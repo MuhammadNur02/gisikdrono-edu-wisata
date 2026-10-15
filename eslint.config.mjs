@@ -182,7 +182,7 @@ export default defineConfig([
   },
   {
     // next.config.ts runs at build time before src/lib/env.ts can load, and only reads build switches.
-    files: ['src/lib/env.ts', 'next.config.ts'],
+    files: ['src/lib/env.ts', 'src/lib/public-env.ts', 'next.config.ts'],
     rules: { 'no-restricted-syntax': 'off' },
   },
   {

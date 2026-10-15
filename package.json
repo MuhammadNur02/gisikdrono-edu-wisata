@@ -40,9 +40,12 @@
     "analyze": "next build"
   },
   "dependencies": {
+    "@t3-oss/env-nextjs": "^0.13.11",
     "next": "^15.5.27",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "server-only": "^0.0.1",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.3",

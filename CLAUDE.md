@@ -57,6 +57,7 @@ The platform is operated by a small municipal team: one Superadmin Kelurahan and
 | Motion | `motion` package (`import { motion } from 'motion/react'`) | `MotionConfig reducedMotion="user"` + `LazyMotion` |
 | Data | Supabase: Postgres + RLS, Auth (staff only, TOTP), Storage; `@supabase/supabase-js` v2 + `@supabase/ssr` | Region `ap-southeast-1`; separate `staging` and `production` projects |
 | Forms & validation | `zod` (`.strict()` schemas), `react-hook-form` + `@hookform/resolvers` | Schemas shared client/server in `src/lib/validations` |
+| Env validation | `@t3-oss/env-nextjs` + `zod` | `src/lib/env.ts` (`serverEnv`, server-only) extends `src/lib/public-env.ts` (`publicEnv`, `NEXT_PUBLIC_*` only); see §7.7 |
 | Tables, charts, URL state | `@tanstack/react-table`, Recharts via shadcn Chart, `nuqs` | Dashboard only |
 | Dates | `date-fns` + `@date-fns/tz`, locale `id`, `APP_TZ = 'Asia/Jakarta'` | DB `timestamptz`; visit dates `date` |
 | Payments | Midtrans Snap, **redirect mode**, thin typed fetch wrapper in `src/lib/midtrans/client.ts` (no SDK) | QRIS + Virtual Account only |
@@ -160,7 +161,7 @@ src/
     email/                     React Email templates (links only, never attachments)
     pdf/                       quotation.tsx, invoice.tsx, receipt.tsx, ticket.tsx, certificate.tsx, fonts/
     seo/ images/ motion/ validations/ utils/ copy/id.ts
-    rate-limit.ts env.ts logger.ts errors.ts turnstile.ts
+    rate-limit.ts env.ts public-env.ts logger.ts errors.ts turnstile.ts
   server/
     actions/                   Server Actions, one file per domain ('use server')
     services/                  orchestration, one file per domain (<domain>-service.ts), booking-state.ts
@@ -569,7 +570,7 @@ Attempts (`internal.create_payment_attempt` + `attach_snap_token`): at most one 
 
 ### 7.7 Secrets & env — owner `src/lib/env.ts`
 
-- All env access goes through `src/lib/env.ts` (zod; `serverEnv` behind `import 'server-only'`, `publicEnv` for `NEXT_PUBLIC_*` only). `process.env` elsewhere is an ESLint error.
+- All env access goes through `src/lib/env.ts` (`serverEnv`, behind `import 'server-only'`) and `src/lib/public-env.ts` (`publicEnv`, `NEXT_PUBLIC_*` only, safe for client components because Next.js inlines those names). `process.env` elsewhere is an ESLint error; the one exception is `next.config.ts`, which runs at build time and reads only build switches (`VERCEL_ENV`, `npm_lifecycle_event`).
 - Fail-fast matrix: `VERCEL_ENV=production` <=> `MIDTRANS_IS_PRODUCTION=true` <=> keys prefixed `Mid-server-` / `Mid-client-`; otherwise `SB-` prefixes. Any `NEXT_PUBLIC_` name containing `SECRET|KEY|TOKEN` outside the known public keys fails CI.
 - `pnpm check:secrets` scans `.next/static` for `Mid-server-`, `service_role`, `MIDTRANS_SERVER_KEY` after build. gitleaks runs pre-commit and in CI.
 - `experimental.taint` + `experimental_taintUniqueValue` on the service key and `CRON_SECRET`. Secrets are never pasted into issues, chats, docs or seed files.

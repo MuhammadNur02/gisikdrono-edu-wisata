@@ -1,11 +1,24 @@
+import { fileURLToPath } from 'node:url';
+
 import { defineConfig } from 'vitest/config';
+
+import { sandboxEnv } from './tests/fixtures/env';
 
 // CLAUDE.md §9.1: pricing, QR, guest links and the booking state map stay at 100 % lines, file by file.
 const FULL_LINE_COVERAGE = { lines: 100, perFile: true };
 
+// Next.js swaps server-only for an empty module on the server; tests run on the server too.
+const serverOnlyStub = fileURLToPath(
+  new URL('./node_modules/server-only/empty.js', import.meta.url),
+);
+
 export default defineConfig({
-  resolve: { tsconfigPaths: true },
+  resolve: {
+    tsconfigPaths: true,
+    alias: { 'server-only': serverOnlyStub },
+  },
   test: {
+    env: sandboxEnv,
     projects: [
       {
         extends: true,
