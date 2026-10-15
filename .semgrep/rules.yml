@@ -18,15 +18,15 @@ rules:
     pattern-regex: (?:from|import\()\s*['"](?:@/lib/supabase/admin|[./]+(?:lib/)?supabase/admin)['"]
     paths:
       exclude:
-        - src/app/api/webhooks/
-        - src/app/api/jobs/
-        - src/server/services/booking-service.ts
-        - src/server/services/payment-service.ts
-        - src/server/services/ticket-service.ts
-        - src/server/services/notification-service.ts
-        - src/server/services/document-service.ts
-        - src/server/services/export-service.ts
-        - src/server/services/staff-service.ts
+        - /src/app/api/webhooks/
+        - /src/app/api/jobs/
+        - /src/server/services/booking-service.ts
+        - /src/server/services/payment-service.ts
+        - /src/server/services/ticket-service.ts
+        - /src/server/services/notification-service.ts
+        - /src/server/services/document-service.ts
+        - /src/server/services/export-service.ts
+        - /src/server/services/staff-service.ts
         - scripts/
 
   - id: fetch-outside-adapters
@@ -38,10 +38,10 @@ rules:
     pattern: fetch(...)
     paths:
       exclude:
-        - src/lib/midtrans/
-        - src/lib/notifications/
-        - src/lib/email/
-        - src/lib/turnstile.ts
+        - /src/lib/midtrans/
+        - /src/lib/notifications/
+        - /src/lib/email/
+        - /src/lib/turnstile.ts
         - scripts/
         - tests/
         - '*.test.ts'
