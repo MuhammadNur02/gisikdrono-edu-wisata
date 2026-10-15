@@ -1,0 +1,78 @@
+# Project rules on top of p/nextjs p/typescript p/react p/owasp-top-ten p/secrets (docs/Security.md SC-03).
+# ESLint catches most of these first; Semgrep is the second net in CI and does not trust lint disables.
+rules:
+  - id: no-dangerously-set-inner-html
+    message: >-
+      dangerouslySetInnerHTML is banned. Rich text is Tiptap JSON rendered by the allowlisted
+      renderer (CLAUDE.md §7.8).
+    severity: ERROR
+    languages: [typescript, javascript]
+    pattern-regex: \bdangerouslySetInnerHTML\b
+
+  - id: service-role-client-outside-allow-list
+    message: >-
+      The service-role client bypasses RLS and is allow-listed (CLAUDE.md §6.1). Use
+      @/lib/supabase/server instead.
+    severity: ERROR
+    languages: [typescript, javascript]
+    pattern-regex: (?:from|import\()\s*['"](?:@/lib/supabase/admin|[./]+(?:lib/)?supabase/admin)['"]
+    paths:
+      exclude:
+        - src/app/api/webhooks/
+        - src/app/api/jobs/
+        - src/server/services/booking-service.ts
+        - src/server/services/payment-service.ts
+        - src/server/services/ticket-service.ts
+        - src/server/services/notification-service.ts
+        - src/server/services/document-service.ts
+        - src/server/services/export-service.ts
+        - src/server/services/staff-service.ts
+        - scripts/
+
+  - id: fetch-outside-adapters
+    message: >-
+      Outbound HTTP lives only in src/lib/{midtrans,notifications,email} and src/lib/turnstile.ts,
+      with base URLs from src/lib/env.ts (CLAUDE.md §3.2).
+    severity: ERROR
+    languages: [typescript, javascript]
+    pattern: fetch(...)
+    paths:
+      exclude:
+        - src/lib/midtrans/
+        - src/lib/notifications/
+        - src/lib/email/
+        - src/lib/turnstile.ts
+        - scripts/
+        - tests/
+        - '*.test.ts'
+
+  - id: supabase-filter-with-non-literal-input
+    message: >-
+      .or() and .filter() build PostgREST filter syntax from their arguments, so anything but a
+      literal can inject conditions (CLAUDE.md §6.3). Use the typed builder methods instead.
+    severity: ERROR
+    languages: [typescript, javascript]
+    pattern-either:
+      - patterns:
+          - pattern: $QUERY.or($FILTER, ...)
+          - pattern-not: $QUERY.or("...", ...)
+      - patterns:
+          - pattern: $QUERY.filter($COLUMN, $OPERATOR, $VALUE)
+          - pattern-not: $QUERY.filter("...", "...", "...")
+
+  - id: server-action-without-guard
+    message: >-
+      A 'use server' file must call a guard (requireUser, requireRole, requireRwAccess,
+      requireAal2, requireFreshTotp, requireGuestToken or verifyTurnstile) before doing anything
+      (CLAUDE.md §5.2).
+    severity: ERROR
+    languages: [typescript, javascript]
+    pattern-regex: (?s)\A(?!.*\b(?:requireUser|requireRole|requireRwAccess|requireAal2|requireFreshTotp|requireGuestToken|verifyTurnstile)\b).*?['"]use server['"]
+
+  - id: spread-into-insert-or-update
+    message: >-
+      Map columns explicitly; spreading an object into .insert() / .update() / .upsert() lets a
+      request body write columns it should never touch (CLAUDE.md §6.3).
+    severity: ERROR
+    languages: [typescript, javascript]
+    pattern-regex: \.(?:insert|update|upsert)\(\s*\[?\s*\{[^}]*\.\.\.
