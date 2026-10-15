@@ -169,7 +169,7 @@ src/
   db/                          types.ts (generated), enums.ts (TS mirror of Postgres enums), rpc.ts (typed RPC wrappers)
   types/                       action-result.ts, domain DTOs, API contracts (VerifyTicketRequest/Response)
   hooks/                       use-*.ts client hooks
-  config/                      site.ts, nav.ts, rw.ts, fonts.ts, status.ts (enum -> label/variant)
+  config/                      site.ts, nav.ts, rw.ts, fonts.ts, auth.ts (cookie options, login paths), status.ts (enum -> label/variant)
   styles/globals.css           tokens (light/dark), @theme inline
   middleware.ts
 supabase/

@@ -6,6 +6,8 @@ const withBundleAnalyzer = bundleAnalyzer({
   enabled: process.env.npm_lifecycle_event === 'analyze',
 });
 
-const nextConfig: NextConfig = {};
+const nextConfig: NextConfig = {
+  experimental: { taint: true },
+};
 
 export default withBundleAnalyzer(nextConfig);
