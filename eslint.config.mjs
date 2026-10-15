@@ -6,6 +6,8 @@ import { defineConfig } from 'eslint/config';
 import checkFile from 'eslint-plugin-check-file';
 import tseslint from 'typescript-eslint';
 
+import { noLoggingWholeRecords } from './scripts/eslint-rules/no-logging-whole-records.mjs';
+
 const projectRoot = dirname(fileURLToPath(import.meta.url));
 const compat = new FlatCompat({ baseDirectory: projectRoot });
 
@@ -131,10 +133,12 @@ export default defineConfig([
     },
   },
   {
+    plugins: { local: { rules: { 'no-logging-whole-records': noLoggingWholeRecords } } },
     rules: {
       'max-lines': ['error', { max: 300, skipBlankLines: true, skipComments: true }],
       'max-lines-per-function': ['error', { max: 40, skipBlankLines: true, skipComments: true }],
       complexity: ['error', 10],
+      'local/no-logging-whole-records': 'error',
       'react/no-danger': 'error',
       'no-console': 'error',
       'no-restricted-syntax': [
@@ -192,7 +196,7 @@ export default defineConfig([
   },
   {
     // A describe block grows with its cases, and test data is full of literal numbers on purpose.
-    files: ['**/*.test.ts', 'tests/**'],
+    files: ['**/*.test.{ts,mjs}', 'tests/**'],
     rules: {
       'max-lines-per-function': 'off',
       '@typescript-eslint/no-magic-numbers': 'off',
