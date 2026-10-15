@@ -51,12 +51,13 @@ The platform is operated by a small municipal team: one Superadmin Kelurahan and
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Runtime | Node 22 LTS, pnpm 10 (`--frozen-lockfile`) | `.npmrc`: `ignore-scripts=true`; `pnpm-workspace.yaml`: `onlyBuiltDependencies: [sharp]`, `minimumReleaseAge: 10080` (7 days, in minutes) |
+| Runtime | Node 22 LTS, pnpm 10 (`--frozen-lockfile`) | `.npmrc`: `ignore-scripts=true`, `min-release-age=7` (npm, days); `pnpm-workspace.yaml`: `onlyBuiltDependencies: [sharp]`, `minimumReleaseAge: 10080` (pnpm, 7 days in minutes) |
 | Framework | Next.js 15 App Router, React 19, TypeScript 5 `strict` + `noUncheckedIndexedAccess` | Path alias `@/*` -> `src/*` |
-| Styling | Tailwind CSS v4 (tokens as CSS variables consumed via `@theme inline`), shadcn/ui `new-york` | Tokens in `src/styles/globals.css` |
+| Styling | Tailwind CSS v4 (tokens as CSS variables consumed via `@theme inline`), shadcn/ui `new-york`, `tw-animate-css` | Tokens in `src/styles/globals.css` |
 | Motion | `motion` package (`import { motion } from 'motion/react'`) | `MotionConfig reducedMotion="user"` + `LazyMotion` |
 | Data | Supabase: Postgres + RLS, Auth (staff only, TOTP), Storage; `@supabase/supabase-js` v2 + `@supabase/ssr` | Region `ap-southeast-1`; separate `staging` and `production` projects |
 | Forms & validation | `zod` (`.strict()` schemas), `react-hook-form` + `@hookform/resolvers` | Schemas shared client/server in `src/lib/validations` |
+| Env validation | `@t3-oss/env-nextjs` + `zod` | `src/lib/env.ts` (`serverEnv`, server-only) extends `src/lib/public-env.ts` (`publicEnv`, `NEXT_PUBLIC_*` only); see §7.7 |
 | Tables, charts, URL state | `@tanstack/react-table`, Recharts via shadcn Chart, `nuqs` | Dashboard only |
 | Dates | `date-fns` + `@date-fns/tz`, locale `id`, `APP_TZ = 'Asia/Jakarta'` | DB `timestamptz`; visit dates `date` |
 | Payments | Midtrans Snap, **redirect mode**, thin typed fetch wrapper in `src/lib/midtrans/client.ts` (no SDK) | QRIS + Virtual Account only |
@@ -64,8 +65,10 @@ The platform is operated by a small municipal team: one Superadmin Kelurahan and
 | Documents | `@react-pdf/renderer`, `pdf-lib`, `qrcode`, `exceljs` | Node route handlers only |
 | Scanner / PWA | `@serwist/next`, `@yudiel/react-qr-scanner` over `barcode-detector` (native `BarcodeDetector`, ZXing-WASM fallback) | Online-only validation |
 | Bot protection & limits | Cloudflare Turnstile; Postgres `rate_limit_buckets` via `internal.rate_limit_hit` | No external rate-limit vendor |
-| Observability | `pino` JSON logs with redaction, `@sentry/nextjs` (tunnel `/monitoring`, `sendDefaultPii: false`), `@vercel/analytics` | `/api/health` for uptime monitor |
-| Testing | Vitest, Playwright, pgTAP (`supabase test db`) | See §9 |
+| Observability | `pino` JSON logs with redaction (`src/lib/logger.ts`; custom rule `scripts/eslint-rules/no-logging-whole-records.mjs`), `@sentry/nextjs` (tunnel `/monitoring`, `sendDefaultPii: false`), `@vercel/analytics` | `/api/health` for uptime monitor |
+| Testing | Vitest (`@vitest/coverage-v8`), Playwright, pgTAP (`supabase test db`) | See §9; projects `unit` (`src/**/*.test.ts`) and `integration` (`tests/integration`) in `vitest.config.ts` |
+| Lint, format, hooks | ESLint 9 flat config (`eslint-config-next` loaded through `@eslint/eslintrc` `FlatCompat`, `typescript-eslint`, `eslint-plugin-check-file` for kebab-case filenames), Prettier + `prettier-plugin-tailwindcss`, Husky + `lint-staged`, `@commitlint/cli` + `@commitlint/config-conventional`, gitleaks | Husky is enabled once per clone with `pnpm exec husky` because `ignore-scripts=true` skips `prepare`; see §9.2 |
+| Scripts and local tools | `tsx` for `scripts/*.ts`, `react-email` CLI for `pnpm email:preview`, `@next/bundle-analyzer` for `pnpm analyze`; Supabase CLI and `cloudflared` installed globally | The `supabase` npm package is not used because its binary download is an install script, which `ignore-scripts=true` blocks; `.npmrc` `shell-emulator=true` makes scripts run the same on Windows and Linux |
 | Hosting | Vercel (Production from `main`; Preview = staging Supabase + Midtrans sandbox) | pg_cron + pg_net drive scheduled jobs |
 
 ### 2.2 Architecture
@@ -158,7 +161,7 @@ src/
     email/                     React Email templates (links only, never attachments)
     pdf/                       quotation.tsx, invoice.tsx, receipt.tsx, ticket.tsx, certificate.tsx, fonts/
     seo/ images/ motion/ validations/ utils/ copy/id.ts
-    rate-limit.ts env.ts logger.ts errors.ts turnstile.ts
+    rate-limit.ts env.ts public-env.ts csp.ts logger.ts errors.ts turnstile.ts
   server/
     actions/                   Server Actions, one file per domain ('use server')
     services/                  orchestration, one file per domain (<domain>-service.ts), booking-state.ts
@@ -166,7 +169,7 @@ src/
   db/                          types.ts (generated), enums.ts (TS mirror of Postgres enums), rpc.ts (typed RPC wrappers)
   types/                       action-result.ts, domain DTOs, API contracts (VerifyTicketRequest/Response)
   hooks/                       use-*.ts client hooks
-  config/                      site.ts, nav.ts, rw.ts, fonts.ts, status.ts (enum -> label/variant)
+  config/                      site.ts, nav.ts, rw.ts, fonts.ts, auth.ts (cookie options, login paths), routes.ts (private route prefixes), status.ts (enum -> label/variant)
   styles/globals.css           tokens (light/dark), @theme inline
   middleware.ts
 supabase/
@@ -248,6 +251,33 @@ These rules are enforced in review and by lint. A PR that violates them is not m
 - [ ] Pure logic has unit tests; critical modules keep 100 % coverage
 - [ ] Indonesian copy reviewed; English identifiers
 
+### 4.2 Tone of code and commits
+
+These rules apply to all code and every commit. Language rules stay as in §3.3 and rule 14: identifiers, comments and commits in English, user-facing text in Indonesian.
+
+**Code**
+
+- Write code the way you would explain it to a colleague, not like a textbook. Variable and function names use everyday words that say what they are for (`remainingSeats`, `isGateOpenNow`, `sendTicketToPic`). Avoid generic or academic names (`data`, `handler2`, `processEntity`).
+- Comment only when there is a reason the code itself does not show, written as a plain sentence: `// Midtrans can send the same notification twice, so we check event_hash before processing it.` Never write a comment that repeats the code.
+- Choose the simplest solution that is correct. Do not add abstractions, patterns or extra layers "just in case". One function, one purpose, readable top to bottom without jumping around.
+- Error messages and UI text are friendly, clear Indonesian, as if talking to the visitor: "Kuota sesi ini sudah penuh, coba pilih jam lain ya", not "QUOTA_EXCEEDED: session full". The `ActionErrorCode` stays for machines; the `message` from `src/lib/copy/id.ts` is what people read.
+
+**Commits**
+
+- Keep the Conventional Commits format (`type(scope): summary`), but write the summary and body the way a person tells what changed and why, not as a list of files. Example:
+
+  ```text
+  feat(booking): hold quota only after the WhatsApp number is verified
+
+  Until now anyone could lock a session's quota without paying, just by
+  filling in the form. A hold is now created only after the OTP passes, so
+  bots and pranksters can no longer use up seats meant for other schools.
+  Limit of 2 active holds per number.
+  Task: P3.4.02
+  ```
+
+- One commit is one complete change that can be explained in a single sentence.
+
 ---
 
 ## 5. Next.js conventions
@@ -263,6 +293,8 @@ These rules are enforced in review and by lint. A PR that violates them is not m
 | Anything touching secrets, service role, QR, links, pricing, PDF, Midtrans, notifications | **Server only**; module starts with `import 'server-only'` | Never imported by client files |
 
 Rules: `'use client'` only on leaf islands, never on `page.tsx`. Client components receive serialisable props (ISO strings, numbers, plain objects). Public pages export `revalidate` (3600; `/rw-08-kampung-seni-budaya/jadwal` 1800; `/e-booklet/*` 86400) plus tags. Booking, auth and dashboard routes export `dynamic = 'force-dynamic'` and send `Cache-Control: private, no-store` + `X-Robots-Tag: noindex`.
+
+CSP follows the same split (docs/Security.md §8.2, decision of 2026-10-15). Private routes, listed in `src/config/routes.ts` (`/dashboard`, `/pesan`, `/reservasi`, `/login`, `/forgot-password`, `/reset-password`, `/mfa`, `/onboarding`, `/auth`, `/v`), get a per-request nonce with `'strict-dynamic'` from `src/middleware.ts`. Public ISR pages are rendered before any request exists, so they get a static CSP without a nonce (`script-src 'self' 'unsafe-inline'`). Never put an inline `next/script` or anything else that needs a nonce on a public page; never render raw HTML there either.
 
 ### 5.2 Server Actions: mandatory order
 
@@ -540,7 +572,7 @@ Attempts (`internal.create_payment_attempt` + `attach_snap_token`): at most one 
 
 ### 7.7 Secrets & env — owner `src/lib/env.ts`
 
-- All env access goes through `src/lib/env.ts` (zod; `serverEnv` behind `import 'server-only'`, `publicEnv` for `NEXT_PUBLIC_*` only). `process.env` elsewhere is an ESLint error.
+- All env access goes through `src/lib/env.ts` (`serverEnv`, behind `import 'server-only'`) and `src/lib/public-env.ts` (`publicEnv`, `NEXT_PUBLIC_*` only, safe for client components because Next.js inlines those names). `process.env` elsewhere is an ESLint error; the one exception is `next.config.ts`, which runs at build time and reads only the `npm_lifecycle_event` build switch. `NODE_ENV` and `VERCEL_ENV` come from `publicEnv` as shared values.
 - Fail-fast matrix: `VERCEL_ENV=production` <=> `MIDTRANS_IS_PRODUCTION=true` <=> keys prefixed `Mid-server-` / `Mid-client-`; otherwise `SB-` prefixes. Any `NEXT_PUBLIC_` name containing `SECRET|KEY|TOKEN` outside the known public keys fails CI.
 - `pnpm check:secrets` scans `.next/static` for `Mid-server-`, `service_role`, `MIDTRANS_SERVER_KEY` after build. gitleaks runs pre-commit and in CI.
 - `experimental.taint` + `experimental_taintUniqueValue` on the service key and `CRON_SECRET`. Secrets are never pasted into issues, chats, docs or seed files.
@@ -553,7 +585,7 @@ Attempts (`internal.create_payment_attempt` + `attach_snap_token`): at most one 
 - `profiles.role`, `rw_id`, `is_active`, `mfa_required` are not updatable by `authenticated`; changes go through `set_staff_role` / `set_staff_status` (superadmin, fresh TOTP <= 5 min, never own row). Every change bumps `claims_version` and deletes sessions.
 - Finance and PII tables (`payments`, `payment_adjustments`, `revenue_share_*`, `exports`, `audit_logs`, `site_settings`, `profiles`, `booking_participants`) carry restrictive AAL2 policies.
 - Rich text is Tiptap/ProseMirror JSON in `articles.body_json` rendered by an allowlisted React renderer; `react/no-danger: error`; HTML is never stored. SVG uploads are rejected.
-- Hardening defaults in `next.config.ts`: `poweredByHeader: false`, `productionBrowserSourceMaps: false`, `images.remotePatterns` pinned, `experimental.serverActions.bodySizeLimit '512kb'`, `allowedOrigins` empty, nonce CSP with `strict-dynamic`, HSTS, `frame-ancestors 'none'`, COOP/CORP `same-origin`. `safeRedirect()` accepts only `^/(?![/\\])`. Supabase Auth redirect allow-list = `/auth/callback` only.
+- Hardening defaults in `next.config.ts`: `poweredByHeader: false`, `productionBrowserSourceMaps: false`, `images.remotePatterns` pinned, `experimental.serverActions.bodySizeLimit '512kb'`, `allowedOrigins` empty, CSP built in `src/middleware.ts` from `src/lib/csp.ts` (nonce + `strict-dynamic` on the private routes of `src/config/routes.ts`, static policy without a nonce on public ISR pages), HSTS, `frame-ancestors 'none'`, COOP/CORP `same-origin`. `safeRedirect()` accepts only `^/(?![/\\])`. Supabase Auth redirect allow-list = `/auth/callback` only.
 
 ---
 
@@ -698,6 +730,7 @@ PRD requirement cited; migration + RLS + pgTAP merged; types regenerated; valida
 | `SECURITY_ALERT_EMAIL`, `SECURITY_ALERT_WA_PHONE` | S | Out-of-band critical alert recipients |
 | `NEXT_PUBLIC_SENTRY_DSN` | P | Sentry client/server DSN |
 | `SENTRY_AUTH_TOKEN` | CI | Source-map upload |
+| `VERCEL_AUTOMATION_BYPASS_SECRET` | CI | Lets CI Playwright reach Vercel preview deployments behind Deployment Protection (`x-vercel-protection-bypass` header) |
 | `BACKUP_AGE_PUBLIC_KEY`, `R2_*` | CI | Weekly encrypted off-site dump |
 
 Side: P = public bundle (`NEXT_PUBLIC_*` only), S = server-only (flagged Sensitive in Vercel), CI = GitHub Actions secret only. Runtime toggles are not env vars; they live in `site_settings` (keys per `docs/PRD.md` §8.6: `booking_enabled, whatsapp_enabled, email_enabled, maintenance_mode, rate_limit_profile, checkin.grace_before_minutes, checkin.grace_after_minutes, booking.hold_minutes_individual, booking.hold_hours_institution, booking.quotation_valid_days, booking.min_lead_hours, booking.max_advance_days, booking.max_pax, pricing.min_price_per_pax, pii_retention_months, finance.expected_payout_account_masked, contact.whatsapp_number, contact.email, kelurahan.address, kelurahan.signatory_name, kelurahan.signatory_title, certificate.template_version, seo.default_description`).
@@ -929,4 +962,4 @@ Public: `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABAS
 
 Server-only: `SUPABASE_SERVICE_ROLE_KEY`, `MIDTRANS_SERVER_KEY`, `MIDTRANS_SERVER_KEY_PREVIOUS`, `MIDTRANS_CLIENT_KEY`, `MIDTRANS_IS_PRODUCTION`, `MIDTRANS_MERCHANT_ID`, `MIDTRANS_WEBHOOK_PATH_TOKEN`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `EMAIL_FROM`, `QR_SIGNING_KEYS`, `QR_SIGNING_ACTIVE_KID`, `BOOKING_LINK_SECRET`, `OTP_PEPPER`, `PARTICIPANT_PII_KEYS`, `PARTICIPANT_PII_ACTIVE_KID`, `CRON_SECRET`, `TURNSTILE_SECRET_KEY`, `SECURITY_ALERT_EMAIL`, `SECURITY_ALERT_WA_PHONE`.
 
-CI-only: `SUPABASE_DB_URL`, `SUPABASE_ACCESS_TOKEN`, `SENTRY_AUTH_TOKEN`, `BACKUP_AGE_PUBLIC_KEY`, `R2_*`.
+CI-only: `SUPABASE_DB_URL`, `SUPABASE_ACCESS_TOKEN`, `SENTRY_AUTH_TOKEN`, `VERCEL_AUTOMATION_BYPASS_SECRET`, `BACKUP_AGE_PUBLIC_KEY`, `R2_*`.

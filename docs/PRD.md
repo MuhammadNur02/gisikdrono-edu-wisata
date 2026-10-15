@@ -2317,6 +2317,7 @@ Additional items tracked in `CLAUDE.md` §12.3: Vercel plan (Hobby vs Pro; pg_cr
 | `NEXT_PUBLIC_FLAG_*` | P | Build-time feature flags |
 | `SECURITY_ALERT_EMAIL`, `SECURITY_ALERT_WA_PHONE` | S | Out-of-band critical alert recipients |
 | `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_AUTH_TOKEN` | P / CI | Sentry DSN and source-map upload |
+| `VERCEL_AUTOMATION_BYPASS_SECRET` | CI | Lets CI Playwright reach Vercel preview deployments behind Deployment Protection (`x-vercel-protection-bypass` header) |
 | `BACKUP_AGE_PUBLIC_KEY`, `R2_*` | CI | Weekly encrypted off-site dump |
 
 Side: P = public bundle (`NEXT_PUBLIC_*` only), S = server-only (flagged Sensitive in Vercel), CI = GitHub Actions secret. All access goes through `src/lib/env.ts`; CI fails on any `NEXT_PUBLIC_` name containing `SECRET`, `KEY` or `TOKEN` outside the listed public keys. Runtime toggles live in `site_settings` (§8.6), not in environment variables.

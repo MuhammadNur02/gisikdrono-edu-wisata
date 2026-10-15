@@ -1,0 +1,42 @@
+name: Weekly database backup
+
+# docs/Security.md RES-01: an encrypted copy of production lives outside Supabase, in Cloudflare R2.
+on:
+  schedule:
+    - cron: '0 19 * * 6' # Sunday 02:00 WIB
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Install pg_dump 17 and age
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common age
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -qq postgresql-client-17
+      # The dump is encrypted with the public key before it touches disk; only the vault holds the private key.
+      - name: Dump and encrypt
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          BACKUP_AGE_PUBLIC_KEY: ${{ secrets.BACKUP_AGE_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          /usr/lib/postgresql/17/bin/pg_dump --format=custom --no-owner --no-privileges "$SUPABASE_DB_URL" \
+            | age --recipient "$BACKUP_AGE_PUBLIC_KEY" > backup.dump.age
+          test -s backup.dump.age
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          aws s3 cp backup.dump.age "s3://$R2_BUCKET/postgres/$(date -u +%Y-%m-%d).dump.age" \
+            --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"

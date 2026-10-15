@@ -197,6 +197,7 @@ Boundary rules: Z1 is the only place secrets exist; Z2 assumes Z1 has bugs (RLS 
 | R10 | Data residency (PP 71/2019) makes Singapore hosting non-compliant | Unknown | Blocker | Open decision A10 (§7.6, §13.3) | Kelurahan / Diskominfo |
 | R11 | Single superadmin defeats dual control | Medium | High | Medium (REC-16 compensating 24 h delay + kelurahan-head email) | Kelurahan head |
 | R12 | Vendor outage on a visit day | Medium | Medium | Low (RES-02, QR-04 manifest contingency) | RW officers |
+| R13 | XSS on a public ISR page, which runs under the static CSP with `'unsafe-inline'` scripts (§8.2) | Low | Medium (no PII, payment or login on those pages) | Low (Tiptap JSON renderer, `react/no-danger`, Semgrep, APP-11; tightening tracked in Task P5.4.03) | Dev team |
 
 ---
 
@@ -615,7 +616,7 @@ Supabase Pro daily backups (7 days); PITR add-on *should*; weekly `supabase db d
 | A03 Injection | supabase-js builder with zod-validated values only; `.or()`/`.filter()`/`.match()`/`.textSearch()` with non-literal input banned by semgrep; `escapeLike()` for `ilike`; typed RPC args; React escaping; Tiptap JSON + allow-listed `RichText` renderer, `react/no-danger: error`; links `https?:`/`mailto:` only with `rel="noopener noreferrer nofollow"`; SVG uploads rejected; WhatsApp params sanitised; pino JSON (no log injection) (APP-10, APP-11, EP-04) | unit tests `escapeLike`, renderer allow-list; Playwright XSS canary article |
 | A04 Insecure design | Server pricing and snapshots; atomic quota; state machine in `internal.*`; `event_hash` idempotency; OTP before hold; unpaid caps; moderated reviews bound to check-in (PAY-03, BOOK-01, WH-05, BOOK-12, BOOK-13, GUEST-09) | pgTAP concurrency and transition tests; webhook replay test |
 | A05 Security misconfiguration | Headers §8.2; `poweredByHeader: false`; `productionBrowserSourceMaps: false` with Sentry `hideSourceMaps`; generic `error.tsx`/`not-found.tsx`; `images.remotePatterns` pinned to `https://<ref>.supabase.co/storage/v1/object/public/public-media/**`; no CORS headers; previews behind Vercel Authentication with `X-Robots-Tag: noindex`; Supabase Security Advisor zero errors per release (HDR-*, RL-06, DB-01, DB-03) | Playwright header test; release checklist |
-| A06 Vulnerable components | pnpm frozen lockfile, `ignore-scripts=true`, `onlyBuiltDependencies=["sharp"]`, `minimumReleaseAge=7`, Renovate weekly grouped, `pnpm audit --prod --audit-level=high` (SC-01, SC-02) | CI |
+| A06 Vulnerable components | pnpm frozen lockfile, `ignore-scripts=true`, `onlyBuiltDependencies: [sharp]`, release-age gate of 7 days set twice (`pnpm-workspace.yaml` `minimumReleaseAge: 10080` in minutes for pnpm, `.npmrc` `min-release-age=7` in days for npm), Renovate weekly grouped, `pnpm audit --prod --audit-level=high` (SC-01, SC-02) | CI |
 | A07 Identification & auth failures | Invite-only with out-of-band `invite_code`; password ≥ 12 + leaked-password protection; TOTP for all staff; lockout in the Auth hook; Auth-level Turnstile; JWT 900 s with rotation; global sign-out and session deletion on deactivation (AUTH-*) | Playwright lockout test against GoTrue directly; pgTAP aal2 tests |
 | A08 Software & data integrity | Webhook signatures + Status API; append-only and hash-chained tables; migrations only via PR; nonce CSP; Vercel builds only from `main`; gitleaks; signed commits *should* (WH-*, REC-04, REC-05, SC-03, SC-05) | CI gates; pgTAP append-only tests |
 | A09 Logging & monitoring failures | `security_events` taxonomy, 5-min anomaly scan, out-of-band critical alerts, `/api/health` 503 semantics, Sentry (OPS-*, MON-*) | synthetic critical event in the go-live checklist |
@@ -625,7 +626,7 @@ Supabase Pro daily backups (7 days); PITR add-on *should*; weekly `supabase db d
 
 ### 8.2 Security headers and CSP (HDR-01…HDR-03)
 
-Static headers in `next.config.ts` `headers()`; CSP with a per-request nonce (`crypto.randomBytes(16).toString('base64')`) and the per-route `Permissions-Policy` in `src/middleware.ts`.
+Static headers in `next.config.ts` `headers()`; the CSP and the per-route `Permissions-Policy` in `src/middleware.ts` (policy builder `src/lib/csp.ts`). Two CSPs exist (decision of 2026-10-15, risk R13): **private routes** (`src/config/routes.ts`: `/dashboard`, `/pesan`, `/reservasi`, `/login`, `/forgot-password`, `/reset-password`, `/mfa`, `/onboarding`, `/auth`, `/v`) get a per-request nonce (16 random bytes, base64) with `'strict-dynamic'`; **public ISR pages** get a static policy without a nonce, because they are rendered before any request exists and could never carry one.
 
 ```
 Strict-Transport-Security: max-age=63072000; includeSubDomains      (+ preload after the domain decision A11)
@@ -637,11 +638,11 @@ Cross-Origin-Resource-Policy: same-origin
 X-DNS-Prefetch-Control: off
 Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), display-capture=(), interest-cohort=()
    on /dashboard/scanner:  camera=(self), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), display-capture=()
-Cache-Control: private, no-store                                      on /dashboard/*, /pesan/*, /reservasi/*, /login, /forgot-password, /reset-password, /mfa/*, /onboarding, /v/*, /api/*
+Cache-Control: private, no-store                                      on /dashboard/*, /pesan/*, /reservasi/*, /login, /forgot-password, /reset-password, /mfa/*, /onboarding, /auth/*, /v/*, /api/*
 X-Robots-Tag: noindex, nofollow                                       on the same routes, and on every response of a non-production deployment
 ```
 
-Production CSP (one line in practice):
+Production CSP on private routes (one line in practice):
 
 ```
 default-src 'self';
@@ -660,6 +661,14 @@ form-action 'self';
 frame-ancestors 'none';
 upgrade-insecure-requests
 ```
+
+Public ISR pages use the same policy except for one directive:
+
+```
+script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com;
+```
+
+Why this is acceptable: public pages hold no PII, no payment form and no login; CMS content is Tiptap/ProseMirror JSON rendered by an allowlisted React renderer, never raw HTML (`react/no-danger`, Semgrep `no-dangerously-set-inner-html`, APP-11), so the remaining XSS surface is small. Every other directive (`connect-src`, `frame-ancestors`, `object-src`, `form-action`, ...) is identical on both policies. Anything that needs a nonce, such as an inline `next/script`, belongs on a private route. P5.4.03 tries Next.js `experimental.sri` (hash-based CSP) to remove `'unsafe-inline'` from public pages later.
 
 Notes: `'wasm-unsafe-eval'` is required by the ZXing WASM fallback of `barcode-detector`; `'unsafe-inline'` for styles is accepted because React SSR and Framer Motion emit `style` attributes; fonts are self-hosted via `next/font`; Sentry uses `tunnelRoute: '/monitoring'`; QR codes are inline SVG so `data:` is unnecessary; no Midtrans origins thanks to redirect mode. Development adds `'unsafe-eval'` to `script-src` only when `NODE_ENV !== 'production'`. Roll-out: `Content-Security-Policy-Report-Only` for one week on staging, then enforce; `report-to` Sentry *could*. `@vercel/analytics` loads `/_vercel/insights/script.js` and beacons to `/_vercel/insights/*` on our own origin, so production needs no extra origin; its development build loads `https://va.vercel-scripts.com`, which is added to `script-src` only when `NODE_ENV !== 'production'`.
 
@@ -703,7 +712,7 @@ Vercel: Firewall managed rulesets on; Deployment Protection (Vercel Authenticati
 |---|---|---|---|
 | `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER`, `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_FLAG_*` | P | all | with project key rotation / n/a |
 | `SUPABASE_SERVICE_ROLE_KEY` | S | per project | 6 months; immediately on incident (two live keys for zero-downtime) |
-| `SUPABASE_DB_URL`, `SUPABASE_ACCESS_TOKEN`, `SENTRY_AUTH_TOKEN`, `BACKUP_AGE_PUBLIC_KEY`, `R2_*` | CI | GitHub environment secrets with required reviewers | 6 months |
+| `SUPABASE_DB_URL`, `SUPABASE_ACCESS_TOKEN`, `SENTRY_AUTH_TOKEN`, `VERCEL_AUTOMATION_BYPASS_SECRET`, `BACKUP_AGE_PUBLIC_KEY`, `R2_*` | CI | GitHub environment secrets with required reviewers | 6 months |
 | `MIDTRANS_SERVER_KEY`, `MIDTRANS_SERVER_KEY_PREVIOUS`, `MIDTRANS_CLIENT_KEY`, `MIDTRANS_IS_PRODUCTION`, `MIDTRANS_MERCHANT_ID`, `MIDTRANS_WEBHOOK_PATH_TOKEN` | S | prod = live, others = sandbox | 12 months; §3.9 procedure |
 | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` | S | prod only (preview uses a stub adapter) | 6 months |
 | `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `EMAIL_FROM` | S | prod + preview | 12 months |
@@ -718,7 +727,7 @@ Rules: every value is "Sensitive" in Vercel per environment; `src/lib/env.ts` va
 
 ### 8.6 Supply chain and CI (SC-01…SC-05)
 
-pnpm 10 `--frozen-lockfile`; `.npmrc` `ignore-scripts=true`, `onlyBuiltDependencies=["sharp"]`, `minimumReleaseAge=7`; Renovate weekly grouped with 7-day release age, majors never auto-merged; `pnpm audit --prod --audit-level=high`; semgrep `p/nextjs p/typescript p/react p/owasp-top-ten p/secrets` plus custom rules (`dangerouslySetInnerHTML`; `admin.ts` import outside the allow-list `src/app/api/webhooks/**`, `src/app/api/jobs/**`, `src/server/services/{booking,payment,ticket,notification,document,export,staff}-service.ts`; `fetch(` outside adapters; `.or(`/`.filter(` with non-literal input; Server Action without a guard; spread into `.insert/.update`); ESLint `react/no-danger: error`, `@typescript-eslint/no-explicit-any: error`, `import/order`; TypeScript `strict` + `noUncheckedIndexedAccess`; branch protection on `main` (PR, required checks lint/typecheck/unit/pgTAP/semgrep/gitleaks/build/Playwright-on-preview, no force push); Vercel deploys only from `main`; SBOM *could*. Clean-code rules from `CLAUDE.md` apply to every security module: pure functions for pricing/signing/state maps with 100 % line coverage on `src/lib/{pricing,qr,links}` and `src/server/services/booking-state.ts`.
+pnpm 10 `--frozen-lockfile`; `.npmrc` `ignore-scripts=true` and `min-release-age=7` (days, read by npm and checked by Semgrep `npm-missing-minimum-release-age`); `pnpm-workspace.yaml` `onlyBuiltDependencies: [sharp]`, `minimumReleaseAge: 10080` (7 days in minutes, read by pnpm). Both gates are kept on purpose: pnpm ignores `min-release-age`, npm ignores `minimumReleaseAge`, so whichever tool resolves a package waits the same week; Renovate weekly grouped with 7-day release age, majors never auto-merged; `pnpm audit --prod --audit-level=high`; semgrep `p/nextjs p/typescript p/react p/owasp-top-ten p/secrets` plus custom rules (`dangerouslySetInnerHTML`; `admin.ts` import outside the allow-list `src/app/api/webhooks/**`, `src/app/api/jobs/**`, `src/server/services/{booking,payment,ticket,notification,document,export,staff}-service.ts`; `fetch(` outside adapters; `.or(`/`.filter(` with non-literal input; Server Action without a guard; spread into `.insert/.update`); ESLint `react/no-danger: error`, `@typescript-eslint/no-explicit-any: error`, `import/order`; TypeScript `strict` + `noUncheckedIndexedAccess`; branch protection on `main` (PR, required checks lint/typecheck/unit/pgTAP/semgrep/gitleaks/build/Playwright-on-preview, no force push); Vercel deploys only from `main`; SBOM *could*. Clean-code rules from `CLAUDE.md` apply to every security module: pure functions for pricing/signing/state maps with 100 % line coverage on `src/lib/{pricing,qr,links}` and `src/server/services/booking-state.ts`.
 
 ### 8.7 Supabase hardening checklist (DB-01…DB-07)
 
@@ -1054,7 +1063,7 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 | QR-06 | must | Grammar-only abuse counting; progressive slow-down; unlock officer; tap-to-scan | Scanner lockout DoS | `/api/tickets/verify`, PWA | 31 bad payloads → slow-down, no lock | P4 - PWA Camera Scanner |
 | QR-07 | must | Manual check-in needs last-4, today only, alerted; `undo_check_in` 15 min; refund revokes tickets; `check_in_ticket` re-checks booking status | Pre-emptive "used" marking; entry after refund | `check_in_ticket`, `record_refund`, `undo_check_in` | pgTAP refunded booking cannot check in | P4 - PWA Camera Scanner |
 | QR-08 | must | `checked_in_pax` ≤ 2× with `unpaid_pax` recorded; certificates gated on `unpaid_pax = 0` or waiver | Pay for 10, bring 45 | `check_in_ticket`, `issue_certificates` | pgTAP; anomaly rule | P4 - E-Certificate Generator |
-| SC-01 | must | pnpm frozen lockfile, ignore-scripts, release-age gating, audit | Malicious packages | `.npmrc`, CI | CI fails on drift/advisory | P1 - Environment Setup |
+| SC-01 | must | pnpm frozen lockfile, ignore-scripts, release-age gating (pnpm `minimumReleaseAge` and npm `min-release-age`, both 7 days), audit | Malicious packages | `.npmrc`, `pnpm-workspace.yaml`, CI | CI fails on drift/advisory | P1 - Environment Setup |
 | SC-02 | must | Renovate weekly grouped, 7-day release age | Outdated dependencies | `renovate.json` | weekly PRs observed | P1 - Environment Setup |
 | SC-03 | must | semgrep rulesets + custom rules; ESLint security rules | Reintroduced insecure patterns | `.semgrep/rules.yml`, `eslint.config.js` | CI fails on seeded violations | P1 - Environment Setup |
 | SC-04 | must | pgTAP + Playwright security smoke as required checks | Authorisation regressions | `supabase/tests`, `tests/e2e/security.spec.ts` | required status checks | P5 - Security Testing |

@@ -365,7 +365,7 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
 | `rounded-xl` / `rounded-2xl` / `rounded-full` | `--radius-xl` / `--radius-2xl` | surfaces / modals / badges |
 | `font-display` / `font-sans` | `--font-display` / `--font-sans` | headings / body |
 
-shadcn `components.json`: `"style": "new-york"`, `"tailwind": { "css": "src/styles/globals.css", "baseColor": "slate", "cssVariables": true }`, aliases `@/components`, `@/components/ui`, `@/lib/utils`, `@/hooks`. Generated primitives in `src/components/ui` receive theme-level edits only; product behaviour is composed in domain folders.
+shadcn `components.json`: `"style": "new-york"`, `"tailwind": { "css": "src/styles/globals.css", "baseColor": "slate", "cssVariables": true }`, aliases `@/components`, `@/components/ui`, `@/lib/utils/cn` (utils), `@/lib`, `@/hooks`. `cn()` lives in `src/lib/utils/cn.ts` and is imported from that path; there is no barrel `src/lib/utils/index.ts`. Generated primitives in `src/components/ui` receive theme-level edits only; product behaviour is composed in domain folders.
 
 ### 2.5 Contrast notes (WCAG 2.1)
 

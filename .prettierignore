@@ -1,0 +1,6 @@
+pnpm-lock.yaml
+.next/
+coverage/
+src/db/types.ts
+# The Markdown docs use hand-aligned tables that Prettier would reflow on every edit.
+*.md

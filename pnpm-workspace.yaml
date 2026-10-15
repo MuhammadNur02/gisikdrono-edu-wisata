@@ -1,0 +1,9 @@
+# docs/Security.md SC-01: only sharp may run install scripts; new releases wait 7 days (in minutes).
+onlyBuiltDependencies:
+  - sharp
+minimumReleaseAge: 10080
+
+# next@15 pins postcss 8.4.31, which has two high advisories (GHSA-r28c-9q8g-f849 and the
+# sourceMappingURL file read). Remove this once next ships a patched postcss.
+overrides:
+  next>postcss: ^8.5.18
