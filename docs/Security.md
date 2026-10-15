@@ -197,6 +197,7 @@ Boundary rules: Z1 is the only place secrets exist; Z2 assumes Z1 has bugs (RLS 
 | R10 | Data residency (PP 71/2019) makes Singapore hosting non-compliant | Unknown | Blocker | Open decision A10 (§7.6, §13.3) | Kelurahan / Diskominfo |
 | R11 | Single superadmin defeats dual control | Medium | High | Medium (REC-16 compensating 24 h delay + kelurahan-head email) | Kelurahan head |
 | R12 | Vendor outage on a visit day | Medium | Medium | Low (RES-02, QR-04 manifest contingency) | RW officers |
+| R13 | XSS on a public ISR page, which runs under the static CSP with `'unsafe-inline'` scripts (§8.2) | Low | Medium (no PII, payment or login on those pages) | Low (Tiptap JSON renderer, `react/no-danger`, Semgrep, APP-11; tightening tracked in Task P5.4.03) | Dev team |
 
 ---
 
@@ -625,7 +626,7 @@ Supabase Pro daily backups (7 days); PITR add-on *should*; weekly `supabase db d
 
 ### 8.2 Security headers and CSP (HDR-01…HDR-03)
 
-Static headers in `next.config.ts` `headers()`; CSP with a per-request nonce (`crypto.randomBytes(16).toString('base64')`) and the per-route `Permissions-Policy` in `src/middleware.ts`.
+Static headers in `next.config.ts` `headers()`; the CSP and the per-route `Permissions-Policy` in `src/middleware.ts` (policy builder `src/lib/csp.ts`). Two CSPs exist (decision of 2026-10-15, risk R13): **private routes** (`src/config/routes.ts`: `/dashboard`, `/pesan`, `/reservasi`, `/login`, `/forgot-password`, `/reset-password`, `/mfa`, `/onboarding`, `/auth`, `/v`) get a per-request nonce (16 random bytes, base64) with `'strict-dynamic'`; **public ISR pages** get a static policy without a nonce, because they are rendered before any request exists and could never carry one.
 
 ```
 Strict-Transport-Security: max-age=63072000; includeSubDomains      (+ preload after the domain decision A11)
@@ -637,11 +638,11 @@ Cross-Origin-Resource-Policy: same-origin
 X-DNS-Prefetch-Control: off
 Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), display-capture=(), interest-cohort=()
    on /dashboard/scanner:  camera=(self), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), display-capture=()
-Cache-Control: private, no-store                                      on /dashboard/*, /pesan/*, /reservasi/*, /login, /forgot-password, /reset-password, /mfa/*, /onboarding, /v/*, /api/*
+Cache-Control: private, no-store                                      on /dashboard/*, /pesan/*, /reservasi/*, /login, /forgot-password, /reset-password, /mfa/*, /onboarding, /auth/*, /v/*, /api/*
 X-Robots-Tag: noindex, nofollow                                       on the same routes, and on every response of a non-production deployment
 ```
 
-Production CSP (one line in practice):
+Production CSP on private routes (one line in practice):
 
 ```
 default-src 'self';
@@ -660,6 +661,14 @@ form-action 'self';
 frame-ancestors 'none';
 upgrade-insecure-requests
 ```
+
+Public ISR pages use the same policy except for one directive:
+
+```
+script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com;
+```
+
+Why this is acceptable: public pages hold no PII, no payment form and no login; CMS content is Tiptap/ProseMirror JSON rendered by an allowlisted React renderer, never raw HTML (`react/no-danger`, Semgrep `no-dangerously-set-inner-html`, APP-11), so the remaining XSS surface is small. Every other directive (`connect-src`, `frame-ancestors`, `object-src`, `form-action`, ...) is identical on both policies. Anything that needs a nonce, such as an inline `next/script`, belongs on a private route. P5.4.03 tries Next.js `experimental.sri` (hash-based CSP) to remove `'unsafe-inline'` from public pages later.
 
 Notes: `'wasm-unsafe-eval'` is required by the ZXing WASM fallback of `barcode-detector`; `'unsafe-inline'` for styles is accepted because React SSR and Framer Motion emit `style` attributes; fonts are self-hosted via `next/font`; Sentry uses `tunnelRoute: '/monitoring'`; QR codes are inline SVG so `data:` is unnecessary; no Midtrans origins thanks to redirect mode. Development adds `'unsafe-eval'` to `script-src` only when `NODE_ENV !== 'production'`. Roll-out: `Content-Security-Policy-Report-Only` for one week on staging, then enforce; `report-to` Sentry *could*. `@vercel/analytics` loads `/_vercel/insights/script.js` and beacons to `/_vercel/insights/*` on our own origin, so production needs no extra origin; its development build loads `https://va.vercel-scripts.com`, which is added to `script-src` only when `NODE_ENV !== 'production'`.
 

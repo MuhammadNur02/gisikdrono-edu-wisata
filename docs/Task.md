@@ -731,6 +731,7 @@ Requirements: NFR-01.
 |---|---|---|---|---|---|
 | P5.4.01 | `[ ]` | Switch `Content-Security-Policy-Report-Only` to enforced `Content-Security-Policy` after seven days with zero violations on staging (console review on home, RW pages, wizard, status hub, dashboard, scanner); nonce flows through `app/layout.tsx` to every `next/script` (HDR-01) | S | P5.3.02 | Dev |
 | P5.4.02 | `[ ]` | securityheaders.com grade A and Mozilla Observatory on staging and production; `X-Robots-Tag: noindex` confirmed on preview URLs; HSTS `max-age=63072000; includeSubDomains` live (`preload` added in P5.7.04); `Cache-Control: private, no-store` verified on `/dashboard/*`, `/reservasi/*`, `/api/*` (HDR-02, RL-06) | S | P5.4.01 | Dev |
+| P5.4.03 | `[ ]` | Try Next.js `experimental.sri` (Subresource Integrity, hash-based CSP) on public ISR pages; if hydration scripts can be covered by hashes, drop `'unsafe-inline'` from their `script-src` in `src/lib/csp.ts` and close risk R13 in `docs/Security.md` §2.6; otherwise record why and keep the static policy (HDR-01) | M | P5.4.01 | Dev |
 
 ### 6.5 P5.5 Security testing, drills and runbooks
 
@@ -961,7 +962,7 @@ Every control of `docs/Security.md` §12 and the tasks that implement or verify 
 | APP-09 | P1.1.15, P2.9.04, P2.9.05, P3.1.01 | APP-10 | P1.1.12, P1.1.15, P4.3.01 |
 | APP-11 | P1.1.04, P1.2.10, P2.4.09, P2.9.03 | APP-12 | P1.1.11, P3.11.09, P5.3.02 |
 | APP-13 | P1.1.12, P1.7.03, P2.8.01 | APP-14 | P1.1.11, P1.1.15, P3.7.01, P5.3.02 |
-| APP-15 | P3.3.02, P3.12.01 | HDR-01 | P1.1.12, P2.2.01, P5.3.02, P5.4.01 |
+| APP-15 | P3.3.02, P3.12.01 | HDR-01 | P1.1.12, P2.2.01, P5.3.02, P5.4.01, P5.4.03 |
 | HDR-02 | P0.2.02, P1.1.11, P5.3.02, P5.4.02, P5.7.04 | HDR-03 | P1.1.11, P1.1.12, P4.4.02, P4.4.03, P5.3.02 |
 | RL-01 | P1.1.13, P1.3.17, P3.4.02, P3.5.04 | RL-02 | P1.3.03, P1.7.03, P2.8.01, P4.8.04 |
 | RL-03 | P4.4.02 | RL-04 | P0.1.10, P3.2.02, P4.11.02 |

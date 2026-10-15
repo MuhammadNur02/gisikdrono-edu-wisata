@@ -1,7 +1,11 @@
-// docs/Security.md §8.2. Built per request because the script nonce changes every time.
+import { PRIVATE_ROUTE_PREFIXES } from '@/config/routes';
+
+// docs/Security.md §8.2. Private routes get a nonce policy built per request. Public ISR pages are
+// rendered before any request exists, so they cannot carry a nonce and get the static policy.
 
 type CspOptions = {
-  nonce: string;
+  // null on public ISR pages.
+  nonce: string | null;
   supabaseUrl: string;
   isDevelopment: boolean;
 };
@@ -16,15 +20,21 @@ const SCANNER_PATH = '/dashboard/scanner';
 const LOCKED_DOWN_FEATURES =
   'microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), display-capture=()';
 
+function isUnder(pathname: string, prefix: string): boolean {
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+
+export function isPrivateRoute(pathname: string): boolean {
+  return PRIVATE_ROUTE_PREFIXES.some((prefix) => isUnder(pathname, prefix));
+}
+
 function scriptSources({ nonce, isDevelopment }: CspOptions): string {
-  const sources = [
-    "'self'",
-    `'nonce-${nonce}'`,
-    "'strict-dynamic'",
-    // The ZXing WASM fallback of the QR scanner needs this.
-    "'wasm-unsafe-eval'",
-    TURNSTILE_ORIGIN,
-  ];
+  const sources =
+    nonce === null
+      ? // Next.js inlines its hydration data as script tags, which a static page can only allow this way.
+        ["'self'", "'unsafe-inline'", TURNSTILE_ORIGIN]
+      : // 'wasm-unsafe-eval' is for the ZXing WASM fallback of the QR scanner.
+        ["'self'", `'nonce-${nonce}'`, "'strict-dynamic'", "'wasm-unsafe-eval'", TURNSTILE_ORIGIN];
   if (isDevelopment) sources.push("'unsafe-eval'", VERCEL_ANALYTICS_DEV_ORIGIN);
   return sources.join(' ');
 }
@@ -55,7 +65,6 @@ export function buildContentSecurityPolicy(options: CspOptions): string {
 
 // Only the gate scanner may open the camera (CLAUDE.md §7.4).
 export function permissionsPolicyFor(pathname: string): string {
-  const isScanner = pathname === SCANNER_PATH || pathname.startsWith(`${SCANNER_PATH}/`);
-  if (isScanner) return `camera=(self), ${LOCKED_DOWN_FEATURES}`;
+  if (isUnder(pathname, SCANNER_PATH)) return `camera=(self), ${LOCKED_DOWN_FEATURES}`;
   return `camera=(), ${LOCKED_DOWN_FEATURES}, interest-cohort=()`;
 }

@@ -169,7 +169,7 @@ src/
   db/                          types.ts (generated), enums.ts (TS mirror of Postgres enums), rpc.ts (typed RPC wrappers)
   types/                       action-result.ts, domain DTOs, API contracts (VerifyTicketRequest/Response)
   hooks/                       use-*.ts client hooks
-  config/                      site.ts, nav.ts, rw.ts, fonts.ts, auth.ts (cookie options, login paths), status.ts (enum -> label/variant)
+  config/                      site.ts, nav.ts, rw.ts, fonts.ts, auth.ts (cookie options, login paths), routes.ts (private route prefixes), status.ts (enum -> label/variant)
   styles/globals.css           tokens (light/dark), @theme inline
   middleware.ts
 supabase/
@@ -293,6 +293,8 @@ These rules apply to all code and every commit. Language rules stay as in §3.3 
 | Anything touching secrets, service role, QR, links, pricing, PDF, Midtrans, notifications | **Server only**; module starts with `import 'server-only'` | Never imported by client files |
 
 Rules: `'use client'` only on leaf islands, never on `page.tsx`. Client components receive serialisable props (ISO strings, numbers, plain objects). Public pages export `revalidate` (3600; `/rw-08-kampung-seni-budaya/jadwal` 1800; `/e-booklet/*` 86400) plus tags. Booking, auth and dashboard routes export `dynamic = 'force-dynamic'` and send `Cache-Control: private, no-store` + `X-Robots-Tag: noindex`.
+
+CSP follows the same split (docs/Security.md §8.2, decision of 2026-10-15). Private routes, listed in `src/config/routes.ts` (`/dashboard`, `/pesan`, `/reservasi`, `/login`, `/forgot-password`, `/reset-password`, `/mfa`, `/onboarding`, `/auth`, `/v`), get a per-request nonce with `'strict-dynamic'` from `src/middleware.ts`. Public ISR pages are rendered before any request exists, so they get a static CSP without a nonce (`script-src 'self' 'unsafe-inline'`). Never put an inline `next/script` or anything else that needs a nonce on a public page; never render raw HTML there either.
 
 ### 5.2 Server Actions: mandatory order
 
@@ -583,7 +585,7 @@ Attempts (`internal.create_payment_attempt` + `attach_snap_token`): at most one 
 - `profiles.role`, `rw_id`, `is_active`, `mfa_required` are not updatable by `authenticated`; changes go through `set_staff_role` / `set_staff_status` (superadmin, fresh TOTP <= 5 min, never own row). Every change bumps `claims_version` and deletes sessions.
 - Finance and PII tables (`payments`, `payment_adjustments`, `revenue_share_*`, `exports`, `audit_logs`, `site_settings`, `profiles`, `booking_participants`) carry restrictive AAL2 policies.
 - Rich text is Tiptap/ProseMirror JSON in `articles.body_json` rendered by an allowlisted React renderer; `react/no-danger: error`; HTML is never stored. SVG uploads are rejected.
-- Hardening defaults in `next.config.ts`: `poweredByHeader: false`, `productionBrowserSourceMaps: false`, `images.remotePatterns` pinned, `experimental.serverActions.bodySizeLimit '512kb'`, `allowedOrigins` empty, nonce CSP with `strict-dynamic`, HSTS, `frame-ancestors 'none'`, COOP/CORP `same-origin`. `safeRedirect()` accepts only `^/(?![/\\])`. Supabase Auth redirect allow-list = `/auth/callback` only.
+- Hardening defaults in `next.config.ts`: `poweredByHeader: false`, `productionBrowserSourceMaps: false`, `images.remotePatterns` pinned, `experimental.serverActions.bodySizeLimit '512kb'`, `allowedOrigins` empty, CSP built in `src/middleware.ts` from `src/lib/csp.ts` (nonce + `strict-dynamic` on the private routes of `src/config/routes.ts`, static policy without a nonce on public ISR pages), HSTS, `frame-ancestors 'none'`, COOP/CORP `same-origin`. `safeRedirect()` accepts only `^/(?![/\\])`. Supabase Auth redirect allow-list = `/auth/callback` only.
 
 ---
 

@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 import { AUTH_COOKIE_OPTIONS, DASHBOARD_PATH, LOGIN_PATH, NEXT_PARAM } from '@/config/auth';
-import { buildContentSecurityPolicy, permissionsPolicyFor } from '@/lib/csp';
+import { buildContentSecurityPolicy, isPrivateRoute, permissionsPolicyFor } from '@/lib/csp';
 import { publicEnv } from '@/lib/public-env';
 
 const NONCE_BYTES = 16;
@@ -16,7 +16,9 @@ function createNonce(): string {
 }
 
 // Next.js reads the nonce from the request's CSP header and stamps it on its own script tags.
-function forwardWithNonce(request: NextRequest, nonce: string, csp: string): NextResponse {
+// Public ISR pages have no nonce, so their request goes through untouched.
+function forwardRequest(request: NextRequest, nonce: string | null, csp: string): NextResponse {
+  if (nonce === null) return NextResponse.next({ request });
   const headers = new Headers(request.headers);
   headers.set('x-nonce', nonce);
   headers.set('Content-Security-Policy', csp);
@@ -77,17 +79,17 @@ function withSecurityHeaders(response: NextResponse, pathname: string, csp: stri
 }
 
 export async function middleware(request: NextRequest) {
-  const nonce = createNonce();
+  const { pathname } = request.nextUrl;
+  const nonce = isPrivateRoute(pathname) ? createNonce() : null;
   const csp = buildContentSecurityPolicy({
     nonce,
     supabaseUrl: publicEnv.NEXT_PUBLIC_SUPABASE_URL,
     isDevelopment: publicEnv.NODE_ENV !== 'production',
   });
-  const continueRequest = () => forwardWithNonce(request, nonce, csp);
+  const continueRequest = () => forwardRequest(request, nonce, csp);
   const response = { current: continueRequest() };
   const isSignedIn = await refreshSession(request, response, continueRequest);
 
-  const { pathname } = request.nextUrl;
   const result =
     !isSignedIn && isDashboardPath(pathname)
       ? redirectToLogin(request, response.current)

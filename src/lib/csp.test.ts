@@ -1,20 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildContentSecurityPolicy, permissionsPolicyFor } from '@/lib/csp';
+import { buildContentSecurityPolicy, isPrivateRoute, permissionsPolicyFor } from '@/lib/csp';
 
-const production = {
+const privateProduction = {
   nonce: 'abc123',
   supabaseUrl: 'https://projectref.supabase.co',
   isDevelopment: false,
 };
+const publicProduction = { ...privateProduction, nonce: null };
 
 function directive(policy: string, name: string): string | undefined {
   return policy.split('; ').find((part) => part.startsWith(`${name} `) || part === name);
 }
 
-describe('buildContentSecurityPolicy', () => {
-  it('locks scripts to the nonce in production, with no unsafe-eval', () => {
-    const policy = buildContentSecurityPolicy(production);
+describe('buildContentSecurityPolicy on private routes', () => {
+  it('locks scripts to the nonce, with no unsafe-inline or unsafe-eval', () => {
+    const policy = buildContentSecurityPolicy(privateProduction);
     expect(directive(policy, 'script-src')).toBe(
       "script-src 'self' 'nonce-abc123' 'strict-dynamic' 'wasm-unsafe-eval' https://challenges.cloudflare.com",
     );
@@ -24,15 +25,39 @@ describe('buildContentSecurityPolicy', () => {
   });
 
   it('allows only our Supabase project for data and realtime', () => {
-    const policy = buildContentSecurityPolicy(production);
+    const policy = buildContentSecurityPolicy(privateProduction);
     expect(directive(policy, 'connect-src')).toBe(
       "connect-src 'self' https://projectref.supabase.co wss://projectref.supabase.co https://challenges.cloudflare.com",
     );
   });
 
+  it('never allows Midtrans, because payment runs in redirect mode', () => {
+    expect(buildContentSecurityPolicy(privateProduction)).not.toContain('midtrans');
+  });
+});
+
+describe('buildContentSecurityPolicy on public ISR pages', () => {
+  it('allows inline scripts from our own origin but no nonce, strict-dynamic or eval', () => {
+    const scripts = directive(buildContentSecurityPolicy(publicProduction), 'script-src');
+    expect(scripts).toBe("script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com");
+  });
+
+  it('keeps every other directive as strict as on private routes', () => {
+    const withoutScripts = (policy: string) =>
+      policy
+        .split('; ')
+        .filter((part) => !part.startsWith('script-src'))
+        .join('; ');
+    expect(withoutScripts(buildContentSecurityPolicy(publicProduction))).toBe(
+      withoutScripts(buildContentSecurityPolicy(privateProduction)),
+    );
+  });
+});
+
+describe('buildContentSecurityPolicy in development', () => {
   it('relaxes only what local development needs', () => {
     const policy = buildContentSecurityPolicy({
-      ...production,
+      ...privateProduction,
       supabaseUrl: 'http://127.0.0.1:54321',
       isDevelopment: true,
     });
@@ -40,9 +65,31 @@ describe('buildContentSecurityPolicy', () => {
     expect(directive(policy, 'connect-src')).toContain('ws://127.0.0.1:54321');
     expect(policy).not.toContain('upgrade-insecure-requests');
   });
+});
 
-  it('never allows Midtrans, because payment runs in redirect mode', () => {
-    expect(buildContentSecurityPolicy(production)).not.toContain('midtrans');
+describe('isPrivateRoute', () => {
+  it.each([
+    '/dashboard',
+    '/dashboard/scanner',
+    '/pesan/eduwisata-ecowastreme',
+    '/reservasi/GSK-7F3K9Q2M/bayar',
+    '/login',
+    '/mfa/verify',
+    '/auth/callback',
+    '/v/GSK.k1.abc.def',
+  ])('treats %s as private', (path) => {
+    expect(isPrivateRoute(path)).toBe(true);
+  });
+
+  it.each([
+    '/',
+    '/paket-wisata',
+    '/rw-05-ecowastreme',
+    '/verifikasi/ABCDE12345',
+    '/varia',
+    '/loginx',
+  ])('treats %s as a public page', (path) => {
+    expect(isPrivateRoute(path)).toBe(false);
   });
 });
 
