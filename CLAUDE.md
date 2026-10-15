@@ -608,7 +608,7 @@ Format `type(scope): summary`; scopes `booking|payment|qr|scanner|admin|public|d
 feat(booking): reserve quota atomically in internal.create_booking
 
 Locks visit_sessions ORDER BY id, re-checks reserved_pax + pax <= capacity.
-Task: P3.1.04
+Task: P3.4.02
 ```
 
 ### 9.5 PR checklist
