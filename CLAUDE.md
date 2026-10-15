@@ -53,7 +53,7 @@ The platform is operated by a small municipal team: one Superadmin Kelurahan and
 |---|---|---|
 | Runtime | Node 22 LTS, pnpm 10 (`--frozen-lockfile`) | `.npmrc`: `ignore-scripts=true`; `pnpm-workspace.yaml`: `onlyBuiltDependencies: [sharp]`, `minimumReleaseAge: 10080` (7 days, in minutes) |
 | Framework | Next.js 15 App Router, React 19, TypeScript 5 `strict` + `noUncheckedIndexedAccess` | Path alias `@/*` -> `src/*` |
-| Styling | Tailwind CSS v4 (tokens as CSS variables consumed via `@theme inline`), shadcn/ui `new-york` | Tokens in `src/styles/globals.css` |
+| Styling | Tailwind CSS v4 (tokens as CSS variables consumed via `@theme inline`), shadcn/ui `new-york`, `tw-animate-css` | Tokens in `src/styles/globals.css` |
 | Motion | `motion` package (`import { motion } from 'motion/react'`) | `MotionConfig reducedMotion="user"` + `LazyMotion` |
 | Data | Supabase: Postgres + RLS, Auth (staff only, TOTP), Storage; `@supabase/supabase-js` v2 + `@supabase/ssr` | Region `ap-southeast-1`; separate `staging` and `production` projects |
 | Forms & validation | `zod` (`.strict()` schemas), `react-hook-form` + `@hookform/resolvers` | Schemas shared client/server in `src/lib/validations` |
@@ -66,6 +66,7 @@ The platform is operated by a small municipal team: one Superadmin Kelurahan and
 | Bot protection & limits | Cloudflare Turnstile; Postgres `rate_limit_buckets` via `internal.rate_limit_hit` | No external rate-limit vendor |
 | Observability | `pino` JSON logs with redaction, `@sentry/nextjs` (tunnel `/monitoring`, `sendDefaultPii: false`), `@vercel/analytics` | `/api/health` for uptime monitor |
 | Testing | Vitest, Playwright, pgTAP (`supabase test db`) | See §9 |
+| Lint, format, hooks | ESLint 9 flat config (`eslint-config-next` loaded through `@eslint/eslintrc` `FlatCompat`, `typescript-eslint`), Prettier + `prettier-plugin-tailwindcss`, Husky + `lint-staged`, `@commitlint/cli` + `@commitlint/config-conventional`, gitleaks | Husky is enabled once per clone with `pnpm exec husky` because `ignore-scripts=true` skips `prepare`; see §9.2 |
 | Hosting | Vercel (Production from `main`; Preview = staging Supabase + Midtrans sandbox) | pg_cron + pg_net drive scheduled jobs |
 
 ### 2.2 Architecture
