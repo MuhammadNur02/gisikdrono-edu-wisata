@@ -1,0 +1,4 @@
+# docs/Security.md SC-01: only sharp may run install scripts; new releases wait 7 days (in minutes).
+onlyBuiltDependencies:
+  - sharp
+minimumReleaseAge: 10080

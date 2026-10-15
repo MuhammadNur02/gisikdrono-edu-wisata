@@ -19,6 +19,16 @@ Stack: Next.js (App Router) · Tailwind CSS · shadcn/ui · Framer Motion · Sup
 
 Precedence on conflict: `supabase/migrations` > `docs/PRD.md` > `CLAUDE.md` > `docs/Security.md` (security rules are additive) > `docs/StyleGuide.md`.
 
+## Local setup
+
+Requires Node 22 (`.nvmrc`), pnpm 10 (pinned in `packageManager`) and [gitleaks](https://github.com/gitleaks/gitleaks) on `PATH`.
+
+```bash
+pnpm install --frozen-lockfile
+pnpm exec husky   # once per clone: .npmrc ignore-scripts=true stops the usual prepare hook from installing it
+pnpm dev
+```
+
 ## Status
 
-Documentation phase (v1.0, 2026-10-15). No application code yet; implementation follows `docs/Task.md` Phase 1.
+Phase 1 in progress: repository scaffold and quality gates (`docs/Task.md` P1.1).
