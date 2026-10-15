@@ -248,6 +248,33 @@ These rules are enforced in review and by lint. A PR that violates them is not m
 - [ ] Pure logic has unit tests; critical modules keep 100 % coverage
 - [ ] Indonesian copy reviewed; English identifiers
 
+### 4.2 Tone of code and commits
+
+These rules apply to all code and every commit. Language rules stay as in §3.3 and rule 14: identifiers, comments and commits in English, user-facing text in Indonesian.
+
+**Code**
+
+- Write code the way you would explain it to a colleague, not like a textbook. Variable and function names use everyday words that say what they are for (`remainingSeats`, `isGateOpenNow`, `sendTicketToPic`). Avoid generic or academic names (`data`, `handler2`, `processEntity`).
+- Comment only when there is a reason the code itself does not show, written as a plain sentence: `// Midtrans can send the same notification twice, so we check event_hash before processing it.` Never write a comment that repeats the code.
+- Choose the simplest solution that is correct. Do not add abstractions, patterns or extra layers "just in case". One function, one purpose, readable top to bottom without jumping around.
+- Error messages and UI text are friendly, clear Indonesian, as if talking to the visitor: "Kuota sesi ini sudah penuh, coba pilih jam lain ya", not "QUOTA_EXCEEDED: session full". The `ActionErrorCode` stays for machines; the `message` from `src/lib/copy/id.ts` is what people read.
+
+**Commits**
+
+- Keep the Conventional Commits format (`type(scope): summary`), but write the summary and body the way a person tells what changed and why, not as a list of files. Example:
+
+  ```text
+  feat(booking): hold quota only after the WhatsApp number is verified
+
+  Until now anyone could lock a session's quota without paying, just by
+  filling in the form. A hold is now created only after the OTP passes, so
+  bots and pranksters can no longer use up seats meant for other schools.
+  Limit of 2 active holds per number.
+  Task: P3.4.02
+  ```
+
+- One commit is one complete change that can be explained in a single sentence.
+
 ---
 
 ## 5. Next.js conventions
