@@ -43,7 +43,7 @@ Glossary of domain terms used throughout: **RW** (Rukun Warga, the neighbourhood
 
 | Party | Responsible for | We rely on |
 |---|---|---|
-| **Vercel** | Edge/TLS termination, function isolation, Firewall managed rules, Deployment Protection, env-var encryption, cron scheduling | Secrets stay server-side; previews behind Vercel Authentication; Attack Challenge Mode as a runbook switch |
+| **Vercel** | Edge/TLS termination, function isolation, Firewall managed rules, Deployment Protection, env-var encryption | Secrets stay server-side; previews behind Vercel Authentication; Attack Challenge Mode as a runbook switch; scheduled jobs are driven by pg_cron + pg_net, never by Vercel cron |
 | **Supabase** | Managed Postgres (AES-256 at rest), Auth (GoTrue, MFA, hooks), Storage, pg_cron/pg_net, backups, Security Advisor | RLS enforcement, Auth hooks, leaked-password protection (Pro), SSL enforcement, daily backups |
 | **Midtrans** | Hosting the payment page (Snap), card/QRIS/VA processing, PCI DSS, settlement to the merchant bank account, `signature_key` on notifications, Status API | We never see payment instruments; we verify every notification and re-confirm with the Status API |
 | **Meta (WhatsApp Cloud API)** | Template approval, message delivery, webhook signing (`X-Hub-Signature-256`) | Templates only; OTP delivery; delivery statuses |
@@ -92,16 +92,16 @@ flowchart LR
     S[Officer phone - PWA scanner]
   end
   subgraph Z1["Z1 Vercel (Next.js, Node runtime)"]
-    MW[src/middleware.ts\nsession refresh, CSP nonce]
-    SA[Server Actions\nzod -> guard -> service]
-    RH[Route handlers\n/api/webhooks/* /api/jobs/* /api/tickets/verify]
-    ADM[src/lib/supabase/admin.ts\nservice role, allow-listed]
+    MW["src/middleware.ts<br/>session refresh, CSP nonce"]
+    SA["Server Actions<br/>zod → guard → service"]
+    RH["Route handlers<br/>/api/webhooks/* /api/jobs/* /api/tickets/verify"]
+    ADM["src/lib/supabase/admin.ts<br/>service role, allow-listed"]
   end
   subgraph Z2["Z2 Supabase (ap-southeast-1)"]
-    PG[(Postgres\nRLS forced, public + internal schemas)]
-    AU[Auth / GoTrue\nhooks, TOTP]
-    ST[Storage\npublic-media, documents, uploads-quarantine]
-    CR[pg_cron + pg_net + Vault]
+    PG[("Postgres<br/>RLS forced, public + internal schemas")]
+    AU["Auth / GoTrue<br/>hooks, TOTP"]
+    ST["Storage<br/>public-media, documents, uploads-quarantine"]
+    CR["pg_cron + pg_net + Vault"]
   end
   subgraph Z3["Z3 Processors"]
     MT[Midtrans Snap + Status API]
@@ -194,7 +194,7 @@ Boundary rules: Z1 is the only place secrets exist; Z2 assumes Z1 has bugs (RLS 
 | R7 | Ticket reuse / entry after refund | Medium | Medium | Low (QR-02, QR-07) | RW officers |
 | R8 | Children's names persist in PDFs after purge | High (without control) | High | Low (DATA-12) | Dev team |
 | R9 | Alerts silenced by a stalled outbox | Medium | High | Low (OPS-06) | Dev team |
-| R10 | Data residency (PP 71/2019) makes Singapore hosting non-compliant | Unknown | Blocker | Open decision A10 (§7.10) | Kelurahan / Diskominfo |
+| R10 | Data residency (PP 71/2019) makes Singapore hosting non-compliant | Unknown | Blocker | Open decision A10 (§7.6, §13.3) | Kelurahan / Diskominfo |
 | R11 | Single superadmin defeats dual control | Medium | High | Medium (REC-16 compensating 24 h delay + kelurahan-head email) | Kelurahan head |
 | R12 | Vendor outage on a visit day | Medium | Medium | Low (RES-02, QR-04 manifest contingency) | RW officers |
 
@@ -212,7 +212,7 @@ sequenceDiagram
   participant M as Midtrans
   participant W as POST /api/webhooks/midtrans/[token]
   participant J as GET /api/jobs/payments-poll
-  V->>A: "Konfirmasi & Bayar" (booking_code + guest cookie bk_<code>)
+  V->>A: "Konfirmasi & Bayar" (booking_code + guest cookie bk_(code))
   A->>DB: internal.create_payment_attempt(booking_id)
   DB-->>A: payments row (order_id = GSK-7F3K9Q2M-01, gross_amount from DB)
   A->>M: POST /snap/v1/transactions (Basic server key, 10 s timeout)
@@ -221,7 +221,7 @@ sequenceDiagram
   A-->>V: 302 to snap_redirect_url (hosted page)
   V->>M: pays QRIS / VA
   M->>W: notification (signature_key SHA-512)
-  W->>W: path token -> rate limit -> size/JSON -> zod -> signature -> merchant_id
+  W->>W: path token → rate limit → size/JSON → zod → signature → merchant_id
   W->>DB: insert payment_events (event_hash unique)
   W->>M: GET /v2/{order_id}/status (5 s)
   W->>DB: internal.apply_payment_event(event_id, 'webhook', confirmed=true)
@@ -229,15 +229,15 @@ sequenceDiagram
   W-->>M: 200
   J->>M: Status API for pending > 2 min (every 5 min)
   J->>DB: internal.apply_payment_event(event_id, 'poll', true)
-  V->>V: /reservasi/<code> polls DB state (never query params)
+  V->>V: /reservasi/(code) polls DB state (never query params)
 ```
 
 ### 3.2 Snap redirect mode and server pricing (PAY-01…PAY-09, PAY-11…PAY-15)
 
 - **Redirect mode only.** The hosted payment page is opened via the stored `payments.snap_redirect_url`; no `snap.js` on our origin, so no Midtrans origins appear in the CSP and `Cross-Origin-Opener-Policy: same-origin` holds. The redirect URL is also sent in `gsk_payment_reminder_v1` and the pending-payment email so a B2B treasurer can pay from another device.
-- **Server computes money.** The booking DTO is `z.object({...}).strict()` carrying `packageId`, `sessionIds`, `pax`, `addons: [{productId, qty}]` (≤ 20 lines), participants and PIC fields; any `price`, `total`, `discount` key fails validation. `computeBookingQuote()` in `src/lib/pricing` is pure, takes DB rows only, returns integer IDR lines with the invariant `sum(lines) = total > 0`, is snapshotted into `bookings` and `booking_addons` at hold time, and is 100 % line-covered.
+- **Server computes money.** The booking DTO is `z.object({...}).strict()` carrying `packageId`, `visitSessionIds`, `pax`, `addons: [{productId, qty}]` (≤ 20 lines), participants and PIC fields; any `price`, `total`, `discount` key fails validation. `computeBookingQuote()` in `src/lib/pricing` is pure, takes DB rows only, returns integer IDR lines with the invariant `sum(lines) = total > 0`, is snapshotted into `bookings` and `booking_addons` at hold time, and is 100 % line-covered.
 - **Snap payload** (`src/lib/midtrans/client.ts`, thin typed `fetch`, no SDK): `transaction_details.order_id = payments.order_id`, `gross_amount = bookings.total_amount`, `item_details` from `booking_addons` plus the package/discount lines (names ≤ 50 chars), `customer_details` = PIC `first_name`, `email`, `phone` only (no participants, no address), `enabled_payments = ['qris','bca_va','bni_va','bri_va','permata_va','cimb_va','other_va']` hard-coded (no cards), `expiry = {unit:'minute', duration: minutes until bookings.expires_at}`, `callbacks.finish = https://<site>/reservasi/<code>`. Snapshot tests lock the payload.
-- **Attempts.** `payments.order_id = booking_code || '-' || lpad(attempt_no, 2, '0')` (`GSK-7F3K9Q2M-01`), unique; a partial unique index allows one `pending`/`needs_review` payment per booking; an unexpired Snap token is reused. **[RT]** A new attempt first calls `POST /v2/{previous order_id}/expire` and proceeds only when Midtrans confirms the previous order is expired or cancelled (WH-16). A new attempt is refused when fewer than 5 minutes of the hold remain (BOOK-14).
+- **Attempts.** `payments.order_id = booking_code || '-' || lpad(attempt_no, 2, '0')` (`GSK-7F3K9Q2M-01`), unique; a partial unique index allows one `pending` payment per booking (a `needs_review` payment also blocks a new attempt until a superadmin resolves it); an unexpired Snap token is reused. **[RT]** A new attempt first calls `POST /v2/{previous order_id}/expire` and proceeds only when Midtrans confirms the previous order is expired or cancelled (WH-16). A new attempt is refused when fewer than 5 minutes of the hold remain (BOOK-14).
 - **Finish page** `/reservasi/[bookingCode]` requires the `bk_<code>` httpOnly cookie minted at hold time, never reads `transaction_status` from the query string, and polls `payments.status` via a Server Action (PAY-09, PAY-15).
 - **Environment fail-fast** in `src/lib/env.ts`: `VERCEL_ENV=production` ⇔ `MIDTRANS_IS_PRODUCTION=true` ⇔ `MIDTRANS_SERVER_KEY` starts with `Mid-server-` and `MIDTRANS_CLIENT_KEY` with `Mid-client-`; any other environment requires `SB-` prefixes. CI scans `.next/static` for `Mid-server-`, `SB-Mid-server-`, `service_role`, `sb_secret_` (PAY-01, PAY-02, SEC-01).
 
@@ -256,7 +256,7 @@ Route `src/app/api/webhooks/midtrans/[token]/route.ts`: `runtime = 'nodejs'`, `d
 | 7 | `INSERT INTO payment_events (… event_hash = sha256(raw body)) ON CONFLICT DO NOTHING RETURNING id`; no row = replay | 200 `{"status":"duplicate"}` | — |
 | 8 | Lookup `payments` by exact `order_id` (never parsed) | 200, `unknown_order`, alert only if the `order_id` matches our grammar `^GSK-[0-9A-HJKMNP-TV-Z]{8}-[0-9]{2}$` **[RT]** | `webhook_amount_mismatch` |
 | 9 | `currency = 'IDR'` and `Number(gross_amount)` integer and equal to `payments.gross_amount` | 200, payment → `needs_review`, high alert | `webhook_amount_mismatch` |
-| 10 | **Status API confirmation for every state-changing transition** (`settlement`, `capture`, `refund`, `partial_refund`, `cancel`, `expire`, `chargeback`) **[RT]**: `GET /v2/{order_id}/status`, Basic auth, 5 s timeout, no retry; `transaction_status`, `fraud_status`, `gross_amount` and `order_id` must agree | unreachable → 503 (Midtrans retries, poll retries), event left `awaiting_status_check`; disagreement → `needs_review`, **critical** alert, webhook quarantine mode | `status_disagreement` |
+| 10 | **Status API confirmation for every state-changing transition** (`settlement`, `capture`, `refund`, `partial_refund`, `cancel`, `expire`, `chargeback`) **[RT]**: `GET /v2/{order_id}/status` through `src/lib/midtrans/client.ts` (Basic auth; default 10 s timeout, capped at 5 s inside the webhook so the route stays within `maxDuration = 15`), no retry; `transaction_status`, `fraud_status`, `gross_amount` and `order_id` must agree | unreachable → 503 (Midtrans retries, poll retries), event left `awaiting_status_check`; disagreement → `needs_review`, **critical** alert, webhook quarantine mode | `status_disagreement` |
 | 11 | `internal.apply_payment_event(event_id, 'webhook', confirmed := true)` — one transaction | DB error → 503 | — |
 | 12 | `after()` kicks `POST /api/jobs/process-notifications` | ignored (cron catches up) | — |
 | 13 | 200 `{"status":"ok"}`; target < 3 s | — | — |
@@ -309,7 +309,7 @@ The same function is called with `p_source = 'poll'` by `/api/jobs/payments-poll
 | Trigger | Table | Behaviour |
 |---|---|---|
 | `payments_protect_settled` BEFORE UPDATE | `payments` | once `status in ('settled','refunded','partially_refunded','disputed','duplicate')`: `gross_amount, currency, order_id, booking_id, transaction_id, settled_at, payment_type` immutable (`raise exception … errcode 'P0001'`); DELETE always raises |
-| `bookings_immutable_guard` BEFORE UPDATE | `bookings` | `rw_ids, package_id, booking_code, created_at, expires_at` immutable after insert; `total_amount, pax_count, discount_*` frozen once `paid`; `status` writable only when `current_setting('app.in_rpc', true) = '1'` |
+| `bookings_immutable_guard` BEFORE UPDATE | `bookings` | `rw_ids, package_id, booking_code, created_at` immutable after insert; `expires_at` writable only inside `extend_booking_hold` (`app.in_rpc`, ≤ 14 days, audited); `total_amount, pax_count, discount_*` frozen once `paid`; `status` writable only when `current_setting('app.in_rpc', true) = '1'` |
 | `booking_addons_guard` | `booking_addons` | UPDATE/DELETE raise once the parent booking is `paid` |
 | `invoices_immutable` | `invoices` | `invoice_no, amount, snapshot, issued_at` always immutable; DELETE raises; status only `issued → paid → void` |
 | `append_only` BEFORE UPDATE OR DELETE | `payment_events` (except `processed_at`, `processing_result`), `revenue_share_entries`, `audit_logs`, `payment_adjustments` (after `applied`), `booking_events`, `security_events`, `ticket_scans`, `webhook_rejections` (purge job only, `set local app.purge = 'on'`) | raise; plus `REVOKE UPDATE, DELETE, TRUNCATE … FROM anon, authenticated` |
@@ -337,7 +337,7 @@ Triggers fire for the service role too (it bypasses RLS, not triggers); only the
 |---|---|
 | Owner account | Kelurahan head's official email (A12), 2FA on, recovery codes in the Bitwarden organisation vault |
 | Operators | Named sub-accounts with least privilege (finance read-only for the treasurer, no key access for developers); no shared logins; quarterly access review signed by the Lurah's office |
-| Protected changes | Server Key regeneration, payout/settlement account change and notification URL change only by the owner with a written record in `audit_logs` (`key_rotated` / `settings.changed`) |
+| Protected changes | Server Key regeneration, payout/settlement account change and notification URL change only by the owner with a written record in `audit_logs` (`key_rotated` / `settings.update`) |
 | Detection | Anomaly rule: signature-failure burst with **zero valid notifications in 30 min** = incident "merchant account compromise" (not "env mix-up"); monthly payout-account check against `site_settings.finance.expected_payout_account_masked` |
 | Server Key rotation | 1) regenerate in the dashboard at 02:00 WIB; 2) set `MIDTRANS_SERVER_KEY`, move the old value to `MIDTRANS_SERVER_KEY_PREVIOUS`; 3) redeploy; 4) overlap ≤ 15 min, then remove the previous key; 5) `security_events.key_rotated`; 6) run `reconcile-payments`. Triggers for unplanned rotation: any `status_disagreement`, suspected leak, departure of anyone with dashboard access. `MIDTRANS_WEBHOOK_PATH_TOKEN` rotates with the key. |
 
@@ -349,13 +349,13 @@ Triggers fire for the service role too (it bypasses RLS, not triggers); only the
 
 1. `requestPhoneOtpAction` (Turnstile, zod E.164 `^\+62[0-9]{8,13}$`) → `internal.issue_phone_otp`: `guest_otps(phone, code_hash = sha256(code || OTP_PEPPER), purpose 'booking_phone', attempts, expires_at = now() + 10 min)`; template `gsk_otp_v1` (AUTHENTICATION, copy-code). Caps: 5 OTP/phone/day, 20/IP/day, resend cooldown 60 s, 5 verify attempts then invalidated.
 2. `verifyPhoneOtpAction` → `internal.verify_phone_otp` marks the row consumed and returns a signed, httpOnly `phone_verified` cookie (phone + `exp` 30 d, HMAC with `BOOKING_LINK_SECRET`).
-3. The booking DTO carries **no phone field**; `createBookingAction` derives `pic_phone` solely from the verified cookie (or the `guest_otps` row consumed within the last 10 min) and sets `bookings.phone_verified_at` in the same call. Changing the number means a new OTP. A trigger refuses any `notifications` row with `channel = 'whatsapp'` for a booking whose `phone_verified_at IS NULL` **[RT]**.
+3. The booking DTO carries **no phone field**; `createBookingAction` derives `pic_phone` solely from the verified cookie (or the `guest_otps` row consumed within the last 10 min) and sets `bookings.phone_verified_at` in the same call. Changing the number means a new OTP. A trigger refuses any `notifications` row with `channel = 'whatsapp'` whose booking has `phone_verified_at IS NULL`; the only exception is `template = 'phone_otp'`, which carries no `booking_id` and is keyed to the `guest_otps` row **[RT]**.
 4. The global OTP breaker (500/day) **degrades** instead of stopping: above threshold the form switches to interactive Turnstile and email OTP; only OTPs that Meta accepted count; superadmin alerted at 50 % **[RT]**.
 
 ### 4.2 Reservation, holds and expiry (BOOK-01, BOOK-02, BOOK-14)
 
 - `internal.create_booking` (service role only, called from `src/server/services/booking-service.ts` after zod, Turnstile and limiter): validates package/legs/sessions/add-ons from DB rows, snapshots prices, then `internal.reserve_session_quota` per leg `ORDER BY id` — conditional `UPDATE visit_sessions SET reserved_pax = reserved_pax + p_pax WHERE … AND reserved_pax + p_pax <= capacity` under the row lock (READ COMMITTED re-check); zero rows → `QUOTA_UNAVAILABLE`; combo is both-or-nothing. `CHECK (reserved_pax <= capacity)` is the second line. Nightly `internal.reconcile_session_counters()` logs drift (`quota.drift`) and corrects downward only.
-- `expires_at` is **NOT NULL for `pending_payment`**, set **once** inside `internal.create_booking` (web individual 120 min; `booker_type in ('school','university','government','company')` 24 h; pax > 20 → 30 min; staff `extend_booking_hold` ≤ 14 days), immutable thereafter (`bookings_immutable_guard`). Snap `expiry.duration = ceil((expires_at − now())/60)`; new attempt refused if < 5 min remain. `internal.expire_stale_bookings()` every 5 min expires at `expires_at + 5 min` grace with `FOR UPDATE SKIP LOCKED`, releases quota idempotently via `booking_legs.quota_released_at`, expires open payments, enqueues `booking_expired`. pgTAP: a `pending_payment` row with NULL `expires_at` cannot exist; Snap expiry never exceeds the hold.
+- `expires_at` is **NOT NULL for `pending_payment`**, set **once** inside `internal.create_booking` (web individual 120 min; `booker_type in ('school','university','government','company')` 24 h; pax > 20 → 30 min) and immutable thereafter (`bookings_immutable_guard`), the sole exception being the staff RPC `extend_booking_hold` (≤ 14 days, audited). Snap `expiry.duration = ceil((expires_at − now())/60)`; new attempt refused if < 5 min remain. `internal.expire_stale_bookings()` every 5 min expires at `expires_at + 5 min` grace with `FOR UPDATE SKIP LOCKED`, releases quota idempotently via `booking_legs.quota_released_at`, expires open payments, enqueues `booking_expired`. pgTAP: a `pending_payment` row with NULL `expires_at` cannot exist; Snap expiry never exceeds the hold.
 - **Quotation holds no quota** (`booking_legs.status = 'unreserved'`, `bookings.status = 'quoted'`); "Konfirmasi & Bayar" reserves and starts the TTL (BOOK-08).
 
 ### 4.3 Caps and limiter rules (BOOK-04, BOOK-11, BOOK-13, BOOK-16)
@@ -370,7 +370,7 @@ Triggers fire for the service role too (it bypasses RLS, not triggers); only the
 | Key normalisation | email lower-cased, gmail dots and `+tags` stripped; phone E.164 `+62` mobile only; applied before limits, dedupe and notifications | `src/lib/validations/normalize.ts` |
 | Evaluation order | per-IP → Turnstile (fail-closed) → global window counting **only Turnstile-verified** requests | `src/server/actions/booking.ts` |
 | Global breaker | **soft**: switch `site_settings.rate_limit_profile` to `strict`, enable Vercel Attack Challenge Mode, alert; never a hard reject | `anomaly-scan` + runbook DoS |
-| Limiter backend | Postgres `rate_limit_buckets` via `internal.rate_limit_hit` (no external quota to exhaust); **fails closed** for login, password reset, scanner, exports and link minting; fails open only for booking creation while Turnstile stays mandatory | `src/lib/rate-limit.ts` |
+| Limiter backend | Postgres `rate_limit_buckets` via `internal.rate_limit_hit` (no external quota to exhaust; an external store such as Upstash is only an optional later upgrade and must keep this fail-closed matrix); **fails closed** for login, password reset, scanner, exports and link minting; fails open only for booking creation while Turnstile stays mandatory | `src/lib/rate-limit.ts` |
 | Turnstile | every public form (booking, OTP, lookup, quotation, review, DSR); server `siteverify` with `remoteip`, `hostname`, `challenge_ts < 5 min`, 5 s timeout | `src/lib/turnstile.ts` |
 
 ### 4.4 Duplicate handling and quotation misuse (BOOK-06, BOOK-08, BOOK-15, BOOK-17)
@@ -383,7 +383,7 @@ Triggers fire for the service role too (it bypasses RLS, not triggers); only the
 
 ## 5. Authentication and session
 
-Supabase Auth is used **only by staff** (`superadmin`, `admin_rw`). Visitors never have accounts (§6.6 guest links).
+Supabase Auth is used **only by staff** (`superadmin`, `admin_rw`). Visitors never have accounts (§6.7 guest links).
 
 ### 5.1 Invite and onboarding (AUTH-01, AUTH-09)
 
@@ -399,7 +399,7 @@ Supabase Auth is used **only by staff** (`superadmin`, `admin_rw`). Visitors nev
 ### 5.2 Password policy and MFA (AUTH-02, AUTH-03, AUTH-12, AUTH-13)
 
 - Minimum 12 characters, all four character classes, Supabase leaked-password protection on (Pro); the onboarding form additionally runs `zxcvbn-ts` and blocks score < 3 (UX only).
-- **TOTP is mandatory for every staff account** (A2): `profiles.mfa_required` defaults `true` and cannot be set `false` for `superadmin`; `site_settings.mfa_required_admin_rw` exists only as an audited emergency relaxation for `admin_rw`. Phone/SMS factors are not enabled.
+- **TOTP is mandatory for every staff account** (A2): `profiles.mfa_required` is `true` for both `superadmin` and `admin_rw`, no RPC sets it `false`, and the column exists only so the hook, middleware and guards enforce enrolment uniformly. Phone/SMS factors are not enabled.
 - **Exactly one verified factor per user**: enrolment is offered only when `listFactors()` returns zero verified factors, or inside onboarding; a second factor needs an AAL2 session plus step-up; a nightly job (and the access-token hook) sets `app_role = 'none'` for any user with > 1 verified factor until a superadmin reviews; `reset_staff_mfa` (superadmin, step-up, dual approval or 24 h delay) deletes **all** factors and logs `mfa_reset` **[RT]**.
 - `src/middleware.ts` calls `supabase.auth.mfa.getAuthenticatorAssuranceLevel()` on every `/dashboard/*` request: `nextLevel = 'aal2' && currentLevel !== 'aal2'` → `/mfa/verify`; `nextLevel !== 'aal2'` with `mfa_required` → `/mfa/enroll`. Middleware is a redirect convenience; the authoritative gates are `requireRole()`/`requireRwAccess()` in `src/server/auth/guards.ts` and the restrictive `aal2()` RLS policies (§6.3).
 
@@ -430,7 +430,7 @@ Actions that require a fresh TOTP verification within the last **5 minutes** (`s
 -- 1 insert into public.login_attempts(user_id, email_hash, ip, success, at)
 -- 2 failures := count(*) where user_id = event.user_id and not success and at > now() - interval '15 min'
 -- 3 failures >= 5  -> return {decision:'reject', message:'Terlalu banyak percobaan. Coba lagi dalam 15 menit.'} + security_events.login_locked
--- 4 failures 3..4 -> progressive delay (pg_sleep 1 s / 2 s) + security_events.login_failed
+-- 4 failures 3..4 -> progressive delay (pg_sleep 1 s / 2 s, bounded so the hook stays within its timeout) + security_events.login_failed
 -- 5 otherwise     -> {decision:'continue'}
 ```
 
@@ -468,7 +468,7 @@ create or replace function public.aal2() returns boolean language sql stable as 
 ### 6.2 Deny-by-default and the `internal` schema (AZ-02, AZ-11, DB-01, DB-02)
 
 - Migration template for every table: `enable row level security; force row level security; revoke all on <table> from anon, authenticated;` then minimal explicit grants. `0001_extensions` through `0008_seed` include `alter default privileges in schema public revoke all on tables, sequences from anon, authenticated` and `alter default privileges in schema public, internal revoke execute on functions from public`.
-- Two schemas: `public` (tables, views, staff RPCs listed in `CLAUDE.md`) and **`internal`** (all transition functions: `create_booking, reserve_session_quota, release_booking_quota, create_payment_attempt, attach_snap_token, apply_payment_event, record_payment_failure, create_quotation, next_document_number, allocate_revenue_share, reverse_revenue_share, issue_phone_otp, verify_phone_otp, submit_review, expire_stale_bookings, close_past_bookings, enqueue_visit_reminders, reconcile_session_counters, claim_notifications, complete_notification, fail_notification, rate_limit_hit, prune_operational_tables, verify_ledger_chain, verify_audit_chain, log_audit`). `internal` is **not** in PostgREST `exposed schemas` (`public` only; `graphql_public` removed) and is callable only by the service role and pg_cron **[RT]**. Nothing mutating is executable by `anon`; the only anon RPC is `increment_booklet_download`.
+- Two schemas: `public` (tables, views, staff RPCs listed in `CLAUDE.md`) and **`internal`** (all transition functions: `create_booking, reserve_session_quota, release_booking_quota, create_payment_attempt, attach_snap_token, apply_payment_event, record_payment_failure, create_quotation, next_document_number, allocate_revenue_share, reverse_revenue_share, issue_phone_otp, verify_phone_otp, submit_review, expire_stale_bookings, close_past_bookings, enqueue_visit_reminders, reconcile_session_counters, claim_notifications, complete_notification, fail_notification, rate_limit_hit, prune_operational_tables, verify_ledger_chain, verify_audit_chain, log_audit`). `internal` is **not** in PostgREST `exposed schemas` (`public` only; `graphql_public` removed) and is callable only by the service role and pg_cron **[RT]**. No RPC at all is executable by `anon`; booklet download counts are incremented by the server route that serves the file, under the service role.
 - CI pgTAP enumerates `pg_proc` in exposed schemas and asserts that `anon`/`authenticated` hold EXECUTE on nothing outside the staff RPC allow-list, and that no `public` table lacks RLS.
 
 ### 6.3 Policy matrix (summary)
@@ -495,7 +495,7 @@ create or replace function public.aal2() returns boolean language sql stable as 
 
 - Every `SECURITY DEFINER` function: owner `postgres`, `set search_path = ''` with fully-qualified names, explicit role check as the first statement, inputs typed and bounded, no dynamic SQL, `revoke execute from public` then explicit grant. pgTAP lints `prosecdef` ⇒ `proconfig @> array['search_path=']`; Supabase Advisor `function_search_path_mutable` must be zero.
 - Every view is created `with (security_invoker = true)`; a migration lint fails on `create view` without it. Finance views (`v_revenue_recap_*`, `v_finance_daily`) are granted to superadmin only; `v_bookings_staff` shows `phone_masked` (`+62812••••45`), `email_masked`, no participants, and `paid`/`unpaid` without amounts for admin_rw **[RT]**.
-- Staff RPCs derive the actor from `auth.uid()` and never accept actor or RW parameters; the scanner path uses the staff user's client, never the service role **[RT]**. Service-role writes always `set_config('app.actor_id', ctx.userId, true)` and `app.actor_role`; `internal.log_audit` rejects a NULL actor on staff-initiated paths **[RT]**. `internal.log_audit` is not callable by clients; the only client-facing event writer is `rpc_log_ui_event(action app_ui_event, entity_id uuid)` limited to `pii_revealed | scanner_opened`, `actor_id := auth.uid()`, 1 KB meta, 600/h per user, `source = 'client'` **[RT]**.
+- Staff RPCs derive the actor from `auth.uid()` and never accept actor or RW parameters; the scanner path uses the staff user's client, never the service role **[RT]**. Service-role writes always `set_config('app.actor_id', ctx.userId, true)` and `app.actor_role`; `internal.log_audit` rejects a NULL actor on staff-initiated paths **[RT]**. `internal.log_audit` is not callable by clients; the only client-facing event writer is `rpc_log_ui_event(action text, entity_id uuid)` whose `action` is CHECKed against `('pii_revealed', 'scanner_opened')`, `actor_id := auth.uid()`, 1 KB meta, 600/h per user, `source = 'client'` **[RT]**.
 
 ### 6.6 Masked views and reveal RPCs (AZ-12, DATA-04)
 
@@ -513,7 +513,7 @@ Masking happens server-side; the full value never reaches the client until the r
 ### 6.7 Guest access model (GUEST-01, GUEST-02, GUEST-06, GUEST-07, GUEST-09, GUEST-10)
 
 - `booking_code = 'GSK-' + 8 Crockford base32 chars` (40 bits) from `crypto.randomBytes`; `bookings.id` is never exposed to guests.
-- Stateless links: `base64url({b: booking_id, s: scope, v: token_version, exp}) + '.' + base64url(HMAC-SHA256(BOOKING_LINK_SECRET))`, verified only in `src/lib/links` with `timingSafeEqual`, then service-role repository functions keyed by `booking_id`. Scopes and TTLs: `pay` 24 h, `manage` 72 h (cancel, invoice, participants, revoke-links; re-issuable via lookup), `view` 72 h (ticket/status only), `review` 14 d, `certificate` 90 d. The OTP-verified WhatsApp number receives `manage`; email receives `view` until `email_verified_at` is set by a one-click confirmation **[RT]**. A valid link upgrades to the `bk_<code>` cookie; `rpc_guest_revoke_links` bumps `token_version`. Tokens travel in the path, pages send `Referrer-Policy: no-referrer`.
+- Stateless links: `base64url({b: booking_id, s: scope, v: token_version, exp}) + '.' + base64url(HMAC-SHA256(BOOKING_LINK_SECRET))`, verified only in `src/lib/links` with `timingSafeEqual`, then service-role repository functions keyed by `booking_id`. Scopes and TTLs: `pay` 24 h, `manage` 72 h (cancel, invoice, participants, revoke-links; re-issuable via lookup), `view` 72 h (ticket/status only), `review` 14 d, `certificate` 90 d. The OTP-verified WhatsApp number receives `manage`; email receives `view` until `email_verified_at` is set by a one-click confirmation **[RT]**. Links are `/reservasi/<booking_code>?t=<token>`: the server verifies the token, sets the `bk_<code>` cookie and redirects to the clean path, so the token never remains in the address bar or history; the logger redacts `t`, and guest pages send `Referrer-Policy: no-referrer`. `revokeGuestLinksAction` (`manage` scope, service role keyed by the verified `booking_id`) bumps `bookings.token_version`.
 - Participant-bearing PDFs (attendance, certificates) require the link **plus** the last 4 digits of the verified phone, limited to 5 attempts per booking per 24 h (`rate_limit_hit('last4:<booking_id>', 5, 86400)`), then locked with an alert; participant names are never rendered on any page reachable by code alone **[RT]**.
 - Reviews: `internal.submit_review` accepts only a single-use `review` link issued after `completed`, requires a used ticket, unique per booking, rating 1–5, body ≤ 2000 chars sanitised, `pending` until moderation.
 - DSR identity (`/privasi/permintaan`): the form sends a `dsr_identity` OTP/link to the booking's verified channel; the request exists only once that link is opened (GUEST-10). The QR carries `ticket_id`, never `booking_code`.
@@ -539,7 +539,7 @@ pgTAP suite `supabase/tests/rls/*.sql` sets `request.jwt.claims` for anon, admin
 | Data | Subject | Columns / location | Purpose | UU PDP basis | Retention (A7) |
 |---|---|---|---|---|---|
 | PIC name, phone, email | Booker (adult) | `bookings.pic_name`, `pic_phone`, `pic_email` | Booking, tickets, invoice | Contract performance | Anonymised 24 months after visit/expiry; unpaid-expired after 7 days |
-| Institution name, city | Organisation | `bookings.institution_name`, `institution_address` (city only) | Invoice, quotation | Contract | 10 years with financial records |
+| Institution name, city | Organisation | `bookings.institution_name`, `institution_city` (city only, never a street address) | Invoice, quotation | Contract | 10 years with financial records |
 | Participant names, class | Visitors, many children | `booking_participants.full_name`, `group_label` | Certificates, attendance | Guardian consent via the institution; legitimate interest | Purged 90 days after visit, including PDFs |
 | Attendance counts | Group | `tickets_qr.checked_in_pax`, `unpaid_pax`, `visit_sessions.checked_in_pax` | Reporting | Legitimate interest | 10 years (non-personal) |
 | OTP hash | Booker | `guest_otps.code_hash` | Verification | Contract | 24 h |
@@ -572,7 +572,7 @@ Each run writes `audit_logs.purge_run` with counts; pgTAP seeds back-dated rows 
 
 ### 7.4 Hashing, encryption and masking (DATA-03, DATA-04, DATA-09)
 
-At rest Supabase AES-256; in transit TLS 1.2+ with HSTS; `sslmode=require` for any direct connection. Hashed: OTP codes (`sha256(code || OTP_PEPPER)`), login-attempt email keys, `security_events.ip_hash`; QR and links are HMAC-signed pointers (no stored secrets); revocation via `token_version`. Column encryption is **not** adopted at launch (pgsodium deprecated by Supabase; the key would still live in Vercel); *should*: AES-256-GCM in `src/lib/crypto/pii.ts` with `PARTICIPANT_PII_KEYS` / `PARTICIPANT_PII_ACTIVE_KID` for `booking_participants.full_name` only (never searched). Admin UI masks by default (`+62812••••45`, `h•••@domain.id`, participants collapsed) and reveals only through the audited RPCs of §6.6.
+At rest Supabase AES-256; in transit TLS 1.2+ with HSTS; `sslmode=require` for any direct connection. Hashed: OTP codes (`sha256(code || OTP_PEPPER)`), login-attempt email keys, `security_events.ip_hash`; QR and links are HMAC-signed pointers (no stored secrets); revocation via `token_version`. Column encryption is **not** adopted at launch (pgsodium deprecated by Supabase; the key would still live in Vercel); *should*: AES-256-GCM in `src/lib/utils/pii-crypto.ts` with `PARTICIPANT_PII_KEYS` / `PARTICIPANT_PII_ACTIVE_KID` for `booking_participants.full_name` only (never searched). Admin UI masks by default (`+62812••••45`, `h•••@domain.id`, participants collapsed) and reveals only through the audited RPCs of §6.6.
 
 ### 7.5 Exports (DATA-06, AUD-04)
 
@@ -588,7 +588,7 @@ At rest Supabase AES-256; in transit TLS 1.2+ with HSTS; `sslmode=require` for a
 | Data-subject rights (Art. 5–13) | Self-service via `manage` link (view, correct participant names, delete the list, withdraw marketing consent); `/privasi/permintaan` with identity proven through the verified channel (GUEST-10); `dsr_requests(kind, booking_id, channel, status, outcome)` log; acknowledge within 3 working days, fulfil within 14 days; deletion inside the 10-year financial retention = anonymisation, explained in the notice |
 | Minimisation and retention (Art. 16) | §7.2, §7.3 with automated purge and tests |
 | Security of processing (Art. 35–36) | This document; yearly review (§13.2) |
-| Breach notification 3 × 24 h (Art. 46) | Runbook §11.4 "Suspected breach": contain within 4 h, assess with `audit_logs`/`exports`/`security_events`, notify the Lurah and the Pejabat Pelindungan Data within 24 h, written notification to data subjects (`gsk_security_alert_v1` + email) and to the authority (Kementerian Komunikasi dan Digital / PDP authority) within 3 × 24 h with data categories, time, cause, mitigation, contact; template letters in `docs/runbooks/` |
+| Breach notification 3 × 24 h (Art. 46) | Runbook §11.4 "Suspected breach": contain within 4 h, assess with `audit_logs`/`exports`/`security_events`, notify the Lurah and the Pejabat Pelindungan Data within 24 h, written notification to data subjects (`gsk_security_alert_v1` + email) and to the authority (Kementerian Komunikasi dan Digital / PDP authority) within 3 × 24 h with data categories, time, cause, mitigation, contact; the Indonesian template letter is kept with the printed runbooks at the kelurahan office |
 | Processors and location (Art. 51, 56) | Supabase `ap-southeast-1` Singapore (DPA), Vercel functions `sin1` (DPA), Midtrans (Indonesia, PCI DSS), Meta WhatsApp (phone + template params), Resend (US; links only, no PDF attachments), Cloudflare Turnstile (IP); contractual safeguards plus notice; see A10 below |
 | Record of processing | §7.1 is the record; reviewed every 12 months |
 
@@ -596,11 +596,11 @@ At rest Supabase AES-256; in transit TLS 1.2+ with HSTS; `sslmode=require` for a
 
 ### 7.7 Logging redaction (DATA-05, DATA-13)
 
-`src/lib/logger.ts` (pino JSON) redacts the concrete paths `booking.pic_phone`, `booking.pic_email`, `booking.pic_name`, `customer_details.*`, `participants[*].full_name`, `req.headers.authorization`, `req.headers.cookie`, `*.token`, `*.signature_key`, `*.snap_token`; a lint rule bans logging whole `bookings`/`booking_participants` objects (ids and hashes only); emails appear as `sha256(email).slice(0,12)`; link paths are logged as `/v/[token]`; the redactor is unit-tested against a real booking fixture **[RT]**. Sentry: `sendDefaultPii: false`, `beforeSend` strips cookies/headers/bodies, `tunnelRoute: '/monitoring'`.
+`src/lib/logger.ts` (pino JSON) redacts the concrete paths `booking.pic_phone`, `booking.pic_email`, `booking.pic_name`, `customer_details.*`, `participants[*].full_name`, `req.headers.authorization`, `req.headers.cookie`, `*.token`, `*.signature_key`, `*.snap_token`; a lint rule bans logging whole `bookings`/`booking_participants` objects (ids and hashes only); emails appear as `sha256(email).slice(0,12)`; link tokens are redacted in logs (`/v/[token]`, `t=[token]`); the redactor is unit-tested against a real booking fixture **[RT]**. Sentry: `sendDefaultPii: false`, `beforeSend` strips cookies/headers/bodies, `tunnelRoute: '/monitoring'`.
 
 ### 7.8 Backups and resilience (RES-01, RES-02)
 
-Supabase Pro daily backups (7 days); PITR add-on *should*; weekly `supabase db dump` from CI encrypted with `age` (`BACKUP_AGE_PUBLIC_KEY`) to a private Cloudflare R2 bucket (`R2_*`, 8-week retention); `public-media` mirrored monthly with `rclone`; `documents` are regenerable from rows. Quarterly restore drill into the staging project with pgTAP and a Playwright smoke; targets RPO 24 h (1 h with PITR), RTO 4 h; results in `docs/runbooks/restore-drills.md`. Vendor outage behaviour: public pages keep serving from ISR; `/api/health` 503 disables the booking form; webhooks answer 503 so Midtrans retries; the outbox resumes idempotently; a Snap failure keeps the hold and sends a `pay` link.
+Supabase Pro daily backups (7 days); PITR add-on *should*; weekly `supabase db dump` from CI encrypted with `age` (`BACKUP_AGE_PUBLIC_KEY`) to a private Cloudflare R2 bucket (`R2_*`, 8-week retention); `public-media` mirrored monthly with `rclone`; `documents` are regenerable from rows. Quarterly restore drill into the staging project with pgTAP and a Playwright smoke; targets RPO 24 h (1 h with PITR), RTO 4 h; results recorded in the quarterly review minutes (§13.2). Vendor outage behaviour: public pages keep serving from ISR; `/api/health` 503 disables the booking form; webhooks answer 503 so Midtrans retries; the outbox resumes idempotently; a Snap failure keeps the hold and sends a `pay` link.
 
 ---
 
@@ -610,11 +610,11 @@ Supabase Pro daily backups (7 days); PITR add-on *should*; weekly `supabase db d
 
 | Risk | Concrete mitigation | Verified by |
 |---|---|---|
-| A01 Broken access control | RLS forced everywhere; claims from the Auth hook; `requireUser()`/`requireRole()`/`requireRwAccess()` at the top of every Server Action with the target row's `rw_id` read server-side; uuid PKs, 40-bit booking codes, HMAC guest links; `documents` bucket without policies; column grants on `profiles` (APP-04, APP-05, APP-06, APP-15, AZ-*) | pgTAP cross-RW suite; Playwright 403 tests; semgrep "action without `requireStaff|requireGuestToken|verifyTurnstile`" |
+| A01 Broken access control | RLS forced everywhere; claims from the Auth hook; `requireUser()`/`requireRole()`/`requireRwAccess()` at the top of every Server Action with the target row's `rw_id` read server-side; uuid PKs, 40-bit booking codes, HMAC guest links; `documents` bucket without policies; column grants on `profiles` (APP-04, APP-05, APP-06, APP-15, AZ-*) | pgTAP cross-RW suite; Playwright 403 tests; semgrep "action without `requireUser|requireRole|requireRwAccess|requireGuestToken|verifyTurnstile`" |
 | A02 Cryptographic failures | TLS + HSTS; secrets never `NEXT_PUBLIC_`; `crypto.randomBytes`/`randomUUID` only; HMAC-SHA256 with `kid` for QR and links; `timingSafeEqual` everywhere; no card data; VA numbers superadmin-only (SEC-01, QR-01, GUEST-02) | unit tests on sign/verify helpers; bundle secret scan |
 | A03 Injection | supabase-js builder with zod-validated values only; `.or()`/`.filter()`/`.match()`/`.textSearch()` with non-literal input banned by semgrep; `escapeLike()` for `ilike`; typed RPC args; React escaping; Tiptap JSON + allow-listed `RichText` renderer, `react/no-danger: error`; links `https?:`/`mailto:` only with `rel="noopener noreferrer nofollow"`; SVG uploads rejected; WhatsApp params sanitised; pino JSON (no log injection) (APP-10, APP-11, EP-04) | unit tests `escapeLike`, renderer allow-list; Playwright XSS canary article |
 | A04 Insecure design | Server pricing and snapshots; atomic quota; state machine in `internal.*`; `event_hash` idempotency; OTP before hold; unpaid caps; moderated reviews bound to check-in (PAY-03, BOOK-01, WH-05, BOOK-12, BOOK-13, GUEST-09) | pgTAP concurrency and transition tests; webhook replay test |
-| A05 Security misconfiguration | Headers §8.2; `poweredByHeader: false`; `productionBrowserSourceMaps: false` with Sentry `hideSourceMaps`; generic `error.tsx`/`not-found.tsx`; `images.remotePatterns` pinned to `https://<ref>.supabase.co/storage/v1/object/public/**`; no CORS headers; previews behind Vercel Authentication with `X-Robots-Tag: noindex`; Supabase Security Advisor zero errors per release (HDR-*, RL-06, DB-01, DB-03) | Playwright header test; release checklist |
+| A05 Security misconfiguration | Headers §8.2; `poweredByHeader: false`; `productionBrowserSourceMaps: false` with Sentry `hideSourceMaps`; generic `error.tsx`/`not-found.tsx`; `images.remotePatterns` pinned to `https://<ref>.supabase.co/storage/v1/object/public/public-media/**`; no CORS headers; previews behind Vercel Authentication with `X-Robots-Tag: noindex`; Supabase Security Advisor zero errors per release (HDR-*, RL-06, DB-01, DB-03) | Playwright header test; release checklist |
 | A06 Vulnerable components | pnpm frozen lockfile, `ignore-scripts=true`, `onlyBuiltDependencies=["sharp"]`, `minimumReleaseAge=7`, Renovate weekly grouped, `pnpm audit --prod --audit-level=high` (SC-01, SC-02) | CI |
 | A07 Identification & auth failures | Invite-only with out-of-band `invite_code`; password ≥ 12 + leaked-password protection; TOTP for all staff; lockout in the Auth hook; Auth-level Turnstile; JWT 900 s with rotation; global sign-out and session deletion on deactivation (AUTH-*) | Playwright lockout test against GoTrue directly; pgTAP aal2 tests |
 | A08 Software & data integrity | Webhook signatures + Status API; append-only and hash-chained tables; migrations only via PR; nonce CSP; Vercel builds only from `main`; gitleaks; signed commits *should* (WH-*, REC-04, REC-05, SC-03, SC-05) | CI gates; pgTAP append-only tests |
@@ -637,8 +637,8 @@ Cross-Origin-Resource-Policy: same-origin
 X-DNS-Prefetch-Control: off
 Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), display-capture=(), interest-cohort=()
    on /dashboard/scanner:  camera=(self), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), display-capture=()
-Cache-Control: private, no-store                                      on /dashboard/*, /reservasi/*, /api/*
-X-Robots-Tag: noindex, nofollow                                       on /dashboard/*, /reservasi/*, /api/*, and all non-production deployments
+Cache-Control: private, no-store                                      on /dashboard/*, /pesan/*, /reservasi/*, /login, /forgot-password, /reset-password, /mfa/*, /onboarding, /v/*, /api/*
+X-Robots-Tag: noindex, nofollow                                       on the same routes, and on every response of a non-production deployment
 ```
 
 Production CSP (one line in practice):
@@ -661,7 +661,7 @@ frame-ancestors 'none';
 upgrade-insecure-requests
 ```
 
-Notes: `'wasm-unsafe-eval'` is required by the ZXing WASM fallback of `barcode-detector`; `'unsafe-inline'` for styles is accepted because React SSR and Framer Motion emit `style` attributes; fonts are self-hosted via `next/font`; Sentry uses `tunnelRoute: '/monitoring'`; QR codes are inline SVG so `data:` is unnecessary; no Midtrans origins thanks to redirect mode. Development adds `'unsafe-eval'` to `script-src` only when `NODE_ENV !== 'production'`. Roll-out: `Content-Security-Policy-Report-Only` for one week on staging, then enforce; `report-to` Sentry *could*. If `@vercel/analytics` is enabled add `https://va.vercel-scripts.com` to `script-src` and `https://vitals.vercel-insights.com` to `connect-src`.
+Notes: `'wasm-unsafe-eval'` is required by the ZXing WASM fallback of `barcode-detector`; `'unsafe-inline'` for styles is accepted because React SSR and Framer Motion emit `style` attributes; fonts are self-hosted via `next/font`; Sentry uses `tunnelRoute: '/monitoring'`; QR codes are inline SVG so `data:` is unnecessary; no Midtrans origins thanks to redirect mode. Development adds `'unsafe-eval'` to `script-src` only when `NODE_ENV !== 'production'`. Roll-out: `Content-Security-Policy-Report-Only` for one week on staging, then enforce; `report-to` Sentry *could*. `@vercel/analytics` loads `/_vercel/insights/script.js` and beacons to `/_vercel/insights/*` on our own origin, so production needs no extra origin; its development build loads `https://va.vercel-scripts.com`, which is added to `script-src` only when `NODE_ENV !== 'production'`.
 
 ### 8.3 Body limits, rate limiting, bot protection (RL-01…RL-07)
 
@@ -674,7 +674,7 @@ Notes: `'wasm-unsafe-eval'` is required by the ZXing WASM fallback of `barcode-d
 | `/login` (plus Auth hook) | user | 5 failures / 15 min |
 | `/forgot-password` | ip, email | 3/h, silent success |
 | `/reservasi/cari` | ip / code | 10 per 15 min; 5 per hour |
-| link verification `/reservasi/[code]` | ip | 30/min, constant 404 |
+| link verification `/reservasi/[bookingCode]?t=` | ip | 30/min, constant 404 |
 | signed-URL minting `/api/documents/[kind]/[id]` | booking / ip | 20 per 10 min; 60/min |
 | last-4 step-up | booking | 5 per 24 h then lock + alert |
 | `/api/webhooks/midtrans/[token]` | ip / global | 30/min; 600/min |
@@ -713,7 +713,7 @@ Vercel: Firewall managed rulesets on; Deployment Protection (Vercel Authenticati
 | `TURNSTILE_SECRET_KEY` | S | all | 12 months (Cloudflare grace period) |
 | `SECURITY_ALERT_EMAIL`, `SECURITY_ALERT_WA_PHONE` | S | all | n/a |
 
-Rules: every value is "Sensitive" in Vercel per environment; `src/lib/env.ts` validates server and client schemas with zod at boot and `experimental_taintUniqueValue` taints the service key and `CRON_SECRET`; CI fails on any `NEXT_PUBLIC_` name containing `SECRET|KEY|TOKEN` outside the known public keys; `.env*` git-ignored, `.env.example` placeholders only; gitleaks as lefthook pre-commit, in CI, plus GitHub push protection and a one-time full-history scan before launch; every rotation writes `security_events.key_rotated` (key name, kid, operator; never material).
+Rules: every value is "Sensitive" in Vercel per environment; `src/lib/env.ts` validates server and client schemas with zod at boot and `experimental_taintUniqueValue` taints the service key and `CRON_SECRET`; CI fails on any `NEXT_PUBLIC_` name containing `SECRET|KEY|TOKEN` outside the known public keys; `.env*` git-ignored, `.env.example` placeholders only; gitleaks in the Husky pre-commit hook (alongside lint-staged and commitlint), in CI, plus GitHub push protection and a one-time full-history scan before launch; every rotation writes `security_events.key_rotated` (key name, kid, operator; never material).
 
 ### 8.6 Supply chain and CI (SC-01…SC-05)
 
@@ -738,7 +738,7 @@ pnpm 10 `--frozen-lockfile`; `.npmrc` `ignore-scripts=true`, `onlyBuiltDependenc
 
 ### 8.8 Vercel hardening
 
-Production deploys only from `main`; fork deploys disabled; Deployment Protection (Vercel Authentication) on previews; Firewall managed rulesets; env vars Sensitive and scoped per environment (Preview → staging Supabase + Midtrans sandbox); functions region `sin1`; cron-failure emails on; Observability 5xx alert (Pro); `vercel.json` has no public rewrites to internal routes; `/api/jobs/*` refuse unless `VERCEL_ENV === 'production'` or `ALLOW_CRON_PREVIEW=1`.
+Production deploys only from `main`; fork deploys disabled; Deployment Protection (Vercel Authentication) on previews; Firewall managed rulesets; env vars Sensitive and scoped per environment (Preview → staging Supabase + Midtrans sandbox); functions region `sin1`; Observability 5xx alert (Pro); `vercel.json` has no public rewrites to internal routes and defines no crons; `/api/jobs/*` are driven only by the pg_cron + pg_net schedules of the Supabase project bound to that environment (staging → Preview, production → Production), each presenting its own `CRON_SECRET`, so a preview can never trigger production jobs.
 
 ---
 
@@ -831,9 +831,9 @@ Signed URLs are never persisted, logged or placed in messages; `document.signed_
 
 ### 11.3 Delivery, health and heartbeat (OPS-03, OPS-06)
 
-Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5 s timeout from the job/route (and an optional Telegram bot HTTP call from the function and from `pg_net`), falling back to the outbox only on failure, so a stalled outbox cannot silence its own alarm **[RT]**. `/api/health` returns **503** when the last successful cron run is older than 15 min, the outbox backlog exceeds the threshold, or `select 1` fails; Better Stack/UptimeRobot checks it every 5 min with email + Telegram. Hourly synthetic WhatsApp/email to a kelurahan-owned test number (*should*). Sentry alerts: new issue under `api/webhooks/*` or `api/jobs/*`, error rate > 2 % for 5 min, any `fatal` from the security-event writer. Vercel cron-failure emails and Supabase resource alerts on.
+Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5 s timeout from the job/route (and an optional Telegram bot HTTP call from the function and from `pg_net`), falling back to the outbox only on failure, so a stalled outbox cannot silence its own alarm **[RT]**. `/api/health` returns **503** when the last successful cron run is older than 15 min, the outbox backlog exceeds the threshold, or `select 1` fails; Better Stack/UptimeRobot checks it every 5 min with email + Telegram. Hourly synthetic WhatsApp/email to a kelurahan-owned test number (*should*). Sentry alerts: new issue under `api/webhooks/*` or `api/jobs/*`, error rate > 2 % for 5 min, any `fatal` from the security-event writer. pg_cron failures (`cron.job_run_details`) surface as `cron_failed` events; Supabase resource alerts on.
 
-### 11.4 Runbooks (`docs/runbooks/`, one page each; MON-06, OPS-04)
+### 11.4 Runbooks (this section is the authoritative text; each runbook is also printed as a one-page card for the kelurahan office; MON-06, OPS-04)
 
 **R1 — Money received but no ticket.** 1) Identify `order_id` (`GSK-<code>-NN`). 2) Superadmin → Reservasi → search: `payments.status`, `payment_events`, latest `processing_result`. 3) No event rows → "Sinkronkan dengan Midtrans" (Status API → `apply_payment_event('manual')`); verify the notification URL in the Midtrans dashboard; check Vercel logs for 404 on the path token. 4) `webhook_rejections` hits → key/environment mismatch: compare `MIDTRANS_IS_PRODUCTION` and key prefix; fix env, redeploy, sync. 5) `amount_mismatch` → Midtrans amount is what was paid; never edit rows: underpaid → refund and re-book; our bug → `payment_adjustments` with evidence and dual control, then fix the bug. 6) `paid` without tickets → "Terbitkan ulang tiket" (`ensureTicketsIssued`); retry failed outbox rows. 7) `needs_review` (late settlement, no capacity) → call the PIC; `resolve_booking_review('issue_tickets')` after moving the session, or `'refund'`. 8) Group at the gate now: `admin_rw` manual check-in only if `bookings.status = 'paid'`. 9) `audit_logs.incident.closed`; regression test if a bug.
 
@@ -855,7 +855,7 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 
 ## 12. Controls matrix
 
-**Numbering notes.** Control IDs from the three source designs are preserved so `docs/Task.md` can cite them. Where two designs used the same family, the application/infrastructure design's IDs were renumbered within the family: its `APP-01…12` are now **`APP-04…15`** (the data/privacy design keeps `APP-01…03`, each merged into the control it duplicates), its `PAY-01…05` are now **`PAY-11…15`** (payment design keeps `PAY-01…10`), and its `DATA-01…04` are now **`DATA-07…10`** (data/privacy design keeps `DATA-01…06`). Controls added to close red-team findings take the next free number in their family (`BOOK-12…17`, `PAY-16`, `WH-14…16`, `REC-13…16`, `AUTH-09…13`, `AZ-09…15`, `GUEST-06…10`, `DATA-11…13`, `QR-05…08`, `UPL-05`, `EP-03…04`, `DOC-02`, `MON-07`, `OPS-06`). Priority: **must** = launch gate, **should** = within 90 days, **could** = backlog. Task references are by phase and module name; task numbers are assigned in `docs/Task.md`.
+**Numbering notes.** The matrix merges three control families that were specified separately (payment, data/auth/privacy, application/infrastructure) and keeps every ID stable so `docs/Task.md` can cite it. Where two families used the same prefix, the application/infrastructure controls were renumbered within the family: `APP-01…12` became **`APP-04…15`** (the data/privacy family keeps `APP-01…03`, each merged into the control it duplicates), `PAY-01…05` became **`PAY-11…15`** (the payment family keeps `PAY-01…10`), and `DATA-01…04` became **`DATA-07…10`** (the data/privacy family keeps `DATA-01…06`). Controls added to close red-team findings take the next free number in their family (`BOOK-12…17`, `PAY-16`, `WH-14…16`, `REC-13…16`, `AUTH-09…13`, `AZ-09…15`, `GUEST-06…10`, `DATA-11…13`, `QR-05…08`, `UPL-05`, `EP-03…04`, `DOC-02`, `MON-07`, `OPS-06`). Priority: **must** = launch gate, **should** = within 90 days, **could** = backlog. The last column names the `docs/Task.md` phase and module that owns the control; task numbers (`P<phase>.<module>.<nn>`) are assigned there, and `docs/Task.md` Appendix D maps every ID back to its tasks. Module names correspond to `docs/Task.md` modules as follows: `P0 - Accounts` = P0.1–P0.4; `P1 - Environment Setup` = P1.1; `P1 - DB & RLS` = P1.2–P1.6 and P1.9; `P2 - CMS & Public Pages` = P2.2, P2.8 and P2.9; Phase 3–5 modules carry the same names as in this matrix.
 
 | ID | Priority | Control | Threat | Where implemented | How tested | Task.md phase/module |
 |---|---|---|---|---|---|---|
@@ -875,7 +875,7 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 | PAY-14 | must | = REC-01 (daily reconciliation) | Missed notifications | see REC-01 | see REC-01 | P3 - Payment Gateway & Webhook |
 | PAY-15 | must | = PAY-09 (finish page never trusts query params) | Fake paid screens | see PAY-09 | see PAY-09 | P3 - Payment Gateway & Webhook |
 | PAY-16 | must | Midtrans dashboard governance; expected payout account in `site_settings`; merchant-compromise alert | Payout diversion, key regeneration by attacker | Midtrans console, `site_settings.finance.expected_payout_account_masked`, `anomaly-scan` | quarterly access review; monthly payout check; seeded burst test | P0 - Accounts |
-| WH-01 | must | SHA-512 `signature_key`, `timingSafeEqual`, 403 | Forged notification | webhook route step 5, `src/lib/midtrans/signature.ts` | unit (doc example, tampered) | P3 - Payment Gateway & Webhook |
+| WH-01 | must | SHA-512 `signature_key`, `timingSafeEqual`, 403 | Forged notification | webhook route step 5, `src/lib/midtrans/verify-signature.ts` | unit (doc example, tampered) | P3 - Payment Gateway & Webhook |
 | WH-02 | must | 16 KB body, JSON content type, zod | DoS/malformed input | webhook steps 3–4 | 413/415/400 tests | P3 - Payment Gateway & Webhook |
 | WH-03 | must | Rate limit 30/min/IP, 600/min global before DB writes | Flooding | `rate_limit_hit` in route | mocked limiter test | P3 - Payment Gateway & Webhook |
 | WH-04 | should | Unguessable path token, 404 | Scanner noise | `[token]` segment | 404 test | P3 - Payment Gateway & Webhook |
@@ -913,7 +913,7 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 | BOOK-04 | must | Limits per IP+UA/phone/email; concurrent caps | Mass holds | `src/lib/rate-limit.ts`, `internal.rate_limit_hit` | mocked limiter tests | P3 - Booking Engine & Quota |
 | BOOK-05 | must | zod `.strict()` + DB CHECKs | Malformed inputs | `src/lib/validations`, migrations | boundary tests; pgTAP | P3 - Booking Engine & Quota |
 | BOOK-06 | should | Idempotent duplicate handling (`idempotency_key`) | Accidental duplicates | `bookings.idempotency_key` | integration | P3 - Booking Engine & Quota |
-| BOOK-07 | could | Coupons (deferred) with atomic redemption | Coupon abuse | future | — | — |
+| BOOK-07 | could | Coupons (deferred) with atomic redemption | Coupon abuse | future `coupons` table redeemed inside `internal.create_booking` | defined when implemented | — (backlog) |
 | BOOK-08 | must | Quotation ≠ reservation: no hold, disclaimer, validity, numbering | Quotation misuse | `internal.create_quotation`, PDF template | snapshot; capacity unchanged test | P3 - B2B Invoice PDF |
 | BOOK-09 | should | Large-booking review flag | Fraud/mistakes | `anomaly-scan` | seeded test | P4 - Dashboards & CRUD |
 | BOOK-10 | should | 40-bit codes; masked status page; last-4 step-up | Enumeration | `src/lib/links`, `/reservasi/*` | entropy test; e2e masking | P3 - Booking Engine & Quota |
@@ -928,13 +928,13 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 | AUD-02 | must | `audit_logs` superadmin AAL2 only | Cross-RW/PII leakage | RLS on `audit_logs` | pgTAP | P1 - DB & RLS |
 | AUD-03 | should | Hash chain on `audit_logs` + nightly verify | Log tampering | `fn_audit_chain`, `internal.verify_audit_chain` | pgTAP tamper test | P1 - DB & RLS |
 | AUD-04 | must | Every export logged (actor, filters, rows) | Untracked extraction | `rpc_create_export`, `exports` | integration | P4 - Data Export |
-| AUD-05 | could | Weekly chain anchoring outside the DB | Full-chain rewrite | job + email | manual check | — |
+| AUD-05 | could | Weekly chain anchoring outside the DB | Full-chain rewrite | weekly job emailing the latest `(id, row_hash)` to the kelurahan head | manual recomputation against the anchored hash | — (backlog) |
 | MON-01 | must | Structured logs, closed taxonomy, redaction | Blind spots, leakage | `src/lib/logger.ts` | redaction unit test | P1 - Environment Setup |
 | MON-02 | must | 5-min anomaly scan with dedupe | Slow detection | `/api/jobs/anomaly-scan`, `security_alerts` | seeded anomalies | P4 - Dashboards & CRUD |
 | MON-03 | must | Inline alerts: signature burst, mismatch, disagreement | Active attack | webhook route | integration | P3 - Payment Gateway & Webhook |
 | MON-04 | must | Invariant checks with self-heal | Visitor harm, revenue loss | poll + scan jobs | seeded violations | P3 - Payment Gateway & Webhook |
 | MON-05 | should | Sentry with PII scrubbing, tunnel route | Unnoticed exceptions | `sentry.*.config.ts` | smoke event | P5 - Production Deployment |
-| MON-06 | should | Runbooks R1/R2 + quarterly tabletop | Slow incident handling | `docs/runbooks/` | drill record | P5 - Security Testing |
+| MON-06 | should | Runbooks R1/R2 + quarterly tabletop | Slow incident handling | §11.4 of this document | drill record | P5 - Security Testing |
 | MON-07 | must | Full alert rule set of §11.2 incl. price, session, reveal, check-in and lockout rules | Insider and abuse patterns undetected | `/api/jobs/anomaly-scan` | one seeded case per rule | P4 - Dashboards & CRUD |
 | STAFF-01 | must | Superadmin TOTP; finance routes and RLS require `aal2()` | Account takeover | middleware, restrictive policies | pgTAP aal1/aal2; e2e | P1 - DB & RLS |
 | STAFF-02 | must | admin_rw sees paid/unpaid only, no amounts | Cross-RW financial leakage | `v_bookings_staff` | pgTAP RW 05 vs 08 | P1 - DB & RLS |
@@ -978,24 +978,24 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 | GUEST-05 | must | Reviews via `internal.submit_review`, check-in required, unique, moderated | Fake reviews, stored XSS | `internal.submit_review`, `v_public_reviews` | pgTAP | P4 - Dashboards & CRUD |
 | GUEST-06 | must | `manage` to verified phone, `view` to email until verified; participant PDFs need last-4 (5/24 h); names never on code-only pages | Forwarded link exposes rosters | `src/lib/links`, `/api/documents/*` | integration | P3 - QR Ticket & WhatsApp Trigger |
 | GUEST-07 | must | One-click email verification; links-only email; 3/day cap | Typo/shared mailbox misdelivery | `email_verified_at`, `src/lib/email` | Playwright | P3 - QR Ticket & WhatsApp Trigger |
-| GUEST-08 | must | Phone derived from verified cookie only; WhatsApp rows require `phone_verified_at`; OTP breaker degrades | Cookie/phone decoupling; OTP kill switch | `booking-service.ts`, trigger on `notifications` | pgTAP; integration | P3 - Booking Engine & Quota |
+| GUEST-08 | must | Phone derived from verified cookie only; WhatsApp rows (except `phone_otp`) require `phone_verified_at`; OTP breaker degrades | Cookie/phone decoupling; OTP kill switch | `booking-service.ts`, trigger on `notifications` | pgTAP; integration | P3 - Booking Engine & Quota |
 | GUEST-09 | must | Single-use `review` link after `completed` | Reviews from leaked codes | `internal.submit_review`, `close_past_bookings` | pgTAP | P4 - Dashboards & CRUD |
 | GUEST-10 | must | DSR identity via verified channel; no `booking_code` in QR | DSR abuse from a photographed ticket | `/privasi/permintaan`, `src/lib/qr` | Playwright | P4 - Dashboards & CRUD |
 | DATA-01 | must | Minimisation (no NIK/DOB/address/photos; name + class) | Over-collection | booking zod schema; DB columns | strict() test; schema check | P3 - Booking Engine & Quota |
-| DATA-02 | must | pg_cron purge/anonymise jobs per A7 | Over-retention | `*_retention.sql` | pgTAP back-dated rows | P1 - DB & RLS |
+| DATA-02 | must | pg_cron purge/anonymise jobs per A7 | Over-retention | purge functions (migration `0004`), `cron.schedule` entries (migration `0007`) | pgTAP back-dated rows | P1 - DB & RLS |
 | DATA-03 | must | Hashed OTP; signed pointers; rotation calendar; no column encryption at launch (documented) | DB read exposure | `guest_otps.code_hash`, §8.5 | pgTAP no plaintext column | P1 - DB & RLS |
 | DATA-04 | must | Server-side masking; reveal logged; daily counts | Insider browsing | `v_bookings_staff`, `rpc_reveal_booking_contact` | Playwright | P4 - Dashboards & CRUD |
 | DATA-05 | must | pino redaction; no full webhook bodies; Sentry no PII | PII in logs | `src/lib/logger.ts` | unit | P1 - Environment Setup |
 | DATA-06 | must | Exports superadmin AAL2 via `rpc_create_export`; watermark; 24 h delete | Bulk exfiltration | `rpc_create_export`, `export-service.ts` | 403 for admin_rw; footer test | P4 - Data Export |
 | DATA-07 | must | = PDP-01 + DATA-01 (consent capture, minimisation) | Unlawful processing | see PDP-01 | see PDP-01 | P3 - Booking Engine & Quota |
 | DATA-08 | must | = DATA-02 (retention jobs) | Indefinite retention | see DATA-02 | see DATA-02 | P1 - DB & RLS |
-| DATA-09 | should | AES-256-GCM for `booking_participants.full_name` with `PARTICIPANT_PII_KEYS` | DB leak of children's names | `src/lib/crypto/pii.ts` | dump shows no plaintext | P4 - E-Certificate Generator |
+| DATA-09 | should | AES-256-GCM for `booking_participants.full_name` with `PARTICIPANT_PII_KEYS` | DB leak of children's names | `src/lib/utils/pii-crypto.ts` | dump shows no plaintext | P4 - E-Certificate Generator |
 | DATA-10 | must | = DATA-06 + AZ-12 (export scope, visit-window reads) | Staff exfiltration | see DATA-06 | see DATA-06 | P4 - Data Export |
 | DATA-11 | must | Audit diff column allow-list; `names_only` mode for purge; null diffs on anonymise | Audit log becomes a PII store | `internal.log_audit`, purge jobs | pgTAP diff not like `%+62%` | P1 - DB & RLS |
 | DATA-12 | must | Retention reaches PDFs; certificate route refuses after 90 d | Children's names persist in artifacts | `purge_participants`, `/reservasi/[code]/sertifikat` | pgTAP + storage listing | P4 - E-Certificate Generator |
 | DATA-13 | must | Concrete redaction paths; lint against logging PII objects; fixture test | Wildcard redaction misses columns | `src/lib/logger.ts`, ESLint | unit with booking fixture | P1 - Environment Setup |
 | PDP-01 | must | Guardian-consent checkbox, marketing opt-in off, `consent_version/consented_at`, `/privasi` | Unlawful processing of children's data | booking form, `bookings` | Playwright | P3 - Booking Engine & Quota |
-| PDP-02 | must | Breach runbook with 3 × 24 h workflow; containment; yearly tabletop | Late notification | `docs/runbooks/`, `maintenance_mode` | tabletop record | P5 - Security Testing |
+| PDP-02 | must | Breach runbook with 3 × 24 h workflow; containment; yearly tabletop | Late notification | §11.4 of this document, `site_settings.maintenance_mode` | tabletop record | P5 - Security Testing |
 | PDP-03 | should | DSR self-service + `/privasi/permintaan` + `dsr_requests`; 3-day ack / 14-day fulfil | Rights not honoured | manage page, `dsr_requests` | Playwright | P4 - Dashboards & CRUD |
 | RES-01 | must | Daily backups; weekly encrypted dump to R2; quarterly restore drill; PITR (should) | Data loss | Supabase, `.github/workflows/backup.yml` | drill passes pgTAP | P5 - Production Deployment |
 | RES-02 | should | Health 503 semantics; maintenance banner; idempotent outbox; hold kept on Snap failure | Vendor outage | `/api/health`, outbox | mocked outage tests | P5 - Production Deployment |
@@ -1004,12 +1004,12 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 | APP-03 | must | = SC-01/02 + APP-11 (supply chain, CMS XSS) | Supply chain, stored XSS | see those | see those | P1 - Environment Setup |
 | APP-04 | must | anon reads published views only; no anon mutating RPC; public writes via service role after validation | Direct PostgREST bypass of Turnstile/limits | `0005_policies_grants.sql`, `src/server/actions/booking.ts` | pgTAP anon INSERT/EXECUTE denied | P1 - DB & RLS |
 | APP-05 | must | `requireRole()`/`requireRwAccess()` first in every action; target `rw_id` read server-side | Middleware bypass, crafted form data | `src/server/auth/guards.ts`, semgrep | Playwright 403; semgrep | P4 - Dashboards & CRUD |
-| APP-06 | must | RLS reads claims via helpers; AAL2 for superadmin writes on finance/config | IDOR if app code has bugs | `*_rls.sql` | pgTAP | P1 - DB & RLS |
+| APP-06 | must | RLS reads claims via helpers; AAL2 for superadmin writes on finance/config | IDOR if app code has bugs | migration `0005` (RLS policies and grants) | pgTAP | P1 - DB & RLS |
 | APP-07 | must | Role claims only via the hook and privileged RPCs; `rls_references_user_metadata` = 0 | Self-assigned role | hook, `set_staff_role` | integration | P1 - DB & RLS |
 | APP-08 | must | = AZ-04 (profiles column grants) | Mass assignment of role | see AZ-04 | see AZ-04 | P1 - DB & RLS |
 | APP-09 | must | zod `.strict()`; explicit column objects (no spread) | Mass assignment | `src/lib/validations`, semgrep | unit; semgrep | P3 - Booking Engine & Quota |
 | APP-10 | must | Builder methods only; `.or/.filter` banned with input; `escapeLike()` | PostgREST filter injection | `src/lib/utils/escape-like.ts`, semgrep | unit; semgrep | P1 - Environment Setup |
-| APP-11 | must | Tiptap JSON + allow-listed renderer; `react/no-danger`; SVG rejected | Stored XSS | `src/components/articles/RichText.tsx`, ESLint | XSS canary article | P2 - CMS & Public Pages |
+| APP-11 | must | Tiptap JSON + allow-listed renderer; `react/no-danger`; SVG rejected | Stored XSS | `src/components/articles/rich-text.tsx`, ESLint | XSS canary article | P2 - CMS & Public Pages |
 | APP-12 | must | CSRF: origin check, SameSite=Lax httpOnly, no state-changing GET, bearer-only mutating handlers | CSRF | `next.config.ts`, `@supabase/ssr` | cross-origin POST → 403 | P1 - Environment Setup |
 | APP-13 | must | `safeRedirect()`; Supabase redirect allow-list `/auth/callback` | Open redirect | `src/lib/utils/safe-redirect.ts`, Auth settings | unit (`//evil.com`) | P1 - Environment Setup |
 | APP-14 | must | Outbound `fetch` only in adapters; `remotePatterns` pinned | SSRF | `src/lib/{midtrans,notifications,email,turnstile}`, `next.config.ts` | semgrep; `/_next/image?url=evil` → 400 | P1 - Environment Setup |
@@ -1023,7 +1023,7 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 | RL-04 | must | Turnstile fail-closed on public forms (= BOOK-03) | Bots | see BOOK-03 | see BOOK-03 | P3 - Booking Engine & Quota |
 | RL-05 | must | Body caps 512 KB actions / 64 KB handlers / 16 KB webhook | Memory exhaustion | `next.config.ts`, handlers | 100 KB body → 413 | P1 - Environment Setup |
 | RL-06 | must | Vercel Authentication on previews; `noindex` off-production | Staging exposure | Vercel settings | curl preview → 401 | P5 - Production Deployment |
-| RL-07 | should | Firewall managed rules; Attack Challenge Mode runbook; custom challenge rules | L7 DoS | Vercel Firewall, `docs/runbooks/dos.md` | staging tabletop | P5 - Production Deployment |
+| RL-07 | should | Firewall managed rules; Attack Challenge Mode runbook; custom challenge rules | L7 DoS | Vercel Firewall, §11.4 DoS runbook | staging tabletop | P5 - Production Deployment |
 | UPL-01 | must | Signed upload URLs (5 min) to quarantine; server paths; MIME/size allow-list | Path traversal, wrong types | `/api/uploads/sign`, bucket config | `.svg`, oversize, custom path rejected | P2 - CMS & Public Pages |
 | UPL-02 | must | Magic bytes; sharp re-encode; PDF scan | Polyglots, EXIF, malicious PDFs | `/api/uploads/finalize` | polyglot and JS-PDF fixtures | P2 - CMS & Public Pages |
 | UPL-03 | must | `documents` bucket without policies; signed URLs only | Unauthorised document access | storage policies, `/api/documents/*` | direct URL → 400/403 | P1 - DB & RLS |
@@ -1031,18 +1031,18 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 | UPL-05 | must | `pdf-lib` catalog walk (decoded names/object streams), rasterised pages, attachment delivery | Encoded-name PDF bypass | `/api/uploads/finalize` | hex-escaped `/Open#41ction` fixture | P2 - CMS & Public Pages |
 | SEC-01 | must | Env registry with zod server/client split; `NEXT_PUBLIC_` secret-name check | Secret in bundle | `src/lib/env.ts`, CI | CI script; bundle grep | P1 - Environment Setup |
 | SEC-02 | must | Service-role client quarantined with `server-only` + taint; lint/semgrep | Key leaked via props | `src/lib/supabase/admin.ts` | lint/semgrep CI | P1 - Environment Setup |
-| SEC-03 | must | gitleaks pre-commit + CI; push protection; history scan | Committed secrets | `lefthook.yml`, CI | fake-key fixture blocked | P1 - Environment Setup |
-| SEC-04 | must | Rotation schedule per key; `key_rotated` events | Long-lived leaked credentials | §8.5, `docs/runbooks/rotate-keys.md` | quarterly status; staging rehearsal | P5 - Production Deployment |
+| SEC-03 | must | gitleaks pre-commit + CI; push protection; history scan | Committed secrets | `.husky/pre-commit`, CI | fake-key fixture blocked | P1 - Environment Setup |
+| SEC-04 | must | Rotation schedule per key; `key_rotated` events | Long-lived leaked credentials | §8.5, §3.9 and the key-leak runbook in §11.4 | quarterly status; staging rehearsal | P5 - Production Deployment |
 | SEC-05 | must | Institutional console accounts, org-level MFA, Bitwarden vault, read-only backup role, quarterly review | Console takeover | all provider consoles | signed checklist | P0 - Accounts |
 | DB-01 | must | Exposed schemas `public` only; `graphql_public` removed; internal tables unreachable | Unexpected API surface | Supabase API settings, grants | anon select → denied | P1 - DB & RLS |
 | DB-02 | must | SECURITY DEFINER `search_path=''`; EXECUTE revoked unless staff-facing | RPC escalation | migrations | Advisor = 0; pgTAP | P1 - DB & RLS |
 | DB-03 | must | Auth settings (§8.7 item 5) | Rogue accounts, weak sessions | Supabase Auth | Advisor lints; manual sign-up fails | P0 - Accounts |
 | DB-04 | must | Append-only + audit triggers with redaction (= REC-04, DATA-11) | Record tampering | see REC-04 | see REC-04 | P1 - DB & RLS |
-| DB-05 | must | pg_cron jobs from migrations only; `cron` not exposed | Stale holds; job tampering | `*_cron.sql` | pgTAP expiry test; `cron.job` listing | P1 - DB & RLS |
+| DB-05 | must | pg_cron jobs from migrations only; `cron` not exposed | Stale holds; job tampering | migration `0007` (`cron.schedule` entries) | pgTAP expiry test; `cron.job` listing | P1 - DB & RLS |
 | DB-06 | should | SSL enforcement; network restrictions; separate projects | Direct DB access | Supabase settings | psql without SSL refused | P5 - Production Deployment |
 | DB-07 | should | PITR, off-site dumps, restore drill (= RES-01) | Data loss | see RES-01 | see RES-01 | P5 - Production Deployment |
 | EP-01 | must | Meta webhook verify token + `X-Hub-Signature-256`; statuses only | Spoofed WhatsApp statuses | `/api/webhooks/whatsapp` | wrong token 403; wrong signature 401 | P3 - QR Ticket & WhatsApp Trigger |
-| EP-02 | must | Jobs require `Bearer CRON_SECRET` (timing-safe); production-only; lease-based idempotent outbox with dead-letter alert | Unauthorised jobs; duplicate sends | `/api/jobs/*`, `internal.claim_notifications` | no bearer → 401; double run sends once | P3 - QR Ticket & WhatsApp Trigger |
+| EP-02 | must | Jobs require `Bearer CRON_SECRET` (timing-safe) of their own environment; lease-based idempotent outbox with dead-letter alert | Unauthorised jobs; duplicate sends | `/api/jobs/*`, `internal.claim_notifications` | no bearer → 401; double run sends once | P3 - QR Ticket & WhatsApp Trigger |
 | EP-03 | must | SPF, DKIM, DMARC `p=reject` on root and `mail.<domain>`; no VA numbers in messages | Spoofed kelurahan email; social engineering | DNS, `src/lib/email` | DMARC report; template snapshot | P0 - Accounts |
 | EP-04 | must | Template param sanitisation; per-destination caps; static bodies | Phishing relay via official sender | `src/lib/notifications/templates.ts` | unit: URL/digit-run stripped | P3 - QR Ticket & WhatsApp Trigger |
 | QR-01 | must | HMAC-SHA256 with `kid`; `GSK.<kid>.<id>.<sig>`; no PII | Forgery; DB-leak to tickets | `src/lib/qr`, `tickets_qr.key_id` | sign/verify, wrong kid, tampered id | P3 - QR Ticket & WhatsApp Trigger |
@@ -1056,12 +1056,12 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 | SC-01 | must | pnpm frozen lockfile, ignore-scripts, release-age gating, audit | Malicious packages | `.npmrc`, CI | CI fails on drift/advisory | P1 - Environment Setup |
 | SC-02 | must | Renovate weekly grouped, 7-day release age | Outdated dependencies | `renovate.json` | weekly PRs observed | P1 - Environment Setup |
 | SC-03 | must | semgrep rulesets + custom rules; ESLint security rules | Reintroduced insecure patterns | `.semgrep/rules.yml`, `eslint.config.js` | CI fails on seeded violations | P1 - Environment Setup |
-| SC-04 | must | pgTAP + Playwright security smoke as required checks | Authorisation regressions | `supabase/tests`, `e2e/security.spec.ts` | required status checks | P5 - Security Testing |
+| SC-04 | must | pgTAP + Playwright security smoke as required checks | Authorisation regressions | `supabase/tests`, `tests/e2e/security.spec.ts` | required status checks | P5 - Security Testing |
 | SC-05 | must | Branch protection, prod from `main` only; signed commits (should) | Unreviewed code in production | GitHub rules, Vercel git settings | direct push rejected | P1 - Environment Setup |
 | OPS-01 | must | pino redaction; token paths masked; Sentry no PII | PII in logs | `src/lib/logger.ts`, Sentry config | unit; log review | P1 - Environment Setup |
 | OPS-02 | must | `security_events` + 5-min summariser; `/dashboard/security-alerts` | Undetected attacks | `security_events`, `anomaly-scan` | synthetic critical event | P4 - Dashboards & CRUD |
 | OPS-03 | must | Uptime monitor on `/api/health`; Vercel/Sentry/Supabase alerts | Silent outage | Better Stack, Vercel, Sentry | forced failure alerts | P5 - Production Deployment |
-| OPS-04 | must | Runbooks (key leak, breach, takeover, defacement, DoS, discrepancy, R1, R2) | Slow/non-compliant response | `docs/runbooks/*.md` | yearly tabletop | P5 - Security Testing |
+| OPS-04 | must | Runbooks (key leak, breach, takeover, defacement, DoS, discrepancy, R1, R2) | Slow/non-compliant response | §11.4 of this document | yearly tabletop | P5 - Security Testing |
 | OPS-05 | must | Go-live checklist and review cadence (§13) | Launching with gaps | this document | checklist sign-off | P5 - Production Deployment |
 | OPS-06 | must | Out-of-band critical alerts; `/api/health` 503 semantics; heartbeat; synthetic message (should) | Alerts silenced by a stalled outbox | jobs/routes direct Resend/Telegram, `/api/health` | stalled-outbox test triggers monitor | P5 - Production Deployment |
 
@@ -1084,7 +1084,7 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 | 9 | SPF, DKIM, DMARC `p=reject` live on the root domain and `mail.<domain>`; DMARC report received | DNS records |
 | 10 | Rate limits exercised on staging (booking, OTP, login via direct GoTrue, scanner, exports); fail-closed behaviour confirmed for login/scanner/exports | test report |
 | 11 | pgTAP, Vitest, Playwright security smoke green on the production build; gitleaks full-history scan clean; `pnpm audit` no high/critical | CI run link |
-| 12 | Backups on; first restore drill into `gisikdrono-staging` completed; weekly R2 dump job ran once | `docs/runbooks/restore-drills.md` |
+| 12 | Backups on; first restore drill into `gisikdrono-staging` completed; weekly R2 dump job ran once | drill record in the quarterly review minutes (§13.2) |
 | 13 | Synthetic `critical` security event delivered out-of-band to `SECURITY_ALERT_EMAIL` and `SECURITY_ALERT_WA_PHONE`; `/api/health` returns 503 when the outbox is stalled; uptime monitor configured | monitor screenshot |
 | 14 | `/privasi` live with Pejabat Pelindungan Data contact; consent checkbox enforced; retention jobs listed in `cron.job`; `/privasi/permintaan` works end-to-end | Playwright report |
 | 15 | Runbooks printed and handed to the kelurahan office; on-call owner for R1/R2 named | signed handover |
@@ -1116,9 +1116,9 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 
 ## Appendix A. Red-team findings register
 
-Each finding against the security design is listed with the controls that close it. Severity and persona are as reported; "both" = external and insider.
+Each finding against the security design is listed with the controls that close it. Severity and attacker persona are as assessed; "both" = external and insider.
 
-### A.1 Payment and financial design, round 1
+### A.1 Payment and financial security, first review
 
 | Finding | Severity | Persona | Closing controls |
 |---|---|---|---|
@@ -1126,21 +1126,21 @@ Each finding against the security design is listed with the controls that close 
 | Midtrans merchant dashboard is the real wallet, ungoverned | Critical | external | PAY-16, REC-02, SEC-05 |
 | Hold expiry defined twice (never-expiring hold or paid-no-seat) | High | external | BOOK-14, PAY-05 |
 | Resume path leaks a victim's booking code; hold hijack/cancel | High | external | BOOK-15, BOOK-12, GUEST-06 |
-| `profiles.role/rw_id` unpinned; self-enrolled TOTP defeats AAL2 and dual control | High | rogue_rw_admin | AZ-04, AZ-10, AZ-01, AUTH-12, REC-16, AUTH-09 |
-| RW admin self-dealing through prices and UMKM payees | High | rogue_rw_admin | REC-13, MON-07 |
-| Bulk unlogged exfiltration of children's data via PostgREST | High | rogue_rw_admin | AZ-12, DATA-02, MON-07 |
-| `visit_sessions` mutable after paid bookings | Medium | rogue_rw_admin | REC-15, MON-07 |
-| Combo packages owned by one RW | Medium | rogue_rw_admin | REC-14 |
+| `profiles.role/rw_id` unpinned; self-enrolled TOTP defeats AAL2 and dual control | High | rogue admin_rw | AZ-04, AZ-10, AZ-01, AUTH-12, REC-16, AUTH-09 |
+| RW admin self-dealing through prices and UMKM payees | High | rogue admin_rw | REC-13, MON-07 |
+| Bulk unlogged exfiltration of children's data via PostgREST | High | rogue admin_rw | AZ-12, DATA-02, MON-07 |
+| `visit_sessions` mutable after paid bookings | Medium | rogue admin_rw | REC-15, MON-07 |
+| Combo packages owned by one RW | Medium | rogue admin_rw | REC-14 |
 | Pay for minimum pax, arrive with the whole school | Medium | external | QR-08, MON-07 |
 | Last-4 step-up brute-forceable | Medium | external | GUEST-06, DOC-02 |
 | Documents delivered to unverified contacts on 30-day links | Medium | both | BOOK-12, GUEST-06, GUEST-07, DOC-02 |
-| Manual check-in by code with a stolen admin session | Medium | rogue_rw_admin | QR-07, MON-07, QR-04 |
+| Manual check-in by code with a stolen admin session | Medium | rogue admin_rw | QR-07, MON-07, QR-04 |
 | Alert fatigue from junk webhook posts | Low | external | WH-15, MON-03 |
 | Review submission without authentication | Low | external | GUEST-09, GUEST-05 |
 | QR and link secrets without rotation design | Low | both | QR-05, SEC-04 |
 | Quotation PDFs with attacker-controlled text | Low | external | BOOK-17 |
 
-### A.2 Payment and financial design, round 2
+### A.2 Payment and financial security, second review
 
 | Finding | Severity | Persona | Closing controls |
 |---|---|---|---|
@@ -1148,19 +1148,19 @@ Each finding against the security design is listed with the controls that close 
 | Hold TTL reset or undefined at first attempt | High | external | BOOK-14 |
 | Quota denial with fake contacts and max-pax holds | High | external | BOOK-12, BOOK-13 |
 | Self-registration yields an `authenticated` JWT | High | external | AUTH-01, AZ-02, AZ-09 |
-| Role/RW escalation through a self-updatable profiles row | High | rogue_rw_admin | AZ-04, AZ-10, AUTH-09, REC-16 |
-| Owner-privileged finance views leak the other RW | High | rogue_rw_admin | AZ-13, STAFF-02 |
-| Price-floor skim (IDR 1 window, quotation lock-in) | High | rogue_rw_admin | REC-13, BOOK-17, MON-07 |
+| Role/RW escalation through a self-updatable profiles row | High | rogue admin_rw | AZ-04, AZ-10, AUTH-09, REC-16 |
+| Owner-privileged finance views leak the other RW | High | rogue admin_rw | AZ-13, STAFF-02 |
+| Price-floor skim (IDR 1 window, quotation lock-in) | High | rogue admin_rw | REC-13, BOOK-17, MON-07 |
 | Public phone number yields code, roster and cancel | High | external | BOOK-15, GUEST-06, BOOK-12 |
 | Storage exhaustion by persisting invalid-signature bodies | Medium | external | WH-15, WH-03 |
 | Two open VAs: double payment and double ledger posting | Medium | external | WH-16, REC-01 |
-| Combo packages without owner or split rule | Medium | rogue_rw_admin | REC-14 |
-| Check-in route under service role; shared gate phones | Medium | rogue_rw_admin | AZ-14, HDR-03, QR-04 |
-| Bulk PII exfiltration via pagination unrecorded | Medium | rogue_rw_admin | AZ-12, MON-07 |
+| Combo packages without owner or split rule | Medium | rogue admin_rw | REC-14 |
+| Check-in route under service role; shared gate phones | Medium | rogue admin_rw | AZ-14, HDR-03, QR-04 |
+| Bulk PII exfiltration via pagination unrecorded | Medium | rogue admin_rw | AZ-12, MON-07 |
 | Official WhatsApp/email used as a phishing relay | Medium | external | BOOK-12, GUEST-07, EP-04, BOOK-17 |
 | Non-paid transitions applied on signature alone | Medium | external | WH-14 |
 | Certificate and review stages without an authorisation model | Medium | both | GUEST-09, QR-08, MON-07, DOC-02 |
-| Deactivated staff keep sessions; `log_audit` callable to plant evidence | Medium | rogue_rw_admin | AUTH-07, AZ-09, AZ-15 |
+| Deactivated staff keep sessions; `log_audit` callable to plant evidence | Medium | rogue admin_rw | AUTH-07, AZ-09, AZ-15 |
 | 30-day document tokens expose children's names when forwarded | Medium | external | DOC-02, GUEST-06, DATA-12 |
 | Critical alerts depend on the outbox they monitor | Low | external | OPS-06 |
 
@@ -1168,21 +1168,21 @@ Each finding against the security design is listed with the controls that close 
 
 | Finding | Severity | Persona | Closing controls |
 |---|---|---|---|
-| Silent bulk PII dump of own RW with the staff JWT | Critical | rogue_rw_admin | AZ-12, AZ-13, DATA-04, MON-07 |
+| Silent bulk PII dump of own RW with the staff JWT | Critical | rogue admin_rw | AZ-12, AZ-13, DATA-04, MON-07 |
 | Mailbox possession yields a privileged account | High | external | AUTH-09, AUTH-12 |
 | Vendor consoles outside the design | High | both | SEC-05, PAY-16, DB-06 |
 | One verified phone holds every session's capacity | High | external | BOOK-13, BOOK-12 |
 | No step-up for superadmin-critical actions | High | both | AUTH-11, AUTH-09 |
 | Account-lockout DoS and CGNAT IP lockouts | Medium | external | AUTH-10, BOOK-16 |
 | OTP global breaker is a kill switch | Medium | external | GUEST-08 |
-| Price manipulation on own RW packages | Medium | rogue_rw_admin | REC-13 |
-| `rpc_log_event` open to any authenticated user | Medium | rogue_rw_admin | AZ-15 |
+| Price manipulation on own RW packages | Medium | rogue admin_rw | REC-13 |
+| `rpc_log_event` open to any authenticated user | Medium | rogue admin_rw | AZ-15 |
 | Audit diff denylist misses real columns; re-leaks erased values | Medium | both | DATA-11 |
 | Unverified email receives bearer links and certificates | Medium | external | GUEST-07, GUEST-06, EP-03 |
 | Guest RPCs cannot verify HMAC tokens (secret only in Vercel) | Medium | external | AZ-11, GUEST-02 |
 | OTP not bound to the stored phone | Medium | external | GUEST-08 |
-| Signed upload URL puts raw EXIF images in the public bucket | Low | rogue_rw_admin | UPL-01, UPL-02 |
-| `current_user = 'postgres'` escape breaks deactivation | Low | rogue_rw_admin | AZ-10 |
+| Signed upload URL puts raw EXIF images in the public bucket | Low | rogue admin_rw | UPL-01, UPL-02 |
+| `current_user = 'postgres'` escape breaks deactivation | Low | rogue admin_rw | AZ-10 |
 | No email authentication / anti-phishing posture | Low | external | EP-03, EP-04 |
 | Persistence via an extra TOTP factor | Low | both | AUTH-12 |
 | DSR identity by booking code alone | Low | external | GUEST-10, QR-05 |
@@ -1194,10 +1194,10 @@ Each finding against the security design is listed with the controls that close 
 |---|---|---|---|
 | Login lockout only in the Server Action; GoTrue reachable | High | external | AUTH-10, AUTH-13 |
 | Free unverified holds plus unnormalised limiter keys | High | external | BOOK-12, BOOK-11, BOOK-13 |
-| Bulk PII via direct PostgREST reads | High | rogue_rw_admin | AZ-12, DATA-09 |
-| Upstash quota exhaustion switches limits to fail-open | High | external | BOOK-16 |
-| RW admin rewrites prices to divert revenue | Medium | rogue_rw_admin | REC-13 |
-| `check_in_ticket(p_officer)` accepts the officer as a parameter | Medium | rogue_rw_admin | AZ-14 |
+| Bulk PII via direct PostgREST reads | High | rogue admin_rw | AZ-12, DATA-09 |
+| External limiter (Upstash) quota exhaustion switches limits to fail-open | High | external | BOOK-16 |
+| RW admin rewrites prices to divert revenue | Medium | rogue admin_rw | REC-13 |
+| `check_in_ticket(p_officer)` accepts the officer as a parameter | Medium | rogue admin_rw | AZ-14 |
 | Refund leaves the QR ticket valid | Medium | external | QR-07, REC-08 |
 | Booking state machine incomplete (late settlement, combo, refund after check-in) | Medium | both | WH-07, REC-08, QR-02 |
 | Invalid-signature lockout turns the scanner into a DoS lever | Medium | external | QR-06 |
@@ -1205,12 +1205,12 @@ Each finding against the security design is listed with the controls that close 
 | Participant purge does not reach PDFs or links | Medium | both | DATA-12, DOC-02 |
 | Attacker-chosen contacts turn senders into a spam cannon | Medium | external | BOOK-12, GUEST-07, EP-04 |
 | Public quotation generator is letterhead-as-a-service | Low | external | BOOK-17 |
-| PDF keyword scan bypassed by name encoding and object streams | Low | rogue_rw_admin | UPL-05 |
+| PDF keyword scan bypassed by name encoding and object streams | Low | rogue admin_rw | UPL-05 |
 | Alerting depends on the outbox; `/api/health` 200 while degraded | Low | both | OPS-06 |
-| Disabled admin keeps access while claims are stale | Low | rogue_rw_admin | AZ-09, AUTH-07 |
+| Disabled admin keeps access while claims are stale | Low | rogue admin_rw | AZ-09, AUTH-07 |
 | pino redaction paths do not match PII column names | Low | both | DATA-13 |
 | Finish page keyed on `order_id` alone | Low | external | PAY-09, APP-15 |
-| Service-role staff actions produce NULL audit actors | Low | rogue_rw_admin | AZ-15 |
+| Service-role staff actions produce NULL audit actors | Low | rogue admin_rw | AZ-15 |
 | One capability token grants every guest action | Low | external | GUEST-02, GUEST-06 |
 
 *End of document.*
