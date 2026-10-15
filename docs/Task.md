@@ -134,7 +134,7 @@ Requirements: NFR-01, NFR-07, NFR-11.
 | P1.1.04 | `[ ]` | ESLint flat config: `next/core-web-vitals`, `typescript-eslint` strict-type-checked, `import/order`, `react/no-danger: error`, `@typescript-eslint/no-explicit-any: error`, `no-console` outside `src/lib/logger.ts`, `no-restricted-syntax` on `process.env` outside `src/lib/env.ts`, `no-restricted-imports` for `@/lib/supabase/admin` with allow-list `src/app/api/webhooks/**`, `src/app/api/jobs/**`, `src/server/services/{booking,payment,ticket,notification,document,export,staff}-service.ts`, and for `createBrowserClient` under `src/app/(admin)/**` (STAFF-04, AZ-06, SEC-02, AUTH-05, APP-11) | M | P1.1.01 | Dev |
 | P1.1.05 | `[ ]` | Prettier + `prettier-plugin-tailwindcss`; Husky + lint-staged (eslint, prettier, `gitleaks protect --staged`) and commitlint with Conventional Commits scopes `booking, payment, qr, scanner, admin, public, db, rls, notify, pdf, seo, infra, docs, deps` (SEC-03) | S | P1.1.04 | Dev |
 | P1.1.06 | `[ ]` | Clean-code enforcement: ESLint `max-lines` 300, `max-lines-per-function` 40, `complexity` 10, `@typescript-eslint/naming-convention` (kebab-case files, PascalCase components, `use-*` hooks), `no-magic-numbers` with constants in `src/config` and enums in `src/db/enums.ts`; PR template with the definition-of-done checklist of `CLAUDE.md` §9 | S | P1.1.04 | Dev |
-| P1.1.07 | `[ ]` | `package.json` scripts exactly as the `CLAUDE.md` §2 command library: `dev build start lint lint:fix format format:check typecheck test test:watch test:integration test:rls e2e e2e:ui check db:start db:stop db:status db:reset db:migrate:new db:diff db:push db:types db:types:check db:seed db:test midtrans:simulate midtrans:status tunnel wa:send-test email:preview check:secrets analyze` | S | P1.1.01 | Dev |
+| P1.1.07 | `[ ]` | `package.json` scripts exactly as the `CLAUDE.md` §10.1 command library: `dev build start lint lint:fix format format:check typecheck test test:watch test:integration test:rls e2e e2e:ui check db:start db:stop db:status db:reset db:migrate:new db:diff db:push db:types db:types:check db:seed db:test midtrans:simulate midtrans:status tunnel wa:send-test email:preview check:secrets analyze` | S | P1.1.01 | Dev |
 | P1.1.08 | `[ ]` | `src/lib/env.ts` with `@t3-oss/env-nextjs`: server and client schemas for every variable of Appendix A; fail-fast refinements `VERCEL_ENV=production ⇔ MIDTRANS_IS_PRODUCTION=true ⇔ MIDTRANS_SERVER_KEY startsWith Mid-server- and MIDTRANS_CLIENT_KEY startsWith Mid-client-`, otherwise `SB-` prefixes; client schema rejects any `NEXT_PUBLIC_` name containing `SECRET`, `KEY` or `TOKEN` except the known public keys; `.env.example` with placeholders only; env-matrix unit tests (PAY-01, PAY-02, SEC-01) | M | P1.1.01 | Dev |
 | P1.1.09 | `[ ]` | `src/lib/logger.ts`: pino JSON with `requestId` (`x-vercel-id` or `randomUUID`), closed event taxonomy, concrete redaction paths `booking.pic_phone`, `booking.pic_email`, `booking.pic_name`, `customer_details.*`, `participants[*].full_name`, `req.headers.authorization`, `req.headers.cookie`, `*.token`, `*.signature_key`, `*.snap_token`; custom ESLint rule banning `logger.*` calls with whole `bookings` or `booking_participants` objects; redactor unit test with a real booking fixture (MON-01, DATA-05, DATA-13, OPS-01) | M | P1.1.04 | Dev |
 | P1.1.10 | `[ ]` | Supabase clients `src/lib/supabase/{server.ts,client.ts,admin.ts}` and `src/middleware.ts` session refresh with `@supabase/ssr` and `auth.getUser()`; `admin.ts` starts with `import 'server-only'`, applies `experimental_taintUniqueValue` to `SUPABASE_SERVICE_ROLE_KEY` and `CRON_SECRET`, `persistSession: false`; every importer carries a header comment stating why RLS cannot apply (AZ-06, SEC-02, AUTH-05) | S | P1.1.08 | Dev |
@@ -197,6 +197,7 @@ Requirements: NFR-01, NFR-02, FR-POST-08, FR-ADMIN-01 (`docs/PRD.md` §8.7).
 | P1.3.21 | `[ ]` | Staff-management RPCs `public.set_staff_role(user_id, role, rw_id)`, `public.set_staff_status(user_id, is_active, reason)`, `public.reset_staff_mfa(user_id)`: superadmin at AAL2 with a TOTP verified ≤ 5 minutes ago (`amr` timestamp), never the caller's own row, `set_config('app.privileged_rpc', 'on', true)`, bump `claims_version`, delete `auth.sessions` for the user, delete MFA factors, write `role_changed` or `staff_disabled` (AZ-04, AZ-10, AUTH-07, AUTH-12) | M | P1.3.05 | Dev |
 | P1.3.22 | `[ ]` | Views (all `security_invoker = true`): `v_session_availability` (open, future, `remaining = capacity - reserved_pax`), `v_public_reviews` (`Pengunjung` when anonymous; no `booking_id`, no moderation columns), `v_bookings_staff` (masked `phone_masked`, `email_masked`, no participants; admin_rw rows limited to `visit_date between today - 7 and today + 30`; superadmin all), `v_booking_admin`, `v_attendance_today`, `v_booking_export`, `v_revenue_recap_daily`, `v_revenue_recap_by_party`, `v_revenue_recap_by_booking` (amounts from the ledger only), `v_finance_daily` (REC-07, STAFF-02, AZ-13) | M | P1.3.14 | Dev |
 | P1.3.23 | `[ ]` | `public.rpc_reveal_booking_contact(booking_id, reason)` (one booking's full PIC contact; writes `pii_revealed`; daily cap 50 per user, breach → `security_alerts`) and `public.rpc_get_participants(booking_id)` (scope check, window −7/+30 days, row cap 300, audited) as the only PII paths for admin_rw (DATA-04, AZ-12) | M | P1.3.22 | Dev |
+| P1.3.24 | `[ ]` | `internal.increment_booklet_download(p_booklet_id uuid) returns void`: `update public.booklets set download_count = download_count + 1 where id = p_booklet_id and status = 'published'`; service role only (EXECUTE revoked from `public`, `anon`, `authenticated`; no `public.*` counterpart), called by the booklet download route of P2.4.08; pgTAP: `anon` and `authenticated` EXECUTE denied (APP-04, AZ-11) | S | P1.3.04 | Dev |
 
 ### 2.4 P1.4 Migration 0005: RLS policies and grants
 
@@ -314,7 +315,7 @@ Requirements: FR-PUB-22, NFR-05.
 
 ### 3.4 P2.4 Public routes (ISR 3600 unless stated)
 
-Requirements: FR-PUB-01, FR-PUB-02, FR-PUB-04 … FR-PUB-13, FR-PUB-16 … FR-PUB-19, FR-PUB-22, FR-PUB-23.
+Requirements: FR-PUB-01, FR-PUB-02, FR-PUB-04 … FR-PUB-19, FR-PUB-22, FR-PUB-23.
 
 | ID | Status | Task | Est | Dep | Owner |
 |---|---|---|---|---|---|
@@ -325,7 +326,7 @@ Requirements: FR-PUB-01, FR-PUB-02, FR-PUB-04 … FR-PUB-13, FR-PUB-16 … FR-PU
 | P2.4.05 | `[ ]` | `/paket-wisata` with `nuqs` filters `?rw=05 or 08 or combo` and `?type=regular, student, institutional, combo` (filtered in memory on the cached list), `ItemList` JSON-LD; `/paket-wisata/[slug]` with `generateStaticParams`, `src/components/packages/{package-card,package-grid,package-filters,availability-preview}.tsx` (14-day availability island, client fetch, uncached), `Product` + `Offer` (IDR), sticky mobile CTA to `/pesan/[packageSlug]`, `opengraph-image.tsx` | M | P2.3.03 | Dev |
 | P2.4.06 | `[ ]` | `/produk` (`?rw=&category=`) and `/produk/[slug]` with `src/components/products/{product-card,product-grid}.tsx`, vendor public info, `Product` JSON-LD with `brand` = UMKM name, OG image | M | P2.3.03 | Dev |
 | P2.4.07 | `[ ]` | `/galeri` integrated gallery with `?filter=rw05, rw08, umkm, kunjungan` mapped to `rw_id` / `category`; `ImageGallery` JSON-LD | S | P2.6.01 | Dev |
-| P2.4.08 | `[ ]` | `/e-booklet` list and `/e-booklet/[slug]` flipbook page (ISR 86400, tag `booklets`, `DigitalDocument`), PDF download from `public-media` with `download=` so it is served as an attachment; `increment_booklet_download` counter via a rate-limited Server Action | S | P2.7.01 | Dev |
+| P2.4.08 | `[ ]` | `/e-booklet` list and `/e-booklet/[slug]` flipbook page (ISR 86400, tag `booklets`, `DigitalDocument`); "Unduh PDF" goes through the server route `GET /api/documents/booklet/[id]` (public, no session; published booklets only; `rateLimit('booklet:download')` 30/min/IP), which calls `internal.increment_booklet_download(p_booklet_id)` through `document-service.ts` under the service role and then redirects (302) to the `public-media` object URL with `?download=<slug>.pdf` so the PDF is served as an attachment; the counter is never an `anon`-callable RPC (APP-04) | S | P2.7.01, P1.3.24 | Dev |
 | P2.4.09 | `[ ]` | `/artikel` and `/artikel/[slug]`: `src/components/articles/{article-card,rich-text}.tsx` rendering `body_json` through the allowlisted renderer (no HTML), `Article` JSON-LD, OG image, reading time (APP-11) | M | P2.9.03 | Dev |
 | P2.4.10 | `[ ]` | `/ulasan`: published reviews from `v_public_reviews` with `src/components/reviews/{review-card,rating-stars}.tsx`, `Review[]` + `AggregateRating` | S | P2.3.03 | Dev |
 | P2.4.11 | `[ ]` | `/peta-kontak`: Leaflet map, Google Maps iframe embed + "Rute di Google Maps" deep link, contact block from public `site_settings`, `GovernmentOrganization` with `hasMap` and `ContactPoint` | S | P2.5.02 | Dev |
@@ -511,7 +512,7 @@ Requirements: FR-BOOK-13, FR-BOOK-21, FR-PUB-21.
 
 ### 4.11 P3.11 Notifications outbox, WhatsApp, email, health
 
-Requirements: FR-BOOK-14, FR-B2B-10, FR-ADMIN-25, NFR-10.
+Requirements: FR-BOOK-14, FR-B2B-10, FR-ADMIN-25, NFR-07, NFR-10.
 
 | ID | Status | Task | Est | Dep | Owner |
 |---|---|---|---|---|---|
@@ -520,9 +521,10 @@ Requirements: FR-BOOK-14, FR-B2B-10, FR-ADMIN-25, NFR-10.
 | P3.11.03 | `[ ]` | `src/lib/notifications/whatsapp-meta.ts`: Graph `v21.0` `POST /{WHATSAPP_PHONE_NUMBER_ID}/messages`, `type: template`, `language.code: id`, `to` = E.164 digits; document header for `gsk_ticket_issued_v1` = 60-min signed ticket PDF URL (minted at send time, never stored); URL button suffix = scoped link; permanent errors (`131026`, `131047`, `132xxx`) → `fail_notification(permanent = true)`, `130429` / 5xx → retry; `scripts/wa-send-test.ts` (`pnpm wa:send-test`) (EP-04, GUEST-03) | M | P3.11.02 | Dev |
 | P3.11.04 | `[ ]` | `src/lib/notifications/email-resend.ts` + React Email templates `src/lib/email/{booking-created,quotation-ready,payment-reminder,ticket-issued,booking-expired,booking-cancelled,visit-reminder-d1,checked-in-thanks,certificate-ready,review-invite,refund-processed,admin-new-paid-booking,admin-booking-needs-review,security-alert,phone-otp}.tsx` carrying links only (never attachments); `EMAIL_FROM` on `mail.<domain>`; one-click verification route `/reservasi/[bookingCode]?verify=<token>` sets `email_verified_at` and upgrades the email channel to `manage`; cap 3 messages/address/day before payment; `pnpm email:preview` (GUEST-07, EP-03) | M | P3.11.02 | Dev |
 | P3.11.05 | `[ ]` | `POST /api/jobs/process-notifications` (`maxDuration 60`, Bearer `timingSafeEqual`): `claim_notifications(20)` → render missing ticket PDF → provider send → `complete_notification` / `fail_notification`; email always queued in parallel with WhatsApp so a WhatsApp failure never loses a ticket link; `after()` kicks from the Midtrans webhook and `check_in_ticket`; log `{ job, processed, failed, runId }`; integration: double invocation sends once, dead-letter alert after 8 attempts (EP-02) | M | P3.11.03, P3.11.04 | Dev |
-| P3.11.06 | `[ ]` | `GET/POST /api/webhooks/whatsapp`: `hub.verify_token` handshake with `WHATSAPP_VERIFY_TOKEN`; `X-Hub-Signature-256` = HMAC-SHA256 of the raw body with `WHATSAPP_APP_SECRET` (`timingSafeEqual`), 64 KB cap, status events only (`sent → delivered → read`, `failed` with error code) updating `notifications.provider_status` by `provider_message_id`; Resend bounce/complaint webhook verified with `RESEND_WEBHOOK_SECRET` marking email rows `failed` (route name per §7 Open decisions); tests: wrong token 403, wrong signature 401 (EP-01) | S | P3.11.05 | Dev |
+| P3.11.06 | `[ ]` | `GET/POST /api/webhooks/whatsapp`: `hub.verify_token` handshake with `WHATSAPP_VERIFY_TOKEN`; `X-Hub-Signature-256` = HMAC-SHA256 of the raw body with `WHATSAPP_APP_SECRET` (`timingSafeEqual`), 64 KB cap, status events only (`sent → delivered → read`, `failed` with error code) updating `notifications.provider_status` by `provider_message_id`; tests: wrong token 403, wrong signature 401 (EP-01) | S | P3.11.05 | Dev |
 | P3.11.07 | `[ ]` | `GET /api/health`: DB ping; returns 503 when the last successful `expire_stale_bookings` or `process-notifications` heartbeat is older than 15 min, when `notifications` has `queued` rows older than 15 min, or when `site_settings.maintenance_mode` is on; body `{ status, checks }` without secrets; uptime monitor from P0.1.12 pointed at it (OPS-06, RES-02, OPS-03) | S | P3.11.05 | Dev |
 | P3.11.08 | `[ ]` | `src/lib/notifications/alerts.ts` `raiseSecurityAlert({ fingerprint, severity, details })`: `security_alerts` upsert with 60-min dedupe window; `high` / `critical` also sent out-of-band (direct Resend call with 5 s timeout to `SECURITY_ALERT_EMAIL`, `gsk_security_alert_v1` to `SECURITY_ALERT_WA_PHONE`) so a stalled outbox cannot silence alerts; `details` never contains PII (OPS-06, MON-03) | S | P3.11.04 | Dev |
+| P3.11.09 | `[ ]` | `POST /api/webhooks/resend` (should-item; outside the auth middleware matcher, `maxDuration 15`): Svix signature headers `svix-id`, `svix-timestamp`, `svix-signature` verified with `RESEND_WEBHOOK_SECRET` (HMAC-SHA256 over `id.timestamp.body` on the raw body, `timingSafeEqual`, timestamp tolerance 5 min); 64 KB cap; only `email.bounced` and `email.complained` events are processed → `fail_notification(permanent = true)` on the matching `notifications` row by `provider_message_id`; informational only, never touches bookings or money; 200 for processed, replayed (`svix-id` seen) and unknown ids; tests: missing or invalid signature 401, stale timestamp 401, replay no-op (EP-03, APP-12) | S | P3.11.05 | Dev |
 
 ### 4.12 P3.12 Guest status hub and manage page
 
@@ -672,7 +674,7 @@ Requirements: FR-ADMIN-24, FR-ADMIN-25, FR-PUB-19.
 
 ### 5.11 P4.11 Post-visit reviews
 
-Requirements: FR-POST-05, FR-POST-06, FR-POST-07.
+Requirements: FR-POST-05, FR-POST-06, FR-PUB-17.
 
 | ID | Status | Task | Est | Dep | Owner |
 |---|---|---|---|---|---|
@@ -788,7 +790,7 @@ Requirements: NFR-01, NFR-08.
 
 ## 7. Open decisions
 
-Defaults below are in force until the owner decides otherwise; each maps to `docs/PRD.md` §13.1 and `docs/Security.md` §13.3.
+Defaults below are in force until the owner decides otherwise. A10–A12 and OD-1–OD-3 map to `docs/PRD.md` §13.1 and `docs/Security.md` §13.3; OD-5 maps to `CLAUDE.md` §12.3; OD-4 is decided and OD-6 is tracked here only.
 
 | # | Decision | Default in force | Blocks |
 |---|---|---|---|
@@ -798,7 +800,7 @@ Defaults below are in force until the owner decides otherwise; each maps to `doc
 | OD-1 | Refund policy windows and who bears the Midtrans fee | Mechanism supports any policy (`record_refund`, adjustments); wording needed for `/privasi` and the ticket PDF | P3.6.02, P4.7.03 |
 | OD-2 | Second superadmin account for dual control | Compensating control: 24 h delay + email to the kelurahan head | P4.7.03, P5.7.07 |
 | OD-3 | External penetration test budget | ZAP baseline + manual IDOR / role tests as the minimum | P5.5.06 |
-| OD-4 | Resend bounce / complaint webhook route (env `RESEND_WEBHOOK_SECRET` exists; no route in `CLAUDE.md` Appendix A.3) | Register `api/webhooks/resend` in `CLAUDE.md` Appendix A.3 in the P3.11.06 PR | P3.11.06 |
+| OD-4 | Resend bounce / complaint webhook route (env `RESEND_WEBHOOK_SECRET` exists) | **Decided:** `POST api/webhooks/resend`, Svix-signed, informational only (bounce / complaint events mark the email row `failed`), implemented as a should-item in P3.11.09; signature verification specified in `docs/Security.md` §10.2 | P3.11.09 |
 | OD-5 | Vercel plan (Hobby vs Pro) | Pro; pg_cron + pg_net drive every schedule so no `vercel.json` cron is needed | P0.1.03 |
 | OD-6 | Participant-name encryption at launch (`DATA-09`) | Not at launch; 90-day backlog item P4.5.04 | P5.8.02 |
 
@@ -815,7 +817,7 @@ Values never appear in the repository. P = public bundle (`NEXT_PUBLIC_*` only),
 | `MIDTRANS_SERVER_KEY`, `MIDTRANS_SERVER_KEY_PREVIOUS`, `MIDTRANS_CLIENT_KEY`, `MIDTRANS_IS_PRODUCTION`, `MIDTRANS_MERCHANT_ID` | S | Vercel (sandbox `SB-` on Preview, `Mid-` on Production) | Midtrans dashboard (owner only); `PREVIOUS` set only during the 15-min overlap | P0.1.05, P5.5.03, P5.7.01 |
 | `MIDTRANS_WEBHOOK_PATH_TOKEN` | S | Vercel per environment, Midtrans notification URL | `openssl rand -base64 32` (URL-safe); rotating it changes the notification URL | P0.3.02, P0.1.06 |
 | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` | S | Vercel per environment | Meta Business Manager System User (`whatsapp_business_messaging` only); token rotated yearly | P0.1.07, P3.11.03, P3.11.06 |
-| `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `EMAIL_FROM` | S | Vercel per environment | Resend; `EMAIL_FROM` on `mail.<domain>` | P0.1.09, P3.11.04 |
+| `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `EMAIL_FROM` | S | Vercel per environment | Resend; `EMAIL_FROM` on `mail.<domain>`; `RESEND_WEBHOOK_SECRET` is the Svix signing secret of the `api/webhooks/resend` endpoint | P0.1.09, P3.11.04, P3.11.09 |
 | `QR_SIGNING_KEYS`, `QR_SIGNING_ACTIVE_KID` | S | Vercel per environment | JSON `{ "k1": "<base64 32 bytes>" }`; new kid per rotation, old kid retired 30 days after its last `valid_on` | P0.3.02, P3.10.01, P5.5.03 |
 | `BOOKING_LINK_SECRET`, `OTP_PEPPER` | S | Vercel per environment | `openssl rand -base64 32`; rotating `BOOKING_LINK_SECRET` invalidates all guest links | P0.3.02, P3.3.01, P3.2.01 |
 | `PARTICIPANT_PII_KEYS`, `PARTICIPANT_PII_ACTIVE_KID` | S (should) | Vercel per environment | Versioned AES-256-GCM keys; introduced with P4.5.04 | P4.5.04 |
@@ -935,7 +937,7 @@ Every control of `docs/Security.md` §12 and the tasks that implement or verify 
 | AZ-04 | P1.3.05, P1.3.21, P1.4.06, P1.9.03 | AZ-05 | P1.3.04, P1.4.07, P1.9.01 |
 | AZ-06 | P1.1.04, P1.1.10 | AZ-07 | P1.5.01, P1.5.03, P1.9.07 |
 | AZ-08 | P1.9.01, P1.9.02, P1.9.07, P5.2.01, P5.2.02 | AZ-09 | P1.3.01 |
-| AZ-10 | P1.3.05, P1.3.21, P4.8.02 | AZ-11 | P1.2.01, P1.4.01, P1.4.07, P1.9.01 |
+| AZ-10 | P1.3.05, P1.3.21, P4.8.02 | AZ-11 | P1.2.01, P1.3.24, P1.4.01, P1.4.07, P1.9.01 |
 | AZ-12 | P1.3.23, P4.3.02 | AZ-13 | P1.3.22, P4.2.01 |
 | AZ-14 | P4.3.08, P4.4.01, P4.4.02 | AZ-15 | P1.3.13, P1.9.03, P3.4.03 |
 | GUEST-01 | P3.1.05, P3.3.03, P3.12.04 | GUEST-02 | P3.3.01, P3.3.02, P3.12.02, P3.12.04 |
@@ -953,11 +955,11 @@ Every control of `docs/Security.md` §12 and the tasks that implement or verify 
 | PDP-02 | P0.4.03, P5.5.05 | PDP-03 | P1.2.12, P2.4.12, P3.12.03, P4.10.03, P5.8.02 |
 | RES-01 | P0.1.02, P0.1.13, P5.5.04, P5.8.02 | RES-02 | P3.11.07, P5.8.02 |
 | APP-01 | P1.1.11, P1.1.12 (= HDR-01/02) | APP-02 | P1.1.11, P1.1.14, P3.4.04 (= APP-09/12, EP-02, RL-05) |
-| APP-03 | P1.1.02, P1.1.16, P2.9.03 (= SC-01/02, APP-11) | APP-04 | P1.2.01, P1.4.01, P1.4.02 |
+| APP-03 | P1.1.02, P1.1.16, P2.9.03 (= SC-01/02, APP-11) | APP-04 | P1.2.01, P1.3.24, P1.4.01, P1.4.02, P2.4.08 |
 | APP-05 | P1.1.14, P2.8.03, P2.9.05, P4.1.01 | APP-06 | P1.4.05, P4.9.01 |
 | APP-07 | P1.9.07 | APP-08 | P1.3.05, P1.4.06 |
 | APP-09 | P1.1.15, P2.9.04, P2.9.05, P3.1.01 | APP-10 | P1.1.12, P1.1.15, P4.3.01 |
-| APP-11 | P1.1.04, P1.2.10, P2.4.09, P2.9.03 | APP-12 | P1.1.11, P5.3.02 |
+| APP-11 | P1.1.04, P1.2.10, P2.4.09, P2.9.03 | APP-12 | P1.1.11, P3.11.09, P5.3.02 |
 | APP-13 | P1.1.12, P1.7.03, P2.8.01 | APP-14 | P1.1.11, P1.1.15, P3.7.01, P5.3.02 |
 | APP-15 | P3.3.02, P3.12.01 | HDR-01 | P1.1.12, P2.2.01, P5.3.02, P5.4.01 |
 | HDR-02 | P0.2.02, P1.1.11, P5.3.02, P5.4.02, P5.7.04 | HDR-03 | P1.1.11, P1.1.12, P4.4.02, P4.4.03, P5.3.02 |
@@ -974,7 +976,7 @@ Every control of `docs/Security.md` §12 and the tasks that implement or verify 
 | DB-04 | P1.3.10 (= REC-04, DATA-11) | DB-05 | P1.3.18, P1.6.01 |
 | DB-06 | P0.1.02, P5.7.02, P5.8.02 | DB-07 | P0.1.13, P5.5.04, P5.8.02 |
 | EP-01 | P0.1.07, P3.11.06 | EP-02 | P0.3.03, P1.6.02, P3.4.04, P3.9.02, P3.11.01, P3.11.05 |
-| EP-03 | P0.1.09, P3.11.04, P5.7.03 | EP-04 | P3.11.02, P3.11.03 |
+| EP-03 | P0.1.09, P3.11.04, P3.11.09, P5.7.03 | EP-04 | P3.11.02, P3.11.03 |
 | QR-01 | P1.2.09, P3.10.01, P3.10.02, P3.10.03 | QR-02 | P1.2.09, P1.3.11, P4.4.01 |
 | QR-03 | P4.4.04, P4.4.05 | QR-04 | P4.3.09, P4.4.03, P4.4.04 |
 | QR-05 | P3.10.01, P5.5.03 | QR-06 | P4.4.02, P4.4.05 |

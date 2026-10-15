@@ -153,9 +153,9 @@ A visiting teacher can find the programme on Google on Monday, download a visit 
 
 | Attribute | Detail |
 |---|---|
-| Who | Kelurahan staff member (Kasi Pelayanan or designated operator) accountable to the Lurah; one or two accounts |
+| Who | Kelurahan staff member (Kasi Pelayanan, the head of the public-service section, or a designated operator) accountable to the Lurah (the kelurahan head); one or two accounts |
 | Role | `superadmin`; sees both RWs through `RwSwitcher`; AAL2 mandatory |
-| Goals | Correct money: every paid booking reconciled, revenue split transparently, payouts documented; moderated public content; staff accounts under control; exportable statistics for the kelurahan and Diskominfo reports |
+| Goals | Correct money: every paid booking reconciled, revenue split transparently, payouts documented; moderated public content; staff accounts under control; exportable statistics for the kelurahan and for Diskominfo (the municipal communications and informatics office) reports |
 | Pain points | Not a full-time engineer; limited time; fears personal liability for mishandled funds or children's data; receives escalations from both RWs |
 | Devices | Office laptop (Chrome, 1366 px) and personal Android phone |
 | Key scenarios | Invite an RW admin (FR-ADMIN-18); approve a price change and moderate an article (FR-ADMIN-11, §11.4); resolve a `needs_review` booking after a late settlement (FR-ADMIN-26); record a payout batch with proof (FR-ADMIN-20); export monthly visits to XLSX (FR-ADMIN-22); review `security-alerts` after a signature-failure burst (FR-ADMIN-25) |
@@ -176,7 +176,7 @@ A visiting teacher can find the programme on Google on Monday, download a visit 
 | Attribute | Detail |
 |---|---|
 | Who | Teacher, lecturer, office administrator, HR or CSR staff booking for 20-200 people; needs internal approval and an official document trail |
-| Role | Guest (no account); identified by `booking_code` + OTP-verified phone; `booker_type` in `school | university | government | company | community` |
+| Role | Guest (no account); identified by `booking_code` + OTP-verified phone; `booker_type` in `school \| university \| government \| company \| community` |
 | Goals | Download a proposal, obtain a quotation to attach to a budget request, pay by VA from the institution's account, receive invoice and receipt, get certificates for every participant |
 | Pain points | Approval takes days; the treasurer, not the booker, pays; participant lists change until the last day; needs proof documents for audits |
 | Devices | Office laptop and WhatsApp on a phone |
@@ -222,6 +222,7 @@ Public slugs are Indonesian; admin and API paths are English. Public pages use I
 | Jadwal Pertunjukan & Workshop | `/rw-08-kampung-seni-budaya/jadwal` | FR-PUB-10 |
 | Galeri Dokumentasi Kegiatan RW 08 | `/rw-08-kampung-seni-budaya#galeri`, `/galeri?filter=rw08` | FR-PUB-14 |
 | Suvenir & Cinderamata Khas RW 08 | `/rw-08-kampung-seni-budaya#produk`, `/produk?rw=08` | FR-PUB-13 |
+| Marketplace UMKM terpadu (katalog gabungan dan detail produk) | `/produk`, `/produk/[slug]` | FR-PUB-13 |
 | Paket Wisata Khusus RW 08 | `/paket-wisata?rw=08` | FR-PUB-11 |
 | Paket Wisata & Pemesanan Tiket: Katalog Semua Paket | `/paket-wisata`, `/paket-wisata/[slug]` | FR-PUB-11, FR-PUB-12 |
 | Kalender Kunjungan & Pemilihan Kuota/Sesi Waktu | `/pesan/[packageSlug]?step=jadwal` | FR-BOOK-01, FR-BOOK-02 |
@@ -232,7 +233,7 @@ Public slugs are Indonesian; admin and API paths are English. Public pages use I
 | Layanan Pasca Kunjungan: Unduh E-Sertifikat | `/reservasi/[bookingCode]/sertifikat`, `/verifikasi/[code]` | FR-POST-01..04 |
 | Formulir Buku Tamu, Rating & Ulasan | `/reservasi/[bookingCode]/ulasan` | FR-POST-05, FR-POST-06 |
 | Galeri Terpadu (Filter RW 05, RW 08, UMKM, Kunjungan) | `/galeri?filter=rw05\|rw08\|umkm\|kunjungan` | FR-PUB-14 |
-| E-Booklet (Flipbook & Unduhan PDF) | `/e-booklet`, `/e-booklet/[slug]` | FR-PUB-15 |
+| E-Booklet (Flipbook & Unduhan PDF) | `/e-booklet`, `/e-booklet/[slug]`, `api/documents/booklet/[id]` | FR-PUB-07, FR-PUB-15 |
 | Artikel & Kabar Edu Center Kelurahan | `/artikel`, `/artikel/[slug]` | FR-PUB-16 |
 | Ulasan (published guest book) | `/ulasan` | FR-PUB-17 |
 | Peta & Kontak (Embed Maps & Floating WhatsApp) | `/peta-kontak` + `WhatsAppFab` on every public page | FR-PUB-18 |
@@ -274,9 +275,10 @@ Public slugs are Indonesian; admin and API paths are English. Public pages use I
 |---|---|---|
 | `POST api/webhooks/midtrans/[token]` | Midtrans | FR-BOOK-12, §10.1 |
 | `GET/POST api/webhooks/whatsapp` | Meta | FR-BOOK-14, §10.2 |
-| `POST api/jobs/process-notifications`, `payments-poll`, `reconcile-payments`, `anomaly-scan`, `expire-bookings` | pg_cron via pg_net, `Bearer CRON_SECRET` | §8.8, §10.4 |
+| `POST api/jobs/process-notifications`, `payments-poll`, `reconcile-payments`, `anomaly-scan`, `expire-bookings` | pg_cron via pg_net, `Bearer CRON_SECRET` | §8.9, §10.4 |
 | `POST api/tickets/verify` | PWA scanner (staff session) | FR-SCAN-03, FR-SCAN-04 |
-| `GET api/documents/[kind]/[id]` | guest (cookie) / staff | FR-B2B-02, FR-B2B-05, FR-POST-03 |
+| `GET api/documents/[kind]/[id]` | guest (cookie) / staff; `kind = booklet` is public (rate-limited, counts the download, redirects to `public-media`) | FR-B2B-02, FR-B2B-05, FR-POST-03, FR-PUB-07 |
+| `POST api/webhooks/resend` (could) | Resend: Svix-signed bounce/complaint events, verified with `RESEND_WEBHOOK_SECRET`; informational only | §10.2 |
 | `GET api/export/[kind]` | staff | FR-ADMIN-22 |
 | `POST api/uploads/sign`, `api/uploads/finalize` | staff | FR-ADMIN-16 |
 | `GET api/health` | uptime monitor | NFR-07 |
@@ -298,7 +300,7 @@ Priority uses MoSCoW: **M** must, **S** should, **C** could, **W** won't (this r
 | FR-PUB-04 | Featured package cards (`tour_packages.is_featured`, `status = 'published'`) with price from `price_per_pax`/`flat_price` formatted by `formatIDR()` | M | Max 6 cards; each links to `/paket-wisata/[slug]`; price shown as "mulai Rp …" when tiers exist |
 | FR-PUB-05 | Testimonials section from `v_public_reviews` where `is_featured`, showing rating, excerpt, institution and first name only | M | Anonymous reviews show "Pengunjung"; no PII beyond institution + first name |
 | FR-PUB-06 | Latest 3 published articles with cover, category, date | M | Ordered by `published_at desc`; links to `/artikel/[slug]` |
-| FR-PUB-07 | E-booklet and visit-proposal download block (`booklets` published, kinds `ebooklet`, `visit_proposal`, `price_list`) | M | Download served from `public-media` as attachment; `download_count` incremented |
+| FR-PUB-07 | E-booklet and visit-proposal download block (`booklets` published, kinds `ebooklet`, `visit_proposal`, `price_list`) | M | Download link is `api/documents/booklet/[id]` (public, rate-limited per IP), which increments `download_count` through `internal.increment_booklet_download` under the service role (`document-service.ts`) and then redirects to the published `public-media` object served as an attachment; no RPC is executable by `anon` |
 | FR-PUB-08 | RW 05 page: profile/vision/philosophy (`rw_units.description_md`, `vision_md`), activity points list, gallery preview, UMKM products, RW packages | M | All sections read only `rw_id = 5` published rows; anchors `#profil #titik-aktivitas #galeri #produk #paket` |
 | FR-PUB-09 | RW 08 page: profile of sanggar and culture house, upcoming schedule preview, gallery, souvenirs, RW packages | M | Schedule preview shows next 5 published `performance_schedules`; same anchor pattern |
 | FR-PUB-10 | Full schedule page `/rw-08-kampung-seni-budaya/jadwal` with month navigation and `Event` JSON-LD | M | Shows `starts_at`/`ends_at` in WIB, venue, type badge; links to the bookable package when `package_id` is set |
@@ -306,7 +308,7 @@ Priority uses MoSCoW: **M** must, **S** should, **C** could, **W** won't (this r
 | FR-PUB-12 | Package detail: highlights, inclusions, itinerary, duration, pricing tiers, gallery, availability preview for the next 14 days from `v_session_availability`, CTA "Pesan Sekarang" | M | Availability island fetches uncached through the server; CTA goes to `/pesan/[slug]?step=jadwal`; `Product`/`Offer` JSON-LD with IDR price |
 | FR-PUB-13 | UMKM marketplace list and detail (`products_umkm` published) with vendor name, category filter and "Pesan sebagai tambahan" hint | M | No cart; add-on-eligible products show the hint; vendor private columns never serialised |
 | FR-PUB-14 | Integrated gallery with filters `rw05 \| rw08 \| umkm \| kunjungan`, CSS-column masonry, lightbox, load-more cursor | M | Filter maps to `rw_id`/`category`; every image has `alt_text`; videos embed YouTube by `video_url` |
-| FR-PUB-15 | E-booklet viewer: flipbook over pre-rendered `pages/0001.webp…` with PDF download | M | Flipbook is `next/dynamic` `ssr:false`; page images lazy; download link is the PDF object |
+| FR-PUB-15 | E-booklet viewer: flipbook over pre-rendered `pages/0001.webp…` with PDF download | M | Flipbook is `next/dynamic` `ssr:false`; page images lazy; download link is `api/documents/booklet/[id]` (FR-PUB-07) |
 | FR-PUB-16 | Articles list and detail rendering `articles.body_json` through the allowlisted `RichText` React renderer | M | Unknown node types are dropped, never rendered as HTML; `Article` JSON-LD; reading time |
 | FR-PUB-17 | Reviews page listing published reviews with rating filter and aggregate rating | M | Reads `v_public_reviews` only; `AggregateRating` JSON-LD |
 | FR-PUB-18 | Map and contact page: Google Maps embed, Leaflet markers, route deep link, contact from public `site_settings`; floating WhatsApp button on all public pages using `NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER` | M | Embed origin allow-listed in CSP; WhatsApp button opens `wa.me` with a prefilled Indonesian message |
@@ -378,7 +380,7 @@ Priority uses MoSCoW: **M** must, **S** should, **C** could, **W** won't (this r
 | ID | Requirement | Pri | Acceptance criteria |
 |---|---|---|---|
 | FR-SCAN-01 | Installable PWA (`@serwist/next`, `manifest.ts` with `start_url: /dashboard/scanner`, `display: standalone`), shell cached only, `NetworkOnly` for `/api/*`, no PII cached | M | Lighthouse PWA installable; offline opens the shell and shows "Tidak ada sinyal" |
-| FR-SCAN-02 | Camera scanning with `@yudiel/react-qr-scanner` (native `BarcodeDetector`, ZXing-WASM fallback), rear camera, torch toggle when supported, started by a tap; `Permissions-Policy: camera=(self)` only on `/dashboard/scanner` | M | Works in Chrome Android and Safari iOS >= 14.3; in-app browsers show "Buka di Safari/Chrome" |
+| FR-SCAN-02 | Camera scanning with `@yudiel/react-qr-scanner` (native `BarcodeDetector`, ZXing-WASM fallback), rear camera, torch toggle when supported, started by a tap; `Permissions-Policy: camera=(self)` only on `/dashboard/scanner` | M | Works in Android Chrome and iOS Safari >= 16 (NFR-13); in-app browsers show "Buka di Safari/Chrome" |
 | FR-SCAN-03 | Preview: client posts `{ token, attemptId, mode: 'preview' }` to `POST /api/tickets/verify`; server checks staff session (AAL2) + Origin, verifies HMAC in Node, calls `validate_ticket` (read-only, logs `ticket_scans`) and returns the group card (institution, PIC first name, package, session, `pax_count`, participant count, add-ons) | M | Client decoding is a hint only; payloads not matching `GSK.<kid>.<id>.<sig>` are reported as "bukan tiket" and not sent as attempts |
 | FR-SCAN-04 | Commit: officer confirms identity and enters attendee count (default `pax_count`, keypad) -> `{ mode: 'commit', attendeeCount }` -> `check_in_ticket` atomically moves `issued -> used`, records `checked_in_pax`, `unpaid_pax = max(0, attendees - pax_count)` (max 2x), updates leg, session counter, booking (`checked_in` on first leg), issues certificates when all legs are used, enqueues `checked_in_thanks` | M | Second commit of the same ticket -> `already_used` with who/when; attendee count outside 1..2x -> validation error |
 | FR-SCAN-05 | Result UX by `scan_result`: green `ok`; amber `already_used`, `outside_window`, `wrong_date`; red `invalid_signature`, `not_found`, `suspended`, `revoked`, `wrong_rw`, `booking_not_paid`, `ticket_expired`, `forbidden`; full-screen colour, vibration, `aria-live` text in Indonesian | M | Every result shows a next action ("Cek manual", "Hubungi superadmin") |
@@ -1222,7 +1224,7 @@ create index ticket_scans_ticket_idx  on public.ticket_scans (ticket_id, scanned
 create table public.certificates (
   id                 uuid primary key default gen_random_uuid(),
   booking_id         uuid not null references public.bookings(id) on delete restrict,
-  participant_id     uuid references public.booking_participants(id) on delete restrict,
+  participant_id     uuid references public.booking_participants(id) on delete set null,   -- NULL after purge_participants
   kind               public.certificate_kind not null,
   certificate_number text not null unique,                -- 'SERT/GSK/2026/00031'
   verify_code        text not null unique,                -- 10-char Crockford base32, /verifikasi/[code]
@@ -1240,8 +1242,9 @@ create table public.certificates (
   issued_by          uuid references public.profiles(id), -- NULL when auto-issued at check-in
   revoked_at         timestamptz,
   revoke_reason      text,
+  purged_at          timestamptz,                         -- set by internal.purge_participants: participant_id nulled, recipient_name '[dihapus]'
   constraint certificates_kind_ok check (
-    (kind = 'group' and participant_id is null) or (kind = 'participant' and participant_id is not null))
+    (kind = 'group' and participant_id is null) or (kind = 'participant' and (participant_id is not null or purged_at is not null)))
 );
 create unique index certificates_group_once       on public.certificates (booking_id) where kind = 'group';
 create unique index certificates_participant_once on public.certificates (participant_id) where kind = 'participant';
@@ -1591,7 +1594,7 @@ create table public.dsr_requests (
   email           citext,
   booking_code    text,
   message         text check (length(message) <= 2000),
-  otp_id          uuid references public.guest_otps(id),
+  otp_id          uuid references public.guest_otps(id) on delete set null,   -- guest_otps are pruned after 24 h
   verified_at     timestamptz,
   status          text not null default 'received' check (status in ('received','in_progress','completed','rejected')),
   due_at          timestamptz not null,                    -- created_at + 3 days (3x24 h response window)
@@ -1670,7 +1673,7 @@ Claims `app_role`, `app_rw_id`, `claims_version` are injected by `public.custom_
 create or replace function public.app_role() returns text language sql stable security definer set search_path = '' as $$
   select case
     when p.id is null or not p.is_active or p.claims_version <> coalesce((auth.jwt() ->> 'claims_version')::int, -1) then 'none'
-    else coalesce(auth.jwt() ->> 'app_role', 'anon') end
+    else coalesce(auth.jwt() ->> 'app_role', 'none') end
   from (select 1) x left join public.profiles p on p.id = auth.uid() $$;
 create or replace function public.app_rw_id() returns smallint language sql stable as $$
   select case when public.app_role() = 'admin_rw' then nullif(auth.jwt() ->> 'app_rw_id', '')::smallint end $$;
@@ -1725,7 +1728,7 @@ Legend: S/I/U/D = select/insert/update/delete; "—" = denied; "fn" = only throu
 | reviews | S `published` via `v_public_reviews` | S `owns_any_rw(rw_ids)` | S all; U `status, is_featured, moderation_note`; D | — | visitor insert via `submit_review` |
 | galleries | S `published` | S/I/U/D `owns_rw(rw_id)` | all | — | — |
 | articles | S `published` | S/I/U `owns_rw(rw_id)` (trigger: no publish) | all | — | — |
-| booklets | S `published` | S/I/U `owns_rw(rw_id)` | all | — | `download_count` via anon RPC |
+| booklets | S `published` | S/I/U `owns_rw(rw_id)` | all | — | `download_count` via `internal.increment_booklet_download` (from `api/documents/booklet/[id]`) |
 | hero_banners | S active and in window | — | all | — | — |
 | activity_points | S `published` | S/I/U/D `owns_rw(rw_id)` | all | — | — |
 | performance_schedules | S `published` | S/I/U/D `owns_rw(rw_id)` | all | — | — |
@@ -1849,11 +1852,11 @@ grant update (full_name, phone, avatar_path) on public.profiles to authenticated
 | `rpc_reveal_booking_contact` | `(p_booking_id uuid, p_reason text) returns jsonb` | staff in scope | Returns unmasked PIC contact; security event `pii_revealed`; cap 50/day/user |
 | `rpc_get_participants` | `(p_booking_id uuid) returns setof public.booking_participants` | staff in scope | Window `visit_date - 7 d .. + 30 d`; row cap 300; audited |
 | `rpc_create_export` | `(p_kind export_kind, p_format text, p_filters jsonb, p_reason text) returns uuid` | superadmin (all kinds), admin_rw (`attendance`, own RW) | Validates caps (50 000 rows / 12 months, 10/h); inserts `exports`; the route handler renders the file |
-| `rpc_log_ui_event` | `(p_event text, p_props jsonb) returns void` | staff / anon (rate-limited) | Funnel events for G2 (no PII) |
+| `rpc_log_ui_event` | `(p_event text, p_props jsonb) returns void` | staff; visitor funnel events arrive through a rate-limited Server Action that calls it under the service role (`anon` has no execute grant) | Funnel events for G2 (no PII) |
 | `propose_adjustment` / `approve_adjustment` / `apply_adjustment` | `(…) returns public.payment_adjustments` | superadmin | Dual control per FR-ADMIN-21; `apply_adjustment` writes `adjustment` ledger rows and `payments.refunded_amount` |
 | `set_staff_role` / `set_staff_status` / `reset_staff_mfa` | `(p_user_id uuid, …) returns void` | superadmin, fresh TOTP, never own row | Sets `app.privileged_rpc`; bumps `claims_version`; deletes sessions/factors; security events `role_changed`, `staff_disabled` |
 
-Anonymous RPC: `increment_booklet_download(p_booklet_id uuid) returns void` (published booklets only, rate-limited app-side).
+No function is executable by `anon`. Public writes (OTP, bookings, reviews, DSR requests, booklet download counts, funnel events) reach the database only through Server Actions or route handlers that validate, rate-limit and then call `internal.*` under the service role.
 
 #### 8.7.2 Internal functions (`internal`, service role from allow-listed services or cron)
 
@@ -1873,6 +1876,7 @@ Anonymous RPC: `increment_booklet_download(p_booklet_id uuid) returns void` (pub
 | `issue_phone_otp` | `(p_phone text, p_purpose otp_purpose, p_ip inet, p_booking_id uuid) returns jsonb` | Caps 5/phone/day, 20/IP/day, global soft breaker 500/day; stores `code_hash`; enqueues `phone_otp` (`gsk_otp_v1`); returns `{otp_id}` |
 | `verify_phone_otp` | `(p_otp_id uuid, p_code text) returns jsonb` | Constant-time hash compare; `attempts`; sets `verified_at`, `bookings.phone_verified_at` |
 | `submit_review` | `(p_booking_id uuid, p_rating smallint, p_title text, p_body text, p_reviewer_name text, p_is_anonymous boolean) returns public.reviews` | Requires a `used` ticket; one per booking; `pending` |
+| `increment_booklet_download` | `(p_booklet_id uuid) returns void` | `download_count + 1` for a `published` booklet only; called by `api/documents/booklet/[id]` (rate-limited per IP) under the service role; never granted to `anon` |
 | `expire_stale_bookings` | `() returns int` | `pending_payment` with `expires_at < now() - 5 min` (`FOR UPDATE SKIP LOCKED`) -> `expired`; release quota; open payments `expired`; `quoted` past `valid_until` -> `expired`; enqueues `booking_expired` |
 | `close_past_bookings` | `() returns int` | `checked_in` with all leg dates passed -> `completed` (+ `review_invite`); `paid` with no leg checked in and dates passed -> `no_show`; tickets `issued` past `valid_until` -> `expired` |
 | `enqueue_visit_reminders` | `() returns int` | `visit_reminder_d1` for `paid` bookings with a leg tomorrow |
@@ -1881,7 +1885,7 @@ Anonymous RPC: `increment_booklet_download(p_booklet_id uuid) returns void` (pub
 | `complete_notification` / `fail_notification` | `(p_id uuid, p_provider_message_id text)` / `(p_id uuid, p_error_code text, p_error text, p_permanent boolean)` | Backoff 1/5/15/60/240 min; `dead_at` after 8 attempts or permanent error + `notification_dead` event |
 | `rate_limit_hit` | `(p_key text, p_limit int, p_window_seconds int) returns boolean` | Fixed-window counter in `rate_limit_buckets` |
 | `prune_operational_tables` | `() returns void` | `notifications` > 180 d, `webhook_rejections` > 30 d, `payment_events` > 24 mo, `audit_logs` > 24 mo (after chain checkpoint), `security_events` > 12 mo, `login_attempts` > 90 d, `rate_limit_buckets` > 1 d |
-| `purge_participants` | `() returns int` | Deletes `booking_participants` and participant-bearing PDFs (`certificates/<booking_id>/participant-*.pdf`, attendance exports) for `visit_date_end < today - 90 d`; certificate rows keep number/status with `recipient_name = '[dihapus]'`; audited |
+| `purge_participants` | `() returns int` | Deletes `booking_participants` and participant-bearing PDFs (`certificates/<booking_id>/participant-*.pdf`, attendance exports) for `visit_date_end < today - 90 d`; certificate rows keep number/status with `participant_id = NULL`, `recipient_name = '[dihapus]'` and `purged_at` set; audited |
 | `anonymise_booker_pii` | `() returns int` | Unpaid-expired bookings: PII pseudonymised 7 d after expiry; all bookings: PIC name/phone/email replaced by irreversible hashes after `pii_retention_months`; audited |
 | `verify_ledger_chain` / `verify_audit_chain` | `() returns jsonb` | Recomputes hashes; returns `{ok, checked, first_broken_id}`; failure -> critical alert |
 | `log_audit` | trigger function + `(p_action text, p_entity_type text, p_entity_id text, p_metadata jsonb)` helper | Writes `audit_logs` with chain hash |
@@ -2028,7 +2032,7 @@ sequenceDiagram
   SA->>DB: internal.create_booking(mode='pay') [recompute, PRICE_MISMATCH check, reserve quota, expires_at]
   DB-->>SA: { booking_id, booking_code }
   SA->>DB: internal.create_payment_attempt(booking_id) -> order_id GSK-XXXXXXXX-01
-  SA->>MT: POST /snap/v1/transactions (order_id, gross_amount, item_details, enabled_payments QRIS+VA, expiry=minutes until expires_at, callbacks.finish=/reservasi/<code>)
+  SA->>MT: POST /snap/v1/transactions (order_id, gross_amount, item_details, enabled_payments QRIS+VA, expiry=minutes until expires_at, callbacks.finish=/reservasi/{code})
   MT-->>SA: { token, redirect_url }
   SA->>DB: internal.attach_snap_token(payment_id, token, redirect_url, expiry)
   SA->>OB: enqueue booking_created (WA manage link + redirect_url, email view link)
@@ -2050,7 +2054,7 @@ sequenceDiagram
   DB->>OB: enqueue payment_received_ticket (WA + email), admin_new_paid_booking
   WH-->>MT: 200 { ok: true }
   WH->>OB: after(): kick api/jobs/process-notifications
-  V->>SA: /reservasi/<code> polls DB state (query params ignored)
+  V->>SA: /reservasi/{code} polls DB state (query params ignored)
 ```
 
 Error contract: 200 processed / duplicate / ignored; 400 / 413 / 415 malformed; 403 bad signature or merchant; 404 bad path token; 429 rate limited; 503 transient (DB or Status API unreachable) so Midtrans retries. Business failures (mismatch, out-of-order, already paid) are stored and return 200. `api/jobs/payments-poll` every 5 min re-checks `pending` attempts older than 2 min and self-heals paid-without-tickets; `api/jobs/reconcile-payments` nightly re-verifies the last 7 days of settlements and runs the SQL invariants and chain checks.
@@ -2071,7 +2075,7 @@ sequenceDiagram
 
   W->>SA: requestOtpAction({ phone, turnstileToken })
   SA->>DB: internal.issue_phone_otp(phone, 'booking_phone', ip) [caps 5/phone/day, 20/IP/day, breaker 500/day]
-  DB->>DB: insert guest_otps (code_hash), insert notifications (template phone_otp, dedupe_key otp:<id>)
+  DB->>DB: insert guest_otps (code_hash), insert notifications (template phone_otp, dedupe_key otp:{id})
   SA->>JOB: after(): kick worker
   JOB->>DB: internal.claim_notifications(20) FOR UPDATE SKIP LOCKED
   JOB->>WA: POST /v21.0/{PHONE_NUMBER_ID}/messages { template gsk_otp_v1, language id, copy-code button }
@@ -2081,7 +2085,7 @@ sequenceDiagram
   SA->>DB: internal.verify_phone_otp -> phone_verified_at
   Note over DB,JOB: Later: apply_payment_event enqueues payment_received_ticket for whatsapp AND email
   CR->>JOB: every minute, Authorization: Bearer CRON_SECRET (Vault)
-  JOB->>DB: claim — render ticket PDF if missing (documents/bookings/<id>/ticket-<code>.pdf)
+  JOB->>DB: claim — render ticket PDF if missing (documents/bookings/{id}/ticket-{code}.pdf)
   JOB->>WA: template gsk_ticket_issued_v1, header document = 60-min signed URL, body params (code, package, date, session, pax), URL button -> manage link
   JOB->>RS: React Email with view link only (no attachment)
   alt permanent error (131026, 131047, 132xxx)
@@ -2095,6 +2099,8 @@ sequenceDiagram
 ```
 
 Rules: only pre-approved templates are sent (no free-form messages, so the 24-hour window is irrelevant); template parameters are sanitised (no URLs or phone-like digit runs in free text); `whatsapp_enabled` / `email_enabled` are checked at claim time; email is always queued in parallel so a WhatsApp failure never loses a ticket link; critical and high security alerts are also sent out-of-band by a direct Resend call with a 5 s timeout.
+
+Email delivery events (could): Resend bounce and complaint events arrive at `POST api/webhooks/resend`, verified on the raw body with the Svix headers (`svix-id`, `svix-timestamp`, `svix-signature`) against `RESEND_WEBHOOK_SECRET`. The handler is informational only: it updates `notifications.provider_status` for the matching `provider_message_id`, ignores unknown ids, and never changes booking state.
 
 ### 10.3 QR issuance and scanner verification
 
@@ -2110,8 +2116,8 @@ sequenceDiagram
 
   DB->>DB: apply_payment_event inserts tickets_qr per leg (key_id = QR_SIGNING_ACTIVE_KID)
   PDF->>PDF: token = 'GSK.' + kid + '.' + b64url(ticket_id) + '.' + b64url(HMAC-SHA256(key[kid], 'GSK.'+kid+'.'+ticket_id+'|'+rw_id+'|'+valid_on))[0..22]
-  PDF->>G: QR = https://<site>/v/<token> (inline SVG, no PII, no booking_code)
-  PWA->>PWA: officer taps "Scan" — camera decodes — grammar check GSK.<kid>.<id>.<sig> (else "bukan tiket")
+  PDF->>G: QR = https://{site}/v/{token} (inline SVG, no PII, no booking_code)
+  PWA->>PWA: officer taps "Scan" — camera decodes — grammar check GSK.{kid}.{id}.{sig} (else "bukan tiket")
   PWA->>API: { token, attemptId, mode: 'preview' } (session cookie, Origin check)
   API->>API: requireRole staff + AAL2 — verify HMAC in Node (src/lib/qr/verify.ts) — invalid -> result invalid_signature + ticket_scans
   API->>RPC: validate_ticket(ticket_id, attemptId, raw, device) with the staff user's client (auth.uid() flows)
@@ -2123,7 +2129,7 @@ sequenceDiagram
   RPC->>RPC: FOR UPDATE — owns_rw — status issued — booking paid/checked_in — valid_on = today_jkt() — within valid_from..valid_until (grace 60/120) or superadmin override
   RPC->>RPC: ticket used (checked_in_pax, unpaid_pax), leg checked_in, session.checked_in_pax, booking checked_in (first leg), issue_certificates when all legs used, enqueue checked_in_thanks, ticket_scans row
   RPC-->>API: { ok: true, result: 'ok', pax_booked, pax_checked_in }
-  API-->>PWA: green screen "Berhasil check-in: <institution> - <n> orang"
+  API-->>PWA: green screen "Berhasil check-in: {institution} - {n} orang"
   Note over PWA,API: Retry with the same attemptId after an 8 s timeout returns the stored ticket_scans result
 ```
 
@@ -2177,12 +2183,12 @@ sequenceDiagram
   CERT->>DB: released_at = now() when unpaid_pax = 0 (else NULL until superadmin waiver)
   CERT->>OB: enqueue certificate_ready (gsk_certificate_ready_v1 with certificate link 90 d)
   CR->>DB: checked_in bookings with visit_date_end < today -> completed — enqueue review_invite (gsk_review_invite_v1, review link 14 d)
-  G->>DOC: GET /api/documents/certificate/<id> (certificate cookie + last-4 phone)
+  G->>DOC: GET /api/documents/certificate/{id} (certificate cookie + last-4 phone)
   DOC->>DOC: authorise — refuse after visit_date + 90 d
   DOC->>PDF: render lazily on first request (group: 1 page — participants: one multi-page PDF, page extracted per participant)
   PDF->>DB: upsert documents path, rendered_at
   DOC-->>G: 302 to signed URL (600 s), Content-Disposition inline
-  G->>DB: /reservasi/<code>/ulasan -> internal.submit_review (requires used ticket, one per booking) -> pending
+  G->>DB: /reservasi/{code}/ulasan -> internal.submit_review (requires used ticket, one per booking) -> pending
   Note over DB: superadmin moderates on /dashboard/reviews — published rows appear in v_public_reviews
 ```
 
@@ -2279,7 +2285,7 @@ Signature-failure burst for known `order_id`s; amount mismatch; Status API disag
 | A7 | Retention | OTP 24 h; unpaid-expired PII 7 d; participants 90 d after visit; booker PII anonymised 24 mo; financial records 10 y; audit 24 mo | Longer participant retention | `purge_participants`, privacy notice text |
 | A8 | Site language | Indonesian public UI (`lang="id"`), English code/docs, no i18n routing | Bilingual site | Routing, content model, SEO |
 | A9 | Manual payments | Superadmin records `manual_transfer` (proof, dual control); admin_rw records `cash` for walk-ins only | Superadmin only | `mark_booking_paid_manually` role checks |
-| A10 | Data residency (PP 71/2019) — launch blocker to confirm with kelurahan / Diskominfo | Supabase + Vercel Singapore assumed acceptable (private-scope PSE via Pokdarwis/BUMKel or Diskominfo approval) | Indonesian region hosting | Region migration before launch; no design change |
+| A10 | Data residency (PP 71/2019) — launch blocker to confirm with kelurahan / Diskominfo | Supabase + Vercel Singapore assumed acceptable (private-scope PSE, an electronic system operator under PP 71/2019, via Pokdarwis or BUMKel, the kelurahan-owned enterprise, or with Diskominfo approval) | Indonesian region hosting | Region migration before launch; no design change |
 | A11 | Domain | Own domain managed by the project team (for example `eduwisatagisikdrono.id`) with Resend subdomain `mail.<domain>` | `*.semarangkota.go.id` subdomain | Diskominfo must manage DNS, DKIM, DMARC |
 | A12 | Midtrans merchant and settlement account | Held by the kelurahan-designated legal entity (Pokdarwis / BUMKel / kelurahan treasury); owner login = kelurahan head official email + 2FA | Personal account of an officer | Not acceptable: breaks R14 and the payout-vs-ledger control |
 

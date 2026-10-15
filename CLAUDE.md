@@ -20,7 +20,7 @@ The platform is operated by a small municipal team: one Superadmin Kelurahan and
 ### 1.1 How to use this file
 
 - Read this file fully at the start of every coding session. It is the contract for how code is written here.
-- Follow it as imperative instructions. When a rule says "never", there is no exception without a written decision in `docs/PRD.md` §12 (Open decisions).
+- Follow it as imperative instructions. When a rule says "never", there is no exception without a written decision in `docs/PRD.md` §13.1 (Open decisions).
 - Every name in this file (table, column, enum value, route, folder, env var, RPC, bucket, template, tag) is canonical. Use it verbatim. Do not invent synonyms.
 
 ### 1.2 Document map and precedence
@@ -107,6 +107,7 @@ flowchart LR
   SA --> TS
   MT -- "POST /api/webhooks/midtrans/[token]" --> RH
   WA -- "POST /api/webhooks/whatsapp" --> RH
+  RS -- "POST /api/webhooks/resend (could)" --> RH
   CR -- "Bearer CRON_SECRET to /api/jobs/*" --> RH
 ```
 
@@ -345,9 +346,9 @@ export const maxDuration = 15; // webhooks 15, jobs/PDF/export 60
 
 | Handler family | Contract |
 |---|---|
-| Webhooks `api/webhooks/midtrans/[token]`, `api/webhooks/whatsapp` | Outside auth middleware. `await req.text()` first; verify signature on the raw body with `timingSafeEqual`; persist raw event; then process. Body cap 16 KB (Midtrans) / 64 KB (others). 200 for processed/duplicate/ignored; 400/413/415 malformed; 403 bad signature; 404 bad path token; 429; 503 transient so the provider retries. Never 500 for business-rule failures: store, alert, return 200. |
-| Jobs `api/jobs/{process-notifications,payments-poll,reconcile-payments,anomaly-scan,expire-bookings}` | `Authorization: Bearer ${CRON_SECRET}` compared with `timingSafeEqual`, else 401. Idempotent, batch-limited, log `{ job, processed, failed, runId }`. Triggered by pg_cron + pg_net (and `after()` kicks from the Midtrans webhook and check-in). |
-| Documents `api/documents/[kind]/[id]` | Authorise first (staff RLS check or verified guest cookie, plus last-4 of verified phone for participant-bearing PDFs); render lazily on first request; store in `documents`; `Content-Type: application/pdf`, `Content-Disposition: inline`, `Cache-Control: private, no-store`. |
+| Webhooks `api/webhooks/midtrans/[token]`, `api/webhooks/whatsapp`, `api/webhooks/resend` (could) | Outside auth middleware. `await req.text()` first; verify signature on the raw body with `timingSafeEqual`; persist raw event; then process. Body cap 16 KB (Midtrans) / 64 KB (others). 200 for processed/duplicate/ignored; 400/413/415 malformed; 403 bad signature; 404 bad path token; 429; 503 transient so the provider retries. Never 500 for business-rule failures: store, alert, return 200. `api/webhooks/resend` (POST) receives Svix-signed bounce/complaint events (`svix-id`, `svix-timestamp`, `svix-signature` verified with `RESEND_WEBHOOK_SECRET`); informational only: updates `notifications.provider_status` by `provider_message_id`, never touches booking state. |
+| Jobs `api/jobs/{process-notifications,payments-poll,reconcile-payments,anomaly-scan,expire-bookings}` | `Authorization: Bearer ${CRON_SECRET}` compared with `timingSafeEqual`, else 401. Idempotent, batch-limited, log `{ job, processed, failed, runId }`. Triggered by pg_cron + pg_net (and `after()` kicks from the Midtrans webhook and check-in). `process-notifications` dead-letters a row by keeping `status = 'failed'` and setting `notifications.dead_at` (after 8 attempts or a permanent provider error); there is no `dead` status value. |
+| Documents `api/documents/[kind]/[id]` | Authorise first (staff RLS check or verified guest cookie, plus last-4 of verified phone for participant-bearing PDFs); render lazily on first request; store in `documents`; `Content-Type: application/pdf`, `Content-Disposition: inline`, `Cache-Control: private, no-store`. `kind = booklet` is the one public kind: no auth, rate-limited per IP, calls `internal.increment_booklet_download` under the service role (`document-service.ts`), then redirects to the published `public-media` object served as an attachment. No RPC is ever granted to `anon`. |
 | Export `api/export/[kind]` (`visits`, `attendance`, `finance`, `audit`) | Via `rpc_create_export`; superadmin AAL2 (admin_rw: own-RW attendance without contact columns); cap 50 000 rows / 12 months; 10 exports/h/user; watermark footer; 300 s signed URL; auto-delete 24 h. |
 | Uploads `api/uploads/sign`, `api/uploads/finalize` | Signed upload URL (5 min) into `uploads-quarantine/rw-XX/<uuid>`; `finalize` re-encodes with sharp (strip EXIF, max 1600 px, webp, magic-byte check) or scans PDFs with `pdf-lib`, moves to `public-media`, deletes the quarantine object. SVG rejected. |
 
@@ -402,7 +403,7 @@ ESLint `no-restricted-imports` and a CI grep enforce the allow-list. Every impor
 
 ### 6.2 RLS reliance and the `getUser()` rule
 
-- RLS is **enabled and forced** on every table; `revoke all ... from anon, authenticated` then minimal grants; functions revoked from `public` by default. CI pgTAP fails when a table lacks RLS or a function is executable by `anon`/`authenticated` outside the allow-list.
+- RLS is **enabled and forced** on every table; `revoke all ... from anon, authenticated` then minimal grants; functions revoked from `public` by default. CI pgTAP fails when a table lacks RLS, when any function is executable by `anon` (none is: public writes go through Server Actions or route handlers that call `internal.*` under the service role), or when a function is executable by `authenticated` outside the staff-RPC allow-list.
 - Two schemas: `public` (tables, views, staff-callable RPCs) and `internal` (SECURITY DEFINER transition functions, not exposed to PostgREST, callable only by service role / cron).
 - Authorise with `supabase.auth.getUser()` and RLS. Never `getSession()` for authorization, never client-side role checks alone, never `user_metadata` in policies.
 - Claims `app_role`, `app_rw_id`, `claims_version` come from `public.custom_access_token_hook`; helpers `app_role()`, `app_rw_id()`, `is_superadmin()`, `is_admin_rw()`, `is_staff()`, `owns_rw(rw_id)`, `owns_any_rw(rw_ids)`, `aal2()`, `today_jkt()` are wrapped as `(select ...)` in policies.
@@ -463,8 +464,8 @@ pnpm check             # lint + typecheck + unit + types drift
 
 | Bucket | Visibility | Path | Rule |
 |---|---|---|---|
-| `uploads-quarantine` | private | `rw-05/<uuid>`, `rw-08/<uuid>` | Raw admin uploads via 5-min signed upload URL; `finalize` re-encodes/scans then deletes; hourly purge > 24 h |
-| `public-media` | public | `rw-05/...`, `rw-08/...`, `kelurahan/...` | Gallery, products, packages, hero, articles, activity points, booklet PDF + `pages/0001.webp`, avatars; staff write own prefix only |
+| `uploads-quarantine` | private | `rw-05/<uuid>`, `rw-08/<uuid>`, `kelurahan/<uuid>` | Raw admin uploads via 5-min signed upload URL; `finalize` re-encodes/scans then deletes; hourly purge > 24 h |
+| `public-media` | public | `rw-05/...`, `rw-08/...`, `kelurahan/...` | Gallery, products, packages, hero, articles, activity points, booklet PDF + `pages/0001.webp`, avatars; staff write own prefix only (storage policies call `public.storage_owner_prefix_ok(name)`) |
 | `documents` | private | `bookings/<id>/...`, `certificates/<booking_id>/...`, `payouts/<batch>/...`, `exports/<profile_id>/...` | No anon/authenticated policies; server-issued signed URLs only after authorisation: 600 s tickets/certificates, 900 s invoices, 300 s exports, 60 min WhatsApp document header. Signed URLs are never persisted or messaged. |
 
 ---
@@ -534,7 +535,7 @@ Attempts (`internal.create_payment_attempt` + `attach_snap_token`): at most one 
 - Collect only: PIC name, phone (E.164 `+62`), email, institution, optional participant name + group label. Never NIK, birth dates, addresses, photos of participants.
 - Never log phone, email, participant names, tokens, signatures, Snap tokens or full webhook bodies. `pino` redaction paths: `booking.pic_phone`, `booking.pic_email`, `booking.pic_name`, `customer_details.*`, `participants[*].full_name`, `req.headers.authorization`, `req.headers.cookie`, `*.token`, `*.signature_key`, `*.snap_token`. Log ids and hashes, never whole `bookings` / `booking_participants` objects (lint rule). `no-console` outside the logger.
 - PII never appears in URLs, QR payloads, client bundles, public pages (reviews show institution + first name only), error messages or Sentry (`sendDefaultPii: false`).
-- Retention is enforced by pg_cron (`purge/retention 02:00 WIB`): participants 90 d after the visit (including participant-bearing PDFs), unpaid-expired PII 7 d, booker PII anonymised after 24 months. Pages that show PII are `force-dynamic` with `private, no-store`.
+- Retention is enforced by pg_cron (`purge/retention 02:00 WIB` running `internal.purge_participants` and `internal.anonymise_booker_pii`): participants 90 d after the visit (including participant-bearing PDFs), unpaid-expired PII 7 d, booker PII anonymised after `pii_retention_months` (24). Pages that show PII are `force-dynamic` with `private, no-store`.
 - Every PII reveal and export is audited (`security_events` `pii_revealed`, `export_downloaded`).
 
 ### 7.7 Secrets & env — owner `src/lib/env.ts`
@@ -699,7 +700,7 @@ PRD requirement cited; migration + RLS + pgTAP merged; types regenerated; valida
 | `SENTRY_AUTH_TOKEN` | CI | Source-map upload |
 | `BACKUP_AGE_PUBLIC_KEY`, `R2_*` | CI | Weekly encrypted off-site dump |
 
-Side: P = public bundle (`NEXT_PUBLIC_*` only), S = server-only (flagged Sensitive in Vercel), CI = GitHub Actions secret only. Runtime toggles are not env vars; they live in `site_settings` (`booking_enabled, whatsapp_enabled, email_enabled, maintenance_mode, rate_limit_profile, checkin.grace_before_minutes, checkin.grace_after_minutes, booking.hold_minutes_individual, booking.hold_hours_institution, booking.max_pax, pricing.min_price_per_pax, pii_retention_months, finance.expected_payout_account_masked`).
+Side: P = public bundle (`NEXT_PUBLIC_*` only), S = server-only (flagged Sensitive in Vercel), CI = GitHub Actions secret only. Runtime toggles are not env vars; they live in `site_settings` (keys per `docs/PRD.md` §8.6: `booking_enabled, whatsapp_enabled, email_enabled, maintenance_mode, rate_limit_profile, checkin.grace_before_minutes, checkin.grace_after_minutes, booking.hold_minutes_individual, booking.hold_hours_institution, booking.quotation_valid_days, booking.min_lead_hours, booking.max_advance_days, booking.max_pax, pricing.min_price_per_pax, pii_retention_months, finance.expected_payout_account_masked, contact.whatsapp_number, contact.email, kelurahan.address, kelurahan.signatory_name, kelurahan.signatory_title, certificate.template_version, seo.default_description`).
 
 ---
 
@@ -798,7 +799,7 @@ Show the migration first and wait for review.
 8. Never treat client-side QR decoding as proof; never mark a ticket used from the client; never build an offline check-in queue.
 9. Never log or print PII, secrets, tokens, signatures or full webhook bodies.
 10. Never hand-edit `src/db/types.ts` or an applied migration.
-11. Never add a table without RLS enabled + forced, grants, policies and a pgTAP test; never create a public read policy without `status = 'published'`.
+11. Never add a table without RLS enabled + forced, grants, policies and a pgTAP test; never create a public read policy without `status = 'published'`; never grant `execute` on any function to `anon`.
 12. Never put admin writes in Client Components; never fetch staff data with `src/lib/supabase/client.ts`.
 13. Never use `any`, `as unknown as`, `@ts-ignore` or `!` on external data to pass typecheck.
 14. Never use `dangerouslySetInnerHTML`; never store HTML for rich text; never accept SVG uploads.
@@ -826,8 +827,8 @@ Do not guess, do not invent a placeholder name, and do not disable a lint rule t
 
 | Item | Default in force | Decided in |
 |---|---|---|
-| Vercel plan (Hobby vs Pro) | pg_cron + pg_net call `api/jobs/*`; no `vercel.json` crons required | `docs/PRD.md` §12 |
-| Data residency (PP 71/2019 scope) | Supabase + Vercel Singapore; launch blocker to confirm with Diskominfo | `docs/PRD.md` §12, `docs/Security.md` |
+| Vercel plan (Hobby vs Pro) | pg_cron + pg_net call `api/jobs/*`; no `vercel.json` crons required | `docs/PRD.md` §13.1 |
+| Data residency (PP 71/2019 scope) | Supabase + Vercel Singapore; launch blocker to confirm with Diskominfo | `docs/PRD.md` §13.1 (A10), `docs/Security.md` |
 | Signed commits on `main` | Should; enabled once every developer has SSH signing | `docs/Security.md` |
 
 ---
@@ -850,7 +851,7 @@ Do not guess, do not invent a placeholder name, and do not disable a lint rule t
 | Finance | `revenue_share_rules`, `revenue_share_rule_lines`, `revenue_share_entries`, `payout_batches` |
 | Ops | `notifications`, `security_events`, `security_alerts`, `exports`, `dsr_requests`, `audit_logs`, `login_attempts`, `rate_limit_buckets` |
 
-Codes: `booking_code` = `GSK-` + 8 chars Crockford base32 (`GSK-7F3K9Q2M`); `payments.order_id` = `<booking_code>-NN`; `ticket_code` = `<booking_code>-<rw 2 digits>`; `SP/GSK/YYYY/MM/NNNN` quotation, `INV/GSK/YYYY/MM/NNNN` invoice, `KW/GSK/YYYY/MM/NNNN` receipt, `CN/GSK/YYYY/NNNN` credit note, `SERT/GSK/YYYY/NNNNN` certificate.
+Codes: `booking_code` = `GSK-` + 8 chars Crockford base32 (`GSK-7F3K9Q2M`); `payments.order_id` = `<booking_code>-NN`; `ticket_code` = `<booking_code>-<rw 2 digits>`; `SP/GSK/YYYY/MM/NNNN` quotation, `INV/GSK/YYYY/MM/NNNN` invoice, `KW/GSK/YYYY/MM/NNNN` receipt, `CN/GSK/YYYY/NNNN` credit note, `SERT/GSK/YYYY/NNNNN` certificate; `quotations.verify_code` and `certificates.verify_code` = 10 chars Crockford base32, random, used only in the public verify URL `/verifikasi/[code]`.
 
 ### A.2 Enums
 
@@ -895,6 +896,8 @@ Codes: `booking_code` = `GSK-` + 8 chars Crockford base32 (`GSK-7F3K9Q2M`); `pay
 | `export_kind` | `visits \| attendance \| finance \| audit` |
 | `alert_severity` | `info \| medium \| high \| critical` |
 
+`notification_status` has no `dead` value: a dead-lettered notification keeps `status = 'failed'` with `notifications.dead_at` set (8 attempts exhausted or a permanent provider error) and raises a `security_events` row `notification_dead`.
+
 ### A.3 Routes
 
 | Group | Routes |
@@ -903,19 +906,19 @@ Codes: `booking_code` = `GSK-` + 8 chars Crockford base32 (`GSK-7F3K9Q2M`); `pay
 | Booking (force-dynamic, noindex) | `/pesan/[packageSlug]?step=jadwal\|data\|tambahan\|ringkasan`, `/reservasi/cari`, `/reservasi/[bookingCode]`, `/reservasi/[bookingCode]/bayar`, `/reservasi/[bookingCode]/tiket`, `/reservasi/[bookingCode]/sertifikat`, `/reservasi/[bookingCode]/ulasan` |
 | Auth | `/login`, `/forgot-password`, `/reset-password`, `/mfa/enroll`, `/mfa/verify`, `/onboarding`, `auth/callback`, `auth/signout` |
 | Admin `(admin)/dashboard` | `/dashboard`, `bookings`, `bookings/[id]`, `sessions`, `scanner`, `attendance`, `certificates`, `packages`, `packages/new`, `packages/[id]/edit`, `products` (same pattern), `galleries`, `articles` (same pattern), `booklets`, `schedules`, `activity-points`, `pages`, `reviews`, `finance`, `finance/revenue-share`, `finance/reconciliation`, `finance/adjustments`, `exports`, `users`, `settings`, `settings/hero-banners`, `audit-logs`, `security-alerts`, `profile` |
-| API | `api/webhooks/midtrans/[token]`, `api/webhooks/whatsapp`, `api/jobs/process-notifications`, `api/jobs/payments-poll`, `api/jobs/reconcile-payments`, `api/jobs/anomaly-scan`, `api/jobs/expire-bookings`, `api/tickets/verify`, `api/documents/[kind]/[id]`, `api/export/[kind]`, `api/uploads/sign`, `api/uploads/finalize`, `api/health`, `sitemap.ts`, `robots.ts`, `manifest.ts`, `opengraph-image.tsx` |
+| API | `api/webhooks/midtrans/[token]`, `api/webhooks/whatsapp`, `api/webhooks/resend` (could), `api/jobs/process-notifications`, `api/jobs/payments-poll`, `api/jobs/reconcile-payments`, `api/jobs/anomaly-scan`, `api/jobs/expire-bookings`, `api/tickets/verify`, `api/documents/[kind]/[id]`, `api/export/[kind]`, `api/uploads/sign`, `api/uploads/finalize`, `api/health`, `sitemap.ts`, `robots.ts`, `manifest.ts`, `opengraph-image.tsx` |
 
 ### A.4 RPCs, views, buckets, jobs
 
 | Kind | Names |
 |---|---|
 | Staff RPCs (`public`, re-check scope) | `validate_ticket`, `check_in_ticket`, `undo_check_in`, `mark_booking_paid_manually`, `cancel_booking`, `extend_booking_hold`, `reactivate_booking`, `record_refund`, `resolve_booking_review`, `issue_certificates`, `revoke_ticket`, `revoke_certificate`, `settle_revenue_entries`, `revenue_recap`, `visit_stats`, `generate_visit_sessions`, `request_notification_resend`, `rpc_reveal_booking_contact`, `rpc_get_participants`, `rpc_create_export`, `rpc_log_ui_event`, `propose_adjustment`, `approve_adjustment`, `apply_adjustment`, `set_staff_role`, `set_staff_status`, `reset_staff_mfa` |
-| Internal functions (`internal`, service role / cron) | `create_booking`, `reserve_session_quota`, `release_booking_quota`, `create_payment_attempt`, `attach_snap_token`, `apply_payment_event`, `record_payment_failure`, `create_quotation`, `next_document_number`, `allocate_revenue_share`, `reverse_revenue_share`, `issue_phone_otp`, `verify_phone_otp`, `submit_review`, `expire_stale_bookings`, `close_past_bookings`, `enqueue_visit_reminders`, `reconcile_session_counters`, `claim_notifications`, `complete_notification`, `fail_notification`, `rate_limit_hit`, `prune_operational_tables`, `verify_ledger_chain`, `verify_audit_chain`, `log_audit` |
+| Internal functions (`internal`, service role / cron) | `create_booking`, `reserve_session_quota`, `release_booking_quota`, `create_payment_attempt`, `attach_snap_token`, `apply_payment_event`, `record_payment_failure`, `create_quotation`, `next_document_number`, `allocate_revenue_share`, `reverse_revenue_share`, `issue_phone_otp`, `verify_phone_otp`, `submit_review`, `expire_stale_bookings`, `close_past_bookings`, `enqueue_visit_reminders`, `reconcile_session_counters`, `increment_booklet_download`, `claim_notifications`, `complete_notification`, `fail_notification`, `rate_limit_hit`, `prune_operational_tables`, `purge_participants`, `anonymise_booker_pii`, `verify_ledger_chain`, `verify_audit_chain`, `log_audit` |
 | Auth hooks | `public.custom_access_token_hook`, `public.hook_password_verification_attempt` |
-| RLS helpers | `app_role()`, `app_rw_id()`, `is_superadmin()`, `is_admin_rw()`, `is_staff()`, `owns_rw(rw_id)`, `owns_any_rw(rw_ids)`, `aal2()`, `today_jkt()` |
+| RLS and storage helpers (`public`) | `app_role()`, `app_rw_id()`, `is_superadmin()`, `is_admin_rw()`, `is_staff()`, `owns_rw(rw_id)`, `owns_any_rw(rw_ids)`, `aal2()`, `today_jkt()`, `storage_owner_prefix_ok(name)` |
 | Views | `v_session_availability`, `v_public_reviews`, `v_bookings_staff`, `v_booking_admin`, `v_attendance_today`, `v_booking_export`, `v_revenue_recap_daily`, `v_revenue_recap_by_party`, `v_revenue_recap_by_booking`, `v_finance_daily` |
 | Buckets | `uploads-quarantine`, `public-media`, `documents` |
-| pg_cron jobs | `expire_stale_bookings */5`, `process-notifications * * * * *` (pg_net), `payments-poll */5` (pg_net), `enqueue_visit_reminders 09:00 WIB`, `close_past_bookings + reconcile_session_counters 23:30 WIB`, `generate_visit_sessions 00:00 WIB`, `reconcile-payments 02:30 WIB` (pg_net), `anomaly-scan */5` (pg_net), `purge/retention 02:00 WIB`, `prune_operational_tables monthly` |
+| pg_cron jobs | `expire_stale_bookings */5`, `process-notifications * * * * *` (pg_net), `payments-poll */5` (pg_net), `enqueue_visit_reminders 09:00 WIB`, `close_past_bookings + reconcile_session_counters 23:30 WIB`, `generate_visit_sessions 00:00 WIB`, `reconcile-payments 02:30 WIB` (pg_net), `anomaly-scan */5` (pg_net), `purge/retention 02:00 WIB` (`purge_participants` + `anonymise_booker_pii` + `guest_otps` / `uploads-quarantine` > 24 h), `prune rate_limit_buckets hourly`, `prune_operational_tables monthly` |
 | WhatsApp templates (language `id`) | `gsk_otp_v1`, `gsk_booking_created_v1`, `gsk_quotation_ready_v1`, `gsk_payment_reminder_v1`, `gsk_ticket_issued_v1`, `gsk_booking_expired_v1`, `gsk_booking_cancelled_v1`, `gsk_visit_reminder_d1_v1`, `gsk_checked_in_thanks_v1`, `gsk_certificate_ready_v1`, `gsk_review_invite_v1`, `gsk_refund_processed_v1`, `gsk_admin_new_paid_booking_v1`, `gsk_security_alert_v1` |
 | Revalidation tags | `packages:<rw\|combo>`, `sessions:<rwId>:<YYYY-MM>`, `products:<rwId>`, `galleries:<rwId>`, `articles`, `banners`, `booklets`, `schedules`, `reviews`, `settings`, `booking:<id>` |
 | Security control prefixes | `PAY, WH, REC, BOOK, AUTH, AZ, GUEST, DATA, PDP, APP, HDR, RL, UPL, SEC, DB, QR, SC, OPS, MON, STAFF, DOC, RES` |
