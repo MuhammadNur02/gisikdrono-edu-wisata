@@ -8,7 +8,7 @@ const withBundleAnalyzer = bundleAnalyzer({
   enabled: process.env.npm_lifecycle_event === 'analyze',
 });
 
-const isProductionDeployment = process.env.VERCEL_ENV === 'production';
+const isProductionDeployment = publicEnv.VERCEL_ENV === 'production';
 const supabaseUrl = new URL(publicEnv.NEXT_PUBLIC_SUPABASE_URL);
 
 // docs/Security.md §8.2. Permissions-Policy and the CSP are per request, so they live in src/middleware.ts.

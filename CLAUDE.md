@@ -161,7 +161,7 @@ src/
     email/                     React Email templates (links only, never attachments)
     pdf/                       quotation.tsx, invoice.tsx, receipt.tsx, ticket.tsx, certificate.tsx, fonts/
     seo/ images/ motion/ validations/ utils/ copy/id.ts
-    rate-limit.ts env.ts public-env.ts logger.ts errors.ts turnstile.ts
+    rate-limit.ts env.ts public-env.ts csp.ts logger.ts errors.ts turnstile.ts
   server/
     actions/                   Server Actions, one file per domain ('use server')
     services/                  orchestration, one file per domain (<domain>-service.ts), booking-state.ts
@@ -570,7 +570,7 @@ Attempts (`internal.create_payment_attempt` + `attach_snap_token`): at most one 
 
 ### 7.7 Secrets & env — owner `src/lib/env.ts`
 
-- All env access goes through `src/lib/env.ts` (`serverEnv`, behind `import 'server-only'`) and `src/lib/public-env.ts` (`publicEnv`, `NEXT_PUBLIC_*` only, safe for client components because Next.js inlines those names). `process.env` elsewhere is an ESLint error; the one exception is `next.config.ts`, which runs at build time and reads only build switches (`VERCEL_ENV`, `npm_lifecycle_event`).
+- All env access goes through `src/lib/env.ts` (`serverEnv`, behind `import 'server-only'`) and `src/lib/public-env.ts` (`publicEnv`, `NEXT_PUBLIC_*` only, safe for client components because Next.js inlines those names). `process.env` elsewhere is an ESLint error; the one exception is `next.config.ts`, which runs at build time and reads only the `npm_lifecycle_event` build switch. `NODE_ENV` and `VERCEL_ENV` come from `publicEnv` as shared values.
 - Fail-fast matrix: `VERCEL_ENV=production` <=> `MIDTRANS_IS_PRODUCTION=true` <=> keys prefixed `Mid-server-` / `Mid-client-`; otherwise `SB-` prefixes. Any `NEXT_PUBLIC_` name containing `SECRET|KEY|TOKEN` outside the known public keys fails CI.
 - `pnpm check:secrets` scans `.next/static` for `Mid-server-`, `service_role`, `MIDTRANS_SERVER_KEY` after build. gitleaks runs pre-commit and in CI.
 - `experimental.taint` + `experimental_taintUniqueValue` on the service key and `CRON_SECRET`. Secrets are never pasted into issues, chats, docs or seed files.

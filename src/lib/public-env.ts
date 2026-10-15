@@ -14,7 +14,14 @@ export const publicEnv = createEnv({
     NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: z.string().regex(INDONESIAN_MOBILE_E164),
     NEXT_PUBLIC_SENTRY_DSN: z.url().optional(),
   },
+  // Set by Node and Vercel, not by us. VERCEL_ENV is only defined on the server side.
+  shared: {
+    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    VERCEL_ENV: z.enum(['production', 'preview', 'development']).optional(),
+  },
   experimental__runtimeEnv: {
+    NODE_ENV: process.env.NODE_ENV,
+    VERCEL_ENV: process.env.VERCEL_ENV,
     NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,

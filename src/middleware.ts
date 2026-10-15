@@ -3,11 +3,33 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 import { AUTH_COOKIE_OPTIONS, DASHBOARD_PATH, LOGIN_PATH, NEXT_PARAM } from '@/config/auth';
+import { buildContentSecurityPolicy, permissionsPolicyFor } from '@/lib/csp';
 import { publicEnv } from '@/lib/public-env';
+
+const NONCE_BYTES = 16;
+
+type ContinueRequest = () => NextResponse;
+
+function createNonce(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(NONCE_BYTES));
+  return btoa(String.fromCharCode(...bytes));
+}
+
+// Next.js reads the nonce from the request's CSP header and stamps it on its own script tags.
+function forwardWithNonce(request: NextRequest, nonce: string, csp: string): NextResponse {
+  const headers = new Headers(request.headers);
+  headers.set('x-nonce', nonce);
+  headers.set('Content-Security-Policy', csp);
+  return NextResponse.next({ request: { headers } });
+}
 
 // Refreshes the Supabase session cookie and returns whether someone is signed in. getUser() asks
 // Supabase Auth, so an expired or forged cookie never counts as a user (CLAUDE.md §6.2).
-async function refreshSession(request: NextRequest, response: { current: NextResponse }) {
+async function refreshSession(
+  request: NextRequest,
+  response: { current: NextResponse },
+  continueRequest: ContinueRequest,
+) {
   const supabase = createServerClient(
     publicEnv.NEXT_PUBLIC_SUPABASE_URL,
     publicEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
@@ -17,7 +39,7 @@ async function refreshSession(request: NextRequest, response: { current: NextRes
         getAll: () => request.cookies.getAll(),
         setAll: (cookiesToSet) => {
           for (const { name, value } of cookiesToSet) request.cookies.set(name, value);
-          response.current = NextResponse.next({ request });
+          response.current = continueRequest();
           for (const { name, value, options } of cookiesToSet) {
             response.current.cookies.set(name, value, options);
           }
@@ -34,18 +56,43 @@ function isDashboardPath(pathname: string): boolean {
 }
 
 // A convenience redirect only; who may see what is decided by the guards and RLS (CLAUDE.md §2.3).
-function redirectToLogin(request: NextRequest): NextResponse {
+// The refreshed (or cleared) auth cookies travel along so the browser does not keep a stale session.
+function redirectToLogin(request: NextRequest, refreshed: NextResponse): NextResponse {
   const loginUrl = new URL(LOGIN_PATH, request.url);
   loginUrl.searchParams.set(NEXT_PARAM, `${request.nextUrl.pathname}${request.nextUrl.search}`);
-  return NextResponse.redirect(loginUrl);
+  const redirect = NextResponse.redirect(loginUrl);
+  for (const cookie of refreshed.cookies.getAll()) redirect.cookies.set(cookie);
+  return redirect;
+}
+
+// docs/Security.md §8.2: staging only reports CSP violations until the policy is proven (P5.4.01).
+function withSecurityHeaders(response: NextResponse, pathname: string, csp: string) {
+  const cspHeader =
+    publicEnv.VERCEL_ENV === 'preview'
+      ? 'Content-Security-Policy-Report-Only'
+      : 'Content-Security-Policy';
+  response.headers.set(cspHeader, csp);
+  response.headers.set('Permissions-Policy', permissionsPolicyFor(pathname));
+  return response;
 }
 
 export async function middleware(request: NextRequest) {
-  const response = { current: NextResponse.next({ request }) };
-  const isSignedIn = await refreshSession(request, response);
+  const nonce = createNonce();
+  const csp = buildContentSecurityPolicy({
+    nonce,
+    supabaseUrl: publicEnv.NEXT_PUBLIC_SUPABASE_URL,
+    isDevelopment: publicEnv.NODE_ENV !== 'production',
+  });
+  const continueRequest = () => forwardWithNonce(request, nonce, csp);
+  const response = { current: continueRequest() };
+  const isSignedIn = await refreshSession(request, response, continueRequest);
 
-  if (!isSignedIn && isDashboardPath(request.nextUrl.pathname)) return redirectToLogin(request);
-  return response.current;
+  const { pathname } = request.nextUrl;
+  const result =
+    !isSignedIn && isDashboardPath(pathname)
+      ? redirectToLogin(request, response.current)
+      : response.current;
+  return withSecurityHeaders(result, pathname, csp);
 }
 
 export const config = {
