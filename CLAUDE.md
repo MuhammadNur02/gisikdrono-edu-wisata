@@ -65,8 +65,9 @@ The platform is operated by a small municipal team: one Superadmin Kelurahan and
 | Scanner / PWA | `@serwist/next`, `@yudiel/react-qr-scanner` over `barcode-detector` (native `BarcodeDetector`, ZXing-WASM fallback) | Online-only validation |
 | Bot protection & limits | Cloudflare Turnstile; Postgres `rate_limit_buckets` via `internal.rate_limit_hit` | No external rate-limit vendor |
 | Observability | `pino` JSON logs with redaction, `@sentry/nextjs` (tunnel `/monitoring`, `sendDefaultPii: false`), `@vercel/analytics` | `/api/health` for uptime monitor |
-| Testing | Vitest, Playwright, pgTAP (`supabase test db`) | See §9 |
+| Testing | Vitest (`@vitest/coverage-v8`), Playwright, pgTAP (`supabase test db`) | See §9; projects `unit` (`src/**/*.test.ts`) and `integration` (`tests/integration`) in `vitest.config.ts` |
 | Lint, format, hooks | ESLint 9 flat config (`eslint-config-next` loaded through `@eslint/eslintrc` `FlatCompat`, `typescript-eslint`, `eslint-plugin-check-file` for kebab-case filenames), Prettier + `prettier-plugin-tailwindcss`, Husky + `lint-staged`, `@commitlint/cli` + `@commitlint/config-conventional`, gitleaks | Husky is enabled once per clone with `pnpm exec husky` because `ignore-scripts=true` skips `prepare`; see §9.2 |
+| Scripts and local tools | `tsx` for `scripts/*.ts`, `react-email` CLI for `pnpm email:preview`, `@next/bundle-analyzer` for `pnpm analyze`; Supabase CLI and `cloudflared` installed globally | The `supabase` npm package is not used because its binary download is an install script, which `ignore-scripts=true` blocks; `.npmrc` `shell-emulator=true` makes scripts run the same on Windows and Linux |
 | Hosting | Vercel (Production from `main`; Preview = staging Supabase + Midtrans sandbox) | pg_cron + pg_net drive scheduled jobs |
 
 ### 2.2 Architecture
