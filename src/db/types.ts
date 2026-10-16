@@ -34,7 +34,240 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      profiles: {
+        Row: {
+          avatar_path: string | null
+          claims_version: number
+          created_at: string
+          created_by: string | null
+          email: string
+          full_name: string
+          id: string
+          is_active: boolean
+          last_login_at: string | null
+          mfa_required: boolean
+          phone: string | null
+          role: Database["public"]["Enums"]["app_role"]
+          rw_id: number | null
+          updated_at: string
+        }
+        Insert: {
+          avatar_path?: string | null
+          claims_version?: number
+          created_at?: string
+          created_by?: string | null
+          email: string
+          full_name: string
+          id: string
+          is_active?: boolean
+          last_login_at?: string | null
+          mfa_required?: boolean
+          phone?: string | null
+          role?: Database["public"]["Enums"]["app_role"]
+          rw_id?: number | null
+          updated_at?: string
+        }
+        Update: {
+          avatar_path?: string | null
+          claims_version?: number
+          created_at?: string
+          created_by?: string | null
+          email?: string
+          full_name?: string
+          id?: string
+          is_active?: boolean
+          last_login_at?: string | null
+          mfa_required?: boolean
+          phone?: string | null
+          role?: Database["public"]["Enums"]["app_role"]
+          rw_id?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rw_units: {
+        Row: {
+          code: string
+          contact_email: string | null
+          contact_phone: string | null
+          created_at: string
+          description_md: string | null
+          hero_image_path: string | null
+          id: number
+          is_active: boolean
+          map_lat: number | null
+          map_lng: number | null
+          name: string
+          slug: string
+          sort_order: number
+          tagline: string | null
+          theme_label: string
+          treasury_account_holder: string | null
+          treasury_account_number: string | null
+          treasury_bank_name: string | null
+          updated_at: string
+          vision_md: string | null
+        }
+        Insert: {
+          code: string
+          contact_email?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          description_md?: string | null
+          hero_image_path?: string | null
+          id: number
+          is_active?: boolean
+          map_lat?: number | null
+          map_lng?: number | null
+          name: string
+          slug: string
+          sort_order?: number
+          tagline?: string | null
+          theme_label: string
+          treasury_account_holder?: string | null
+          treasury_account_number?: string | null
+          treasury_bank_name?: string | null
+          updated_at?: string
+          vision_md?: string | null
+        }
+        Update: {
+          code?: string
+          contact_email?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          description_md?: string | null
+          hero_image_path?: string | null
+          id?: number
+          is_active?: boolean
+          map_lat?: number | null
+          map_lng?: number | null
+          name?: string
+          slug?: string
+          sort_order?: number
+          tagline?: string | null
+          theme_label?: string
+          treasury_account_holder?: string | null
+          treasury_account_number?: string | null
+          treasury_bank_name?: string | null
+          updated_at?: string
+          vision_md?: string | null
+        }
+        Relationships: []
+      }
+      site_settings: {
+        Row: {
+          description: string | null
+          is_public: boolean
+          key: string
+          updated_at: string
+          updated_by: string | null
+          value: Json
+        }
+        Insert: {
+          description?: string | null
+          is_public?: boolean
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+          value: Json
+        }
+        Update: {
+          description?: string | null
+          is_public?: boolean
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_settings_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staff_invites: {
+        Row: {
+          accepted_at: string | null
+          accepted_user_id: string | null
+          created_at: string
+          created_by: string
+          email: string
+          expires_at: string
+          id: string
+          invite_code_hash: string
+          revoked_at: string | null
+          role: Database["public"]["Enums"]["app_role"]
+          rw_id: number | null
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_user_id?: string | null
+          created_at?: string
+          created_by: string
+          email: string
+          expires_at: string
+          id?: string
+          invite_code_hash: string
+          revoked_at?: string | null
+          role: Database["public"]["Enums"]["app_role"]
+          rw_id?: number | null
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_user_id?: string | null
+          created_at?: string
+          created_by?: string
+          email?: string
+          expires_at?: string
+          id?: string
+          invite_code_hash?: string
+          revoked_at?: string | null
+          role?: Database["public"]["Enums"]["app_role"]
+          rw_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_invites_accepted_user_id_fkey"
+            columns: ["accepted_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_invites_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_invites_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
