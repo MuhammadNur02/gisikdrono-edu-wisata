@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(421);
+select plan(427);
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -1869,10 +1869,10 @@ select lives_ok(
 );
 reset role;
 select is(
-  (select role || ' ' || rw_id || ' ' || is_active || ' v' || claims_version from public.profiles
+  (select role || ' ' || coalesce(rw_id::text, '-') || ' ' || is_active || ' v' || claims_version from public.profiles
    where id = '00000000-0000-4000-8000-000000000002'),
-  'admin_rw 5 false v6',
-  'the profile moved, was deactivated, and its claims_version went up twice'
+  'none - false v6',
+  'the profile moved, then lost its role and RW when it was deactivated; claims_version went up at each step'
 );
 select is(
   (select count(*)::int from auth.sessions where user_id = '00000000-0000-4000-8000-000000000002')
@@ -1883,7 +1883,8 @@ select is(
 select is(
   (select jsonb_object_agg(event_type, details) from public.security_events
    where entity_id = '00000000-0000-4000-8000-000000000002' and event_type in ('role_changed', 'staff_disabled')),
-  '{"role_changed": {"from_role": "admin_rw", "to_role": "admin_rw", "from_rw_id": 8, "to_rw_id": 5}, "staff_disabled": {}}'::jsonb,
+  '{"role_changed": {"from_role": "admin_rw", "to_role": "admin_rw", "from_rw_id": 8, "to_rw_id": 5},
+    "staff_disabled": {"from_role": "admin_rw", "from_rw_id": 5}}'::jsonb,
   'both changes raise security events'
 );
 select is(
@@ -1911,6 +1912,18 @@ set local role authenticated;
 select lives_ok(
   $$select public.set_staff_status('00000000-0000-4000-8000-000000000002', true, 'Kembali bertugas')$$,
   'a fresh check reactivates the admin'
+);
+reset role;
+select is(
+  (select role || ' ' || is_active from public.profiles where id = '00000000-0000-4000-8000-000000000002'),
+  'none true',
+  'reactivation only reopens the account; the role does not come back with it (review L9)'
+);
+set local role authenticated;
+select is(
+  public.set_staff_role('00000000-0000-4000-8000-000000000002', 'admin_rw', 5::smallint) ->> 'stage',
+  'applied',
+  'it comes back through set_staff_role'
 );
 reset role;
 select set_config('request.jwt.claims', '', true);
@@ -1991,7 +2004,8 @@ select is(
 
 -- A request is only good for a week, and it can be called off.
 grant execute on function public.reset_staff_mfa(uuid), public.cancel_staff_mfa_reset(uuid),
-  public.cancel_superadmin_promotion(uuid), public.set_staff_role(uuid, public.app_role, smallint) to authenticated;
+  public.cancel_superadmin_promotion(uuid), public.set_staff_role(uuid, public.app_role, smallint),
+  public.set_staff_status(uuid, boolean, text) to authenticated;
 select set_config('request.jwt.claims', (select claims from step_up_claims where method = 'totp' and seconds_ago = 60), true);
 set local role authenticated;
 select is(
@@ -2111,10 +2125,31 @@ select is(
   'applied',
   'any other role change still applies at once'
 );
+
+-- A superadmin who was deactivated comes back without the role (review L9).
+select lives_ok(
+  $$select public.set_staff_status('00000000-0000-4000-8000-000000000003', false, 'Cuti panjang')$$,
+  'the second superadmin is deactivated'
+);
+select lives_ok(
+  $$select public.set_staff_status('00000000-0000-4000-8000-000000000003', true, 'Kembali dari cuti')$$,
+  'and reactivated'
+);
+select is(
+  public.set_staff_role('00000000-0000-4000-8000-000000000003', 'superadmin') ->> 'stage',
+  'requested',
+  'so being superadmin again is a new promotion, which waits 24 hours'
+);
 reset role;
+select is(
+  (select role || ' ' || is_active from public.profiles where id = '00000000-0000-4000-8000-000000000003'),
+  'none true',
+  'and meanwhile the reactivated account holds no role'
+);
 select set_config('request.jwt.claims', '', true);
 revoke execute on function public.reset_staff_mfa(uuid), public.cancel_staff_mfa_reset(uuid),
-  public.cancel_superadmin_promotion(uuid), public.set_staff_role(uuid, public.app_role, smallint) from authenticated;
+  public.cancel_superadmin_promotion(uuid), public.set_staff_role(uuid, public.app_role, smallint),
+  public.set_staff_status(uuid, boolean, text) from authenticated;
 
 -- ===== Service-role entry points =====
 

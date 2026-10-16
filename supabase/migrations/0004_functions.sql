@@ -2319,34 +2319,47 @@ begin
 end;
 $$;
 
--- Deactivates or reactivates a staff member, with a reason for the audit log. Deactivation ends every
--- session and removes every MFA factor, so a returning officer enrols again; banning the Auth user is
--- the staff service's next step through the Auth admin API (docs/Security.md §5.6).
+-- Deactivates or reactivates a staff member, with a reason for the audit log. Deactivation takes the
+-- role and RW away, ends every session, removes every MFA factor and drops any pending request, so a
+-- returning officer enrols again and gets a role back only through set_staff_role, where a former
+-- superadmin waits 24 hours like any promotion (review L9); reactivation only reopens the account.
+-- Banning the Auth user is the staff service's next step through the Auth admin API (docs/Security.md
+-- §5.6).
 create function public.set_staff_status(p_user_id uuid, p_is_active boolean, p_reason text) returns void
   language plpgsql security definer
   set search_path = ''
 as $$
 declare
   previous_settings jsonb;
-  staff_rw_id smallint;
+  previous record;
 begin
   perform internal.require_superadmin_step_up();
   if p_is_active is null or length(btrim(coalesce(p_reason, ''))) not between 3 and 300 then
     raise exception 'a status change needs a reason of 3 to 300 characters' using errcode = '22023';
   end if;
-
-  previous_settings := internal.push_settings('{"app.privileged_rpc": "on"}');
-  update public.profiles set is_active = p_is_active where id = p_user_id returning rw_id into staff_rw_id;
+  select p.role, p.rw_id into previous from public.profiles p where p.id = p_user_id;
   if not found then
     raise exception 'no staff profile %', p_user_id using errcode = 'P0002';
   end if;
+
+  previous_settings := internal.push_settings('{"app.privileged_rpc": "on"}');
+  update public.profiles
+  set is_active = p_is_active,
+      role = case when p_is_active then role else 'none' end,
+      rw_id = case when p_is_active then rw_id end,
+      mfa_reset_requested_at = case when p_is_active then mfa_reset_requested_at end,
+      mfa_reset_requested_by = case when p_is_active then mfa_reset_requested_by end,
+      promotion_requested_at = case when p_is_active then promotion_requested_at end,
+      promotion_requested_by = case when p_is_active then promotion_requested_by end
+  where id = p_user_id;
   perform internal.restore_settings(previous_settings);
 
   if not p_is_active then
     delete from auth.sessions where user_id = p_user_id;
     delete from auth.mfa_factors where user_id = p_user_id;
-    insert into public.security_events (event_type, severity, actor_id, rw_id, entity_type, entity_id)
-    values ('staff_disabled', 'high', auth.uid(), staff_rw_id, 'profiles', p_user_id::text);
+    insert into public.security_events (event_type, severity, actor_id, rw_id, entity_type, entity_id, details)
+    values ('staff_disabled', 'high', auth.uid(), previous.rw_id, 'profiles', p_user_id::text,
+            jsonb_build_object('from_role', previous.role, 'from_rw_id', previous.rw_id));
   end if;
   perform internal.log_audit(case when p_is_active then 'staff.reactivated' else 'staff.deactivated' end,
     'profiles', p_user_id::text, jsonb_build_object('reason', btrim(p_reason)));
