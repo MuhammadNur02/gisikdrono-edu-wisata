@@ -311,3 +311,179 @@ alter table public.products_umkm force row level security;
 revoke all on public.products_umkm from anon, authenticated;
 create trigger set_updated_at before update on public.products_umkm
   for each row execute function public.set_updated_at();
+
+
+-- ===== Booking engine (docs/PRD.md §8.4.4, Task P1.2.06) =====
+
+-- bookings (A): the reservation aggregate. Holds the only booker PII. Never deleted.
+create table public.bookings (
+  id                  uuid primary key default gen_random_uuid(),
+  booking_code        text not null unique check (booking_code ~ '^GSK-[0-9A-HJKMNP-TV-Z]{8}$'),
+  status              public.booking_status not null,
+  channel             public.booking_channel not null default 'web',
+  package_id          uuid not null references public.tour_packages(id) on delete restrict,
+  package_snapshot    jsonb not null,                       -- {name, category, pricing_basis, unit_price, tier}
+  rw_ids              smallint[] not null check (cardinality(rw_ids) >= 1),   -- RLS scope; immutable
+  booker_type         public.booker_type not null,
+  institution_name    text,
+  pic_name            text not null,
+  pic_phone           text not null check (pic_phone ~ '^\+62[0-9]{8,13}$'),
+  pic_email           citext not null,
+  pax_count           integer not null check (pax_count between 1 and 1000),
+  visit_date          date not null,                        -- earliest leg date
+  visit_date_end      date not null,                        -- latest leg date
+  notes               text check (length(notes) <= 1000),
+  subtotal_package    bigint not null check (subtotal_package >= 0),
+  subtotal_addons     bigint not null default 0 check (subtotal_addons >= 0),
+  discount_amount     bigint not null default 0 check (discount_amount >= 0),
+  discount_note       text,
+  total_amount        bigint not null,
+  amount_paid         bigint not null default 0 check (amount_paid >= 0),
+  currency            char(3) not null default 'IDR' check (currency = 'IDR'),
+  expires_at          timestamptz,                          -- hold deadline; written once when the hold starts
+  quoted_at           timestamptz,
+  paid_at             timestamptz,
+  checked_in_at       timestamptz,                          -- first leg check-in
+  completed_at        timestamptz,
+  cancelled_at        timestamptz,
+  cancelled_by        uuid references public.profiles(id),
+  cancel_reason       text,
+  expired_at          timestamptz,
+  refunded_at         timestamptz,
+  needs_review        boolean not null default false,
+  review_reason       text,
+  phone_verified_at   timestamptz,                          -- set by internal.verify_phone_otp
+  email_verified_at   timestamptz,                          -- set by one-click email confirmation
+  consent_version     text not null,                        -- privacy notice version accepted
+  consented_at        timestamptz not null,
+  token_version       integer not null default 1,           -- bump to revoke every guest link
+  idempotency_key     text unique,                          -- client UUID per wizard mount
+  ticket_pdf_path     text,                                 -- documents/bookings/<id>/ticket-<code>.pdf
+  admin_notes         text,                                 -- the only column staff may UPDATE directly
+  created_by          uuid references public.profiles(id), -- staff id when channel = 'admin'
+  source_ip           inet,
+  user_agent          text,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now(),
+  constraint bookings_total_ok check (total_amount = subtotal_package + subtotal_addons - discount_amount and total_amount > 0),
+  constraint bookings_hold_has_deadline check (status <> 'pending_payment' or expires_at is not null),
+  constraint bookings_dates_ok check (visit_date_end >= visit_date)
+);
+create index bookings_status_expiry_idx on public.bookings (expires_at) where status = 'pending_payment';
+create index bookings_visit_date_idx    on public.bookings (visit_date, status);
+create index bookings_rw_ids_idx        on public.bookings using gin (rw_ids);
+create index bookings_pic_phone_idx     on public.bookings (pic_phone);
+create index bookings_pic_email_idx     on public.bookings (pic_email);
+create index bookings_created_idx       on public.bookings (created_at desc);
+create index bookings_search_idx        on public.bookings using gin ((coalesce(institution_name,'') || ' ' || pic_name) gin_trgm_ops);
+-- trigger bookings_immutable_guard: rw_ids, package_id, booking_code, created_at, consent_version never change;
+--   money columns frozen once paid_at is set; status only when app.in_rpc = '1'.
+-- trigger bookings_discount_guard: discount columns only by superadmin while status in ('quoted','pending_payment').
+alter table public.bookings enable row level security;
+alter table public.bookings force row level security;
+revoke all on public.bookings from anon, authenticated;
+create trigger set_updated_at before update on public.bookings
+  for each row execute function public.set_updated_at();
+
+-- booking_legs (A): one row per RW visited; holds the quota reservation state.
+create table public.booking_legs (
+  id                uuid primary key default gen_random_uuid(),
+  booking_id        uuid not null references public.bookings(id) on delete restrict,
+  rw_id             smallint not null references public.rw_units(id),
+  visit_session_id  uuid not null references public.visit_sessions(id) on delete restrict,
+  leg_order         smallint not null check (leg_order >= 1),
+  pax_count         integer not null check (pax_count >= 1),
+  status            public.booking_leg_status not null default 'unreserved',
+  quota_reserved_at timestamptz,
+  quota_released_at timestamptz,
+  checked_in_at     timestamptz,
+  unique (booking_id, rw_id),
+  unique (booking_id, leg_order),
+  constraint booking_legs_reserved_stamp check (status <> 'reserved' or quota_reserved_at is not null)
+);
+create index booking_legs_session_idx on public.booking_legs (visit_session_id, status);
+create index booking_legs_rw_idx      on public.booking_legs (rw_id, visit_session_id);
+alter table public.booking_legs enable row level security;
+alter table public.booking_legs force row level security;
+revoke all on public.booking_legs from anon, authenticated;
+
+-- booking_addons: pre-ordered UMKM items with price snapshot (frozen after settlement).
+create table public.booking_addons (
+  id                    uuid primary key default gen_random_uuid(),
+  booking_id            uuid not null references public.bookings(id) on delete restrict,
+  product_id            uuid not null references public.products_umkm(id) on delete restrict,
+  rw_id                 smallint not null references public.rw_units(id),
+  vendor_id             uuid not null references public.umkm_vendors(id),
+  product_name_snapshot text not null,
+  unit_price            bigint not null check (unit_price >= 0),
+  qty                   integer not null check (qty >= 1),
+  line_total            bigint not null check (line_total = unit_price * qty),
+  notes                 text,
+  fulfillment_status    public.addon_fulfillment_status not null default 'pending',
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now(),
+  unique (booking_id, product_id)
+);
+create index booking_addons_rw_idx on public.booking_addons (rw_id, fulfillment_status);
+alter table public.booking_addons enable row level security;
+alter table public.booking_addons force row level security;
+revoke all on public.booking_addons from anon, authenticated;
+create trigger set_updated_at before update on public.booking_addons
+  for each row execute function public.set_updated_at();
+
+-- booking_participants (A): optional participant list -> per-participant certificates. PII; purged visit_date + 90 d.
+create table public.booking_participants (
+  id          uuid primary key default gen_random_uuid(),
+  booking_id  uuid not null references public.bookings(id) on delete restrict,
+  seq_no      integer not null check (seq_no >= 1),
+  full_name   text not null check (length(full_name) between 2 and 120),   -- column encryption (PARTICIPANT_PII_KEYS) is a "should"
+  group_label text check (length(group_label) <= 60),                      -- class / department
+  role_label  text check (role_label in ('student','teacher','chaperone','participant')),
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  unique (booking_id, seq_no)
+);
+alter table public.booking_participants enable row level security;
+alter table public.booking_participants force row level security;
+revoke all on public.booking_participants from anon, authenticated;
+create trigger set_updated_at before update on public.booking_participants
+  for each row execute function public.set_updated_at();
+
+-- booking_events (AO): append-only status timeline written by every transition.
+create table public.booking_events (
+  id          bigint generated always as identity primary key,
+  booking_id  uuid not null references public.bookings(id) on delete restrict,
+  from_status public.booking_status,
+  to_status   public.booking_status not null,
+  actor_type  text not null check (actor_type in ('system','webhook','admin','cron','visitor')),
+  actor_id    uuid,
+  reason      text,
+  payload     jsonb not null default '{}',
+  occurred_at timestamptz not null default now()
+);
+create index booking_events_booking_idx on public.booking_events (booking_id, occurred_at);
+alter table public.booking_events enable row level security;
+alter table public.booking_events force row level security;
+revoke all on public.booking_events from anon, authenticated;
+
+-- guest_otps: hashed one-time codes for phone verification and DSR identity; pruned after 24 h.
+create table public.guest_otps (
+  id           uuid primary key default gen_random_uuid(),
+  purpose      public.otp_purpose not null,
+  phone        text check (phone ~ '^\+62[0-9]{8,13}$'),
+  email        citext,
+  booking_id   uuid references public.bookings(id) on delete restrict,
+  code_hash    text not null,                                   -- sha256(code || OTP_PEPPER || id)
+  attempts     smallint not null default 0,
+  max_attempts smallint not null default 5,
+  expires_at   timestamptz not null,                            -- created_at + 5 min
+  verified_at  timestamptz,
+  consumed_at  timestamptz,
+  ip           inet,
+  created_at   timestamptz not null default now(),
+  constraint guest_otps_target_ok check (phone is not null or email is not null)
+);
+create index guest_otps_phone_idx on public.guest_otps (phone, created_at desc);
+alter table public.guest_otps enable row level security;
+alter table public.guest_otps force row level security;
+revoke all on public.guest_otps from anon, authenticated;

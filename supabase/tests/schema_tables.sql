@@ -1,7 +1,7 @@
 -- Structure test for 0003_tables, extended group by group: exact columns, the types other code
 -- relies on, keys, and the CHECK / unique rules proven by trying to break them.
 begin;
-select plan(74);
+select plan(100);
 
 -- ===== Every table: RLS from birth, no API rights, updated_at kept by trigger =====
 
@@ -386,6 +386,175 @@ select throws_ok(
   $$insert into public.products_umkm (rw_id, vendor_id, slug, name, category, price)
     values (5, '00000000-0000-4000-8000-0000000000d1', 'kompos', 'Kompos', 'compost', -1)$$,
   '23514', null, 'a product price is never negative'
+);
+
+-- ===== Booking engine (Task P1.2.06) =====
+
+select columns_are('public', 'bookings', array[
+  'id', 'booking_code', 'status', 'channel', 'package_id', 'package_snapshot', 'rw_ids',
+  'booker_type', 'institution_name', 'pic_name', 'pic_phone', 'pic_email', 'pax_count',
+  'visit_date', 'visit_date_end', 'notes', 'subtotal_package', 'subtotal_addons',
+  'discount_amount', 'discount_note', 'total_amount', 'amount_paid', 'currency', 'expires_at',
+  'quoted_at', 'paid_at', 'checked_in_at', 'completed_at', 'cancelled_at', 'cancelled_by',
+  'cancel_reason', 'expired_at', 'refunded_at', 'needs_review', 'review_reason',
+  'phone_verified_at', 'email_verified_at', 'consent_version', 'consented_at', 'token_version',
+  'idempotency_key', 'ticket_pdf_path', 'admin_notes', 'created_by', 'source_ip', 'user_agent',
+  'created_at', 'updated_at'
+]);
+select columns_are('public', 'booking_legs', array[
+  'id', 'booking_id', 'rw_id', 'visit_session_id', 'leg_order', 'pax_count', 'status',
+  'quota_reserved_at', 'quota_released_at', 'checked_in_at'
+]);
+select columns_are('public', 'booking_addons', array[
+  'id', 'booking_id', 'product_id', 'rw_id', 'vendor_id', 'product_name_snapshot', 'unit_price',
+  'qty', 'line_total', 'notes', 'fulfillment_status', 'created_at', 'updated_at'
+]);
+select columns_are('public', 'booking_participants', array[
+  'id', 'booking_id', 'seq_no', 'full_name', 'group_label', 'role_label', 'created_at',
+  'updated_at'
+]);
+select columns_are('public', 'booking_events', array[
+  'id', 'booking_id', 'from_status', 'to_status', 'actor_type', 'actor_id', 'reason', 'payload',
+  'occurred_at'
+]);
+select columns_are('public', 'guest_otps', array[
+  'id', 'purpose', 'phone', 'email', 'booking_id', 'code_hash', 'attempts', 'max_attempts',
+  'expires_at', 'verified_at', 'consumed_at', 'ip', 'created_at'
+]);
+select is(
+  (select count(*)::int from pg_indexes where schemaname = 'public'
+     and indexname = any (array['bookings_status_expiry_idx', 'bookings_visit_date_idx', 'bookings_rw_ids_idx', 'bookings_pic_phone_idx', 'bookings_pic_email_idx', 'bookings_created_idx', 'bookings_search_idx', 'booking_legs_session_idx', 'booking_legs_rw_idx', 'booking_addons_rw_idx', 'booking_events_booking_idx', 'guest_otps_phone_idx'])),
+  12,
+  'every index of the booking group exists'
+);
+
+-- One valid booking; each check below breaks exactly one rule of it.
+select lives_ok(
+  $$insert into public.bookings (id, booking_code, status, package_id, package_snapshot, rw_ids, booker_type,
+      pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
+      consent_version, consented_at, idempotency_key)
+    values ('00000000-0000-4000-8000-0000000000e1', 'GSK-7F3K9Q2M', 'quoted', '00000000-0000-4000-8000-0000000000c1',
+      '{"name": "Eduwisata"}', '{5}', 'school', 'Siti Rahmawati', '+6281234567890', 'siti@example.test', 40,
+      '2026-11-12', '2026-11-12', 1000000, 1000000, 'v1', now(), 'wizard-1')$$,
+  'a complete quoted booking is accepted'
+);
+select throws_ok(
+  $$insert into public.bookings (booking_code, status, package_id, package_snapshot, rw_ids, booker_type,
+      pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
+      consent_version, consented_at)
+    values ('GSK-7F3K9Q2A', 'quoted', '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school',
+      'x', '+6281234567890', 'x@example.test', 40, '2026-11-12', '2026-11-12', 1000000, 999000, 'v1', now())$$,
+  '23514', null, 'the total must equal package + add-ons - discount'
+);
+select throws_ok(
+  $$insert into public.bookings (booking_code, status, package_id, package_snapshot, rw_ids, booker_type,
+      pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
+      consent_version, consented_at)
+    values ('GSK-7F3K9Q2B', 'quoted', '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school',
+      'x', '+6281234567890', 'x@example.test', 40, '2026-11-12', '2026-11-12', 0, 0, 'v1', now())$$,
+  '23514', null, 'a booking is never free'
+);
+select throws_ok(
+  $$insert into public.bookings (booking_code, status, package_id, package_snapshot, rw_ids, booker_type,
+      pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
+      consent_version, consented_at)
+    values ('GSK-7F3K9Q2C', 'pending_payment', '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school',
+      'x', '+6281234567890', 'x@example.test', 40, '2026-11-12', '2026-11-12', 1000000, 1000000, 'v1', now())$$,
+  '23514', null, 'a hold always has a deadline (expires_at)'
+);
+select throws_ok(
+  $$insert into public.bookings (booking_code, status, package_id, package_snapshot, rw_ids, booker_type,
+      pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
+      consent_version, consented_at)
+    values ('GSK-7F3K9Q2D', 'quoted', '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school',
+      'x', '+6281234567890', 'x@example.test', 40, '2026-11-12', '2026-11-11', 1000000, 1000000, 'v1', now())$$,
+  '23514', null, 'the last visit date is never before the first'
+);
+select throws_ok(
+  $$insert into public.bookings (booking_code, status, package_id, package_snapshot, rw_ids, booker_type,
+      pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
+      consent_version, consented_at)
+    values ('GSK-ILOU1234', 'quoted', '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school',
+      'x', '+6281234567890', 'x@example.test', 40, '2026-11-12', '2026-11-12', 1000000, 1000000, 'v1', now())$$,
+  '23514', null, 'booking codes use Crockford base32 (no I, L, O, U)'
+);
+select throws_ok(
+  $$insert into public.bookings (booking_code, status, package_id, package_snapshot, rw_ids, booker_type,
+      pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
+      consent_version, consented_at, currency)
+    values ('GSK-7F3K9Q2E', 'quoted', '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school',
+      'x', '+6281234567890', 'x@example.test', 40, '2026-11-12', '2026-11-12', 1000000, 1000000, 'v1', now(), 'USD')$$,
+  '23514', null, 'bookings are always in IDR'
+);
+select throws_ok(
+  $$insert into public.bookings (booking_code, status, package_id, package_snapshot, rw_ids, booker_type,
+      pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
+      consent_version, consented_at, idempotency_key)
+    values ('GSK-7F3K9Q2F', 'quoted', '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school',
+      'x', '+6281234567890', 'x@example.test', 40, '2026-11-12', '2026-11-12', 1000000, 1000000, 'v1', now(), 'wizard-1')$$,
+  '23505', null, 'the same wizard submission cannot create a second booking'
+);
+
+insert into public.booking_legs (id, booking_id, rw_id, visit_session_id, leg_order, pax_count)
+values ('00000000-0000-4000-8000-0000000000e2', '00000000-0000-4000-8000-0000000000e1', 5,
+        '00000000-0000-4000-8000-0000000000b1', 1, 40);
+select is(
+  (select status from public.booking_legs where id = '00000000-0000-4000-8000-0000000000e2'),
+  'unreserved'::public.booking_leg_status,
+  'a new leg holds no quota yet'
+);
+select throws_ok(
+  $$update public.booking_legs set status = 'reserved' where id = '00000000-0000-4000-8000-0000000000e2'$$,
+  '23514', null, 'a reserved leg records when its quota was taken'
+);
+select throws_ok(
+  $$insert into public.booking_legs (booking_id, rw_id, visit_session_id, leg_order, pax_count)
+    values ('00000000-0000-4000-8000-0000000000e1', 5, '00000000-0000-4000-8000-0000000000b1', 2, 40)$$,
+  '23505', null, 'a booking has one leg per RW'
+);
+
+insert into public.products_umkm (id, rw_id, vendor_id, slug, name, category, price)
+values ('00000000-0000-4000-8000-0000000000d2', 5, '00000000-0000-4000-8000-0000000000d1', 'keripik-daun', 'Keripik', 'snack', 10000);
+insert into public.booking_addons (booking_id, product_id, rw_id, vendor_id, product_name_snapshot, unit_price, qty, line_total)
+values ('00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-0000000000d2', 5,
+        '00000000-0000-4000-8000-0000000000d1', 'Keripik', 10000, 3, 30000);
+select throws_ok(
+  $$update public.booking_addons set line_total = 25000 where booking_id = '00000000-0000-4000-8000-0000000000e1'$$,
+  '23514', null, 'an add-on line total is always unit price x quantity'
+);
+select throws_ok(
+  $$insert into public.booking_addons (booking_id, product_id, rw_id, vendor_id, product_name_snapshot, unit_price, qty, line_total)
+    values ('00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-0000000000d2', 5,
+            '00000000-0000-4000-8000-0000000000d1', 'Keripik', 10000, 1, 10000)$$,
+  '23505', null, 'a product appears once per booking (change the quantity instead)'
+);
+
+insert into public.booking_participants (booking_id, seq_no, full_name, group_label, role_label)
+values ('00000000-0000-4000-8000-0000000000e1', 1, 'Budi Santoso', '5A', 'student');
+select throws_ok(
+  $$insert into public.booking_participants (booking_id, seq_no, full_name) values ('00000000-0000-4000-8000-0000000000e1', 2, 'B')$$,
+  '23514', null, 'a participant name has at least 2 characters'
+);
+select throws_ok(
+  $$insert into public.booking_participants (booking_id, seq_no, full_name, role_label)
+    values ('00000000-0000-4000-8000-0000000000e1', 2, 'Ani Lestari', 'parent')$$,
+  '23514', null, 'role_label is one of student, teacher, chaperone, participant'
+);
+select throws_ok(
+  $$insert into public.booking_participants (booking_id, seq_no, full_name) values ('00000000-0000-4000-8000-0000000000e1', 1, 'Ani Lestari')$$,
+  '23505', null, 'participant numbers are unique within a booking'
+);
+select throws_ok(
+  $$insert into public.booking_events (booking_id, to_status, actor_type) values ('00000000-0000-4000-8000-0000000000e1', 'quoted', 'robot')$$,
+  '23514', null, 'booking events name a known actor type'
+);
+select throws_ok(
+  $$insert into public.guest_otps (purpose, code_hash, expires_at) values ('booking_phone', 'h', now() + interval '5 minutes')$$,
+  '23514', null, 'an OTP is sent to a phone or an email'
+);
+select throws_ok(
+  $$delete from public.bookings where id = '00000000-0000-4000-8000-0000000000e1'$$,
+  '23503', null, 'a booking with legs, add-ons or participants is never deleted'
 );
 
 select * from finish();

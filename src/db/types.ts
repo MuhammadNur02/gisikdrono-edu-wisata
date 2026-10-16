@@ -34,6 +34,460 @@ export type Database = {
   }
   public: {
     Tables: {
+      booking_addons: {
+        Row: {
+          booking_id: string
+          created_at: string
+          fulfillment_status: Database["public"]["Enums"]["addon_fulfillment_status"]
+          id: string
+          line_total: number
+          notes: string | null
+          product_id: string
+          product_name_snapshot: string
+          qty: number
+          rw_id: number
+          unit_price: number
+          updated_at: string
+          vendor_id: string
+        }
+        Insert: {
+          booking_id: string
+          created_at?: string
+          fulfillment_status?: Database["public"]["Enums"]["addon_fulfillment_status"]
+          id?: string
+          line_total: number
+          notes?: string | null
+          product_id: string
+          product_name_snapshot: string
+          qty: number
+          rw_id: number
+          unit_price: number
+          updated_at?: string
+          vendor_id: string
+        }
+        Update: {
+          booking_id?: string
+          created_at?: string
+          fulfillment_status?: Database["public"]["Enums"]["addon_fulfillment_status"]
+          id?: string
+          line_total?: number
+          notes?: string | null
+          product_id?: string
+          product_name_snapshot?: string
+          qty?: number
+          rw_id?: number
+          unit_price?: number
+          updated_at?: string
+          vendor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_addons_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_addons_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products_umkm"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_addons_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_addons_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "umkm_vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      booking_events: {
+        Row: {
+          actor_id: string | null
+          actor_type: string
+          booking_id: string
+          from_status: Database["public"]["Enums"]["booking_status"] | null
+          id: number
+          occurred_at: string
+          payload: Json
+          reason: string | null
+          to_status: Database["public"]["Enums"]["booking_status"]
+        }
+        Insert: {
+          actor_id?: string | null
+          actor_type: string
+          booking_id: string
+          from_status?: Database["public"]["Enums"]["booking_status"] | null
+          id?: never
+          occurred_at?: string
+          payload?: Json
+          reason?: string | null
+          to_status: Database["public"]["Enums"]["booking_status"]
+        }
+        Update: {
+          actor_id?: string | null
+          actor_type?: string
+          booking_id?: string
+          from_status?: Database["public"]["Enums"]["booking_status"] | null
+          id?: never
+          occurred_at?: string
+          payload?: Json
+          reason?: string | null
+          to_status?: Database["public"]["Enums"]["booking_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_events_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      booking_legs: {
+        Row: {
+          booking_id: string
+          checked_in_at: string | null
+          id: string
+          leg_order: number
+          pax_count: number
+          quota_released_at: string | null
+          quota_reserved_at: string | null
+          rw_id: number
+          status: Database["public"]["Enums"]["booking_leg_status"]
+          visit_session_id: string
+        }
+        Insert: {
+          booking_id: string
+          checked_in_at?: string | null
+          id?: string
+          leg_order: number
+          pax_count: number
+          quota_released_at?: string | null
+          quota_reserved_at?: string | null
+          rw_id: number
+          status?: Database["public"]["Enums"]["booking_leg_status"]
+          visit_session_id: string
+        }
+        Update: {
+          booking_id?: string
+          checked_in_at?: string | null
+          id?: string
+          leg_order?: number
+          pax_count?: number
+          quota_released_at?: string | null
+          quota_reserved_at?: string | null
+          rw_id?: number
+          status?: Database["public"]["Enums"]["booking_leg_status"]
+          visit_session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_legs_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_legs_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_legs_visit_session_id_fkey"
+            columns: ["visit_session_id"]
+            isOneToOne: false
+            referencedRelation: "visit_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      booking_participants: {
+        Row: {
+          booking_id: string
+          created_at: string
+          full_name: string
+          group_label: string | null
+          id: string
+          role_label: string | null
+          seq_no: number
+          updated_at: string
+        }
+        Insert: {
+          booking_id: string
+          created_at?: string
+          full_name: string
+          group_label?: string | null
+          id?: string
+          role_label?: string | null
+          seq_no: number
+          updated_at?: string
+        }
+        Update: {
+          booking_id?: string
+          created_at?: string
+          full_name?: string
+          group_label?: string | null
+          id?: string
+          role_label?: string | null
+          seq_no?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_participants_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bookings: {
+        Row: {
+          admin_notes: string | null
+          amount_paid: number
+          booker_type: Database["public"]["Enums"]["booker_type"]
+          booking_code: string
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          channel: Database["public"]["Enums"]["booking_channel"]
+          checked_in_at: string | null
+          completed_at: string | null
+          consent_version: string
+          consented_at: string
+          created_at: string
+          created_by: string | null
+          currency: string
+          discount_amount: number
+          discount_note: string | null
+          email_verified_at: string | null
+          expired_at: string | null
+          expires_at: string | null
+          id: string
+          idempotency_key: string | null
+          institution_name: string | null
+          needs_review: boolean
+          notes: string | null
+          package_id: string
+          package_snapshot: Json
+          paid_at: string | null
+          pax_count: number
+          phone_verified_at: string | null
+          pic_email: string
+          pic_name: string
+          pic_phone: string
+          quoted_at: string | null
+          refunded_at: string | null
+          review_reason: string | null
+          rw_ids: number[]
+          source_ip: unknown
+          status: Database["public"]["Enums"]["booking_status"]
+          subtotal_addons: number
+          subtotal_package: number
+          ticket_pdf_path: string | null
+          token_version: number
+          total_amount: number
+          updated_at: string
+          user_agent: string | null
+          visit_date: string
+          visit_date_end: string
+        }
+        Insert: {
+          admin_notes?: string | null
+          amount_paid?: number
+          booker_type: Database["public"]["Enums"]["booker_type"]
+          booking_code: string
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          channel?: Database["public"]["Enums"]["booking_channel"]
+          checked_in_at?: string | null
+          completed_at?: string | null
+          consent_version: string
+          consented_at: string
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          discount_amount?: number
+          discount_note?: string | null
+          email_verified_at?: string | null
+          expired_at?: string | null
+          expires_at?: string | null
+          id?: string
+          idempotency_key?: string | null
+          institution_name?: string | null
+          needs_review?: boolean
+          notes?: string | null
+          package_id: string
+          package_snapshot: Json
+          paid_at?: string | null
+          pax_count: number
+          phone_verified_at?: string | null
+          pic_email: string
+          pic_name: string
+          pic_phone: string
+          quoted_at?: string | null
+          refunded_at?: string | null
+          review_reason?: string | null
+          rw_ids: number[]
+          source_ip?: unknown
+          status: Database["public"]["Enums"]["booking_status"]
+          subtotal_addons?: number
+          subtotal_package: number
+          ticket_pdf_path?: string | null
+          token_version?: number
+          total_amount: number
+          updated_at?: string
+          user_agent?: string | null
+          visit_date: string
+          visit_date_end: string
+        }
+        Update: {
+          admin_notes?: string | null
+          amount_paid?: number
+          booker_type?: Database["public"]["Enums"]["booker_type"]
+          booking_code?: string
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          channel?: Database["public"]["Enums"]["booking_channel"]
+          checked_in_at?: string | null
+          completed_at?: string | null
+          consent_version?: string
+          consented_at?: string
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          discount_amount?: number
+          discount_note?: string | null
+          email_verified_at?: string | null
+          expired_at?: string | null
+          expires_at?: string | null
+          id?: string
+          idempotency_key?: string | null
+          institution_name?: string | null
+          needs_review?: boolean
+          notes?: string | null
+          package_id?: string
+          package_snapshot?: Json
+          paid_at?: string | null
+          pax_count?: number
+          phone_verified_at?: string | null
+          pic_email?: string
+          pic_name?: string
+          pic_phone?: string
+          quoted_at?: string | null
+          refunded_at?: string | null
+          review_reason?: string | null
+          rw_ids?: number[]
+          source_ip?: unknown
+          status?: Database["public"]["Enums"]["booking_status"]
+          subtotal_addons?: number
+          subtotal_package?: number
+          ticket_pdf_path?: string | null
+          token_version?: number
+          total_amount?: number
+          updated_at?: string
+          user_agent?: string | null
+          visit_date?: string
+          visit_date_end?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bookings_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "tour_packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      guest_otps: {
+        Row: {
+          attempts: number
+          booking_id: string | null
+          code_hash: string
+          consumed_at: string | null
+          created_at: string
+          email: string | null
+          expires_at: string
+          id: string
+          ip: unknown
+          max_attempts: number
+          phone: string | null
+          purpose: Database["public"]["Enums"]["otp_purpose"]
+          verified_at: string | null
+        }
+        Insert: {
+          attempts?: number
+          booking_id?: string | null
+          code_hash: string
+          consumed_at?: string | null
+          created_at?: string
+          email?: string | null
+          expires_at: string
+          id?: string
+          ip?: unknown
+          max_attempts?: number
+          phone?: string | null
+          purpose: Database["public"]["Enums"]["otp_purpose"]
+          verified_at?: string | null
+        }
+        Update: {
+          attempts?: number
+          booking_id?: string | null
+          code_hash?: string
+          consumed_at?: string | null
+          created_at?: string
+          email?: string | null
+          expires_at?: string
+          id?: string
+          ip?: unknown
+          max_attempts?: number
+          phone?: string | null
+          purpose?: Database["public"]["Enums"]["otp_purpose"]
+          verified_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "guest_otps_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       package_price_history: {
         Row: {
           changed_at: string
