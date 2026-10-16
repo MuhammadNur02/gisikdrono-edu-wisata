@@ -1571,7 +1571,9 @@ end;
 $$;
 
 -- Gives back the seats of every reserved leg of a booking. A leg is released once: its
--- quota_released_at stamp makes a second call (a late webhook, a retried job) a no-op.
+-- quota_released_at stamp makes a second call (a late webhook, a retried job) a no-op. A counter that
+-- has already lost those seats (drift) is not pushed below zero, which its CHECK would refuse and so
+-- fail the whole release; it is floored at zero and logged as quota.drift for a person to look at.
 create function internal.release_booking_quota(p_booking_id uuid) returns void
   language plpgsql security definer
   set search_path = ''
@@ -1579,6 +1581,7 @@ as $$
 declare
   previous_settings jsonb;
   leg record;
+  stored integer;
 begin
   previous_settings := internal.push_settings('{"app.in_rpc": "1"}');
   for leg in
@@ -1588,7 +1591,13 @@ begin
     order by l.visit_session_id
     for update
   loop
-    update public.visit_sessions set reserved_pax = reserved_pax - leg.pax_count where id = leg.visit_session_id;
+    select s.reserved_pax into stored from public.visit_sessions s where s.id = leg.visit_session_id for update;
+    if stored < leg.pax_count then
+      perform internal.log_audit('quota.drift', 'visit_sessions', leg.visit_session_id::text,
+        jsonb_build_object('stored', stored, 'released', leg.pax_count, 'corrected', true,
+                           'source', 'release_booking_quota'));
+    end if;
+    update public.visit_sessions set reserved_pax = greatest(stored - leg.pax_count, 0) where id = leg.visit_session_id;
     update public.booking_legs set status = 'released', quota_released_at = now() where id = leg.id;
   end loop;
   perform internal.restore_settings(previous_settings);
@@ -1782,16 +1791,24 @@ begin
     order by b.id
     for update skip locked
   loop
-    update public.bookings set status = 'expired', expired_at = now() where id = stale.id;
-    perform internal.release_booking_quota(stale.id);
-    update public.payments set status = 'expired' where booking_id = stale.id and status in ('initiated', 'pending');
-    update public.quotations set status = 'expired' where booking_id = stale.id and status = 'issued';
-    insert into public.booking_events (booking_id, from_status, to_status, actor_type, reason)
-    values (stale.id, stale.status, 'expired', 'cron',
-            case when stale.status = 'quoted' then 'quotation_lapsed' else 'hold_lapsed' end);
-    perform internal.enqueue_notification(stale.id, 'booking_expired', 'whatsapp', '{}');
-    perform internal.enqueue_notification(stale.id, 'booking_expired', 'email', '{}');
-    expired_count := expired_count + 1;
+    -- One booking that fails must not keep every other hold from expiring: it is rolled back on its
+    -- own, reported as cron_failed, and tried again on the next run.
+    begin
+      update public.bookings set status = 'expired', expired_at = now() where id = stale.id;
+      perform internal.release_booking_quota(stale.id);
+      update public.payments set status = 'expired' where booking_id = stale.id and status in ('initiated', 'pending');
+      update public.quotations set status = 'expired' where booking_id = stale.id and status = 'issued';
+      insert into public.booking_events (booking_id, from_status, to_status, actor_type, reason)
+      values (stale.id, stale.status, 'expired', 'cron',
+              case when stale.status = 'quoted' then 'quotation_lapsed' else 'hold_lapsed' end);
+      perform internal.enqueue_notification(stale.id, 'booking_expired', 'whatsapp', '{}');
+      perform internal.enqueue_notification(stale.id, 'booking_expired', 'email', '{}');
+      expired_count := expired_count + 1;
+    exception when others then
+      insert into public.security_events (event_type, severity, entity_type, entity_id, details)
+      values ('cron_failed', 'high', 'bookings', stale.id::text,
+              jsonb_build_object('job', 'expire_stale_bookings', 'sqlstate', sqlstate));
+    end;
   end loop;
   perform internal.restore_settings(previous_settings);
   return expired_count;

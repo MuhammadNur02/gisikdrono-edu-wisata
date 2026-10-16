@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(365);
+select plan(368);
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -1238,9 +1238,59 @@ insert into public.tickets_qr (id, booking_id, booking_leg_id, rw_id, visit_sess
 select '00000000-0000-4000-8000-000000001d05', l.booking_id, l.id, 5, l.visit_session_id, 'GSK-J0B01E05-05',
   public.today_jkt() - 3, now() - interval '3 days 2 hours', now() - interval '3 days', 4, 'k1'
 from public.booking_legs l where l.booking_id = '00000000-0000-4000-8000-000000001e05';
+
+-- Two lapsed holds that would once have stopped the whole run: 1e15 holds 4 seats of a session whose
+-- counter has drifted down to 2, and 1e16 hits an error that a test trigger plants below.
+insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity, reserved_pax) values
+  ('00000000-0000-4000-8000-000000001b07', 5, public.today_jkt() + 12, '05:55', '06:30', 'Melenceng', 10, 2);
+insert into public.bookings (id, booking_code, status, package_id, package_snapshot, rw_ids, booker_type, pic_name,
+  pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount, consent_version,
+  consented_at, expires_at)
+values
+  ('00000000-0000-4000-8000-000000001e15', 'GSK-J0B01E15', 'pending_payment', '00000000-0000-4000-8000-0000000000c1',
+   '{}', '{5}', 'school', 'Guru Lima Belas', '+628123450015', 'guru15@example.test', 4, public.today_jkt() + 12,
+   public.today_jkt() + 12, 100000, 100000, 'v1', now(), now() - interval '10 minutes'),
+  ('00000000-0000-4000-8000-000000001e16', 'GSK-J0B01E16', 'pending_payment', '00000000-0000-4000-8000-0000000000c1',
+   '{}', '{5}', 'school', 'Guru Enam Belas', '+628123450016', 'guru16@example.test', 4, public.today_jkt() + 12,
+   public.today_jkt() + 12, 100000, 100000, 'v1', now(), now() - interval '10 minutes');
+insert into public.booking_legs (booking_id, rw_id, visit_session_id, leg_order, pax_count, status, quota_reserved_at)
+values ('00000000-0000-4000-8000-000000001e15', 5, '00000000-0000-4000-8000-000000001b07', 1, 4, 'reserved', now());
 select set_config('app.in_rpc', '', true);
+create function public.test_fail_one_expiry() returns trigger
+  language plpgsql
+as $$
+begin
+  if new.booking_id = '00000000-0000-4000-8000-000000001e16' then
+    raise exception 'a planted failure for one booking';
+  end if;
+  return new;
+end;
+$$;
+create trigger test_fail_one_expiry before insert on public.booking_events
+  for each row execute function public.test_fail_one_expiry();
 
 select internal.expire_stale_bookings();
+drop trigger test_fail_one_expiry on public.booking_events;
+drop function public.test_fail_one_expiry();
+select is(
+  (select status::text from public.bookings where id = '00000000-0000-4000-8000-000000001e16')
+  || ' ' || (select details ->> 'job' from public.security_events
+             where event_type = 'cron_failed' and entity_id = '00000000-0000-4000-8000-000000001e16'),
+  'pending_payment expire_stale_bookings',
+  'a booking that fails is rolled back on its own and reported as cron_failed, to be tried again'
+);
+select is(
+  (select status::text from public.bookings where id = '00000000-0000-4000-8000-000000001e15')
+  || ' ' || (select reserved_pax from public.visit_sessions where id = '00000000-0000-4000-8000-000000001b07'),
+  'expired 0',
+  'while the others still expire, and a drifted counter is floored at zero instead of failing the release'
+);
+select is(
+  (select metadata - 'audit_mode' from public.audit_logs
+   where action = 'quota.drift' and entity_id = '00000000-0000-4000-8000-000000001b07'),
+  '{"stored": 2, "released": 4, "corrected": true, "source": "release_booking_quota"}'::jsonb,
+  'and the drift is logged for a person to look at'
+);
 select is(
   coalesce(current_setting('app.in_rpc', true), '') || '/' || coalesce(current_setting('app.actor_role', true), ''),
   '/',
