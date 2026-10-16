@@ -2,7 +2,7 @@
 -- login_attempts, rate_limit_buckets (docs/PRD.md §8.5.2, docs/Security.md AUD-02, Task P1.4.04, P1.4.05, P1.9.02).
 -- Every check runs as an API role.
 begin;
-select plan(26);
+select plan(27);
 \ir helpers/rls_personas.psql
 
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax) values
@@ -21,10 +21,12 @@ from (values
 ) as fixture(id, code, package_id, rw_ids, phone, day_offset);
 insert into public.notifications (booking_id, channel, template, recipient, recipient_name, params, dedupe_key)
 select b.id, 'email', 'booking_created', b.pic_email, 'Budi', '{"link_scope": "view"}', 'rls:' || b.booking_code
-from public.bookings b where b.booking_code like 'GSK-N%';
+from public.bookings b
+where b.id in ('00000000-0000-4000-8000-0000b5000001', '00000000-0000-4000-8000-0000b5000008',
+               '00000000-0000-4000-8000-0000b8000001');
 insert into public.notifications (channel, template, recipient, params, dedupe_key)
 values ('email', 'security_alert', 'alerts@example.test', '{"severity": "high"}', 'rls:alert');
-insert into public.security_events (event_type, severity) values ('rate_limited', 'info');
+insert into public.security_events (event_type, severity, fingerprint) values ('rate_limited', 'info', 'rls:event:1');
 insert into public.security_alerts (id, rule, severity, fingerprint, title)
 values ('00000000-0000-4000-8000-0000af000001', 'rls_test', 'high', 'rls:alert:1', 'Uji RLS');
 insert into public.exports (kind, format, requested_by, rw_id, watermark, expires_at) values
@@ -35,6 +37,14 @@ values ('00000000-0000-4000-8000-0000af000002', 'access', 'subjek@example.test',
 insert into public.login_attempts (user_id, success, reason)
 values ('00000000-0000-4000-8000-00000000f005', false, 'bad_password');
 insert into public.rate_limit_buckets (key, window_start, count) values ('rls:test', now(), 1);
+-- The audit rows the booking fixtures above wrote.
+create function pg_temp.is_fixture_audit(p_entity_id text) returns boolean
+  language sql immutable
+as $$
+  select p_entity_id in ('00000000-0000-4000-8000-0000b5000001', '00000000-0000-4000-8000-0000b5000008',
+                         '00000000-0000-4000-8000-0000b8000001');
+$$;
+grant execute on function pg_temp.is_fixture_audit(text) to anon, authenticated;
 
 -- ===== anon =====
 select pg_temp.act_as('anon');
@@ -50,8 +60,10 @@ select throws_ok($$select key from public.rate_limit_buckets$$, '42501', null, '
 reset role;
 select pg_temp.act_as('none');
 select is(
-  (select count(*)::int from public.notifications) + (select count(*)::int from public.security_events)
-  + (select count(*)::int from public.audit_logs) + (select count(*)::int from public.exports),
+  (select count(*)::int from public.notifications where dedupe_key like 'rls:%')
+  + (select count(*)::int from public.security_events where fingerprint = 'rls:event:1')
+  + (select count(*)::int from public.audit_logs where pg_temp.is_fixture_audit(entity_id))
+  + (select count(*)::int from public.exports where watermark like 'Diekspor oleh % RLS%'),
   0,
   'a user without a role sees no operational row'
 );
@@ -59,35 +71,47 @@ select is(
 -- ===== admin_rw 05 =====
 reset role;
 select pg_temp.act_as('admin_rw_05');
-select is((select string_agg(dedupe_key, ',') from public.notifications), 'rls:GSK-N5000001',
+select is((select string_agg(dedupe_key, ',') from public.notifications where dedupe_key like 'rls:%'), 'rls:GSK-N5000001',
   'an RW admin sees the outbox rows of the bookings they see');
-select is((select status::text || '/' || template::text from public.notifications), 'queued/booking_created',
-  'whether the message went out');
+select is(
+  (select status::text || '/' || template::text from public.notifications where dedupe_key = 'rls:GSK-N5000001'),
+  'queued/booking_created',
+  'whether the message went out'
+);
 select throws_ok($$select recipient from public.notifications$$, '42501', null, 'never to whom');
 select throws_ok($$select recipient_name, params from public.notifications$$, '42501', null, 'nor the greeting and params');
 select throws_ok($$select last_error from public.notifications$$, '42501', null, 'nor the provider''s error text');
 select is(
-  (select count(*)::int from public.security_events) + (select count(*)::int from public.security_alerts)
-  + (select count(*)::int from public.audit_logs) + (select count(*)::int from public.dsr_requests)
-  + (select count(*)::int from public.login_attempts),
+  (select count(*)::int from public.security_events where fingerprint = 'rls:event:1')
+  + (select count(*)::int from public.security_alerts where id = '00000000-0000-4000-8000-0000af000001')
+  + (select count(*)::int from public.audit_logs where pg_temp.is_fixture_audit(entity_id))
+  + (select count(*)::int from public.dsr_requests where id = '00000000-0000-4000-8000-0000af000002')
+  + (select count(*)::int from public.login_attempts where user_id = '00000000-0000-4000-8000-00000000f005'),
   0,
   'security events, alerts, the audit log, data-subject requests and login attempts are the superadmin''s (AUD-02)'
 );
-select is((select string_agg(kind::text, ',') from public.exports), 'attendance', 'sees their own export only');
+select is((select string_agg(kind::text, ',') from public.exports where watermark like 'Diekspor oleh % RLS%'), 'attendance',
+  'sees their own export only');
 select throws_ok($$select key from public.rate_limit_buckets$$, '42501', null, 'and no rate-limit bucket');
 
 -- ===== admin_rw 05 without AAL2 =====
 reset role;
 select pg_temp.act_as('admin_rw_05_aal1');
-select is((select count(*)::int from public.exports), 0, 'without AAL2 an RW admin sees not even their own export');
+select is((select count(*)::int from public.exports where watermark like 'Diekspor oleh % RLS%'), 0,
+  'without AAL2 an RW admin sees not even their own export');
+select is((select count(*)::int from public.notifications where dedupe_key like 'rls:%'), 0,
+  'nor whether a message about their RW''s booking went out');
 
 -- ===== superadmin at AAL1 =====
 reset role;
 select pg_temp.act_as('superadmin_aal1');
 select is(
-  (select count(*)::int from public.audit_logs) + (select count(*)::int from public.security_events)
-  + (select count(*)::int from public.security_alerts) + (select count(*)::int from public.exports)
-  + (select count(*)::int from public.dsr_requests) + (select count(*)::int from public.login_attempts),
+  (select count(*)::int from public.audit_logs where pg_temp.is_fixture_audit(entity_id))
+  + (select count(*)::int from public.security_events where fingerprint = 'rls:event:1')
+  + (select count(*)::int from public.security_alerts where id = '00000000-0000-4000-8000-0000af000001')
+  + (select count(*)::int from public.exports where watermark like 'Diekspor oleh % RLS%')
+  + (select count(*)::int from public.dsr_requests where id = '00000000-0000-4000-8000-0000af000002')
+  + (select count(*)::int from public.login_attempts where user_id = '00000000-0000-4000-8000-00000000f005'),
   0,
   'a superadmin without AAL2 sees no audit row, event, alert, export, request or login attempt'
 );
@@ -98,10 +122,10 @@ select pg_temp.act_as('superadmin_aal2');
 select is((select count(*)::int from public.notifications where dedupe_key like 'rls:%'), 4,
   'the superadmin sees every outbox row, the staff alert included');
 select throws_ok($$select recipient from public.notifications$$, '42501', null, 'but no recipient either');
-select ok((select count(*) from public.audit_logs) > 0, 'reads the audit log');
+select ok((select count(*) from public.audit_logs where pg_temp.is_fixture_audit(entity_id)) > 0, 'reads the audit log');
 select is((select count(*)::int from public.login_attempts where user_id = '00000000-0000-4000-8000-00000000f005'), 1,
   'and the login attempts behind a lockout');
-select is((select count(*)::int from public.exports), 2, 'every export');
+select is((select count(*)::int from public.exports where watermark like 'Diekspor oleh % RLS%'), 2, 'every export');
 select is(pg_temp.row_count($$update public.security_alerts set acknowledged_at = now(),
   acknowledged_by = '00000000-0000-4000-8000-00000000f001' where id = '00000000-0000-4000-8000-0000af000001'$$), 1,
   'acknowledges an alert in their own name');

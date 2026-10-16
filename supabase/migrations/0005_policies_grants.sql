@@ -7,10 +7,14 @@
 -- names, outbox recipients) are therefore granted to nobody; they reach a screen only through the audited
 -- RPCs (decisions of 2026-10-16). Columns are always listed, so a column added later stays private until a
 -- migration grants it. Policies call the 0004 helpers wrapped in (select ...), so the JWT is read once per
--- statement, and never read auth.jwt() themselves, so is_active and claims_version apply everywhere.
+-- statement, and never read auth.jwt() themselves, so is_active and claims_version apply everywhere. Every
+-- table authenticated may touch also carries a restrictive AAL2 policy, written once at the end of the file:
+-- no staff member reads or writes a single row without a verified authenticator.
 --
 -- The 0001 note that service_role access would be granted here is superseded: service_role keeps its
--- Supabase table rights and reaches internal.* only through the svc_* wrappers of 0004.
+-- Supabase table rights and reaches internal.* only through the svc_* wrappers of 0004. The review of this
+-- file (2026-10-17) also tightened a few 0003 and 0004 objects that the grants rely on; 0003 and 0004 are
+-- merged, so those changes are made here, forward-only, next to the grants they protect.
 
 
 -- ===== Baseline (Task P1.4.01, P1.4.07) =====
@@ -69,7 +73,7 @@ create policy rw_units_staff_update on public.rw_units for update to authenticat
 
 -- profiles: staff see their own row and their RW's colleagues; the superadmin sees everyone. A staff member
 -- edits only their own name, phone and avatar; role, RW, status and the pending requests move through the
--- staff RPCs (profiles_guard, 0004). Every command needs AAL2.
+-- staff RPCs (profiles_guard, 0004).
 grant select (id, email, full_name, phone, role, rw_id, is_active, mfa_required, claims_version, avatar_path,
   last_login_at, created_by, created_at, updated_at, mfa_reset_requested_at, mfa_reset_requested_by,
   promotion_requested_at, promotion_requested_by) on public.profiles to authenticated;
@@ -82,15 +86,17 @@ create policy profiles_staff_read on public.profiles for select to authenticated
 create policy profiles_update_own on public.profiles for update to authenticated
   using ((select public.is_superadmin()) or ((select public.is_staff()) and id = (select auth.uid())))
   with check ((select public.is_superadmin()) or ((select public.is_staff()) and id = (select auth.uid())));
-create policy profiles_aal2 on public.profiles as restrictive for all to authenticated
-  using ((select public.aal2()));
 
 -- staff_invites: the superadmin's alone (FR-ADMIN-01). An invite names its creator and is later only revoked;
--- accepting one happens in the onboarding service.
-grant select (id, email, role, rw_id, invite_code_hash, expires_at, accepted_at, accepted_user_id, revoked_at,
-  created_by, created_at) on public.staff_invites to authenticated;
+-- accepting one happens in the onboarding service. The code's hash is written once and read by no API role,
+-- so nobody can try codes against it offline; onboarding compares it inside the database. An invite lives
+-- 72 hours at most, whatever expiry its creator sends.
+grant select (id, email, role, rw_id, expires_at, accepted_at, accepted_user_id, revoked_at, created_by, created_at)
+  on public.staff_invites to authenticated;
 grant insert (email, role, rw_id, invite_code_hash, expires_at, created_by) on public.staff_invites to authenticated;
 grant update (revoked_at) on public.staff_invites to authenticated;
+alter table public.staff_invites add constraint staff_invites_expiry_72h
+  check (expires_at <= created_at + interval '72 hours');
 
 create policy staff_invites_super_read on public.staff_invites for select to authenticated
   using ((select public.is_superadmin()));
@@ -98,11 +104,15 @@ create policy staff_invites_super_insert on public.staff_invites for insert to a
   with check ((select public.is_superadmin()) and created_by = (select auth.uid()));
 create policy staff_invites_super_revoke on public.staff_invites for update to authenticated
   using ((select public.is_superadmin())) with check ((select public.is_superadmin()));
-create policy staff_invites_aal2 on public.staff_invites as restrictive for all to authenticated
-  using ((select public.aal2()));
 
 -- site_settings: public keys for everyone, the rest for the superadmin, who alone writes them. Whoever writes
--- a setting signs it with their own id.
+-- a setting signs it with their own id. Only the keys docs/PRD.md §8.6 marks public may be public, so a
+-- slipped flag never publishes a private value such as the payout account.
+alter table public.site_settings add constraint site_settings_public_keys check (
+  not is_public or key in ('booking_enabled', 'maintenance_mode', 'booking.min_lead_hours', 'booking.max_advance_days',
+                           'booking.max_pax', 'contact.whatsapp_number', 'contact.email', 'kelurahan.address',
+                           'seo.default_description')
+);
 grant select (key, value, is_public) on public.site_settings to anon;
 grant select (key, value, is_public, description, updated_by, updated_at) on public.site_settings to authenticated;
 grant insert (key, value, is_public, description, updated_by) on public.site_settings to authenticated;
@@ -118,8 +128,6 @@ create policy site_settings_super_update on public.site_settings for update to a
   using ((select public.is_superadmin())) with check ((select public.is_superadmin()) and updated_by = (select auth.uid()));
 create policy site_settings_super_delete on public.site_settings for delete to authenticated
   using ((select public.is_superadmin()));
-create policy site_settings_aal2 on public.site_settings as restrictive for all to authenticated
-  using ((select public.aal2()));
 
 
 -- ===== Sessions: session_templates, visit_sessions, v_session_availability =====
@@ -159,13 +167,33 @@ create policy visit_sessions_staff_update on public.visit_sessions for update to
 create policy visit_sessions_staff_delete on public.visit_sessions for delete to authenticated
   using ((select public.owns_rw(rw_id)));
 
+-- A foreign key checks that its row exists, past RLS, so the reference columns below need their own scope
+-- check: an RW admin points only at rows of their own RW, and a row that does not exist gets the same
+-- refusal as another RW's, so the check reveals nothing about either. The superadmin and the system may
+-- point anywhere.
+create function internal.visit_sessions_template_rw_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if new.template_id is not null and not internal.is_superadmin_or_system()
+     and not exists (select 1 from public.session_templates t where t.id = new.template_id and t.rw_id = new.rw_id) then
+    raise exception 'a session follows a template of its own RW' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+create trigger visit_sessions_template_rw_guard before insert or update of template_id, rw_id on public.visit_sessions
+  for each row execute function internal.visit_sessions_template_rw_guard();
+revoke execute on function internal.visit_sessions_template_rw_guard() from public, anon, authenticated, service_role;
+
 
 -- ===== Catalogue: tour_packages, tour_package_legs, tour_package_price_tiers, package_price_history,
 --       umkm_vendors, products_umkm =====
 -- Published rows are public. An RW admin manages their own RW's catalogue and reads, never edits, a combo
 -- that visits their RW (REC-14); only the superadmin deletes a package, a vendor or a product, which the RW
 -- admin archives through its status instead (decision of 2026-10-16). Whoever creates a row signs it with their
--- own id, and whoever edits a package signs the edit.
+-- own id; a new package carries that id as its last editor too, and whoever edits a package signs the edit.
 
 grant select (id, rw_id, category, slug, name, tagline, description_md, highlights, inclusions, itinerary,
   duration_minutes, pricing_basis, price_per_pax, flat_price, min_pax, max_pax, image_paths, is_featured, status,
@@ -188,7 +216,7 @@ create policy tour_packages_staff_read on public.tour_packages for select to aut
              where l.package_id = tour_packages.id and l.rw_id = (select public.app_rw_id()))
 );
 create policy tour_packages_staff_insert on public.tour_packages for insert to authenticated
-  with check ((select public.owns_rw(rw_id)) and created_by = (select auth.uid()));
+  with check ((select public.owns_rw(rw_id)) and created_by = (select auth.uid()) and updated_by = (select auth.uid()));
 create policy tour_packages_staff_update on public.tour_packages for update to authenticated
   using ((select public.owns_rw(rw_id)))
   with check ((select public.owns_rw(rw_id)) and updated_by = (select auth.uid()));
@@ -345,7 +373,8 @@ grant select (id, booking_id, rw_id, visit_session_id, leg_order, pax_count, sta
 create policy booking_legs_staff_read on public.booking_legs for select to authenticated
   using ((select public.owns_rw(rw_id)));
 
--- booking_addons: the kitchen of each RW marks its own lines prepared or handed over.
+-- booking_addons: the kitchen of each RW marks its own lines prepared or handed over. These lines are the money
+-- an RW admin reads per booking: their own RW's, never the other RW's lines of a combo (STAFF-02).
 grant select (id, booking_id, product_id, rw_id, vendor_id, product_name_snapshot, unit_price, qty, line_total, notes,
   fulfillment_status, created_at, updated_at) on public.booking_addons to authenticated;
 grant update (fulfillment_status) on public.booking_addons to authenticated;
@@ -354,10 +383,66 @@ create policy booking_addons_staff_read on public.booking_addons for select to a
 create policy booking_addons_staff_fulfil on public.booking_addons for update to authenticated
   using ((select public.owns_rw(rw_id))) with check ((select public.owns_rw(rw_id)));
 
+-- anonymise_booker_pii replaces its 0004 version, which left an add-on's note in place: the note is the
+-- visitor's own text for the kitchen, read by the RW admin, and may name someone, so it now goes with the
+-- booker's contact. The function keeps its 0004 grants. Two groups lose their booker's contact: unpaid
+-- bookings a week after they expired or were cancelled (with their participants, since they never visited),
+-- and every booking pii_retention_months after its visit. Along with the contact go the verification stamps,
+-- every free-text field that may name someone (the visitor's notes on the booking and its add-ons, staff
+-- notes, cancel, review and discount reasons), the IP and user agent, every guest link (token_version) and the
+-- outbox rows that still name the contact. Expired OTP rows go the day after. A missing pii_retention_months
+-- skips the second group; 0008_seed writes it in every environment.
+create or replace function internal.anonymise_booker_pii() returns integer
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  previous_settings jsonb;
+  retention_months integer := (select (value #>> '{}')::integer from public.site_settings
+                               where key = 'pii_retention_months');
+  unpaid_cutoff timestamptz := now() - interval '7 days';
+  anonymised integer;
+  participants_deleted integer;
+  otps_deleted integer;
+begin
+  previous_settings := internal.begin_retention_run();
+
+  delete from public.booking_participants p using public.bookings b
+  where b.id = p.booking_id and b.status in ('expired', 'cancelled') and b.paid_at is null
+    and coalesce(b.expired_at, b.cancelled_at) < unpaid_cutoff;
+  get diagnostics participants_deleted = row_count;
+
+  with anonymised_bookings as (
+    update public.bookings
+    set pic_name = 'anon', pic_phone = null, pic_email = null, phone_verified_at = null, email_verified_at = null,
+        notes = null, admin_notes = null, cancel_reason = null, review_reason = null, discount_note = null,
+        source_ip = null, user_agent = null, pii_purged_at = now(), token_version = token_version + 1
+    where pii_purged_at is null
+      and ((status in ('expired', 'cancelled') and paid_at is null and coalesce(expired_at, cancelled_at) < unpaid_cutoff)
+           or visit_date_end < public.today_jkt() - make_interval(months => retention_months))
+    returning id
+  ), forgotten_messages as (
+    delete from public.notifications n using anonymised_bookings a where n.booking_id = a.id
+  ), forgotten_addon_notes as (
+    update public.booking_addons ad set notes = null
+    from anonymised_bookings a where ad.booking_id = a.id and ad.notes is not null
+  )
+  select count(*) into anonymised from anonymised_bookings;
+
+  delete from public.guest_otps where expires_at < now() - interval '1 day';
+  get diagnostics otps_deleted = row_count;
+
+  perform internal.log_audit('purge_run', 'bookings', null, jsonb_build_object(
+    'job', 'anonymise_booker_pii', 'bookings_anonymised', anonymised,
+    'participants_deleted', participants_deleted, 'otps_deleted', otps_deleted));
+  perform internal.restore_settings(previous_settings);
+  return anonymised;
+end;
+$$;
+
 -- booking_participants: no grant at all; names only through rpc_get_participants, corrections with their UI
--- (decision of 2026-10-16). The AAL2 policy stands ready for the day a grant is added.
-create policy booking_participants_aal2 on public.booking_participants as restrictive for all to authenticated
-  using ((select public.aal2()));
+-- (decision of 2026-10-16). It still gets the AAL2 policy at the end of the file, ready for the day a grant
+-- is added.
 
 -- booking_events: a booking's timeline, visible wherever the booking itself is.
 grant select (id, booking_id, from_status, to_status, actor_type, actor_id, reason, payload, occurred_at)
@@ -371,48 +456,43 @@ create policy booking_events_staff_read on public.booking_events for select to a
 
 -- ===== Payments and documents: payments, payment_events, webhook_rejections, payment_adjustments,
 --       reconciliation_runs, reconciliation_issues, quotations, invoices, document_sequences =====
--- Every write here belongs to the transition functions and the jobs. Staff read a payment where they read its
--- booking, with the amounts of their own RW (STAFF-02), but never the hosted pay link, the snap token, the VA
--- number or the stored Midtrans reply, which carries the VA number too (decision of 2026-10-16). Everything
--- about money needs AAL2; events, rejections, adjustments and reconciliation are the superadmin's alone.
+-- Every write here belongs to the transition functions and the jobs. Staff read a payment, a quotation and an
+-- invoice where they read its booking, but not their amounts: a payment, an invoice and a quotation each carry
+-- the whole booking's money, which for a combo holds the other RW's share, and superadmin and admin_rw share
+-- one role, so the amount columns and the document snapshots are granted to nobody. The superadmin reads them
+-- through the finance RPC of P4.7.01; an RW admin's money per booking is their own RW's add-on lines and ledger
+-- keys (STAFF-02). Nobody reads the hosted pay link, the snap token, the VA number or the stored Midtrans reply,
+-- which carries the VA number too (decision of 2026-10-16). Events, rejections, adjustments and reconciliation
+-- are the superadmin's alone, and a payment event's payload stays in the database, like the stored reply.
 
-grant select (id, booking_id, attempt_no, provider, method, status, order_id, provider_txn_id, gross_amount,
-  payment_type_raw, va_bank, transaction_time, settlement_time, expiry_time, fraud_status, status_code,
-  manual_proof_path, manual_reference, recorded_by, refunded_amount, created_at, updated_at)
+grant select (id, booking_id, attempt_no, provider, method, status, order_id, provider_txn_id, payment_type_raw,
+  va_bank, transaction_time, settlement_time, expiry_time, fraud_status, status_code, manual_proof_path,
+  manual_reference, recorded_by, created_at, updated_at)
   on public.payments to authenticated;
 create policy payments_staff_read on public.payments for select to authenticated using (
   exists (select 1 from public.bookings b where b.id = payments.booking_id)
 );
-create policy payments_aal2 on public.payments as restrictive for all to authenticated using ((select public.aal2()));
 
 grant select (id, payment_id, order_id, source, event_hash, transaction_status, fraud_status, status_code,
-  gross_amount_raw, payload, received_at, processed_at, processing_result) on public.payment_events to authenticated;
+  gross_amount_raw, received_at, processed_at, processing_result) on public.payment_events to authenticated;
 create policy payment_events_super_read on public.payment_events for select to authenticated
   using ((select public.is_superadmin()));
-create policy payment_events_aal2 on public.payment_events as restrictive for all to authenticated
-  using ((select public.aal2()));
 
 grant select (id, provider, reason, order_id, status_code, body_sha256, ip, user_agent, received_at)
   on public.webhook_rejections to authenticated;
 create policy webhook_rejections_super_read on public.webhook_rejections for select to authenticated
   using ((select public.is_superadmin()));
-create policy webhook_rejections_aal2 on public.webhook_rejections as restrictive for all to authenticated
-  using ((select public.aal2()));
 
 -- payment_adjustments: proposed, approved and applied through their RPCs (P4.7.03).
 grant select (id, booking_id, payment_id, type, status, amount, reason, evidence_path, proposed_by, proposed_at,
   approved_by, approved_at, rejected_reason, apply_not_before, applied_at) on public.payment_adjustments to authenticated;
 create policy payment_adjustments_super_read on public.payment_adjustments for select to authenticated
   using ((select public.is_superadmin()));
-create policy payment_adjustments_aal2 on public.payment_adjustments as restrictive for all to authenticated
-  using ((select public.aal2()));
 
 grant select (id, run_date, source, started_at, finished_at, payments_checked, issues_found, ledger_chain_ok,
   audit_chain_ok, summary, created_by) on public.reconciliation_runs to authenticated;
 create policy reconciliation_runs_super_read on public.reconciliation_runs for select to authenticated
   using ((select public.is_superadmin()));
-create policy reconciliation_runs_aal2 on public.reconciliation_runs as restrictive for all to authenticated
-  using ((select public.aal2()));
 
 -- reconciliation_issues: the superadmin resolves an issue in their own name.
 grant select (id, run_id, booking_id, payment_id, issue_type, severity, details, resolved_at, resolved_by,
@@ -423,22 +503,39 @@ create policy reconciliation_issues_super_read on public.reconciliation_issues f
 create policy reconciliation_issues_super_resolve on public.reconciliation_issues for update to authenticated
   using ((select public.is_superadmin()))
   with check ((select public.is_superadmin()) and resolved_by = (select auth.uid()));
-create policy reconciliation_issues_aal2 on public.reconciliation_issues as restrictive for all to authenticated
-  using ((select public.aal2()));
 
--- quotations and invoices: read where their booking is; their snapshots hold no contact (0004).
-grant select (id, booking_id, quotation_number, verify_code, version, status, issued_at, valid_until, snapshot,
-  pdf_path, issued_by) on public.quotations to authenticated;
+-- quotations and invoices: read where their booking is, without the amounts and the snapshot (above).
+grant select (id, booking_id, quotation_number, verify_code, version, status, issued_at, valid_until, pdf_path,
+  issued_by) on public.quotations to authenticated;
 create policy quotations_staff_read on public.quotations for select to authenticated using (
   exists (select 1 from public.bookings b where b.id = quotations.booking_id)
 );
 
-grant select (id, booking_id, invoice_number, status, issued_at, due_date, amount_due, amount_paid, paid_at,
-  payment_id, receipt_number, credit_note_number, snapshot, pdf_path, receipt_pdf_path, credit_note_pdf_path,
-  void_reason, voided_at, created_at, updated_at) on public.invoices to authenticated;
+grant select (id, booking_id, invoice_number, status, issued_at, due_date, paid_at, payment_id, receipt_number,
+  credit_note_number, pdf_path, receipt_pdf_path, credit_note_pdf_path, void_reason, voided_at, created_at, updated_at)
+  on public.invoices to authenticated;
 create policy invoices_staff_read on public.invoices for select to authenticated using (
   exists (select 1 from public.bookings b where b.id = invoices.booking_id)
 );
+
+-- The booking detail view reads its invoker's columns, so the 0004 version, which listed each payment's
+-- amount, would now refuse every reader. It lists the payments without their amounts; the booking's own
+-- amounts stay in the row, per shows_amounts.
+create or replace view public.v_booking_admin with (security_invoker = true) as
+select v.*,
+  (select jsonb_agg(jsonb_build_object('attempt_no', py.attempt_no, 'method', py.method, 'status', py.status,
+                                       'order_id', py.order_id, 'settlement_time', py.settlement_time)
+                    order by py.attempt_no)
+   from public.payments py where py.booking_id = v.id) as payments,
+  (select jsonb_agg(jsonb_build_object('ticket_code', t.ticket_code, 'rw_id', t.rw_id, 'status', t.status,
+                                       'valid_on', t.valid_on, 'pax', t.pax_count, 'checked_in_pax', t.checked_in_pax,
+                                       'unpaid_pax', t.unpaid_pax, 'checked_in_at', t.checked_in_at) order by t.rw_id)
+   from public.tickets_qr t where t.booking_id = v.id) as tickets,
+  (select jsonb_agg(jsonb_build_object('invoice_number', i.invoice_number, 'status', i.status,
+                                       'receipt_number', i.receipt_number, 'credit_note_number', i.credit_note_number,
+                                       'issued_at', i.issued_at) order by i.issued_at)
+   from public.invoices i where i.booking_id = v.id) as invoices
+from public.v_bookings_staff v;
 
 -- document_sequences: nothing at all; only next_document_number touches it.
 
@@ -454,8 +551,13 @@ grant select (id, booking_id, booking_leg_id, rw_id, visit_session_id, ticket_co
 create policy tickets_qr_staff_read on public.tickets_qr for select to authenticated
   using ((select public.owns_rw(rw_id)));
 
+-- ticket_scans: what an officer scanned is kept only as the sha256 hex of the scanned string, so a scan log is
+-- never a list of working tickets: for a valid ticket the string is the signed token itself. 0003 kept its
+-- first 128 characters. The digest still matches repeated scans of one string, and no API role reads it.
+alter table public.ticket_scans drop constraint ticket_scans_raw_payload_check;
+alter table public.ticket_scans add constraint ticket_scans_raw_payload_sha256 check (raw_payload ~ '^[0-9a-f]{64}$');
 grant select (id, attempt_id, ticket_id, rw_id, scanned_by, phase, result, source, attendee_count, override_reason,
-  raw_payload, device_info, ip, scanned_at) on public.ticket_scans to authenticated;
+  device_info, ip, scanned_at) on public.ticket_scans to authenticated;
 create policy ticket_scans_staff_read on public.ticket_scans for select to authenticated
   using ((select public.owns_rw(rw_id)));
 
@@ -492,6 +594,23 @@ create policy galleries_staff_insert on public.galleries for insert to authentic
 create policy galleries_staff_update on public.galleries for update to authenticated
   using ((select public.owns_rw(rw_id))) with check ((select public.owns_rw(rw_id)));
 create policy galleries_staff_delete on public.galleries for delete to authenticated using ((select public.owns_rw(rw_id)));
+
+-- A gallery item links a booking that visited its own RW (see visit_sessions_template_rw_guard).
+create function internal.galleries_booking_rw_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if new.booking_id is not null and not internal.is_superadmin_or_system()
+     and not exists (select 1 from public.bookings b where b.id = new.booking_id and new.rw_id = any (b.rw_ids)) then
+    raise exception 'a gallery item links a booking that visited its own RW' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+create trigger galleries_booking_rw_guard before insert or update of booking_id, rw_id on public.galleries
+  for each row execute function internal.galleries_booking_rw_guard();
+revoke execute on function internal.galleries_booking_rw_guard() from public, anon, authenticated, service_role;
 
 grant select (id, rw_id, slug, title, excerpt, body_json, cover_path, category, tags, status, published_at, seo_title,
   seo_description, reading_minutes, created_at, updated_at) on public.articles to anon;
@@ -585,13 +704,32 @@ create policy performance_schedules_staff_update on public.performance_schedules
 create policy performance_schedules_staff_delete on public.performance_schedules for delete to authenticated
   using ((select public.owns_rw(rw_id)));
 
+-- A schedule links a package of its own RW (see visit_sessions_template_rw_guard); a combo, which belongs to
+-- no RW, is linked by the superadmin.
+create function internal.performance_schedules_package_rw_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if new.package_id is not null and not internal.is_superadmin_or_system()
+     and not exists (select 1 from public.tour_packages p where p.id = new.package_id and p.rw_id = new.rw_id) then
+    raise exception 'a schedule links a package of its own RW' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+create trigger performance_schedules_package_rw_guard before insert or update of package_id, rw_id
+  on public.performance_schedules for each row execute function internal.performance_schedules_package_rw_guard();
+revoke execute on function internal.performance_schedules_package_rw_guard() from public, anon, authenticated, service_role;
+
 -- reviews: the public reads a published review through v_public_reviews, which shows the author's first name
--- or 'Pengunjung', never reviewer_name or the booking. Staff read their RW's reviews; the superadmin moderates
--- (reviews_moderation_stamp records who and when) and deletes.
+-- or 'Pengunjung', never reviewer_name or the booking. Staff read their RW's reviews under the same name, so
+-- the full name a visitor typed reaches no screen; the superadmin moderates (reviews_moderation_stamp records
+-- who and when) and deletes.
 grant select (id, rating, title, body, public_reviewer_name, institution_name, rw_ids, is_featured, status, created_at)
   on public.reviews to anon;
-grant select (id, booking_id, rw_ids, rating, title, body, reviewer_name, institution_name, is_anonymous, status,
-  is_featured, moderated_by, moderated_at, moderation_note, created_at, updated_at, public_reviewer_name)
+grant select (id, booking_id, rw_ids, rating, title, body, institution_name, is_anonymous, status, is_featured,
+  moderated_by, moderated_at, moderation_note, created_at, updated_at, public_reviewer_name)
   on public.reviews to authenticated;
 grant update (status, is_featured, moderation_note) on public.reviews to authenticated;
 grant delete on public.reviews to authenticated;
@@ -607,7 +745,7 @@ create policy reviews_super_delete on public.reviews for delete to authenticated
 -- ===== Finance: revenue_share_rules, revenue_share_rule_lines, revenue_share_entries, payout_batches =====
 -- The ledger is the superadmin's. An RW admin reads only their own keys: their RW's treasury ('rw:<id>') and
 -- their RW's vendors, never the kelurahan's share, whatever rw_id an entry carries (STAFF-02), and in every
--- period, so RW recaps count the whole history. Everything here needs AAL2.
+-- period, so RW recaps count the whole history.
 
 -- revenue_share_rules: the rules that apply to an RW admin's RW, packages and products; the superadmin writes
 -- them (revenue_rules_immutable_once_used, 0004, closes a used rule instead of changing it).
@@ -632,8 +770,6 @@ create policy revenue_share_rules_super_update on public.revenue_share_rules for
   using ((select public.is_superadmin())) with check ((select public.is_superadmin()));
 create policy revenue_share_rules_super_delete on public.revenue_share_rules for delete to authenticated
   using ((select public.is_superadmin()));
-create policy revenue_share_rules_aal2 on public.revenue_share_rules as restrictive for all to authenticated
-  using ((select public.aal2()));
 
 grant select (id, rule_id, beneficiary, rw_id, vendor_id, pct) on public.revenue_share_rule_lines to authenticated;
 grant insert (rule_id, beneficiary, rw_id, vendor_id, pct) on public.revenue_share_rule_lines to authenticated;
@@ -645,15 +781,15 @@ create policy revenue_share_rule_lines_staff_read on public.revenue_share_rule_l
 );
 create policy revenue_share_rule_lines_super_write on public.revenue_share_rule_lines for all to authenticated
   using ((select public.is_superadmin())) with check ((select public.is_superadmin()));
-create policy revenue_share_rule_lines_aal2 on public.revenue_share_rule_lines as restrictive for all to authenticated
-  using ((select public.aal2()));
 
 -- revenue_share_entries: written by allocate_revenue_share and settled by settle_revenue_entries only.
 grant select (id, booking_id, payment_id, adjustment_id, entry_type, line_ref, booking_addon_id, rule_id, rule_version,
   beneficiary, beneficiary_key, rw_id, vendor_id, base_amount, pct, amount, payout_batch_id, prev_hash, entry_hash,
   created_at) on public.revenue_share_entries to authenticated;
-grant select on public.v_revenue_recap_daily, public.v_revenue_recap_by_party, public.v_revenue_recap_by_booking,
-  public.v_finance_daily to authenticated;
+-- v_finance_daily sums payments.gross_amount, which no API role reads, so it is granted to nobody and serves the
+-- finance RPC of P4.7.01 instead.
+grant select on public.v_revenue_recap_daily, public.v_revenue_recap_by_party, public.v_revenue_recap_by_booking
+  to authenticated;
 
 create policy revenue_share_entries_staff_read on public.revenue_share_entries for select to authenticated using (
   (select public.is_superadmin())
@@ -663,8 +799,6 @@ create policy revenue_share_entries_staff_read on public.revenue_share_entries f
                and exists (select 1 from public.umkm_vendors v
                            where v.id = revenue_share_entries.vendor_id and v.rw_id = (select public.app_rw_id())))))
 );
-create policy revenue_share_entries_aal2 on public.revenue_share_entries as restrictive for all to authenticated
-  using ((select public.aal2()));
 
 -- payout_batches: the superadmin records a payout in their own name; an RW admin sees the payouts to their keys.
 grant select (id, beneficiary_key, period_from, period_to, total_amount, paid_at, reference, proof_path, notes,
@@ -684,8 +818,6 @@ create policy payout_batches_super_insert on public.payout_batches for insert to
   with check ((select public.is_superadmin()) and created_by = (select auth.uid()));
 create policy payout_batches_super_update on public.payout_batches for update to authenticated
   using ((select public.is_superadmin())) with check ((select public.is_superadmin()));
-create policy payout_batches_aal2 on public.payout_batches as restrictive for all to authenticated
-  using ((select public.aal2()));
 
 
 -- ===== Operations: notifications, security_events, security_alerts, exports, dsr_requests, audit_logs,
@@ -706,8 +838,6 @@ grant select (id, event_type, severity, actor_id, actor_role, ip_hash, user_agen
   fingerprint, details, occurred_at) on public.security_events to authenticated;
 create policy security_events_super_read on public.security_events for select to authenticated
   using ((select public.is_superadmin()));
-create policy security_events_aal2 on public.security_events as restrictive for all to authenticated
-  using ((select public.aal2()));
 
 -- security_alerts: acknowledged by the superadmin, in their own name.
 grant select (id, rule, severity, fingerprint, title, details, first_seen_at, last_seen_at, occurrences, notified_at,
@@ -718,8 +848,6 @@ create policy security_alerts_super_read on public.security_alerts for select to
 create policy security_alerts_super_acknowledge on public.security_alerts for update to authenticated
   using ((select public.is_superadmin()))
   with check ((select public.is_superadmin()) and acknowledged_by = (select auth.uid()));
-create policy security_alerts_aal2 on public.security_alerts as restrictive for all to authenticated
-  using ((select public.aal2()));
 
 -- exports: requested through rpc_create_export (P4.6); a staff member sees their own, the superadmin all.
 grant select (id, kind, format, requested_by, rw_id, filters, reason, row_count, storage_path, watermark, expires_at,
@@ -727,7 +855,6 @@ grant select (id, kind, format, requested_by, rw_id, filters, reason, row_count,
 create policy exports_staff_read on public.exports for select to authenticated using (
   (select public.is_superadmin()) or ((select public.is_staff()) and requested_by = (select auth.uid()))
 );
-create policy exports_aal2 on public.exports as restrictive for all to authenticated using ((select public.aal2()));
 
 -- dsr_requests: a data subject's request names their phone or email, which the superadmin needs to answer it;
 -- the superadmin handles it in their own name.
@@ -739,19 +866,40 @@ create policy dsr_requests_super_read on public.dsr_requests for select to authe
 create policy dsr_requests_super_handle on public.dsr_requests for update to authenticated
   using ((select public.is_superadmin()))
   with check ((select public.is_superadmin()) and handled_by = (select auth.uid()));
-create policy dsr_requests_aal2 on public.dsr_requests as restrictive for all to authenticated
-  using ((select public.aal2()));
 
 grant select (id, occurred_at, actor_id, actor_role, actor_ip, request_id, action, entity_type, entity_id, rw_id,
   before, after, metadata, prev_hash, entry_hash) on public.audit_logs to authenticated;
 create policy audit_logs_super_read on public.audit_logs for select to authenticated using ((select public.is_superadmin()));
-create policy audit_logs_aal2 on public.audit_logs as restrictive for all to authenticated using ((select public.aal2()));
 
 -- login_attempts: the superadmin reads them to unlock an account (FR-ADMIN-18); they hold an email hash only.
 grant select (id, user_id, email_hash, ip, success, reason, attempted_at) on public.login_attempts to authenticated;
 create policy login_attempts_super_read on public.login_attempts for select to authenticated
   using ((select public.is_superadmin()));
-create policy login_attempts_aal2 on public.login_attempts as restrictive for all to authenticated
-  using ((select public.aal2()));
 
 -- rate_limit_buckets: nothing at all; only rate_limit_hit touches it.
+
+
+-- ===== AAL2 for every staff command (docs/PRD.md §8.5.2, docs/Security.md §6.3, Task P1.4.05) =====
+-- Every staff account signs in with TOTP and the dashboard turns AAL1 sessions away (FR-ADMIN-01), so the
+-- database asks for the second factor too, on every table authenticated holds a right on: a restrictive policy
+-- no permissive policy can widen. An AAL1 session reads no row and writes none, so a stolen password alone
+-- reaches nothing. booking_participants has no grant but takes the policy as well, ready for the day it gets
+-- one. A table granted in a later migration adds its own <table>_aal2 policy there; rls_hygiene.sql fails
+-- otherwise.
+do $$
+declare
+  staff_table text;
+begin
+  for staff_table in
+    select c.relname from pg_class c
+    where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'
+      and (has_any_column_privilege('authenticated', c.oid, 'SELECT, INSERT, UPDATE')
+           or has_table_privilege('authenticated', c.oid, 'DELETE')
+           or c.relname = 'booking_participants')
+    order by c.relname
+  loop
+    execute format('create policy %I on public.%I as restrictive for all to authenticated using ((select public.aal2()))',
+                   staff_table || '_aal2', staff_table);
+  end loop;
+end;
+$$;

@@ -653,14 +653,15 @@ create table public.staff_invites (
   email            citext not null,
   role             public.app_role not null check (role <> 'none'),
   rw_id            smallint references public.rw_units(id),
-  invite_code_hash text not null unique,                      -- sha256(code)
+  invite_code_hash text not null unique,                      -- sha256(code); written with the invite, read by no API role (0005)
   expires_at       timestamptz not null,                      -- created_at + 72 h
   accepted_at      timestamptz,
   accepted_user_id uuid references public.profiles(id),
   revoked_at       timestamptz,
   created_by       uuid not null references public.profiles(id),
   created_at       timestamptz not null default now(),
-  constraint staff_invites_role_rw_ok check ((role = 'superadmin' and rw_id is null) or (role = 'admin_rw' and rw_id is not null))
+  constraint staff_invites_role_rw_ok check ((role = 'superadmin' and rw_id is null) or (role = 'admin_rw' and rw_id is not null)),
+  constraint staff_invites_expiry_72h check (expires_at <= created_at + interval '72 hours')   -- 0005
 );
 create unique index staff_invites_open_email on public.staff_invites (email) where accepted_at is null and revoked_at is null;
 
@@ -671,7 +672,10 @@ create table public.site_settings (
   is_public   boolean not null default false,
   description text,
   updated_by  uuid references public.profiles(id),
-  updated_at  timestamptz not null default now()
+  updated_at  timestamptz not null default now(),
+  constraint site_settings_public_keys check (not is_public or key in (       -- 0005: only the public keys of §8.6
+    'booking_enabled', 'maintenance_mode', 'booking.min_lead_hours', 'booking.max_advance_days', 'booking.max_pax',
+    'contact.whatsapp_number', 'contact.email', 'kelurahan.address', 'seo.default_description'))
 );
 ```
 
@@ -1246,7 +1250,7 @@ create table public.ticket_scans (
   source          text not null default 'qr' check (source in ('qr','manual','manual_backfill')),
   attendee_count  integer,
   override_reason text,
-  raw_payload     text check (length(raw_payload) <= 128),
+  raw_payload     text check (raw_payload ~ '^[0-9a-f]{64}$'),   -- 0005: sha256 hex of the scanned string, never the token; no API role reads it
   device_info     jsonb not null default '{}',
   ip              inet,
   scanned_at      timestamptz not null default now()
@@ -1692,13 +1696,13 @@ create table public.rate_limit_buckets (
 | `v_session_availability` | `id, rw_id, session_date, start_time, end_time, label, capacity, remaining (capacity - reserved_pax)` for `status = 'open'` and `session_date >= today_jkt()`; no unpaid share, since anon may not read bookings: `create_booking` enforces the 50 % rule and the staff dashboard computes `quota_pressure` on its own path (decision of 2026-10-16) | anon (calendar, wizard, Realtime) |
 | `v_public_reviews` | `id, rating, title, body, reviewer_name` (from the stored generated `reviews.public_reviewer_name`: 'Pengunjung' when anonymous, else first name; anon is never granted `reviewer_name`)`, institution_name, rw_ids, is_featured, created_at` for `status = 'published'` | anon |
 | `v_bookings_staff` | booking columns with the stored generated columns `phone_masked` (`+62812••••45`: first six and last two digits), `email_masked` (`a***@domain`) and `pic_first_name` instead of `pic_phone` / `pic_email` / `pic_name` (no API role holds SELECT on the raw contact columns; `rpc_reveal_booking_contact` is the only path); amounts per STAFF-02 (`shows_amounts`: superadmin always, admin_rw for single-RW bookings of their own RW, never a combo total; on screen only, since superadmin and admin_rw share the `authenticated` role); admin_rw rows from `visit_date − 7 d` to `+ 30 d`; package name, leg sessions, payment status, ticket status | staff (scope via underlying RLS, repeated in the view) |
-| `v_booking_admin` | datatable projection for `/dashboard/bookings` (joins `v_bookings_staff`, `payments`, `tickets_qr`, `invoices`) | staff |
+| `v_booking_admin` | datatable projection for `/dashboard/bookings` (joins `v_bookings_staff`, `payments`, `tickets_qr`, `invoices`); payments and invoices without their amounts, which no API role reads (0005); the booking's own amounts per `shows_amounts` | staff |
 | `v_attendance_today` | per RW: today's bookings with ticket status, booked pax, checked-in pax, unpaid pax, manual flag | staff |
 | `v_booking_export` | flat export row without contact columns (`visits`, `attendance` exports) | staff via `rpc_create_export` |
 | `v_revenue_recap_daily` | `day, rw_id, beneficiary_key, settled_amount, reversed_amount, net_amount, bookings` from the ledger | superadmin; admin_rw own keys |
 | `v_revenue_recap_by_party` | `beneficiary, beneficiary_key, beneficiary_name, rw_id, accrued, paid_out, outstanding` | superadmin; admin_rw own keys |
 | `v_revenue_recap_by_booking` | `booking_id, booking_code, paid_at, total_amount, entries jsonb` | superadmin |
-| `v_finance_daily` | `day, gross_settled, refunds, net, payments_count, qris_count, va_count` from `payments` | superadmin |
+| `v_finance_daily` | `day, gross_settled, refunds, net, payments_count, qris_count, va_count` from `payments` | no API role: it sums `payments.gross_amount`, which 0005 grants to nobody, so it serves the superadmin finance RPC of P4.7.01 |
 
 ### 8.5 Access control
 
@@ -1729,50 +1733,50 @@ Policies always wrap helpers as `(select public.owns_rw(rw_id))` so the JWT is r
 
 #### 8.5.2 Policy matrix
 
-Legend: S/I/U/D = select/insert/update/delete; "—" = denied; "fn" = only through a SECURITY DEFINER RPC granted to `authenticated` that re-checks scope; "svc" = `internal.*` from allow-listed service-role code or cron; AAL2 = restrictive policy `using ((select public.aal2()))` applied to every staff command on that table.
+Legend: S/I/U/D = select/insert/update/delete; "—" = denied; "fn" = only through a SECURITY DEFINER RPC granted to `authenticated` that re-checks scope; "svc" = `internal.*` from allow-listed service-role code or cron; AAL2 = restrictive policy `using ((select public.aal2()))` applied to every staff command on that table. Every table `authenticated` holds a right on carries it (review of 0005, H1, decision of 2026-10-17): every staff read and write needs a verified authenticator, so an AAL1 session reads no row and writes none anywhere.
 
 | Table | anon | admin_rw (own RW) | superadmin | AAL2 | svc-only writes |
 |---|---|---|---|---|---|
-| rw_units | S `is_active` (public columns via column grant) | S all (public columns); U own row content columns (`code`, `slug`, `is_active` not granted; `rw_units_guard` as well) | S all (public columns); U content columns; I. The treasury columns are granted to no API role: the superadmin edits them through an RPC that comes with the finance pages (P4; decision of 2026-10-16) | — | — |
+| rw_units | S `is_active` (public columns via column grant) | S all (public columns); U own row content columns (`code`, `slug`, `is_active` not granted; `rw_units_guard` as well) | S all (public columns); U content columns; I. The treasury columns are granted to no API role: the superadmin edits them through an RPC that comes with the finance pages (P4; decision of 2026-10-16) | yes | — |
 | profiles | — | S own row + same RW; U own `full_name, phone, avatar_path` | S all; U (not `role, rw_id, is_active, mfa_required, claims_version` — fn `set_staff_role`, `set_staff_status`; nor the pending-request columns — fn `set_staff_role`, `reset_staff_mfa`, `cancel_staff_mfa_reset`, `cancel_superadmin_promotion`) | yes | insert by auth trigger |
-| staff_invites | — | — | S/I; revoke via U `revoked_at` | yes | accept via onboarding (svc) |
-| site_settings | S `is_public` | S `is_public` | S/I/U/D | yes | — |
-| session_templates | — | S/I/U/D `owns_rw(rw_id)` | all | — | — |
-| visit_sessions | S via `v_session_availability` | S/I/U/D `owns_rw(rw_id)`; column grant excludes `reserved_pax, checked_in_pax`; trigger guard | all (same rule) | — | counters |
-| tour_packages | S `published` | S own or leg in own RW (combo read-only); I/U `owns_rw(rw_id)` | all | — | — |
-| tour_package_legs | S (published parent) | S/I/U/D `owns_rw(rw_id)` of the leg itself, so the other RW's leg of a combo stays hidden; trigger `tour_package_legs_guard` keeps a combo's legs to the superadmin and an RW package's leg in its RW | all | — | — |
-| tour_package_price_tiers | S (published parent) | I/U/D via parent ownership | all | — | — |
-| package_price_history | — | S own packages | S | — | insert by trigger |
-| umkm_vendors | S `is_active` (public columns: no owner name or phone) | S/I/U `owns_rw(rw_id)`; the bank columns are granted to no API role | all but the bank columns, which the superadmin edits through an RPC in P4 (decision of 2026-10-16); D | — | — |
-| products_umkm | S `published` | S/I/U `owns_rw(rw_id)` | all | — | — |
-| bookings | — | S by column, without `pic_name`, `pic_phone`, `pic_email`, `source_ip`, `user_agent`, `idempotency_key`, where `owns_any_rw(rw_ids)` and the visit falls between today − 7 and today + 30 days (decision of 2026-10-16), read through `v_bookings_staff`; U `admin_notes`; I fn `create_booking` (walk-in) | S every row, same columns; U `admin_notes` (a discount recomputes the total, so it waits for its own RPC, P4.3.08) | — | all transitions |
-| booking_legs | — | S `owns_rw(rw_id)` | S | — | all writes |
-| booking_addons | — | S `owns_rw(rw_id)`; U `fulfillment_status` | S; U same | — | insert |
+| staff_invites | — | — | S without `invite_code_hash`, which is written with the invite and read by no API role; I, expiring at most 72 h after creation (CHECK `staff_invites_expiry_72h`); revoke via U `revoked_at` | yes | accept via onboarding (svc) |
+| site_settings | S `is_public` | S `is_public` | S/I/U/D; only the keys §8.6 marks public may be made public (CHECK `site_settings_public_keys`) | yes | — |
+| session_templates | — | S/I/U/D `owns_rw(rw_id)` | all | yes | — |
+| visit_sessions | S via `v_session_availability` | S/I/U/D `owns_rw(rw_id)`; column grant excludes `reserved_pax, checked_in_pax`; trigger guard; `template_id` only of a template of the same RW (`visit_sessions_template_rw_guard`) | all (same rule; any template) | yes | counters |
+| tour_packages | S `published` | S own or leg in own RW (combo read-only); I `owns_rw(rw_id)`, signed with their own id in `created_by` and `updated_by`; U `owns_rw(rw_id)`, signed in `updated_by` | all | yes | — |
+| tour_package_legs | S (published parent) | S/I/U/D `owns_rw(rw_id)` of the leg itself, so the other RW's leg of a combo stays hidden; trigger `tour_package_legs_guard` keeps a combo's legs to the superadmin and an RW package's leg in its RW | all | yes | — |
+| tour_package_price_tiers | S (published parent) | I/U/D via parent ownership | all | yes | — |
+| package_price_history | — | S own packages | S | yes | insert by trigger |
+| umkm_vendors | S `is_active` (public columns: no owner name or phone) | S/I/U `owns_rw(rw_id)`; the bank columns are granted to no API role | all but the bank columns, which the superadmin edits through an RPC in P4 (decision of 2026-10-16); D | yes | — |
+| products_umkm | S `published` | S/I/U `owns_rw(rw_id)` | all | yes | — |
+| bookings | — | S by column, without `pic_name`, `pic_phone`, `pic_email`, `source_ip`, `user_agent`, `idempotency_key`, where `owns_any_rw(rw_ids)` and the visit falls between today − 7 and today + 30 days (decision of 2026-10-16), read through `v_bookings_staff`; U `admin_notes`; I fn `create_booking` (walk-in) | S every row, same columns; U `admin_notes` (a discount recomputes the total, so it waits for its own RPC, P4.3.08) | yes | all transitions |
+| booking_legs | — | S `owns_rw(rw_id)` | S | yes | all writes |
+| booking_addons | — | S `owns_rw(rw_id)`: their own RW's lines, a combo's included, are their money per booking (STAFF-02); U `fulfillment_status` | S; U same | yes | insert |
 | booking_participants | — | fn `rpc_get_participants` only: no grant (corrections arrive with their UI) | fn `rpc_get_participants` only | yes | visitor writes via svc |
-| booking_events | — | S where booking in scope | S | — | insert |
+| booking_events | — | S where booking in scope | S | yes | insert |
 | guest_otps | — | — | — | — | all (svc) |
-| payments | — | S where booking in scope; `snap_token`, `snap_redirect_url`, `va_number` and `last_payload` are granted to no API role | S every row, same columns | yes | all writes |
-| payment_events | — | — | S | yes | insert |
+| payments | — | S where booking in scope; `snap_token`, `snap_redirect_url`, `va_number` and `last_payload` are granted to no API role, and neither are `gross_amount` and `refunded_amount`, which carry the whole booking's money, a combo's other RW share included (review of 0005, M1) | S every row, same columns; the amounts through the finance RPC of P4.7.01 | yes | all writes |
+| payment_events | — | — | S without `payload` | yes | insert |
 | webhook_rejections | — | — | S | yes | insert |
 | payment_adjustments | — | — | S; fn propose/approve/apply | yes | — |
 | reconciliation_runs / _issues | — | — | S; U `resolved_*` on issues | yes | insert (job) |
-| quotations | — | S where booking in scope | S | — | svc / fn create |
-| invoices | — | S where booking in scope | S | — | all writes |
+| quotations | — | S where booking in scope, without `snapshot`, which lists the money (M1) | S, same columns; the snapshot through the finance RPC of P4.7.01 | yes | svc / fn create |
+| invoices | — | S where booking in scope, without `amount_due`, `amount_paid` and `snapshot` (M1) | S, same columns; those through the finance RPC of P4.7.01 | yes | all writes |
 | document_sequences | — | — | — | — | `next_document_number` |
-| tickets_qr | — | S `owns_rw(rw_id)`; fn `check_in_ticket` | S; fn `revoke_ticket`, `undo_check_in` | — | issuance, revoke on refund |
-| ticket_scans | — | S `owns_rw(rw_id)` | S | — | insert via fn |
-| certificates | — | S `owns_any_rw(rw_ids)` without `recipient_name`, which is granted to no API role; fn `issue_certificates` | S, same columns; fn `revoke_certificate` | — | pdf_path, released_at |
-| reviews | S `published` via `v_public_reviews` | S `owns_any_rw(rw_ids)` | S all; U `status, is_featured, moderation_note`; D | — | visitor insert via `submit_review` |
-| galleries | S `published` | S/I/U/D `owns_rw(rw_id)` | all | — | — |
-| articles | S `published` | S/I/U `owns_rw(rw_id)` (trigger: no publish) | all | — | — |
-| booklets | S `published` | S/I/U `owns_rw(rw_id)` | all | — | `download_count` via `internal.increment_booklet_download` (from `api/documents/booklet/[id]`) |
-| hero_banners | S active and in window | — | all | — | — |
-| activity_points | S `published` | S/I/U/D `owns_rw(rw_id)` | all | — | — |
-| performance_schedules | S `published` | S/I/U/D `owns_rw(rw_id)` | all | — | — |
+| tickets_qr | — | S `owns_rw(rw_id)`; fn `check_in_ticket` | S; fn `revoke_ticket`, `undo_check_in` | yes | issuance, revoke on refund |
+| ticket_scans | — | S `owns_rw(rw_id)` without `raw_payload`, which holds only the sha256 hex of the scanned string (CHECK `ticket_scans_raw_payload_sha256`) and is granted to no API role | S, same columns | yes | insert via fn |
+| certificates | — | S `owns_any_rw(rw_ids)` without `recipient_name`, which is granted to no API role; fn `issue_certificates` | S, same columns; fn `revoke_certificate` | yes | pdf_path, released_at |
+| reviews | S `published` via `v_public_reviews` | S `owns_any_rw(rw_ids)` without `reviewer_name`: staff read `public_reviewer_name`, the first name or 'Pengunjung' | S all but `reviewer_name`; U `status, is_featured, moderation_note`; D | yes | visitor insert via `submit_review` |
+| galleries | S `published` | S/I/U/D `owns_rw(rw_id)`; `booking_id` only of a booking that visited their RW (`galleries_booking_rw_guard`) | all (any booking) | yes | — |
+| articles | S `published` | S/I/U `owns_rw(rw_id)` (trigger: no publish) | all | yes | — |
+| booklets | S `published` | S/I/U `owns_rw(rw_id)` | all | yes | `download_count` via `internal.increment_booklet_download` (from `api/documents/booklet/[id]`) |
+| hero_banners | S active and in window | — | all | yes | — |
+| activity_points | S `published` | S/I/U/D `owns_rw(rw_id)` | all | yes | — |
+| performance_schedules | S `published` | S/I/U/D `owns_rw(rw_id)`; `package_id` only of a package of their RW (`performance_schedules_package_rw_guard`) | all (any package, combos included) | yes | — |
 | revenue_share_rules / _lines | — | S rules for own RW / own packages / own products | all | yes | — |
 | revenue_share_entries | — | S their own keys only: `beneficiary_key = 'rw:<own RW>'` or a vendor of their RW, never the kelurahan's key, whatever the row's `rw_id` (STAFF-02) | S; fn `settle_revenue_entries` | yes | insert |
 | payout_batches | — | S own `beneficiary_key`s | S/I/U | yes | — |
-| notifications | — | S where booking in scope, without `recipient`, `recipient_name`, `params` and `last_error`, which are granted to no API role (decision of 2026-10-16); fn `request_notification_resend` | S every row, same columns; same fn | — | worker |
+| notifications | — | S where booking in scope, without `recipient`, `recipient_name`, `params` and `last_error`, which are granted to no API role (decision of 2026-10-16); fn `request_notification_resend` | S every row, same columns; same fn | yes | worker |
 | security_events | — | — | S | yes | insert |
 | security_alerts | — | — | S; U `acknowledged_*` | yes | insert (job) |
 | exports | — | S own rows; fn `rpc_create_export` (attendance only) | S all; fn | yes | file lifecycle |
@@ -1781,7 +1785,7 @@ Legend: S/I/U/D = select/insert/update/delete; "—" = denied; "fn" = only throu
 | login_attempts | — | — | S | yes | insert by auth hook |
 | rate_limit_buckets | — | — | — | — | `rate_limit_hit` |
 
-Public reads are policies `to anon` only: staff read through their own scope, so an RW admin sees no other RW's rows even where they are published. Every grant lists its columns (`0005_policies_grants.sql`), so a column added later stays private until a migration grants it, and a row created through the API carries its creator's own id in `created_by` (`uploaded_by`, `author_id`).
+Public reads are policies `to anon` only: staff read through their own scope, so an RW admin sees no other RW's rows even where they are published. Every grant lists its columns (`0005_policies_grants.sql`), so a column added later stays private until a migration grants it, and a row created through the API carries its creator's own id in `created_by` (`uploaded_by`, `author_id`). A foreign key checks its row past RLS, so a reference an RW admin writes (`visit_sessions.template_id`, `galleries.booking_id`, `performance_schedules.package_id`) is held to their RW by a trigger, which answers a missing row and another RW's row alike.
 
 Representative policy for an RW-scoped content table:
 
@@ -1809,7 +1813,7 @@ create policy tour_packages_super_delete on public.tour_packages
   for delete to authenticated using ((select public.is_superadmin()));
 ```
 
-Restrictive AAL2 policy pattern (finance and PII tables):
+Restrictive AAL2 policy pattern, on every table `authenticated` holds a right on (0005 writes it in one loop at the end; a table granted later adds its own in the same migration, which `rls_hygiene.sql` checks):
 
 ```sql
 create policy payments_aal2 on public.payments as restrictive
@@ -1840,6 +1844,7 @@ grant update (full_name, phone, avatar_path) on public.profiles to authenticated
 | `visit_sessions_guard` | `visit_sessions` | §8.4.2 |
 | `tour_packages_legs_guard`, `tour_packages_price_floor`, `tour_packages_price_history` | `tour_packages`, `tour_package_price_tiers` | §8.4.3 |
 | `tour_package_legs_guard` | `tour_package_legs` (BEFORE INSERT/UPDATE/DELETE, 0005) | A combo's legs change only for the superadmin or the system; an RW package's leg stays in the package's RW. It is a trigger because the package's read policy asks the legs, and Postgres refuses policies that ask each other |
+| `visit_sessions_template_rw_guard`, `galleries_booking_rw_guard`, `performance_schedules_package_rw_guard` | `visit_sessions.template_id`, `galleries.booking_id`, `performance_schedules.package_id` (BEFORE INSERT and UPDATE of the column or `rw_id`, 0005) | Outside the superadmin and the system, the referenced template, booking or package belongs to the row's RW (a booking: `rw_id = any (rw_ids)`); a missing row gets the same `42501` as another RW's, so the check reveals nothing |
 | `products_umkm_vendor_rw_guard` | `products_umkm` | `vendor.rw_id = product.rw_id` |
 | `quotations_limit_guard` | `quotations` | Max 3 per booking; requires `bookings.phone_verified_at` |
 | `tickets_require_paid_booking`, `tickets_no_revive` | `tickets_qr` | §8.4.6 |
@@ -1854,6 +1859,8 @@ grant update (full_name, phone, avatar_path) on public.profiles to authenticated
 | `set_updated_at` | every table with `updated_at` | — |
 
 ### 8.6 `site_settings` keys
+
+Only the keys marked public below may have `is_public = true` (CHECK `site_settings_public_keys`, 0005), so a slipped flag never publishes a private value.
 
 | Key | Default | Public | Purpose |
 |---|---|---|---|
@@ -1938,7 +1945,7 @@ No function is executable by `anon`. Public writes (OTP, bookings, reviews, DSR 
 | `prune_operational_tables` | `() returns void` | `notifications` > 180 d (their `params` emptied after 30 d), `webhook_rejections` > 30 d, `payment_events` > 24 mo (deleted whole; they never hold customer details, see `midtrans_payload_minimise`), `audit_logs` > 24 mo only while `verify_audit_chain()` passes (the id and hash of the last pruned row are kept in the `purge_run` row as the new anchor; a broken chain raises `cron_failed` instead), `security_events` > 12 mo, `login_attempts` > 24 h, `rate_limit_buckets` > 1 d, `ticket_scans` > 24 mo (attendance itself stays in `tickets_qr`); runs under `app.purge = 'on'` so the append-only triggers allow it |
 | `purgeable_files` / `forget_purged_files` | `(p_limit int) returns table (bucket text, path text)` / `(p_paths text[]) returns int` | The files the retention runs marked (purged participant certificates' `pdf_path`, deleted exports' `storage_path`, `ticket_pdf_path` 12 months after the visit), oldest first; after `api/jobs/purge-storage` deletes them through the Storage API it clears the paths that are still marked, logged as cron; reached through `svc_purgeable_files` / `svc_forget_purged_files` |
 | `purge_participants` | `() returns int` | For `visit_date_end < today - 90 d`: first marks the participant certificates (`participant_id = NULL`, `recipient_name = '[dihapus]'`, `purged_at`), then deletes the `booking_participants` rows (the certificate CHECK refuses the other order); also marks expired `exports` (`deleted_at`). The files (`certificates/<booking_id>/participant-*.pdf`, attendance exports, ticket PDFs > 12 months) are deleted afterwards by `api/jobs/purge-storage` through the Storage API, because Supabase blocks `delete from storage.objects`; audited |
-| `anonymise_booker_pii` | `() returns int` | Unpaid `expired`/`cancelled` bookings 7 d after expiry (their participants deleted too), and every booking `pii_retention_months` after the visit (skipped while the setting is missing): `pic_name = 'anon'`, `pic_phone` and `pic_email` NULL, `phone_verified_at` and `email_verified_at` NULL, `notes`, `admin_notes`, `cancel_reason`, `review_reason`, `discount_note`, `source_ip`, `user_agent` NULL (the money guards let only the retention run clear `discount_note` on a paid booking), `pii_purged_at = now()`, `token_version + 1`, and their `notifications` rows deleted; `guest_otps` deleted 1 d after `expires_at`; the masked generated columns follow automatically; invoices keep institution and amounts; audited under `app.audit_mode = 'names_only'` |
+| `anonymise_booker_pii` | `() returns int` | Unpaid `expired`/`cancelled` bookings 7 d after expiry (their participants deleted too), and every booking `pii_retention_months` after the visit (skipped while the setting is missing): `pic_name = 'anon'`, `pic_phone` and `pic_email` NULL, `phone_verified_at` and `email_verified_at` NULL, `notes`, `admin_notes`, `cancel_reason`, `review_reason`, `discount_note`, `source_ip`, `user_agent` NULL (the money guards let only the retention run clear `discount_note` on a paid booking), `booking_addons.notes` NULL (0005), `pii_purged_at = now()`, `token_version + 1`, and their `notifications` rows deleted; `guest_otps` deleted 1 d after `expires_at`; the masked generated columns follow automatically; invoices keep institution and amounts; audited under `app.audit_mode = 'names_only'` |
 | `verify_ledger_chain` / `verify_audit_chain` | `() returns jsonb` | Recomputes hashes; returns `{ok, checked, first_broken_id}`; failure -> critical alert |
 | `log_audit` | trigger function + `(p_action text, p_entity_type text, p_entity_id text, p_metadata jsonb)` helper | Writes `audit_logs` with chain hash |
 
@@ -2260,7 +2267,7 @@ sequenceDiagram
 | Superadmin | Pendapatan bulan ini, Reservasi lunas, Pengunjung check-in, Rating rata-rata | `revenue_recap`, `visit_stats`, `v_public_reviews` |
 | Admin RW | Kuota hari ini terpakai, Reservasi mendatang, Check-in hari ini, Produk terjual | `v_session_availability`, `v_bookings_staff`, `v_attendance_today`, `booking_addons` |
 
-Recap pages read only the ledger views (`v_revenue_recap_daily`, `v_revenue_recap_by_party`, `v_revenue_recap_by_booking`, `v_finance_daily`); invariant check on every recap: `sum(settlement + reversal + adjustment amounts) = sum(bookings.total_amount) - sum(payments.refunded_amount)` for settled bookings in range.
+Recap pages read only the ledger views (`v_revenue_recap_daily`, `v_revenue_recap_by_party`, `v_revenue_recap_by_booking`) and the payment totals of `v_finance_daily` through the superadmin finance RPC of P4.7.01, since no API role reads payment amounts (0005); invariant check on every recap: `sum(settlement + reversal + adjustment amounts) = sum(bookings.total_amount) - sum(payments.refunded_amount)` for settled bookings in range.
 
 ### 11.2 Revenue share
 
@@ -2334,7 +2341,7 @@ Signature-failure burst for known `order_id`s; amount mismatch; Status API disag
 | # | Decision | Recommended default (in force) | Alternative | Impact if changed |
 |---|---|---|---|---|
 | A1 | WhatsApp OTP before quota reservation | Yes, mandatory; email is a link-only secondary channel | Email OTP or no verification | Removes the main defence against quota lock-out and misdelivered tickets; `FR-BOOK-06`, `create_booking` |
-| A2 | Staff MFA (TOTP) | Mandatory for `superadmin` and `admin_rw` from day one | Mandatory for superadmin only | AAL2 restrictive policies on finance/PII tables would need role-specific variants |
+| A2 | Staff MFA (TOTP) | Mandatory for `superadmin` and `admin_rw` from day one | Mandatory for superadmin only | The AAL2 restrictive policy on every staff table would need role-specific variants |
 | A3 | Supabase plan and region | Pro plan, `ap-southeast-1` (Singapore), disclosed in the privacy notice | Free plan (no backups, project pauses) | Backups, PITR, image transforms, leaked-password protection |
 | A4 | Revenue share defaults | Package 20 % kelurahan / 80 % RW treasury; add-on 90 % UMKM vendor / 10 % RW treasury; combo 20 / 40 / 40 | Any split summing to 100 % | Seed values in `0008_seed.sql` only |
 | A5 | Hold TTL | Individual 120 min; institutions 24 h; staff extension <= 14 d; quotation holds no quota | Quotation holds quota for 7 d | Larger lock-out risk; `booking_legs.status` semantics |

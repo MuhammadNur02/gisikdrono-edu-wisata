@@ -7,8 +7,12 @@
 -- act_as switches to the persona's API role, anon or authenticated, never postgres, and sets
 -- request.jwt.claims the way GoTrue does: the standard claims plus what the real access-token hook adds
 -- (internal.staff_token_claims), so the helpers read exactly what they read in production. The personas are
--- anon, none (signed in without a role), admin_rw_05 and admin_rw_08 (at AAL2, as the dashboard requires),
--- admin_rw_05_aal1, superadmin_aal1 and superadmin_aal2.
+-- anon, none (signed in without a role), admin_rw_05 and admin_rw_08, all at AAL2 as the dashboard requires,
+-- so their checks test the role and never just the missing factor, and admin_rw_05_aal1, superadmin_aal1 and
+-- superadmin_aal2.
+--
+-- A suite counts and lists its own fixture rows only (by id, code, slug or key), never a whole table, so the
+-- reference rows of 0008_seed and the rows of other suites never change its answers.
 
 insert into public.rw_units (id, code, slug, name, theme_label) values
   (5, 'RW05', 'rw-05-ecowastreme', 'RW 05 Ecowastreme', 'Ekowisata & Lingkungan'),
@@ -44,7 +48,7 @@ create function pg_temp.act_as(p_persona text) returns void
 as $$
 declare
   user_id uuid := pg_temp.persona_id(p_persona);
-  is_aal2 boolean := p_persona in ('admin_rw_05', 'admin_rw_08', 'superadmin_aal2');
+  is_aal2 boolean := p_persona in ('none', 'admin_rw_05', 'admin_rw_08', 'superadmin_aal2');
   signed_in_at bigint := extract(epoch from now())::bigint - 120;
 begin
   if p_persona = 'anon' then

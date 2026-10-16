@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(435);
+select plan(436);
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -1659,6 +1659,11 @@ insert into public.booking_participants (id, booking_id, seq_no, full_name, role
   ('00000000-0000-4000-8000-000000001c01', '00000000-0000-4000-8000-000000001e07', 1, 'Rina Wulandari', 'student'),
   ('00000000-0000-4000-8000-000000001c02', '00000000-0000-4000-8000-000000001e07', 2, 'Joko Susilo', 'student'),
   ('00000000-0000-4000-8000-000000001c03', '00000000-0000-4000-8000-000000001e08', 1, 'Tari Puspita', 'student');
+insert into public.booking_addons (booking_id, product_id, rw_id, vendor_id, product_name_snapshot, unit_price, qty,
+  line_total, notes)
+select ('00000000-0000-4000-8000-00000000' || code)::uuid, '00000000-0000-4000-8000-0000000000d2', 5,
+       '00000000-0000-4000-8000-0000000000d1', 'Keripik', 10000, 1, 10000, 'Antar ke Bu Ani di aula'
+from unnest(array['1e07', '1e08', '1e10']) as code;
 insert into public.certificates (id, booking_id, participant_id, kind, certificate_number, verify_code, recipient_name, visit_date, rw_ids)
 values ('00000000-0000-4000-8000-000000001a07', '00000000-0000-4000-8000-000000001e07', '00000000-0000-4000-8000-000000001c01',
         'participant', 'SERT/GSK/2026/00907', 'R7PXRGE001', 'Rina Wulandari', public.today_jkt() - 100, '{5}');
@@ -1730,6 +1735,14 @@ select is(
    from public.bookings where booking_code in ('GSK-R0B01E08', 'GSK-R0B01E10')),
   'GSK-R0B01E08=-/-/-/- GSK-R0B01E10=-/-/-/-',
   'staff notes and the cancel, review and discount reasons go too, even on a paid booking'
+);
+select is(
+  (select string_agg(right(booking_id::text, 4) || '=' || coalesce(notes, '-'), ' ' order by booking_id)
+   from public.booking_addons
+   where booking_id in ('00000000-0000-4000-8000-000000001e07', '00000000-0000-4000-8000-000000001e08',
+                        '00000000-0000-4000-8000-000000001e10')),
+  '1e07=Antar ke Bu Ani di aula 1e08=- 1e10=-',
+  'and so do the notes the visitor left on their add-ons (review of 0005, L3)'
 );
 
 -- Document snapshots keep to the one shape of docs/PRD.md §8.4.5 and name the institution, never a
@@ -2632,10 +2645,11 @@ select is(
   'contacts appear masked'
 );
 select is(
-  (select (payments -> 0 ->> 'gross_amount') || ' ' || (tickets -> 0 ->> 'status') from public.v_booking_admin
-   where booking_code = 'GSK-J0B01E05'),
-  '100000 expired',
-  'the detail view adds payments and tickets'
+  (select (payments -> 0 ->> 'order_id') || ' ' || (payments -> 0 ->> 'status') || ' ' || (payments -> 0 ? 'gross_amount')
+          || ' ' || (tickets -> 0 ->> 'status')
+   from public.v_booking_admin where booking_code = 'GSK-J0B01E05'),
+  'GSK-J0B01E05-01 settled false expired',
+  'the detail view adds payments, without their amounts since the review of 0005, and tickets'
 );
 select is(
   (select jsonb_object_agg(beneficiary_key, jsonb_build_array(beneficiary_name, accrued, paid_out, outstanding))

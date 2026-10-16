@@ -1,7 +1,7 @@
 -- RLS matrix for the catalogue: tour_packages, tour_package_legs, tour_package_price_tiers, package_price_history,
 -- umkm_vendors, products_umkm (docs/PRD.md §8.5.2, Task P1.4.02, P1.4.03, P1.9.02). Every check runs as an API role.
 begin;
-select plan(39);
+select plan(41);
 \ir helpers/rls_personas.psql
 
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax, status) values
@@ -26,18 +26,30 @@ insert into public.products_umkm (id, rw_id, vendor_id, slug, name, category, pr
   ('00000000-0000-4000-8000-00000000e501', 5, '00000000-0000-4000-8000-00000000d501', 'pr5', 'Kompos', 'compost', 15000, 'published'),
   ('00000000-0000-4000-8000-00000000e502', 5, '00000000-0000-4000-8000-00000000d501', 'pr5d', 'Bibit', 'seedling', 5000, 'draft'),
   ('00000000-0000-4000-8000-00000000e801', 8, '00000000-0000-4000-8000-00000000d801', 'pr8', 'Batik', 'souvenir', 50000, 'published');
+create function pg_temp.is_fixture_package(p_id uuid) returns boolean
+  language sql immutable
+as $$
+  select p_id in ('00000000-0000-4000-8000-00000000c501', '00000000-0000-4000-8000-00000000c502',
+                  '00000000-0000-4000-8000-00000000c801', '00000000-0000-4000-8000-00000000c802',
+                  '00000000-0000-4000-8000-00000000c900');
+$$;
+grant execute on function pg_temp.is_fixture_package(uuid) to anon, authenticated;
 
 -- ===== anon =====
 select pg_temp.act_as('anon');
-select is((select string_agg(slug, ',' order by slug) from public.tour_packages), 'p5,p8,pc',
-  'anon sees the published packages, the combo included');
+select is((select string_agg(slug, ',' order by slug) from public.tour_packages where pg_temp.is_fixture_package(id)),
+  'p5,p8,pc', 'anon sees the published packages, the combo included');
 select throws_ok($$select created_by from public.tour_packages$$, '42501', null, 'but not who created them');
-select is((select count(*)::int from public.tour_package_legs), 4, 'the legs of published packages');
-select is((select count(*)::int from public.tour_package_price_tiers), 2, 'and their price tiers');
-select is((select string_agg(slug, ',' order by slug) from public.umkm_vendors), 'v5,v8', 'the active vendors');
+select is((select count(*)::int from public.tour_package_legs where pg_temp.is_fixture_package(package_id)), 4,
+  'the legs of published packages');
+select is((select count(*)::int from public.tour_package_price_tiers where pg_temp.is_fixture_package(package_id)), 2,
+  'and their price tiers');
+select is((select string_agg(slug, ',' order by slug) from public.umkm_vendors where slug in ('v5', 'v5i', 'v8')),
+  'v5,v8', 'the active vendors');
 select throws_ok($$select bank_name from public.umkm_vendors$$, '42501', null, 'never a vendor''s bank account');
 select throws_ok($$select owner_name, phone from public.umkm_vendors$$, '42501', null, 'nor its owner''s name and phone');
-select is((select string_agg(slug, ',' order by slug) from public.products_umkm), 'pr5,pr8', 'the published products');
+select is((select string_agg(slug, ',' order by slug) from public.products_umkm where slug in ('pr5', 'pr5d', 'pr8')),
+  'pr5,pr8', 'the published products');
 select throws_ok($$select id from public.package_price_history$$, '42501', null, 'no price history');
 select throws_ok($$insert into public.tour_packages (rw_id, category, slug, name, price_per_pax)
   values (5, 'regular', 'palsu', 'Palsu', 25000)$$, '42501', null, 'and writes nothing');
@@ -46,8 +58,10 @@ select throws_ok($$insert into public.tour_packages (rw_id, category, slug, name
 reset role;
 select pg_temp.act_as('none');
 select is(
-  (select count(*)::int from public.tour_packages) + (select count(*)::int from public.tour_package_legs)
-  + (select count(*)::int from public.umkm_vendors) + (select count(*)::int from public.products_umkm),
+  (select count(*)::int from public.tour_packages where pg_temp.is_fixture_package(id))
+  + (select count(*)::int from public.tour_package_legs where pg_temp.is_fixture_package(package_id))
+  + (select count(*)::int from public.umkm_vendors where slug in ('v5', 'v5i', 'v8'))
+  + (select count(*)::int from public.products_umkm where slug in ('pr5', 'pr5d', 'pr8')),
   0,
   'a user without a role sees no catalogue row'
 );
@@ -55,19 +69,31 @@ select is(
 -- ===== admin_rw 05 =====
 reset role;
 select pg_temp.act_as('admin_rw_05');
-select is((select string_agg(slug, ',' order by slug) from public.tour_packages), 'p5,p5d,pc',
-  'an RW admin sees their own packages, drafts included, and the combo that visits their RW');
-select is((select string_agg(distinct rw_id::text, ',') || ':' || count(*) from public.tour_package_legs), '5:3',
-  'but only the legs in their own RW, never RW 08''s leg of the combo');
-select is((select count(*)::int from public.tour_package_price_tiers), 1, 'their own packages'' tiers only');
-select lives_ok($$insert into public.tour_packages (rw_id, category, slug, name, price_per_pax, created_by)
-  values (5, 'regular', 'p5-baru', 'Paket Baru', 25000, '00000000-0000-4000-8000-00000000f005')$$,
-  'creates a package for their RW, signed with their own id');
-select throws_ok($$insert into public.tour_packages (rw_id, category, slug, name, price_per_pax, created_by)
-  values (8, 'regular', 'p8-baru', 'Paket Baru', 25000, '00000000-0000-4000-8000-00000000f005')$$,
+select is((select string_agg(slug, ',' order by slug) from public.tour_packages where pg_temp.is_fixture_package(id)),
+  'p5,p5d,pc', 'an RW admin sees their own packages, drafts included, and the combo that visits their RW');
+select is(
+  (select string_agg(distinct rw_id::text, ',') || ':' || count(*) from public.tour_package_legs
+   where pg_temp.is_fixture_package(package_id)),
+  '5:3',
+  'but only the legs in their own RW, never RW 08''s leg of the combo'
+);
+select is((select count(*)::int from public.tour_package_price_tiers where pg_temp.is_fixture_package(package_id)), 1,
+  'their own packages'' tiers only');
+select lives_ok($$insert into public.tour_packages (rw_id, category, slug, name, price_per_pax, created_by, updated_by)
+  values (5, 'regular', 'p5-baru', 'Paket Baru', 25000, '00000000-0000-4000-8000-00000000f005',
+          '00000000-0000-4000-8000-00000000f005')$$,
+  'creates a package for their RW, signed with their own id as creator and last editor');
+select throws_ok($$insert into public.tour_packages (rw_id, category, slug, name, price_per_pax, created_by, updated_by)
+  values (5, 'regular', 'p5-lain', 'Paket Lain', 25000, '00000000-0000-4000-8000-00000000f005',
+          '00000000-0000-4000-8000-00000000f008')$$,
+  '42501', null, 'and names nobody else as its last editor');
+select throws_ok($$insert into public.tour_packages (rw_id, category, slug, name, price_per_pax, created_by, updated_by)
+  values (8, 'regular', 'p8-baru', 'Paket Baru', 25000, '00000000-0000-4000-8000-00000000f005',
+          '00000000-0000-4000-8000-00000000f005')$$,
   '42501', null, 'but none for RW 08');
-select throws_ok($$insert into public.tour_packages (category, slug, name, pricing_basis, flat_price, created_by)
-  values ('combo', 'pc-baru', 'Kombinasi Baru', 'flat_group', 1500000, '00000000-0000-4000-8000-00000000f005')$$,
+select throws_ok($$insert into public.tour_packages (category, slug, name, pricing_basis, flat_price, created_by, updated_by)
+  values ('combo', 'pc-baru', 'Kombinasi Baru', 'flat_group', 1500000, '00000000-0000-4000-8000-00000000f005',
+          '00000000-0000-4000-8000-00000000f005')$$,
   '42501', null, 'and no combo (REC-14)');
 select is(pg_temp.row_count($$update public.tour_packages set price_per_pax = 30000,
   updated_by = '00000000-0000-4000-8000-00000000f005' where id = '00000000-0000-4000-8000-00000000c501'$$), 1,
@@ -91,12 +117,13 @@ select lives_ok($$insert into public.tour_package_price_tiers (package_id, min_p
 select throws_ok($$insert into public.tour_package_price_tiers (package_id, min_pax, max_pax, price_per_pax)
   values ('00000000-0000-4000-8000-00000000c801', 21, null, 20000)$$, '42501', null, 'but not to RW 08''s');
 select is(
-  (select string_agg(distinct right(package_id::text, 4), ',') from public.package_price_history),
+  (select string_agg(distinct right(package_id::text, 4), ',') from public.package_price_history
+   where pg_temp.is_fixture_package(package_id)),
   'c501',
   'reads the price history of their own packages only'
 );
-select is((select string_agg(slug, ',' order by slug) from public.umkm_vendors), 'v5,v5i',
-  'sees their own RW''s vendors, inactive ones included');
+select is((select string_agg(slug, ',' order by slug) from public.umkm_vendors where slug in ('v5', 'v5i', 'v8')),
+  'v5,v5i', 'sees their own RW''s vendors, inactive ones included');
 select throws_ok($$select bank_name from public.umkm_vendors$$, '42501', null, 'but no bank account');
 select lives_ok($$insert into public.umkm_vendors (rw_id, slug, name, created_by)
   values (5, 'v5-baru', 'Vendor Baru', '00000000-0000-4000-8000-00000000f005')$$, 'adds a vendor for their RW');
@@ -104,8 +131,8 @@ select is(pg_temp.row_count($$update public.umkm_vendors set name = 'Diubah'
   where id = '00000000-0000-4000-8000-00000000d801'$$), 0, 'edits no RW 08 vendor');
 select is(pg_temp.row_count($$delete from public.umkm_vendors where id = '00000000-0000-4000-8000-00000000d502'$$), 0,
   'and deletes no vendor');
-select is((select string_agg(slug, ',' order by slug) from public.products_umkm), 'pr5,pr5d',
-  'sees their own RW''s products, drafts included');
+select is((select string_agg(slug, ',' order by slug) from public.products_umkm where slug in ('pr5', 'pr5d', 'pr8')),
+  'pr5,pr5d', 'sees their own RW''s products, drafts included');
 select lives_ok($$insert into public.products_umkm (rw_id, vendor_id, slug, name, category, price, created_by)
   values (5, '00000000-0000-4000-8000-00000000d501', 'pr5-baru', 'Produk Baru', 'other', 10000,
           '00000000-0000-4000-8000-00000000f005')$$, 'and adds one');
@@ -113,20 +140,28 @@ select lives_ok($$insert into public.products_umkm (rw_id, vendor_id, slug, name
 -- ===== admin_rw 08 =====
 reset role;
 select pg_temp.act_as('admin_rw_08');
-select is((select string_agg(slug, ',' order by slug) from public.tour_packages), 'p8,p8d,pc',
-  'RW 08''s admin sees their own packages and the combo');
-select is((select count(*)::int from public.tour_package_legs where rw_id = 5), 0, 'and no RW 05 leg');
+select is((select string_agg(slug, ',' order by slug) from public.tour_packages where pg_temp.is_fixture_package(id)),
+  'p8,p8d,pc', 'RW 08''s admin sees their own packages and the combo');
+select is(
+  (select count(*)::int from public.tour_package_legs where pg_temp.is_fixture_package(package_id) and rw_id = 5),
+  0,
+  'and no RW 05 leg'
+);
 
 -- ===== superadmin =====
 reset role;
 select pg_temp.act_as('superadmin_aal1');
-select is((select count(*)::int from public.tour_packages where slug in ('p5', 'p5d', 'p8', 'p8d', 'pc')), 5,
-  'the catalogue needs no AAL2: the superadmin sees it all at AAL1');
+select is((select count(*)::int from public.tour_packages where pg_temp.is_fixture_package(id)), 0,
+  'without AAL2 the superadmin sees no package, published or not');
+select throws_ok($$insert into public.tour_packages (rw_id, category, slug, name, price_per_pax, created_by, updated_by)
+  values (8, 'regular', 'p8-tanpa-totp', 'Tanpa TOTP', 25000, '00000000-0000-4000-8000-00000000f001',
+          '00000000-0000-4000-8000-00000000f001')$$,
+  '42501', null, 'and creates none');
 reset role;
 select pg_temp.act_as('superadmin_aal2');
 select is(pg_temp.row_count($$update public.tour_packages set name = 'Kombinasi Baru',
   updated_by = '00000000-0000-4000-8000-00000000f001' where id = '00000000-0000-4000-8000-00000000c900'$$), 1,
-  'the superadmin edits the combo');
+  'at AAL2 the superadmin edits the combo');
 select is(pg_temp.row_count($$delete from public.tour_packages where id = '00000000-0000-4000-8000-00000000c802'$$), 1,
   'and deletes a package');
 select throws_ok($$select bank_name from public.umkm_vendors$$, '42501', null,

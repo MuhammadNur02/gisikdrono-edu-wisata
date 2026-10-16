@@ -2,7 +2,7 @@
 -- recap views (docs/PRD.md §8.5.2, docs/Security.md STAFF-01, STAFF-02, Task P1.4.03, P1.4.05, P1.9.02). Every check
 -- runs as an API role.
 begin;
-select plan(22);
+select plan(25);
 \ir helpers/rls_personas.psql
 
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax) values
@@ -22,6 +22,19 @@ insert into public.revenue_share_rules (id, scope, rw_id, package_id, product_id
 insert into public.revenue_share_rule_lines (rule_id, beneficiary, rw_id, pct) values
   ('00000000-0000-4000-8000-0000ad000005', 'kelurahan', null, 30), ('00000000-0000-4000-8000-0000ad000005', 'rw_treasury', 5, 70),
   ('00000000-0000-4000-8000-0000ad000008', 'kelurahan', null, 30), ('00000000-0000-4000-8000-0000ad000008', 'rw_treasury', 8, 70);
+create function pg_temp.is_fixture_rule(p_id uuid) returns boolean
+  language sql immutable
+as $$
+  select p_id in ('00000000-0000-4000-8000-0000ad000001', '00000000-0000-4000-8000-0000ad000005',
+                  '00000000-0000-4000-8000-0000ad000008', '00000000-0000-4000-8000-0000ad000051',
+                  '00000000-0000-4000-8000-0000ad000081');
+$$;
+create function pg_temp.is_fixture_booking(p_id uuid) returns boolean
+  language sql immutable
+as $$
+  select p_id in ('00000000-0000-4000-8000-0000b5000060', '00000000-0000-4000-8000-0000b8000001');
+$$;
+grant execute on function pg_temp.is_fixture_rule(uuid), pg_temp.is_fixture_booking(uuid) to anon, authenticated;
 insert into public.bookings (id, booking_code, status, package_id, package_snapshot, rw_ids, booker_type, pic_name,
   pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount, consent_version,
   consented_at)
@@ -42,8 +55,8 @@ insert into public.revenue_share_entries (booking_id, entry_type, line_ref, rule
   ('00000000-0000-4000-8000-0000b8000001', 'settlement', 'package', '{}', 'rw_treasury', 'rw:8', 8, null, 100000, 80, 80000),
   ('00000000-0000-4000-8000-0000b8000001', 'settlement', 'package', '{}', 'umkm_vendor',
    'vendor:00000000-0000-4000-8000-00000000d801', 8, '00000000-0000-4000-8000-00000000d801', 100000, 20, 20000);
-insert into public.payout_batches (beneficiary_key, period_from, period_to, total_amount, created_by)
-select key, public.today_jkt() - 30, public.today_jkt(), 1000, '00000000-0000-4000-8000-00000000f001'
+insert into public.payout_batches (beneficiary_key, period_from, period_to, total_amount, reference, created_by)
+select key, public.today_jkt() - 30, public.today_jkt(), 1000, 'rls-payout', '00000000-0000-4000-8000-00000000f001'
 from unnest(array['rw:5', 'rw:8', 'kelurahan', 'vendor:00000000-0000-4000-8000-00000000d501']) as key;
 
 -- ===== anon =====
@@ -57,8 +70,9 @@ select throws_ok($$select day from public.v_revenue_recap_daily$$, '42501', null
 reset role;
 select pg_temp.act_as('none');
 select is(
-  (select count(*)::int from public.revenue_share_rules) + (select count(*)::int from public.revenue_share_entries)
-  + (select count(*)::int from public.payout_batches),
+  (select count(*)::int from public.revenue_share_rules where pg_temp.is_fixture_rule(id))
+  + (select count(*)::int from public.revenue_share_entries where pg_temp.is_fixture_booking(booking_id))
+  + (select count(*)::int from public.payout_batches where reference = 'rls-payout'),
   0,
   'a user without a role sees no finance row'
 );
@@ -66,39 +80,54 @@ select is(
 -- ===== admin_rw 05 =====
 reset role;
 select pg_temp.act_as('admin_rw_05');
-select is((select string_agg(name, ',' order by name) from public.revenue_share_rules), 'Default RW 05,Paket RW 05',
-  'an RW admin sees the rules of their RW and their own packages and products');
-select is((select count(*)::int from public.revenue_share_rule_lines), 2, 'and those rules'' lines');
+select is(
+  (select string_agg(name, ',' order by name) from public.revenue_share_rules where pg_temp.is_fixture_rule(id)),
+  'Default RW 05,Paket RW 05',
+  'an RW admin sees the rules of their RW and their own packages and products'
+);
+select is((select count(*)::int from public.revenue_share_rule_lines where pg_temp.is_fixture_rule(rule_id)), 2,
+  'and those rules'' lines');
 select is(
   (select string_agg(case when beneficiary_key like 'vendor:%' then 'vendor' else beneficiary_key end, ','
-                     order by beneficiary_key) from public.revenue_share_entries),
+                     order by beneficiary_key)
+   from public.revenue_share_entries where pg_temp.is_fixture_booking(booking_id)),
   'rw:5,vendor',
   'the ledger entries of their RW''s treasury and their RW''s vendors'
 );
-select is((select count(*)::int from public.revenue_share_entries where beneficiary_key = 'kelurahan'), 0,
-  'never the kelurahan''s share, even when it carries their rw_id (STAFF-02)');
+select is(
+  (select count(*)::int from public.revenue_share_entries
+   where pg_temp.is_fixture_booking(booking_id) and beneficiary_key = 'kelurahan'),
+  0,
+  'never the kelurahan''s share, even when it carries their rw_id (STAFF-02)'
+);
 select is(
   (select count(*)::int from public.revenue_share_entries where booking_id = '00000000-0000-4000-8000-0000b5000060'),
   2,
   'in every period: a visit two months old still counts, so RW recaps cover the whole history'
 );
+-- A recap sums every entry of a key, so it is checked against the entries the same reader sees.
 select is(
-  (select string_agg(case when beneficiary_key like 'vendor:%' then 'vendor' else beneficiary_key end || '=' || accrued, ','
-                     order by beneficiary_key) from public.v_revenue_recap_by_party),
-  'rw:5=70000,vendor=10000',
-  'which the recap by party adds up'
+  (select string_agg(distinct case when beneficiary_key like 'vendor:%' then 'vendor' else beneficiary_key end, ',')
+   from public.v_revenue_recap_by_party),
+  'rw:5,vendor',
+  'the recap by party shows their own keys only'
+);
+select ok(
+  (select accrued from public.v_revenue_recap_by_party where beneficiary_key = 'rw:5')
+  = (select sum(amount) from public.revenue_share_entries where beneficiary_key = 'rw:5'),
+  'and adds up the entries they see'
 );
 select is(
   (select string_agg(case when beneficiary_key like 'vendor:%' then 'vendor' else beneficiary_key end, ','
-                     order by beneficiary_key) from public.payout_batches),
+                     order by beneficiary_key)
+   from public.payout_batches where reference = 'rls-payout'),
   'rw:5,vendor',
   'and the payouts to their own keys'
 );
-select is(
-  (select count(*)::int from public.v_revenue_recap_by_booking) + (select count(*)::int from public.v_finance_daily),
-  0,
-  'the per-booking recap and the payment totals are the superadmin''s'
-);
+select is((select count(*)::int from public.v_revenue_recap_by_booking where pg_temp.is_fixture_booking(booking_id)), 0,
+  'the per-booking recap is the superadmin''s');
+select throws_ok($$select day from public.v_finance_daily$$, '42501', null,
+  'and the payment totals reach no API role (review of 0005, M1)');
 select throws_ok($$insert into public.revenue_share_rules (scope, rw_id, name, created_by)
   values ('package_default', 5, 'Aturan Sendiri', '00000000-0000-4000-8000-00000000f005')$$, '42501', null,
   'and writes no rule');
@@ -106,14 +135,16 @@ select throws_ok($$insert into public.revenue_share_rules (scope, rw_id, name, c
 -- ===== admin_rw 05 without AAL2 =====
 reset role;
 select pg_temp.act_as('admin_rw_05_aal1');
-select is((select count(*)::int from public.revenue_share_entries), 0, 'without AAL2 an RW admin sees no ledger entry');
+select is((select count(*)::int from public.revenue_share_entries where pg_temp.is_fixture_booking(booking_id)), 0,
+  'without AAL2 an RW admin sees no ledger entry');
 
 -- ===== admin_rw 08 =====
 reset role;
 select pg_temp.act_as('admin_rw_08');
 select is(
   (select string_agg(case when beneficiary_key like 'vendor:%' then 'vendor' else beneficiary_key end, ','
-                     order by beneficiary_key) from public.revenue_share_entries),
+                     order by beneficiary_key)
+   from public.revenue_share_entries where pg_temp.is_fixture_booking(booking_id)),
   'rw:8,vendor',
   'RW 08''s admin sees RW 08''s keys only'
 );
@@ -122,8 +153,9 @@ select is(
 reset role;
 select pg_temp.act_as('superadmin_aal1');
 select is(
-  (select count(*)::int from public.revenue_share_rules) + (select count(*)::int from public.revenue_share_entries)
-  + (select count(*)::int from public.payout_batches),
+  (select count(*)::int from public.revenue_share_rules where pg_temp.is_fixture_rule(id))
+  + (select count(*)::int from public.revenue_share_entries where pg_temp.is_fixture_booking(booking_id))
+  + (select count(*)::int from public.payout_batches where reference = 'rls-payout'),
   0,
   'a superadmin without AAL2 sees no finance row'
 );
@@ -131,8 +163,12 @@ select is(
 -- ===== superadmin at AAL2 =====
 reset role;
 select pg_temp.act_as('superadmin_aal2');
-select is((select count(*)::int from public.revenue_share_entries), 5, 'the superadmin sees the whole ledger');
-select is((select count(*)::int from public.v_revenue_recap_by_booking), 2, 'and the recap per booking');
+select is((select count(*)::int from public.revenue_share_entries where pg_temp.is_fixture_booking(booking_id)), 5,
+  'the superadmin sees the whole ledger');
+select is((select count(*)::int from public.v_revenue_recap_by_booking where pg_temp.is_fixture_booking(booking_id)), 2,
+  'and the recap per booking');
+select throws_ok($$select day from public.v_finance_daily$$, '42501', null,
+  'but reads the payment totals through the finance RPC of P4.7.01, not this view');
 select lives_ok($$insert into public.payout_batches (beneficiary_key, period_from, period_to, total_amount, created_by)
   values ('rw:5', public.today_jkt() - 7, public.today_jkt(), 5000, '00000000-0000-4000-8000-00000000f001')$$,
   'records a payout in their own name');

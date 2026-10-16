@@ -3,7 +3,7 @@
 -- with the admin_rw window of a week back to a month ahead (decision of 2026-10-16). Every check runs as an
 -- API role.
 begin;
-select plan(32);
+select plan(35);
 \ir helpers/rls_personas.psql
 
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax, status) values
@@ -34,21 +34,34 @@ from (values
   ('00000000-0000-4000-8000-0000b8000001', 'GSK-W8000001', '00000000-0000-4000-8000-00000000c801', '{8}', '+6281200008001', 0),
   ('00000000-0000-4000-8000-0000bc000001', 'GSK-WC000001', '00000000-0000-4000-8000-00000000c900', '{5,8}', '+6281200009001', 5)
 ) as fixture(id, code, package_id, rw_ids, phone, day_offset);
+create function pg_temp.is_fixture_booking(p_id uuid) returns boolean
+  language sql immutable
+as $$
+  select p_id in ('00000000-0000-4000-8000-0000b5000001', '00000000-0000-4000-8000-0000b5000007',
+                  '00000000-0000-4000-8000-0000b5000008', '00000000-0000-4000-8000-0000b5000030',
+                  '00000000-0000-4000-8000-0000b5000031', '00000000-0000-4000-8000-0000b8000001',
+                  '00000000-0000-4000-8000-0000bc000001');
+$$;
+grant execute on function pg_temp.is_fixture_booking(uuid) to anon, authenticated;
 insert into public.booking_legs (booking_id, rw_id, visit_session_id, leg_order, pax_count)
 select b.id, rw, case rw when 5 then '00000000-0000-4000-8000-00000000a501'::uuid else '00000000-0000-4000-8000-00000000a801'::uuid end,
        ordinality::smallint, 4
 from public.bookings b cross join lateral unnest(b.rw_ids) with ordinality as leg(rw, ordinality)
-where b.booking_code like 'GSK-W%';
+where pg_temp.is_fixture_booking(b.id);
 insert into public.umkm_vendors (id, rw_id, slug, name) values
   ('00000000-0000-4000-8000-00000000d501', 5, 'v5', 'Vendor RW 05'), ('00000000-0000-4000-8000-00000000d801', 8, 'v8', 'Vendor RW 08');
 insert into public.products_umkm (id, rw_id, vendor_id, slug, name, category, price) values
   ('00000000-0000-4000-8000-00000000e501', 5, '00000000-0000-4000-8000-00000000d501', 'pr5', 'Kompos', 'compost', 15000),
   ('00000000-0000-4000-8000-00000000e801', 8, '00000000-0000-4000-8000-00000000d801', 'pr8', 'Batik', 'souvenir', 50000);
-insert into public.booking_addons (booking_id, product_id, rw_id, vendor_id, product_name_snapshot, unit_price, qty, line_total) values
-  ('00000000-0000-4000-8000-0000b5000001', '00000000-0000-4000-8000-00000000e501', 5, '00000000-0000-4000-8000-00000000d501',
-   'Kompos', 15000, 2, 30000),
-  ('00000000-0000-4000-8000-0000b8000001', '00000000-0000-4000-8000-00000000e801', 8, '00000000-0000-4000-8000-00000000d801',
-   'Batik', 50000, 1, 50000);
+-- The combo orders from both RWs: each RW admin's money for it is their own RW's line.
+insert into public.booking_addons (booking_id, product_id, rw_id, vendor_id, product_name_snapshot, unit_price, qty, line_total)
+select booking_id::uuid, product_id::uuid, rw_id, vendor_id::uuid, name, price, qty, price * qty
+from (values
+  ('00000000-0000-4000-8000-0000b5000001', '00000000-0000-4000-8000-00000000e501', 5, '00000000-0000-4000-8000-00000000d501', 'Kompos', 15000, 2),
+  ('00000000-0000-4000-8000-0000b8000001', '00000000-0000-4000-8000-00000000e801', 8, '00000000-0000-4000-8000-00000000d801', 'Batik', 50000, 1),
+  ('00000000-0000-4000-8000-0000bc000001', '00000000-0000-4000-8000-00000000e501', 5, '00000000-0000-4000-8000-00000000d501', 'Kompos', 15000, 4),
+  ('00000000-0000-4000-8000-0000bc000001', '00000000-0000-4000-8000-00000000e801', 8, '00000000-0000-4000-8000-00000000d801', 'Batik', 50000, 3)
+) as fixture(booking_id, product_id, rw_id, vendor_id, name, price, qty);
 insert into public.booking_events (booking_id, from_status, to_status, actor_type, reason) values
   ('00000000-0000-4000-8000-0000b5000001', null, 'quoted', 'visitor', 'created'),
   ('00000000-0000-4000-8000-0000b5000008', null, 'quoted', 'visitor', 'created'),
@@ -68,8 +81,10 @@ select throws_ok($$select id from public.v_bookings_staff$$, '42501', null, 'and
 reset role;
 select pg_temp.act_as('none');
 select is(
-  (select count(*)::int from public.bookings) + (select count(*)::int from public.booking_legs)
-  + (select count(*)::int from public.booking_addons) + (select count(*)::int from public.booking_events),
+  (select count(*)::int from public.bookings where pg_temp.is_fixture_booking(id))
+  + (select count(*)::int from public.booking_legs where pg_temp.is_fixture_booking(booking_id))
+  + (select count(*)::int from public.booking_addons where pg_temp.is_fixture_booking(booking_id))
+  + (select count(*)::int from public.booking_events where pg_temp.is_fixture_booking(booking_id)),
   0,
   'a user without a role sees no booking row'
 );
@@ -78,7 +93,7 @@ select is(
 reset role;
 select pg_temp.act_as('admin_rw_05');
 select is(
-  (select string_agg(booking_code, ',' order by booking_code) from public.bookings),
+  (select string_agg(booking_code, ',' order by booking_code) from public.bookings where pg_temp.is_fixture_booking(id)),
   'GSK-W5000001,GSK-W5000007,GSK-W5000030,GSK-WC000001',
   'an RW admin sees their RW''s bookings from a week back to a month ahead, today''s and the combo included'
 );
@@ -92,7 +107,8 @@ select is(
   'the masked phone is what they read'
 );
 select is(
-  (select string_agg(booking_code, ',' order by booking_code) from public.v_bookings_staff),
+  (select string_agg(booking_code, ',' order by booking_code) from public.v_bookings_staff
+   where pg_temp.is_fixture_booking(id)),
   'GSK-W5000001,GSK-W5000007,GSK-W5000030,GSK-WC000001',
   'the staff view shows the same bookings'
 );
@@ -112,19 +128,26 @@ select throws_ok($$update public.bookings set status = 'expired' where booking_c
   'and never moves a status');
 select throws_ok($$update public.bookings set discount_amount = 10000 where booking_code = 'GSK-W5000001'$$, '42501', null,
   'nor gives a discount, which waits for its own RPC');
-select is((select count(*)::int from public.booking_legs where rw_id = 8), 0, 'sees no RW 08 leg, not even the combo''s');
+select is((select count(*)::int from public.booking_legs where pg_temp.is_fixture_booking(booking_id) and rw_id = 8), 0,
+  'sees no RW 08 leg, not even the combo''s');
 select is(
   (select count(*)::int from public.booking_legs where booking_id = '00000000-0000-4000-8000-0000b5000008'),
   1,
   'but every leg of their own RW, old ones included, so visit statistics count every period'
 );
-select is((select string_agg(product_name_snapshot, ',') from public.booking_addons), 'Kompos', 'their own RW''s add-ons only');
+select is(
+  (select string_agg(right(booking_id::text, 8) || ':' || product_name_snapshot || '=' || line_total, ','
+                     order by booking_id)
+   from public.booking_addons where pg_temp.is_fixture_booking(booking_id)),
+  'b5000001:Kompos=30000,bc000001:Kompos=60000',
+  'their own RW''s add-on lines only, a combo''s included, never RW 08''s line of it (STAFF-02)'
+);
 select is(pg_temp.row_count($$update public.booking_addons set fulfillment_status = 'prepared'
   where booking_id = '00000000-0000-4000-8000-0000b5000001'$$), 1, 'which they mark prepared');
 select is(pg_temp.row_count($$update public.booking_addons set fulfillment_status = 'prepared'
   where booking_id = '00000000-0000-4000-8000-0000b8000001'$$), 0, 'while RW 08''s stay out of reach');
 select is(
-  (select string_agg(right(booking_id::text, 8), ',') from public.booking_events),
+  (select string_agg(right(booking_id::text, 8), ',') from public.booking_events where pg_temp.is_fixture_booking(booking_id)),
   'b5000001',
   'a booking''s timeline is visible where the booking is: inside the window, in their RW'
 );
@@ -140,22 +163,36 @@ select is(
 reset role;
 select pg_temp.act_as('admin_rw_08');
 select is(
-  (select string_agg(booking_code, ',' order by booking_code) from public.bookings),
+  (select string_agg(booking_code, ',' order by booking_code) from public.bookings where pg_temp.is_fixture_booking(id)),
   'GSK-W8000001,GSK-WC000001',
   'RW 08''s admin sees RW 08''s bookings and the combo, nothing of RW 05'
 );
+select is(
+  (select string_agg(right(booking_id::text, 8) || ':' || product_name_snapshot, ',' order by booking_id)
+   from public.booking_addons where pg_temp.is_fixture_booking(booking_id)),
+  'b8000001:Batik,bc000001:Batik',
+  'and RW 08''s add-on lines, the combo''s included'
+);
+
+-- ===== admin_rw 05 without AAL2 =====
+reset role;
+select pg_temp.act_as('admin_rw_05_aal1');
+select is((select count(*)::int from public.bookings where pg_temp.is_fixture_booking(id)), 0,
+  'without AAL2 an RW admin sees no booking, not even today''s');
+select is(pg_temp.row_count($$update public.bookings set admin_notes = 'Tanpa TOTP' where booking_code = 'GSK-W5000001'$$), 0,
+  'and writes no note');
 
 -- ===== superadmin =====
 reset role;
 select pg_temp.act_as('superadmin_aal1');
-select is((select count(*)::int from public.bookings where booking_code like 'GSK-W%'), 7,
-  'bookings need no AAL2, and the window does not apply to the superadmin');
+select is((select count(*)::int from public.bookings where pg_temp.is_fixture_booking(id)), 0,
+  'without AAL2 the superadmin sees no booking either');
 reset role;
 select pg_temp.act_as('superadmin_aal2');
 select is(
-  (select string_agg(booking_code, ',' order by booking_code) from public.bookings where booking_code like 'GSK-W%'),
+  (select string_agg(booking_code, ',' order by booking_code) from public.bookings where pg_temp.is_fixture_booking(id)),
   'GSK-W5000001,GSK-W5000007,GSK-W5000008,GSK-W5000030,GSK-W5000031,GSK-W8000001,GSK-WC000001',
-  'the superadmin sees every booking, however old or far ahead'
+  'at AAL2 the superadmin sees every booking, however old or far ahead'
 );
 select is((select total_amount from public.v_bookings_staff where booking_code = 'GSK-WC000001'), 100000::bigint,
   'and the combo''s total');
@@ -164,8 +201,7 @@ select throws_ok($$select pic_phone from public.bookings$$, '42501', null,
 select is(pg_temp.row_count($$update public.bookings set admin_notes = 'Catatan' where booking_code = 'GSK-W8000001'$$), 1,
   'writes notes on any booking');
 select is(
-  (select count(*)::int from public.booking_events
-   where booking_id in (select id from public.bookings where booking_code like 'GSK-W%')),
+  (select count(*)::int from public.booking_events where pg_temp.is_fixture_booking(booking_id)),
   3,
   'and reads every timeline'
 );

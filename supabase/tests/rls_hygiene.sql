@@ -1,9 +1,9 @@
 -- Policy and grant hygiene over the whole schema (Task P1.4.06, P1.4.08, docs/Security.md §6.1–§6.6): policies read
 -- the JWT only through the helpers, always wrapped in (select ...); no authenticated policy opens a table with
--- using (true); the restrictive AAL2 policies sit on exactly the tables of docs/PRD.md §8.5.2; and the columns no API
--- role may read or write are granted to nobody.
+-- using (true); a restrictive AAL2 policy sits on every table authenticated may touch (docs/PRD.md §8.5.2, review
+-- of 0005 H1); and the columns no API role may read or write are granted to nobody.
 begin;
-select plan(9);
+select plan(11);
 
 select is(
   array(
@@ -38,15 +38,30 @@ select is(
 );
 select is(
   array(
-    select tablename::text from pg_policies
-    where schemaname = 'public' and permissive = 'RESTRICTIVE' and coalesce(qual, '') ~ 'aal2\('
+    select c.relname::text from pg_class c
+    where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'
+      and (has_any_column_privilege('authenticated', c.oid, 'SELECT, INSERT, UPDATE')
+           or has_table_privilege('authenticated', c.oid, 'DELETE'))
+      and not exists (
+        select 1 from pg_policies p
+        where p.schemaname = 'public' and p.tablename = c.relname and p.permissive = 'RESTRICTIVE' and p.cmd = 'ALL'
+          and p.roles = array['authenticated']::name[] and p.qual ~ '^\( SELECT aal2\(\) AS aal2\)$')
     order by 1
   ),
-  array['audit_logs', 'booking_participants', 'dsr_requests', 'exports', 'login_attempts', 'payment_adjustments',
-        'payment_events', 'payments', 'payout_batches', 'profiles', 'reconciliation_issues', 'reconciliation_runs',
-        'revenue_share_entries', 'revenue_share_rule_lines', 'revenue_share_rules', 'security_alerts', 'security_events',
-        'site_settings', 'staff_invites', 'webhook_rejections'],
-  'the restrictive AAL2 policy sits on exactly the finance, PII and security tables of the PRD matrix'
+  array[]::text[],
+  'every table authenticated holds a right on asks AAL2 of every command through a restrictive policy'
+);
+select is(
+  array(
+    select tablename::text from pg_tables t
+    where schemaname = 'public'
+      and not exists (select 1 from pg_policies p
+                      where p.schemaname = 'public' and p.tablename = t.tablename and p.permissive = 'RESTRICTIVE'
+                        and coalesce(p.qual, '') ~ 'aal2\(')
+    order by 1
+  ),
+  array['document_sequences', 'guest_otps', 'rate_limit_buckets'],
+  'only the three tables no API role touches go without it; booking_participants carries it, ready for a grant'
 );
 select is(
   array(
@@ -69,8 +84,10 @@ select is(
   'and they, with booking_participants, hold no grant at all'
 );
 
--- Withheld columns (decisions of 2026-10-16): contacts, bank and treasury accounts, pay links, the stored Midtrans
--- reply, participant names on certificates and outbox recipients are granted to no API role.
+-- Withheld columns (decisions of 2026-10-16 and the review of 0005): contacts, bank and treasury accounts, pay
+-- links, the stored Midtrans reply and event payloads, the whole-booking amounts of payments, invoices and
+-- quotations, scanned payloads, a reviewer's full name, participant names on certificates and outbox recipients
+-- are granted to no API role.
 select is(
   array(
     select c.table_name || '.' || c.column_name from (values
@@ -79,6 +96,9 @@ select is(
       ('umkm_vendors', 'bank_name'), ('umkm_vendors', 'bank_account_number'), ('umkm_vendors', 'bank_account_holder'),
       ('rw_units', 'treasury_bank_name'), ('rw_units', 'treasury_account_number'), ('rw_units', 'treasury_account_holder'),
       ('payments', 'snap_token'), ('payments', 'snap_redirect_url'), ('payments', 'va_number'), ('payments', 'last_payload'),
+      ('payments', 'gross_amount'), ('payments', 'refunded_amount'), ('payment_events', 'payload'),
+      ('invoices', 'amount_due'), ('invoices', 'amount_paid'), ('invoices', 'snapshot'), ('quotations', 'snapshot'),
+      ('ticket_scans', 'raw_payload'), ('reviews', 'reviewer_name'),
       ('certificates', 'recipient_name'),
       ('notifications', 'recipient'), ('notifications', 'recipient_name'), ('notifications', 'params'),
       ('notifications', 'last_error')
@@ -91,6 +111,14 @@ select is(
   ),
   array[]::text[],
   'no API role may read or write a withheld column'
+);
+select is(
+  array(
+    select api.role_name from (values ('anon'), ('authenticated')) as api(role_name)
+    where has_column_privilege(api.role_name, 'public.staff_invites', 'invite_code_hash', 'SELECT')
+  ),
+  array[]::text[],
+  'an invite code''s hash is written with the invite and read back by no API role'
 );
 -- Review M4: statuses and counters move only inside the transition functions.
 select is(

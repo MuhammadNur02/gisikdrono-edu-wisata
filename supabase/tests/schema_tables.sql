@@ -1,7 +1,7 @@
 -- Structure test for 0003_tables, extended group by group: exact columns, the types other code
 -- relies on, keys, and the CHECK / unique rules proven by trying to break them.
 begin;
-select plan(212);
+select plan(213);
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -822,10 +822,19 @@ select throws_ok(
             '00000000-0000-4000-8000-000000000002', 'check_in', 'ok')$$,
   '23505', null, 'a retried scan attempt cannot be recorded twice'
 );
+-- 0005 (review L2): for a valid ticket the scanned string is the signed token, so it is kept only as a digest.
 select throws_ok(
   $$insert into public.ticket_scans (attempt_id, scanned_by, phase, result, raw_payload)
-    values (gen_random_uuid(), '00000000-0000-4000-8000-000000000002', 'validate', 'invalid_signature', repeat('x', 129))$$,
-  '23514', null, 'only the first 128 characters of a scanned payload are kept'
+    values (gen_random_uuid(), '00000000-0000-4000-8000-000000000002', 'validate', 'invalid_signature',
+            'https://example.test/v/GSK.k1.AAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB')$$,
+  '23514', null, 'a scanned payload is never kept as it was scanned'
+);
+select lives_ok(
+  $$insert into public.ticket_scans (attempt_id, scanned_by, phase, result, raw_payload)
+    values (gen_random_uuid(), '00000000-0000-4000-8000-000000000002', 'validate', 'invalid_signature',
+            encode(sha256(convert_to('https://example.test/v/GSK.k1.AAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB',
+                                     'UTF8')), 'hex'))$$,
+  'only as the sha256 hex of the scanned string'
 );
 select throws_ok(
   $$insert into public.ticket_scans (attempt_id, scanned_by, phase, result, source)

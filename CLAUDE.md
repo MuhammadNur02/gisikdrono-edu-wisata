@@ -123,7 +123,7 @@ flowchart LR
 | 3. Mutation | `src/server/actions/<domain>.ts` | Mandatory order (§5.2): validate -> guard -> service -> revalidate -> `ActionResult`. |
 | 4. Orchestration | `src/server/services/<domain>-service.ts` | Calls data access and RPCs; only the allow-listed services may use the service-role client. |
 | 5. Data access | `src/lib/supabase/server.ts` under RLS, or `public.*` / `internal.*` RPCs | Status columns and quota counters are written only inside `internal.*` functions. |
-| 6. Database | Postgres with RLS **enabled and forced** on every table | Deny-by-default grants; helpers `app_role()`, `app_rw_id()`, `is_superadmin()`, `owns_rw()`; AAL2 restrictive policies on finance/PII tables. |
+| 6. Database | Postgres with RLS **enabled and forced** on every table | Deny-by-default grants; helpers `app_role()`, `app_rw_id()`, `is_superadmin()`, `owns_rw()`; an AAL2 restrictive policy on every table `authenticated` may touch. |
 | 7. Side effects | `notifications` outbox, `documents` bucket, `booking_events`, `audit_logs` | Written in the same transaction as the state change; delivery is asynchronous. |
 | Machine callers | `api/webhooks/*`, `api/jobs/*` | Outside auth middleware; verify signature or `CRON_SECRET` first, read raw body, persist, then process. |
 
@@ -585,7 +585,7 @@ Attempts (`internal.create_payment_attempt` + `attach_snap_token`): at most one 
 - Staff accounts are invite-only (`staff_invites`, public sign-up disabled). TOTP MFA is mandatory for **every** staff role (`superadmin` and `admin_rw`): `(admin)/dashboard/layout.tsx` redirects AAL1 sessions to `/mfa/verify` (or `/mfa/enroll` when no factor exists); enrolment happens only at onboarding or at AAL2; the password-verification hook `public.hook_password_verification_attempt` enforces lockout inside Auth.
 - Staff RPCs (`public.*`, granted to `authenticated`) re-check scope inside the function. `internal.*` functions are executed only by the service role from allow-listed services or by cron.
 - `profiles.role`, `rw_id`, `is_active`, `mfa_required` are not updatable by `authenticated`; changes go through `set_staff_role` / `set_staff_status` (superadmin, fresh TOTP <= 5 min, never own row). Deactivation also removes the role and RW; a returning officer gets them back only through `set_staff_role`. Every change bumps `claims_version` and deletes sessions.
-- Finance and PII tables (`payments`, `payment_adjustments`, `revenue_share_*`, `exports`, `audit_logs`, `site_settings`, `profiles`, `booking_participants`) carry restrictive AAL2 policies.
+- Every table `authenticated` holds a right on carries a restrictive AAL2 policy `<table>_aal2` (decision of 2026-10-17), so no staff read or write works at AAL1; a migration that grants a new table to `authenticated` adds its policy in the same file (`rls_hygiene.sql` fails otherwise).
 - Rich text is Tiptap/ProseMirror JSON in `articles.body_json` rendered by an allowlisted React renderer; `react/no-danger: error`; HTML is never stored. SVG uploads are rejected.
 - Hardening defaults in `next.config.ts`: `poweredByHeader: false`, `productionBrowserSourceMaps: false`, `images.remotePatterns` pinned, `experimental.serverActions.bodySizeLimit '512kb'`, `allowedOrigins` empty, CSP built in `src/middleware.ts` from `src/lib/csp.ts` (nonce + `strict-dynamic` on the private routes of `src/config/routes.ts`, static policy without a nonce on public ISR pages), HSTS, `frame-ancestors 'none'`, COOP/CORP `same-origin`. `safeRedirect()` accepts only `^/(?![/\\])`. Supabase Auth redirect allow-list = `/auth/callback` only.
 
@@ -810,7 +810,7 @@ supabase/migrations/<YYYYMMDDHHMMSS>_<table>.sql:
   revoke all on public.<table> from anon, authenticated; explicit grants.
 - Policies: anon/authenticated read only published rows (if public content);
   staff via (select public.is_superadmin()) or (select public.owns_rw(rw_id));
-  restrictive AAL2 policy if the table holds money or PII.
+  restrictive AAL2 policy <table>_aal2 whenever authenticated is granted anything on it.
 - Audit trigger (log_audit) if PII or money; append-only trigger if it is a log or ledger.
 Then: supabase/tests/<table>.sql pgTAP (RLS enabled, cross-RW 0 rows, write denied for wrong role),
 pnpm db:types, mirror enums in src/db/enums.ts, DTO in src/types/<table>.ts,
