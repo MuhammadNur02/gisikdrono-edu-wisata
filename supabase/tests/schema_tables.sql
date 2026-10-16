@@ -762,6 +762,9 @@ select is(
 
 -- Since 0004 a ticket needs a paid booking with a settled payment behind it.
 update public.payments set status = 'settled', settlement_time = now() where order_id = 'GSK-7F3K9Q2M-02';
+-- A booking reaches paid only through pending_payment (docs/PRD.md §9.2).
+update public.bookings set status = 'pending_payment', expires_at = now() + interval '2 hours'
+where id = '00000000-0000-4000-8000-0000000000e1';
 update public.bookings set status = 'paid', paid_at = now(), amount_paid = 1000000 where id = '00000000-0000-4000-8000-0000000000e1';
 insert into public.tickets_qr (id, booking_id, booking_leg_id, rw_id, visit_session_id, ticket_code, valid_on,
   valid_from, valid_until, pax_count, key_id)

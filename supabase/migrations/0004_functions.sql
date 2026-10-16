@@ -670,6 +670,41 @@ as $$ select nullif(current_setting('app.adjustment_id', true), '') is not null;
 
 revoke execute on function internal.in_rpc(), internal.in_adjustment() from public, anon, authenticated;
 
+-- A function that opens a fence sets its flags with push_settings and puts the previous values back
+-- with restore_settings before it returns, so a fence opened by one transition never stays open for
+-- whatever else runs in the same transaction. An error needs no restore: the rollback undoes it.
+create function internal.push_settings(p_settings jsonb) returns jsonb
+  language plpgsql
+  set search_path = ''
+as $$
+declare
+  setting record;
+  previous jsonb := '{}';
+begin
+  for setting in select key, value from jsonb_each_text(p_settings) loop
+    previous := previous || jsonb_build_object(setting.key, coalesce(current_setting(setting.key, true), ''));
+    perform set_config(setting.key, setting.value, true);
+  end loop;
+  return previous;
+end;
+$$;
+
+create function internal.restore_settings(p_previous jsonb) returns void
+  language plpgsql
+  set search_path = ''
+as $$
+declare
+  setting record;
+begin
+  for setting in select key, value from jsonb_each_text(p_previous) loop
+    perform set_config(setting.key, setting.value, true);
+  end loop;
+end;
+$$;
+
+revoke execute on function internal.push_settings(jsonb), internal.restore_settings(jsonb)
+  from public, anon, authenticated, service_role;
+
 -- guard_status_writes: the columns named on each trigger change only inside a transition function.
 create function internal.guard_status_writes() returns trigger
   language plpgsql security definer
@@ -704,6 +739,71 @@ create trigger guard_status_writes before update on public.booking_legs
   for each row execute function internal.guard_status_writes('status');
 create trigger guard_status_writes before update on public.visit_sessions
   for each row execute function internal.guard_status_writes('reserved_pax', 'checked_in_pax');
+
+-- guard_status_inserts: outside a transition function a new row starts where its state machine
+-- starts. Each argument names a fenced column and its starting value. A booking starts as 'quoted',
+-- the one state that holds neither quota nor money.
+create function internal.guard_status_inserts() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  starting_value text;
+  column_name text;
+  after_row jsonb := to_jsonb(new);
+begin
+  if internal.in_rpc() then
+    return new;
+  end if;
+  foreach starting_value in array tg_argv loop
+    column_name := split_part(starting_value, '=', 1);
+    if after_row ->> column_name is distinct from split_part(starting_value, '=', 2) then
+      raise exception '%.% starts at % unless a transition function writes it', tg_table_name, column_name,
+        split_part(starting_value, '=', 2) using errcode = '42501';
+    end if;
+  end loop;
+  return new;
+end;
+$$;
+create trigger guard_status_inserts before insert on public.bookings
+  for each row execute function internal.guard_status_inserts('status=quoted');
+create trigger guard_status_inserts before insert on public.payments
+  for each row execute function internal.guard_status_inserts('status=initiated');
+create trigger guard_status_inserts before insert on public.tickets_qr
+  for each row execute function internal.guard_status_inserts('status=issued');
+create trigger guard_status_inserts before insert on public.certificates
+  for each row execute function internal.guard_status_inserts('status=issued');
+create trigger guard_status_inserts before insert on public.booking_legs
+  for each row execute function internal.guard_status_inserts('status=unreserved');
+create trigger guard_status_inserts before insert on public.visit_sessions
+  for each row execute function internal.guard_status_inserts('reserved_pax=0', 'checked_in_pax=0');
+
+-- bookings_status_transition: even a transition function moves a booking only along the state
+-- machine of docs/PRD.md §9.2. The list below is that transition table; staying in the same status
+-- (a new payment attempt, a second leg checked in) is not a transition.
+create function internal.bookings_status_transition() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if new.status = old.status then
+    return new;
+  end if;
+  if (old.status::text, new.status::text) not in (
+    ('quoted', 'pending_payment'), ('quoted', 'expired'), ('quoted', 'cancelled'),
+    ('pending_payment', 'paid'), ('pending_payment', 'expired'), ('pending_payment', 'cancelled'),
+    ('expired', 'paid'), ('expired', 'pending_payment'),
+    ('paid', 'checked_in'), ('paid', 'no_show'), ('paid', 'cancelled'), ('paid', 'refunded'),
+    ('checked_in', 'completed'), ('checked_in', 'refunded'), ('checked_in', 'paid')
+  ) then
+    raise exception 'a booking does not go from % to %', old.status, new.status
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  return new;
+end;
+$$;
+create trigger bookings_status_transition before update of status on public.bookings
+  for each row execute function internal.bookings_status_transition();
 
 -- bookings_immutable_guard: a booking keeps its identity for life, and its money once it is paid.
 create function internal.bookings_immutable_guard() returns trigger
@@ -867,7 +967,8 @@ $$;
 create trigger tickets_no_revive before update on public.tickets_qr
   for each row execute function internal.tickets_no_revive();
 
-revoke execute on function internal.guard_status_writes(), internal.bookings_immutable_guard(),
+revoke execute on function internal.guard_status_writes(), internal.guard_status_inserts(),
+  internal.bookings_status_transition(), internal.bookings_immutable_guard(),
   internal.bookings_discount_guard(), internal.payments_immutable_guard(), internal.invoices_immutable_guard(),
   internal.booking_addons_freeze(), internal.tickets_require_paid_booking(), internal.tickets_no_revive()
   from public, anon, authenticated;
@@ -1450,12 +1551,14 @@ create function internal.reserve_session_quota(p_session_id uuid, p_pax integer)
   language plpgsql security definer
   set search_path = ''
 as $$
+declare
+  previous_settings jsonb;
 begin
   if p_pax is null or p_pax < 1 then
     raise exception 'a reservation needs at least one visitor' using errcode = '22023';
   end if;
 
-  perform set_config('app.in_rpc', '1', true);
+  previous_settings := internal.push_settings('{"app.in_rpc": "1"}');
   update public.visit_sessions
   set reserved_pax = reserved_pax + p_pax
   where id = p_session_id and status = 'open' and reserved_pax + p_pax <= capacity;
@@ -1463,6 +1566,7 @@ begin
     raise exception 'session % has no room for % more visitors', p_session_id, p_pax
       using errcode = 'P0001', hint = 'QUOTA_UNAVAILABLE';
   end if;
+  perform internal.restore_settings(previous_settings);
 end;
 $$;
 
@@ -1473,9 +1577,10 @@ create function internal.release_booking_quota(p_booking_id uuid) returns void
   set search_path = ''
 as $$
 declare
+  previous_settings jsonb;
   leg record;
 begin
-  perform set_config('app.in_rpc', '1', true);
+  previous_settings := internal.push_settings('{"app.in_rpc": "1"}');
   for leg in
     select l.id, l.visit_session_id, l.pax_count
     from public.booking_legs l
@@ -1486,6 +1591,7 @@ begin
     update public.visit_sessions set reserved_pax = reserved_pax - leg.pax_count where id = leg.visit_session_id;
     update public.booking_legs set status = 'released', quota_released_at = now() where id = leg.id;
   end loop;
+  perform internal.restore_settings(previous_settings);
 end;
 $$;
 
@@ -1641,13 +1747,12 @@ revoke execute on function internal.notifications_guest_guard(),
 -- service role; either way it is logged as cron, and like any transition it may move statuses and
 -- counters. Each run is its own transaction, so the settings below end with it.
 
-create function internal.begin_scheduled_job() returns void
+create function internal.begin_scheduled_job() returns jsonb
   language plpgsql
   set search_path = ''
 as $$
 begin
-  perform set_config('app.actor_role', 'cron', true);
-  perform set_config('app.in_rpc', '1', true);
+  return internal.push_settings('{"app.actor_role": "cron", "app.in_rpc": "1"}');
 end;
 $$;
 
@@ -1659,12 +1764,13 @@ create function internal.expire_stale_bookings() returns integer
   set search_path = ''
 as $$
 declare
+  previous_settings jsonb;
   quotation_days integer := (select (value #>> '{}')::integer from public.site_settings
                              where key = 'booking.quotation_valid_days');
   stale record;
   expired_count integer := 0;
 begin
-  perform internal.begin_scheduled_job();
+  previous_settings := internal.begin_scheduled_job();
   for stale in
     select b.id, b.status
     from public.bookings b
@@ -1687,6 +1793,7 @@ begin
     perform internal.enqueue_notification(stale.id, 'booking_expired', 'email', '{}');
     expired_count := expired_count + 1;
   end loop;
+  perform internal.restore_settings(previous_settings);
   return expired_count;
 end;
 $$;
@@ -1698,11 +1805,12 @@ create function internal.close_past_bookings() returns integer
   set search_path = ''
 as $$
 declare
+  previous_settings jsonb;
   past record;
   next_status public.booking_status;
   closed_count integer := 0;
 begin
-  perform internal.begin_scheduled_job();
+  previous_settings := internal.begin_scheduled_job();
   for past in
     select b.id, b.status
     from public.bookings b
@@ -1725,6 +1833,7 @@ begin
   end loop;
 
   update public.tickets_qr set status = 'expired' where status = 'issued' and valid_until < now();
+  perform internal.restore_settings(previous_settings);
   return closed_count;
 end;
 $$;
@@ -1734,10 +1843,11 @@ create function internal.enqueue_visit_reminders() returns integer
   set search_path = ''
 as $$
 declare
+  previous_settings jsonb;
   due record;
   reminded_count integer := 0;
 begin
-  perform internal.begin_scheduled_job();
+  previous_settings := internal.begin_scheduled_job();
   for due in
     select distinct b.id
     from public.bookings b
@@ -1749,6 +1859,7 @@ begin
     perform internal.enqueue_notification(due.id, 'visit_reminder_d1', 'email', '{"link_scope": "view"}');
     reminded_count := reminded_count + 1;
   end loop;
+  perform internal.restore_settings(previous_settings);
   return reminded_count;
 end;
 $$;
@@ -1761,12 +1872,13 @@ create function internal.reconcile_session_counters() returns integer
   set search_path = ''
 as $$
 declare
+  previous_settings jsonb;
   upcoming record;
   stored integer;
   held integer;
   drift_count integer := 0;
 begin
-  perform internal.begin_scheduled_job();
+  previous_settings := internal.begin_scheduled_job();
   for upcoming in
     select s.id from public.visit_sessions s where s.session_date >= public.today_jkt() order by s.id
   loop
@@ -1783,6 +1895,7 @@ begin
       jsonb_build_object('stored', stored, 'held', held, 'corrected', stored > held));
     drift_count := drift_count + 1;
   end loop;
+  perform internal.restore_settings(previous_settings);
   return drift_count;
 end;
 $$;
@@ -1793,14 +1906,13 @@ $$;
 -- Each run ends with one purge_run audit row carrying its counts. Storage objects cannot be deleted
 -- from SQL; api/jobs/purge-storage removes the files of whatever these runs marked.
 
-create function internal.begin_retention_run() returns void
+create function internal.begin_retention_run() returns jsonb
   language plpgsql
   set search_path = ''
 as $$
 begin
-  perform internal.begin_scheduled_job();
-  perform set_config('app.purge', 'on', true);
-  perform set_config('app.audit_mode', 'names_only', true);
+  return internal.push_settings(
+    '{"app.actor_role": "cron", "app.in_rpc": "1", "app.purge": "on", "app.audit_mode": "names_only"}');
 end;
 $$;
 
@@ -1811,12 +1923,13 @@ create function internal.purge_participants() returns integer
   set search_path = ''
 as $$
 declare
+  previous_settings jsonb;
   cutoff date := public.today_jkt() - 90;
   certificates_marked integer;
   participants_deleted integer;
   exports_marked integer;
 begin
-  perform internal.begin_retention_run();
+  previous_settings := internal.begin_retention_run();
 
   update public.certificates c set participant_id = null, recipient_name = '[dihapus]', purged_at = now()
   from public.bookings b
@@ -1833,6 +1946,7 @@ begin
   perform internal.log_audit('purge_run', 'booking_participants', null, jsonb_build_object(
     'job', 'purge_participants', 'participants_deleted', participants_deleted,
     'certificates_marked', certificates_marked, 'exports_marked', exports_marked));
+  perform internal.restore_settings(previous_settings);
   return participants_deleted;
 end;
 $$;
@@ -1848,6 +1962,7 @@ create function internal.anonymise_booker_pii() returns integer
   set search_path = ''
 as $$
 declare
+  previous_settings jsonb;
   retention_months integer := (select (value #>> '{}')::integer from public.site_settings
                                where key = 'pii_retention_months');
   unpaid_cutoff timestamptz := now() - interval '7 days';
@@ -1855,7 +1970,7 @@ declare
   participants_deleted integer;
   otps_deleted integer;
 begin
-  perform internal.begin_retention_run();
+  previous_settings := internal.begin_retention_run();
 
   delete from public.booking_participants p using public.bookings b
   where b.id = p.booking_id and b.status in ('expired', 'cancelled') and b.paid_at is null
@@ -1881,6 +1996,7 @@ begin
   perform internal.log_audit('purge_run', 'bookings', null, jsonb_build_object(
     'job', 'anonymise_booker_pii', 'bookings_anonymised', anonymised,
     'participants_deleted', participants_deleted, 'otps_deleted', otps_deleted));
+  perform internal.restore_settings(previous_settings);
   return anonymised;
 end;
 $$;
@@ -1894,13 +2010,14 @@ create function internal.prune_operational_tables() returns void
   set search_path = ''
 as $$
 declare
+  previous_settings jsonb;
   audit_cutoff_id bigint := (select max(a.id) from public.audit_logs a where a.occurred_at < now() - interval '24 months');
   anchor_hash text := (select a.entry_hash from public.audit_logs a where a.id = audit_cutoff_id);
   chain jsonb := internal.verify_audit_chain();
   counts jsonb := '{}';
   pruned integer;
 begin
-  perform internal.begin_retention_run();
+  previous_settings := internal.begin_retention_run();
 
   update public.notifications set params = '{}' where created_at < now() - interval '30 days' and params <> '{}';
   delete from public.notifications where created_at < now() - interval '180 days';
@@ -1935,6 +2052,7 @@ begin
 
   perform internal.log_audit('purge_run', 'operational_tables', null,
     jsonb_build_object('job', 'prune_operational_tables') || counts);
+  perform internal.restore_settings(previous_settings);
 end;
 $$;
 
@@ -2054,6 +2172,7 @@ create function public.set_staff_role(p_user_id uuid, p_role public.app_role, p_
   set search_path = ''
 as $$
 declare
+  previous_settings jsonb;
   previous record;
 begin
   perform internal.require_superadmin_step_up();
@@ -2065,9 +2184,9 @@ begin
     raise exception 'no staff profile %', p_user_id using errcode = 'P0002';
   end if;
 
-  perform set_config('app.privileged_rpc', 'on', true);
+  previous_settings := internal.push_settings('{"app.privileged_rpc": "on"}');
   update public.profiles set role = p_role, rw_id = p_rw_id where id = p_user_id;
-  perform set_config('app.privileged_rpc', '', true);
+  perform internal.restore_settings(previous_settings);
   delete from auth.sessions where user_id = p_user_id;
 
   insert into public.security_events (event_type, severity, actor_id, rw_id, entity_type, entity_id, details)
@@ -2085,6 +2204,7 @@ create function public.set_staff_status(p_user_id uuid, p_is_active boolean, p_r
   set search_path = ''
 as $$
 declare
+  previous_settings jsonb;
   staff_rw_id smallint;
 begin
   perform internal.require_superadmin_step_up();
@@ -2092,12 +2212,12 @@ begin
     raise exception 'a status change needs a reason of 3 to 300 characters' using errcode = '22023';
   end if;
 
-  perform set_config('app.privileged_rpc', 'on', true);
+  previous_settings := internal.push_settings('{"app.privileged_rpc": "on"}');
   update public.profiles set is_active = p_is_active where id = p_user_id returning rw_id into staff_rw_id;
   if not found then
     raise exception 'no staff profile %', p_user_id using errcode = 'P0002';
   end if;
-  perform set_config('app.privileged_rpc', '', true);
+  perform internal.restore_settings(previous_settings);
 
   if not p_is_active then
     delete from auth.sessions where user_id = p_user_id;
@@ -2155,6 +2275,7 @@ create function public.svc_log_audit(
   set search_path = ''
 as $$
 declare
+  previous_settings jsonb;
   staff_role public.app_role;
 begin
   if p_actor_id is not null then
@@ -2163,9 +2284,10 @@ begin
       raise exception 'audit actor % is not active staff', p_actor_id using errcode = '42501';
     end if;
   end if;
-  perform set_config('app.actor_id', coalesce(p_actor_id::text, ''), true);
-  perform set_config('app.actor_role', coalesce(staff_role::text, 'visitor'), true);
+  previous_settings := internal.push_settings(jsonb_build_object(
+    'app.actor_id', coalesce(p_actor_id::text, ''), 'app.actor_role', coalesce(staff_role::text, 'visitor')));
   perform internal.log_audit(p_action, p_entity_type, p_entity_id, p_metadata);
+  perform internal.restore_settings(previous_settings);
 end;
 $$;
 
@@ -2601,10 +2723,11 @@ create function internal.forget_purged_files(p_paths text[]) returns integer
   set search_path = ''
 as $$
 declare
+  previous_settings jsonb;
   forgotten integer := 0;
   cleared integer;
 begin
-  perform internal.begin_scheduled_job();
+  previous_settings := internal.begin_scheduled_job();
   update public.certificates set pdf_path = null where purged_at is not null and pdf_path = any (p_paths);
   get diagnostics cleared = row_count;
   forgotten := forgotten + cleared;
@@ -2614,6 +2737,7 @@ begin
   update public.bookings set ticket_pdf_path = null
   where ticket_pdf_path = any (p_paths) and visit_date_end < (public.today_jkt() - interval '12 months')::date;
   get diagnostics cleared = row_count;
+  perform internal.restore_settings(previous_settings);
   return forgotten + cleared;
 end;
 $$;

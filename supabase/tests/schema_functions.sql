@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(352);
+select plan(365);
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -594,11 +594,11 @@ select lives_ok(
   'but it can be closed to make room for a new version'
 );
 
--- Sessions with bookings.
+-- Sessions with bookings. The leg status and the counter are fenced; this fixture plays the
+-- transition function.
+select set_config('app.in_rpc', '1', true);
 insert into public.booking_legs (booking_id, rw_id, visit_session_id, leg_order, pax_count, status, quota_reserved_at)
 values ('00000000-0000-4000-8000-0000000000e1', 5, '00000000-0000-4000-8000-0000000000b1', 1, 40, 'reserved', now());
--- The counter is fenced since group 4; this fixture plays the transition function.
-select set_config('app.in_rpc', '1', true);
 update public.visit_sessions set reserved_pax = 40 where id = '00000000-0000-4000-8000-0000000000b1';
 select set_config('app.in_rpc', '', true);
 select throws_ok(
@@ -637,6 +637,68 @@ select throws_ok(
 );
 
 -- ===== Status fences and immutability (Task P1.3.08, P1.3.09, P1.3.11) =====
+
+-- New rows start where their state machine starts, unless a transition function writes them.
+select throws_ok(
+  $$insert into public.bookings (booking_code, status, package_id, package_snapshot, rw_ids, booker_type, pic_name,
+      pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount, consent_version,
+      consented_at, paid_at, amount_paid)
+    values ('GSK-7F3K9Q2V', 'paid', '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school', 'Uji',
+      '+6281234567893', 'uji@example.test', 4, pg_temp.days_from_today(27), pg_temp.days_from_today(27),
+      100000, 100000, 'v1', now(), now(), 100000)$$,
+  '42501', 'bookings.status starts at quoted unless a transition function writes it',
+  'a booking cannot be created already paid'
+);
+select throws_ok(
+  $$insert into public.payments (booking_id, attempt_no, provider, order_id, gross_amount, status)
+    values ('00000000-0000-4000-8000-0000000000e1', 9, 'midtrans', 'GSK-7F3K9Q2M-09', 1000000, 'settled')$$,
+  '42501', null, 'a payment cannot be recorded already settled'
+);
+select throws_ok(
+  $$insert into public.visit_sessions (rw_id, session_date, start_time, end_time, label, capacity, reserved_pax)
+    values (5, pg_temp.days_from_today(40), '06:00', '07:00', 'Penuh palsu', 20, 20)$$,
+  '42501', 'visit_sessions.reserved_pax starts at 0 unless a transition function writes it',
+  'an RW admin cannot create a session that already looks full'
+);
+select throws_ok(
+  $$insert into public.visit_sessions (rw_id, session_date, start_time, end_time, label, capacity, checked_in_pax)
+    values (5, pg_temp.days_from_today(40), '06:00', '07:00', 'Hadir palsu', 20, 15)$$,
+  '42501', null, 'nor one with visitors already checked in'
+);
+select lives_ok(
+  $$insert into public.visit_sessions (rw_id, session_date, start_time, end_time, label, capacity)
+    values (5, pg_temp.days_from_today(40), '06:00', '07:00', 'Sesi baru', 20)$$,
+  'a session that starts empty is fine'
+);
+
+-- Even a transition function moves a booking only along docs/PRD.md §9.2.
+insert into public.bookings (id, booking_code, status, package_id, package_snapshot, rw_ids, booker_type, pic_name,
+  pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount, consent_version,
+  consented_at)
+values ('00000000-0000-4000-8000-0000000000ea', 'GSK-7F3K9Q2T', 'quoted', '00000000-0000-4000-8000-0000000000c1', '{}',
+  '{5}', 'school', 'Uji Transisi', '+6281234567894', 'transisi@example.test', 4, pg_temp.days_from_today(27),
+  pg_temp.days_from_today(27), 100000, 100000, 'v1', now());
+select set_config('app.in_rpc', '1', true);
+select throws_ok(
+  $$update public.bookings set status = 'paid', paid_at = now(), amount_paid = 100000
+    where id = '00000000-0000-4000-8000-0000000000ea'$$,
+  'P0001', 'a booking does not go from quoted to paid', 'a quoted booking cannot jump straight to paid'
+);
+select lives_ok(
+  $$update public.bookings set status = 'pending_payment', expires_at = now() + interval '2 hours'
+    where id = '00000000-0000-4000-8000-0000000000ea'$$,
+  'it goes to pending_payment first'
+);
+select lives_ok(
+  $$update public.bookings set status = 'paid', paid_at = now(), amount_paid = 100000
+    where id = '00000000-0000-4000-8000-0000000000ea'$$,
+  'and from there to paid'
+);
+select throws_ok(
+  $$update public.bookings set status = 'quoted' where id = '00000000-0000-4000-8000-0000000000ea'$$,
+  'P0001', null, 'a paid booking never goes back to quoted'
+);
+select set_config('app.in_rpc', '', true);
 
 select throws_ok(
   $$update public.bookings set status = 'pending_payment', expires_at = now() + interval '2 hours'
@@ -975,6 +1037,13 @@ select throws_ok(
 
 -- A combo booking holding both legs gives its seats back once.
 select internal.reserve_session_quota('00000000-0000-4000-8000-0000000000b8', 3);
+select is(
+  coalesce(current_setting('app.in_rpc', true), ''),
+  '',
+  'a transition puts the status fence back the way it found it, so nothing after it writes unfenced'
+);
+-- The booking and its legs start past their first state; this fixture plays create_booking.
+select set_config('app.in_rpc', '1', true);
 insert into public.bookings (id, booking_code, status, package_id, package_snapshot, rw_ids, booker_type,
   pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
   consent_version, consented_at, expires_at)
@@ -1172,6 +1241,11 @@ from public.booking_legs l where l.booking_id = '00000000-0000-4000-8000-0000000
 select set_config('app.in_rpc', '', true);
 
 select internal.expire_stale_bookings();
+select is(
+  coalesce(current_setting('app.in_rpc', true), '') || '/' || coalesce(current_setting('app.actor_role', true), ''),
+  '/',
+  'a job puts the status fence and its cron actor back when it is done'
+);
 select set_config('app.in_rpc', '', true), set_config('app.actor_role', '', true);
 select is(
   (select string_agg(b.booking_code || '=' || b.status, ' ' order by b.booking_code) from public.bookings b
@@ -1282,6 +1356,11 @@ insert into public.guest_otps (id, purpose, phone, code_hash, expires_at) values
   ('00000000-0000-4000-8000-000000001a10', 'booking_phone', '+6281234609998', 'hash-new', now() + interval '5 minutes');
 
 select internal.purge_participants();
+select is(
+  coalesce(current_setting('app.purge', true), '') || '/' || coalesce(current_setting('app.audit_mode', true), ''),
+  '/',
+  'a retention run puts the purge switch and the audit mode back when it is done'
+);
 select set_config('app.purge', '', true), set_config('app.audit_mode', '', true), set_config('app.in_rpc', '', true),
   set_config('app.actor_role', '', true);
 select is(
@@ -1681,6 +1760,11 @@ select throws_ok(
   '42501', null, 'but never in the name of a deactivated staff member'
 );
 reset role;
+select is(
+  coalesce(current_setting('app.actor_id', true), '') || '/' || coalesce(current_setting('app.actor_role', true), ''),
+  '/',
+  'the actor the server named does not outlive its event'
+);
 select set_config('app.actor_id', '', true), set_config('app.actor_role', '', true);
 select is(
   (select string_agg(action || ' ' || actor_role || ' ' || coalesce(actor_id::text, '-'), ', ' order by id)
