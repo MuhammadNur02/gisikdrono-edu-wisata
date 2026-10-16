@@ -466,3 +466,139 @@ create policy certificates_staff_read on public.certificates for select to authe
   using ((select public.owns_any_rw(rw_ids)));
 
 grant select on public.v_attendance_today to authenticated;
+
+
+-- ===== Content: galleries, articles, booklets, hero_banners, activity_points, performance_schedules, reviews =====
+-- Published content is public, without the staff ids behind it or a gallery item's link to a booking. An RW
+-- admin manages their own RW's content; kelurahan-level rows (rw_id NULL) and the hero banners are the
+-- superadmin's. Only the superadmin publishes an article (articles_moderation_guard, 0004) and deletes an
+-- article or a booklet (decision of 2026-10-16). Whoever creates a row signs it with their own id.
+
+grant select (id, rw_id, category, media_type, storage_path, thumbnail_path, video_url, width, height, blurhash, caption,
+  alt_text, taken_at, tags, status, sort_order, created_at, updated_at) on public.galleries to anon;
+grant select (id, rw_id, category, media_type, storage_path, thumbnail_path, video_url, width, height, blurhash, caption,
+  alt_text, taken_at, booking_id, tags, status, sort_order, uploaded_by, created_at, updated_at)
+  on public.galleries to authenticated;
+grant insert (rw_id, category, media_type, storage_path, thumbnail_path, video_url, width, height, blurhash, caption,
+  alt_text, taken_at, booking_id, tags, status, sort_order, uploaded_by) on public.galleries to authenticated;
+grant update (category, media_type, storage_path, thumbnail_path, video_url, width, height, blurhash, caption, alt_text,
+  taken_at, booking_id, tags, status, sort_order) on public.galleries to authenticated;
+grant delete on public.galleries to authenticated;
+
+create policy galleries_public_read on public.galleries for select to anon using (status = 'published');
+create policy galleries_staff_read on public.galleries for select to authenticated using ((select public.owns_rw(rw_id)));
+create policy galleries_staff_insert on public.galleries for insert to authenticated
+  with check ((select public.owns_rw(rw_id)) and uploaded_by = (select auth.uid()));
+create policy galleries_staff_update on public.galleries for update to authenticated
+  using ((select public.owns_rw(rw_id))) with check ((select public.owns_rw(rw_id)));
+create policy galleries_staff_delete on public.galleries for delete to authenticated using ((select public.owns_rw(rw_id)));
+
+grant select (id, rw_id, slug, title, excerpt, body_json, cover_path, category, tags, status, published_at, seo_title,
+  seo_description, reading_minutes, created_at, updated_at) on public.articles to anon;
+grant select (id, rw_id, slug, title, excerpt, body_json, cover_path, category, tags, status, author_id, reviewed_by,
+  published_at, seo_title, seo_description, reading_minutes, created_at, updated_at) on public.articles to authenticated;
+grant insert (rw_id, slug, title, excerpt, body_json, cover_path, category, tags, status, author_id, seo_title,
+  seo_description, reading_minutes) on public.articles to authenticated;
+grant update (slug, title, excerpt, body_json, cover_path, category, tags, status, seo_title, seo_description,
+  reading_minutes) on public.articles to authenticated;
+grant delete on public.articles to authenticated;
+
+create policy articles_public_read on public.articles for select to anon using (status = 'published');
+create policy articles_staff_read on public.articles for select to authenticated using ((select public.owns_rw(rw_id)));
+create policy articles_staff_insert on public.articles for insert to authenticated
+  with check ((select public.owns_rw(rw_id)) and author_id = (select auth.uid()));
+create policy articles_staff_update on public.articles for update to authenticated
+  using ((select public.owns_rw(rw_id))) with check ((select public.owns_rw(rw_id)));
+create policy articles_super_delete on public.articles for delete to authenticated using ((select public.is_superadmin()));
+
+-- booklets: download_count moves only through svc_increment_booklet_download.
+grant select (id, rw_id, kind, slug, title, description, pdf_path, cover_path, page_images_prefix, page_count,
+  file_size_bytes, download_count, status, published_at, created_at, updated_at) on public.booklets to anon;
+grant select (id, rw_id, kind, slug, title, description, pdf_path, cover_path, page_images_prefix, page_count,
+  file_size_bytes, download_count, status, published_at, created_by, created_at, updated_at) on public.booklets to authenticated;
+grant insert (rw_id, kind, slug, title, description, pdf_path, cover_path, page_images_prefix, page_count,
+  file_size_bytes, status, published_at, created_by) on public.booklets to authenticated;
+grant update (kind, slug, title, description, pdf_path, cover_path, page_images_prefix, page_count, file_size_bytes,
+  status, published_at) on public.booklets to authenticated;
+grant delete on public.booklets to authenticated;
+
+create policy booklets_public_read on public.booklets for select to anon using (status = 'published');
+create policy booklets_staff_read on public.booklets for select to authenticated using ((select public.owns_rw(rw_id)));
+create policy booklets_staff_insert on public.booklets for insert to authenticated
+  with check ((select public.owns_rw(rw_id)) and created_by = (select auth.uid()));
+create policy booklets_staff_update on public.booklets for update to authenticated
+  using ((select public.owns_rw(rw_id))) with check ((select public.owns_rw(rw_id)));
+create policy booklets_super_delete on public.booklets for delete to authenticated using ((select public.is_superadmin()));
+
+-- hero_banners: the home page carousel, the superadmin's alone; the public sees an active banner in its window.
+grant select (id, title, subtitle, cta_label, cta_href, image_path, mobile_image_path, product_id, sort_order, is_active,
+  starts_at, ends_at, created_at, updated_at) on public.hero_banners to anon;
+grant select (id, title, subtitle, cta_label, cta_href, image_path, mobile_image_path, product_id, sort_order, is_active,
+  starts_at, ends_at, created_by, created_at, updated_at) on public.hero_banners to authenticated;
+grant insert (title, subtitle, cta_label, cta_href, image_path, mobile_image_path, product_id, sort_order, is_active,
+  starts_at, ends_at, created_by) on public.hero_banners to authenticated;
+grant update (title, subtitle, cta_label, cta_href, image_path, mobile_image_path, product_id, sort_order, is_active,
+  starts_at, ends_at) on public.hero_banners to authenticated;
+grant delete on public.hero_banners to authenticated;
+
+create policy hero_banners_public_read on public.hero_banners for select to anon
+  using (is_active and (starts_at is null or starts_at <= now()) and (ends_at is null or ends_at > now()));
+create policy hero_banners_super_read on public.hero_banners for select to authenticated
+  using ((select public.is_superadmin()));
+create policy hero_banners_super_insert on public.hero_banners for insert to authenticated
+  with check ((select public.is_superadmin()) and created_by = (select auth.uid()));
+create policy hero_banners_super_update on public.hero_banners for update to authenticated
+  using ((select public.is_superadmin())) with check ((select public.is_superadmin()));
+create policy hero_banners_super_delete on public.hero_banners for delete to authenticated
+  using ((select public.is_superadmin()));
+
+grant select (id, rw_id, slug, name, point_type, short_description, body_md, image_path, map_x, map_y, svg_hotspot_id,
+  lat, lng, sort_order, status, created_at, updated_at) on public.activity_points to anon, authenticated;
+grant insert (rw_id, slug, name, point_type, short_description, body_md, image_path, map_x, map_y, svg_hotspot_id, lat,
+  lng, sort_order, status) on public.activity_points to authenticated;
+grant update (slug, name, point_type, short_description, body_md, image_path, map_x, map_y, svg_hotspot_id, lat, lng,
+  sort_order, status) on public.activity_points to authenticated;
+grant delete on public.activity_points to authenticated;
+
+create policy activity_points_public_read on public.activity_points for select to anon using (status = 'published');
+create policy activity_points_staff on public.activity_points for all to authenticated
+  using ((select public.owns_rw(rw_id))) with check ((select public.owns_rw(rw_id)));
+
+grant select (id, rw_id, title, schedule_type, description_md, starts_at, ends_at, venue, recurrence_rule, image_path,
+  package_id, status, created_at, updated_at) on public.performance_schedules to anon;
+grant select (id, rw_id, title, schedule_type, description_md, starts_at, ends_at, venue, recurrence_rule, image_path,
+  package_id, status, created_by, created_at, updated_at) on public.performance_schedules to authenticated;
+grant insert (rw_id, title, schedule_type, description_md, starts_at, ends_at, venue, recurrence_rule, image_path,
+  package_id, status, created_by) on public.performance_schedules to authenticated;
+grant update (title, schedule_type, description_md, starts_at, ends_at, venue, recurrence_rule, image_path, package_id,
+  status) on public.performance_schedules to authenticated;
+grant delete on public.performance_schedules to authenticated;
+
+create policy performance_schedules_public_read on public.performance_schedules for select to anon
+  using (status = 'published');
+create policy performance_schedules_staff_read on public.performance_schedules for select to authenticated
+  using ((select public.owns_rw(rw_id)));
+create policy performance_schedules_staff_insert on public.performance_schedules for insert to authenticated
+  with check ((select public.owns_rw(rw_id)) and created_by = (select auth.uid()));
+create policy performance_schedules_staff_update on public.performance_schedules for update to authenticated
+  using ((select public.owns_rw(rw_id))) with check ((select public.owns_rw(rw_id)));
+create policy performance_schedules_staff_delete on public.performance_schedules for delete to authenticated
+  using ((select public.owns_rw(rw_id)));
+
+-- reviews: the public reads a published review through v_public_reviews, which shows the author's first name
+-- or 'Pengunjung', never reviewer_name or the booking. Staff read their RW's reviews; the superadmin moderates
+-- (reviews_moderation_stamp records who and when) and deletes.
+grant select (id, rating, title, body, public_reviewer_name, institution_name, rw_ids, is_featured, status, created_at)
+  on public.reviews to anon;
+grant select (id, booking_id, rw_ids, rating, title, body, reviewer_name, institution_name, is_anonymous, status,
+  is_featured, moderated_by, moderated_at, moderation_note, created_at, updated_at, public_reviewer_name)
+  on public.reviews to authenticated;
+grant update (status, is_featured, moderation_note) on public.reviews to authenticated;
+grant delete on public.reviews to authenticated;
+grant select on public.v_public_reviews to anon, authenticated;
+
+create policy reviews_public_read on public.reviews for select to anon using (status = 'published');
+create policy reviews_staff_read on public.reviews for select to authenticated using ((select public.owns_any_rw(rw_ids)));
+create policy reviews_super_moderate on public.reviews for update to authenticated
+  using ((select public.is_superadmin())) with check ((select public.is_superadmin()));
+create policy reviews_super_delete on public.reviews for delete to authenticated using ((select public.is_superadmin()));
