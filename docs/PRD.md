@@ -1865,7 +1865,7 @@ grant update (full_name, phone, avatar_path) on public.profiles to authenticated
 | `cancel_booking` | `(p_booking_id uuid, p_reason text) returns jsonb` | staff in scope (paid -> superadmin) | §9 transition; revokes tickets; releases quota; enqueues `booking_cancelled` |
 | `extend_booking_hold` | `(p_booking_id uuid, p_new_expires_at timestamptz) returns jsonb` | staff in scope | `pending_payment` only; <= now() + 14 d and < first session start; audited |
 | `reactivate_booking` | `(p_booking_id uuid) returns jsonb` | staff in scope | `expired -> pending_payment`; re-reserves quota (raises `QUOTA_UNAVAILABLE`); new `expires_at`; new attempt |
-| `record_refund` | `(p_booking_id uuid, p_amount bigint, p_reference text, p_reason text) returns jsonb` | superadmin | After the refund executed in Midtrans: payment `refunded`/`partially_refunded`, booking `refunded` (full) or stays with `needs_review` cleared (partial), tickets revoked (full), quota released if future, reversal ledger rows, invoice void + credit note, `refund_processed` |
+| `record_refund` | `(p_booking_id uuid, p_amount bigint, p_reference text, p_reason text) returns jsonb` | superadmin, AAL2 | Sets `app.recording_refund`, the only way a booking becomes `refunded` (from `paid`, `checked_in`, `cancelled`, `completed`, `no_show`, or `pending_payment` under review), and only while it has a `settled` payment, so it moves the booking before it closes that payment. After the refund executed in Midtrans: payment `refunded`/`partially_refunded`, booking `refunded` (full) or stays with `needs_review` cleared (partial), tickets revoked (full), quota released if future, reversal ledger rows, invoice void + credit note, `refund_processed` |
 | `resolve_booking_review` | `(p_booking_id uuid, p_action text) returns jsonb` | superadmin | `issue_tickets` (re-reserve + issue) or `refund`; clears `needs_review` |
 | `issue_certificates` | `(p_booking_id uuid) returns setof public.certificates` | staff in scope / svc | Requires all legs checked in; inserts missing group + participant certificates; idempotent |
 | `revoke_ticket` | `(p_ticket_id uuid, p_reason text) returns void` | superadmin | `issued -> revoked`; audited |
@@ -1986,6 +1986,10 @@ stateDiagram-v2
   paid --> refunded : record_refund (superadmin, full) — tickets revoked, ledger reversed
   checked_in --> completed : close_past_bookings — all leg dates passed, review_invite
   checked_in --> refunded : record_refund (superadmin, partial attendance)
+  cancelled --> refunded : record_refund (superadmin) — paid, then cancelled
+  completed --> refunded : record_refund (superadmin)
+  no_show --> refunded : record_refund (superadmin)
+  pending_payment --> refunded : record_refund (superadmin) — money received under review
   completed --> [*]
   no_show --> [*]
   cancelled --> [*]
@@ -2016,7 +2020,7 @@ Terminal states: `completed`, `no_show`, `cancelled`, `refunded`. `expired` is r
 | `checked_in` | `completed` | `internal.close_past_bookings` (23:30 WIB) when `visit_date_end < today_jkt()` | `completed_at`; `review_invite` with `review` link (14 d) |
 | `paid` | `no_show` | Same job when no leg is checked in and `visit_date_end < today_jkt()` | Tickets `expired`; ledger untouched |
 | `paid` | `cancelled` | Superadmin -> `cancel_booking` (reason required) | Tickets `revoked`; quota released if future; ledger untouched until a refund is recorded; `booking_cancelled` |
-| `paid` / `checked_in` | `refunded` | Superadmin -> `record_refund` after executing the refund in Midtrans (full, or partial after partial attendance) | Payment `refunded` / `partially_refunded` (`refunded_amount`); all tickets `revoked`; quota released if future; `reverse_revenue_share`; invoice `void` + `credit_note_number` (`CN/`); `refund_processed` |
+| `paid` / `checked_in` / `cancelled` / `completed` / `no_show` / `pending_payment` (`needs_review`) | `refunded` | Superadmin at AAL2 -> `record_refund` only (`app.recording_refund`), after executing the refund in Midtrans (full, or partial after partial attendance), and only while the booking has a `settled` payment (`bookings_status_transition`, review N2); `record_refund` moves the booking before it closes the payment | Payment `refunded` / `partially_refunded` (`refunded_amount`); all tickets `revoked`; quota released if future; `reverse_revenue_share`; invoice `void` + `credit_note_number` (`CN/`); `refund_processed` |
 | `paid` | `paid` (`disputed`) | Midtrans `chargeback` | Payment `disputed`; tickets `suspended`; critical alert; superadmin resolves via adjustment or refund |
 | `paid` | `paid` (`duplicate`) | Second settlement for an already-paid booking | New payment row `duplicate`; auto-refund task in `payment_adjustments`; high alert |
 | any (`needs_review`) | same | Superadmin -> `resolve_booking_review(action)` | `issue_tickets` (re-reserve + issue tickets) or `refund`; flag cleared; audit |

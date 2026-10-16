@@ -668,7 +668,14 @@ create function internal.in_adjustment() returns boolean
   set search_path = ''
 as $$ select nullif(current_setting('app.adjustment_id', true), '') is not null; $$;
 
-revoke execute on function internal.in_rpc(), internal.in_adjustment() from public, anon, authenticated;
+-- record_refund (Task P4.7.03) announces itself with app.recording_refund = '1'.
+create function internal.recording_refund() returns boolean
+  language sql stable
+  set search_path = ''
+as $$ select coalesce(current_setting('app.recording_refund', true), '') = '1'; $$;
+
+revoke execute on function internal.in_rpc(), internal.in_adjustment(), internal.recording_refund()
+  from public, anon, authenticated;
 
 -- A function that opens a fence sets its flags with push_settings and puts the previous values back
 -- with restore_settings before it returns, so a fence opened by one transition never stays open for
@@ -780,7 +787,9 @@ create trigger guard_status_inserts before insert on public.visit_sessions
 
 -- bookings_status_transition: even a transition function moves a booking only along the state
 -- machine of docs/PRD.md §9.2. The list below is that transition table; staying in the same status
--- (a new payment attempt, a second leg checked in) is not a transition.
+-- (a new payment attempt, a second leg checked in) is not a transition. A booking becomes refunded
+-- only inside record_refund, run by a superadmin at AAL2, and only while money is held for it in a
+-- settled payment, so record_refund moves the booking before it closes that payment (review N2).
 create function internal.bookings_status_transition() returns trigger
   language plpgsql security definer
   set search_path = ''
@@ -792,12 +801,24 @@ begin
   if (old.status::text, new.status::text) not in (
     ('quoted', 'pending_payment'), ('quoted', 'expired'), ('quoted', 'cancelled'),
     ('pending_payment', 'paid'), ('pending_payment', 'expired'), ('pending_payment', 'cancelled'),
+    ('pending_payment', 'refunded'),
     ('expired', 'paid'), ('expired', 'pending_payment'),
     ('paid', 'checked_in'), ('paid', 'no_show'), ('paid', 'cancelled'), ('paid', 'refunded'),
-    ('checked_in', 'completed'), ('checked_in', 'refunded'), ('checked_in', 'paid')
+    ('checked_in', 'completed'), ('checked_in', 'refunded'), ('checked_in', 'paid'),
+    ('cancelled', 'refunded'), ('completed', 'refunded'), ('no_show', 'refunded')
   ) then
     raise exception 'a booking does not go from % to %', old.status, new.status
       using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  if new.status = 'refunded' then
+    if not (internal.recording_refund() and public.is_superadmin() and public.aal2()) then
+      raise exception 'a booking becomes refunded only through record_refund, by a superadmin at AAL2'
+        using errcode = '42501';
+    end if;
+    if not exists (select 1 from public.payments p where p.booking_id = new.id and p.status = 'settled') then
+      raise exception 'a booking is refunded only while it has a settled payment'
+        using errcode = 'P0001', hint = 'STATE_INVALID';
+    end if;
   end if;
   return new;
 end;

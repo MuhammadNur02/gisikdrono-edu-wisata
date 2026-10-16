@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(405);
+select plan(413);
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -698,6 +698,77 @@ select throws_ok(
   $$update public.bookings set status = 'quoted' where id = '00000000-0000-4000-8000-0000000000ea'$$,
   'P0001', null, 'a paid booking never goes back to quoted'
 );
+
+-- A refund is recorded only by record_refund, by a superadmin at AAL2, while a settled payment holds the
+-- money (review N2): from a cancelled, completed or no-show booking, or one still awaiting payment whose
+-- money arrived under review, as well as from a paid or checked-in one.
+insert into public.bookings (id, booking_code, status, package_id, package_snapshot, rw_ids, booker_type, pic_name,
+  pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount, consent_version,
+  consented_at, expires_at)
+select id::uuid, code, status::public.booking_status, '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school', 'Uji Refund',
+  phone, code || '@example.test', 4, pg_temp.days_from_today(-3), pg_temp.days_from_today(-3), 100000, 100000, 'v1',
+  now(), case when status = 'pending_payment' then now() + interval '2 hours' end
+from (values
+  ('00000000-0000-4000-8000-0000000002a1', 'GSK-RFND00A1', 'cancelled', '+6281234567201'),
+  ('00000000-0000-4000-8000-0000000002a2', 'GSK-RFND00A2', 'completed', '+6281234567202'),
+  ('00000000-0000-4000-8000-0000000002a3', 'GSK-RFND00A3', 'no_show', '+6281234567203'),
+  ('00000000-0000-4000-8000-0000000002a4', 'GSK-RFND00A4', 'pending_payment', '+6281234567204'),
+  ('00000000-0000-4000-8000-0000000002a5', 'GSK-RFND00A5', 'cancelled', '+6281234567205'),
+  ('00000000-0000-4000-8000-0000000002a6', 'GSK-RFND00A6', 'cancelled', '+6281234567206')
+) as fixture(id, code, status, phone);
+insert into public.payments (booking_id, attempt_no, provider, order_id, gross_amount, status)
+select ('00000000-0000-4000-8000-0000000002' || suffix)::uuid, 1, 'midtrans', 'GSK-RFND00' || upper(suffix) || '-01', 100000, 'settled'
+from unnest(array['a1', 'a2', 'a3', 'a4', 'a6']) as suffix;
+
+select set_config('request.jwt.claims', (
+  select jsonb_build_object('sub', id, 'role', 'authenticated', 'aal', 'aal2', 'app_role', role,
+                            'claims_version', claims_version)::text
+  from public.profiles where id = '00000000-0000-4000-8000-000000000001'), true);
+select throws_ok(
+  $$update public.bookings set status = 'refunded' where id = '00000000-0000-4000-8000-0000000002a1'$$,
+  '42501', 'a booking becomes refunded only through record_refund, by a superadmin at AAL2',
+  'no transition function but record_refund refunds a booking'
+);
+select set_config('app.recording_refund', '1', true);
+select lives_ok(
+  $$update public.bookings set status = 'refunded' where id = '00000000-0000-4000-8000-0000000002a1'$$,
+  'record_refund, run by a superadmin at AAL2, refunds a paid booking that was cancelled'
+);
+select lives_ok(
+  $$update public.bookings set status = 'refunded' where id = '00000000-0000-4000-8000-0000000002a2'$$,
+  'a completed one'
+);
+select lives_ok(
+  $$update public.bookings set status = 'refunded' where id = '00000000-0000-4000-8000-0000000002a3'$$,
+  'a no-show'
+);
+select lives_ok(
+  $$update public.bookings set status = 'refunded' where id = '00000000-0000-4000-8000-0000000002a4'$$,
+  'and one still awaiting payment whose money arrived under review'
+);
+select throws_ok(
+  $$update public.bookings set status = 'refunded' where id = '00000000-0000-4000-8000-0000000002a5'$$,
+  'P0001', 'a booking is refunded only while it has a settled payment',
+  'but never a cancelled booking that received no money'
+);
+select set_config('request.jwt.claims', (
+  select jsonb_build_object('sub', id, 'role', 'authenticated', 'aal', 'aal1', 'app_role', role,
+                            'claims_version', claims_version)::text
+  from public.profiles where id = '00000000-0000-4000-8000-000000000001'), true);
+select throws_ok(
+  $$update public.bookings set status = 'refunded' where id = '00000000-0000-4000-8000-0000000002a6'$$,
+  '42501', null, 'nor by a superadmin who has not passed the TOTP step'
+);
+select set_config('request.jwt.claims', (
+  select jsonb_build_object('sub', id, 'role', 'authenticated', 'aal', 'aal2', 'app_role', role, 'app_rw_id', rw_id,
+                            'claims_version', claims_version)::text
+  from public.profiles where id = '00000000-0000-4000-8000-000000000002'), true);
+select throws_ok(
+  $$update public.bookings set status = 'refunded' where id = '00000000-0000-4000-8000-0000000002a6'$$,
+  '42501', null, 'nor by an RW admin'
+);
+select set_config('app.recording_refund', '', true);
+select set_config('request.jwt.claims', '', true);
 select set_config('app.in_rpc', '', true);
 
 select throws_ok(

@@ -917,7 +917,7 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 | REC-05 | must | Hash-chained ledger + nightly verify | DB-owner tampering | `fn_ledger_chain`, `internal.verify_ledger_chain` | pgTAP tamper test | P1 - DB & RLS |
 | REC-06 | must | Largest-remainder split, rule snapshot, idempotent | Wrong splits, double posting | `internal.allocate_revenue_share` | pgTAP odd amounts; second call no-op | P3 - Payment Gateway & Webhook |
 | REC-07 | must | Recap/exports from ledger views only; exports audited | Reports from editable rows | `v_revenue_recap_*`, `export-service.ts` | type-level + audit row test | P4 - Data Export |
-| REC-08 | must | Refund paths (API for QRIS, evidence-backed manual for VA); credit notes; tickets revoked | Unrecorded refunds | `record_refund`, `apply_adjustment` | sandbox refund e2e; pgTAP | P3 - Payment Gateway & Webhook |
+| REC-08 | must | Refund paths (API for QRIS, evidence-backed manual for VA); credit notes; tickets revoked; a booking becomes `refunded` only inside `record_refund` (superadmin, AAL2) while a settled payment exists | Unrecorded refunds | `record_refund`, `apply_adjustment` | sandbox refund e2e; pgTAP | P3 - Payment Gateway & Webhook |
 | REC-09 | must | Dual-control adjustments (proposer ≠ approver, AAL2, evidence) | Insider money edits | `payment_adjustments`, RLS, `apply_adjustment` | pgTAP + integration | P4 - Dashboards & CRUD |
 | REC-10 | must | Versioned immutable revenue-share rules | Retroactive split changes | `revenue_share_rules` | pgTAP | P1 - DB & RLS |
 | REC-11 | must | Gapless numbering at settlement | Audit findings | `document_sequences`, `internal.next_document_number` | concurrency script | P3 - B2B Invoice PDF |
