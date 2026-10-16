@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(279);
+select plan(289);
 
 -- Fixtures, rolled back at the end. The pepper is a throwaway local value.
 select vault.create_secret('local-test-pepper-not-a-real-secret-0000000', 'otp_pepper', 'test only');
@@ -1427,6 +1427,58 @@ select is(
   internal.staff_token_claims('00000000-0000-4000-8000-000000000004') ->> 'app_role',
   'none',
   'an account with a second verified factor gets no role until its MFA is reset'
+);
+
+-- ===== Service-role entry points =====
+
+select is(
+  (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname like 'svc\_%'
+     and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'))),
+  0,
+  'no svc_ function is executable by anon or authenticated'
+);
+select is(
+  (select bool_and(has_function_privilege('service_role', p.oid, 'execute') and p.prosecdef)
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname like 'svc\_%'),
+  true,
+  'every svc_ function is security definer and executable by the service role'
+);
+select is(
+  has_schema_privilege('service_role', 'internal', 'usage'),
+  false,
+  'so the service role needs no right on internal itself'
+);
+
+set local role anon;
+select throws_ok($$select public.svc_rate_limit_hit('test:svc', 5, 60)$$, '42501', null, 'anon cannot call a svc_ function');
+reset role;
+set local role authenticated;
+select throws_ok($$select public.svc_expire_stale_bookings()$$, '42501', null, 'nor can a signed-in user');
+reset role;
+
+set local role service_role;
+select is(public.svc_rate_limit_hit('test:svc', 5, 60), true, 'the service role reaches internal through the wrapper');
+select lives_ok(
+  $$select public.svc_log_audit('00000000-0000-4000-8000-000000000001', 'export.downloaded', 'exports', 'x1', '{"rows": 3}')$$,
+  'the server logs a staff member''s application event'
+);
+select lives_ok(
+  $$select public.svc_log_audit(null, 'booking.access_link_resent', 'bookings', 'x2', '{}')$$,
+  'or a visitor''s'
+);
+select throws_ok(
+  $$select public.svc_log_audit('00000000-0000-4000-8000-000000000003', 'export.downloaded', 'exports', 'x3', '{}')$$,
+  '42501', null, 'but never in the name of a deactivated staff member'
+);
+reset role;
+select set_config('app.actor_id', '', true), set_config('app.actor_role', '', true);
+select is(
+  (select string_agg(action || ' ' || actor_role || ' ' || coalesce(actor_id::text, '-'), ', ' order by id)
+   from public.audit_logs where entity_id in ('x1', 'x2')),
+  'export.downloaded superadmin 00000000-0000-4000-8000-000000000001, booking.access_link_resent visitor -',
+  'each event carries the actor the server named'
 );
 
 -- ===== Append-only logs =====

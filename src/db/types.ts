@@ -3419,6 +3419,34 @@ export type Database = {
         Args: { p_is_active: boolean; p_reason: string; p_user_id: string }
         Returns: undefined
       }
+      svc_enqueue_notification: {
+        Args: {
+          p_booking_id: string
+          p_channel: Database["public"]["Enums"]["notification_channel"]
+          p_params: Json
+          p_template: Database["public"]["Enums"]["notification_template"]
+        }
+        Returns: string
+      }
+      svc_expire_stale_bookings: { Args: never; Returns: number }
+      svc_increment_booklet_download: {
+        Args: { p_booklet_id: string }
+        Returns: undefined
+      }
+      svc_log_audit: {
+        Args: {
+          p_action: string
+          p_actor_id: string
+          p_entity_id: string
+          p_entity_type: string
+          p_metadata: Json
+        }
+        Returns: undefined
+      }
+      svc_rate_limit_hit: {
+        Args: { p_key: string; p_limit: number; p_window_seconds: number }
+        Returns: boolean
+      }
       today_jkt: { Args: never; Returns: string }
     }
     Enums: {

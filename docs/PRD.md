@@ -469,7 +469,7 @@ Priority uses MoSCoW: **M** must, **S** should, **C** could, **W** won't (this r
 
 | Topic | Rule |
 |---|---|
-| Schemas | `public`: tables, views, RLS helpers and staff-callable RPCs (exposed to PostgREST). `internal`: SECURITY DEFINER transition functions, never exposed to PostgREST, executable only by `service_role` and `postgres` (pg_cron). `graphql_public` is removed from exposed schemas. |
+| Schemas | `public`: tables, views, RLS helpers and staff-callable RPCs (exposed to PostgREST). `internal`: SECURITY DEFINER transition functions, never exposed to PostgREST, executed by `postgres` (pg_cron); server code reaches them only through `public.svc_<name>` wrappers (security definer, EXECUTE for `service_role` only), so `service_role` holds no right on `internal` itself (decision of 2026-10-16). `graphql_public` is removed from exposed schemas. |
 | Primary keys | `uuid default gen_random_uuid()` for entity tables; `bigint generated always as identity` for append-only logs; `rw_units.id smallint` = the RW number |
 | Timestamps | `timestamptz`; `created_at` default `now()`; `updated_at` maintained by trigger `set_updated_at()`; business dates computed in `Asia/Jakarta` (`today_jkt()`) |
 | Money | `bigint`, whole IDR; column names end in `_amount`, `_price`, `_total`; never `numeric` with decimals |

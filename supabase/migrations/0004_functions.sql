@@ -2053,3 +2053,67 @@ $$;
 revoke execute on function internal.has_fresh_totp(), internal.require_superadmin_step_up(),
   public.set_staff_role(uuid, public.app_role, smallint), public.set_staff_status(uuid, boolean, text)
   from public, anon, authenticated;
+
+
+-- ===== Service-role entry points (decision of 2026-10-16, CLAUDE.md §6.1) =====
+-- PostgREST exposes public only, so server code (src/lib/supabase/admin.ts) reaches internal.* through
+-- these svc_ wrappers. Each is security definer, so the service role needs no right on internal at
+-- all, and each is executable by the service role only. An internal function the server calls gets
+-- its svc_ wrapper in the same migration that creates it.
+
+create function public.svc_rate_limit_hit(p_key text, p_limit integer, p_window_seconds integer) returns boolean
+  language sql security definer
+  set search_path = ''
+as $$ select internal.rate_limit_hit(p_key, p_limit, p_window_seconds); $$;
+
+create function public.svc_enqueue_notification(
+  p_booking_id uuid, p_template public.notification_template, p_channel public.notification_channel, p_params jsonb
+) returns uuid
+  language sql security definer
+  set search_path = ''
+as $$ select internal.enqueue_notification(p_booking_id, p_template, p_channel, p_params); $$;
+
+create function public.svc_increment_booklet_download(p_booklet_id uuid) returns void
+  language sql security definer
+  set search_path = ''
+as $$ select internal.increment_booklet_download(p_booklet_id); $$;
+
+create function public.svc_expire_stale_bookings() returns integer
+  language sql security definer
+  set search_path = ''
+as $$ select internal.expire_stale_bookings(); $$;
+
+-- Application events the server writes (export.*, document.signed_url, booking.access_link_resent, ...).
+-- A PostgREST call cannot set app.actor_id beforehand, so the actor comes in as a parameter: a staff
+-- member's profile id, or NULL when the server acts for a visitor.
+create function public.svc_log_audit(
+  p_actor_id uuid, p_action text, p_entity_type text, p_entity_id text, p_metadata jsonb
+) returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  staff_role public.app_role;
+begin
+  if p_actor_id is not null then
+    select p.role into staff_role from public.profiles p where p.id = p_actor_id and p.is_active;
+    if staff_role is null or staff_role = 'none' then
+      raise exception 'audit actor % is not active staff', p_actor_id using errcode = '42501';
+    end if;
+  end if;
+  perform set_config('app.actor_id', coalesce(p_actor_id::text, ''), true);
+  perform set_config('app.actor_role', coalesce(staff_role::text, 'visitor'), true);
+  perform internal.log_audit(p_action, p_entity_type, p_entity_id, p_metadata);
+end;
+$$;
+
+revoke execute on function public.svc_rate_limit_hit(text, integer, integer),
+  public.svc_enqueue_notification(uuid, public.notification_template, public.notification_channel, jsonb),
+  public.svc_increment_booklet_download(uuid), public.svc_expire_stale_bookings(),
+  public.svc_log_audit(uuid, text, text, text, jsonb)
+  from public, anon, authenticated;
+grant execute on function public.svc_rate_limit_hit(text, integer, integer),
+  public.svc_enqueue_notification(uuid, public.notification_template, public.notification_channel, jsonb),
+  public.svc_increment_booklet_download(uuid), public.svc_expire_stale_bookings(),
+  public.svc_log_audit(uuid, text, text, text, jsonb)
+  to service_role;
