@@ -305,3 +305,65 @@ create policy products_umkm_staff_update on public.products_umkm for update to a
   using ((select public.owns_rw(rw_id))) with check ((select public.owns_rw(rw_id)));
 create policy products_umkm_super_delete on public.products_umkm for delete to authenticated
   using ((select public.is_superadmin()));
+
+
+-- ===== Bookings: bookings, booking_legs, booking_addons, booking_participants, booking_events, guest_otps =====
+-- No API role reads a booker's contact or a participant's name (DATA-04, AZ-12): those columns are granted to
+-- nobody and leave the database only through rpc_reveal_booking_contact and rpc_get_participants, which audit
+-- every read. An RW admin sees a booking that visits their RW from a week before its visit until a month
+-- ahead; the superadmin sees every booking (decision of 2026-10-16). Today's visits, and so today's check-in
+-- and certificates, always fall inside that window. The legs and add-ons, which carry no personal data, are
+-- scoped by RW alone, so visit statistics and RW recaps can count every period.
+
+grant select (id, booking_code, status, channel, package_id, package_snapshot, rw_ids, booker_type, institution_name,
+  pax_count, visit_date, visit_date_end, notes, subtotal_package, subtotal_addons, discount_amount, discount_note,
+  total_amount, amount_paid, currency, expires_at, quoted_at, paid_at, checked_in_at, completed_at, cancelled_at,
+  cancelled_by, cancel_reason, expired_at, refunded_at, needs_review, review_reason, phone_verified_at,
+  email_verified_at, consent_version, consented_at, token_version, ticket_pdf_path, admin_notes, created_by,
+  created_at, updated_at, pii_purged_at, phone_masked, email_masked, pic_first_name) on public.bookings to authenticated;
+-- A discount also recomputes the total, so it waits for its own RPC (P4); staff write notes only.
+grant update (admin_notes) on public.bookings to authenticated;
+grant select on public.v_bookings_staff, public.v_booking_admin, public.v_booking_export to authenticated;
+
+create policy bookings_staff_read on public.bookings for select to authenticated using (
+  (select public.is_superadmin())
+  or ((select public.owns_any_rw(rw_ids))
+      and visit_date_end >= (select public.today_jkt()) - 7 and visit_date <= (select public.today_jkt()) + 30)
+);
+create policy bookings_staff_notes on public.bookings for update to authenticated using (
+  (select public.is_superadmin())
+  or ((select public.owns_any_rw(rw_ids))
+      and visit_date_end >= (select public.today_jkt()) - 7 and visit_date <= (select public.today_jkt()) + 30)
+) with check (
+  (select public.is_superadmin())
+  or ((select public.owns_any_rw(rw_ids))
+      and visit_date_end >= (select public.today_jkt()) - 7 and visit_date <= (select public.today_jkt()) + 30)
+);
+
+grant select (id, booking_id, rw_id, visit_session_id, leg_order, pax_count, status, quota_reserved_at,
+  quota_released_at, checked_in_at) on public.booking_legs to authenticated;
+create policy booking_legs_staff_read on public.booking_legs for select to authenticated
+  using ((select public.owns_rw(rw_id)));
+
+-- booking_addons: the kitchen of each RW marks its own lines prepared or handed over.
+grant select (id, booking_id, product_id, rw_id, vendor_id, product_name_snapshot, unit_price, qty, line_total, notes,
+  fulfillment_status, created_at, updated_at) on public.booking_addons to authenticated;
+grant update (fulfillment_status) on public.booking_addons to authenticated;
+create policy booking_addons_staff_read on public.booking_addons for select to authenticated
+  using ((select public.owns_rw(rw_id)));
+create policy booking_addons_staff_fulfil on public.booking_addons for update to authenticated
+  using ((select public.owns_rw(rw_id))) with check ((select public.owns_rw(rw_id)));
+
+-- booking_participants: no grant at all; names only through rpc_get_participants, corrections with their UI
+-- (decision of 2026-10-16). The AAL2 policy stands ready for the day a grant is added.
+create policy booking_participants_aal2 on public.booking_participants as restrictive for all to authenticated
+  using ((select public.aal2()));
+
+-- booking_events: a booking's timeline, visible wherever the booking itself is.
+grant select (id, booking_id, from_status, to_status, actor_type, actor_id, reason, payload, occurred_at)
+  on public.booking_events to authenticated;
+create policy booking_events_staff_read on public.booking_events for select to authenticated using (
+  exists (select 1 from public.bookings b where b.id = booking_events.booking_id)
+);
+
+-- guest_otps: nothing at all; only issue_phone_otp and verify_phone_otp touch it.
