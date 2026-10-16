@@ -245,3 +245,375 @@ end;
 $$;
 revoke execute on function public.hook_password_verification_attempt(jsonb) from public, anon, authenticated;
 grant execute on function public.hook_password_verification_attempt(jsonb) to supabase_auth_admin;
+
+
+-- ===== Self-escalation lock on profiles (docs/PRD.md §8.5.2–§8.5.3, Task P1.3.05) =====
+
+-- 0005 grants authenticated an UPDATE on full_name, phone and avatar_path only; the revoke here
+-- states the intent now and costs nothing.
+revoke update (role, rw_id, is_active, mfa_required, email, claims_version) on public.profiles from authenticated;
+
+-- Who is acting: the signed-in staff member, or the actor a service-role call declared.
+create function internal.current_actor_id() returns uuid
+  language sql stable
+  set search_path = ''
+as $$
+  select coalesce(auth.uid(), nullif(current_setting('app.actor_id', true), '')::uuid);
+$$;
+revoke execute on function internal.current_actor_id() from public, anon, authenticated;
+
+-- Role, RW, status, MFA flag and email move only inside set_staff_role / set_staff_status, which
+-- announce themselves with app.privileged_rpc, never on the caller's own row, and never in a way
+-- that leaves the kelurahan without an active superadmin. Every such change bumps claims_version,
+-- so tokens minted before it stop working at the next request.
+create function internal.profiles_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  protected_change boolean :=
+    new.role is distinct from old.role
+    or new.rw_id is distinct from old.rw_id
+    or new.is_active is distinct from old.is_active
+    or new.mfa_required is distinct from old.mfa_required
+    or new.email is distinct from old.email;
+  loses_superadmin boolean :=
+    old.role = 'superadmin' and old.is_active and (new.role <> 'superadmin' or not new.is_active);
+begin
+  if not protected_change then
+    return new;
+  end if;
+
+  if coalesce(current_setting('app.privileged_rpc', true), '') <> 'on' then
+    raise exception 'role, rw_id, is_active, mfa_required and email change only through set_staff_role / set_staff_status'
+      using errcode = '42501';
+  end if;
+
+  if new.id = internal.current_actor_id() then
+    raise exception 'a staff member cannot change their own role or status'
+      using errcode = '42501';
+  end if;
+
+  if loses_superadmin and not exists (
+    select 1 from public.profiles p
+    where p.role = 'superadmin' and p.is_active and p.id <> old.id
+  ) then
+    raise exception 'the last active superadmin cannot be demoted or deactivated'
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+
+  new.claims_version := old.claims_version + 1;
+  return new;
+end;
+$$;
+
+create trigger profiles_guard before update on public.profiles
+  for each row execute function internal.profiles_guard();
+
+
+-- ===== Guard triggers (docs/PRD.md §8.5.3, Task P1.3.06, P1.3.07) =====
+-- Every trigger function here is security definer: a trigger runs with the privileges of whoever
+-- fired it, and the API roles hold no rights on internal.* nor on the rows the guards consult. Postgres
+-- itself refuses to run a trigger function outside a trigger (0A000), which is their caller check;
+-- EXECUTE is still revoked at the end so nothing can even try.
+
+-- Migrations, seed, cron and psql never SET ROLE, so the role setting reads 'none' for them and they are
+-- trusted; every API request arrives through a SET ROLE, and of those only a signed-in superadmin passes
+-- the superadmin-only guards. current_user cannot tell them apart inside a definer body, this can.
+create function internal.is_superadmin_or_system() returns boolean
+  language sql stable
+  set search_path = ''
+as $$
+  select coalesce(current_setting('role', true), 'none') = 'none' or public.is_superadmin();
+$$;
+revoke execute on function internal.is_superadmin_or_system() from public, anon, authenticated;
+
+-- rw_units_guard: an RW admin edits the public profile of their RW, never its identity or its bank
+-- account.
+create function internal.rw_units_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if (new.code, new.slug, new.is_active, new.treasury_bank_name, new.treasury_account_number, new.treasury_account_holder)
+     is distinct from
+     (old.code, old.slug, old.is_active, old.treasury_bank_name, old.treasury_account_number, old.treasury_account_holder)
+     and not internal.is_superadmin_or_system() then
+    raise exception 'only the superadmin changes an RW''s code, slug, status or treasury account'
+      using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+create trigger rw_units_guard before update on public.rw_units
+  for each row execute function internal.rw_units_guard();
+
+-- umkm_vendors_bank_guard: bank details are written by the superadmin only.
+create function internal.umkm_vendors_bank_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  bank_touched boolean := case tg_op
+    when 'INSERT' then (new.bank_name, new.bank_account_number, new.bank_account_holder) is distinct from (null, null, null)
+    else (new.bank_name, new.bank_account_number, new.bank_account_holder)
+         is distinct from (old.bank_name, old.bank_account_number, old.bank_account_holder)
+  end;
+begin
+  if bank_touched and not internal.is_superadmin_or_system() then
+    raise exception 'only the superadmin records a vendor''s bank account' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+create trigger umkm_vendors_bank_guard before insert or update on public.umkm_vendors
+  for each row execute function internal.umkm_vendors_bank_guard();
+
+-- products_umkm_vendor_rw_guard: a product belongs to the RW of its vendor.
+create function internal.products_umkm_vendor_rw_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if not exists (select 1 from public.umkm_vendors v where v.id = new.vendor_id and v.rw_id = new.rw_id) then
+    raise exception 'a product must belong to the same RW as its vendor'
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  return new;
+end;
+$$;
+create trigger products_umkm_vendor_rw_guard before insert or update on public.products_umkm
+  for each row execute function internal.products_umkm_vendor_rw_guard();
+
+-- tour_packages_legs_guard: a combo is kelurahan business (superadmin only) and cannot be published
+-- until it visits two different RWs; an RW package gets its single leg written for it.
+create function internal.tour_packages_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  becomes_published boolean := new.status = 'published' and (tg_op = 'INSERT' or old.status <> 'published');
+begin
+  if new.category = 'combo' and not internal.is_superadmin_or_system() then
+    raise exception 'only the superadmin creates or edits a combo package' using errcode = '42501';
+  end if;
+
+  if new.category = 'combo' and becomes_published
+     and (select count(distinct l.rw_id) from public.tour_package_legs l where l.package_id = new.id) < 2 then
+    raise exception 'a combo package needs legs in at least two different RWs before it is published'
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  return new;
+end;
+$$;
+create trigger tour_packages_legs_guard before insert or update on public.tour_packages
+  for each row execute function internal.tour_packages_guard();
+
+create function internal.tour_packages_single_leg() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if new.category <> 'combo' then
+    insert into public.tour_package_legs (package_id, rw_id, leg_order)
+    values (new.id, new.rw_id, 1)
+    on conflict do nothing;
+  end if;
+  return new;
+end;
+$$;
+create trigger tour_packages_single_leg after insert on public.tour_packages
+  for each row execute function internal.tour_packages_single_leg();
+
+-- articles_moderation_guard: only the superadmin publishes; an RW admin's edit of a live article
+-- takes it back to review instead of changing what the public reads.
+create function internal.articles_moderation_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  is_moderator boolean := internal.is_superadmin_or_system();
+  becomes_published boolean := new.status = 'published' and (tg_op = 'INSERT' or old.status <> 'published');
+begin
+  if becomes_published and not is_moderator then
+    raise exception 'only the superadmin publishes an article' using errcode = '42501';
+  end if;
+
+  if becomes_published then
+    new.published_at := coalesce(new.published_at, now());
+    new.reviewed_by := coalesce(auth.uid(), new.reviewed_by);
+  end if;
+
+  if tg_op = 'UPDATE' and old.status = 'published' and new.status = 'published' and not is_moderator
+     and (new.title, new.excerpt, new.body_json, new.cover_path, new.category, new.tags, new.seo_title, new.seo_description)
+         is distinct from
+         (old.title, old.excerpt, old.body_json, old.cover_path, old.category, old.tags, old.seo_title, old.seo_description) then
+    new.status := 'pending_review';
+  end if;
+  return new;
+end;
+$$;
+create trigger articles_moderation_guard before insert or update on public.articles
+  for each row execute function internal.articles_moderation_guard();
+
+-- reviews_moderation_stamp: every moderation decision records who made it and when.
+create function internal.reviews_moderation_stamp() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if new.status is distinct from old.status then
+    new.moderated_by := coalesce(auth.uid(), internal.current_actor_id());
+    new.moderated_at := now();
+  end if;
+  return new;
+end;
+$$;
+create trigger reviews_moderation_stamp before update on public.reviews
+  for each row execute function internal.reviews_moderation_stamp();
+
+-- quotations_limit_guard: three versions at most, and none before the phone is verified.
+create function internal.quotations_limit_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if not exists (select 1 from public.bookings b where b.id = new.booking_id and b.phone_verified_at is not null) then
+    raise exception 'a quotation is issued only after the phone number is verified'
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  if (select count(*) from public.quotations q where q.booking_id = new.booking_id) >= 3 then
+    raise exception 'a booking gets at most three quotation versions'
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  return new;
+end;
+$$;
+create trigger quotations_limit_guard before insert on public.quotations
+  for each row execute function internal.quotations_limit_guard();
+
+-- revenue_rule_sum_guard: a rule's lines always add up to 100 %, checked at commit so a rule can be
+-- written line by line.
+create function internal.revenue_rule_sum_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  affected_rule uuid := coalesce(new.rule_id, old.rule_id);
+  line_total numeric(7,2);
+begin
+  select sum(pct) into line_total from public.revenue_share_rule_lines where rule_id = affected_rule;
+  if line_total is not null and line_total <> 100.00 then
+    raise exception 'the shares of a revenue rule must add up to 100 %% (got %)', line_total
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  return null;
+end;
+$$;
+create constraint trigger revenue_rule_sum_guard
+  after insert or update or delete on public.revenue_share_rule_lines
+  deferrable initially deferred
+  for each row execute function internal.revenue_rule_sum_guard();
+
+-- revenue_rules_immutable_once_used: a rule the ledger already relied on only ever closes
+-- (effective_to, is_active); its lines never change. New terms mean a new rule version.
+create function internal.rule_in_use(p_rule_id uuid) returns boolean
+  language sql stable
+  set search_path = ''
+as $$ select exists (select 1 from public.revenue_share_entries e where e.rule_id = p_rule_id); $$;
+revoke execute on function internal.rule_in_use(uuid) from public, anon, authenticated;
+
+create function internal.revenue_rules_immutable_once_used() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if not internal.rule_in_use(old.id) then
+    return coalesce(new, old);
+  end if;
+  if tg_op = 'UPDATE'
+     and (new.scope, new.rw_id, new.package_id, new.product_id, new.name, new.effective_from)
+         is not distinct from
+         (old.scope, old.rw_id, old.package_id, old.product_id, old.name, old.effective_from) then
+    return new;
+  end if;
+  raise exception 'a revenue rule already used by the ledger cannot change; close it and create a new version'
+    using errcode = 'P0001', hint = 'STATE_INVALID';
+end;
+$$;
+create trigger revenue_rules_immutable_once_used before update or delete on public.revenue_share_rules
+  for each row execute function internal.revenue_rules_immutable_once_used();
+
+create function internal.revenue_rule_lines_immutable_once_used() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if internal.rule_in_use(old.rule_id) then
+    raise exception 'the lines of a revenue rule already used by the ledger cannot change; create a new rule version'
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  return coalesce(new, old);
+end;
+$$;
+create trigger revenue_rule_lines_immutable_once_used before update or delete on public.revenue_share_rule_lines
+  for each row execute function internal.revenue_rule_lines_immutable_once_used();
+
+-- visit_sessions_guard: a session that holds bookings keeps its place in time and cannot vanish;
+-- anything else that changes under bookings is logged for the superadmin to see.
+create function internal.visit_sessions_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  has_bookings boolean;
+begin
+
+  has_bookings := old.reserved_pax > 0 or exists (
+    select 1 from public.booking_legs l
+    where l.visit_session_id = old.id and l.status in ('reserved', 'checked_in')
+  );
+  if not has_bookings then
+    return coalesce(new, old);
+  end if;
+
+  if tg_op = 'DELETE' then
+    raise exception 'a session with bookings cannot be deleted' using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  if new.status = 'cancelled' and old.status <> 'cancelled' then
+    raise exception 'a session with bookings cannot be cancelled; move or contact the bookings first'
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  if (new.rw_id, new.session_date, new.start_time, new.end_time)
+     is distinct from (old.rw_id, old.session_date, old.start_time, old.end_time) then
+    raise exception 'a session with bookings keeps its RW, date and times'
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  if new.capacity < new.reserved_pax then
+    raise exception 'capacity cannot go below the seats already reserved (%)', new.reserved_pax
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+
+  if (new.label, new.notes, new.capacity) is distinct from (old.label, old.notes, old.capacity) then
+    insert into public.security_events (event_type, severity, actor_id, rw_id, entity_type, entity_id, details)
+    values ('session_changed_with_bookings', 'info', internal.current_actor_id(), old.rw_id, 'visit_sessions', old.id::text,
+            jsonb_build_object('capacity_before', old.capacity, 'capacity_after', new.capacity, 'reserved_pax', old.reserved_pax));
+  end if;
+  return new;
+end;
+$$;
+create trigger visit_sessions_guard before update or delete on public.visit_sessions
+  for each row execute function internal.visit_sessions_guard();
+
+-- Trigger functions fire without EXECUTE, so nothing is lost by revoking it from everyone.
+revoke execute on function internal.profiles_guard() from public, anon, authenticated;
+revoke execute on function internal.rw_units_guard() from public, anon, authenticated;
+revoke execute on function internal.umkm_vendors_bank_guard() from public, anon, authenticated;
+revoke execute on function internal.products_umkm_vendor_rw_guard() from public, anon, authenticated;
+revoke execute on function internal.tour_packages_guard() from public, anon, authenticated;
+revoke execute on function internal.tour_packages_single_leg() from public, anon, authenticated;
+revoke execute on function internal.articles_moderation_guard() from public, anon, authenticated;
+revoke execute on function internal.reviews_moderation_stamp() from public, anon, authenticated;
+revoke execute on function internal.quotations_limit_guard() from public, anon, authenticated;
+revoke execute on function internal.revenue_rule_sum_guard() from public, anon, authenticated;
+revoke execute on function internal.revenue_rules_immutable_once_used() from public, anon, authenticated;

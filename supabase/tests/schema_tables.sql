@@ -322,10 +322,9 @@ select lives_ok(
   'a flat-priced combo without RW is accepted'
 );
 
+-- Since 0004 the single leg of an RW package is written by tour_packages_single_leg.
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax)
 values ('00000000-0000-4000-8000-0000000000c1', 5, 'regular', 'eduwisata-ecowastreme', 'Eduwisata', 25000);
-insert into public.tour_package_legs (package_id, rw_id, leg_order)
-values ('00000000-0000-4000-8000-0000000000c1', 5, 1);
 
 select throws_ok(
   $$insert into public.tour_package_legs (package_id, rw_id, leg_order) values ('00000000-0000-4000-8000-0000000000c1', 5, 2)$$,
@@ -366,8 +365,6 @@ select throws_ok(
 );
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax)
 values ('00000000-0000-4000-8000-0000000000c2', 8, 'regular', 'paket-uji-hapus', 'Uji', 30000);
-insert into public.tour_package_legs (package_id, rw_id, leg_order)
-values ('00000000-0000-4000-8000-0000000000c2', 8, 1);
 delete from public.tour_packages where id = '00000000-0000-4000-8000-0000000000c2';
 select is(
   (select count(*) from public.tour_package_legs where package_id = '00000000-0000-4000-8000-0000000000c2'),
@@ -685,6 +682,8 @@ select throws_ok(
   '23514', null, 'reconciliation issues use a known type'
 );
 
+-- Since 0004, quotations_limit_guard wants a verified phone first.
+update public.bookings set phone_verified_at = now() where id = '00000000-0000-4000-8000-0000000000e1';
 insert into public.quotations (booking_id, quotation_number, verify_code, valid_until, snapshot)
 values ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0001', 'ABCDEFGH12', '2026-11-01', '{}');
 select throws_ok(

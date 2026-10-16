@@ -460,7 +460,7 @@ create policy tour_packages_staff_rw on public.tour_packages
   with check ((select public.is_superadmin()) or (select public.owns_rw(rw_id)));
 ```
 
-SECURITY DEFINER hygiene: owner `postgres`, `set search_path = ''` with fully-qualified names, explicit role check as the first statement, `revoke execute ... from public`. Views use `with (security_invoker = true)`.
+SECURITY DEFINER hygiene: owner `postgres`, `set search_path = ''` with fully-qualified names, explicit role check as the first statement, `revoke execute ... from public`. Trigger functions are definer too (a trigger runs with the privileges of whoever fired it, and API roles hold nothing on `internal.*`); their caller check is Postgres' own refusal to run a `returns trigger` function outside a trigger. Views use `with (security_invoker = true)`.
 
 ### 6.3 Typed `Database`, queries and services
 
