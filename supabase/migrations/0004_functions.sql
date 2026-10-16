@@ -1376,3 +1376,116 @@ revoke execute on function internal.price_floor(), internal.tour_packages_price_
   internal.tour_packages_price_history(), internal.tour_package_tiers_price_history(),
   internal.products_umkm_price_changed()
   from public, anon, authenticated;
+
+
+-- ===== Quota, document numbers, rate limits (docs/PRD.md §8.7, Task P1.3.15–P1.3.17) =====
+
+-- Takes p_pax seats of an open session or raises QUOTA_UNAVAILABLE. The conditional UPDATE locks the
+-- session row, and a booking racing for the same session waits and then re-checks the room that is
+-- left, so the counter never passes capacity. A caller reserving several legs calls this in
+-- visit_session_id order, the order release_booking_quota uses too, so two bookings never wait on
+-- each other in a cycle (BOOK-01).
+create function internal.reserve_session_quota(p_session_id uuid, p_pax integer) returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if p_pax is null or p_pax < 1 then
+    raise exception 'a reservation needs at least one visitor' using errcode = '22023';
+  end if;
+
+  perform set_config('app.in_rpc', '1', true);
+  update public.visit_sessions
+  set reserved_pax = reserved_pax + p_pax
+  where id = p_session_id and status = 'open' and reserved_pax + p_pax <= capacity;
+  if not found then
+    raise exception 'session % has no room for % more visitors', p_session_id, p_pax
+      using errcode = 'P0001', hint = 'QUOTA_UNAVAILABLE';
+  end if;
+end;
+$$;
+
+-- Gives back the seats of every reserved leg of a booking. A leg is released once: its
+-- quota_released_at stamp makes a second call (a late webhook, a retried job) a no-op.
+create function internal.release_booking_quota(p_booking_id uuid) returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  leg record;
+begin
+  perform set_config('app.in_rpc', '1', true);
+  for leg in
+    select l.id, l.visit_session_id, l.pax_count
+    from public.booking_legs l
+    where l.booking_id = p_booking_id and l.status = 'reserved' and l.quota_released_at is null
+    order by l.visit_session_id
+    for update
+  loop
+    update public.visit_sessions set reserved_pax = reserved_pax - leg.pax_count where id = leg.visit_session_id;
+    update public.booking_legs set status = 'released', quota_released_at = now() where id = leg.id;
+  end loop;
+end;
+$$;
+
+-- The next gapless number of a document kind (docs/PRD.md Appendix C). The upsert locks the period's
+-- counter row until the caller's transaction ends, and a rollback takes the number back with it, so
+-- numbers are never skipped or reused. The period follows the Jakarta calendar.
+create function internal.next_document_number(p_kind public.document_kind, p_at timestamptz) returns text
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  is_monthly boolean := p_kind in ('quotation', 'invoice', 'receipt');
+  counter_period text := to_char(p_at at time zone 'Asia/Jakarta', case when is_monthly then 'YYYY-MM' else 'YYYY' end);
+  digits integer := case when p_kind = 'certificate' then 5 else 4 end;
+  prefix text := case p_kind
+    when 'quotation' then 'SP'
+    when 'invoice' then 'INV'
+    when 'receipt' then 'KW'
+    when 'credit_note' then 'CN'
+    when 'certificate' then 'SERT'
+  end;
+  number integer;
+begin
+  if p_at is null then
+    raise exception 'a document number needs the time it is issued' using errcode = '22004';
+  end if;
+
+  insert into public.document_sequences as sequence (kind, period, last_value)
+  values (p_kind, counter_period, 1)
+  on conflict (kind, period) do update set last_value = sequence.last_value + 1
+  returning sequence.last_value into number;
+
+  -- A period that outgrows its digits keeps counting rather than wrapping.
+  return prefix || '/GSK/' || replace(counter_period, '-', '/') || '/'
+    || lpad(number::text, greatest(digits, length(number::text)), '0');
+end;
+$$;
+
+-- Counts one hit for p_key in the current fixed window and says whether the caller is still within
+-- p_limit. Keys name the subject by id or keyed hash, never by a raw phone number or email.
+create function internal.rate_limit_hit(p_key text, p_limit integer, p_window_seconds integer) returns boolean
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  current_window timestamptz;
+  hits integer;
+begin
+  if p_window_seconds is null or p_window_seconds < 1 or p_limit is null or p_limit < 0 then
+    raise exception 'a rate limit needs a positive window and a limit' using errcode = '22023';
+  end if;
+
+  current_window := to_timestamp(floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds);
+  insert into public.rate_limit_buckets as bucket (key, window_start, count)
+  values (p_key, current_window, 1)
+  on conflict (key, window_start) do update set count = bucket.count + 1
+  returning bucket.count into hits;
+  return hits <= p_limit;
+end;
+$$;
+
+revoke execute on function internal.reserve_session_quota(uuid, integer), internal.release_booking_quota(uuid),
+  internal.next_document_number(public.document_kind, timestamptz), internal.rate_limit_hit(text, integer, integer)
+  from public, anon, authenticated;

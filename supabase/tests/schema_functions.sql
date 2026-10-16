@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(186);
+select plan(210);
 
 -- Fixtures, rolled back at the end. The pepper is a throwaway local value.
 select vault.create_secret('local-test-pepper-not-a-real-secret-0000000', 'otp_pepper', 'test only');
@@ -847,6 +847,109 @@ delete from public.site_settings where key = 'pricing.min_price_per_pax';
 select lives_ok(
   $$update public.tour_packages set price_per_pax = 1000 where id = '00000000-0000-4000-8000-0000000000c1'$$,
   'without the setting there is no floor, which is why 0008_seed writes it everywhere'
+);
+
+-- ===== Quota =====
+
+insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity, status) values
+  ('00000000-0000-4000-8000-0000000000b5', 5, '2026-11-20', '08:00', '10:00', 'Sesi Pagi', 10, 'open'),
+  ('00000000-0000-4000-8000-0000000000b8', 8, '2026-11-20', '13:00', '15:00', 'Sesi Siang', 10, 'open'),
+  ('00000000-0000-4000-8000-0000000000b9', 5, '2026-11-21', '08:00', '10:00', 'Sesi Ditutup', 10, 'closed');
+select lives_ok(
+  $$select internal.reserve_session_quota('00000000-0000-4000-8000-0000000000b5', 6)$$,
+  'a session with room takes the reservation'
+);
+select throws_ok(
+  $$select internal.reserve_session_quota('00000000-0000-4000-8000-0000000000b5', 5)$$,
+  'P0001', null, 'one visitor too many is refused'
+);
+select is(
+  (select reserved_pax from public.visit_sessions where id = '00000000-0000-4000-8000-0000000000b5'),
+  6,
+  'and the refused reservation took nothing'
+);
+select lives_ok(
+  $$select internal.reserve_session_quota('00000000-0000-4000-8000-0000000000b5', 4)$$,
+  'the last seats can be taken'
+);
+select throws_ok(
+  $$select internal.reserve_session_quota('00000000-0000-4000-8000-0000000000b9', 1)$$,
+  'P0001', null, 'a closed session takes no one'
+);
+select throws_ok(
+  $$select internal.reserve_session_quota('00000000-0000-4000-8000-0000000000b8', 0)$$,
+  '22023', null, 'a reservation needs at least one visitor'
+);
+
+-- A combo booking holding both legs gives its seats back once.
+select internal.reserve_session_quota('00000000-0000-4000-8000-0000000000b8', 3);
+insert into public.bookings (id, booking_code, status, package_id, package_snapshot, rw_ids, booker_type,
+  pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
+  consent_version, consented_at, expires_at)
+values ('00000000-0000-4000-8000-0000000000e6', 'GSK-7F3K9Q2P', 'pending_payment', '00000000-0000-4000-8000-0000000000c1',
+  '{}', '{5,8}', 'school', 'Dewi Lestari', '+6281234567892', 'dewi@example.test', 3,
+  '2026-11-20', '2026-11-20', 75000, 75000, 'v1', now(), now() + interval '2 hours');
+insert into public.booking_legs (booking_id, rw_id, visit_session_id, leg_order, pax_count, status, quota_reserved_at) values
+  ('00000000-0000-4000-8000-0000000000e6', 5, '00000000-0000-4000-8000-0000000000b5', 1, 3, 'reserved', now()),
+  ('00000000-0000-4000-8000-0000000000e6', 8, '00000000-0000-4000-8000-0000000000b8', 2, 3, 'reserved', now());
+select lives_ok(
+  $$select internal.release_booking_quota('00000000-0000-4000-8000-0000000000e6')$$,
+  'releasing a booking gives back the seats of every leg'
+);
+select is(
+  (select string_agg(id::text || '=' || reserved_pax, ' ' order by id) from public.visit_sessions
+   where id in ('00000000-0000-4000-8000-0000000000b5', '00000000-0000-4000-8000-0000000000b8')),
+  '00000000-0000-4000-8000-0000000000b5=7 00000000-0000-4000-8000-0000000000b8=0',
+  'each session drops by that leg''s visitors'
+);
+select is(
+  (select count(*)::int from public.booking_legs
+   where booking_id = '00000000-0000-4000-8000-0000000000e6' and status = 'released' and quota_released_at is not null),
+  2,
+  'and both legs are stamped released'
+);
+select internal.release_booking_quota('00000000-0000-4000-8000-0000000000e6');
+select is(
+  (select sum(reserved_pax)::int from public.visit_sessions
+   where id in ('00000000-0000-4000-8000-0000000000b5', '00000000-0000-4000-8000-0000000000b8')),
+  7,
+  'a second release changes nothing'
+);
+select set_config('app.in_rpc', '', true);
+
+-- ===== Document numbers =====
+
+select is(internal.next_document_number('invoice', '2026-10-31 23:30+07'), 'INV/GSK/2026/10/0001', 'the first invoice of a month is 0001');
+select is(internal.next_document_number('invoice', '2026-10-31 23:40+07'), 'INV/GSK/2026/10/0002', 'the next one follows without a gap');
+select is(
+  internal.next_document_number('invoice', '2026-10-31 17:30+00'),
+  'INV/GSK/2026/11/0001',
+  'the month follows the Jakarta calendar, not UTC'
+);
+select is(internal.next_document_number('receipt', '2026-10-31 23:50+07'), 'KW/GSK/2026/10/0001', 'receipts count on their own');
+select is(internal.next_document_number('quotation', '2026-10-15 10:00+07'), 'SP/GSK/2026/10/0001', 'so do quotations');
+select is(internal.next_document_number('credit_note', '2026-10-15 10:00+07'), 'CN/GSK/2026/0001', 'credit notes count per year');
+select is(internal.next_document_number('certificate', '2026-10-15 10:00+07'), 'SERT/GSK/2026/00001', 'certificates per year, five digits');
+insert into public.document_sequences (kind, period, last_value) values ('quotation', '2026-12', 9999);
+select is(
+  internal.next_document_number('quotation', '2026-12-01 09:00+07'),
+  'SP/GSK/2026/12/10000',
+  'a busy month keeps counting past its digits instead of wrapping'
+);
+select throws_ok(
+  $$select internal.next_document_number('invoice', null)$$,
+  '22004', null, 'a number needs the time it is issued'
+);
+
+-- ===== Rate limits =====
+
+select is(internal.rate_limit_hit('test:otp:hash-a', 2, 3600), true, 'the first hit is allowed');
+select is(internal.rate_limit_hit('test:otp:hash-a', 2, 3600), true, 'so is the second, at the limit');
+select is(internal.rate_limit_hit('test:otp:hash-a', 2, 3600), false, 'the third is over it');
+select is(internal.rate_limit_hit('test:otp:hash-b', 2, 3600), true, 'another key has its own count');
+select throws_ok(
+  $$select internal.rate_limit_hit('test:otp:hash-a', 2, 0)$$,
+  '22023', null, 'a window must be at least a second'
 );
 
 -- ===== Append-only logs =====
