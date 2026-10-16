@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(330);
+select plan(333);
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -1552,6 +1552,49 @@ select is(
   'each event carries the actor the server named'
 );
 
+-- ===== Midtrans payload minimisation =====
+
+-- A settlement notification carrying everything Midtrans may echo back about the booker.
+create temp table midtrans_reply as select '{
+  "transaction_time": "2026-10-16 10:00:00", "transaction_status": "settlement", "transaction_id": "tx-1",
+  "status_code": "200", "payment_type": "bank_transfer", "order_id": "GSK-7F3K9Q2N-01", "merchant_id": "G000000001",
+  "gross_amount": "500000.00", "currency": "IDR", "fraud_status": "accept",
+  "va_numbers": [{"bank": "bca", "va_number": "12345678901"}],
+  "customer_details": {"first_name": "Budi", "last_name": "Santoso", "email": "budi@example.test", "phone": "+6281234567891",
+    "billing_address": {"first_name": "Budi", "address": "Jl. Mawar 1", "phone": "081234567891"}},
+  "custom_field1": "budi@example.test",
+  "item_details": [{"id": "pkg", "name": "Paket Eduwisata", "price": 500000, "quantity": 1,
+                    "shipping_address": {"phone": "081234567891"}}]
+}'::jsonb as reply;
+
+insert into public.payment_events (order_id, source, event_hash, payload)
+select 'GSK-7F3K9Q2N-01', 'webhook', 'event-hash-minimised', reply from midtrans_reply;
+insert into public.payments (id, booking_id, attempt_no, provider, order_id, gross_amount, last_payload)
+select '00000000-0000-4000-8000-0000000000f6', '00000000-0000-4000-8000-0000000000e5', 1, 'midtrans', 'GSK-7F3K9Q2N-01',
+       500000, reply from midtrans_reply;
+select is(
+  (select payload::text ~* '(Budi|Santoso|Mawar|@|\+62|0812)' from public.payment_events where event_hash = 'event-hash-minimised')
+  or (select last_payload::text ~* '(Budi|Santoso|Mawar|@|\+62|0812)' from public.payments
+      where id = '00000000-0000-4000-8000-0000000000f6'),
+  false,
+  'no name, email, phone or address from a Midtrans reply is stored, in payment_events or payments'
+);
+select is(
+  (select jsonb_build_object('status', payload ->> 'transaction_status', 'amount', payload ->> 'gross_amount',
+                             'va', payload -> 'va_numbers' -> 0 ->> 'va_number', 'item', payload -> 'item_details' -> 0 ->> 'name')
+   from public.payment_events where event_hash = 'event-hash-minimised'),
+  '{"status": "settlement", "amount": "500000.00", "va": "12345678901", "item": "Paket Eduwisata"}'::jsonb,
+  'while what reconciliation needs stays'
+);
+update public.payments set last_payload = (select reply from midtrans_reply) || '{"transaction_status": "pending"}'
+where id = '00000000-0000-4000-8000-0000000000f6';
+select is(
+  (select (last_payload ? 'customer_details') or (last_payload ->> 'transaction_status') <> 'pending' from public.payments
+   where id = '00000000-0000-4000-8000-0000000000f6'),
+  false,
+  'a later reply stored on the payment is minimised too'
+);
+
 -- ===== Append-only logs =====
 
 insert into public.booking_events (booking_id, to_status, actor_type)
@@ -1588,8 +1631,8 @@ select lives_ok(
   'until the retention run prunes it'
 );
 select lives_ok(
-  $$update public.payment_events set payload = payload - 'customer_details' where event_hash = 'event-hash-1'$$,
-  'and the retention run may strip the customer details from an old event'
+  $$delete from public.payment_events where event_hash = 'event-hash-1'$$,
+  'and delete an old payment event'
 );
 select set_config('app.purge', '', true);
 

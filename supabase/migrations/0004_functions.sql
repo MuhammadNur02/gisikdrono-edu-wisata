@@ -2458,3 +2458,55 @@ $$;
 revoke execute on function internal.require_booking_pii_access(uuid), public.rpc_reveal_booking_contact(uuid, text),
   public.rpc_get_participants(uuid)
   from public, anon, authenticated;
+
+
+-- ===== Midtrans payload minimisation (docs/Security.md §7.2, DATA-01, PAY-07) =====
+-- Midtrans echoes back what it was sent about the booker (customer_details, billing and shipping
+-- addresses, the merchant's custom fields). We need none of it to reconcile a payment, and storing it
+-- would keep the booker's contact long after the booking is anonymised, frozen on settled payments.
+-- So these keys are dropped at any depth before any writer stores a Midtrans reply; order, amount,
+-- status, VA and acquirer fields stay.
+
+create function internal.minimise_midtrans_payload(p_payload jsonb) returns jsonb
+  language plpgsql immutable
+  set search_path = ''
+as $$
+declare
+  personal_keys constant text[] := array[
+    'customer_details', 'billing_address', 'shipping_address', 'first_name', 'last_name', 'full_name',
+    'customer_name', 'email', 'customer_email', 'phone', 'customer_phone', 'address',
+    'custom_field1', 'custom_field2', 'custom_field3', 'masked_card'];
+begin
+  return case jsonb_typeof(p_payload)
+    when 'object' then (
+      select coalesce(jsonb_object_agg(field.key, internal.minimise_midtrans_payload(field.value)), '{}'::jsonb)
+      from jsonb_each(p_payload) as field
+      where field.key <> all (personal_keys))
+    when 'array' then (
+      select coalesce(jsonb_agg(internal.minimise_midtrans_payload(element.value) order by element.position), '[]'::jsonb)
+      from jsonb_array_elements(p_payload) with ordinality as element(value, position))
+    else p_payload
+  end;
+end;
+$$;
+
+create function internal.minimise_stored_midtrans_payload() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if tg_table_name = 'payments' then
+    new.last_payload := internal.minimise_midtrans_payload(new.last_payload);
+  else
+    new.payload := internal.minimise_midtrans_payload(new.payload);
+  end if;
+  return new;
+end;
+$$;
+create trigger midtrans_payload_minimise before insert or update of last_payload on public.payments
+  for each row execute function internal.minimise_stored_midtrans_payload();
+create trigger midtrans_payload_minimise before insert or update of payload on public.payment_events
+  for each row execute function internal.minimise_stored_midtrans_payload();
+
+revoke execute on function internal.minimise_midtrans_payload(jsonb), internal.minimise_stored_midtrans_payload()
+  from public, anon, authenticated;
