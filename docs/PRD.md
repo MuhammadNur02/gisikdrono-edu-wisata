@@ -593,7 +593,7 @@ create type public.alert_severity           as enum ('info','medium','high','cri
 
 ### 8.4 Tables (DDL)
 
-All tables get, in the same migration: `enable row level security`, `force row level security`, `revoke all … from anon, authenticated`, explicit grants, policies (§8.5), `set_updated_at` where `updated_at` exists, `log_audit` where marked (A), append-only trigger where marked (AO).
+Every table ends up with `enable row level security`, `force row level security`, `revoke all … from anon, authenticated`, explicit grants, policies (§8.5), `set_updated_at` where `updated_at` exists, `log_audit` where marked (A) and an append-only trigger where marked (AO). In the bootstrap set (§8.1) they are placed by dependency (decision of 2026-10-16): `0003_tables` enables and forces RLS, revokes the API roles and adds `set_updated_at` right after each `create table`, so every table denies everything from birth; `0004_functions` adds `log_audit` and the append-only triggers together with the functions they call; `0005_policies_grants` adds grants and policies, which need the helpers of 0004. Timestamped migrations after the bootstrap keep all of it in the same file (`CLAUDE.md` §6.4, Recipe D).
 
 #### 8.4.1 Configuration and staff
 
