@@ -43,7 +43,154 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      activity_point_type:
+        | "bank_sampah"
+        | "composter"
+        | "maggot"
+        | "urban_farming"
+        | "pkk_craft"
+        | "sanggar"
+        | "culture_house"
+        | "stage"
+        | "dolanan_area"
+        | "umkm_stall"
+        | "meeting_point"
+        | "other"
+      addon_fulfillment_status:
+        | "pending"
+        | "prepared"
+        | "handed_over"
+        | "cancelled"
+      adjustment_status: "proposed" | "approved" | "rejected" | "applied"
+      adjustment_type:
+        | "manual_mark_paid"
+        | "manual_refund"
+        | "write_off"
+        | "reclassify_share"
+        | "pax_correction"
+      alert_severity: "info" | "medium" | "high" | "critical"
+      app_role: "superadmin" | "admin_rw" | "none"
+      article_category: "news" | "education" | "announcement"
+      booker_type:
+        | "individual"
+        | "school"
+        | "university"
+        | "government"
+        | "company"
+        | "community"
+        | "other"
+      booking_channel: "web" | "admin"
+      booking_leg_status: "unreserved" | "reserved" | "checked_in" | "released"
+      booking_status:
+        | "quoted"
+        | "pending_payment"
+        | "paid"
+        | "checked_in"
+        | "completed"
+        | "no_show"
+        | "expired"
+        | "cancelled"
+        | "refunded"
+      booklet_kind: "ebooklet" | "visit_proposal" | "price_list"
+      certificate_kind: "group" | "participant"
+      certificate_status: "issued" | "revoked"
+      content_status: "draft" | "pending_review" | "published" | "archived"
+      document_kind:
+        | "quotation"
+        | "invoice"
+        | "receipt"
+        | "credit_note"
+        | "certificate"
+      export_kind: "visits" | "attendance" | "finance" | "audit"
+      gallery_category: "activity" | "umkm" | "visit" | "event"
+      invoice_status: "issued" | "paid" | "void"
+      media_type: "image" | "video"
+      notification_channel: "whatsapp" | "email"
+      notification_status:
+        | "queued"
+        | "sending"
+        | "sent"
+        | "delivered"
+        | "read"
+        | "failed"
+        | "cancelled"
+      notification_template:
+        | "phone_otp"
+        | "booking_created"
+        | "quotation_ready"
+        | "payment_reminder"
+        | "payment_received_ticket"
+        | "booking_expired"
+        | "booking_cancelled"
+        | "visit_reminder_d1"
+        | "checked_in_thanks"
+        | "certificate_ready"
+        | "review_invite"
+        | "refund_processed"
+        | "admin_new_paid_booking"
+        | "admin_booking_needs_review"
+        | "security_alert"
+      otp_purpose: "booking_phone" | "dsr_identity"
+      package_category: "regular" | "student" | "institutional" | "combo"
+      payment_method: "qris" | "virtual_account" | "manual_transfer" | "cash"
+      payment_provider: "midtrans" | "manual"
+      payment_status:
+        | "initiated"
+        | "pending"
+        | "needs_review"
+        | "settled"
+        | "denied"
+        | "failed"
+        | "cancelled"
+        | "expired"
+        | "refunded"
+        | "partially_refunded"
+        | "disputed"
+        | "duplicate"
+      pricing_basis: "per_pax" | "flat_group"
+      product_category:
+        | "compost"
+        | "seedling"
+        | "recycled_craft"
+        | "snack"
+        | "souvenir"
+        | "other"
+      quotation_status:
+        | "issued"
+        | "accepted"
+        | "expired"
+        | "superseded"
+        | "void"
+      revenue_beneficiary: "kelurahan" | "rw_treasury" | "umkm_vendor"
+      revenue_entry_type: "settlement" | "reversal" | "adjustment"
+      revenue_rule_scope:
+        | "package_default"
+        | "addon_default"
+        | "package"
+        | "product"
+      review_status: "pending" | "published" | "rejected"
+      scan_phase: "validate" | "check_in"
+      scan_result:
+        | "ok"
+        | "invalid_signature"
+        | "not_found"
+        | "already_used"
+        | "suspended"
+        | "revoked"
+        | "wrong_rw"
+        | "wrong_date"
+        | "outside_window"
+        | "booking_not_paid"
+        | "ticket_expired"
+        | "forbidden"
+      schedule_type:
+        | "dance_performance"
+        | "dolanan_session"
+        | "workshop"
+        | "art_class"
+        | "other"
+      session_status: "open" | "closed" | "cancelled"
+      ticket_status: "issued" | "used" | "suspended" | "revoked" | "expired"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -173,7 +320,164 @@ export const Constants = {
     Enums: {},
   },
   public: {
-    Enums: {},
+    Enums: {
+      activity_point_type: [
+        "bank_sampah",
+        "composter",
+        "maggot",
+        "urban_farming",
+        "pkk_craft",
+        "sanggar",
+        "culture_house",
+        "stage",
+        "dolanan_area",
+        "umkm_stall",
+        "meeting_point",
+        "other",
+      ],
+      addon_fulfillment_status: [
+        "pending",
+        "prepared",
+        "handed_over",
+        "cancelled",
+      ],
+      adjustment_status: ["proposed", "approved", "rejected", "applied"],
+      adjustment_type: [
+        "manual_mark_paid",
+        "manual_refund",
+        "write_off",
+        "reclassify_share",
+        "pax_correction",
+      ],
+      alert_severity: ["info", "medium", "high", "critical"],
+      app_role: ["superadmin", "admin_rw", "none"],
+      article_category: ["news", "education", "announcement"],
+      booker_type: [
+        "individual",
+        "school",
+        "university",
+        "government",
+        "company",
+        "community",
+        "other",
+      ],
+      booking_channel: ["web", "admin"],
+      booking_leg_status: ["unreserved", "reserved", "checked_in", "released"],
+      booking_status: [
+        "quoted",
+        "pending_payment",
+        "paid",
+        "checked_in",
+        "completed",
+        "no_show",
+        "expired",
+        "cancelled",
+        "refunded",
+      ],
+      booklet_kind: ["ebooklet", "visit_proposal", "price_list"],
+      certificate_kind: ["group", "participant"],
+      certificate_status: ["issued", "revoked"],
+      content_status: ["draft", "pending_review", "published", "archived"],
+      document_kind: [
+        "quotation",
+        "invoice",
+        "receipt",
+        "credit_note",
+        "certificate",
+      ],
+      export_kind: ["visits", "attendance", "finance", "audit"],
+      gallery_category: ["activity", "umkm", "visit", "event"],
+      invoice_status: ["issued", "paid", "void"],
+      media_type: ["image", "video"],
+      notification_channel: ["whatsapp", "email"],
+      notification_status: [
+        "queued",
+        "sending",
+        "sent",
+        "delivered",
+        "read",
+        "failed",
+        "cancelled",
+      ],
+      notification_template: [
+        "phone_otp",
+        "booking_created",
+        "quotation_ready",
+        "payment_reminder",
+        "payment_received_ticket",
+        "booking_expired",
+        "booking_cancelled",
+        "visit_reminder_d1",
+        "checked_in_thanks",
+        "certificate_ready",
+        "review_invite",
+        "refund_processed",
+        "admin_new_paid_booking",
+        "admin_booking_needs_review",
+        "security_alert",
+      ],
+      otp_purpose: ["booking_phone", "dsr_identity"],
+      package_category: ["regular", "student", "institutional", "combo"],
+      payment_method: ["qris", "virtual_account", "manual_transfer", "cash"],
+      payment_provider: ["midtrans", "manual"],
+      payment_status: [
+        "initiated",
+        "pending",
+        "needs_review",
+        "settled",
+        "denied",
+        "failed",
+        "cancelled",
+        "expired",
+        "refunded",
+        "partially_refunded",
+        "disputed",
+        "duplicate",
+      ],
+      pricing_basis: ["per_pax", "flat_group"],
+      product_category: [
+        "compost",
+        "seedling",
+        "recycled_craft",
+        "snack",
+        "souvenir",
+        "other",
+      ],
+      quotation_status: ["issued", "accepted", "expired", "superseded", "void"],
+      revenue_beneficiary: ["kelurahan", "rw_treasury", "umkm_vendor"],
+      revenue_entry_type: ["settlement", "reversal", "adjustment"],
+      revenue_rule_scope: [
+        "package_default",
+        "addon_default",
+        "package",
+        "product",
+      ],
+      review_status: ["pending", "published", "rejected"],
+      scan_phase: ["validate", "check_in"],
+      scan_result: [
+        "ok",
+        "invalid_signature",
+        "not_found",
+        "already_used",
+        "suspended",
+        "revoked",
+        "wrong_rw",
+        "wrong_date",
+        "outside_window",
+        "booking_not_paid",
+        "ticket_expired",
+        "forbidden",
+      ],
+      schedule_type: [
+        "dance_performance",
+        "dolanan_session",
+        "workshop",
+        "art_class",
+        "other",
+      ],
+      session_status: ["open", "closed", "cancelled"],
+      ticket_status: ["issued", "used", "suspended", "revoked", "expired"],
+    },
   },
 } as const
 
