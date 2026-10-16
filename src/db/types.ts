@@ -169,6 +169,53 @@ export type Database = {
         }
         Relationships: []
       }
+      session_templates: {
+        Row: {
+          capacity: number
+          created_at: string
+          end_time: string
+          id: string
+          is_active: boolean
+          label: string
+          rw_id: number
+          start_time: string
+          updated_at: string
+          weekday: number
+        }
+        Insert: {
+          capacity: number
+          created_at?: string
+          end_time: string
+          id?: string
+          is_active?: boolean
+          label: string
+          rw_id: number
+          start_time: string
+          updated_at?: string
+          weekday: number
+        }
+        Update: {
+          capacity?: number
+          created_at?: string
+          end_time?: string
+          id?: string
+          is_active?: boolean
+          label?: string
+          rw_id?: number
+          start_time?: string
+          updated_at?: string
+          weekday?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_templates_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       site_settings: {
         Row: {
           description: string | null
@@ -264,6 +311,82 @@ export type Database = {
             columns: ["rw_id"]
             isOneToOne: false
             referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      visit_sessions: {
+        Row: {
+          capacity: number
+          checked_in_pax: number
+          created_at: string
+          created_by: string | null
+          end_time: string
+          id: string
+          label: string
+          notes: string | null
+          reserved_pax: number
+          rw_id: number
+          session_date: string
+          start_time: string
+          status: Database["public"]["Enums"]["session_status"]
+          template_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          capacity: number
+          checked_in_pax?: number
+          created_at?: string
+          created_by?: string | null
+          end_time: string
+          id?: string
+          label: string
+          notes?: string | null
+          reserved_pax?: number
+          rw_id: number
+          session_date: string
+          start_time: string
+          status?: Database["public"]["Enums"]["session_status"]
+          template_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          capacity?: number
+          checked_in_pax?: number
+          created_at?: string
+          created_by?: string | null
+          end_time?: string
+          id?: string
+          label?: string
+          notes?: string | null
+          reserved_pax?: number
+          rw_id?: number
+          session_date?: string
+          start_time?: string
+          status?: Database["public"]["Enums"]["session_status"]
+          template_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "visit_sessions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "visit_sessions_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "visit_sessions_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "session_templates"
             referencedColumns: ["id"]
           },
         ]

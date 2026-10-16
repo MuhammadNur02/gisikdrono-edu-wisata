@@ -1,7 +1,7 @@
 -- Structure test for 0003_tables, extended group by group: exact columns, the types other code
 -- relies on, keys, and the CHECK / unique rules proven by trying to break them.
 begin;
-select plan(31);
+select plan(49);
 
 -- ===== Every table: RLS from birth, no API rights, updated_at kept by trigger =====
 
@@ -160,6 +160,95 @@ select is(
   (select updated_at from public.site_settings where key = 'test.probe'),
   now(),
   'set_updated_at moves updated_at on update'
+);
+
+-- ===== Sessions and quota (Task P1.2.04) =====
+
+select columns_are('public', 'session_templates', array[
+  'id', 'rw_id', 'weekday', 'label', 'start_time', 'end_time', 'capacity', 'is_active',
+  'created_at', 'updated_at'
+]);
+select columns_are('public', 'visit_sessions', array[
+  'id', 'rw_id', 'session_date', 'start_time', 'end_time', 'label', 'capacity', 'reserved_pax',
+  'checked_in_pax', 'status', 'template_id', 'notes', 'created_by', 'created_at', 'updated_at'
+]);
+
+select col_type_is('public', 'visit_sessions', 'status', 'public', 'session_status', 'visit_sessions.status is session_status');
+select col_type_is('public', 'visit_sessions', 'reserved_pax', 'integer', 'reserved_pax is an integer counter');
+select col_type_is('public', 'visit_sessions', 'session_date', 'date', 'session_date is a date');
+select is(
+  (select confdeltype from pg_constraint
+   where conrelid = 'public.visit_sessions'::regclass and confrelid = 'public.session_templates'::regclass),
+  'n'::"char",
+  'deleting a template leaves its sessions in place (on delete set null)'
+);
+select ok(
+  (select indexdef like '%WHERE (status = ''open''::session_status)%' from pg_indexes
+   where schemaname = 'public' and indexname = 'visit_sessions_avail_idx'),
+  'visit_sessions_avail_idx only covers open sessions'
+);
+
+insert into public.session_templates (id, rw_id, weekday, label, start_time, end_time, capacity)
+values ('00000000-0000-4000-8000-0000000000a1', 5, 1, 'Sesi Pagi', '08:00', '10:00', 40);
+
+select throws_ok(
+  $$insert into public.session_templates (rw_id, weekday, label, start_time, end_time, capacity)
+    values (5, 7, 'x', '08:00', '10:00', 40)$$,
+  '23514', null, 'a template weekday is 0 (Sunday) to 6'
+);
+select throws_ok(
+  $$insert into public.session_templates (rw_id, weekday, label, start_time, end_time, capacity)
+    values (5, 2, 'x', '10:00', '10:00', 40)$$,
+  '23514', null, 'a template ends after it starts'
+);
+select throws_ok(
+  $$insert into public.session_templates (rw_id, weekday, label, start_time, end_time, capacity)
+    values (5, 2, 'x', '08:00', '10:00', 2001)$$,
+  '23514', null, 'a template capacity stays between 1 and 2000'
+);
+select throws_ok(
+  $$insert into public.session_templates (rw_id, weekday, label, start_time, end_time, capacity)
+    values (5, 1, 'Sesi Pagi lagi', '08:00', '11:00', 20)$$,
+  '23505', null, 'one template per RW, weekday and start time'
+);
+
+insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity, template_id)
+values ('00000000-0000-4000-8000-0000000000b1', 5, '2026-11-12', '08:00', '10:00', 'Sesi Pagi', 10,
+        '00000000-0000-4000-8000-0000000000a1');
+
+select is(
+  (select status from public.visit_sessions where id = '00000000-0000-4000-8000-0000000000b1'),
+  'open'::public.session_status,
+  'a new session starts open'
+);
+select throws_ok(
+  $$insert into public.visit_sessions (rw_id, session_date, start_time, end_time, label, capacity, reserved_pax)
+    values (8, '2026-11-12', '13:00', '15:00', 'x', 10, 11)$$,
+  '23514', null, 'a session is never created oversold'
+);
+select throws_ok(
+  $$update public.visit_sessions set reserved_pax = 11 where id = '00000000-0000-4000-8000-0000000000b1'$$,
+  '23514', null, 'reserving past capacity is refused by the database itself'
+);
+select throws_ok(
+  $$update public.visit_sessions set reserved_pax = -1 where id = '00000000-0000-4000-8000-0000000000b1'$$,
+  '23514', null, 'reserved_pax never goes negative'
+);
+select throws_ok(
+  $$insert into public.visit_sessions (rw_id, session_date, start_time, end_time, label, capacity)
+    values (5, '2026-11-12', '08:00', '09:00', 'dobel', 10)$$,
+  '23505', null, 'one session per RW, date and start time'
+);
+select lives_ok(
+  $$insert into public.visit_sessions (rw_id, session_date, start_time, end_time, label, capacity)
+    values (8, '2026-11-12', '08:00', '10:00', 'Sesi Pagi RW 08', 10)$$,
+  'another RW may use the same date and start time'
+);
+delete from public.session_templates where id = '00000000-0000-4000-8000-0000000000a1';
+select is(
+  (select template_id from public.visit_sessions where id = '00000000-0000-4000-8000-0000000000b1'),
+  null,
+  'the session survives its template, with template_id cleared'
 );
 
 select * from finish();

@@ -109,3 +109,56 @@ alter table public.site_settings force row level security;
 revoke all on public.site_settings from anon, authenticated;
 create trigger set_updated_at before update on public.site_settings
   for each row execute function public.set_updated_at();
+
+
+-- ===== Sessions and quota (docs/PRD.md §8.4.2, Task P1.2.04) =====
+
+-- session_templates (A): weekly recurring pattern per RW, materialised into visit_sessions.
+create table public.session_templates (
+  id         uuid primary key default gen_random_uuid(),
+  rw_id      smallint not null references public.rw_units(id),
+  weekday    smallint not null check (weekday between 0 and 6),             -- 0 = Sunday
+  label      text not null,                                                 -- 'Sesi Pagi'
+  start_time time not null,
+  end_time   time not null check (end_time > start_time),
+  capacity   integer not null check (capacity between 1 and 2000),
+  is_active  boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (rw_id, weekday, start_time)
+);
+alter table public.session_templates enable row level security;
+alter table public.session_templates force row level security;
+revoke all on public.session_templates from anon, authenticated;
+create trigger set_updated_at before update on public.session_templates
+  for each row execute function public.set_updated_at();
+
+-- visit_sessions (A): one bookable window per RW per date. reserved_pax is the quota counter.
+create table public.visit_sessions (
+  id             uuid primary key default gen_random_uuid(),
+  rw_id          smallint not null references public.rw_units(id),
+  session_date   date not null,
+  start_time     time not null,
+  end_time       time not null check (end_time > start_time),
+  label          text not null,
+  capacity       integer not null check (capacity >= 0),
+  reserved_pax   integer not null default 0 check (reserved_pax >= 0),     -- written only by internal quota functions
+  checked_in_pax integer not null default 0 check (checked_in_pax >= 0),   -- written only by check_in_ticket / undo_check_in
+  status         public.session_status not null default 'open',
+  template_id    uuid references public.session_templates(id) on delete set null,
+  notes          text,
+  created_by     uuid references public.profiles(id),
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now(),
+  constraint visit_sessions_not_oversold check (reserved_pax <= capacity),
+  unique (rw_id, session_date, start_time)
+);
+create index visit_sessions_avail_idx on public.visit_sessions (rw_id, session_date) where status = 'open';
+-- trigger visit_sessions_guard: while reserved_pax > 0 forbid DELETE, status 'cancelled', and any change of
+-- rw_id / session_date / start_time / end_time; capacity may not go below reserved_pax; logs security event
+-- session_changed_with_bookings when label/notes/capacity change on a session with reservations.
+alter table public.visit_sessions enable row level security;
+alter table public.visit_sessions force row level security;
+revoke all on public.visit_sessions from anon, authenticated;
+create trigger set_updated_at before update on public.visit_sessions
+  for each row execute function public.set_updated_at();
