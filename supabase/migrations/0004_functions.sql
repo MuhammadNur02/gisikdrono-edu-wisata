@@ -1923,7 +1923,7 @@ $$;
 -- The one event a browser may write to the audit log: a staff member opening the scanner or a masked
 -- contact. Only those two events, only staff, at most 600 an hour each; the actor is always the
 -- signed-in user, never a parameter (docs/Security.md AZ-15).
-create function public.rpc_log_ui_event(p_event text, p_entity_id uuid) returns void
+create function public.rpc_log_ui_event(p_event text, p_entity_id uuid default null) returns void
   language plpgsql security definer
   set search_path = ''
 as $$
@@ -1989,7 +1989,8 @@ $$;
 -- Moves a staff member to another role or RW. profiles_guard refuses the caller's own row and the last
 -- active superadmin, and bumps claims_version so tokens minted before the change stop working; the
 -- open sessions are ended too, so the next request has to sign in again.
-create function public.set_staff_role(p_user_id uuid, p_role public.app_role, p_rw_id smallint) returns void
+-- p_rw_id defaults to NULL so the generated types let a superadmin or 'none' role pass none.
+create function public.set_staff_role(p_user_id uuid, p_role public.app_role, p_rw_id smallint default null) returns void
   language plpgsql security definer
   set search_path = ''
 as $$
@@ -2085,9 +2086,11 @@ as $$ select internal.expire_stale_bookings(); $$;
 
 -- Application events the server writes (export.*, document.signed_url, booking.access_link_resent, ...).
 -- A PostgREST call cannot set app.actor_id beforehand, so the actor comes in as a parameter: a staff
--- member's profile id, or NULL when the server acts for a visitor.
+-- member's profile id, or NULL when the server acts for a visitor. The nullable parameters have
+-- defaults so the generated types can leave them out; src/db/rpc.ts still makes callers say which.
 create function public.svc_log_audit(
-  p_actor_id uuid, p_action text, p_entity_type text, p_entity_id text, p_metadata jsonb
+  p_action text, p_entity_type text, p_actor_id uuid default null, p_entity_id text default null,
+  p_metadata jsonb default '{}'
 ) returns void
   language plpgsql security definer
   set search_path = ''
@@ -2110,12 +2113,12 @@ $$;
 revoke execute on function public.svc_rate_limit_hit(text, integer, integer),
   public.svc_enqueue_notification(uuid, public.notification_template, public.notification_channel, jsonb),
   public.svc_increment_booklet_download(uuid), public.svc_expire_stale_bookings(),
-  public.svc_log_audit(uuid, text, text, text, jsonb)
+  public.svc_log_audit(text, text, uuid, text, jsonb)
   from public, anon, authenticated;
 grant execute on function public.svc_rate_limit_hit(text, integer, integer),
   public.svc_enqueue_notification(uuid, public.notification_template, public.notification_channel, jsonb),
   public.svc_increment_booklet_download(uuid), public.svc_expire_stale_bookings(),
-  public.svc_log_audit(uuid, text, text, text, jsonb)
+  public.svc_log_audit(text, text, uuid, text, jsonb)
   to service_role;
 
 

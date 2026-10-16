@@ -1523,15 +1523,15 @@ reset role;
 set local role service_role;
 select is(public.svc_rate_limit_hit('test:svc', 5, 60), true, 'the service role reaches internal through the wrapper');
 select lives_ok(
-  $$select public.svc_log_audit('00000000-0000-4000-8000-000000000001', 'export.downloaded', 'exports', 'x1', '{"rows": 3}')$$,
+  $$select public.svc_log_audit('export.downloaded', 'exports', '00000000-0000-4000-8000-000000000001', 'x1', '{"rows": 3}')$$,
   'the server logs a staff member''s application event'
 );
 select lives_ok(
-  $$select public.svc_log_audit(null, 'booking.access_link_resent', 'bookings', 'x2', '{}')$$,
+  $$select public.svc_log_audit('booking.access_link_resent', 'bookings', null, 'x2', '{}')$$,
   'or a visitor''s'
 );
 select throws_ok(
-  $$select public.svc_log_audit('00000000-0000-4000-8000-000000000003', 'export.downloaded', 'exports', 'x3', '{}')$$,
+  $$select public.svc_log_audit('export.downloaded', 'exports', '00000000-0000-4000-8000-000000000003', 'x3', '{}')$$,
   '42501', null, 'but never in the name of a deactivated staff member'
 );
 reset role;

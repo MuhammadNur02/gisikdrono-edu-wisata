@@ -4134,7 +4134,7 @@ export type Database = {
         }
       }
       rpc_log_ui_event: {
-        Args: { p_entity_id: string; p_event: string }
+        Args: { p_entity_id?: string; p_event: string }
         Returns: undefined
       }
       rpc_reveal_booking_contact: {
@@ -4144,7 +4144,7 @@ export type Database = {
       set_staff_role: {
         Args: {
           p_role: Database["public"]["Enums"]["app_role"]
-          p_rw_id: number
+          p_rw_id?: number
           p_user_id: string
         }
         Returns: undefined
@@ -4170,10 +4170,10 @@ export type Database = {
       svc_log_audit: {
         Args: {
           p_action: string
-          p_actor_id: string
-          p_entity_id: string
+          p_actor_id?: string
+          p_entity_id?: string
           p_entity_type: string
-          p_metadata: Json
+          p_metadata?: Json
         }
         Returns: undefined
       }
