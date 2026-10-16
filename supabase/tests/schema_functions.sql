@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(392);
+select plan(401);
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -1194,6 +1194,34 @@ select lives_ok(
     values ('email', 'security_alert', 'alerts@example.test', '{"severity": "high"}', 'alert:fingerprint-1')$$,
   'staff alerts, which belong to no booking, are queued as they are'
 );
+select throws_ok(
+  $$select internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'review_invite', 'whatsapp',
+      '{"link_scope": "admin"}')$$,
+  '22023', 'unknown link scope admin', 'a link scope outside the five the worker knows is refused'
+);
+select throws_ok(
+  $$select internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'review_invite', 'whatsapp',
+      '{"note": "lihat www.contoh.id"}')$$,
+  '22023', null, 'so is a www link'
+);
+select throws_ok(
+  $$select internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'review_invite', 'whatsapp',
+      '{"note": "bayar di gisikdrono.id/bayar"}')$$,
+  '22023', null, 'and a bare domain'
+);
+select throws_ok(
+  $$update public.notifications set recipient = '+6289999999999'
+    where dedupe_key = 'booking:00000000-0000-4000-8000-0000000000e5:booking_created:whatsapp'$$,
+  '42501', 'a booking''s message goes only to that booking''s own contact',
+  'an update cannot point a queued message at another number'
+);
+update public.bookings set pic_email = 'alamat.baru@example.test' where id = '00000000-0000-4000-8000-0000000000e5';
+select lives_ok(
+  $$update public.notifications set params = '{}'
+    where dedupe_key = 'booking:00000000-0000-4000-8000-0000000000e5:booking_created:email'$$,
+  'while emptying old params, as the prune does, works even after the booking''s contact changed'
+);
+update public.bookings set pic_email = 'budi@example.test' where id = '00000000-0000-4000-8000-0000000000e5';
 
 -- ===== Scheduled jobs =====
 -- Fixtures are dated relative to today and start at 05:xx, so they never collide with the fixed-date
@@ -1611,6 +1639,21 @@ select throws_ok(
   '42501', null, 'a signed-in non-staff user logs nothing'
 );
 reset role;
+select set_config('request.jwt.claims', (
+  select jsonb_build_object('sub', id, 'role', 'authenticated', 'aal', 'aal1', 'app_role', role,
+                            'app_rw_id', rw_id, 'claims_version', claims_version)::text
+  from public.profiles where id = '00000000-0000-4000-8000-000000000002'), true);
+set local role authenticated;
+select throws_ok(
+  $$select public.generate_visit_sessions(8::smallint, public.today_jkt(), public.today_jkt() + 13)$$,
+  '42501', null, 'an RW admin who has not passed the TOTP step generates no sessions'
+);
+select throws_ok(
+  $$select public.rpc_log_ui_event('scanner_opened', null)$$,
+  '42501', 'only staff with a verified authenticator log UI events', 'and logs no UI events'
+);
+reset role;
+select set_config('request.jwt.claims', '', true);
 revoke execute on function public.generate_visit_sessions(smallint, date, date), public.rpc_log_ui_event(text, uuid)
   from authenticated;
 
@@ -2028,6 +2071,15 @@ select is(
   false,
   'a later reply stored on the payment is minimised too'
 );
+select is(
+  internal.minimise_midtrans_payload('{"order_id": "GSK-7F3K9Q2N-01", "signature_key": "abc", "customer_note": "Bu Ani",
+    "va_numbers": [{"bank": "bca", "va_number": "12345678901", "holder": "Budi Santoso"}],
+    "transaction_details": {"order_id": "GSK-7F3K9Q2N-01", "gross_amount": "500000.00", "customer_name": "Budi"}}'),
+  '{"order_id": "GSK-7F3K9Q2N-01", "va_numbers": [{"bank": "bca", "va_number": "12345678901"}],
+    "transaction_details": {"order_id": "GSK-7F3K9Q2N-01", "gross_amount": "500000.00"}}'::jsonb,
+  'only the keys reconciliation reads survive; unknown ones are dropped at every level, the signature too'
+);
+select is(internal.minimise_midtrans_payload(null), null, 'and an absent reply stays absent');
 
 -- ===== Append-only logs =====
 
