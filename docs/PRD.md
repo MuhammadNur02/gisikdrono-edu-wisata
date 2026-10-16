@@ -756,7 +756,9 @@ create table public.tour_packages (
 create index tour_packages_public_idx on public.tour_packages (status, is_featured, sort_order);
 create index tour_packages_rw_idx on public.tour_packages (rw_id);
 -- trigger tour_packages_legs_guard: auto-insert the single leg for non-combo; block publishing a combo with < 2 distinct RW legs.
--- trigger tour_packages_price_floor: price_per_pax (and tiers) >= site_settings 'pricing.min_price_per_pax'.
+-- trigger tour_packages_price_floor: price_per_pax (and tiers) >= site_settings 'pricing.min_price_per_pax', and for
+--   pricing_basis 'flat_group' flat_price >= pricing.min_price_per_pax * min_pax; fires on price_per_pax, flat_price,
+--   pricing_basis and min_pax.
 -- trigger tour_packages_price_history: any change of price_per_pax / flat_price inserts package_price_history + security event price_changed.
 
 -- tour_package_legs: which RW(s) a package visits (1 row for RW packages, >= 2 for combo).
@@ -2250,7 +2252,7 @@ Rules: `rpc_create_export` (AAL2) validates caps (50 000 rows / 12 months, 10 ex
 
 | Control | Rule |
 |---|---|
-| Floor | Trigger rejects `price_per_pax` / tier prices below `pricing.min_price_per_pax` |
+| Floor | Trigger rejects `price_per_pax` / tier prices below `pricing.min_price_per_pax`, and a `flat_group` `flat_price` below `pricing.min_price_per_pax × min_pax` (the smallest group it can be booked for); it fires whenever `price_per_pax`, `flat_price`, `pricing_basis` or `min_pax` changes |
 | History | Every price change writes `package_price_history` and a `price_changed` security event |
 | Snapshots | Bookings snapshot package and add-on prices at creation; catalogue edits never change a booking |
 | Anomaly rules (`anomaly-scan`) | Unit price < 50 % of the 30-day median; price changed -> booking created -> price restored within 7 d; add-on subtotal > 60 % of total; pax > 60 bookings |

@@ -1275,9 +1275,39 @@ as $$
   select (value #>> '{}')::bigint from public.site_settings where key = 'pricing.min_price_per_pax';
 $$;
 
--- Shared by tour_packages and tour_package_price_tiers, which both carry price_per_pax. Only a price
--- that is being set is checked, so raising the floor does not block unrelated edits of older packages.
+-- A package pays at least the floor for every visitor: price_per_pax >= floor, and a flat group price
+-- >= floor × min_pax, the fewest visitors it can be booked for (docs/Security.md REC-13). Only a
+-- package whose price, basis or minimum is being set is checked, so raising the floor does not block
+-- unrelated edits of older packages.
 create function internal.tour_packages_price_floor() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  floor_price bigint := internal.price_floor();
+begin
+  if tg_op = 'UPDATE'
+     and (new.price_per_pax, new.flat_price, new.pricing_basis, new.min_pax)
+         is not distinct from (old.price_per_pax, old.flat_price, old.pricing_basis, old.min_pax) then
+    return new;
+  end if;
+  if new.price_per_pax < floor_price then
+    raise exception 'a price per visitor may not go below IDR %', floor_price
+      using errcode = 'check_violation', constraint = 'tour_packages_price_floor';
+  end if;
+  if new.pricing_basis = 'flat_group' and new.flat_price < floor_price * new.min_pax then
+    raise exception 'a group price for at least % visitors may not go below IDR %', new.min_pax, floor_price * new.min_pax
+      using errcode = 'check_violation', constraint = 'tour_packages_price_floor';
+  end if;
+  return new;
+end;
+$$;
+create trigger tour_packages_price_floor
+  before insert or update of price_per_pax, flat_price, pricing_basis, min_pax on public.tour_packages
+  for each row execute function internal.tour_packages_price_floor();
+
+-- A volume tier prices each visitor, so it meets the same per-visitor floor.
+create function internal.tour_package_tiers_price_floor() returns trigger
   language plpgsql security definer
   set search_path = ''
 as $$
@@ -1292,10 +1322,8 @@ begin
   return new;
 end;
 $$;
-create trigger tour_packages_price_floor before insert or update of price_per_pax on public.tour_packages
-  for each row execute function internal.tour_packages_price_floor();
 create trigger tour_packages_price_floor before insert or update of price_per_pax on public.tour_package_price_tiers
-  for each row execute function internal.tour_packages_price_floor();
+  for each row execute function internal.tour_package_tiers_price_floor();
 
 create function internal.record_price_change(
   p_package_id uuid, p_tier_id uuid,
@@ -1378,6 +1406,7 @@ create trigger products_umkm_price_changed after update of price on public.produ
   for each row execute function internal.products_umkm_price_changed();
 
 revoke execute on function internal.price_floor(), internal.tour_packages_price_floor(),
+  internal.tour_package_tiers_price_floor(),
   internal.record_price_change(uuid, uuid, bigint, bigint, bigint, bigint),
   internal.tour_packages_price_history(), internal.tour_package_tiers_price_history(),
   internal.products_umkm_price_changed()

@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(340);
+select plan(344);
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -803,6 +803,29 @@ select throws_ok(
   $$insert into public.tour_packages (rw_id, category, slug, name, price_per_pax)
     values (5, 'regular', 'paket-murah', 'Paket Murah', 4999)$$,
   '23514', null, 'nor start below it'
+);
+
+-- REC-13 for group prices: a flat price covers at least min_pax visitors at the floor.
+insert into public.tour_packages (id, rw_id, category, slug, name, pricing_basis, flat_price, min_pax)
+values ('00000000-0000-4000-8000-0000000000c6', 5, 'institutional', 'paket-rombongan', 'Paket Rombongan',
+        'flat_group', 100000, 20);
+select throws_ok(
+  $$update public.tour_packages set flat_price = 99999 where id = '00000000-0000-4000-8000-0000000000c6'$$,
+  '23514', 'a group price for at least 20 visitors may not go below IDR 100000',
+  'a group price below the floor for its smallest group is refused'
+);
+select throws_ok(
+  $$update public.tour_packages set min_pax = 21 where id = '00000000-0000-4000-8000-0000000000c6'$$,
+  '23514', null, 'and so is raising the smallest group above what the price covers'
+);
+select throws_ok(
+  $$update public.tour_packages set pricing_basis = 'flat_group', flat_price = 1
+    where id = '00000000-0000-4000-8000-0000000000c1'$$,
+  '23514', null, 'switching a per-visitor package to a flat price of IDR 1 is refused'
+);
+select lives_ok(
+  $$update public.tour_packages set name = 'Paket Rombongan Sekolah' where id = '00000000-0000-4000-8000-0000000000c6'$$,
+  'other edits of a group package pass'
 );
 
 select set_config('app.actor_id', '00000000-0000-4000-8000-000000000002', true);
