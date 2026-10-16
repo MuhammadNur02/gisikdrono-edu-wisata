@@ -34,6 +34,8 @@ export default defineConfig({
           name: 'integration',
           include: ['tests/integration/**/*.test.ts'],
           environment: 'node',
+          // Every file shares the one local database and cleans up after itself, so they take turns.
+          fileParallelism: false,
         },
       },
     ],
