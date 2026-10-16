@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(417);
+select plan(421);
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -1310,6 +1310,27 @@ select throws_ok(
   $$select internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'review_invite', 'whatsapp',
       '{"note": "bayar di gisikdrono.id/bayar"}')$$,
   '22023', null, 'and a bare domain'
+);
+select throws_ok(
+  $$select internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'review_invite', 'whatsapp',
+      '{"note": "bayar di gisik-bayar.top"}')$$,
+  '22023', null, 'any name.tld host, whatever its ending (review L7)'
+);
+select throws_ok(
+  $$select internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'review_invite', 'whatsapp',
+      '{"note": "bayar di 103.20.1.5/bayar"}')$$,
+  '22023', null, 'and an IP address'
+);
+select throws_ok(
+  $$update public.notifications set recipient_name = 'klik evil.shop'
+    where dedupe_key = 'booking:00000000-0000-4000-8000-0000000000e5:booking_created:whatsapp'$$,
+  '22023', 'notification params and recipient_name never carry a link, host or IP address; the worker mints links from params.link_scope',
+  'the greeting name is checked too, on an update as well'
+);
+select lives_ok(
+  $$select internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'checked_in_thanks', 'whatsapp',
+      '{"session": "08.00-10.00 WIB", "total": "Rp 1.250.000"}')$$,
+  'times and amounts written with dots still pass'
 );
 select throws_ok(
   $$update public.notifications set recipient = '+6289999999999'

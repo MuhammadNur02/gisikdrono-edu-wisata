@@ -17,4 +17,7 @@ export const copy = {
     PAYMENT: 'Pembayaran belum bisa diproses. Coba beberapa saat lagi atau pilih metode lain.',
     INTERNAL: 'Maaf, ada kendala di sistem kami. Coba lagi sebentar lagi, ya.',
   } satisfies Record<ActionErrorCode, string>,
+  validation: {
+    freeText: 'Tulis tanpa tautan, alamat situs, email, atau nomor telepon, ya.',
+  },
 };

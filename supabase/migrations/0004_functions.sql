@@ -1729,25 +1729,29 @@ revoke execute on function internal.reserve_session_quota(uuid, integer), intern
 -- ===== Notification outbox (docs/PRD.md §8.7, docs/Security.md GUEST-07, GUEST-08, Task P1.3.25) =====
 
 -- notifications_guest_guard: the backstop for any outbox row, including ones written without
--- enqueue_notification, on insert and whenever its routing or params change. A booking's message goes
--- only to that booking's own contact; WhatsApp only once the number is verified (the OTP that verifies
--- it excepted); an unconfirmed email address gets view links only; params carry no URL or link of
--- any form, because the worker mints every link itself, and link_scope is one of the five scopes. A
--- row without link_scope gets no link at all from the worker. The recipient is checked again only
--- when the routing changes, so emptying old params during the prune still works after a booking's
--- contact has changed.
+-- enqueue_notification, on insert and whenever its routing, params or greeting change. A booking's
+-- message goes only to that booking's own contact; WhatsApp only once the number is verified (the OTP
+-- that verifies it excepted); an unconfirmed email address gets view links only; params and
+-- recipient_name carry no link in any form, no host (name.tld) and no IP address, because messages go
+-- out from the kelurahan's own number and the worker mints every link itself; link_scope is one of the
+-- five scopes. A row without link_scope gets no link at all from the worker. The recipient is checked
+-- again only when the routing changes, so emptying old params during the prune still works after a
+-- booking's contact has changed. The application validates the same free text earlier
+-- (src/lib/notifications/templates.ts), so this backstop never has to stop a transition.
 create function internal.notifications_guest_guard() returns trigger
   language plpgsql security definer
   set search_path = ''
 as $$
 declare
+  link_pattern constant text := '(://|www\.|javascript:|data:|\m[[:alnum:]-]+\.[[:alpha:]]{2,}\M'
+    || '|\m((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\M)';
   booking record;
   is_new_route boolean := tg_op = 'INSERT'
     or (new.booking_id, new.channel, new.template, new.recipient)
        is distinct from (old.booking_id, old.channel, old.template, old.recipient);
 begin
-  if new.params::text ~* '(://|www\.|javascript:|data:|\m[a-z0-9-]+\.(id|com|net|org|co|io|app|link|me|ly|site|xyz|info|biz)\M)' then
-    raise exception 'notification params never carry a URL; the worker mints links from params.link_scope'
+  if new.params::text ~* link_pattern or coalesce(new.recipient_name, '') ~* link_pattern then
+    raise exception 'notification params and recipient_name never carry a link, host or IP address; the worker mints links from params.link_scope'
       using errcode = '22023';
   end if;
   if new.params ? 'link_scope'
@@ -1775,7 +1779,7 @@ begin
 end;
 $$;
 create trigger notifications_guest_guard
-  before insert or update of booking_id, channel, template, recipient, params on public.notifications
+  before insert or update of booking_id, channel, template, recipient, recipient_name, params on public.notifications
   for each row execute function internal.notifications_guest_guard();
 
 -- Queues one message about a booking for the outbox worker and returns its id. The recipient always
