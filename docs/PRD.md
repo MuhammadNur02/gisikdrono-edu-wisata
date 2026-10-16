@@ -1464,7 +1464,8 @@ create table public.payout_batches (
   created_at      timestamptz not null default now()
 );
 
--- revenue_share_entries (AO): append-only, hash-chained ledger. Reversal = negative row; never updated.
+-- revenue_share_entries (AO): append-only, hash-chained ledger. Reversal = negative row; never updated except
+-- payout_batch_id, which the payout run sets once (it stays outside the hash).
 create table public.revenue_share_entries (
   id               bigint generated always as identity primary key,    -- chain order
   booking_id       uuid not null references public.bookings(id) on delete restrict,
@@ -1806,7 +1807,7 @@ grant update (full_name, phone, avatar_path) on public.profiles to authenticated
 | `tickets_require_paid_booking`, `tickets_no_revive` | `tickets_qr` | §8.4.6 |
 | `articles_moderation_guard`, `reviews_moderation_stamp` | `articles`, `reviews` | §8.4.7 |
 | `revenue_rule_sum_guard`, `revenue_rules_immutable_once_used` | `revenue_share_rule_lines`, `revenue_share_rules` | §8.4.8 |
-| `append_only` | `booking_events`, `payment_events`, `webhook_rejections`, `package_price_history`, `ticket_scans`, `revenue_share_entries` (except `payout_batch_id`), `security_events`, `audit_logs`, `login_attempts`, `payment_adjustments` (except workflow columns) | Raises on UPDATE/DELETE |
+| `append_only` | `booking_events`, `payment_events` (except `processed_at`, `processing_result`), `webhook_rejections`, `package_price_history`, `ticket_scans`, `revenue_share_entries` (except `payout_batch_id`, set once from NULL), `security_events`, `audit_logs`, `login_attempts`, `payment_adjustments` (own function: the proposal columns never change, the workflow columns move until `applied`, then the row is final) | Raises on UPDATE/DELETE, plus a statement trigger on TRUNCATE; only `app.purge = 'on'` (the retention runs) passes; UPDATE/DELETE/TRUNCATE are also revoked from `anon`, `authenticated` and `service_role` |
 | `ledger_chain`, `audit_chain` | `revenue_share_entries`, `audit_logs` | Computes `prev_hash`/`entry_hash` on insert; verified by `internal.verify_ledger_chain` / `verify_audit_chain` |
 | `log_audit` | `bookings, booking_legs, booking_participants, payments, payment_adjustments, tickets_qr, certificates, quotations, invoices, tour_packages, products_umkm, umkm_vendors, visit_sessions, session_templates, profiles, staff_invites, rw_units, revenue_share_rules, revenue_share_rule_lines, revenue_share_entries, payout_batches, site_settings, reviews, articles, hero_banners` (25 tables; `booking_participants` without `full_name`) | Row-level before/after of allow-listed columns into `audit_logs`; `actor_id = coalesce(auth.uid(), current_setting('app.actor_id', true)::uuid)`; rejects NULL actor for staff/service roles |
 | `set_updated_at` | every table with `updated_at` | — |

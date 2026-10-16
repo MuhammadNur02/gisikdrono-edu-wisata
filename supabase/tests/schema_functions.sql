@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(134);
+select plan(174);
 
 -- Fixtures, rolled back at the end. The pepper is a throwaway local value.
 select vault.create_secret('local-test-pepper-not-a-real-secret-0000000', 'otp_pepper', 'test only');
@@ -769,6 +769,281 @@ select lives_ok(
   'revoke_certificate moves it'
 );
 select set_config('app.in_rpc', '', true);
+
+-- ===== Append-only logs =====
+
+insert into public.booking_events (booking_id, to_status, actor_type)
+values ('00000000-0000-4000-8000-0000000000e5', 'quoted', 'visitor');
+select throws_ok(
+  $$update public.booking_events set reason = 'diubah' where booking_id = '00000000-0000-4000-8000-0000000000e5'$$,
+  '42501', null, 'a booking event is never edited'
+);
+select throws_ok(
+  $$delete from public.booking_events where booking_id = '00000000-0000-4000-8000-0000000000e5'$$,
+  '42501', 'booking_events is append-only: rows are never deleted', 'or deleted'
+);
+select throws_ok('truncate public.audit_logs', '42501', 'audit_logs is append-only: rows are never deleted', 'and no log can be truncated');
+
+insert into public.payment_events (order_id, source, event_hash, payload)
+values ('GSK-7F3K9Q2M-01', 'webhook', 'event-hash-1', '{"transaction_status": "settlement", "customer_details": {"first_name": "Siti"}}');
+select lives_ok(
+  $$update public.payment_events set processed_at = now(), processing_result = 'applied' where event_hash = 'event-hash-1'$$,
+  'processing marks a payment event done'
+);
+select throws_ok(
+  $$update public.payment_events set payload = '{}' where event_hash = 'event-hash-1'$$,
+  '42501', 'payment_events is append-only: only processed_at, processing_result may change', 'but what Midtrans sent never changes'
+);
+
+insert into public.webhook_rejections (provider, reason) values ('midtrans', 'signature_invalid');
+select throws_ok(
+  $$delete from public.webhook_rejections where reason = 'signature_invalid'$$,
+  '42501', null, 'a rejection record stays'
+);
+select set_config('app.purge', 'on', true);
+select lives_ok(
+  $$delete from public.webhook_rejections where reason = 'signature_invalid'$$,
+  'until the retention run prunes it'
+);
+select lives_ok(
+  $$update public.payment_events set payload = payload - 'customer_details' where event_hash = 'event-hash-1'$$,
+  'and the retention run may strip the customer details from an old event'
+);
+select set_config('app.purge', '', true);
+
+insert into public.payment_adjustments (id, booking_id, type, amount, reason, evidence_path, proposed_by)
+values ('00000000-0000-4000-8000-000000000c01', '00000000-0000-4000-8000-0000000000e1', 'write_off', 1000,
+        'selisih pembulatan transfer bank', 'documents/bookings/e1/payment-proof-1.jpg', '00000000-0000-4000-8000-000000000002');
+select throws_ok(
+  $$update public.payment_adjustments set amount = 900000 where id = '00000000-0000-4000-8000-000000000c01'$$,
+  '42501', 'the proposal of an adjustment never changes; only its approval workflow moves',
+  'the approver approves exactly what was proposed'
+);
+select lives_ok(
+  $$update public.payment_adjustments set status = 'approved', approved_by = '00000000-0000-4000-8000-000000000001',
+      approved_at = now() where id = '00000000-0000-4000-8000-000000000c01'$$,
+  'the approval moves it'
+);
+update public.payment_adjustments set status = 'applied', applied_at = now() where id = '00000000-0000-4000-8000-000000000c01';
+select throws_ok(
+  $$update public.payment_adjustments set rejected_reason = 'dibatalkan' where id = '00000000-0000-4000-8000-000000000c01'$$,
+  '42501', 'an applied adjustment is final', 'an applied adjustment is final'
+);
+select throws_ok(
+  $$delete from public.payment_adjustments where id = '00000000-0000-4000-8000-000000000c01'$$,
+  '42501', 'payment_adjustments are never deleted', 'and never deleted'
+);
+
+select is(
+  (select bool_or(has_table_privilege(api_role, 'public.' || log_table, privilege))
+   from unnest(array['anon', 'authenticated', 'service_role']) as api_role,
+        unnest(array['booking_events', 'payment_events', 'webhook_rejections', 'package_price_history', 'ticket_scans',
+                     'revenue_share_entries', 'security_events', 'audit_logs', 'login_attempts', 'payment_adjustments']) as log_table,
+        unnest(array['UPDATE', 'DELETE', 'TRUNCATE']) as privilege),
+  false,
+  'no API role, not even the service role, may update, delete or truncate a log'
+);
+
+-- ===== Ledger hash chain =====
+
+insert into public.payout_batches (id, beneficiary_key, period_from, period_to, total_amount, created_by)
+values ('00000000-0000-4000-8000-000000000b01', 'kelurahan', '2026-11-01', '2026-11-30', 300000,
+        '00000000-0000-4000-8000-000000000001');
+-- The rule-in-use test above already wrote one ledger row for e1; these three follow it.
+insert into public.revenue_share_entries (booking_id, entry_type, line_ref, rule_version, beneficiary, beneficiary_key,
+  rw_id, base_amount, pct, amount, entry_hash)
+values
+  ('00000000-0000-4000-8000-0000000000e5', 'settlement', 'package', '{"lines": 2}', 'kelurahan', 'kelurahan',
+   null, 450000, 30, 135000, 'picked-by-the-caller'),
+  ('00000000-0000-4000-8000-0000000000e5', 'settlement', 'package', '{"lines": 2}', 'rw_treasury', 'rw:5',
+   5, 450000, 70, 315000, null),
+  ('00000000-0000-4000-8000-0000000000e5', 'settlement', 'addon:00000000-0000-4000-8000-000000000801', '{"lines": 1}',
+   'rw_treasury', 'rw:5', 5, 30000, 100, 30000, null);
+select is(
+  (select count(*) filter (where entry_hash ~ '^[0-9a-f]{64}$') = count(*) and count(*) = 4
+   from public.revenue_share_entries),
+  true,
+  'the chain computes every hash itself, whatever the caller sent'
+);
+select is(
+  (select count(*)::int from public.revenue_share_entries entry
+   join public.revenue_share_entries previous
+     on previous.id = (select max(id) from public.revenue_share_entries where id < entry.id)
+   where entry.prev_hash = previous.entry_hash),
+  3,
+  'each ledger row carries the hash of the row before it'
+);
+select is(
+  internal.verify_ledger_chain(),
+  '{"ok": true, "checked": 4, "first_broken_id": null}'::jsonb,
+  'an untouched ledger verifies'
+);
+select throws_ok(
+  $$update public.revenue_share_entries set amount = 1
+    where booking_id = '00000000-0000-4000-8000-0000000000e5' and line_ref = 'package' and beneficiary_key = 'rw:5'$$,
+  '42501', null, 'a ledger amount never changes; a correction is a new row'
+);
+select lives_ok(
+  $$update public.revenue_share_entries set payout_batch_id = '00000000-0000-4000-8000-000000000b01'
+    where beneficiary_key = 'kelurahan'$$,
+  'a payout run claims a ledger row'
+);
+select throws_ok(
+  $$update public.revenue_share_entries set payout_batch_id = null where beneficiary_key = 'kelurahan'$$,
+  '42501', 'revenue_share_entries.payout_batch_id is set once and never changed', 'and never releases or moves it'
+);
+select is((internal.verify_ledger_chain() ->> 'ok')::boolean, true, 'claiming a row for a payout keeps the chain intact');
+
+-- Someone with database access edits an amount behind the triggers' back.
+alter table public.revenue_share_entries disable trigger append_only;
+update public.revenue_share_entries set amount = 300000
+where booking_id = '00000000-0000-4000-8000-0000000000e5' and line_ref = 'package' and beneficiary_key = 'rw:5';
+alter table public.revenue_share_entries enable trigger append_only;
+select is(
+  internal.verify_ledger_chain(),
+  (select jsonb_build_object('ok', false, 'checked', (select count(*) from public.revenue_share_entries where id < edited.id),
+                             'first_broken_id', edited.id)
+   from public.revenue_share_entries edited
+   where booking_id = '00000000-0000-4000-8000-0000000000e5' and line_ref = 'package' and beneficiary_key = 'rw:5'),
+  'verification stops at the edited row'
+);
+
+-- ===== Audit log =====
+
+select is(
+  (select actor_role || ' ' || actor_id from public.audit_logs
+   where action = 'bookings.update' and entity_id = '00000000-0000-4000-8000-0000000000e5'
+     and metadata -> 'changed_columns' ? 'discount_amount'),
+  'superadmin 00000000-0000-4000-8000-000000000001',
+  'a staff edit is logged under the staff member who made it'
+);
+select is(
+  (select after from public.audit_logs
+   where action = 'bookings.update' and entity_id = '00000000-0000-4000-8000-0000000000e5'
+     and metadata -> 'changed_columns' ? 'discount_amount'),
+  '{"discount_amount": 50000, "total_amount": 450000}'::jsonb,
+  'an update copies only the values that changed'
+);
+select is(
+  (select rw_id from public.audit_logs where action = 'bookings.insert' and entity_id = '00000000-0000-4000-8000-0000000000e5'),
+  5::smallint,
+  'a booking''s audit rows carry its RW'
+);
+select is(
+  (select actor_role || ' ' || coalesce(actor_id::text, 'no actor') from public.audit_logs
+   where action = 'payout_batches.insert' and entity_id = '00000000-0000-4000-8000-000000000b01'),
+  'cron no actor',
+  'a job without a session is logged as cron'
+);
+
+update public.bookings set pic_phone = '+6281299998888', pic_email = 'tata.usaha@sdgisikdrono.test'
+where id = '00000000-0000-4000-8000-0000000000e5';
+select is(
+  (select jsonb_build_object('before', before, 'after', after, 'changed', metadata -> 'changed_columns')
+   from public.audit_logs where action = 'bookings.update' and entity_id = '00000000-0000-4000-8000-0000000000e5'
+   order by id desc limit 1),
+  '{"before": null, "after": null, "changed": ["email_masked", "phone_masked", "pic_email", "pic_phone"]}'::jsonb,
+  'a contact change is logged by column name, without a single value'
+);
+
+insert into public.booking_participants (booking_id, seq_no, full_name, group_label, role_label)
+values ('00000000-0000-4000-8000-0000000000e5', 1, 'Andi Pratama', 'Kelas 5A', 'student');
+select is(
+  (select (after ? 'full_name') or after::text like '%Andi%' from public.audit_logs where action = 'booking_participants.insert'),
+  false,
+  'a participant is logged without the name'
+);
+
+insert into public.site_settings (key, value, is_public) values ('contact.whatsapp_number', '"+6281333334444"', true)
+on conflict (key) do update set value = excluded.value;
+select is(
+  (select coalesce(after, '{}') ? 'value' from public.audit_logs
+   where entity_type = 'site_settings' and entity_id = 'contact.whatsapp_number' order by id desc limit 1),
+  false,
+  'a public contact number in the settings is still kept out of the log'
+);
+
+select set_config('app.audit_mode', 'names_only', true);
+update public.bookings set institution_name = 'SD Negeri Gisikdrono 02' where id = '00000000-0000-4000-8000-0000000000e5';
+select set_config('app.audit_mode', '', true);
+select is(
+  (select jsonb_build_object('before', before, 'after', after, 'metadata', metadata)
+   from public.audit_logs where action = 'bookings.update' and entity_id = '00000000-0000-4000-8000-0000000000e5'
+   order by id desc limit 1),
+  '{"before": null, "after": null, "metadata": {"changed_columns": ["institution_name"], "audit_mode": "names_only"}}'::jsonb,
+  'in names_only mode (the retention runs) even allow-listed values stay out'
+);
+
+create temp table audit_count_before as select count(*) as n from public.audit_logs;
+update public.rw_units set name = name where id = 5;
+select is((select count(*) from public.audit_logs), (select n from audit_count_before), 'an update that changes nothing writes nothing');
+
+-- Service-role code must say whom it acts for, unless it acts for the visitor.
+set local role service_role;
+select throws_ok(
+  $$insert into public.session_templates (rw_id, weekday, label, start_time, end_time, capacity)
+    values (5, 1, 'Pagi', '08:00', '10:00', 40)$$,
+  '42501', 'audit: a service action must name its actor (set app.actor_id)',
+  'a service-role write that does not name its actor is refused'
+);
+select set_config('app.actor_id', '00000000-0000-4000-8000-000000000002', true);
+select lives_ok(
+  $$insert into public.session_templates (rw_id, weekday, label, start_time, end_time, capacity)
+    values (5, 1, 'Pagi', '08:00', '10:00', 40)$$,
+  'naming the staff member lets it through'
+);
+select set_config('app.actor_id', '', true);
+select set_config('app.actor_role', 'visitor', true);
+select lives_ok(
+  $$insert into public.booking_participants (booking_id, seq_no, full_name, role_label)
+    values ('00000000-0000-4000-8000-0000000000e5', 2, 'Bu Rina', 'teacher')$$,
+  'a guest flow may stay anonymous when it says it acts for the visitor'
+);
+select set_config('app.actor_role', '', true);
+reset role;
+select is(
+  (select actor_role || ' ' || actor_id from public.audit_logs where action = 'session_templates.insert' order by id desc limit 1),
+  'service 00000000-0000-4000-8000-000000000002',
+  'and the log shows whom the service acted for'
+);
+
+select lives_ok(
+  $$select internal.log_audit('purge_run', 'booking_participants', null, '{"deleted": 0}')$$,
+  'jobs write application events through the helper'
+);
+select is(
+  (select actor_role || ' ' || (metadata ->> 'deleted') from public.audit_logs where action = 'purge_run'),
+  'cron 0',
+  'and the event lands with its metadata'
+);
+
+select is(
+  (select (internal.verify_audit_chain() ->> 'checked')::bigint = count(*) from public.audit_logs),
+  true,
+  'every audit row written in this test is chained and verifies'
+);
+select set_config('app.purge', 'on', true);
+delete from public.audit_logs where id = (select min(id) from public.audit_logs);
+select set_config('app.purge', '', true);
+select is((internal.verify_audit_chain() ->> 'ok')::boolean, true, 'pruning the oldest rows leaves the rest verifiable');
+
+-- Someone erases who created the session template.
+alter table public.audit_logs disable trigger append_only;
+update public.audit_logs set actor_role = 'cron', actor_id = null
+where id = (select max(id) from public.audit_logs where action = 'session_templates.insert');
+alter table public.audit_logs enable trigger append_only;
+select is(
+  (internal.verify_audit_chain() ->> 'first_broken_id')::bigint,
+  (select max(id) from public.audit_logs where action = 'session_templates.insert'),
+  'verification stops at the row whose actor was erased'
+);
+
+select is(
+  (select count(*)::int from public.audit_logs
+   where concat(before::text, after::text, metadata::text) similar to '%(\+62|@)%'),
+  0,
+  'no phone number or email address reached the audit log'
+);
 
 select * from finish();
 rollback;

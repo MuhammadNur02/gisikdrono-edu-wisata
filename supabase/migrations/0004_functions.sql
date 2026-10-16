@@ -839,3 +839,411 @@ revoke execute on function internal.guard_status_writes(), internal.bookings_imm
   internal.bookings_discount_guard(), internal.payments_immutable_guard(), internal.invoices_immutable_guard(),
   internal.booking_addons_freeze(), internal.tickets_require_paid_booking(), internal.tickets_no_revive()
   from public, anon, authenticated;
+
+
+-- ===== Append-only logs (docs/PRD.md §8.5.3, Task P1.3.10) =====
+-- Logs and the ledger only ever grow. The retention functions are the one exception: they run with
+-- app.purge = 'on' (docs/Security.md §7.3) and may delete old rows or blank PII inside them.
+
+create function internal.in_purge() returns boolean
+  language sql stable
+  set search_path = ''
+as $$ select coalesce(current_setting('app.purge', true), '') = 'on'; $$;
+revoke execute on function internal.in_purge() from public, anon, authenticated;
+
+-- The trigger arguments name the columns that may still change. A name ending in ':once' may only be
+-- filled in from NULL (revenue_share_entries.payout_batch_id when a payout settles it).
+create function internal.append_only() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  allowed text;
+  frozen_old jsonb;
+  frozen_new jsonb;
+begin
+  if internal.in_purge() then
+    return coalesce(new, old);
+  end if;
+  if tg_op = 'TRUNCATE' or tg_op = 'DELETE' then
+    raise exception '% is append-only: rows are never deleted', tg_table_name using errcode = '42501';
+  end if;
+
+  frozen_old := to_jsonb(old);
+  frozen_new := to_jsonb(new);
+  -- tg_argv is NULL, not an empty array, when the trigger names no columns.
+  foreach allowed in array coalesce(tg_argv, '{}') loop
+    if allowed like '%:once' then
+      allowed := split_part(allowed, ':', 1);
+      if frozen_old -> allowed <> 'null'::jsonb and frozen_old -> allowed is distinct from frozen_new -> allowed then
+        raise exception '%.% is set once and never changed', tg_table_name, allowed using errcode = '42501';
+      end if;
+    end if;
+    frozen_old := frozen_old - allowed;
+    frozen_new := frozen_new - allowed;
+  end loop;
+
+  if frozen_old is distinct from frozen_new then
+    raise exception '% is append-only: only % may change', tg_table_name,
+      coalesce(nullif(array_to_string(tg_argv, ', '), ''), 'nothing') using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger append_only before update or delete on public.booking_events
+  for each row execute function internal.append_only();
+create trigger append_only before update or delete on public.payment_events
+  for each row execute function internal.append_only('processed_at', 'processing_result');
+create trigger append_only before update or delete on public.webhook_rejections
+  for each row execute function internal.append_only();
+create trigger append_only before update or delete on public.package_price_history
+  for each row execute function internal.append_only();
+create trigger append_only before update or delete on public.ticket_scans
+  for each row execute function internal.append_only();
+create trigger append_only before update or delete on public.revenue_share_entries
+  for each row execute function internal.append_only('payout_batch_id:once');
+create trigger append_only before update or delete on public.security_events
+  for each row execute function internal.append_only();
+create trigger append_only before update or delete on public.audit_logs
+  for each row execute function internal.append_only();
+create trigger append_only before update or delete on public.login_attempts
+  for each row execute function internal.append_only();
+
+-- TRUNCATE skips row triggers, so it gets a statement trigger of its own.
+create trigger append_only_truncate before truncate on public.booking_events
+  for each statement execute function internal.append_only();
+create trigger append_only_truncate before truncate on public.payment_events
+  for each statement execute function internal.append_only();
+create trigger append_only_truncate before truncate on public.webhook_rejections
+  for each statement execute function internal.append_only();
+create trigger append_only_truncate before truncate on public.package_price_history
+  for each statement execute function internal.append_only();
+create trigger append_only_truncate before truncate on public.ticket_scans
+  for each statement execute function internal.append_only();
+create trigger append_only_truncate before truncate on public.revenue_share_entries
+  for each statement execute function internal.append_only();
+create trigger append_only_truncate before truncate on public.security_events
+  for each statement execute function internal.append_only();
+create trigger append_only_truncate before truncate on public.audit_logs
+  for each statement execute function internal.append_only();
+create trigger append_only_truncate before truncate on public.login_attempts
+  for each statement execute function internal.append_only();
+create trigger append_only_truncate before truncate on public.payment_adjustments
+  for each statement execute function internal.append_only();
+
+-- payment_adjustments: the proposal itself never changes; its workflow columns move until it is
+-- applied, after which the row is final.
+create function internal.payment_adjustments_append_only() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if internal.in_purge() then
+    return coalesce(new, old);
+  end if;
+  if tg_op = 'DELETE' then
+    raise exception 'payment_adjustments are never deleted' using errcode = '42501';
+  end if;
+  if old.status = 'applied' then
+    raise exception 'an applied adjustment is final' using errcode = '42501';
+  end if;
+  if (new.booking_id, new.payment_id, new.type, new.amount, new.reason, new.evidence_path, new.proposed_by, new.proposed_at)
+     is distinct from
+     (old.booking_id, old.payment_id, old.type, old.amount, old.reason, old.evidence_path, old.proposed_by, old.proposed_at) then
+    raise exception 'the proposal of an adjustment never changes; only its approval workflow moves'
+      using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+create trigger append_only before update or delete on public.payment_adjustments
+  for each row execute function internal.payment_adjustments_append_only();
+
+-- Even the service role writes these tables only by inserting.
+revoke update, delete, truncate on public.booking_events, public.payment_events, public.webhook_rejections,
+  public.package_price_history, public.ticket_scans, public.revenue_share_entries, public.security_events,
+  public.audit_logs, public.login_attempts, public.payment_adjustments
+  from anon, authenticated, service_role;
+
+revoke execute on function internal.append_only(), internal.payment_adjustments_append_only()
+  from public, anon, authenticated;
+
+
+-- ===== Hash chains (docs/Security.md §3.8, §11.1, Task P1.3.14) =====
+-- Each row stores the hash of the row before it, so editing or deleting any row breaks every link
+-- after it. The hash covers the whole row as canonical jsonb, with timestamps rendered in UTC so the
+-- result does not depend on the session time zone. Left out: the two hash columns themselves and
+-- revenue_share_entries.payout_batch_id, the one column the payout run fills in later (once).
+--
+-- Ids come from a sequence before triggers run, so two concurrent inserts could get ids in a different
+-- order than they reach the chain. The trigger therefore takes the advisory lock first and only then
+-- draws the row's id: inside the lock, id order is chain order.
+
+create function internal.chain_hash(p_prev_hash text, p_row jsonb) returns text
+  language sql immutable
+  set search_path = ''
+as $$
+  select encode(
+    extensions.digest(
+      coalesce(p_prev_hash, '') || '|' || (p_row - 'prev_hash' - 'entry_hash' - 'payout_batch_id')::text,
+      'sha256'
+    ),
+    'hex'
+  );
+$$;
+revoke execute on function internal.chain_hash(text, jsonb) from public, anon, authenticated;
+
+create function internal.chain_append() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+  set timezone = 'UTC'
+as $$
+begin
+  perform pg_advisory_xact_lock(hashtext('chain:' || tg_table_name));
+  new.id := nextval(pg_get_serial_sequence(format('public.%I', tg_table_name), 'id'));
+  execute format('select entry_hash from public.%I order by id desc limit 1', tg_table_name)
+    into new.prev_hash;
+  new.entry_hash := internal.chain_hash(new.prev_hash, to_jsonb(new));
+  return new;
+end;
+$$;
+create trigger ledger_chain before insert on public.revenue_share_entries
+  for each row execute function internal.chain_append();
+create trigger audit_chain before insert on public.audit_logs
+  for each row execute function internal.chain_append();
+
+-- Walks the chain in id order, recomputing every hash. The first remaining row's prev_hash is
+-- accepted as the anchor, because retention prunes the oldest rows (after a checkpoint).
+create function internal.verify_chain(p_table text) returns jsonb
+  language plpgsql stable security definer
+  set search_path = ''
+  set timezone = 'UTC'
+as $$
+declare
+  link record;
+  expected_prev text;
+  is_first boolean := true;
+  checked integer := 0;
+begin
+  for link in execute format('select id, prev_hash, entry_hash, to_jsonb(t) as row_data from public.%I t order by id', p_table) loop
+    if (not is_first and link.prev_hash is distinct from expected_prev)
+       or link.entry_hash <> internal.chain_hash(link.prev_hash, link.row_data) then
+      return jsonb_build_object('ok', false, 'checked', checked, 'first_broken_id', link.id);
+    end if;
+    expected_prev := link.entry_hash;
+    is_first := false;
+    checked := checked + 1;
+  end loop;
+  return jsonb_build_object('ok', true, 'checked', checked, 'first_broken_id', null);
+end;
+$$;
+
+create function internal.verify_ledger_chain() returns jsonb
+  language sql stable
+  set search_path = ''
+as $$ select internal.verify_chain('revenue_share_entries'); $$;
+
+create function internal.verify_audit_chain() returns jsonb
+  language sql stable
+  set search_path = ''
+as $$ select internal.verify_chain('audit_logs'); $$;
+
+revoke execute on function internal.chain_append(), internal.verify_chain(text),
+  internal.verify_ledger_chain(), internal.verify_audit_chain() from public, anon, authenticated;
+
+
+-- ===== Audit log (docs/PRD.md §8.5.3, docs/Security.md §6.5, §11.1, Task P1.3.13) =====
+
+-- Who acted, in the vocabulary of audit_logs.actor_role. API requests always SET ROLE; service-role
+-- code declares the real actor with app.actor_role / app.actor_id; cron, seed and psql set no role.
+create function internal.current_actor_role() returns text
+  language sql stable security definer
+  set search_path = ''
+as $$
+  select case coalesce(current_setting('role', true), 'none')
+    when 'authenticated' then case when public.app_role() in ('superadmin', 'admin_rw') then public.app_role() else 'anon' end
+    when 'anon' then 'anon'
+    when 'service_role' then coalesce(nullif(current_setting('app.actor_role', true), ''), 'service')
+    else coalesce(nullif(current_setting('app.actor_role', true), ''), 'cron')
+  end;
+$$;
+revoke execute on function internal.current_actor_role() from public, anon, authenticated;
+
+-- The columns whose values may be copied into before/after. Anything not listed (contact details,
+-- names, free text, tokens, snapshots) appears in metadata.changed_columns by name only. A column added
+-- to a table later is private until someone lists it here.
+create function internal.audit_columns(p_table text) returns text[]
+  language sql immutable
+  set search_path = ''
+as $$
+  select case p_table
+    when 'bookings' then array['id', 'booking_code', 'status', 'channel', 'package_id', 'rw_ids', 'booker_type',
+      'institution_name', 'pax_count', 'visit_date', 'visit_date_end', 'subtotal_package', 'subtotal_addons',
+      'discount_amount', 'total_amount', 'amount_paid', 'currency', 'expires_at', 'quoted_at', 'paid_at',
+      'checked_in_at', 'completed_at', 'cancelled_at', 'cancelled_by', 'expired_at', 'refunded_at', 'needs_review',
+      'phone_verified_at', 'email_verified_at', 'consent_version', 'consented_at', 'token_version', 'created_by',
+      'created_at', 'pii_purged_at']
+    when 'booking_legs' then array['id', 'booking_id', 'rw_id', 'visit_session_id', 'leg_order', 'pax_count', 'status',
+      'quota_reserved_at', 'quota_released_at', 'checked_in_at']
+    when 'booking_participants' then array['id', 'booking_id', 'seq_no', 'group_label', 'role_label', 'created_at']
+    when 'payments' then array['id', 'booking_id', 'attempt_no', 'provider', 'method', 'status', 'order_id',
+      'provider_txn_id', 'gross_amount', 'payment_type_raw', 'va_bank', 'transaction_time', 'settlement_time',
+      'expiry_time', 'fraud_status', 'status_code', 'manual_reference', 'recorded_by', 'refunded_amount', 'created_at']
+    when 'payment_adjustments' then array['id', 'booking_id', 'payment_id', 'type', 'status', 'amount', 'reason',
+      'evidence_path', 'proposed_by', 'proposed_at', 'approved_by', 'approved_at', 'rejected_reason',
+      'apply_not_before', 'applied_at']
+    when 'tickets_qr' then array['id', 'booking_id', 'booking_leg_id', 'rw_id', 'visit_session_id', 'ticket_code',
+      'status', 'valid_on', 'valid_from', 'valid_until', 'pax_count', 'key_id', 'issued_at', 'checked_in_at',
+      'checked_in_pax', 'unpaid_pax', 'checked_in_by', 'suspended_at', 'suspend_reason', 'revoked_at', 'revoked_by',
+      'revoke_reason']
+    when 'certificates' then array['id', 'booking_id', 'participant_id', 'kind', 'certificate_number', 'status',
+      'institution_name', 'visit_date', 'rw_ids', 'template_version', 'rendered_at', 'released_at',
+      'release_waived_by', 'issued_at', 'issued_by', 'revoked_at', 'revoke_reason', 'purged_at']
+    when 'quotations' then array['id', 'booking_id', 'quotation_number', 'version', 'status', 'issued_at',
+      'valid_until', 'issued_by']
+    when 'invoices' then array['id', 'booking_id', 'invoice_number', 'status', 'issued_at', 'due_date', 'amount_due',
+      'amount_paid', 'paid_at', 'payment_id', 'receipt_number', 'credit_note_number', 'void_reason', 'voided_at',
+      'created_at']
+    when 'tour_packages' then array['id', 'rw_id', 'category', 'slug', 'name', 'pricing_basis', 'price_per_pax',
+      'flat_price', 'min_pax', 'max_pax', 'is_featured', 'status', 'sort_order', 'valid_from', 'valid_to',
+      'created_by', 'updated_by', 'created_at']
+    when 'products_umkm' then array['id', 'rw_id', 'vendor_id', 'slug', 'name', 'category', 'price', 'unit_label',
+      'min_order_qty', 'max_order_qty', 'lead_time_days', 'is_addon_eligible', 'is_available', 'is_featured',
+      'status', 'sort_order', 'created_by', 'created_at']
+    when 'umkm_vendors' then array['id', 'rw_id', 'slug', 'name', 'logo_path', 'is_active', 'created_by', 'created_at']
+    when 'visit_sessions' then array['id', 'rw_id', 'session_date', 'start_time', 'end_time', 'label', 'capacity',
+      'reserved_pax', 'checked_in_pax', 'status', 'template_id', 'created_by', 'created_at']
+    when 'session_templates' then array['id', 'rw_id', 'weekday', 'label', 'start_time', 'end_time', 'capacity',
+      'is_active', 'created_at']
+    when 'profiles' then array['id', 'role', 'rw_id', 'is_active', 'mfa_required', 'claims_version', 'last_login_at',
+      'created_by', 'created_at']
+    when 'staff_invites' then array['id', 'role', 'rw_id', 'expires_at', 'accepted_at', 'accepted_user_id',
+      'revoked_at', 'created_by', 'created_at']
+    when 'rw_units' then array['id', 'code', 'slug', 'name', 'theme_label', 'tagline', 'hero_image_path',
+      'treasury_bank_name', 'map_lat', 'map_lng', 'is_active', 'sort_order', 'created_at']
+    when 'revenue_share_rules' then array['id', 'scope', 'rw_id', 'package_id', 'product_id', 'name',
+      'effective_from', 'effective_to', 'is_active', 'created_by', 'created_at']
+    when 'revenue_share_rule_lines' then array['id', 'rule_id', 'beneficiary', 'rw_id', 'vendor_id', 'pct']
+    when 'revenue_share_entries' then array['id', 'booking_id', 'payment_id', 'adjustment_id', 'entry_type',
+      'line_ref', 'booking_addon_id', 'rule_id', 'beneficiary', 'beneficiary_key', 'rw_id', 'vendor_id',
+      'base_amount', 'pct', 'amount', 'payout_batch_id', 'entry_hash', 'created_at']
+    when 'payout_batches' then array['id', 'beneficiary_key', 'period_from', 'period_to', 'total_amount', 'paid_at',
+      'reference', 'proof_path', 'created_by', 'created_at']
+    when 'site_settings' then array['key', 'value', 'is_public', 'updated_by']
+    when 'reviews' then array['id', 'booking_id', 'rw_ids', 'rating', 'institution_name', 'is_anonymous', 'status',
+      'is_featured', 'moderated_by', 'moderated_at', 'moderation_note', 'created_at']
+    when 'articles' then array['id', 'rw_id', 'slug', 'title', 'category', 'status', 'author_id', 'reviewed_by',
+      'published_at', 'created_at']
+    when 'hero_banners' then array['id', 'title', 'cta_label', 'cta_href', 'image_path', 'product_id', 'sort_order',
+      'is_active', 'starts_at', 'ends_at', 'created_by', 'created_at']
+    else array[]::text[]
+  end;
+$$;
+revoke execute on function internal.audit_columns(text) from public, anon, authenticated;
+
+-- Writes one audit row with the chain hash. Staff and service-role actions must name their actor;
+-- only cron, visitor and anon actions may be anonymous (docs/Security.md §6.5).
+create function internal.log_audit(p_action text, p_entity_type text, p_entity_id text, p_metadata jsonb)
+  returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  perform internal.write_audit_row(p_action, p_entity_type, p_entity_id, null, null, null, coalesce(p_metadata, '{}'));
+end;
+$$;
+
+create function internal.write_audit_row(
+  p_action text, p_entity_type text, p_entity_id text, p_rw_id smallint,
+  p_before jsonb, p_after jsonb, p_metadata jsonb
+) returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  actor uuid := internal.current_actor_id();
+  actor_role text := internal.current_actor_role();
+begin
+  if actor is null and actor_role not in ('cron', 'visitor', 'anon') then
+    raise exception 'audit: a % action must name its actor (set app.actor_id)', actor_role using errcode = '42501';
+  end if;
+  insert into public.audit_logs (actor_id, actor_role, request_id, action, entity_type, entity_id, rw_id, before, after, metadata)
+  values (actor, actor_role, nullif(current_setting('app.request_id', true), ''), p_action, p_entity_type, p_entity_id,
+          p_rw_id, p_before, p_after, p_metadata);
+end;
+$$;
+
+-- Row trigger on the audited tables. In names_only mode (the retention jobs) no value is copied at all.
+create function internal.log_audit() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  allowed text[] := internal.audit_columns(tg_table_name);
+  before_row jsonb := case when tg_op <> 'INSERT' then to_jsonb(old) end;
+  after_row jsonb := case when tg_op <> 'DELETE' then to_jsonb(new) end;
+  subject jsonb := coalesce(after_row, before_row);
+  names_only boolean := coalesce(current_setting('app.audit_mode', true), '') = 'names_only';
+  changed text[];
+  kept_before jsonb;
+  kept_after jsonb;
+begin
+  if tg_op = 'UPDATE' then
+    select array_agg(column_name order by column_name) into changed
+    from jsonb_object_keys(after_row) as column_name
+    where before_row -> column_name is distinct from after_row -> column_name and column_name <> 'updated_at';
+    if changed is null then
+      return null;
+    end if;
+  end if;
+
+  if not names_only then
+    select jsonb_object_agg(column_name, before_row -> column_name) into kept_before
+    from unnest(allowed) as column_name
+    where before_row ? column_name and (changed is null or column_name = any (changed));
+    select jsonb_object_agg(column_name, after_row -> column_name) into kept_after
+    from unnest(allowed) as column_name
+    where after_row ? column_name and (changed is null or column_name = any (changed));
+  end if;
+
+  -- Public contact numbers in site_settings are still phone numbers; their values stay out too.
+  if tg_table_name = 'site_settings' and subject ->> 'key' like 'contact.%' then
+    kept_before := kept_before - 'value';
+    kept_after := kept_after - 'value';
+  end if;
+
+  perform internal.write_audit_row(
+    tg_table_name || '.' || lower(tg_op),
+    tg_table_name,
+    coalesce(subject ->> 'id', subject ->> 'key'),
+    coalesce((subject ->> 'rw_id')::smallint, (subject -> 'rw_ids' ->> 0)::smallint),
+    kept_before,
+    kept_after,
+    jsonb_strip_nulls(jsonb_build_object('changed_columns', to_jsonb(changed), 'audit_mode', nullif(current_setting('app.audit_mode', true), '')))
+  );
+  return null;
+end;
+$$;
+
+revoke execute on function internal.log_audit(text, text, text, jsonb),
+  internal.write_audit_row(text, text, text, smallint, jsonb, jsonb, jsonb), internal.log_audit()
+  from public, anon, authenticated;
+
+do $$
+declare
+  audited text;
+begin
+  foreach audited in array array[
+    'bookings', 'booking_legs', 'booking_participants', 'payments', 'payment_adjustments', 'tickets_qr',
+    'certificates', 'quotations', 'invoices', 'tour_packages', 'products_umkm', 'umkm_vendors', 'visit_sessions',
+    'session_templates', 'profiles', 'staff_invites', 'rw_units', 'revenue_share_rules', 'revenue_share_rule_lines',
+    'revenue_share_entries', 'payout_batches', 'site_settings', 'reviews', 'articles', 'hero_banners'
+  ] loop
+    execute format(
+      'create trigger log_audit after insert or update or delete on public.%I for each row execute function internal.log_audit()',
+      audited
+    );
+  end loop;
+end;
+$$;

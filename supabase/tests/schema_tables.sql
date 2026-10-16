@@ -1058,13 +1058,7 @@ select throws_ok(
             1000000, 20, 5000, 'hash-entry-6')$$,
   '23514', null, 'an adjustment row points at its approved adjustment'
 );
-select throws_ok(
-  $$insert into public.revenue_share_entries (booking_id, entry_type, line_ref, rule_version, beneficiary, beneficiary_key,
-      base_amount, pct, amount, entry_hash)
-    values ('00000000-0000-4000-8000-0000000000e1', 'settlement', 'addon:y', '{}', 'kelurahan', 'kelurahan',
-            1000000, 20, 200000, 'hash-entry-1')$$,
-  '23505', null, 'every ledger row has its own chain hash'
-);
+select col_is_unique('public', 'revenue_share_entries', 'entry_hash', 'every ledger row has its own chain hash');
 
 -- ===== Messaging, security, audit and infrastructure (Task P1.2.12) =====
 
@@ -1167,10 +1161,7 @@ select lives_ok(
   $$insert into public.audit_logs (actor_role, action, entity_type, entry_hash) values ('cron', 'purge_run', 'booking_participants', 'audit-2')$$,
   'a cron action may have no actor'
 );
-select throws_ok(
-  $$insert into public.audit_logs (actor_role, action, entity_type, entry_hash) values ('cron', 'purge_run', 'booking_participants', 'audit-2')$$,
-  '23505', null, 'every audit row has its own chain hash'
-);
+select col_is_unique('public', 'audit_logs', 'entry_hash', 'every audit row has its own chain hash');
 
 select throws_ok(
   $$insert into public.login_attempts (email_hash, success, reason) values ('hmac-of-email', false, 'typo')$$,
