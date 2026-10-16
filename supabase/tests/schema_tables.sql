@@ -32,8 +32,9 @@ select is(
 -- table-level right is DELETE, for staff on the tables whose policies let them remove rows.
 select is(
   array(
-    select distinct grantee || ':' || privilege_type from information_schema.role_table_grants
-    where table_schema = 'public' and grantee in ('anon', 'authenticated')
+    select distinct g.grantee || ':' || g.privilege_type from information_schema.role_table_grants g
+    join information_schema.tables t on t.table_schema = g.table_schema and t.table_name = g.table_name
+    where g.table_schema = 'public' and g.grantee in ('anon', 'authenticated') and t.table_type = 'BASE TABLE'
     order by 1
   ),
   array['authenticated:DELETE'],
@@ -346,12 +347,16 @@ select throws_ok(
   $$insert into public.tour_package_legs (package_id, rw_id, leg_order) values ('00000000-0000-4000-8000-0000000000c1', 5, 2)$$,
   '23505', null, 'a package visits each RW once'
 );
+-- A combo takes legs in several RWs (an RW package keeps its single leg in its own RW, tour_package_legs_guard).
+insert into public.tour_packages (id, category, slug, name, pricing_basis, flat_price)
+values ('00000000-0000-4000-8000-0000000000c9', 'combo', 'kombinasi-urutan', 'Kombinasi Urutan', 'flat_group', 1500000);
+insert into public.tour_package_legs (package_id, rw_id, leg_order) values ('00000000-0000-4000-8000-0000000000c9', 5, 1);
 select throws_ok(
-  $$insert into public.tour_package_legs (package_id, rw_id, leg_order) values ('00000000-0000-4000-8000-0000000000c1', 8, 1)$$,
+  $$insert into public.tour_package_legs (package_id, rw_id, leg_order) values ('00000000-0000-4000-8000-0000000000c9', 8, 1)$$,
   '23505', null, 'leg order is unique within a package'
 );
 select throws_ok(
-  $$insert into public.tour_package_legs (package_id, rw_id, leg_order) values ('00000000-0000-4000-8000-0000000000c1', 8, 0)$$,
+  $$insert into public.tour_package_legs (package_id, rw_id, leg_order) values ('00000000-0000-4000-8000-0000000000c9', 8, 0)$$,
   '23514', null, 'leg order starts at 1'
 );
 
