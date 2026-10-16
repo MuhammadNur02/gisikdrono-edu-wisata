@@ -281,7 +281,7 @@ max_frequency = "5s"
 
 # This hook runs before a token is issued and allows you to add additional claims based on the authentication method used.
 # Adds app_role, app_rw_id and claims_version to every access token (CLAUDE.md §6.2).
-# The function itself arrives with the auth migrations; until then sign-in fails locally.
+# Both hooks are proved end to end by tests/integration/auth-hooks.test.ts.
 [auth.hook.custom_access_token]
 enabled = true
 uri = "pg-functions://postgres/public/custom_access_token_hook"

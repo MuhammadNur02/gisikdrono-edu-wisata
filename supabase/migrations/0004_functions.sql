@@ -105,9 +105,11 @@ grant execute on function public.app_role(), public.app_rw_id(), public.is_super
 
 
 -- ===== Auth hooks (docs/Security.md §5.5, Task P1.3.02, P1.3.03) =====
--- Each hook is a thin wrapper that only checks the caller, over an internal.* body that holds the
--- logic. The split exists for pgTAP: tests run as postgres, which cannot become supabase_auth_admin,
--- but owns the internal functions and may call them directly.
+-- Each hook is a thin wrapper over an internal.* body that holds the logic. The split exists for
+-- pgTAP: tests run as postgres, which cannot become supabase_auth_admin, but owns the internal
+-- functions and may call them directly; tests/integration/auth-hooks.test.ts signs in through GoTrue.
+-- Only supabase_auth_admin holds EXECUTE. Inside a definer body current_user is always the owner,
+-- so the wrappers tell Auth apart by its login role, session_user.
 
 -- Auth reads profiles while minting a token (docs/PRD.md §8.5.3 handle_new_auth_user later also
 -- writes through this role); it needs its own policy and may still write nothing here.
@@ -139,7 +141,7 @@ create function public.custom_access_token_hook(event jsonb) returns jsonb
   set search_path = ''
 as $$
 begin
-  if current_user <> 'supabase_auth_admin' then
+  if session_user <> 'supabase_auth_admin' then
     raise exception 'custom_access_token_hook is reserved for Auth' using errcode = '42501';
   end if;
   return jsonb_set(
@@ -149,7 +151,7 @@ begin
   );
 end;
 $$;
-revoke execute on function public.custom_access_token_hook(jsonb) from public, anon, authenticated;
+revoke execute on function public.custom_access_token_hook(jsonb) from public, anon, authenticated, service_role;
 grant execute on function public.custom_access_token_hook(jsonb) to supabase_auth_admin;
 
 -- Keyed hash of an email: lower-cased and trimmed first so one address counts once, keyed with
@@ -222,10 +224,11 @@ begin
   insert into public.security_events (event_type, severity, actor_id, details)
   values ('login_failed', 'info', p_user_id, jsonb_build_object('failures', earlier_failures + 1));
 
-  -- The third and fourth failures slow down instead of locking out; the hook has a timeout, so 2 s
-  -- is the most it ever waits.
-  if earlier_failures + 1 = 3 then perform pg_sleep(1); end if;
-  if earlier_failures + 1 = 4 then perform pg_sleep(2); end if;
+  -- The third and fourth failures slow down instead of locking out. Auth cancels a hook after 2 s,
+  -- and a cancelled hook records nothing, so a longer wait would keep the count from ever reaching
+  -- the lockout; the delays stay well below that limit.
+  if earlier_failures + 1 = 3 then perform pg_sleep(0.5); end if;
+  if earlier_failures + 1 = 4 then perform pg_sleep(1); end if;
 
   return jsonb_build_object('decision', 'continue');
 end;
@@ -237,7 +240,7 @@ create function public.hook_password_verification_attempt(event jsonb) returns j
   set search_path = ''
 as $$
 begin
-  if current_user <> 'supabase_auth_admin' then
+  if session_user <> 'supabase_auth_admin' then
     raise exception 'hook_password_verification_attempt is reserved for Auth' using errcode = '42501';
   end if;
   return internal.record_login_attempt(
@@ -246,7 +249,7 @@ begin
   );
 end;
 $$;
-revoke execute on function public.hook_password_verification_attempt(jsonb) from public, anon, authenticated;
+revoke execute on function public.hook_password_verification_attempt(jsonb) from public, anon, authenticated, service_role;
 grant execute on function public.hook_password_verification_attempt(jsonb) to supabase_auth_admin;
 
 
@@ -1952,9 +1955,10 @@ as $$
   update public.booklets set download_count = download_count + 1 where id = p_booklet_id and status = 'published';
 $$;
 
+-- Staff RPCs run as the signed-in user; the service role never calls them (docs/Security.md L3 review).
 revoke execute on function public.generate_visit_sessions(smallint, date, date),
   public.rpc_log_ui_event(text, uuid), internal.increment_booklet_download(uuid)
-  from public, anon, authenticated;
+  from public, anon, authenticated, service_role;
 
 
 -- ===== Staff management (docs/PRD.md §8.7, docs/Security.md §5.3, §5.6, Task P1.3.21) =====
@@ -2053,7 +2057,7 @@ $$;
 
 revoke execute on function internal.has_fresh_totp(), internal.require_superadmin_step_up(),
   public.set_staff_role(uuid, public.app_role, smallint), public.set_staff_status(uuid, boolean, text)
-  from public, anon, authenticated;
+  from public, anon, authenticated, service_role;
 
 
 -- ===== Service-role entry points (decision of 2026-10-16, CLAUDE.md §6.1) =====
@@ -2205,7 +2209,7 @@ end;
 $$;
 
 revoke execute on function internal.record_mfa_reset_step(uuid, text), public.reset_staff_mfa(uuid)
-  from public, anon, authenticated;
+  from public, anon, authenticated, service_role;
 
 
 -- ===== Views (docs/PRD.md §8.4.10, Task P1.3.22) =====
@@ -2457,7 +2461,7 @@ $$;
 
 revoke execute on function internal.require_booking_pii_access(uuid), public.rpc_reveal_booking_contact(uuid, text),
   public.rpc_get_participants(uuid)
-  from public, anon, authenticated;
+  from public, anon, authenticated, service_role;
 
 
 -- ===== Midtrans payload minimisation (docs/Security.md §7.2, DATA-01, PAY-07) =====

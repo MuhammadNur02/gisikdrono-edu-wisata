@@ -425,7 +425,8 @@ Actions that require a fresh TOTP verification within the last **5 minutes** (`s
 
 ```sql
 -- public.custom_access_token_hook(event jsonb) returns jsonb  (plpgsql, security definer, set search_path = '')
--- grant execute to supabase_auth_admin only; reads public.profiles (policy profiles_auth_admin_read)
+-- grant execute to supabase_auth_admin only (revoked from service_role too); the body refuses any session_user but
+-- supabase_auth_admin, because current_user inside a definer body is always the owner; reads public.profiles (policy profiles_auth_admin_read)
 -- claims := claims || {'app_role': role or 'none' when not is_active, 'app_rw_id': rw_id, 'claims_version': claims_version}
 
 -- public.hook_password_verification_attempt(event jsonb) returns jsonb   [RT]
@@ -433,7 +434,8 @@ Actions that require a fresh TOTP verification within the last **5 minutes** (`s
 --   email_hash = hex(hmac-sha256(lower(trim(email)), key = vault 'otp_pepper'))
 -- 2 failures := count(*) where user_id = event.user_id and not success and attempted_at > now() - interval '15 min'
 -- 3 failures >= 5  -> return {decision:'reject', message:'Terlalu banyak percobaan. Coba lagi dalam 15 menit.'} + security_events.login_locked
--- 4 failures 3..4 -> progressive delay (pg_sleep 1 s / 2 s, bounded so the hook stays within its timeout) + security_events.login_failed
+-- 4 failures 3..4 -> progressive delay (pg_sleep 0.5 s / 1 s: Auth cancels a hook after 2 s and a cancelled hook records nothing,
+--   so a 2 s wait would keep the count from ever reaching the lockout) + security_events.login_failed
 -- 5 otherwise     -> {decision:'continue'}
 ```
 

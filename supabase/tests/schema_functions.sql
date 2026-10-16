@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(338);
+select plan(340);
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -17,7 +17,9 @@ grant execute on function pg_temp.days_from_today(integer), pg_temp.jakarta_time
 select vault.create_secret('local-test-pepper-not-a-real-secret-0000000', 'otp_pepper', 'test only');
 insert into public.rw_units (id, code, slug, name, theme_label) values
   (5, 'RW05', 'rw-05-ecowastreme', 'RW 05 Ecowastreme', 'Ekowisata & Lingkungan'),
-  (8, 'RW08', 'rw-08-kampung-seni-budaya', 'RW 08 Kampung Seni Budaya', 'Seni & Budaya');
+  (8, 'RW08', 'rw-08-kampung-seni-budaya', 'RW 08 Kampung Seni Budaya', 'Seni & Budaya')
+-- Reference rows: the seed and the integration tests may have written them already.
+on conflict (id) do nothing;
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-000000000001', 'superadmin@example.test'),
   ('00000000-0000-4000-8000-000000000002', 'admin05@example.test'),
@@ -165,7 +167,7 @@ select isnt(
 
 select is(internal.record_login_attempt('00000000-0000-4000-8000-000000000001', false) ->> 'decision', 'continue', 'failure 1 continues');
 select is(internal.record_login_attempt('00000000-0000-4000-8000-000000000001', false) ->> 'decision', 'continue', 'failure 2 continues');
--- Failures 3 and 4 sleep 1 s and 2 s; the delay is the behaviour, so the test pays for it.
+-- Failures 3 and 4 sleep 0.5 s and 1 s; the delay is the behaviour, so the test pays for it.
 select is(internal.record_login_attempt('00000000-0000-4000-8000-000000000001', false) ->> 'decision', 'continue', 'failure 3 continues after a delay');
 select is(internal.record_login_attempt('00000000-0000-4000-8000-000000000001', false) ->> 'decision', 'continue', 'failure 4 continues after a delay');
 select is(
@@ -179,7 +181,8 @@ select is(
   'every attempt is recorded with its reason'
 );
 select is(
-  (select string_agg(event_type || ':' || severity, ',' order by id) from public.security_events),
+  (select string_agg(event_type || ':' || severity, ',' order by id) from public.security_events
+   where actor_id = '00000000-0000-4000-8000-000000000001'),
   'login_failed:info,login_failed:info,login_failed:info,login_failed:info,login_locked:medium',
   'four login_failed events then one login_locked'
 );
@@ -199,7 +202,8 @@ select is(
   'the refused correct password is recorded as locked, with the password truthfully marked valid'
 );
 select is(
-  (select count(*) from public.security_events where event_type = 'login_locked'),
+  (select count(*) from public.security_events
+   where event_type = 'login_locked' and actor_id = '00000000-0000-4000-8000-000000000001'),
   1::bigint,
   'one login_locked event per lockout, not one per refused attempt'
 );
@@ -207,6 +211,14 @@ select is(internal.record_login_attempt('00000000-0000-4000-8000-000000000002', 
 select throws_ok(
   $$select public.hook_password_verification_attempt('{"user_id":"00000000-0000-4000-8000-000000000001","valid":false}')$$,
   '42501', null, 'only Auth may call the password hook'
+);
+select is(
+  (select string_agg(r.rolname, ',' order by r.rolname) from pg_roles r
+   where r.rolname in ('anon', 'authenticated', 'service_role', 'supabase_auth_admin')
+     and has_function_privilege(r.oid, 'public.custom_access_token_hook(jsonb)', 'execute')
+     and has_function_privilege(r.oid, 'public.hook_password_verification_attempt(jsonb)', 'execute')),
+  'supabase_auth_admin',
+  'Auth is the only API role that can execute either hook (signing in through GoTrue: tests/integration)'
 );
 
 -- ===== Definer template (Task P1.3.04) =====
@@ -1545,6 +1557,16 @@ select is(
 );
 
 -- ===== Service-role entry points =====
+
+select is(
+  (select string_agg(p.proname, ', ' order by p.proname) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and not p.proname like 'svc_%' and p.prorettype <> 'trigger'::regtype
+     and p.proname not in ('app_role', 'app_rw_id', 'is_superadmin', 'is_admin_rw', 'is_staff', 'owns_rw',
+                           'owns_any_rw', 'aal2', 'today_jkt')
+     and has_function_privilege('service_role', p.oid, 'execute')),
+  null,
+  'the service role can call no staff RPC and neither Auth hook, only its svc_ entry points'
+);
 
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
