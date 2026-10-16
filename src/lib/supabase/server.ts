@@ -4,12 +4,13 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
 import { AUTH_COOKIE_OPTIONS } from '@/config/auth';
+import type { Database } from '@/db/types';
 import { publicEnv } from '@/lib/public-env';
 
 // Runs every query as the signed-in staff member (or anon), so RLS decides what comes back.
 export async function createSupabaseServerClient() {
   const cookieStore = await cookies();
-  return createServerClient(
+  return createServerClient<Database>(
     publicEnv.NEXT_PUBLIC_SUPABASE_URL,
     publicEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     {

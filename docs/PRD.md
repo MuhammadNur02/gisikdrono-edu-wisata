@@ -76,7 +76,7 @@ A visiting teacher can find the programme on Google on Monday, download a visit 
 | # | Goal | Metric | Target (6 months after go-live) | Source |
 |---|---|---|---|---|
 | G1 | Grow bookings | Paid bookings per month | >= 40 | `visit_stats` |
-| G2 | Convert visitors | Wizard conversion (step `jadwal` started -> `paid`) | >= 35 % | `rpc_log_ui_event` + `bookings` |
+| G2 | Convert visitors | Wizard conversion (step `jadwal` started -> `paid`) | >= 35 % | `@vercel/analytics` custom events + `bookings` |
 | G3 | Fast ticketing | Settlement -> WhatsApp ticket delivered (p95) | <= 60 s | `payment_events.processed_at` -> `notifications.delivered_at` |
 | G4 | Fast gate | Scan `preview` -> `commit` per group (median) | <= 60 s | `ticket_scans` |
 | G5 | Never oversell | Sessions with `reserved_pax > capacity` | 0 (CHECK constraint) | `reconcile_session_counters` drift log |
@@ -469,7 +469,7 @@ Priority uses MoSCoW: **M** must, **S** should, **C** could, **W** won't (this r
 
 | Topic | Rule |
 |---|---|
-| Schemas | `public`: tables, views, RLS helpers and staff-callable RPCs (exposed to PostgREST). `internal`: SECURITY DEFINER transition functions, never exposed to PostgREST, executable only by `service_role` and `postgres` (pg_cron). `graphql_public` is removed from exposed schemas. |
+| Schemas | `public`: tables, views, RLS helpers and staff-callable RPCs (exposed to PostgREST). `internal`: SECURITY DEFINER transition functions, never exposed to PostgREST, executed by `postgres` (pg_cron); server code reaches them only through `public.svc_<name>` wrappers (security definer, EXECUTE for `service_role` only), so `service_role` holds no right on `internal` itself (decision of 2026-10-16). `graphql_public` is removed from exposed schemas. |
 | Primary keys | `uuid default gen_random_uuid()` for entity tables; `bigint generated always as identity` for append-only logs; `rw_units.id smallint` = the RW number |
 | Timestamps | `timestamptz`; `created_at` default `now()`; `updated_at` maintained by trigger `set_updated_at()`; business dates computed in `Asia/Jakarta` (`today_jkt()`) |
 | Money | `bigint`, whole IDR; column names end in `_amount`, `_price`, `_total`; never `numeric` with decimals |
@@ -635,6 +635,10 @@ create table public.profiles (
   claims_version integer not null default 1,        -- bumped on every role/RW/status change; copied into the JWT
   avatar_path    text,
   last_login_at  timestamptz,
+  mfa_reset_requested_at timestamptz,                        -- 0004: pending reset_staff_mfa (24 h – 7 days); NULL on insert, written only by its RPCs
+  mfa_reset_requested_by uuid references public.profiles(id),
+  promotion_requested_at timestamptz,                        -- 0004: pending promotion to superadmin (24 h – 7 days); NULL on insert, written only by its RPCs
+  promotion_requested_by uuid references public.profiles(id),
   created_by     uuid references public.profiles(id),
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now(),
@@ -754,8 +758,11 @@ create table public.tour_packages (
 create index tour_packages_public_idx on public.tour_packages (status, is_featured, sort_order);
 create index tour_packages_rw_idx on public.tour_packages (rw_id);
 -- trigger tour_packages_legs_guard: auto-insert the single leg for non-combo; block publishing a combo with < 2 distinct RW legs.
--- trigger tour_packages_price_floor: price_per_pax (and tiers) >= site_settings 'pricing.min_price_per_pax'.
--- trigger tour_packages_price_history: any change of price_per_pax / flat_price inserts package_price_history + security event price_changed.
+-- trigger tour_packages_price_floor: price_per_pax (and tiers) >= site_settings 'pricing.min_price_per_pax', and for
+--   pricing_basis 'flat_group' flat_price >= pricing.min_price_per_pax * max_pax (the largest group, since the same
+--   admin sets min_pax); fires on price_per_pax, flat_price, pricing_basis and max_pax.
+-- trigger tour_packages_price_history: any change of price_per_pax, flat_price, pricing_basis, min_pax or max_pax
+--   inserts package_price_history + security event price_changed naming the fields that changed.
 
 -- tour_package_legs: which RW(s) a package visits (1 row for RW packages, >= 2 for combo).
 create table public.tour_package_legs (
@@ -790,7 +797,13 @@ create table public.package_price_history (
   old_flat_price    bigint,
   new_flat_price    bigint,
   reason            text,
-  changed_at        timestamptz not null default now()
+  changed_at        timestamptz not null default now(),
+  old_pricing_basis public.pricing_basis,                 -- 0004 (review M1): basis and group size are price changes too
+  new_pricing_basis public.pricing_basis,
+  old_min_pax       integer,
+  new_min_pax       integer,
+  old_max_pax       integer,
+  new_max_pax       integer
 );
 create index package_price_history_pkg_idx on public.package_price_history (package_id, changed_at desc);
 
@@ -856,8 +869,12 @@ create table public.bookings (
   booker_type         public.booker_type not null,
   institution_name    text,
   pic_name            text not null,
-  pic_phone           text not null check (pic_phone ~ '^\+62[0-9]{8,13}$'),
-  pic_email           citext not null,
+  pic_phone           text check (pic_phone ~ '^\+62[0-9]{8,13}$'),           -- NULL only after anonymisation
+  pic_email           citext,
+  pii_purged_at       timestamptz,                          -- set by internal.anonymise_booker_pii
+  phone_masked        text generated always as (case when pic_phone is null then null else left(pic_phone, 6) || '••••' || right(pic_phone, 2) end) stored,
+  email_masked        text generated always as (case when pic_email is null then null else left(pic_email::text, 1) || '***@' || split_part(pic_email::text, '@', 2) end) stored,
+  pic_first_name      text generated always as (split_part(pic_name, ' ', 1)) stored,
   pax_count           integer not null check (pax_count between 1 and 1000),
   visit_date          date not null,                        -- earliest leg date
   visit_date_end      date not null,                        -- latest leg date
@@ -896,7 +913,8 @@ create table public.bookings (
   updated_at          timestamptz not null default now(),
   constraint bookings_total_ok check (total_amount = subtotal_package + subtotal_addons - discount_amount and total_amount > 0),
   constraint bookings_hold_has_deadline check (status <> 'pending_payment' or expires_at is not null),
-  constraint bookings_dates_ok check (visit_date_end >= visit_date)
+  constraint bookings_dates_ok check (visit_date_end >= visit_date),
+  constraint bookings_contact_until_purged check (pii_purged_at is not null or (pic_phone is not null and pic_email is not null))
 );
 create index bookings_status_expiry_idx on public.bookings (expires_at) where status = 'pending_payment';
 create index bookings_visit_date_idx    on public.bookings (visit_date, status);
@@ -1018,7 +1036,7 @@ create table public.payments (
   expiry_time        timestamptz,                          -- mirrors bookings.expires_at via Snap expiry
   fraud_status       text,
   status_code        text,
-  last_payload       jsonb,
+  last_payload       jsonb,                                -- minimised on write by midtrans_payload_minimise (0004)
   manual_proof_path  text,                                 -- documents/bookings/<id>/payment-proof-<uuid>.pdf
   manual_reference   text,
   recorded_by        uuid references public.profiles(id),
@@ -1124,7 +1142,7 @@ create table public.quotations (
   status           public.quotation_status not null default 'issued',
   issued_at        timestamptz not null default now(),
   valid_until      date not null,
-  snapshot         jsonb not null,                         -- whitelisted, length-limited fields only
+  snapshot         jsonb not null,                         -- the document snapshot shape below
   pdf_path         text,
   issued_by        uuid references public.profiles(id),    -- NULL when visitor self-generated
   unique (booking_id, version)
@@ -1154,6 +1172,22 @@ create table public.invoices (
   updated_at            timestamptz not null default now()
 );
 create unique index invoices_one_live_per_booking on public.invoices (booking_id) where status <> 'void';
+
+-- Document snapshot (quotations.snapshot, invoices.snapshot): one fixed shape, enforced by the trigger
+-- snapshot_without_contact (review M7). Every key is optional and no other key is allowed at any depth; no value
+-- looks like an email address or an Indonesian phone number (+62 / 62 / 08) or runs past 300 characters. The
+-- booker appears as institution_name only. quotation.tsx, invoice.tsx, receipt.tsx and the credit note render
+-- from these fields, and P3 builds every snapshot to this shape:
+--   booking_code, institution_name, booker_type, package_name, package_category, pricing_basis, rw_names[],
+--   visit_date, visit_date_end,
+--   sessions[]: {rw_name, session_date, start_time, end_time},
+--   pax_count,
+--   lines[]: {kind ('package' | 'addon'), product_name, qty, unit_price, line_total},
+--   subtotal_package, subtotal_addons, discount_amount, total_amount, currency,
+--   valid_until (quotation), due_date (invoice),
+--   payment: {method, va_bank, order_id, paid_at, amount_paid} (invoice and receipt),
+--   credit_note: {number, issued_at, amount} (invoice after a refund),
+--   signatory_name, signatory_title (the kelurahan official at issue time), template_version
 
 -- document_sequences: gapless per-kind-per-period numbering under row lock (internal.next_document_number only).
 create table public.document_sequences (
@@ -1394,6 +1428,8 @@ create table public.reviews (
   reviewer_name    text not null check (length(reviewer_name) between 2 and 60),
   institution_name text,
   is_anonymous     boolean not null default false,
+  public_reviewer_name text generated always as (                   -- 0004: the only author column anon reads
+    case when is_anonymous then 'Pengunjung' else split_part(btrim(reviewer_name), ' ', 1) end) stored,
   status           public.review_status not null default 'pending',
   is_featured      boolean not null default false,
   moderated_by     uuid references public.profiles(id),
@@ -1459,7 +1495,8 @@ create table public.payout_batches (
   created_at      timestamptz not null default now()
 );
 
--- revenue_share_entries (AO): append-only, hash-chained ledger. Reversal = negative row; never updated.
+-- revenue_share_entries (AO): append-only, hash-chained ledger. Reversal = negative row; never updated except
+-- payout_batch_id, which the payout run sets once (it stays outside the hash).
 create table public.revenue_share_entries (
   id               bigint generated always as identity primary key,    -- chain order
   booking_id       uuid not null references public.bookings(id) on delete restrict,
@@ -1533,7 +1570,7 @@ create table public.security_events (
     'mfa_failed','mfa_enrolled','scanner_invalid_signature','scanner_lockout','rate_limited','turnstile_failed',
     'upload_rejected','role_changed','staff_disabled','key_rotated','export_downloaded','pii_revealed',
     'manual_checkin','manual_backfill','undo_check_in','cron_failed','notification_dead','price_changed',
-    'session_changed_with_bookings','quota_pressure')),
+    'session_changed_with_bookings','quota_pressure','mfa_reset','notification_blocked')), -- the last two added by 0004
   severity    public.alert_severity not null default 'info',
   actor_id    uuid,
   actor_role  text,
@@ -1652,9 +1689,9 @@ create table public.rate_limit_buckets (
 
 | View | Columns | Reader |
 |---|---|---|
-| `v_session_availability` | `id, rw_id, session_date, start_time, end_time, label, capacity, remaining (capacity - reserved_pax), pending_share` for `status = 'open'` and `session_date >= today_jkt()` | anon (calendar, wizard, Realtime) |
-| `v_public_reviews` | `id, rating, title, body, reviewer_name ('Pengunjung' when anonymous, else first name), institution_name, rw_ids, is_featured, created_at` for `status = 'published'` | anon |
-| `v_bookings_staff` | booking columns with `pic_phone` masked to `+62…1234`, `pic_email` masked to `a***@domain`, `pic_name` first name; package name, leg sessions, payment status, ticket status | staff (scope via underlying RLS) |
+| `v_session_availability` | `id, rw_id, session_date, start_time, end_time, label, capacity, remaining (capacity - reserved_pax)` for `status = 'open'` and `session_date >= today_jkt()`; no unpaid share, since anon may not read bookings: `create_booking` enforces the 50 % rule and the staff dashboard computes `quota_pressure` on its own path (decision of 2026-10-16) | anon (calendar, wizard, Realtime) |
+| `v_public_reviews` | `id, rating, title, body, reviewer_name` (from the stored generated `reviews.public_reviewer_name`: 'Pengunjung' when anonymous, else first name; anon is never granted `reviewer_name`)`, institution_name, rw_ids, is_featured, created_at` for `status = 'published'` | anon |
+| `v_bookings_staff` | booking columns with the stored generated columns `phone_masked` (`+62812••••45`: first six and last two digits), `email_masked` (`a***@domain`) and `pic_first_name` instead of `pic_phone` / `pic_email` / `pic_name` (no API role holds SELECT on the raw contact columns; `rpc_reveal_booking_contact` is the only path); amounts per STAFF-02 (`shows_amounts`: superadmin always, admin_rw for single-RW bookings of their own RW, never a combo total; on screen only, since superadmin and admin_rw share the `authenticated` role); admin_rw rows from `visit_date − 7 d` to `+ 30 d`; package name, leg sessions, payment status, ticket status | staff (scope via underlying RLS, repeated in the view) |
 | `v_booking_admin` | datatable projection for `/dashboard/bookings` (joins `v_bookings_staff`, `payments`, `tickets_qr`, `invoices`) | staff |
 | `v_attendance_today` | per RW: today's bookings with ticket status, booked pax, checked-in pax, unpaid pax, manual flag | staff |
 | `v_booking_export` | flat export row without contact columns (`visits`, `attendance` exports) | staff via `rpc_create_export` |
@@ -1681,7 +1718,7 @@ create or replace function public.is_superadmin() returns boolean language sql s
 create or replace function public.is_admin_rw()   returns boolean language sql stable as $$ select public.app_role() = 'admin_rw' and public.app_rw_id() is not null $$;
 create or replace function public.is_staff()      returns boolean language sql stable as $$ select public.is_superadmin() or public.is_admin_rw() $$;
 create or replace function public.owns_rw(p_rw_id smallint) returns boolean language sql stable as $$
-  select public.is_superadmin() or (public.is_admin_rw() and p_rw_id = public.app_rw_id()) $$;      -- NULL rw_id: superadmin only
+  select public.is_superadmin() or (public.is_admin_rw() and p_rw_id is not null and p_rw_id = public.app_rw_id()) $$;   -- NULL rw_id: superadmin only; answers false, never NULL
 create or replace function public.owns_any_rw(p_rw_ids smallint[]) returns boolean language sql stable as $$
   select public.is_superadmin() or (public.is_admin_rw() and public.app_rw_id() = any (p_rw_ids)) $$;
 create or replace function public.aal2() returns boolean language sql stable as $$ select coalesce(auth.jwt() ->> 'aal', 'aal1') = 'aal2' $$;
@@ -1697,7 +1734,7 @@ Legend: S/I/U/D = select/insert/update/delete; "—" = denied; "fn" = only throu
 | Table | anon | admin_rw (own RW) | superadmin | AAL2 | svc-only writes |
 |---|---|---|---|---|---|
 | rw_units | S `is_active` (public columns via column grant) | S all; U own row content columns (trigger blocks treasury/contact-account, `code`, `slug`, `is_active`) | S/U all; I | — | — |
-| profiles | — | S own row + same RW; U own `full_name, phone, avatar_path` | S all; U (not `role, rw_id, is_active, mfa_required, claims_version` — fn `set_staff_role`, `set_staff_status`) | yes | insert by auth trigger |
+| profiles | — | S own row + same RW; U own `full_name, phone, avatar_path` | S all; U (not `role, rw_id, is_active, mfa_required, claims_version` — fn `set_staff_role`, `set_staff_status`; nor the pending-request columns — fn `set_staff_role`, `reset_staff_mfa`, `cancel_staff_mfa_reset`, `cancel_superadmin_promotion`) | yes | insert by auth trigger |
 | staff_invites | — | — | S/I; revoke via U `revoked_at` | yes | accept via onboarding (svc) |
 | site_settings | S `is_public` | S `is_public` | S/I/U/D | yes | — |
 | session_templates | — | S/I/U/D `owns_rw(rw_id)` | all | — | — |
@@ -1791,7 +1828,9 @@ grant update (full_name, phone, avatar_path) on public.profiles to authenticated
 | `handle_new_auth_user` | `profiles` | Creates the profile with `role = 'none'` on `auth.users` insert; role assigned only by onboarding completion through `staff_invites` |
 | `profiles_guard` | `profiles` | Non-privileged path cannot change `role, rw_id, is_active, mfa_required, email`; last active superadmin cannot be demoted or deactivated; any privileged change bumps `claims_version` |
 | `rw_units_guard` | `rw_units` | Non-superadmin cannot change treasury columns, `is_active`, `code`, `slug` |
-| `guard_status_writes` | `bookings`, `payments`, `tickets_qr`, `certificates`, `booking_legs`, `visit_sessions` (counters) | Status / counter columns change only when `current_setting('app.in_rpc', true) = '1'` |
+| `guard_status_writes` | `bookings`, `payments`, `tickets_qr`, `certificates`, `booking_legs`, `visit_sessions` (counters) | Status / counter columns change only when `current_setting('app.in_rpc', true) = '1'`; every function that opens the fence puts the flag back when it returns (`internal.push_settings` / `restore_settings`), so it never stays open for the rest of a transaction |
+| `guard_status_inserts` | same tables, BEFORE INSERT | Outside a transition function a new row starts at its state machine's start: `bookings.status = 'quoted'`, `payments.status = 'initiated'`, `tickets_qr` / `certificates` `'issued'`, `booking_legs` `'unreserved'`, `visit_sessions.reserved_pax = checked_in_pax = 0` |
+| `bookings_status_transition` | `bookings` (UPDATE of `status`) | Even inside a transition function the status moves only along §9.2: `quoted → pending_payment / expired / cancelled`, `pending_payment → paid / expired / cancelled`, `expired → paid / pending_payment`, `paid → checked_in / no_show / cancelled / refunded`, `checked_in → completed / refunded / paid` (undo); anything else raises `STATE_INVALID` |
 | `bookings_immutable_guard`, `bookings_discount_guard` | `bookings` | §8.4.4 |
 | `payments_immutable_guard`, `invoices_immutable_guard`, `booking_addons_freeze` | `payments`, `invoices`, `booking_addons` | Financial columns frozen after settlement |
 | `visit_sessions_guard` | `visit_sessions` | §8.4.2 |
@@ -1801,9 +1840,12 @@ grant update (full_name, phone, avatar_path) on public.profiles to authenticated
 | `tickets_require_paid_booking`, `tickets_no_revive` | `tickets_qr` | §8.4.6 |
 | `articles_moderation_guard`, `reviews_moderation_stamp` | `articles`, `reviews` | §8.4.7 |
 | `revenue_rule_sum_guard`, `revenue_rules_immutable_once_used` | `revenue_share_rule_lines`, `revenue_share_rules` | §8.4.8 |
-| `append_only` | `booking_events`, `payment_events`, `webhook_rejections`, `package_price_history`, `ticket_scans`, `revenue_share_entries` (except `payout_batch_id`), `security_events`, `audit_logs`, `login_attempts`, `payment_adjustments` (except workflow columns) | Raises on UPDATE/DELETE |
+| `notifications_guest_guard` | `notifications` (BEFORE INSERT, and UPDATE of `booking_id`, `channel`, `template`, `recipient`, `recipient_name`, `params`, `status`) | Backstop for GUEST-07/GUEST-08 on every outbox row, not only those from `enqueue_notification`: a booking's row goes only to that booking's `pic_phone` / `pic_email` (checked again whenever the routing changes); `whatsapp` rows except `phone_otp` need `phone_verified_at`; `params.link_scope` must be `pay`, `manage`, `view`, `review` or `certificate` and becomes `view` on `email` rows while `email_verified_at` is NULL; a row without `link_scope` gets no link from the worker. Refused text (a link in any form in `params` or `recipient_name`: `://`, `www.`, `javascript:`, `data:`, any `name.tld` host, an IPv4 address; or an unknown `link_scope`) never raises, so the transaction that queued the message, a payment among them, still commits: the row is held as `cancelled` with `last_error_code = 'blocked_<reason>'`, reported as `notification_blocked`, and stays cancelled until its text is clean. Indonesian academic and honorific titles written with dots (`S.Pd.`, `M.Sc`, `Dr.`, `Univ.Diponegoro`, …) are not hosts; the application checks the same free text first (`freeTextSchema` in `src/lib/validations/free-text.ts`, typed params in `src/lib/notifications/templates.ts`) |
+| `snapshot_without_contact` | `invoices`, `quotations` (`snapshot`, BEFORE INSERT/UPDATE) | Holds the snapshot to the one document shape of §8.4.5 (an allow-list): any other key is refused at any depth, and so is any value that looks like an email address or an Indonesian phone number (`+62` / `62` / `08`) or runs past 300 characters. The booker appears as `institution_name` only, because a paid invoice's snapshot is frozen for 10 years and retention could never erase a contact in it |
+| `midtrans_payload_minimise` | `payments` (`last_payload`), `payment_events` (`payload`), BEFORE INSERT/UPDATE | Keeps only the keys reconciliation reads (an allow-list: order, amount, status, time, payment type, VA, acquirer, refund and item fields, with nested objects limited to their own known keys) and drops everything else Midtrans sends, including `customer_details`, addresses, custom fields, `signature_key` and any key a future version adds (`docs/Security.md` §7.2) |
+| `append_only` | `booking_events`, `payment_events` (except `processed_at`, `processing_result`), `webhook_rejections`, `package_price_history`, `ticket_scans`, `revenue_share_entries` (except `payout_batch_id`, set once from NULL), `security_events`, `audit_logs`, `login_attempts`, `payment_adjustments` (own function: the proposal columns never change, the workflow columns move until `applied`, then the row is final) | Raises on UPDATE/DELETE, plus a statement trigger on TRUNCATE; only `app.purge = 'on'` (the retention runs) passes; UPDATE/DELETE/TRUNCATE are also revoked from `anon`, `authenticated` and `service_role` |
 | `ledger_chain`, `audit_chain` | `revenue_share_entries`, `audit_logs` | Computes `prev_hash`/`entry_hash` on insert; verified by `internal.verify_ledger_chain` / `verify_audit_chain` |
-| `log_audit` | `bookings, booking_legs, booking_participants, payments, payment_adjustments, tickets_qr, certificates, quotations, invoices, tour_packages, products_umkm, umkm_vendors, visit_sessions, session_templates, profiles, staff_invites, rw_units, revenue_share_rules, revenue_share_rule_lines, payout_batches, site_settings, reviews, articles, hero_banners` | Row-level before/after of allow-listed columns into `audit_logs`; `actor_id = coalesce(auth.uid(), current_setting('app.actor_id', true)::uuid)`; rejects NULL actor for staff/service roles |
+| `log_audit` | `bookings, booking_legs, booking_participants, payments, payment_adjustments, tickets_qr, certificates, quotations, invoices, tour_packages, products_umkm, umkm_vendors, visit_sessions, session_templates, profiles, staff_invites, rw_units, revenue_share_rules, revenue_share_rule_lines, revenue_share_entries, payout_batches, site_settings, reviews, articles, hero_banners` (25 tables; `booking_participants` without `full_name`) | Row-level before/after of allow-listed columns into `audit_logs`; `actor_id = coalesce(auth.uid(), current_setting('app.actor_id', true)::uuid)`; rejects NULL actor for staff/service roles |
 | `set_updated_at` | every table with `updated_at` | — |
 
 ### 8.6 `site_settings` keys
@@ -1839,7 +1881,7 @@ grant update (full_name, phone, avatar_path) on public.profiles to authenticated
 | `cancel_booking` | `(p_booking_id uuid, p_reason text) returns jsonb` | staff in scope (paid -> superadmin) | §9 transition; revokes tickets; releases quota; enqueues `booking_cancelled` |
 | `extend_booking_hold` | `(p_booking_id uuid, p_new_expires_at timestamptz) returns jsonb` | staff in scope | `pending_payment` only; <= now() + 14 d and < first session start; audited |
 | `reactivate_booking` | `(p_booking_id uuid) returns jsonb` | staff in scope | `expired -> pending_payment`; re-reserves quota (raises `QUOTA_UNAVAILABLE`); new `expires_at`; new attempt |
-| `record_refund` | `(p_booking_id uuid, p_amount bigint, p_reference text, p_reason text) returns jsonb` | superadmin | After the refund executed in Midtrans: payment `refunded`/`partially_refunded`, booking `refunded` (full) or stays with `needs_review` cleared (partial), tickets revoked (full), quota released if future, reversal ledger rows, invoice void + credit note, `refund_processed` |
+| `record_refund` | `(p_booking_id uuid, p_amount bigint, p_reference text, p_reason text) returns jsonb` | superadmin, AAL2 | Sets `app.recording_refund`, the only way a booking becomes `refunded` (from `paid`, `checked_in`, `cancelled`, `completed`, `no_show`, or `pending_payment` under review), and only while it has a `settled` payment, so it moves the booking before it closes that payment. After the refund executed in Midtrans: payment `refunded`/`partially_refunded`, booking `refunded` (full) or stays with `needs_review` cleared (partial), tickets revoked (full), quota released if future, reversal ledger rows, invoice void + credit note, `refund_processed` |
 | `resolve_booking_review` | `(p_booking_id uuid, p_action text) returns jsonb` | superadmin | `issue_tickets` (re-reserve + issue) or `refund`; clears `needs_review` |
 | `issue_certificates` | `(p_booking_id uuid) returns setof public.certificates` | staff in scope / svc | Requires all legs checked in; inserts missing group + participant certificates; idempotent |
 | `revoke_ticket` | `(p_ticket_id uuid, p_reason text) returns void` | superadmin | `issued -> revoked`; audited |
@@ -1847,14 +1889,17 @@ grant update (full_name, phone, avatar_path) on public.profiles to authenticated
 | `settle_revenue_entries` | `(p_beneficiary_key text, p_from date, p_to date, p_reference text, p_proof_path text) returns public.payout_batches` | superadmin | Creates the batch and stamps `payout_batch_id` on unsettled entries in range |
 | `revenue_recap` | `(p_from date, p_to date, p_rw_id smallint) returns table(...)` | staff | admin_rw forced to own RW; reads ledger views only |
 | `visit_stats` | `(p_from date, p_to date, p_rw_id smallint, p_granularity text) returns table(bucket date, rw_id smallint, bookings_paid int, pax_booked int, pax_checked_in int, no_shows int, revenue bigint, addon_revenue bigint)` | staff | KPI cards, sparklines, exports |
-| `generate_visit_sessions` | `(p_rw_id smallint, p_from date, p_to date) returns int` | staff in scope / cron | From active templates; `on conflict do nothing` |
+| `generate_visit_sessions` | `(p_rw_id smallint, p_from date, p_to date) returns int` | staff in scope at AAL2 / cron | From active templates; `on conflict do nothing`; at most a year ahead |
 | `request_notification_resend` | `(p_booking_id uuid, p_template notification_template, p_channel notification_channel) returns uuid` | staff in scope | New outbox row with `:resend:<n>` suffix; audited |
-| `rpc_reveal_booking_contact` | `(p_booking_id uuid, p_reason text) returns jsonb` | staff in scope | Returns unmasked PIC contact; security event `pii_revealed`; cap 50/day/user |
-| `rpc_get_participants` | `(p_booking_id uuid) returns setof public.booking_participants` | staff in scope | Window `visit_date - 7 d .. + 30 d`; row cap 300; audited |
+| `rpc_reveal_booking_contact` | `(p_booking_id uuid, p_reason text) returns jsonb` | staff in scope, AAL2, visit `−7 d .. +30 d` | Returns `{pic_name, pic_phone, pic_email}`; reason 3–300 chars; security event `pii_revealed` with the reason; cap 50 per user per Jakarta day counted from those events under a per-user advisory lock (parallel calls take turns): the reveal that reaches the cap raises a high `security_alerts` row, any further one raises `RATE_LIMITED` |
+| `rpc_get_participants` | `(p_booking_id uuid) returns setof public.booking_participants` | staff in scope, AAL2 | Window `visit_date - 7 d .. + 30 d` for every staff role; row cap 300; audited as `participants.read` with the row count |
 | `rpc_create_export` | `(p_kind export_kind, p_format text, p_filters jsonb, p_reason text) returns uuid` | superadmin (all kinds), admin_rw (`attendance`, own RW) | Validates caps (50 000 rows / 12 months, 10/h); inserts `exports`; the route handler renders the file |
-| `rpc_log_ui_event` | `(p_event text, p_props jsonb) returns void` | staff; visitor funnel events arrive through a rate-limited Server Action that calls it under the service role (`anon` has no execute grant) | Funnel events for G2 (no PII) |
+| `rpc_log_ui_event` | `(p_event text, p_entity_id uuid) returns void` | staff at AAL2 | `p_event` CHECKed against `('pii_revealed', 'scanner_opened')`; writes `audit_logs` with `action = 'ui.<event>'`, `actor_id = auth.uid()`, metadata `{source: 'client'}` ≤ 1 KB; 600 calls/hour per user; no `anon` grant. Visitor funnel events (G2) are measured by `@vercel/analytics`, not the database |
 | `propose_adjustment` / `approve_adjustment` / `apply_adjustment` | `(…) returns public.payment_adjustments` | superadmin | Dual control per FR-ADMIN-21; `apply_adjustment` writes `adjustment` ledger rows and `payments.refunded_amount` |
-| `set_staff_role` / `set_staff_status` / `reset_staff_mfa` | `(p_user_id uuid, …) returns void` | superadmin, fresh TOTP, never own row | Sets `app.privileged_rpc`; bumps `claims_version`; deletes sessions/factors; security events `role_changed`, `staff_disabled` |
+| `set_staff_role` | `(p_user_id uuid, p_role app_role, p_rw_id smallint default null) returns jsonb` | superadmin, fresh TOTP, never own row | A promotion to superadmin is first recorded (`profiles.promotion_requested_at/_by`, returns `{stage: 'requested', completes_after, lapses_after}`) and applied by a call 24 h – 7 days later, with critical `role_changed` events and a critical alert at each step; every other change applies at once (`{stage: 'applied'}`). Sets `app.privileged_rpc`; bumps `claims_version`; deletes sessions; security event `role_changed` |
+| `set_staff_status` | `(p_user_id uuid, p_is_active boolean, p_reason text) returns void` | superadmin, fresh TOTP, never own row | Sets `app.privileged_rpc`; bumps `claims_version`; deactivation also sets `role = 'none'`, `rw_id = NULL` and drops pending requests, deletes sessions and factors, and writes security event `staff_disabled` (`from_role`, `from_rw_id`); reactivation only sets `is_active`, so the role comes back through `set_staff_role`, a former superadmin's through the 24 h promotion |
+| `cancel_staff_mfa_reset` / `cancel_superadmin_promotion` | `(p_user_id uuid) returns void` | superadmin with fresh TOTP; for an MFA reset also the targeted staff member with a fresh TOTP | Clears the pending request; critical event, alert and audit row with stage `cancelled`; `STATE_INVALID` when nothing is pending |
+| `reset_staff_mfa` | `(p_user_id uuid) returns jsonb` | superadmin, fresh TOTP, never own MFA | First call records `profiles.mfa_reset_requested_at/_by` and returns `{stage: 'requested', completes_after, lapses_after}`; a call 24 h – 7 days later deletes every factor and session, bumps `claims_version` and returns `{stage: 'completed'}`; an older request has lapsed and the call starts a new one; each step writes `security_events` `mfa_reset` (critical), a critical `security_alerts` row for out-of-band delivery and an audit row `staff.mfa_reset_requested` / `staff.mfa_reset_completed` (decision of 2026-10-16) |
 
 No function is executable by `anon`. Public writes (OTP, bookings, reviews, DSR requests, booklet download counts, funnel events) reach the database only through Server Actions or route handlers that validate, rate-limit and then call `internal.*` under the service role.
 
@@ -1862,9 +1907,9 @@ No function is executable by `anon`. Public writes (OTP, bookings, reviews, DSR 
 
 | Function | Signature | Behaviour |
 |---|---|---|
-| `create_booking` | `(p_package_id uuid, p_session_ids uuid[], p_pax int, p_booker jsonb, p_addons jsonb, p_participants jsonb, p_mode text, p_channel booking_channel, p_idempotency_key text, p_otp_id uuid, p_consent jsonb, p_actor_id uuid, p_client_meta jsonb) returns jsonb` | Idempotency; package published and valid; one session per leg with matching RW, lead time and advance window; pax within limits; add-ons eligible; recomputes money and raises `PRICE_MISMATCH` against the client quote hash; abuse caps; generates `booking_code`; inserts booking, legs, addons, participants, `booking_events`; mode `pay`: requires verified OTP, reserves quota `ORDER BY id`, sets `expires_at`; mode `quote`: legs `unreserved`, no `expires_at`; enqueues `booking_created` / `quotation_ready` |
+| `create_booking` | `(p_package_id uuid, p_session_ids uuid[], p_pax int, p_booker jsonb, p_addons jsonb, p_participants jsonb, p_mode text, p_channel booking_channel, p_idempotency_key text, p_otp_id uuid, p_consent jsonb, p_actor_id uuid, p_client_meta jsonb) returns jsonb` | Idempotency; package published and valid; one session per leg with matching RW, lead time and advance window; pax within limits; add-ons eligible; recomputes money and raises `PRICE_MISMATCH` against the client quote hash; abuse caps; generates `booking_code`; inserts booking, legs, addons, participants, `booking_events`; mode `pay`: requires verified OTP, reserves quota with sessions locked `ORDER BY visit_session_id` (the same order `release_booking_quota` uses), sets `expires_at`; mode `quote`: legs `unreserved`, no `expires_at`; enqueues `booking_created` / `quotation_ready` |
 | `reserve_session_quota` | `(p_session_id uuid, p_pax int) returns void` | Conditional `UPDATE … WHERE status = 'open' and reserved_pax + p_pax <= capacity` under row lock; raises `QUOTA_UNAVAILABLE` (`P0001`) |
-| `release_booking_quota` | `(p_booking_id uuid) returns void` | Loops legs `ORDER BY visit_session_id`, subtracts pax, stamps `quota_released_at`; idempotent |
+| `release_booking_quota` | `(p_booking_id uuid) returns void` | Loops legs `ORDER BY visit_session_id`, subtracts pax, stamps `quota_released_at`; idempotent; a counter that already lost those seats is floored at zero and logged as `quota.drift` (`source: release_booking_quota`) instead of failing the release |
 | `create_payment_attempt` | `(p_booking_id uuid, p_actor_id uuid) returns public.payments` | `quoted`: reserves quota, sets `expires_at`, quotation `accepted`; refuses when < 5 min remain; expires previous open attempt; `attempt_no + 1`; `order_id` |
 | `attach_snap_token` | `(p_payment_id uuid, p_token text, p_redirect_url text, p_expiry timestamptz) returns void` | Stores Snap token / URL; status `pending` |
 | `apply_payment_event` | `(p_event_id bigint, p_source text, p_confirmed jsonb) returns jsonb` | Locks payment + booking; maps status (`src/lib/midtrans/map-status.ts` mirrored in SQL); amount/currency check -> `needs_review`; settlement: payment `settled`, booking `paid`, invoice + receipt numbers, tickets per leg, `allocate_revenue_share`, outbox (`payment_received_ticket` WA + email, `admin_new_paid_booking`), audit; expire/cancel/deny/failure per §9; late settlement re-reserve or `needs_review`; second settlement on a paid booking -> `duplicate` + alert; returns `{applied, from, to, reason}` instead of raising for legitimate out-of-order sequences |
@@ -1877,20 +1922,22 @@ No function is executable by `anon`. Public writes (OTP, bookings, reviews, DSR 
 | `verify_phone_otp` | `(p_otp_id uuid, p_code text) returns jsonb` | Constant-time hash compare; `attempts`; sets `verified_at`, `bookings.phone_verified_at` |
 | `submit_review` | `(p_booking_id uuid, p_rating smallint, p_title text, p_body text, p_reviewer_name text, p_is_anonymous boolean) returns public.reviews` | Requires a `used` ticket; one per booking; `pending` |
 | `increment_booklet_download` | `(p_booklet_id uuid) returns void` | `download_count + 1` for a `published` booklet only; called by `api/documents/booklet/[id]` (rate-limited per IP) under the service role; never granted to `anon` |
-| `expire_stale_bookings` | `() returns int` | `pending_payment` with `expires_at < now() - 5 min` (`FOR UPDATE SKIP LOCKED`) -> `expired`; release quota; open payments `expired`; `quoted` past `valid_until` -> `expired`; enqueues `booking_expired` |
+| `expire_stale_bookings` | `() returns int` | `pending_payment` with `expires_at < now() - 5 min` (`FOR UPDATE SKIP LOCKED`) -> `expired`; release quota; open payments `expired`; `quoted` past the `valid_until` of its latest `issued` quotation (or, without one, `booking.quotation_valid_days` after creation) -> `expired`, its `issued` quotations `expired`; `booking_events` with reason `hold_lapsed` / `quotation_lapsed`; enqueues `booking_expired`; each booking runs in its own `BEGIN … EXCEPTION` block, so one that fails is rolled back alone, reported as `cron_failed` (`job`, `sqlstate`) and retried on the next run |
 | `close_past_bookings` | `() returns int` | `checked_in` with all leg dates passed -> `completed` (+ `review_invite`); `paid` with no leg checked in and dates passed -> `no_show`; tickets `issued` past `valid_until` -> `expired` |
 | `enqueue_visit_reminders` | `() returns int` | `visit_reminder_d1` for `paid` bookings with a leg tomorrow |
 | `reconcile_session_counters` | `() returns int` | Recomputes `reserved_pax` from `booking_legs`; logs drift (`quota.drift`); auto-corrects only downwards |
 | `claim_notifications` | `(p_limit int) returns setof public.notifications` | `FOR UPDATE SKIP LOCKED`; requeues `sending` older than 10 min |
 | `complete_notification` / `fail_notification` | `(p_id uuid, p_provider_message_id text)` / `(p_id uuid, p_error_code text, p_error text, p_permanent boolean)` | Backoff 1/5/15/60/240 min; `dead_at` after 8 attempts or permanent error + `notification_dead` event |
 | `rate_limit_hit` | `(p_key text, p_limit int, p_window_seconds int) returns boolean` | Fixed-window counter in `rate_limit_buckets` |
-| `prune_operational_tables` | `() returns void` | `notifications` > 180 d, `webhook_rejections` > 30 d, `payment_events` > 24 mo, `audit_logs` > 24 mo (after chain checkpoint), `security_events` > 12 mo, `login_attempts` > 90 d, `rate_limit_buckets` > 1 d |
-| `purge_participants` | `() returns int` | Deletes `booking_participants` and participant-bearing PDFs (`certificates/<booking_id>/participant-*.pdf`, attendance exports) for `visit_date_end < today - 90 d`; certificate rows keep number/status with `participant_id = NULL`, `recipient_name = '[dihapus]'` and `purged_at` set; audited |
-| `anonymise_booker_pii` | `() returns int` | Unpaid-expired bookings: PII pseudonymised 7 d after expiry; all bookings: PIC name/phone/email replaced by irreversible hashes after `pii_retention_months`; audited |
+| `enqueue_notification` | `(p_booking_id uuid, p_template notification_template, p_channel notification_channel, p_params jsonb) returns uuid` | Inserts one outbox row (`dedupe_key = 'booking:<id>:<template>:<channel>'`, `on conflict do nothing`); recipient from `pic_phone` / `pic_email`; a `whatsapp` row for any template except `phone_otp` needs `phone_verified_at`, else skipped (GUEST-08); `params.link_scope` is forced to `view` for `email` rows while `email_verified_at` is NULL (the worker mints the link, never SQL) |
+| `prune_operational_tables` | `() returns void` | `notifications` > 180 d (their `params` emptied after 30 d), `webhook_rejections` > 30 d, `payment_events` > 24 mo (deleted whole; they never hold customer details, see `midtrans_payload_minimise`), `audit_logs` > 24 mo only while `verify_audit_chain()` passes (the id and hash of the last pruned row are kept in the `purge_run` row as the new anchor; a broken chain raises `cron_failed` instead), `security_events` > 12 mo, `login_attempts` > 24 h, `rate_limit_buckets` > 1 d, `ticket_scans` > 24 mo (attendance itself stays in `tickets_qr`); runs under `app.purge = 'on'` so the append-only triggers allow it |
+| `purgeable_files` / `forget_purged_files` | `(p_limit int) returns table (bucket text, path text)` / `(p_paths text[]) returns int` | The files the retention runs marked (purged participant certificates' `pdf_path`, deleted exports' `storage_path`, `ticket_pdf_path` 12 months after the visit), oldest first; after `api/jobs/purge-storage` deletes them through the Storage API it clears the paths that are still marked, logged as cron; reached through `svc_purgeable_files` / `svc_forget_purged_files` |
+| `purge_participants` | `() returns int` | For `visit_date_end < today - 90 d`: first marks the participant certificates (`participant_id = NULL`, `recipient_name = '[dihapus]'`, `purged_at`), then deletes the `booking_participants` rows (the certificate CHECK refuses the other order); also marks expired `exports` (`deleted_at`). The files (`certificates/<booking_id>/participant-*.pdf`, attendance exports, ticket PDFs > 12 months) are deleted afterwards by `api/jobs/purge-storage` through the Storage API, because Supabase blocks `delete from storage.objects`; audited |
+| `anonymise_booker_pii` | `() returns int` | Unpaid `expired`/`cancelled` bookings 7 d after expiry (their participants deleted too), and every booking `pii_retention_months` after the visit (skipped while the setting is missing): `pic_name = 'anon'`, `pic_phone` and `pic_email` NULL, `phone_verified_at` and `email_verified_at` NULL, `notes`, `admin_notes`, `cancel_reason`, `review_reason`, `discount_note`, `source_ip`, `user_agent` NULL (the money guards let only the retention run clear `discount_note` on a paid booking), `pii_purged_at = now()`, `token_version + 1`, and their `notifications` rows deleted; `guest_otps` deleted 1 d after `expires_at`; the masked generated columns follow automatically; invoices keep institution and amounts; audited under `app.audit_mode = 'names_only'` |
 | `verify_ledger_chain` / `verify_audit_chain` | `() returns jsonb` | Recomputes hashes; returns `{ok, checked, first_broken_id}`; failure -> critical alert |
 | `log_audit` | trigger function + `(p_action text, p_entity_type text, p_entity_id text, p_metadata jsonb)` helper | Writes `audit_logs` with chain hash |
 
-Auth hooks (`supabase_auth_admin`): `public.custom_access_token_hook(event jsonb)` and `public.hook_password_verification_attempt(event jsonb)` (records `login_attempts`, rejects after 5 failures per user in 15 min with progressive delay, writes `login_failed` / `login_locked`).
+Auth hooks (`supabase_auth_admin`): `public.custom_access_token_hook(event jsonb)` and `public.hook_password_verification_attempt(event jsonb)` are thin wrappers that only check `current_user = 'supabase_auth_admin'` and delegate to `internal.staff_token_claims(p_user_id uuid) returns jsonb` and `internal.record_login_attempt(p_user_id uuid, p_succeeded boolean) returns jsonb` (records `login_attempts` with `email_hash = internal.hash_email(email)`, counts failures before believing the password, rejects from the 5th failure per user in 15 min, delays 1 s / 2 s at the 3rd and 4th, writes `login_failed` / one `login_locked` per lockout). The split lets pgTAP, which runs as `postgres`, exercise the bodies; the wrappers refuse every other caller.
 
 ### 8.8 Storage buckets
 
@@ -1924,7 +1971,8 @@ create policy quarantine_write    on storage.objects for insert to authenticated
 | `30 16 * * *` (23:30 WIB) | `close_past_bookings` + `reconcile_session_counters` | SQL |
 | `0 17 * * *` (00:00 WIB) | `generate_visit_sessions` | `select public.generate_visit_sessions(id, public.today_jkt(), public.today_jkt() + 180) from public.rw_units where is_active;` |
 | `30 19 * * *` (02:30 WIB) | `reconcile-payments` | pg_net -> `api/jobs/reconcile-payments` (open items, 7-day paid re-verification, SQL invariants, `verify_ledger_chain`, `verify_audit_chain`, issues, digest) |
-| `0 19 * * *` (02:00 WIB) | `purge/retention` | `select internal.purge_participants(); select internal.anonymise_booker_pii();` + `guest_otps` > 24 h, `uploads-quarantine` > 24 h |
+| `0 19 * * *` (02:00 WIB) | `purge/retention` | `select internal.purge_participants(); select internal.anonymise_booker_pii();` + `guest_otps` > 24 h |
+| `15 19 * * *` (02:15 WIB) | `purge-storage` | pg_net -> `api/jobs/purge-storage`: deletes through the Storage API the files the retention run marked (participant PDFs, expired exports, ticket PDFs > 12 months) and `uploads-quarantine` objects > 24 h |
 | `15 * * * *` | prune `rate_limit_buckets` | `delete … where window_start < now() - interval '1 day'` |
 | `0 18 1 * *` | `prune_operational_tables` | `select internal.prune_operational_tables();` |
 
@@ -1954,6 +2002,10 @@ stateDiagram-v2
   paid --> refunded : record_refund (superadmin, full) — tickets revoked, ledger reversed
   checked_in --> completed : close_past_bookings — all leg dates passed, review_invite
   checked_in --> refunded : record_refund (superadmin, partial attendance)
+  cancelled --> refunded : record_refund (superadmin) — paid, then cancelled
+  completed --> refunded : record_refund (superadmin)
+  no_show --> refunded : record_refund (superadmin)
+  pending_payment --> refunded : record_refund (superadmin) — money received under review
   completed --> [*]
   no_show --> [*]
   cancelled --> [*]
@@ -1984,7 +2036,7 @@ Terminal states: `completed`, `no_show`, `cancelled`, `refunded`. `expired` is r
 | `checked_in` | `completed` | `internal.close_past_bookings` (23:30 WIB) when `visit_date_end < today_jkt()` | `completed_at`; `review_invite` with `review` link (14 d) |
 | `paid` | `no_show` | Same job when no leg is checked in and `visit_date_end < today_jkt()` | Tickets `expired`; ledger untouched |
 | `paid` | `cancelled` | Superadmin -> `cancel_booking` (reason required) | Tickets `revoked`; quota released if future; ledger untouched until a refund is recorded; `booking_cancelled` |
-| `paid` / `checked_in` | `refunded` | Superadmin -> `record_refund` after executing the refund in Midtrans (full, or partial after partial attendance) | Payment `refunded` / `partially_refunded` (`refunded_amount`); all tickets `revoked`; quota released if future; `reverse_revenue_share`; invoice `void` + `credit_note_number` (`CN/`); `refund_processed` |
+| `paid` / `checked_in` / `cancelled` / `completed` / `no_show` / `pending_payment` (`needs_review`) | `refunded` | Superadmin at AAL2 -> `record_refund` only (`app.recording_refund`), after executing the refund in Midtrans (full, or partial after partial attendance), and only while the booking has a `settled` payment (`bookings_status_transition`, review N2); `record_refund` moves the booking before it closes the payment | Payment `refunded` / `partially_refunded` (`refunded_amount`); all tickets `revoked`; quota released if future; `reverse_revenue_share`; invoice `void` + `credit_note_number` (`CN/`); `refund_processed` |
 | `paid` | `paid` (`disputed`) | Midtrans `chargeback` | Payment `disputed`; tickets `suspended`; critical alert; superadmin resolves via adjustment or refund |
 | `paid` | `paid` (`duplicate`) | Second settlement for an already-paid booking | New payment row `duplicate`; auto-refund task in `payment_adjustments`; high alert |
 | any (`needs_review`) | same | Superadmin -> `resolve_booking_review(action)` | `issue_tickets` (re-reserve + issue tickets) or `refund`; flag cleared; audit |
@@ -2234,8 +2286,8 @@ Rules: `rpc_create_export` (AAL2) validates caps (50 000 rows / 12 months, 10 ex
 
 | Control | Rule |
 |---|---|
-| Floor | Trigger rejects `price_per_pax` / tier prices below `pricing.min_price_per_pax` |
-| History | Every price change writes `package_price_history` and a `price_changed` security event |
+| Floor | Trigger rejects `price_per_pax` / tier prices below `pricing.min_price_per_pax`, and a `flat_group` `flat_price` below `pricing.min_price_per_pax × max_pax` (the largest group it can be booked for; the same RW admin sets `min_pax`, so the smallest group would let one visitor's floor cover a full bus); it fires whenever `price_per_pax`, `flat_price`, `pricing_basis` or `max_pax` changes |
+| History | Every change of `price_per_pax`, `flat_price`, `pricing_basis`, `min_pax`, `max_pax` or a tier price writes `package_price_history` and a `price_changed` security event naming the fields that changed |
 | Snapshots | Bookings snapshot package and add-on prices at creation; catalogue edits never change a booking |
 | Anomaly rules (`anomaly-scan`) | Unit price < 50 % of the 30-day median; price changed -> booking created -> price restored within 7 d; add-on subtotal > 60 % of total; pax > 60 bookings |
 | Approval queue | Superadmin approval for admin_rw price changes (should; default off) |

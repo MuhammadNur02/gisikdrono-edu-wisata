@@ -3,6 +3,7 @@ import 'server-only';
 import { createClient } from '@supabase/supabase-js';
 import { experimental_taintUniqueValue as taintUniqueValue } from 'react';
 
+import type { Database } from '@/db/types';
 import { serverEnv } from '@/lib/env';
 import { publicEnv } from '@/lib/public-env';
 
@@ -18,7 +19,11 @@ taintUniqueValue(
 taintUniqueValue('CRON_SECRET must never reach the browser.', process, serverEnv.CRON_SECRET);
 
 export function createSupabaseAdminClient() {
-  return createClient(publicEnv.NEXT_PUBLIC_SUPABASE_URL, serverEnv.SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  return createClient<Database>(
+    publicEnv.NEXT_PUBLIC_SUPABASE_URL,
+    serverEnv.SUPABASE_SERVICE_ROLE_KEY,
+    {
+      auth: { persistSession: false, autoRefreshToken: false },
+    },
+  );
 }

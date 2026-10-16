@@ -31,6 +31,7 @@ const CODE_BY_POSTGRES_HINT: Record<string, ActionErrorCode> = {
   QUOTA_UNAVAILABLE: 'QUOTA_EXCEEDED',
   STATE_INVALID: 'STATE_INVALID',
   PRICE_MISMATCH: 'PRICE_MISMATCH',
+  RATE_LIMITED: 'RATE_LIMITED',
 };
 
 export class AppError extends Error {
