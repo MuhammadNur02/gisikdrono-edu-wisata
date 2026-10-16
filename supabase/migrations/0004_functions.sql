@@ -1126,7 +1126,7 @@ as $$
     when 'session_templates' then array['id', 'rw_id', 'weekday', 'label', 'start_time', 'end_time', 'capacity',
       'is_active', 'created_at']
     when 'profiles' then array['id', 'role', 'rw_id', 'is_active', 'mfa_required', 'claims_version', 'last_login_at',
-      'created_by', 'created_at']
+      'mfa_reset_requested_at', 'mfa_reset_requested_by', 'created_by', 'created_at']
     when 'staff_invites' then array['id', 'role', 'rw_id', 'expires_at', 'accepted_at', 'accepted_user_id',
       'revoked_at', 'created_by', 'created_at']
     when 'rw_units' then array['id', 'code', 'slug', 'name', 'theme_label', 'tagline', 'hero_image_path',
@@ -2117,3 +2117,89 @@ grant execute on function public.svc_rate_limit_hit(text, integer, integer),
   public.svc_increment_booklet_download(uuid), public.svc_expire_stale_bookings(),
   public.svc_log_audit(uuid, text, text, text, jsonb)
   to service_role;
+
+
+-- ===== MFA reset with a 24-hour delay (decision of 2026-10-16, docs/Security.md §5.2, Task P1.3.21) =====
+-- Removing someone's authenticator is how an attacker who holds a superadmin session would take over
+-- another account, and the kelurahan may have a single superadmin, so dual approval is not always
+-- possible. A reset is therefore requested first and completed no sooner than 24 hours later; both
+-- steps raise a critical security alert, which the alert sender delivers out of band to the
+-- SECURITY_ALERT_EMAIL / SECURITY_ALERT_WA_PHONE contacts so the kelurahan head can step in.
+
+alter table public.profiles
+  add column mfa_reset_requested_at timestamptz,
+  add column mfa_reset_requested_by uuid references public.profiles(id);
+
+alter table public.security_events drop constraint security_events_event_type_check;
+alter table public.security_events add constraint security_events_event_type_check check (event_type in (
+  'webhook_signature_invalid','webhook_amount_mismatch','status_disagreement','login_failed','login_locked',
+  'mfa_failed','mfa_enrolled','scanner_invalid_signature','scanner_lockout','rate_limited','turnstile_failed',
+  'upload_rejected','role_changed','staff_disabled','key_rotated','export_downloaded','pii_revealed',
+  'manual_checkin','manual_backfill','undo_check_in','cron_failed','notification_dead','price_changed',
+  'session_changed_with_bookings','quota_pressure','mfa_reset'));
+
+-- One security event, one critical alert and one audit row per step. The alert keeps a single open row
+-- per account; a second step bumps it and clears notified_at so it goes out again.
+create function internal.record_mfa_reset_step(p_user_id uuid, p_stage text) returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  staff_rw_id smallint := (select p.rw_id from public.profiles p where p.id = p_user_id);
+  step jsonb := jsonb_build_object('stage', p_stage, 'user_id', p_user_id, 'by', auth.uid());
+begin
+  insert into public.security_events (event_type, severity, actor_id, rw_id, entity_type, entity_id, details)
+  values ('mfa_reset', 'critical', auth.uid(), staff_rw_id, 'profiles', p_user_id::text, step);
+
+  insert into public.security_alerts (rule, severity, fingerprint, title, details)
+  values ('mfa_reset', 'critical', 'mfa_reset:' || p_user_id,
+          case p_stage when 'requested' then 'Permintaan reset MFA staf' else 'Reset MFA staf dijalankan' end, step)
+  on conflict (fingerprint) where acknowledged_at is null do update
+  set title = excluded.title, details = excluded.details, last_seen_at = now(),
+      occurrences = public.security_alerts.occurrences + 1, notified_at = null;
+
+  perform internal.log_audit('staff.mfa_reset_' || p_stage, 'profiles', p_user_id::text, step - 'user_id');
+end;
+$$;
+
+-- The first call records the request; a call 24 hours or more later deletes every factor of the
+-- account, ends its sessions and bumps claims_version, so the person enrols a new authenticator at the
+-- next sign-in. Returns the stage reached and, for a request, when it can be completed.
+create function public.reset_staff_mfa(p_user_id uuid) returns jsonb
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  requested_at timestamptz;
+begin
+  perform internal.require_superadmin_step_up();
+  if p_user_id = auth.uid() then
+    raise exception 'a superadmin never resets their own MFA' using errcode = '42501';
+  end if;
+  select p.mfa_reset_requested_at into requested_at from public.profiles p where p.id = p_user_id;
+  if not found then
+    raise exception 'no staff profile %', p_user_id using errcode = 'P0002';
+  end if;
+
+  if requested_at is null then
+    update public.profiles set mfa_reset_requested_at = now(), mfa_reset_requested_by = auth.uid() where id = p_user_id;
+    perform internal.record_mfa_reset_step(p_user_id, 'requested');
+    return jsonb_build_object('stage', 'requested', 'completes_after', now() + interval '24 hours');
+  end if;
+  if requested_at > now() - interval '24 hours' then
+    raise exception 'this MFA reset can be completed after %', requested_at + interval '24 hours'
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+
+  delete from auth.mfa_factors where user_id = p_user_id;
+  delete from auth.sessions where user_id = p_user_id;
+  update public.profiles
+  set mfa_reset_requested_at = null, mfa_reset_requested_by = null, claims_version = claims_version + 1
+  where id = p_user_id;
+  perform internal.record_mfa_reset_step(p_user_id, 'completed');
+  return jsonb_build_object('stage', 'completed');
+end;
+$$;
+
+revoke execute on function internal.record_mfa_reset_step(uuid, text), public.reset_staff_mfa(uuid)
+  from public, anon, authenticated;

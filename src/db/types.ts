@@ -1930,6 +1930,8 @@ export type Database = {
           is_active: boolean
           last_login_at: string | null
           mfa_required: boolean
+          mfa_reset_requested_at: string | null
+          mfa_reset_requested_by: string | null
           phone: string | null
           role: Database["public"]["Enums"]["app_role"]
           rw_id: number | null
@@ -1946,6 +1948,8 @@ export type Database = {
           is_active?: boolean
           last_login_at?: string | null
           mfa_required?: boolean
+          mfa_reset_requested_at?: string | null
+          mfa_reset_requested_by?: string | null
           phone?: string | null
           role?: Database["public"]["Enums"]["app_role"]
           rw_id?: number | null
@@ -1962,6 +1966,8 @@ export type Database = {
           is_active?: boolean
           last_login_at?: string | null
           mfa_required?: boolean
+          mfa_reset_requested_at?: string | null
+          mfa_reset_requested_by?: string | null
           phone?: string | null
           role?: Database["public"]["Enums"]["app_role"]
           rw_id?: number | null
@@ -1971,6 +1977,13 @@ export type Database = {
           {
             foreignKeyName: "profiles_created_by_fkey"
             columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_mfa_reset_requested_by_fkey"
+            columns: ["mfa_reset_requested_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -3403,6 +3416,7 @@ export type Database = {
       is_superadmin: { Args: never; Returns: boolean }
       owns_any_rw: { Args: { p_rw_ids: number[] }; Returns: boolean }
       owns_rw: { Args: { p_rw_id: number }; Returns: boolean }
+      reset_staff_mfa: { Args: { p_user_id: string }; Returns: Json }
       rpc_log_ui_event: {
         Args: { p_entity_id: string; p_event: string }
         Returns: undefined

@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(289);
+select plan(299);
 
 -- Fixtures, rolled back at the end. The pepper is a throwaway local value.
 select vault.create_secret('local-test-pepper-not-a-real-secret-0000000', 'otp_pepper', 'test only');
@@ -1427,6 +1427,68 @@ select is(
   internal.staff_token_claims('00000000-0000-4000-8000-000000000004') ->> 'app_role',
   'none',
   'an account with a second verified factor gets no role until its MFA is reset'
+);
+
+-- Which is what the superadmin does next, with the 24-hour delay.
+grant execute on function public.reset_staff_mfa(uuid) to authenticated;
+select set_config('request.jwt.claims', (select claims from step_up_claims where method = 'totp' and seconds_ago = 60), true);
+set local role authenticated;
+select throws_ok(
+  $$select public.reset_staff_mfa('00000000-0000-4000-8000-000000000001')$$,
+  '42501', 'a superadmin never resets their own MFA', 'a superadmin never resets their own MFA'
+);
+select is(
+  public.reset_staff_mfa('00000000-0000-4000-8000-000000000004') ->> 'stage',
+  'requested',
+  'the first call only records the request'
+);
+select throws_ok(
+  $$select public.reset_staff_mfa('00000000-0000-4000-8000-000000000004')$$,
+  'P0001', null, 'which cannot be completed within 24 hours'
+);
+reset role;
+select is(
+  (select count(*)::int from auth.mfa_factors where user_id = '00000000-0000-4000-8000-000000000004'),
+  2,
+  'so the factors stay while the request waits'
+);
+update public.profiles set mfa_reset_requested_at = now() - interval '25 hours'
+where id = '00000000-0000-4000-8000-000000000004';
+set local role authenticated;
+select is(
+  public.reset_staff_mfa('00000000-0000-4000-8000-000000000004') ->> 'stage',
+  'completed',
+  'a day later the reset goes through'
+);
+reset role;
+select set_config('request.jwt.claims', '', true);
+revoke execute on function public.reset_staff_mfa(uuid) from authenticated;
+select is(
+  (select count(*)::int from auth.mfa_factors where user_id = '00000000-0000-4000-8000-000000000004'),
+  0,
+  'every factor of the account is gone'
+);
+select is(
+  internal.staff_token_claims('00000000-0000-4000-8000-000000000004') ->> 'app_role',
+  'superadmin',
+  'and the account has its role back, ready to enrol one authenticator'
+);
+select is(
+  (select string_agg(severity || ':' || (details ->> 'stage'), ' ' order by id) from public.security_events
+   where event_type = 'mfa_reset'),
+  'critical:requested critical:completed',
+  'both steps are critical security events'
+);
+select is(
+  (select severity || ' ' || occurrences || ' ' || (notified_at is null) from public.security_alerts
+   where fingerprint = 'mfa_reset:00000000-0000-4000-8000-000000000004'),
+  'critical 2 true',
+  'with one open critical alert, queued for out-of-band delivery again at each step'
+);
+select is(
+  (select string_agg(action, ' ' order by id) from public.audit_logs where action like 'staff.mfa_reset_%'),
+  'staff.mfa_reset_requested staff.mfa_reset_completed',
+  'and both steps are audited'
 );
 
 -- ===== Service-role entry points =====

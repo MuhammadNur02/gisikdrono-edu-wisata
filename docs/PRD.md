@@ -635,6 +635,8 @@ create table public.profiles (
   claims_version integer not null default 1,        -- bumped on every role/RW/status change; copied into the JWT
   avatar_path    text,
   last_login_at  timestamptz,
+  mfa_reset_requested_at timestamptz,                        -- 0004: pending reset_staff_mfa, completes after 24 h
+  mfa_reset_requested_by uuid references public.profiles(id),
   created_by     uuid references public.profiles(id),
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now(),
@@ -1539,7 +1541,7 @@ create table public.security_events (
     'mfa_failed','mfa_enrolled','scanner_invalid_signature','scanner_lockout','rate_limited','turnstile_failed',
     'upload_rejected','role_changed','staff_disabled','key_rotated','export_downloaded','pii_revealed',
     'manual_checkin','manual_backfill','undo_check_in','cron_failed','notification_dead','price_changed',
-    'session_changed_with_bookings','quota_pressure')),
+    'session_changed_with_bookings','quota_pressure','mfa_reset')),        -- mfa_reset added by 0004
   severity    public.alert_severity not null default 'info',
   actor_id    uuid,
   actor_role  text,
@@ -1861,7 +1863,8 @@ grant update (full_name, phone, avatar_path) on public.profiles to authenticated
 | `rpc_create_export` | `(p_kind export_kind, p_format text, p_filters jsonb, p_reason text) returns uuid` | superadmin (all kinds), admin_rw (`attendance`, own RW) | Validates caps (50 000 rows / 12 months, 10/h); inserts `exports`; the route handler renders the file |
 | `rpc_log_ui_event` | `(p_event text, p_entity_id uuid) returns void` | staff | `p_event` CHECKed against `('pii_revealed', 'scanner_opened')`; writes `audit_logs` with `action = 'ui.<event>'`, `actor_id = auth.uid()`, metadata `{source: 'client'}` ≤ 1 KB; 600 calls/hour per user; no `anon` grant. Visitor funnel events (G2) are measured by `@vercel/analytics`, not the database |
 | `propose_adjustment` / `approve_adjustment` / `apply_adjustment` | `(…) returns public.payment_adjustments` | superadmin | Dual control per FR-ADMIN-21; `apply_adjustment` writes `adjustment` ledger rows and `payments.refunded_amount` |
-| `set_staff_role` / `set_staff_status` / `reset_staff_mfa` | `(p_user_id uuid, …) returns void` | superadmin, fresh TOTP, never own row | Sets `app.privileged_rpc`; bumps `claims_version`; deletes sessions/factors; security events `role_changed`, `staff_disabled` |
+| `set_staff_role` / `set_staff_status` | `(p_user_id uuid, …) returns void` | superadmin, fresh TOTP, never own row | Sets `app.privileged_rpc`; bumps `claims_version`; deletes sessions (and factors on deactivation); security events `role_changed`, `staff_disabled` |
+| `reset_staff_mfa` | `(p_user_id uuid) returns jsonb` | superadmin, fresh TOTP, never own MFA | First call records `profiles.mfa_reset_requested_at/_by` and returns `{stage: 'requested', completes_after}`; a call ≥ 24 h later deletes every factor and session, bumps `claims_version` and returns `{stage: 'completed'}`; each step writes `security_events` `mfa_reset` (critical), a critical `security_alerts` row for out-of-band delivery and an audit row `staff.mfa_reset_requested` / `staff.mfa_reset_completed` (decision of 2026-10-16) |
 
 No function is executable by `anon`. Public writes (OTP, bookings, reviews, DSR requests, booklet download counts, funnel events) reach the database only through Server Actions or route handlers that validate, rate-limit and then call `internal.*` under the service role.
 
