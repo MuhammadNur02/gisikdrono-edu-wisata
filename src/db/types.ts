@@ -4114,9 +4114,32 @@ export type Database = {
       owns_any_rw: { Args: { p_rw_ids: number[] }; Returns: boolean }
       owns_rw: { Args: { p_rw_id: number }; Returns: boolean }
       reset_staff_mfa: { Args: { p_user_id: string }; Returns: Json }
+      rpc_get_participants: {
+        Args: { p_booking_id: string }
+        Returns: {
+          booking_id: string
+          created_at: string
+          full_name: string
+          group_label: string | null
+          id: string
+          role_label: string | null
+          seq_no: number
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "booking_participants"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       rpc_log_ui_event: {
         Args: { p_entity_id: string; p_event: string }
         Returns: undefined
+      }
+      rpc_reveal_booking_contact: {
+        Args: { p_booking_id: string; p_reason: string }
+        Returns: Json
       }
       set_staff_role: {
         Args: {

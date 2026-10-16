@@ -2361,3 +2361,97 @@ select (coalesce(py.settlement_time, py.transaction_time, py.created_at) at time
 from public.payments py
 where py.status in ('settled', 'refunded', 'partially_refunded') and (select public.is_superadmin())
 group by 1;
+
+
+-- ===== PII paths for staff (docs/PRD.md §8.7, docs/Security.md DATA-04, AZ-12, Task P1.3.23) =====
+-- No API role reads a booker's contact or a participant name directly; these two RPCs are the only
+-- way, for every staff role, superadmin included. Both need an AAL2 session and a booking the caller
+-- may see, visiting between a week ago and a month ahead.
+
+create function internal.require_booking_pii_access(p_booking_id uuid) returns smallint[]
+  language plpgsql stable security definer
+  set search_path = ''
+as $$
+declare
+  booking record;
+begin
+  if not (public.is_staff() and public.aal2()) then
+    raise exception 'personal data is shown to staff with a verified authenticator only' using errcode = '42501';
+  end if;
+  select b.rw_ids, b.visit_date, b.visit_date_end into booking from public.bookings b where b.id = p_booking_id;
+  if not found then
+    raise exception 'booking % does not exist', p_booking_id using errcode = 'P0002';
+  end if;
+  if not (public.is_superadmin() or public.owns_any_rw(booking.rw_ids)) then
+    raise exception 'this booking belongs to another RW' using errcode = '42501';
+  end if;
+  if booking.visit_date_end < public.today_jkt() - 7 or booking.visit_date > public.today_jkt() + 30 then
+    raise exception 'personal data is shown only from a week before to a month after the visit'
+      using errcode = '42501';
+  end if;
+  return booking.rw_ids;
+end;
+$$;
+
+-- The booker's full contact for one booking, with the reason the staff member gave. Each reveal is a
+-- pii_revealed security event; the 50th of the caller's Jakarta day also raises an alert, and the
+-- 51st is refused. (A refused call cannot write anything, which is why the alert comes with the
+-- 50th.)
+create function public.rpc_reveal_booking_contact(p_booking_id uuid, p_reason text) returns jsonb
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  daily_cap constant integer := 50;
+  rw_ids smallint[] := internal.require_booking_pii_access(p_booking_id);
+  revealed_today integer;
+  contact jsonb;
+begin
+  if length(btrim(coalesce(p_reason, ''))) not between 3 and 300 then
+    raise exception 'a reveal needs a reason of 3 to 300 characters' using errcode = '22023';
+  end if;
+  select count(*) into revealed_today from public.security_events e
+  where e.event_type = 'pii_revealed' and e.actor_id = auth.uid()
+    and e.occurred_at >= public.today_jkt()::timestamp at time zone 'Asia/Jakarta';
+  if revealed_today >= daily_cap then
+    raise exception 'the daily limit of % contact reveals is reached', daily_cap
+      using errcode = 'P0001', hint = 'RATE_LIMITED';
+  end if;
+
+  select jsonb_build_object('pic_name', b.pic_name, 'pic_phone', b.pic_phone, 'pic_email', b.pic_email) into contact
+  from public.bookings b where b.id = p_booking_id;
+  insert into public.security_events (event_type, severity, actor_id, rw_id, entity_type, entity_id, details)
+  values ('pii_revealed', 'info', auth.uid(), rw_ids[1], 'bookings', p_booking_id::text,
+          jsonb_build_object('reason', btrim(p_reason)));
+
+  if revealed_today + 1 = daily_cap then
+    insert into public.security_alerts (rule, severity, fingerprint, title, details)
+    values ('pii_reveal_cap', 'high', 'pii_reveal_cap:' || auth.uid() || ':' || public.today_jkt(),
+            'Batas harian buka kontak tercapai', jsonb_build_object('actor_id', auth.uid(), 'cap', daily_cap))
+    on conflict (fingerprint) where acknowledged_at is null do nothing;
+  end if;
+  return contact;
+end;
+$$;
+
+-- The participant list of one booking, at most 300 rows, with the read audited.
+create function public.rpc_get_participants(p_booking_id uuid) returns setof public.booking_participants
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  row_cap constant integer := 300;
+  rw_ids smallint[] := internal.require_booking_pii_access(p_booking_id);
+  returned integer;
+begin
+  return query
+    select p.* from public.booking_participants p where p.booking_id = p_booking_id order by p.seq_no limit row_cap;
+  get diagnostics returned = row_count;
+  perform internal.log_audit('participants.read', 'bookings', p_booking_id::text,
+    jsonb_build_object('rows', returned, 'rw_id', rw_ids[1]));
+end;
+$$;
+
+revoke execute on function internal.require_booking_pii_access(uuid), public.rpc_reveal_booking_contact(uuid, text),
+  public.rpc_get_participants(uuid)
+  from public, anon, authenticated;

@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(319);
+select plan(330);
 
 -- Fixtures, rolled back at the end. The pepper is a throwaway local value.
 select vault.create_secret('local-test-pepper-not-a-real-secret-0000000', 'otp_pepper', 'test only');
@@ -1858,6 +1858,89 @@ begin
   end loop;
 end;
 $$;
+
+-- ===== PII paths for staff =====
+
+grant execute on function public.rpc_reveal_booking_contact(uuid, text), public.rpc_get_participants(uuid) to authenticated;
+insert into public.booking_participants (booking_id, seq_no, full_name, group_label, role_label) values
+  ('00000000-0000-4000-8000-000000001e06', 1, 'Nanda Putri', 'Kelas 4B', 'student'),
+  ('00000000-0000-4000-8000-000000001e06', 2, 'Pak Hadi', null, 'teacher');
+
+-- The RW 05 admin, at AAL2.
+select set_config('request.jwt.claims', (
+  select jsonb_build_object('sub', id, 'role', 'authenticated', 'aal', 'aal2', 'app_role', role,
+                            'app_rw_id', rw_id, 'claims_version', claims_version)::text
+  from public.profiles where id = '00000000-0000-4000-8000-000000000002'), true);
+set local role authenticated;
+select is(
+  public.rpc_reveal_booking_contact('00000000-0000-4000-8000-000000001e06', 'Konfirmasi jumlah peserta') ->> 'pic_phone',
+  '+628123450006',
+  'an RW admin reveals the contact of their own booking, giving a reason'
+);
+select throws_ok(
+  $$select public.rpc_reveal_booking_contact('00000000-0000-4000-8000-000000001e06', '')$$,
+  '22023', null, 'never without a reason'
+);
+select throws_ok(
+  $$select public.rpc_reveal_booking_contact('00000000-0000-4000-8000-000000001e02', 'Konfirmasi kedatangan')$$,
+  '42501', 'this booking belongs to another RW', 'nor for another RW''s booking'
+);
+select throws_ok(
+  $$select public.rpc_reveal_booking_contact('00000000-0000-4000-8000-000000001e07', 'Konfirmasi kedatangan')$$,
+  '42501', null, 'nor outside the window around the visit'
+);
+select is(
+  (select string_agg(full_name, ', ' order by seq_no) from public.rpc_get_participants('00000000-0000-4000-8000-000000001e06')),
+  'Nanda Putri, Pak Hadi',
+  'the participant list comes through its own RPC'
+);
+reset role;
+select is(
+  (select details ->> 'reason' from public.security_events
+   where event_type = 'pii_revealed' and entity_id = '00000000-0000-4000-8000-000000001e06'),
+  'Konfirmasi jumlah peserta',
+  'each reveal is a security event with its reason'
+);
+select is(
+  (select actor_role || ' ' || (metadata ->> 'rows') from public.audit_logs
+   where action = 'participants.read' and entity_id = '00000000-0000-4000-8000-000000001e06'),
+  'admin_rw 2',
+  'and each participant read is audited with its row count'
+);
+
+-- Forty-eight more reveals today bring the admin to 49; the 50th raises an alert, the 51st is refused.
+insert into public.security_events (event_type, actor_id, entity_type, entity_id)
+select 'pii_revealed', '00000000-0000-4000-8000-000000000002', 'bookings', 'earlier-' || n from generate_series(1, 48) n;
+set local role authenticated;
+select lives_ok(
+  $$select public.rpc_reveal_booking_contact('00000000-0000-4000-8000-000000001e06', 'Konfirmasi ulang jadwal')$$,
+  'the 50th reveal of the day still goes through'
+);
+select throws_ok(
+  $$select public.rpc_reveal_booking_contact('00000000-0000-4000-8000-000000001e06', 'Konfirmasi ulang jadwal')$$,
+  'P0001', 'the daily limit of 50 contact reveals is reached', 'the 51st is refused'
+);
+reset role;
+select is(
+  (select severity::text from public.security_alerts
+   where fingerprint = 'pii_reveal_cap:00000000-0000-4000-8000-000000000002:' || public.today_jkt()),
+  'high',
+  'and reaching the cap raised a high alert'
+);
+
+-- Without a verified authenticator nothing is revealed.
+select set_config('request.jwt.claims', (
+  select jsonb_build_object('sub', id, 'role', 'authenticated', 'aal', 'aal1', 'app_role', role,
+                            'claims_version', claims_version)::text
+  from public.profiles where id = '00000000-0000-4000-8000-000000000001'), true);
+set local role authenticated;
+select throws_ok(
+  $$select public.rpc_get_participants('00000000-0000-4000-8000-000000001e06')$$,
+  '42501', null, 'not even to the superadmin at AAL1'
+);
+reset role;
+select set_config('request.jwt.claims', '', true);
+revoke execute on function public.rpc_reveal_booking_contact(uuid, text), public.rpc_get_participants(uuid) from authenticated;
 
 -- ===== Audit log =====
 
