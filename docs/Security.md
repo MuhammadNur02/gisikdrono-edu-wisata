@@ -198,6 +198,7 @@ Boundary rules: Z1 is the only place secrets exist; Z2 assumes Z1 has bugs (RLS 
 | R11 | Single superadmin defeats dual control | Medium | High | Medium (REC-16 compensating 24 h delay + kelurahan-head email) | Kelurahan head |
 | R12 | Vendor outage on a visit day | Medium | Medium | Low (RES-02, QR-04 manifest contingency) | RW officers |
 | R13 | XSS on a public ISR page, which runs under the static CSP with `'unsafe-inline'` scripts (§8.2) | Low | Medium (no PII, payment or login on those pages) | Low (Tiptap JSON renderer, `react/no-danger`, Semgrep, APP-11; tightening tracked in Task P5.4.03) | Dev team |
+| R14 | An RW admin reads a combo booking's total, which includes the other RW's share, straight from `bookings` through the column access the `security_invoker` views need: `v_bookings_staff` hides it on screen only, because superadmin and `admin_rw` share the `authenticated` role and column grants cannot tell them apart | High (by design) | Low (package and tier prices are published, so the total reveals nothing a visitor cannot compute; ledger shares, adjustments and the kelurahan's keys stay behind RLS) | **Accepted** (decision of 2026-10-16; STAFF-02); revisit if combo prices ever become negotiated per booking | Superadmin |
 
 ---
 
@@ -1098,7 +1099,7 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 | 10 | Rate limits exercised on staging (booking, OTP, login via direct GoTrue, scanner, exports); fail-closed behaviour confirmed for login/scanner/exports | test report |
 | 11 | pgTAP, Vitest, Playwright security smoke green on the production build; gitleaks full-history scan clean; `pnpm audit` no high/critical | CI run link |
 | 12 | Backups on; first restore drill into `gisikdrono-staging` completed; weekly R2 dump job ran once | drill record in the quarterly review minutes (§13.2) |
-| 13 | Synthetic `critical` security event delivered out-of-band to `SECURITY_ALERT_EMAIL` and `SECURITY_ALERT_WA_PHONE`; `/api/health` returns 503 when the outbox is stalled; uptime monitor configured | monitor screenshot |
+| 13 | Synthetic `critical` security event delivered out-of-band to `SECURITY_ALERT_EMAIL` and `SECURITY_ALERT_WA_PHONE`; every unnotified `high` / `critical` `security_alerts` row is delivered the same way (proved with a staging `reset_staff_mfa` request and a reveal-cap alert, with the outbox stalled too), so the 24-hour MFA reset and the PII cap actually reach the kelurahan head; `/api/health` returns 503 when the outbox is stalled; uptime monitor configured | monitor screenshot, alert delivery log |
 | 14 | `/privasi` live with Pejabat Pelindungan Data contact; consent checkbox enforced; retention jobs listed in `cron.job`; `/privasi/permintaan` works end-to-end | Playwright report |
 | 15 | Runbooks printed and handed to the kelurahan office; on-call owner for R1/R2 named | signed handover |
 | 16 | OWASP ZAP baseline against staging plus manual IDOR/role tests from §6.9 (external penetration test if budget allows) | findings closed or accepted |

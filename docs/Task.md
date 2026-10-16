@@ -874,7 +874,7 @@ All 18 items must pass with evidence attached to the release PR and the product 
 | 10 | Rate limits exercised on staging; fail-closed behaviour for login / scanner / exports confirmed | test report | P5.1.02, P4.4.05, P4.6.03 |
 | 11 | pgTAP, Vitest, Playwright security smoke green on the production build; gitleaks history scan clean; `pnpm audit` clean | CI run link | P5.1.01, P5.2.01, P5.3.02, P1.1.16 |
 | 12 | Backups on; restore drill completed; weekly R2 dump ran once | `docs/runbooks/restore-drills.md` | P0.1.13, P5.5.04 |
-| 13 | Synthetic critical event delivered out-of-band; `/api/health` 503 on stalled outbox; uptime monitor configured | monitor screenshot | P3.11.07, P3.11.08, P5.5.02, P5.7.05 |
+| 13 | Synthetic critical event delivered out-of-band; every unnotified `high` / `critical` `security_alerts` row (e.g. a `reset_staff_mfa` request, the PII reveal cap) reaches `SECURITY_ALERT_EMAIL` and `SECURITY_ALERT_WA_PHONE`, also with the outbox stalled; `/api/health` 503 on stalled outbox; uptime monitor configured | monitor screenshot, alert delivery log | P3.11.07, P3.11.08, P5.5.02, P5.7.05 |
 | 14 | `/privasi` live with the DPO contact; consent enforced; retention jobs in `cron.job`; `/privasi/permintaan` works | Playwright report | P2.4.12, P3.5.02, P1.6.03, P3.12.03 |
 | 15 | Runbooks handed over; on-call owner for R1 / R2 named | signed handover | P5.5.05, P5.7.07 |
 | 16 | ZAP baseline + manual IDOR / role tests (external pentest if funded) | findings register | P5.5.01, P5.2.02, P5.5.06 |
