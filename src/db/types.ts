@@ -483,6 +483,7 @@ export type Database = {
           currency: string
           discount_amount: number
           discount_note: string | null
+          email_masked: string | null
           email_verified_at: string | null
           expired_at: string | null
           expires_at: string | null
@@ -495,10 +496,13 @@ export type Database = {
           package_snapshot: Json
           paid_at: string | null
           pax_count: number
+          phone_masked: string | null
           phone_verified_at: string | null
-          pic_email: string
+          pic_email: string | null
+          pic_first_name: string | null
           pic_name: string
-          pic_phone: string
+          pic_phone: string | null
+          pii_purged_at: string | null
           quoted_at: string | null
           refunded_at: string | null
           review_reason: string | null
@@ -533,6 +537,7 @@ export type Database = {
           currency?: string
           discount_amount?: number
           discount_note?: string | null
+          email_masked?: string | null
           email_verified_at?: string | null
           expired_at?: string | null
           expires_at?: string | null
@@ -545,10 +550,13 @@ export type Database = {
           package_snapshot: Json
           paid_at?: string | null
           pax_count: number
+          phone_masked?: string | null
           phone_verified_at?: string | null
-          pic_email: string
+          pic_email?: string | null
+          pic_first_name?: string | null
           pic_name: string
-          pic_phone: string
+          pic_phone?: string | null
+          pii_purged_at?: string | null
           quoted_at?: string | null
           refunded_at?: string | null
           review_reason?: string | null
@@ -583,6 +591,7 @@ export type Database = {
           currency?: string
           discount_amount?: number
           discount_note?: string | null
+          email_masked?: string | null
           email_verified_at?: string | null
           expired_at?: string | null
           expires_at?: string | null
@@ -595,10 +604,13 @@ export type Database = {
           package_snapshot?: Json
           paid_at?: string | null
           pax_count?: number
+          phone_masked?: string | null
           phone_verified_at?: string | null
-          pic_email?: string
+          pic_email?: string | null
+          pic_first_name?: string | null
           pic_name?: string
-          pic_phone?: string
+          pic_phone?: string | null
+          pii_purged_at?: string | null
           quoted_at?: string | null
           refunded_at?: string | null
           review_reason?: string | null
@@ -3374,7 +3386,20 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      aal2: { Args: never; Returns: boolean }
+      app_role: { Args: never; Returns: string }
+      app_rw_id: { Args: never; Returns: number }
+      custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      hook_password_verification_attempt: {
+        Args: { event: Json }
+        Returns: Json
+      }
+      is_admin_rw: { Args: never; Returns: boolean }
+      is_staff: { Args: never; Returns: boolean }
+      is_superadmin: { Args: never; Returns: boolean }
+      owns_any_rw: { Args: { p_rw_ids: number[] }; Returns: boolean }
+      owns_rw: { Args: { p_rw_id: number }; Returns: boolean }
+      today_jkt: { Args: never; Returns: string }
     }
     Enums: {
       activity_point_type:

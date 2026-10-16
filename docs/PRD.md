@@ -1686,7 +1686,7 @@ create or replace function public.is_superadmin() returns boolean language sql s
 create or replace function public.is_admin_rw()   returns boolean language sql stable as $$ select public.app_role() = 'admin_rw' and public.app_rw_id() is not null $$;
 create or replace function public.is_staff()      returns boolean language sql stable as $$ select public.is_superadmin() or public.is_admin_rw() $$;
 create or replace function public.owns_rw(p_rw_id smallint) returns boolean language sql stable as $$
-  select public.is_superadmin() or (public.is_admin_rw() and p_rw_id = public.app_rw_id()) $$;      -- NULL rw_id: superadmin only
+  select public.is_superadmin() or (public.is_admin_rw() and p_rw_id is not null and p_rw_id = public.app_rw_id()) $$;   -- NULL rw_id: superadmin only; answers false, never NULL
 create or replace function public.owns_any_rw(p_rw_ids smallint[]) returns boolean language sql stable as $$
   select public.is_superadmin() or (public.is_admin_rw() and public.app_rw_id() = any (p_rw_ids)) $$;
 create or replace function public.aal2() returns boolean language sql stable as $$ select coalesce(auth.jwt() ->> 'aal', 'aal1') = 'aal2' $$;
@@ -1896,7 +1896,7 @@ No function is executable by `anon`. Public writes (OTP, bookings, reviews, DSR 
 | `verify_ledger_chain` / `verify_audit_chain` | `() returns jsonb` | Recomputes hashes; returns `{ok, checked, first_broken_id}`; failure -> critical alert |
 | `log_audit` | trigger function + `(p_action text, p_entity_type text, p_entity_id text, p_metadata jsonb)` helper | Writes `audit_logs` with chain hash |
 
-Auth hooks (`supabase_auth_admin`): `public.custom_access_token_hook(event jsonb)` and `public.hook_password_verification_attempt(event jsonb)` (records `login_attempts`, rejects after 5 failures per user in 15 min with progressive delay, writes `login_failed` / `login_locked`).
+Auth hooks (`supabase_auth_admin`): `public.custom_access_token_hook(event jsonb)` and `public.hook_password_verification_attempt(event jsonb)` are thin wrappers that only check `current_user = 'supabase_auth_admin'` and delegate to `internal.staff_token_claims(p_user_id uuid) returns jsonb` and `internal.record_login_attempt(p_user_id uuid, p_succeeded boolean) returns jsonb` (records `login_attempts` with `email_hash = internal.hash_email(email)`, counts failures before believing the password, rejects from the 5th failure per user in 15 min, delays 1 s / 2 s at the 3rd and 4th, writes `login_failed` / one `login_locked` per lockout). The split lets pgTAP, which runs as `postgres`, exercise the bodies; the wrappers refuse every other caller.
 
 ### 8.8 Storage buckets
 

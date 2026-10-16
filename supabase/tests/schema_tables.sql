@@ -399,7 +399,9 @@ select columns_are('public', 'bookings', array[
   'cancel_reason', 'expired_at', 'refunded_at', 'needs_review', 'review_reason',
   'phone_verified_at', 'email_verified_at', 'consent_version', 'consented_at', 'token_version',
   'idempotency_key', 'ticket_pdf_path', 'admin_notes', 'created_by', 'source_ip', 'user_agent',
-  'created_at', 'updated_at'
+  'created_at', 'updated_at',
+  -- added by 0004: anonymisation stamp and the stored masks the staff view reads
+  'pii_purged_at', 'phone_masked', 'email_masked', 'pic_first_name'
 ]);
 select columns_are('public', 'booking_legs', array[
   'id', 'booking_id', 'rw_id', 'visit_session_id', 'leg_order', 'pax_count', 'status',
