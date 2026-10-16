@@ -529,7 +529,7 @@ Pipeline, in this order, no step skipped:
 4. Zod parse (`src/lib/midtrans/schemas.ts`).
 5. `signature_key === sha512(order_id + status_code + gross_amount + MIDTRANS_SERVER_KEY)` with `timingSafeEqual` (accept `MIDTRANS_SERVER_KEY_PREVIOUS` during rotation overlap). Mismatch -> `webhook_rejections` (metadata only) + 403.
 6. `merchant_id` equals `MIDTRANS_MERCHANT_ID`.
-7. Persist to `payment_events` (`event_hash` unique; replay -> 200 no-op). The trigger `midtrans_payload_minimise` keeps only an allow-list of the keys reconciliation reads, so `customer_details` and every other booker field never reach from `payment_events.payload` and `payments.last_payload` before storage (docs/Security.md §7.2); never work around it.
+7. Persist to `payment_events` (`event_hash` unique; replay -> 200 no-op). The trigger `midtrans_payload_minimise` keeps only an allow-list of the keys reconciliation reads and drops everything else, `customer_details` and every other booker field included, from `payment_events.payload` and `payments.last_payload` before storage (docs/Security.md §7.2); never work around it.
 8. Lookup by exact `order_id` (`<booking_code>-NN`); `gross_amount` and `IDR` must equal the DB; mismatch -> `payment_status = needs_review` + alert, never paid.
 9. For every state-changing transition (settlement, refund, cancel, expire, chargeback) re-check the Midtrans Status API via `src/lib/midtrans/client.ts` (10 s timeout).
 10. `internal.apply_payment_event(event_id, source, confirmed)` applies payment + booking transition, invoice/receipt numbers, tickets, ledger, outbox and audit in one transaction.
