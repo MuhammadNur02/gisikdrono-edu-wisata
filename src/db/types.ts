@@ -432,6 +432,24 @@ export type Database = {
           },
         ]
       }
+      document_sequences: {
+        Row: {
+          kind: Database["public"]["Enums"]["document_kind"]
+          last_value: number
+          period: string
+        }
+        Insert: {
+          kind: Database["public"]["Enums"]["document_kind"]
+          last_value?: number
+          period: string
+        }
+        Update: {
+          kind?: Database["public"]["Enums"]["document_kind"]
+          last_value?: number
+          period?: string
+        }
+        Relationships: []
+      }
       guest_otps: {
         Row: {
           attempts: number
@@ -484,6 +502,90 @@ export type Database = {
             columns: ["booking_id"]
             isOneToOne: false
             referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invoices: {
+        Row: {
+          amount_due: number
+          amount_paid: number
+          booking_id: string
+          created_at: string
+          credit_note_number: string | null
+          credit_note_pdf_path: string | null
+          due_date: string | null
+          id: string
+          invoice_number: string
+          issued_at: string
+          paid_at: string | null
+          payment_id: string | null
+          pdf_path: string | null
+          receipt_number: string | null
+          receipt_pdf_path: string | null
+          snapshot: Json
+          status: Database["public"]["Enums"]["invoice_status"]
+          updated_at: string
+          void_reason: string | null
+          voided_at: string | null
+        }
+        Insert: {
+          amount_due: number
+          amount_paid?: number
+          booking_id: string
+          created_at?: string
+          credit_note_number?: string | null
+          credit_note_pdf_path?: string | null
+          due_date?: string | null
+          id?: string
+          invoice_number: string
+          issued_at?: string
+          paid_at?: string | null
+          payment_id?: string | null
+          pdf_path?: string | null
+          receipt_number?: string | null
+          receipt_pdf_path?: string | null
+          snapshot: Json
+          status?: Database["public"]["Enums"]["invoice_status"]
+          updated_at?: string
+          void_reason?: string | null
+          voided_at?: string | null
+        }
+        Update: {
+          amount_due?: number
+          amount_paid?: number
+          booking_id?: string
+          created_at?: string
+          credit_note_number?: string | null
+          credit_note_pdf_path?: string | null
+          due_date?: string | null
+          id?: string
+          invoice_number?: string
+          issued_at?: string
+          paid_at?: string | null
+          payment_id?: string | null
+          pdf_path?: string | null
+          receipt_number?: string | null
+          receipt_pdf_path?: string | null
+          snapshot?: Json
+          status?: Database["public"]["Enums"]["invoice_status"]
+          updated_at?: string
+          void_reason?: string | null
+          voided_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoices_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
             referencedColumns: ["id"]
           },
         ]
@@ -545,6 +647,247 @@ export type Database = {
             columns: ["tier_id"]
             isOneToOne: false
             referencedRelation: "tour_package_price_tiers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payment_adjustments: {
+        Row: {
+          amount: number
+          applied_at: string | null
+          apply_not_before: string | null
+          approved_at: string | null
+          approved_by: string | null
+          booking_id: string
+          evidence_path: string
+          id: string
+          payment_id: string | null
+          proposed_at: string
+          proposed_by: string
+          reason: string
+          rejected_reason: string | null
+          status: Database["public"]["Enums"]["adjustment_status"]
+          type: Database["public"]["Enums"]["adjustment_type"]
+        }
+        Insert: {
+          amount: number
+          applied_at?: string | null
+          apply_not_before?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          booking_id: string
+          evidence_path: string
+          id?: string
+          payment_id?: string | null
+          proposed_at?: string
+          proposed_by: string
+          reason: string
+          rejected_reason?: string | null
+          status?: Database["public"]["Enums"]["adjustment_status"]
+          type: Database["public"]["Enums"]["adjustment_type"]
+        }
+        Update: {
+          amount?: number
+          applied_at?: string | null
+          apply_not_before?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          booking_id?: string
+          evidence_path?: string
+          id?: string
+          payment_id?: string | null
+          proposed_at?: string
+          proposed_by?: string
+          reason?: string
+          rejected_reason?: string | null
+          status?: Database["public"]["Enums"]["adjustment_status"]
+          type?: Database["public"]["Enums"]["adjustment_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_adjustments_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_adjustments_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_adjustments_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_adjustments_proposed_by_fkey"
+            columns: ["proposed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payment_events: {
+        Row: {
+          event_hash: string
+          fraud_status: string | null
+          gross_amount_raw: string | null
+          id: number
+          order_id: string
+          payload: Json
+          payment_id: string | null
+          processed_at: string | null
+          processing_result: string | null
+          received_at: string
+          source: string
+          status_code: string | null
+          transaction_status: string | null
+        }
+        Insert: {
+          event_hash: string
+          fraud_status?: string | null
+          gross_amount_raw?: string | null
+          id?: never
+          order_id: string
+          payload: Json
+          payment_id?: string | null
+          processed_at?: string | null
+          processing_result?: string | null
+          received_at?: string
+          source: string
+          status_code?: string | null
+          transaction_status?: string | null
+        }
+        Update: {
+          event_hash?: string
+          fraud_status?: string | null
+          gross_amount_raw?: string | null
+          id?: never
+          order_id?: string
+          payload?: Json
+          payment_id?: string | null
+          processed_at?: string | null
+          processing_result?: string | null
+          received_at?: string
+          source?: string
+          status_code?: string | null
+          transaction_status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_events_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payments: {
+        Row: {
+          attempt_no: number
+          booking_id: string
+          created_at: string
+          expiry_time: string | null
+          fraud_status: string | null
+          gross_amount: number
+          id: string
+          last_payload: Json | null
+          manual_proof_path: string | null
+          manual_reference: string | null
+          method: Database["public"]["Enums"]["payment_method"] | null
+          order_id: string
+          payment_type_raw: string | null
+          provider: Database["public"]["Enums"]["payment_provider"]
+          provider_txn_id: string | null
+          recorded_by: string | null
+          refunded_amount: number
+          settlement_time: string | null
+          snap_redirect_url: string | null
+          snap_token: string | null
+          status: Database["public"]["Enums"]["payment_status"]
+          status_code: string | null
+          transaction_time: string | null
+          updated_at: string
+          va_bank: string | null
+          va_number: string | null
+        }
+        Insert: {
+          attempt_no: number
+          booking_id: string
+          created_at?: string
+          expiry_time?: string | null
+          fraud_status?: string | null
+          gross_amount: number
+          id?: string
+          last_payload?: Json | null
+          manual_proof_path?: string | null
+          manual_reference?: string | null
+          method?: Database["public"]["Enums"]["payment_method"] | null
+          order_id: string
+          payment_type_raw?: string | null
+          provider: Database["public"]["Enums"]["payment_provider"]
+          provider_txn_id?: string | null
+          recorded_by?: string | null
+          refunded_amount?: number
+          settlement_time?: string | null
+          snap_redirect_url?: string | null
+          snap_token?: string | null
+          status?: Database["public"]["Enums"]["payment_status"]
+          status_code?: string | null
+          transaction_time?: string | null
+          updated_at?: string
+          va_bank?: string | null
+          va_number?: string | null
+        }
+        Update: {
+          attempt_no?: number
+          booking_id?: string
+          created_at?: string
+          expiry_time?: string | null
+          fraud_status?: string | null
+          gross_amount?: number
+          id?: string
+          last_payload?: Json | null
+          manual_proof_path?: string | null
+          manual_reference?: string | null
+          method?: Database["public"]["Enums"]["payment_method"] | null
+          order_id?: string
+          payment_type_raw?: string | null
+          provider?: Database["public"]["Enums"]["payment_provider"]
+          provider_txn_id?: string | null
+          recorded_by?: string | null
+          refunded_amount?: number
+          settlement_time?: string | null
+          snap_redirect_url?: string | null
+          snap_token?: string | null
+          status?: Database["public"]["Enums"]["payment_status"]
+          status_code?: string | null
+          transaction_time?: string | null
+          updated_at?: string
+          va_bank?: string | null
+          va_number?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -705,6 +1048,184 @@ export type Database = {
             columns: ["rw_id"]
             isOneToOne: false
             referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quotations: {
+        Row: {
+          booking_id: string
+          id: string
+          issued_at: string
+          issued_by: string | null
+          pdf_path: string | null
+          quotation_number: string
+          snapshot: Json
+          status: Database["public"]["Enums"]["quotation_status"]
+          valid_until: string
+          verify_code: string
+          version: number
+        }
+        Insert: {
+          booking_id: string
+          id?: string
+          issued_at?: string
+          issued_by?: string | null
+          pdf_path?: string | null
+          quotation_number: string
+          snapshot: Json
+          status?: Database["public"]["Enums"]["quotation_status"]
+          valid_until: string
+          verify_code: string
+          version?: number
+        }
+        Update: {
+          booking_id?: string
+          id?: string
+          issued_at?: string
+          issued_by?: string | null
+          pdf_path?: string | null
+          quotation_number?: string
+          snapshot?: Json
+          status?: Database["public"]["Enums"]["quotation_status"]
+          valid_until?: string
+          verify_code?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quotations_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quotations_issued_by_fkey"
+            columns: ["issued_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reconciliation_issues: {
+        Row: {
+          booking_id: string | null
+          created_at: string
+          details: Json
+          id: string
+          issue_type: string
+          payment_id: string | null
+          resolution_note: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          run_id: string
+          severity: Database["public"]["Enums"]["alert_severity"]
+        }
+        Insert: {
+          booking_id?: string | null
+          created_at?: string
+          details?: Json
+          id?: string
+          issue_type: string
+          payment_id?: string | null
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          run_id: string
+          severity: Database["public"]["Enums"]["alert_severity"]
+        }
+        Update: {
+          booking_id?: string | null
+          created_at?: string
+          details?: Json
+          id?: string
+          issue_type?: string
+          payment_id?: string | null
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          run_id?: string
+          severity?: Database["public"]["Enums"]["alert_severity"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reconciliation_issues_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_issues_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_issues_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_issues_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "reconciliation_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reconciliation_runs: {
+        Row: {
+          audit_chain_ok: boolean | null
+          created_by: string | null
+          finished_at: string | null
+          id: string
+          issues_found: number
+          ledger_chain_ok: boolean | null
+          payments_checked: number
+          run_date: string
+          source: string
+          started_at: string
+          summary: Json
+        }
+        Insert: {
+          audit_chain_ok?: boolean | null
+          created_by?: string | null
+          finished_at?: string | null
+          id?: string
+          issues_found?: number
+          ledger_chain_ok?: boolean | null
+          payments_checked?: number
+          run_date: string
+          source: string
+          started_at?: string
+          summary?: Json
+        }
+        Update: {
+          audit_chain_ok?: boolean | null
+          created_by?: string | null
+          finished_at?: string | null
+          id?: string
+          issues_found?: number
+          ledger_chain_ok?: boolean | null
+          payments_checked?: number
+          run_date?: string
+          source?: string
+          started_at?: string
+          summary?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reconciliation_runs_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1251,6 +1772,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      webhook_rejections: {
+        Row: {
+          body_sha256: string | null
+          id: number
+          ip: unknown
+          order_id: string | null
+          provider: string
+          reason: string
+          received_at: string
+          status_code: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          body_sha256?: string | null
+          id?: never
+          ip?: unknown
+          order_id?: string | null
+          provider: string
+          reason: string
+          received_at?: string
+          status_code?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          body_sha256?: string | null
+          id?: never
+          ip?: unknown
+          order_id?: string | null
+          provider?: string
+          reason?: string
+          received_at?: string
+          status_code?: string | null
+          user_agent?: string | null
+        }
+        Relationships: []
       }
     }
     Views: {

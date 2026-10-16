@@ -487,3 +487,204 @@ create index guest_otps_phone_idx on public.guest_otps (phone, created_at desc);
 alter table public.guest_otps enable row level security;
 alter table public.guest_otps force row level security;
 revoke all on public.guest_otps from anon, authenticated;
+
+
+-- ===== Payments and B2B documents (docs/PRD.md §8.4.5, Task P1.2.07, P1.2.08) =====
+
+-- payments (A): one row per Midtrans attempt or manual record. Financial columns frozen after settlement.
+create table public.payments (
+  id                 uuid primary key default gen_random_uuid(),
+  booking_id         uuid not null references public.bookings(id) on delete restrict,
+  attempt_no         smallint not null check (attempt_no >= 1),
+  provider           public.payment_provider not null,
+  method             public.payment_method,
+  status             public.payment_status not null default 'initiated',
+  order_id           text not null unique check (order_id ~ '^GSK-[0-9A-HJKMNP-TV-Z]{8}-[0-9]{2}$'),
+  provider_txn_id    text unique,
+  gross_amount       bigint not null check (gross_amount > 0),
+  snap_token         text,
+  snap_redirect_url  text,
+  payment_type_raw   text,
+  va_bank            text,
+  va_number          text,
+  transaction_time   timestamptz,
+  settlement_time    timestamptz,
+  expiry_time        timestamptz,                          -- mirrors bookings.expires_at via Snap expiry
+  fraud_status       text,
+  status_code        text,
+  last_payload       jsonb,
+  manual_proof_path  text,                                 -- documents/bookings/<id>/payment-proof-<uuid>.pdf
+  manual_reference   text,
+  recorded_by        uuid references public.profiles(id),
+  refunded_amount    bigint not null default 0 check (refunded_amount >= 0),
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now(),
+  unique (booking_id, attempt_no)
+);
+create index payments_booking_idx on public.payments (booking_id, status);
+create unique index payments_one_open_per_booking on public.payments (booking_id) where status in ('initiated','pending','needs_review');
+-- trigger payments_immutable_guard: gross_amount, order_id, provider, booking_id never change; after settled only
+--   refunded_amount/status may move (through internal.* only).
+alter table public.payments enable row level security;
+alter table public.payments force row level security;
+revoke all on public.payments from anon, authenticated;
+create trigger set_updated_at before update on public.payments
+  for each row execute function public.set_updated_at();
+
+-- payment_events (AO): every signature-valid inbound notification, Status API confirmation and poll result.
+create table public.payment_events (
+  id                 bigint generated always as identity primary key,
+  payment_id         uuid references public.payments(id),
+  order_id           text not null,
+  source             text not null check (source in ('webhook','status_api','poll','manual')),
+  event_hash         text not null unique,                 -- sha256(raw body)
+  transaction_status text,
+  fraud_status       text,
+  status_code        text,
+  gross_amount_raw   text,
+  payload            jsonb not null,
+  received_at        timestamptz not null default now(),
+  processed_at       timestamptz,
+  processing_result  text
+);
+create index payment_events_order_idx on public.payment_events (order_id, received_at desc);
+alter table public.payment_events enable row level security;
+alter table public.payment_events force row level security;
+revoke all on public.payment_events from anon, authenticated;
+
+-- webhook_rejections (AO): metadata only for rejected webhook calls; pruned after 30 days.
+create table public.webhook_rejections (
+  id          bigint generated always as identity primary key,
+  provider    text not null check (provider in ('midtrans','whatsapp','resend')),
+  reason      text not null check (reason in ('path_token_invalid','rate_limited','body_too_large','content_type','schema_invalid','signature_invalid','merchant_mismatch')),
+  order_id    text,
+  status_code text,
+  body_sha256 text,
+  ip          inet,
+  user_agent  text,
+  received_at timestamptz not null default now()
+);
+create index webhook_rejections_time_idx on public.webhook_rejections (received_at desc);
+alter table public.webhook_rejections enable row level security;
+alter table public.webhook_rejections force row level security;
+revoke all on public.webhook_rejections from anon, authenticated;
+
+-- payment_adjustments (A, AO): dual-control corrections after settlement.
+create table public.payment_adjustments (
+  id               uuid primary key default gen_random_uuid(),
+  booking_id       uuid not null references public.bookings(id) on delete restrict,
+  payment_id       uuid references public.payments(id),
+  type             public.adjustment_type not null,
+  status           public.adjustment_status not null default 'proposed',
+  amount           bigint not null check (amount >= 0),
+  reason           text not null check (length(reason) between 10 and 2000),
+  evidence_path    text not null,                           -- documents/bookings/<id>/adjustment-<uuid>.pdf
+  proposed_by      uuid not null references public.profiles(id),
+  proposed_at      timestamptz not null default now(),
+  approved_by      uuid references public.profiles(id),
+  approved_at      timestamptz,
+  rejected_reason  text,
+  apply_not_before timestamptz,                             -- 24 h delay when proposer = approver (single-superadmin control)
+  applied_at       timestamptz,
+  constraint payment_adjustments_dual_control check (approved_by is null or approved_by <> proposed_by or apply_not_before is not null)
+);
+create index payment_adjustments_status_idx on public.payment_adjustments (status, proposed_at desc);
+alter table public.payment_adjustments enable row level security;
+alter table public.payment_adjustments force row level security;
+revoke all on public.payment_adjustments from anon, authenticated;
+
+-- reconciliation_runs / reconciliation_issues: nightly and manual reconciliation results.
+create table public.reconciliation_runs (
+  id               uuid primary key default gen_random_uuid(),
+  run_date         date not null,
+  source           text not null check (source in ('nightly','manual','csv_import')),
+  started_at       timestamptz not null default now(),
+  finished_at      timestamptz,
+  payments_checked integer not null default 0,
+  issues_found     integer not null default 0,
+  ledger_chain_ok  boolean,
+  audit_chain_ok   boolean,
+  summary          jsonb not null default '{}',
+  created_by       uuid references public.profiles(id)
+);
+alter table public.reconciliation_runs enable row level security;
+alter table public.reconciliation_runs force row level security;
+revoke all on public.reconciliation_runs from anon, authenticated;
+
+create table public.reconciliation_issues (
+  id              uuid primary key default gen_random_uuid(),
+  run_id          uuid not null references public.reconciliation_runs(id),
+  booking_id      uuid references public.bookings(id),
+  payment_id      uuid references public.payments(id),
+  issue_type      text not null check (issue_type in ('paid_without_tickets','ticket_without_payment','amount_mismatch','status_disagreement','pending_beyond_ttl','ledger_sum_mismatch','chain_broken','payout_mismatch','duplicate_settlement')),
+  severity        public.alert_severity not null,
+  details         jsonb not null default '{}',
+  resolved_at     timestamptz,
+  resolved_by     uuid references public.profiles(id),
+  resolution_note text,
+  created_at      timestamptz not null default now()
+);
+create index reconciliation_issues_open_idx on public.reconciliation_issues (severity, created_at desc) where resolved_at is null;
+alter table public.reconciliation_issues enable row level security;
+alter table public.reconciliation_issues force row level security;
+revoke all on public.reconciliation_issues from anon, authenticated;
+
+-- quotations (A): surat penawaran; versioned; max 3 per booking (trigger); numbers only after phone verification.
+create table public.quotations (
+  id               uuid primary key default gen_random_uuid(),
+  booking_id       uuid not null references public.bookings(id) on delete restrict,
+  quotation_number text not null unique,                   -- 'SP/GSK/2026/10/0007'
+  verify_code      text not null unique,                   -- 10-char Crockford base32 used in /verifikasi/[code]
+  version          smallint not null default 1 check (version between 1 and 3),
+  status           public.quotation_status not null default 'issued',
+  issued_at        timestamptz not null default now(),
+  valid_until      date not null,
+  snapshot         jsonb not null,                         -- whitelisted, length-limited fields only
+  pdf_path         text,
+  issued_by        uuid references public.profiles(id),    -- NULL when visitor self-generated
+  unique (booking_id, version)
+);
+alter table public.quotations enable row level security;
+alter table public.quotations force row level security;
+revoke all on public.quotations from anon, authenticated;
+
+-- invoices (A): official invoice + receipt + credit note numbers. One live invoice per booking.
+create table public.invoices (
+  id                    uuid primary key default gen_random_uuid(),
+  booking_id            uuid not null references public.bookings(id) on delete restrict,
+  invoice_number        text not null unique,              -- 'INV/GSK/2026/10/0012'
+  status                public.invoice_status not null default 'issued',
+  issued_at             timestamptz not null default now(),
+  due_date              date,
+  amount_due            bigint not null check (amount_due > 0),
+  amount_paid           bigint not null default 0 check (amount_paid >= 0),
+  paid_at               timestamptz,
+  payment_id            uuid references public.payments(id),
+  receipt_number        text unique,                       -- 'KW/GSK/2026/10/0012'
+  credit_note_number    text unique,                       -- 'CN/GSK/2026/0003' on refund
+  snapshot              jsonb not null,
+  pdf_path              text,
+  receipt_pdf_path      text,
+  credit_note_pdf_path  text,
+  void_reason           text,
+  voided_at             timestamptz,
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now()
+);
+create unique index invoices_one_live_per_booking on public.invoices (booking_id) where status <> 'void';
+alter table public.invoices enable row level security;
+alter table public.invoices force row level security;
+revoke all on public.invoices from anon, authenticated;
+create trigger set_updated_at before update on public.invoices
+  for each row execute function public.set_updated_at();
+
+-- document_sequences: gapless per-kind-per-period numbering under row lock (internal.next_document_number only).
+create table public.document_sequences (
+  kind       public.document_kind not null,
+  period     text not null check (period ~ '^[0-9]{4}(-[0-9]{2})?$'),   -- '2026-10' for SP/INV/KW; '2026' for CN/SERT
+  last_value integer not null default 0,
+  primary key (kind, period)
+);
+alter table public.document_sequences enable row level security;
+alter table public.document_sequences force row level security;
+revoke all on public.document_sequences from anon, authenticated;

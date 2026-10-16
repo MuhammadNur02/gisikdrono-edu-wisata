@@ -1,7 +1,7 @@
 -- Structure test for 0003_tables, extended group by group: exact columns, the types other code
 -- relies on, keys, and the CHECK / unique rules proven by trying to break them.
 begin;
-select plan(100);
+select plan(129);
 
 -- ===== Every table: RLS from birth, no API rights, updated_at kept by trigger =====
 
@@ -555,6 +555,169 @@ select throws_ok(
 select throws_ok(
   $$delete from public.bookings where id = '00000000-0000-4000-8000-0000000000e1'$$,
   '23503', null, 'a booking with legs, add-ons or participants is never deleted'
+);
+
+-- ===== Payments and B2B documents (Task P1.2.07, P1.2.08) =====
+
+select columns_are('public', 'payments', array[
+  'id', 'booking_id', 'attempt_no', 'provider', 'method', 'status', 'order_id', 'provider_txn_id',
+  'gross_amount', 'snap_token', 'snap_redirect_url', 'payment_type_raw', 'va_bank', 'va_number',
+  'transaction_time', 'settlement_time', 'expiry_time', 'fraud_status', 'status_code',
+  'last_payload', 'manual_proof_path', 'manual_reference', 'recorded_by', 'refunded_amount',
+  'created_at', 'updated_at'
+]);
+select columns_are('public', 'payment_events', array[
+  'id', 'payment_id', 'order_id', 'source', 'event_hash', 'transaction_status', 'fraud_status',
+  'status_code', 'gross_amount_raw', 'payload', 'received_at', 'processed_at', 'processing_result'
+]);
+select columns_are('public', 'webhook_rejections', array[
+  'id', 'provider', 'reason', 'order_id', 'status_code', 'body_sha256', 'ip', 'user_agent',
+  'received_at'
+]);
+select columns_are('public', 'payment_adjustments', array[
+  'id', 'booking_id', 'payment_id', 'type', 'status', 'amount', 'reason', 'evidence_path',
+  'proposed_by', 'proposed_at', 'approved_by', 'approved_at', 'rejected_reason',
+  'apply_not_before', 'applied_at'
+]);
+select columns_are('public', 'reconciliation_runs', array[
+  'id', 'run_date', 'source', 'started_at', 'finished_at', 'payments_checked', 'issues_found',
+  'ledger_chain_ok', 'audit_chain_ok', 'summary', 'created_by'
+]);
+select columns_are('public', 'reconciliation_issues', array[
+  'id', 'run_id', 'booking_id', 'payment_id', 'issue_type', 'severity', 'details', 'resolved_at',
+  'resolved_by', 'resolution_note', 'created_at'
+]);
+select columns_are('public', 'quotations', array[
+  'id', 'booking_id', 'quotation_number', 'verify_code', 'version', 'status', 'issued_at',
+  'valid_until', 'snapshot', 'pdf_path', 'issued_by'
+]);
+select columns_are('public', 'invoices', array[
+  'id', 'booking_id', 'invoice_number', 'status', 'issued_at', 'due_date', 'amount_due',
+  'amount_paid', 'paid_at', 'payment_id', 'receipt_number', 'credit_note_number', 'snapshot',
+  'pdf_path', 'receipt_pdf_path', 'credit_note_pdf_path', 'void_reason', 'voided_at', 'created_at',
+  'updated_at'
+]);
+select columns_are('public', 'document_sequences', array[
+  'kind', 'period', 'last_value'
+]);
+select is(
+  (select count(*)::int from pg_indexes where schemaname = 'public'
+     and indexname = any (array['payments_booking_idx', 'payments_one_open_per_booking', 'payment_events_order_idx', 'webhook_rejections_time_idx', 'payment_adjustments_status_idx', 'reconciliation_issues_open_idx', 'invoices_one_live_per_booking'])),
+  7,
+  'every index of the payments and b2b documents group exists'
+);
+
+insert into public.payments (id, booking_id, attempt_no, provider, order_id, gross_amount)
+values ('00000000-0000-4000-8000-0000000000f1', '00000000-0000-4000-8000-0000000000e1', 1, 'midtrans',
+        'GSK-7F3K9Q2M-01', 1000000);
+select throws_ok(
+  $$insert into public.payments (booking_id, attempt_no, provider, order_id, gross_amount)
+    values ('00000000-0000-4000-8000-0000000000e1', 2, 'midtrans', 'GSK-7F3K9Q2M-02', 1000000)$$,
+  '23505', null, 'a second payment cannot open while the first is initiated'
+);
+update public.payments set status = 'needs_review' where id = '00000000-0000-4000-8000-0000000000f1';
+select throws_ok(
+  $$insert into public.payments (booking_id, attempt_no, provider, order_id, gross_amount)
+    values ('00000000-0000-4000-8000-0000000000e1', 2, 'midtrans', 'GSK-7F3K9Q2M-02', 1000000)$$,
+  '23505', null, 'a payment under review also blocks a new attempt'
+);
+update public.payments set status = 'failed' where id = '00000000-0000-4000-8000-0000000000f1';
+select lives_ok(
+  $$insert into public.payments (booking_id, attempt_no, provider, order_id, gross_amount)
+    values ('00000000-0000-4000-8000-0000000000e1', 2, 'midtrans', 'GSK-7F3K9Q2M-02', 1000000)$$,
+  'after a failed attempt the next one may open'
+);
+select throws_ok(
+  $$insert into public.payments (booking_id, attempt_no, provider, order_id, gross_amount, status)
+    values ('00000000-0000-4000-8000-0000000000e1', 2, 'midtrans', 'GSK-7F3K9Q2M-03', 1000000, 'failed')$$,
+  '23505', null, 'attempt numbers are unique per booking'
+);
+select throws_ok(
+  $$insert into public.payments (booking_id, attempt_no, provider, order_id, gross_amount, status)
+    values ('00000000-0000-4000-8000-0000000000e1', 3, 'midtrans', 'GSK-7F3K9Q2M-3', 1000000, 'failed')$$,
+  '23514', null, 'an order id is the booking code plus a two-digit attempt'
+);
+select throws_ok(
+  $$insert into public.payments (booking_id, attempt_no, provider, order_id, gross_amount, status)
+    values ('00000000-0000-4000-8000-0000000000e1', 3, 'midtrans', 'GSK-7F3K9Q2M-03', 0, 'failed')$$,
+  '23514', null, 'a payment is never for zero rupiah'
+);
+
+insert into public.payment_events (order_id, source, event_hash, payload)
+values ('GSK-7F3K9Q2M-01', 'webhook', 'hash-of-body-1', '{}');
+select throws_ok(
+  $$insert into public.payment_events (order_id, source, event_hash, payload) values ('GSK-7F3K9Q2M-01', 'webhook', 'hash-of-body-1', '{}')$$,
+  '23505', null, 'the same notification body is stored once (replays become no-ops)'
+);
+select throws_ok(
+  $$insert into public.payment_events (order_id, source, event_hash, payload) values ('GSK-7F3K9Q2M-01', 'browser', 'hash-of-body-2', '{}')$$,
+  '23514', null, 'payment events only come from webhook, status API, poll or manual'
+);
+select throws_ok(
+  $$insert into public.webhook_rejections (provider, reason) values ('midtrans', 'looked_odd')$$,
+  '23514', null, 'webhook rejections use a known reason'
+);
+
+select throws_ok(
+  $$insert into public.payment_adjustments (booking_id, type, amount, reason, evidence_path, proposed_by, approved_by)
+    values ('00000000-0000-4000-8000-0000000000e1', 'manual_refund', 100000, 'Refund karena hujan deras',
+            'documents/x.pdf', '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001')$$,
+  '23514', null, 'a superadmin approving their own adjustment needs the 24 h delay'
+);
+select lives_ok(
+  $$insert into public.payment_adjustments (booking_id, type, amount, reason, evidence_path, proposed_by, approved_by, apply_not_before)
+    values ('00000000-0000-4000-8000-0000000000e1', 'manual_refund', 100000, 'Refund karena hujan deras',
+            'documents/x.pdf', '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', now() + interval '24 hours')$$,
+  'self-approval with the 24 h delay is accepted'
+);
+select throws_ok(
+  $$insert into public.payment_adjustments (booking_id, type, amount, reason, evidence_path, proposed_by)
+    values ('00000000-0000-4000-8000-0000000000e1', 'write_off', 100000, 'singkat', 'documents/x.pdf', '00000000-0000-4000-8000-000000000001')$$,
+  '23514', null, 'an adjustment reason has at least 10 characters'
+);
+
+insert into public.reconciliation_runs (id, run_date, source) values ('00000000-0000-4000-8000-000000000101', '2026-11-12', 'nightly');
+select throws_ok(
+  $$insert into public.reconciliation_issues (run_id, issue_type, severity)
+    values ('00000000-0000-4000-8000-000000000101', 'something_else', 'high')$$,
+  '23514', null, 'reconciliation issues use a known type'
+);
+
+insert into public.quotations (booking_id, quotation_number, verify_code, valid_until, snapshot)
+values ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0001', 'ABCDEFGH12', '2026-11-01', '{}');
+select throws_ok(
+  $$insert into public.quotations (booking_id, quotation_number, verify_code, valid_until, snapshot)
+    values ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0002', 'ABCDEFGH13', '2026-11-01', '{}')$$,
+  '23505', null, 'each quotation version exists once per booking'
+);
+select throws_ok(
+  $$insert into public.quotations (booking_id, quotation_number, verify_code, valid_until, snapshot, version)
+    values ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0003', 'ABCDEFGH14', '2026-11-01', '{}', 4)$$,
+  '23514', null, 'a booking has at most three quotation versions'
+);
+
+insert into public.invoices (id, booking_id, invoice_number, amount_due, snapshot)
+values ('00000000-0000-4000-8000-000000000102', '00000000-0000-4000-8000-0000000000e1', 'INV/GSK/2026/10/0001', 1000000, '{}');
+select throws_ok(
+  $$insert into public.invoices (booking_id, invoice_number, amount_due, snapshot)
+    values ('00000000-0000-4000-8000-0000000000e1', 'INV/GSK/2026/10/0002', 1000000, '{}')$$,
+  '23505', null, 'a booking has one live invoice'
+);
+update public.invoices set status = 'void', voided_at = now() where id = '00000000-0000-4000-8000-000000000102';
+select lives_ok(
+  $$insert into public.invoices (booking_id, invoice_number, amount_due, snapshot)
+    values ('00000000-0000-4000-8000-0000000000e1', 'INV/GSK/2026/10/0002', 1000000, '{}')$$,
+  'a voided invoice can be replaced'
+);
+
+select throws_ok(
+  $$insert into public.document_sequences (kind, period) values ('invoice', '2026/10')$$,
+  '23514', null, 'a numbering period is YYYY or YYYY-MM'
+);
+insert into public.document_sequences (kind, period) values ('invoice', '2026-10');
+select throws_ok(
+  $$insert into public.document_sequences (kind, period) values ('invoice', '2026-10')$$,
+  '23505', null, 'one counter per document kind and period'
 );
 
 select * from finish();
