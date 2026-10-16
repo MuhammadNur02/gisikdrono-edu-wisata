@@ -786,7 +786,7 @@ Use only names from CLAUDE.md Appendix A. Show the migration (if any) first.
 
 ```text
 Add notification template <key> (must be a notification_template enum value).
-1. Register in src/lib/notifications/templates.ts with typed params; free text goes through freeTextSchema (src/lib/validations/free-text.ts: no links, hosts, IP addresses, email addresses or phone numbers). The database holds a message with refused text as cancelled instead of failing the transaction.
+1. Register in src/lib/notifications/templates.ts with typed params; free text goes through freeTextSchema (src/lib/validations/free-text.ts: no links, hosts, IP addresses, email addresses or phone numbers; academic titles such as S.Pd. or Univ. pass). The database holds a message with refused text as cancelled instead of failing the transaction.
 2. Map the Meta template name (gsk_<key>_v1 pattern, language id; exact names in CLAUDE.md Appendix A.4,
    e.g. payment_received_ticket -> gsk_ticket_issued_v1) in src/config/site.ts.
 3. React Email template in src/lib/email/<key>.tsx carrying links only (never attachments).

@@ -35,6 +35,11 @@ describe('parseTemplateParams', () => {
     ).toMatchObject({ severity: 'critical' });
   });
 
+  it('accepts names and institutions written with academic titles', () => {
+    const params = { name: 'Ani Lestari, S.Pd.', institution: 'Univ.Diponegoro' };
+    expect(parseTemplateParams('checked_in_thanks', params)).toEqual(params);
+  });
+
   it('refuses free text that carries a link, a host or a phone number', () => {
     for (const name of ['klik evil.shop', 'buka 103.20.1.5', 'Budi 0812-3456-7890']) {
       expect(() => parseTemplateParams('review_invite', { name })).toThrow(ZodError);

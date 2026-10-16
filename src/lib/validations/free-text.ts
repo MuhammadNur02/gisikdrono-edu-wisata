@@ -18,8 +18,16 @@ const FORBIDDEN_PATTERNS: readonly RegExp[] = [
   /\d{8,}/, // any other long run of digits
 ];
 
+// Indonesian academic and honorific titles written with dots (S.Pd., M.Sc, Dr., Univ.Diponegoro) are
+// not hosts, so they are set aside before the checks, unless a dot, letter or slash carries on from
+// them: "s.pd.com" and "univ.gisik-bayar.top" still count as hosts. Kept in step with the title pattern
+// of internal.refused_notification_text in supabase/migrations/0004_functions.sql.
+const ACADEMIC_TITLE =
+  /(?<![a-z0-9.-])(?:(?:s\.(?:pd\.i|pd|si|ag|kom|t|h|e|sos|ip|ked|psi|farm|kep|hum|ak|pt|tr|gz)|m\.(?:pd\.i|pd|si|sc|kom|m|t|h|kes|ag|hum|psi|ak|eng)|b\.sc|a\.md|ph\.d)\b(?!\.?[a-z0-9/:])\.?|(?:dr|dra|drs|ir|prof|univ|hj|kh|st|h)\.(?![/:]))/gi;
+
 export function isSafeFreeText(value: string): boolean {
-  return !FORBIDDEN_PATTERNS.some((pattern) => pattern.test(value));
+  const withoutTitles = value.replace(ACADEMIC_TITLE, ' ');
+  return !FORBIDDEN_PATTERNS.some((pattern) => pattern.test(withoutTitles));
 }
 
 export function freeTextSchema(maxLength: number) {

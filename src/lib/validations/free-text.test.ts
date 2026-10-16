@@ -29,6 +29,27 @@ describe('isSafeFreeText', () => {
   ])('refuses a link, host, address or number: %s', (value) => {
     expect(isSafeFreeText(value)).toBe(false);
   });
+
+  it.each([
+    'Ani Lestari, S.Pd.',
+    'Budi S.Si',
+    'Dra. Rina M.Sc',
+    'Univ.Diponegoro',
+    'DRA. RINA M.SC',
+    'Siti, S.Pd.I',
+    'Dr.Budi Santoso',
+    'Ir. Joko, M.T',
+    'SMA St.Louis',
+  ])('lets Indonesian academic titles through, whatever their case: %s', (value) => {
+    expect(isSafeFreeText(value)).toBe(true);
+  });
+
+  it.each(['gisik-bayar.top', 'univ.gisik-bayar.top', 's.pd.com', 'S.Si/bayar', 'Dr.evil.com'])(
+    'still refuses a host dressed up as a title: %s',
+    (value) => {
+      expect(isSafeFreeText(value)).toBe(false);
+    },
+  );
 });
 
 describe('freeTextSchema', () => {

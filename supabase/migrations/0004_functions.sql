@@ -1753,18 +1753,24 @@ revoke execute on function internal.reserve_session_quota(uuid, integer), intern
 -- Why an outbox message's text is refused, or NULL when it is fine: a link in any form, a host
 -- (name.tld) or an IPv4 address in params or recipient_name, or a link_scope outside the five the worker
 -- knows. Messages go out from the kelurahan's own number and the worker mints every link itself.
--- src/lib/validations/free-text.ts checks the same text when a visitor types it.
+-- Indonesian academic and honorific titles written with dots (S.Pd., M.Sc, Dr., Univ.Diponegoro) are
+-- set aside first, unless a dot, letter or slash carries on from them, so "s.pd.com" or
+-- "univ.gisik-bayar.top" still counts as a host. The title list is kept in step with ACADEMIC_TITLE in
+-- src/lib/validations/free-text.ts, which checks the same text when a visitor types it.
 create function internal.refused_notification_text(p_params jsonb, p_recipient_name text) returns text
   language plpgsql immutable
   set search_path = ''
 as $$
 declare
+  title_pattern constant text := '(?<![[:alnum:].-])((s\.(pd\.i|pd|si|ag|kom|t|h|e|sos|ip|ked|psi|farm|kep|hum|ak|pt|tr|gz)'
+    || '|m\.(pd\.i|pd|si|sc|kom|m|t|h|kes|ag|hum|psi|ak|eng)|b\.sc|a\.md|ph\.d)\M(?!\.?[[:alnum:]/:])\.?'
+    || '|(dr|dra|drs|ir|prof|univ|hj|kh|st|h)\.(?![/:]))';
   link_pattern constant text := '(://|www\.|javascript:|data:|\m[[:alnum:]-]+\.[[:alpha:]]{2,}\M'
     || '|\m((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\M)';
 begin
-  if p_params::text ~* link_pattern then
+  if regexp_replace(p_params::text, title_pattern, ' ', 'gi') ~* link_pattern then
     return 'params_link';
-  elsif coalesce(p_recipient_name, '') ~* link_pattern then
+  elsif regexp_replace(coalesce(p_recipient_name, ''), title_pattern, ' ', 'gi') ~* link_pattern then
     return 'recipient_name_link';
   elsif p_params ? 'link_scope'
         and p_params ->> 'link_scope' not in ('pay', 'manage', 'view', 'review', 'certificate') then

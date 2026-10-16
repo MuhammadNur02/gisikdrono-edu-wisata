@@ -1332,20 +1332,21 @@ insert into public.notifications (booking_id, channel, template, recipient, para
   ('00000000-0000-4000-8000-0000000000e5', 'whatsapp', 'review_invite', '+6281234567891', '{"note": "bayar di gisikdrono.id/bayar"}', 'held:domain'),
   ('00000000-0000-4000-8000-0000000000e5', 'whatsapp', 'review_invite', '+6281234567891', '{"note": "bayar di gisik-bayar.top"}', 'held:host'),
   ('00000000-0000-4000-8000-0000000000e5', 'whatsapp', 'review_invite', '+6281234567891', '{"note": "bayar di 103.20.1.5/bayar"}', 'held:ip'),
+  ('00000000-0000-4000-8000-0000000000e5', 'whatsapp', 'review_invite', '+6281234567891', '{"note": "S.Pd.com"}', 'held:title-host'),
   ('00000000-0000-4000-8000-0000000000e5', 'whatsapp', 'review_invite', '+6281234567891', '{"link_scope": "admin"}', 'held:scope');
 select is(
   (select string_agg(dedupe_key || '=' || status || '/' || last_error_code, ' ' order by dedupe_key)
    from public.notifications where dedupe_key like 'held:%'),
   'held:domain=cancelled/blocked_params_link held:host=cancelled/blocked_params_link '
     || 'held:ip=cancelled/blocked_params_link held:scope=cancelled/blocked_unknown_link_scope '
-    || 'held:url=cancelled/blocked_params_link '
+    || 'held:title-host=cancelled/blocked_params_link held:url=cancelled/blocked_params_link '
     || 'held:www=cancelled/blocked_params_link',
   'a link, any name.tld host, an IP address or an unknown link scope holds the message as cancelled, with the reason'
 );
 select is(
   (select count(*)::int from public.security_events e join public.notifications n on n.id::text = e.entity_id
    where e.event_type = 'notification_blocked' and n.dedupe_key like 'held:%'),
-  6,
+  7,
   'and every held message is reported as notification_blocked'
 );
 select isnt(
@@ -1354,13 +1355,15 @@ select isnt(
   'enqueue_notification does not raise either; it returns the held message'
 );
 
+-- Indonesian academic titles are not hosts.
 insert into public.notifications (booking_id, channel, template, recipient, recipient_name, params, dedupe_key)
-values ('00000000-0000-4000-8000-0000000000e5', 'whatsapp', 'checked_in_thanks', '+6281234567891', 'Ani',
-        '{"session": "08.00-10.00 WIB", "total": "Rp 1.250.000"}', 'dots:1');
+values ('00000000-0000-4000-8000-0000000000e5', 'whatsapp', 'checked_in_thanks', '+6281234567891', 'Ani Lestari, S.Pd.',
+        '{"guide": "Budi S.Si", "head": "Dra. Rina M.Sc", "institution": "Univ.Diponegoro",
+          "session": "08.00-10.00 WIB", "total": "Rp 1.250.000"}', 'titles:1');
 select is(
-  (select status::text from public.notifications where dedupe_key = 'dots:1'),
+  (select status::text from public.notifications where dedupe_key = 'titles:1'),
   'queued',
-  'times and amounts written with dots are queued as they are'
+  'names and institutions with academic titles, times and amounts with dots are queued as they are'
 );
 
 update public.notifications set recipient_name = 'klik evil.shop'
