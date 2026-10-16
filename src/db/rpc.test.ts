@@ -49,9 +49,11 @@ describe('rpc wrappers', () => {
   });
 
   it('leaves out an RW for a role that has none, so the SQL default applies', async () => {
-    const { client, requests } = clientAnswering(204, null);
-    await setStaffRole(client, { userId: STAFF_ID, role: 'superadmin', rwId: null });
-    expect(requests[0]?.body).toEqual({ p_user_id: STAFF_ID, p_role: 'superadmin' });
+    const { client, requests } = clientAnswering(200, { stage: 'applied' });
+    await expect(
+      setStaffRole(client, { userId: STAFF_ID, role: 'none', rwId: null }),
+    ).resolves.toEqual({ stage: 'applied' });
+    expect(requests[0]?.body).toEqual({ p_user_id: STAFF_ID, p_role: 'none' });
   });
 
   it('logs a visitor event without an actor', async () => {
@@ -83,14 +85,16 @@ describe('rpc wrappers', () => {
     ).resolves.toBeNull();
   });
 
-  it('turns the MFA reset reply into camelCase', async () => {
+  it('turns a delayed staff change reply into camelCase', async () => {
     const { client } = clientAnswering(200, {
       stage: 'requested',
       completes_after: '2026-10-17T09:00:00+00:00',
+      lapses_after: '2026-10-23T09:00:00+00:00',
     });
     await expect(resetStaffMfa(client, STAFF_ID)).resolves.toEqual({
       stage: 'requested',
       completesAfter: '2026-10-17T09:00:00+00:00',
+      lapsesAfter: '2026-10-23T09:00:00+00:00',
     });
   });
 

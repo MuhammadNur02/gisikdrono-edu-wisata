@@ -78,8 +78,8 @@ select columns_are('public', 'rw_units', array[
 select columns_are('public', 'profiles', array[
   'id', 'email', 'full_name', 'phone', 'role', 'rw_id', 'is_active', 'mfa_required',
   'claims_version', 'avatar_path', 'last_login_at', 'created_by', 'created_at', 'updated_at',
-  -- added by 0004 for the 24-hour MFA reset
-  'mfa_reset_requested_at', 'mfa_reset_requested_by'
+  -- added by 0004 for the delayed staff changes (MFA reset, promotion to superadmin)
+  'mfa_reset_requested_at', 'mfa_reset_requested_by', 'promotion_requested_at', 'promotion_requested_by'
 ]);
 select columns_are('public', 'staff_invites', array[
   'id', 'email', 'role', 'rw_id', 'invite_code_hash', 'expires_at', 'accepted_at',

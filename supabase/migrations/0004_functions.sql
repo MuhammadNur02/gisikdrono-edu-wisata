@@ -1256,7 +1256,8 @@ as $$
     when 'session_templates' then array['id', 'rw_id', 'weekday', 'label', 'start_time', 'end_time', 'capacity',
       'is_active', 'created_at']
     when 'profiles' then array['id', 'role', 'rw_id', 'is_active', 'mfa_required', 'claims_version', 'last_login_at',
-      'mfa_reset_requested_at', 'mfa_reset_requested_by', 'created_by', 'created_at']
+      'mfa_reset_requested_at', 'mfa_reset_requested_by', 'promotion_requested_at',
+      'promotion_requested_by', 'created_by', 'created_at']
     when 'staff_invites' then array['id', 'role', 'rw_id', 'expires_at', 'accepted_at', 'accepted_user_id',
       'revoked_at', 'created_by', 'created_at']
     when 'rw_units' then array['id', 'code', 'slug', 'name', 'theme_label', 'tagline', 'hero_image_path',
@@ -2182,27 +2183,45 @@ $$;
 
 -- Moves a staff member to another role or RW. profiles_guard refuses the caller's own row and the last
 -- active superadmin, and bumps claims_version so tokens minted before the change stop working; the
--- open sessions are ended too, so the next request has to sign in again.
+-- open sessions are ended too, so the next request has to sign in again. Making someone superadmin
+-- hands over everything, so it waits like an MFA reset: the first call records the request, a call 24
+-- hours to 7 days later applies it, each step raises a critical alert, and cancel_superadmin_promotion
+-- stops it. Every other change applies at once. Returns the stage reached.
 -- p_rw_id defaults to NULL so the generated types let a superadmin or 'none' role pass none.
-create function public.set_staff_role(p_user_id uuid, p_role public.app_role, p_rw_id smallint default null) returns void
+create function public.set_staff_role(p_user_id uuid, p_role public.app_role, p_rw_id smallint default null)
+  returns jsonb
   language plpgsql security definer
   set search_path = ''
 as $$
 declare
   previous_settings jsonb;
   previous record;
+  is_promotion boolean;
 begin
   perform internal.require_superadmin_step_up();
   if (p_role = 'admin_rw') <> (p_rw_id is not null) then
     raise exception 'an RW admin needs an RW, and only an RW admin has one' using errcode = '22023';
   end if;
-  select p.role, p.rw_id into previous from public.profiles p where p.id = p_user_id;
+  select p.role, p.rw_id, p.promotion_requested_at into previous from public.profiles p where p.id = p_user_id;
   if not found then
     raise exception 'no staff profile %', p_user_id using errcode = 'P0002';
   end if;
 
+  is_promotion := p_role = 'superadmin' and previous.role <> 'superadmin';
+  if is_promotion and not internal.staff_change_is_due(previous.promotion_requested_at) then
+    if previous.promotion_requested_at is null or internal.staff_change_has_lapsed(previous.promotion_requested_at) then
+      update public.profiles set promotion_requested_at = now(), promotion_requested_by = auth.uid() where id = p_user_id;
+      perform internal.record_staff_change_step(p_user_id, 'superadmin_promotion', 'requested');
+      return internal.staff_change_requested();
+    end if;
+    raise exception 'this promotion to superadmin can be applied after %',
+      previous.promotion_requested_at + internal.staff_change_delay() using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+
   previous_settings := internal.push_settings('{"app.privileged_rpc": "on"}');
-  update public.profiles set role = p_role, rw_id = p_rw_id where id = p_user_id;
+  update public.profiles
+  set role = p_role, rw_id = p_rw_id, promotion_requested_at = null, promotion_requested_by = null
+  where id = p_user_id;
   perform internal.restore_settings(previous_settings);
   delete from auth.sessions where user_id = p_user_id;
 
@@ -2210,6 +2229,10 @@ begin
   values ('role_changed', 'high', auth.uid(), coalesce(p_rw_id, previous.rw_id), 'profiles', p_user_id::text,
           jsonb_build_object('from_role', previous.role, 'to_role', p_role,
                              'from_rw_id', previous.rw_id, 'to_rw_id', p_rw_id));
+  if is_promotion then
+    perform internal.record_staff_change_step(p_user_id, 'superadmin_promotion', 'completed');
+  end if;
+  return jsonb_build_object('stage', 'applied');
 end;
 $$;
 
@@ -2320,16 +2343,21 @@ grant execute on function public.svc_rate_limit_hit(text, integer, integer),
   to service_role;
 
 
--- ===== MFA reset with a 24-hour delay (decision of 2026-10-16, docs/Security.md §5.2, Task P1.3.21) =====
--- Removing someone's authenticator is how an attacker who holds a superadmin session would take over
--- another account, and the kelurahan may have a single superadmin, so dual approval is not always
--- possible. A reset is therefore requested first and completed no sooner than 24 hours later; both
--- steps raise a critical security alert, which the alert sender delivers out of band to the
--- SECURITY_ALERT_EMAIL / SECURITY_ALERT_WA_PHONE contacts so the kelurahan head can step in.
+-- ===== Delayed staff changes: MFA reset and promotion to superadmin (decision of 2026-10-16,
+-- docs/Security.md §5.2, Task P1.3.21) =====
+-- Removing someone's authenticator, or making someone superadmin, is how a stolen superadmin session
+-- would take over the kelurahan, and there may be a single superadmin, so dual approval is not always
+-- possible. Both changes are therefore requested first and applied no sooner than 24 hours and no
+-- later than 7 days after the request; an older request has lapsed and the next call starts a new
+-- one. Every step (requested, completed, cancelled) raises a critical alert that the alert sender
+-- delivers out of band to SECURITY_ALERT_EMAIL / SECURITY_ALERT_WA_PHONE, so the kelurahan head can
+-- have the request cancelled in time.
 
 alter table public.profiles
   add column mfa_reset_requested_at timestamptz,
-  add column mfa_reset_requested_by uuid references public.profiles(id);
+  add column mfa_reset_requested_by uuid references public.profiles(id),
+  add column promotion_requested_at timestamptz,
+  add column promotion_requested_by uuid references public.profiles(id);
 
 alter table public.security_events drop constraint security_events_event_type_check;
 alter table public.security_events add constraint security_events_event_type_check check (event_type in (
@@ -2339,33 +2367,69 @@ alter table public.security_events add constraint security_events_event_type_che
   'manual_checkin','manual_backfill','undo_check_in','cron_failed','notification_dead','price_changed',
   'session_changed_with_bookings','quota_pressure','mfa_reset'));
 
+create function internal.staff_change_delay() returns interval
+  language sql immutable
+  set search_path = ''
+as $$ select interval '24 hours'; $$;
+
+create function internal.staff_change_has_lapsed(p_requested_at timestamptz) returns boolean
+  language sql stable
+  set search_path = ''
+as $$ select p_requested_at < now() - interval '7 days'; $$;
+
+-- True only inside the window in which a request may be carried out.
+create function internal.staff_change_is_due(p_requested_at timestamptz) returns boolean
+  language sql stable
+  set search_path = ''
+as $$
+  select p_requested_at is not null and p_requested_at <= now() - internal.staff_change_delay()
+    and not internal.staff_change_has_lapsed(p_requested_at);
+$$;
+
+create function internal.staff_change_requested() returns jsonb
+  language sql stable
+  set search_path = ''
+as $$
+  select jsonb_build_object('stage', 'requested', 'completes_after', now() + internal.staff_change_delay(),
+                            'lapses_after', now() + interval '7 days');
+$$;
+
 -- One security event, one critical alert and one audit row per step. The alert keeps a single open row
--- per account; a second step bumps it and clears notified_at so it goes out again.
-create function internal.record_mfa_reset_step(p_user_id uuid, p_stage text) returns void
+-- per account and change; a later step bumps it and clears notified_at so it goes out again.
+create function internal.record_staff_change_step(p_user_id uuid, p_change text, p_stage text) returns void
   language plpgsql security definer
   set search_path = ''
 as $$
 declare
   staff_rw_id smallint := (select p.rw_id from public.profiles p where p.id = p_user_id);
-  step jsonb := jsonb_build_object('stage', p_stage, 'user_id', p_user_id, 'by', auth.uid());
+  step jsonb := jsonb_build_object('change', p_change, 'stage', p_stage, 'user_id', p_user_id, 'by', auth.uid());
+  title text := case p_change || ':' || p_stage
+    when 'mfa_reset:requested' then 'Permintaan reset MFA staf'
+    when 'mfa_reset:completed' then 'Reset MFA staf dijalankan'
+    when 'mfa_reset:cancelled' then 'Permintaan reset MFA staf dibatalkan'
+    when 'superadmin_promotion:requested' then 'Permintaan menjadikan staf superadmin'
+    when 'superadmin_promotion:completed' then 'Staf dijadikan superadmin'
+    when 'superadmin_promotion:cancelled' then 'Permintaan superadmin dibatalkan'
+  end;
 begin
   insert into public.security_events (event_type, severity, actor_id, rw_id, entity_type, entity_id, details)
-  values ('mfa_reset', 'critical', auth.uid(), staff_rw_id, 'profiles', p_user_id::text, step);
+  values (case p_change when 'mfa_reset' then 'mfa_reset' else 'role_changed' end, 'critical', auth.uid(),
+          staff_rw_id, 'profiles', p_user_id::text, step);
 
   insert into public.security_alerts (rule, severity, fingerprint, title, details)
-  values ('mfa_reset', 'critical', 'mfa_reset:' || p_user_id,
-          case p_stage when 'requested' then 'Permintaan reset MFA staf' else 'Reset MFA staf dijalankan' end, step)
+  values (p_change, 'critical', p_change || ':' || p_user_id, title, step)
   on conflict (fingerprint) where acknowledged_at is null do update
   set title = excluded.title, details = excluded.details, last_seen_at = now(),
       occurrences = public.security_alerts.occurrences + 1, notified_at = null;
 
-  perform internal.log_audit('staff.mfa_reset_' || p_stage, 'profiles', p_user_id::text, step - 'user_id');
+  perform internal.log_audit('staff.' || p_change || '_' || p_stage, 'profiles', p_user_id::text, step - 'user_id');
 end;
 $$;
 
--- The first call records the request; a call 24 hours or more later deletes every factor of the
+-- The first call records the request; a call 24 hours to 7 days later deletes every factor of the
 -- account, ends its sessions and bumps claims_version, so the person enrols a new authenticator at the
--- next sign-in. Returns the stage reached and, for a request, when it can be completed.
+-- next sign-in. Returns the stage reached and, for a request, when it can be completed and when it
+-- lapses.
 create function public.reset_staff_mfa(p_user_id uuid) returns jsonb
   language plpgsql security definer
   set search_path = ''
@@ -2382,13 +2446,13 @@ begin
     raise exception 'no staff profile %', p_user_id using errcode = 'P0002';
   end if;
 
-  if requested_at is null then
-    update public.profiles set mfa_reset_requested_at = now(), mfa_reset_requested_by = auth.uid() where id = p_user_id;
-    perform internal.record_mfa_reset_step(p_user_id, 'requested');
-    return jsonb_build_object('stage', 'requested', 'completes_after', now() + interval '24 hours');
-  end if;
-  if requested_at > now() - interval '24 hours' then
-    raise exception 'this MFA reset can be completed after %', requested_at + interval '24 hours'
+  if not internal.staff_change_is_due(requested_at) then
+    if requested_at is null or internal.staff_change_has_lapsed(requested_at) then
+      update public.profiles set mfa_reset_requested_at = now(), mfa_reset_requested_by = auth.uid() where id = p_user_id;
+      perform internal.record_staff_change_step(p_user_id, 'mfa_reset', 'requested');
+      return internal.staff_change_requested();
+    end if;
+    raise exception 'this MFA reset can be completed after %', requested_at + internal.staff_change_delay()
       using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
 
@@ -2397,12 +2461,54 @@ begin
   update public.profiles
   set mfa_reset_requested_at = null, mfa_reset_requested_by = null, claims_version = claims_version + 1
   where id = p_user_id;
-  perform internal.record_mfa_reset_step(p_user_id, 'completed');
+  perform internal.record_staff_change_step(p_user_id, 'mfa_reset', 'completed');
   return jsonb_build_object('stage', 'completed');
 end;
 $$;
 
-revoke execute on function internal.record_mfa_reset_step(uuid, text), public.reset_staff_mfa(uuid)
+-- Stops a pending MFA reset. The superadmin may, and so may the staff member it targets, who proves
+-- with a fresh code from the very authenticator the reset would remove that it is still theirs.
+create function public.cancel_staff_mfa_reset(p_user_id uuid) returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if not (public.is_superadmin() or (auth.uid() = p_user_id and public.is_staff())) then
+    raise exception 'only the superadmin or the staff member themselves cancels an MFA reset' using errcode = '42501';
+  end if;
+  if not internal.has_fresh_totp() then
+    raise exception 'confirm with a fresh authenticator code first' using errcode = '42501';
+  end if;
+  update public.profiles set mfa_reset_requested_at = null, mfa_reset_requested_by = null
+  where id = p_user_id and mfa_reset_requested_at is not null;
+  if not found then
+    raise exception 'no MFA reset is pending for %', p_user_id using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  perform internal.record_staff_change_step(p_user_id, 'mfa_reset', 'cancelled');
+end;
+$$;
+
+-- Stops a pending promotion to superadmin; any superadmin with a fresh TOTP check may.
+create function public.cancel_superadmin_promotion(p_user_id uuid) returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  perform internal.require_superadmin_step_up();
+  update public.profiles set promotion_requested_at = null, promotion_requested_by = null
+  where id = p_user_id and promotion_requested_at is not null;
+  if not found then
+    raise exception 'no promotion to superadmin is pending for %', p_user_id
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  perform internal.record_staff_change_step(p_user_id, 'superadmin_promotion', 'cancelled');
+end;
+$$;
+
+revoke execute on function internal.staff_change_delay(), internal.staff_change_has_lapsed(timestamptz),
+  internal.staff_change_is_due(timestamptz), internal.staff_change_requested(),
+  internal.record_staff_change_step(uuid, text, text), public.reset_staff_mfa(uuid),
+  public.cancel_staff_mfa_reset(uuid), public.cancel_superadmin_promotion(uuid)
   from public, anon, authenticated, service_role;
 
 

@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(368);
+select plan(387);
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -1755,6 +1755,133 @@ select is(
   'staff.mfa_reset_requested staff.mfa_reset_completed',
   'and both steps are audited'
 );
+
+-- A request is only good for a week, and it can be called off.
+grant execute on function public.reset_staff_mfa(uuid), public.cancel_staff_mfa_reset(uuid),
+  public.cancel_superadmin_promotion(uuid), public.set_staff_role(uuid, public.app_role, smallint) to authenticated;
+select set_config('request.jwt.claims', (select claims from step_up_claims where method = 'totp' and seconds_ago = 60), true);
+set local role authenticated;
+select is(
+  public.reset_staff_mfa('00000000-0000-4000-8000-000000000002') ->> 'stage',
+  'requested',
+  'a reset of the RW admin''s authenticator is requested'
+);
+reset role;
+update public.profiles set mfa_reset_requested_at = now() - interval '8 days'
+where id = '00000000-0000-4000-8000-000000000002';
+set local role authenticated;
+select is(
+  public.reset_staff_mfa('00000000-0000-4000-8000-000000000002') ->> 'stage',
+  'requested',
+  'a request older than a week has lapsed, so the next call starts a new one instead of resetting'
+);
+select lives_ok(
+  $$select public.cancel_staff_mfa_reset('00000000-0000-4000-8000-000000000002')$$,
+  'the superadmin calls a pending reset off'
+);
+select throws_ok(
+  $$select public.cancel_staff_mfa_reset('00000000-0000-4000-8000-000000000002')$$,
+  'P0001', null, 'after which there is nothing left to cancel'
+);
+select is(
+  public.reset_staff_mfa('00000000-0000-4000-8000-000000000002') ->> 'stage',
+  'requested',
+  'a fresh request'
+);
+reset role;
+
+-- The RW admin, a minute after a TOTP check with the authenticator the reset would remove.
+select set_config('request.jwt.claims', (
+  select jsonb_build_object('sub', id, 'role', 'authenticated', 'aal', 'aal2', 'app_role', role, 'app_rw_id', rw_id,
+           'claims_version', claims_version,
+           'amr', jsonb_build_array(jsonb_build_object('method', 'totp', 'timestamp', extract(epoch from now())::bigint - 60)))::text
+  from public.profiles where id = '00000000-0000-4000-8000-000000000002'), true);
+set local role authenticated;
+select throws_ok(
+  $$select public.cancel_staff_mfa_reset('00000000-0000-4000-8000-000000000004')$$,
+  '42501', 'only the superadmin or the staff member themselves cancels an MFA reset',
+  'an RW admin cannot call off a reset of someone else'
+);
+select lives_ok(
+  $$select public.cancel_staff_mfa_reset('00000000-0000-4000-8000-000000000002')$$,
+  'but the staff member can call off a reset of their own authenticator, proving they still hold it'
+);
+reset role;
+select is(
+  (select string_agg(details ->> 'stage', ' ' order by id) from public.security_events
+   where event_type = 'mfa_reset' and entity_id = '00000000-0000-4000-8000-000000000002'),
+  'requested requested cancelled requested cancelled',
+  'every step, the cancellations included, is a critical event'
+);
+
+-- Making someone superadmin waits the same way (review L9).
+select set_config('request.jwt.claims', (select claims from step_up_claims where method = 'totp' and seconds_ago = 60), true);
+set local role authenticated;
+select is(
+  public.set_staff_role('00000000-0000-4000-8000-000000000003', 'superadmin') ->> 'stage',
+  'requested',
+  'a promotion to superadmin is only requested at first'
+);
+select throws_ok(
+  $$select public.set_staff_role('00000000-0000-4000-8000-000000000003', 'superadmin')$$,
+  'P0001', null, 'and cannot be applied within 24 hours'
+);
+reset role;
+select is(
+  (select role::text from public.profiles where id = '00000000-0000-4000-8000-000000000003'),
+  'admin_rw',
+  'so the role has not changed yet'
+);
+update public.profiles set promotion_requested_at = now() - interval '25 hours'
+where id = '00000000-0000-4000-8000-000000000003';
+set local role authenticated;
+select is(
+  public.set_staff_role('00000000-0000-4000-8000-000000000003', 'superadmin') ->> 'stage',
+  'applied',
+  'a day later the promotion is applied'
+);
+reset role;
+select is(
+  (select role::text || ' ' || (promotion_requested_at is null) from public.profiles
+   where id = '00000000-0000-4000-8000-000000000003'),
+  'superadmin true',
+  'the account is superadmin and its request is closed'
+);
+select is(
+  (select string_agg(details ->> 'stage', ' ' order by id) from public.security_events
+   where event_type = 'role_changed' and severity = 'critical' and entity_id = '00000000-0000-4000-8000-000000000003'),
+  'requested completed',
+  'both steps of a promotion raise critical events'
+);
+select is(
+  (select severity::text || ' ' || occurrences from public.security_alerts
+   where fingerprint = 'superadmin_promotion:00000000-0000-4000-8000-000000000003'),
+  'critical 2',
+  'and one open critical alert, queued again at each step'
+);
+set local role authenticated;
+select is(
+  public.set_staff_role('00000000-0000-4000-8000-000000000002', 'superadmin') ->> 'stage',
+  'requested',
+  'another promotion is requested'
+);
+select lives_ok(
+  $$select public.cancel_superadmin_promotion('00000000-0000-4000-8000-000000000002')$$,
+  'and called off'
+);
+select throws_ok(
+  $$select public.cancel_superadmin_promotion('00000000-0000-4000-8000-000000000002')$$,
+  'P0001', null, 'once'
+);
+select is(
+  public.set_staff_role('00000000-0000-4000-8000-000000000002', 'admin_rw', 5::smallint) ->> 'stage',
+  'applied',
+  'any other role change still applies at once'
+);
+reset role;
+select set_config('request.jwt.claims', '', true);
+revoke execute on function public.reset_staff_mfa(uuid), public.cancel_staff_mfa_reset(uuid),
+  public.cancel_superadmin_promotion(uuid), public.set_staff_role(uuid, public.app_role, smallint) from authenticated;
 
 -- ===== Service-role entry points =====
 

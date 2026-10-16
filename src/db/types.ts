@@ -2171,6 +2171,8 @@ export type Database = {
           mfa_reset_requested_at: string | null
           mfa_reset_requested_by: string | null
           phone: string | null
+          promotion_requested_at: string | null
+          promotion_requested_by: string | null
           role: Database["public"]["Enums"]["app_role"]
           rw_id: number | null
           updated_at: string
@@ -2189,6 +2191,8 @@ export type Database = {
           mfa_reset_requested_at?: string | null
           mfa_reset_requested_by?: string | null
           phone?: string | null
+          promotion_requested_at?: string | null
+          promotion_requested_by?: string | null
           role?: Database["public"]["Enums"]["app_role"]
           rw_id?: number | null
           updated_at?: string
@@ -2207,6 +2211,8 @@ export type Database = {
           mfa_reset_requested_at?: string | null
           mfa_reset_requested_by?: string | null
           phone?: string | null
+          promotion_requested_at?: string | null
+          promotion_requested_by?: string | null
           role?: Database["public"]["Enums"]["app_role"]
           rw_id?: number | null
           updated_at?: string
@@ -2222,6 +2228,13 @@ export type Database = {
           {
             foreignKeyName: "profiles_mfa_reset_requested_by_fkey"
             columns: ["mfa_reset_requested_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_promotion_requested_by_fkey"
+            columns: ["promotion_requested_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -4099,6 +4112,14 @@ export type Database = {
       aal2: { Args: never; Returns: boolean }
       app_role: { Args: never; Returns: string }
       app_rw_id: { Args: never; Returns: number }
+      cancel_staff_mfa_reset: {
+        Args: { p_user_id: string }
+        Returns: undefined
+      }
+      cancel_superadmin_promotion: {
+        Args: { p_user_id: string }
+        Returns: undefined
+      }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       generate_visit_sessions: {
         Args: { p_from: string; p_rw_id: number; p_to: string }
@@ -4147,7 +4168,7 @@ export type Database = {
           p_rw_id?: number
           p_user_id: string
         }
-        Returns: undefined
+        Returns: Json
       }
       set_staff_status: {
         Args: { p_is_active: boolean; p_reason: string; p_user_id: string }

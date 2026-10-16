@@ -52,17 +52,46 @@ export async function rpcLogUiEvent(
   );
 }
 
+// A promotion to superadmin and an MFA reset are first requested and carried out 24 hours to 7 days
+// later; every other role change applies at once (docs/Security.md §5.2).
+const staffChangeSchema = z.discriminatedUnion('stage', [
+  z
+    .object({
+      stage: z.literal('requested'),
+      completes_after: z.string(),
+      lapses_after: z.string(),
+    })
+    .strict(),
+  z.object({ stage: z.literal('completed') }).strict(),
+  z.object({ stage: z.literal('applied') }).strict(),
+]);
+export type StaffChangeStage =
+  | { stage: 'requested'; completesAfter: string; lapsesAfter: string }
+  | { stage: 'completed' }
+  | { stage: 'applied' };
+
+function staffChangeStageOf(reply: Json): StaffChangeStage {
+  const result = staffChangeSchema.parse(reply);
+  if (result.stage !== 'requested') return { stage: result.stage };
+  return {
+    stage: 'requested',
+    completesAfter: result.completes_after,
+    lapsesAfter: result.lapses_after,
+  };
+}
+
 export async function setStaffRole(
   client: DatabaseClient,
   change: { userId: string; role: Enums['app_role']; rwId: number | null },
-): Promise<void> {
-  await resultOf(
+): Promise<StaffChangeStage> {
+  const reply = await resultOf(
     client.rpc('set_staff_role', {
       p_user_id: change.userId,
       p_role: change.role,
       p_rw_id: change.rwId ?? undefined,
     }),
   );
+  return staffChangeStageOf(reply);
 }
 
 export async function setStaffStatus(
@@ -78,22 +107,22 @@ export async function setStaffStatus(
   );
 }
 
-const mfaResetSchema = z.discriminatedUnion('stage', [
-  z.object({ stage: z.literal('requested'), completes_after: z.string() }).strict(),
-  z.object({ stage: z.literal('completed') }).strict(),
-]);
-export type MfaResetStage = { stage: 'requested'; completesAfter: string } | { stage: 'completed' };
-
 export async function resetStaffMfa(
   client: DatabaseClient,
   userId: string,
-): Promise<MfaResetStage> {
-  const result = mfaResetSchema.parse(
-    await resultOf(client.rpc('reset_staff_mfa', { p_user_id: userId })),
-  );
-  return result.stage === 'requested'
-    ? { stage: 'requested', completesAfter: result.completes_after }
-    : { stage: 'completed' };
+): Promise<StaffChangeStage> {
+  return staffChangeStageOf(await resultOf(client.rpc('reset_staff_mfa', { p_user_id: userId })));
+}
+
+export async function cancelStaffMfaReset(client: DatabaseClient, userId: string): Promise<void> {
+  await resultOf(client.rpc('cancel_staff_mfa_reset', { p_user_id: userId }));
+}
+
+export async function cancelSuperadminPromotion(
+  client: DatabaseClient,
+  userId: string,
+): Promise<void> {
+  await resultOf(client.rpc('cancel_superadmin_promotion', { p_user_id: userId }));
 }
 
 const bookingContactSchema = z
