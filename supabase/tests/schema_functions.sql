@@ -1919,7 +1919,8 @@ select is(
   'both changes raise security events'
 );
 select is(
-  (select actor_role || ': ' || (metadata ->> 'reason') from public.audit_logs where action = 'staff.deactivated'),
+  (select actor_role || ': ' || (metadata ->> 'reason') from public.audit_logs
+   where action = 'staff.deactivated' and entity_id = '00000000-0000-4000-8000-000000000002'),
   'superadmin: Pindah tugas ke kecamatan',
   'and the deactivation is audited with its reason'
 );
@@ -2030,7 +2031,8 @@ select is(
   'with one open critical alert, queued for out-of-band delivery again at each step'
 );
 select is(
-  (select string_agg(action, ' ' order by id) from public.audit_logs where action like 'staff.mfa_reset_%'),
+  (select string_agg(action, ' ' order by id) from public.audit_logs
+   where action like 'staff.mfa_reset_%' and entity_id = '00000000-0000-4000-8000-000000000004'),
   'staff.mfa_reset_requested staff.mfa_reset_completed',
   'and both steps are audited'
 );
