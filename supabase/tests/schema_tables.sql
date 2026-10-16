@@ -1,7 +1,7 @@
 -- Structure test for 0003_tables, extended group by group: exact columns, the types other code
 -- relies on, keys, and the CHECK / unique rules proven by trying to break them.
 begin;
-select plan(210);
+select plan(212);
 
 -- ===== Every table: RLS from birth, no API rights, updated_at kept by trigger =====
 
@@ -1164,6 +1164,33 @@ insert into public.rate_limit_buckets (key, window_start, count) values ('otp:ph
 select throws_ok(
   $$insert into public.rate_limit_buckets (key, window_start, count) values ('otp:phone:abc', '2026-11-12 09:00+07', 1)$$,
   '23505', null, 'one counter per key and window'
+);
+
+-- ===== Cross-cutting (Task P1.2.13) =====
+
+select tables_are(
+  'public',
+  array['rw_units', 'profiles', 'staff_invites', 'site_settings', 'session_templates', 'visit_sessions', 'tour_packages', 'tour_package_legs', 'tour_package_price_tiers', 'umkm_vendors', 'products_umkm', 'package_price_history', 'bookings', 'booking_legs', 'booking_addons', 'booking_participants', 'booking_events', 'guest_otps', 'payments', 'payment_events', 'webhook_rejections', 'payment_adjustments', 'reconciliation_runs', 'reconciliation_issues', 'quotations', 'invoices', 'document_sequences', 'certificates', 'tickets_qr', 'ticket_scans', 'galleries', 'articles', 'booklets', 'hero_banners', 'activity_points', 'performance_schedules', 'reviews', 'revenue_share_rules', 'revenue_share_rule_lines', 'revenue_share_entries', 'payout_batches', 'notifications', 'security_events', 'security_alerts', 'exports', 'dsr_requests', 'audit_logs', 'login_attempts', 'rate_limit_buckets'],
+  'public holds exactly the 49 tables of the CLAUDE.md A.1 registry'
+);
+
+-- docs/PRD.md §8.1: money and operational rows are never deleted through a parent. Only these
+-- catalogue, rule and media links may cascade (c) or clear themselves (n); everything else refuses.
+select is(
+  array(
+    select c.conrelid::regclass::text || '.' || a.attname || ':' || c.confdeltype::text
+    from pg_constraint c
+    join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
+    where c.contype = 'f' and c.connamespace = 'public'::regnamespace and c.confdeltype not in ('a', 'r')
+    order by 1
+  ),
+  array[
+    'certificates.participant_id:n', 'dsr_requests.otp_id:n', 'galleries.booking_id:n',
+    'hero_banners.product_id:n', 'package_price_history.tier_id:n', 'performance_schedules.package_id:n',
+    'revenue_share_rule_lines.rule_id:c', 'revenue_share_rules.package_id:c', 'revenue_share_rules.product_id:c',
+    'tour_package_legs.package_id:c', 'tour_package_price_tiers.package_id:c', 'visit_sessions.template_id:n'
+  ],
+  'only the PRD catalogue, rule and media links cascade or set null; every other reference refuses deletes'
 );
 
 select * from finish();
