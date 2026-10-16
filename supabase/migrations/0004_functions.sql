@@ -188,6 +188,9 @@ declare
   -- True when the window is already full, or when this failure is the one that fills it.
   is_locked boolean;
 begin
+  -- Parallel guesses would otherwise all count the same earlier failures and all get through; one
+  -- user's attempts take turns instead (docs/Security.md AUTH-10).
+  perform pg_advisory_xact_lock(hashtext('login_attempts:' || p_user_id::text));
   select count(*) into earlier_failures
   from public.login_attempts
   where user_id = p_user_id and not success and attempted_at > now() - lockout_window;
@@ -277,20 +280,38 @@ create function internal.profiles_guard() returns trigger
   set search_path = ''
 as $$
 declare
-  protected_change boolean :=
-    new.role is distinct from old.role
+  is_privileged boolean := coalesce(current_setting('app.privileged_rpc', true), '') = 'on';
+  protected_change boolean;
+  loses_superadmin boolean;
+begin
+  -- A profile created outside the privileged and system paths (migrations, seed, the Auth trigger)
+  -- starts without a role, so a service-role bug cannot mint staff, let alone a superadmin.
+  if tg_op = 'INSERT' then
+    if (new.role <> 'none' or new.rw_id is not null) and not is_privileged
+       and coalesce(current_setting('role', true), 'none') <> 'none' then
+      raise exception 'a new profile starts without a role; set_staff_role gives it one'
+        using errcode = '42501';
+    end if;
+    return new;
+  end if;
+
+  -- Going back would make tokens minted before a role change valid again.
+  if new.claims_version < old.claims_version then
+    raise exception 'claims_version never goes back' using errcode = '42501';
+  end if;
+
+  protected_change := new.role is distinct from old.role
     or new.rw_id is distinct from old.rw_id
     or new.is_active is distinct from old.is_active
     or new.mfa_required is distinct from old.mfa_required
     or new.email is distinct from old.email;
-  loses_superadmin boolean :=
-    old.role = 'superadmin' and old.is_active and (new.role <> 'superadmin' or not new.is_active);
-begin
+  loses_superadmin := old.role = 'superadmin' and old.is_active
+    and (new.role <> 'superadmin' or not new.is_active);
   if not protected_change then
     return new;
   end if;
 
-  if coalesce(current_setting('app.privileged_rpc', true), '') <> 'on' then
+  if not is_privileged then
     raise exception 'role, rw_id, is_active, mfa_required and email change only through set_staff_role / set_staff_status'
       using errcode = '42501';
   end if;
@@ -300,12 +321,17 @@ begin
       using errcode = '42501';
   end if;
 
-  if loses_superadmin and not exists (
-    select 1 from public.profiles p
-    where p.role = 'superadmin' and p.is_active and p.id <> old.id
-  ) then
-    raise exception 'the last active superadmin cannot be demoted or deactivated'
-      using errcode = 'P0001', hint = 'STATE_INVALID';
+  -- Two superadmins removing each other at the same moment would each still see the other; taking
+  -- turns makes the second one see the first change.
+  if loses_superadmin then
+    perform pg_advisory_xact_lock(hashtext('profiles:active_superadmins'));
+    if not exists (
+      select 1 from public.profiles p
+      where p.role = 'superadmin' and p.is_active and p.id <> old.id
+    ) then
+      raise exception 'the last active superadmin cannot be demoted or deactivated'
+        using errcode = 'P0001', hint = 'STATE_INVALID';
+    end if;
   end if;
 
   new.claims_version := old.claims_version + 1;
@@ -313,7 +339,7 @@ begin
 end;
 $$;
 
-create trigger profiles_guard before update on public.profiles
+create trigger profiles_guard before insert or update on public.profiles
   for each row execute function internal.profiles_guard();
 
 
@@ -2446,6 +2472,8 @@ begin
   if length(btrim(coalesce(p_reason, ''))) not between 3 and 300 then
     raise exception 'a reveal needs a reason of 3 to 300 characters' using errcode = '22023';
   end if;
+  -- One staff member's reveals take turns, so parallel calls cannot all count below the cap.
+  perform pg_advisory_xact_lock(hashtext('pii_reveal:' || auth.uid()::text));
   select count(*) into revealed_today from public.security_events e
   where e.event_type = 'pii_revealed' and e.actor_id = auth.uid()
     and e.occurred_at >= public.today_jkt()::timestamp at time zone 'Asia/Jakarta';
@@ -2460,7 +2488,7 @@ begin
   values ('pii_revealed', 'info', auth.uid(), rw_ids[1], 'bookings', p_booking_id::text,
           jsonb_build_object('reason', btrim(p_reason)));
 
-  if revealed_today + 1 = daily_cap then
+  if revealed_today + 1 >= daily_cap then
     insert into public.security_alerts (rule, severity, fingerprint, title, details)
     values ('pii_reveal_cap', 'high', 'pii_reveal_cap:' || auth.uid() || ':' || public.today_jkt(),
             'Batas harian buka kontak tercapai', jsonb_build_object('actor_id', auth.uid(), 'cap', daily_cap))

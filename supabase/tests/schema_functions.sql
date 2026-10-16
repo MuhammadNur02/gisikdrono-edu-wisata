@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(344);
+select plan(352);
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -12,6 +12,18 @@ create function pg_temp.jakarta_time(p_days integer, p_time time) returns timest
   language sql stable
 as $$ select (public.today_jkt() + p_days + p_time) at time zone 'Asia/Jakarta'; $$;
 grant execute on function pg_temp.days_from_today(integer), pg_temp.jakarta_time(integer, time) to public;
+-- Whether this session holds the transaction advisory lock a function takes with
+-- pg_advisory_xact_lock(hashtext(key)). Such a lock lasts until the test's transaction ends, so seeing
+-- it after a call proves the call took it; the race it prevents needs two sessions to show.
+create function pg_temp.holds_advisory_lock(p_key text) returns boolean
+  language sql stable
+as $$
+  select exists (
+    select 1 from pg_locks l
+    where l.locktype = 'advisory' and l.pid = pg_backend_pid() and l.objsubid = 1
+      and l.classid = ((hashtext(p_key)::bigint >> 32) & 4294967295)::oid
+      and l.objid = (hashtext(p_key)::bigint & 4294967295)::oid);
+$$;
 
 -- Fixtures, rolled back at the end. The pepper is a throwaway local value.
 select vault.create_secret('local-test-pepper-not-a-real-secret-0000000', 'otp_pepper', 'test only');
@@ -207,6 +219,10 @@ select is(
   1::bigint,
   'one login_locked event per lockout, not one per refused attempt'
 );
+select ok(
+  pg_temp.holds_advisory_lock('login_attempts:00000000-0000-4000-8000-000000000001'),
+  'one user''s login attempts take turns, so parallel guesses cannot all see a short count'
+);
 select is(internal.record_login_attempt('00000000-0000-4000-8000-000000000002', true) ->> 'decision', 'continue', 'another user with a correct password continues');
 select throws_ok(
   $$select public.hook_password_verification_attempt('{"user_id":"00000000-0000-4000-8000-000000000001","valid":false}')$$,
@@ -342,10 +358,42 @@ select lives_ok(
   $$update public.profiles set is_active = false where id = '00000000-0000-4000-8000-000000000001'$$,
   'once another superadmin is active, the first can be deactivated'
 );
+select ok(
+  pg_temp.holds_advisory_lock('profiles:active_superadmins'),
+  'and removing a superadmin waits its turn, so two cannot remove each other at once'
+);
+select ok(not pg_temp.holds_advisory_lock('a-key-nobody-took'), 'the lock check tells a held lock from any other');
 -- Put the first superadmin back; later sections sign in as them.
 update public.profiles set is_active = true where id = '00000000-0000-4000-8000-000000000001';
 select set_config('app.privileged_rpc', '', true);
 select set_config('app.actor_id', '', true);
+
+select throws_ok(
+  $$update public.profiles set claims_version = claims_version - 1 where id = '00000000-0000-4000-8000-000000000002'$$,
+  '42501', 'claims_version never goes back', 'claims_version never goes back, not even for the system'
+);
+-- A new profile from outside the system and privileged paths starts without a role.
+insert into auth.users (id, email) values ('00000000-0000-4000-8000-000000000005', 'baru@example.test');
+set local role service_role;
+select set_config('app.actor_id', '00000000-0000-4000-8000-000000000001', true);
+select throws_ok(
+  $$insert into public.profiles (id, email, full_name, role, is_active)
+    values ('00000000-0000-4000-8000-000000000005', 'baru@example.test', 'Orang Baru', 'superadmin', true)$$,
+  '42501', 'a new profile starts without a role; set_staff_role gives it one',
+  'the service role cannot create a superadmin profile'
+);
+select throws_ok(
+  $$insert into public.profiles (id, email, full_name, role, rw_id, is_active)
+    values ('00000000-0000-4000-8000-000000000005', 'baru@example.test', 'Orang Baru', 'admin_rw', 5, true)$$,
+  '42501', null, 'nor an RW admin'
+);
+select lives_ok(
+  $$insert into public.profiles (id, email, full_name, role, is_active)
+    values ('00000000-0000-4000-8000-000000000005', 'baru@example.test', 'Orang Baru', 'none', true)$$,
+  'only a profile without a role'
+);
+select set_config('app.actor_id', '', true);
+reset role;
 
 -- ===== Guard triggers (Task P1.3.06, P1.3.07) =====
 
@@ -2036,6 +2084,10 @@ select is(
   'the participant list comes through its own RPC'
 );
 reset role;
+select ok(
+  pg_temp.holds_advisory_lock('pii_reveal:00000000-0000-4000-8000-000000000002'),
+  'one staff member''s reveals take turns, so parallel calls cannot all count below the cap'
+);
 select is(
   (select details ->> 'reason' from public.security_events
    where event_type = 'pii_revealed' and entity_id = '00000000-0000-4000-8000-000000001e06'),

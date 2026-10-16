@@ -432,7 +432,8 @@ Actions that require a fresh TOTP verification within the last **5 minutes** (`s
 -- public.hook_password_verification_attempt(event jsonb) returns jsonb   [RT]
 -- 1 insert into public.login_attempts(user_id, email_hash, ip, success, reason, attempted_at)
 --   email_hash = hex(hmac-sha256(lower(trim(email)), key = vault 'otp_pepper'))
--- 2 failures := count(*) where user_id = event.user_id and not success and attempted_at > now() - interval '15 min'
+-- 2 pg_advisory_xact_lock per user_id first, so parallel guesses take turns instead of all counting the same failures;
+--   failures := count(*) where user_id = event.user_id and not success and attempted_at > now() - interval '15 min'
 -- 3 failures >= 5  -> return {decision:'reject', message:'Terlalu banyak percobaan. Coba lagi dalam 15 menit.'} + security_events.login_locked
 -- 4 failures 3..4 -> progressive delay (pg_sleep 0.5 s / 1 s: Auth cancels a hook after 2 s and a cancelled hook records nothing,
 --   so a 2 s wait would keep the count from ever reaching the lockout) + security_events.login_failed
@@ -496,6 +497,8 @@ create or replace function public.aal2() returns boolean language sql stable as 
 ### 6.4 Self-escalation prevention and privileged RPCs (AZ-04, AZ-10)
 
 `revoke update on public.profiles from authenticated; grant update (full_name, phone, avatar_path) on public.profiles to authenticated;` so `role`, `rw_id`, `is_active`, `mfa_required`, `claims_version` are unreachable by any client query. Trigger `profiles_guard` raises `42501` on any change of those columns unless `current_setting('app.privileged_rpc', true) = 'on'`, which only `set_staff_role` and `set_staff_status` set (`set local`), both `SECURITY DEFINER`, owner `postgres`, superadmin + `aal2()` + fresh TOTP, never for `auth.uid()`'s own row. There is **no** `current_user = 'postgres'`/`'service_role'` escape hatch **[RT]**; pgTAP asserts `set role service_role; update profiles set role = …` raises.
+
+`profiles_guard` also fires on INSERT: outside the privileged and system paths (migrations, seed, the Auth trigger) a new profile starts with role `none` and no RW, so a service-role bug cannot mint staff. `claims_version` never goes back, and the "last active superadmin" check runs under `pg_advisory_xact_lock(hashtext('profiles:active_superadmins'))`, so two superadmins cannot remove each other at the same moment.
 
 ### 6.5 SECURITY DEFINER hygiene, views, actor attribution (AZ-05, AZ-13, AZ-14, AZ-15)
 
