@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(432);
+select plan(435);
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -1312,11 +1312,6 @@ select throws_ok(
     values ('00000000-0000-4000-8000-0000000000e5', 'email', 'booking_created', 'someone.else@example.test', 'direct:2')$$,
   '42501', null, 'a booking''s message never goes to another address'
 );
-select throws_ok(
-  $$select internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'review_invite', 'email',
-      '{"link": "https://gisikdrono.example/reservasi/GSK-7F3K9Q2N?t=abc"}')$$,
-  '22023', null, 'params never carry a URL'
-);
 select is(
   internal.enqueue_notification('00000000-0000-4000-8000-0000000000e1', 'review_invite', 'email', '{}'),
   null,
@@ -1327,41 +1322,67 @@ select lives_ok(
     values ('email', 'security_alert', 'alerts@example.test', '{"severity": "high"}', 'alert:fingerprint-1')$$,
   'staff alerts, which belong to no booking, are queued as they are'
 );
-select throws_ok(
-  $$select internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'review_invite', 'whatsapp',
-      '{"link_scope": "admin"}')$$,
-  '22023', 'unknown link scope admin', 'a link scope outside the five the worker knows is refused'
+
+-- Refused text never fails the transaction that queues it, since a payment may be committing there: the
+-- message is held as cancelled with its reason and reported (re-review of L7).
+insert into public.notifications (booking_id, channel, template, recipient, params, dedupe_key) values
+  ('00000000-0000-4000-8000-0000000000e5', 'email', 'review_invite', 'budi@example.test',
+   '{"link": "https://gisikdrono.example/reservasi/GSK-7F3K9Q2N?t=abc"}', 'held:url'),
+  ('00000000-0000-4000-8000-0000000000e5', 'whatsapp', 'review_invite', '+6281234567891', '{"note": "lihat www.contoh.id"}', 'held:www'),
+  ('00000000-0000-4000-8000-0000000000e5', 'whatsapp', 'review_invite', '+6281234567891', '{"note": "bayar di gisikdrono.id/bayar"}', 'held:domain'),
+  ('00000000-0000-4000-8000-0000000000e5', 'whatsapp', 'review_invite', '+6281234567891', '{"note": "bayar di gisik-bayar.top"}', 'held:host'),
+  ('00000000-0000-4000-8000-0000000000e5', 'whatsapp', 'review_invite', '+6281234567891', '{"note": "bayar di 103.20.1.5/bayar"}', 'held:ip'),
+  ('00000000-0000-4000-8000-0000000000e5', 'whatsapp', 'review_invite', '+6281234567891', '{"link_scope": "admin"}', 'held:scope');
+select is(
+  (select string_agg(dedupe_key || '=' || status || '/' || last_error_code, ' ' order by dedupe_key)
+   from public.notifications where dedupe_key like 'held:%'),
+  'held:domain=cancelled/blocked_params_link held:host=cancelled/blocked_params_link '
+    || 'held:ip=cancelled/blocked_params_link held:scope=cancelled/blocked_unknown_link_scope '
+    || 'held:url=cancelled/blocked_params_link '
+    || 'held:www=cancelled/blocked_params_link',
+  'a link, any name.tld host, an IP address or an unknown link scope holds the message as cancelled, with the reason'
 );
-select throws_ok(
-  $$select internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'review_invite', 'whatsapp',
-      '{"note": "lihat www.contoh.id"}')$$,
-  '22023', null, 'so is a www link'
+select is(
+  (select count(*)::int from public.security_events e join public.notifications n on n.id::text = e.entity_id
+   where e.event_type = 'notification_blocked' and n.dedupe_key like 'held:%'),
+  6,
+  'and every held message is reported as notification_blocked'
 );
-select throws_ok(
-  $$select internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'review_invite', 'whatsapp',
-      '{"note": "bayar di gisikdrono.id/bayar"}')$$,
-  '22023', null, 'and a bare domain'
+select isnt(
+  internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'review_invite', 'whatsapp', '{"note": "bayar di gisik-bayar.top"}'),
+  null,
+  'enqueue_notification does not raise either; it returns the held message'
 );
-select throws_ok(
-  $$select internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'review_invite', 'whatsapp',
-      '{"note": "bayar di gisik-bayar.top"}')$$,
-  '22023', null, 'any name.tld host, whatever its ending (review L7)'
+
+insert into public.notifications (booking_id, channel, template, recipient, recipient_name, params, dedupe_key)
+values ('00000000-0000-4000-8000-0000000000e5', 'whatsapp', 'checked_in_thanks', '+6281234567891', 'Ani',
+        '{"session": "08.00-10.00 WIB", "total": "Rp 1.250.000"}', 'dots:1');
+select is(
+  (select status::text from public.notifications where dedupe_key = 'dots:1'),
+  'queued',
+  'times and amounts written with dots are queued as they are'
 );
-select throws_ok(
-  $$select internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'review_invite', 'whatsapp',
-      '{"note": "bayar di 103.20.1.5/bayar"}')$$,
-  '22023', null, 'and an IP address'
-);
-select throws_ok(
-  $$update public.notifications set recipient_name = 'klik evil.shop'
-    where dedupe_key = 'booking:00000000-0000-4000-8000-0000000000e5:booking_created:whatsapp'$$,
-  '22023', 'notification params and recipient_name never carry a link, host or IP address; the worker mints links from params.link_scope',
+
+update public.notifications set recipient_name = 'klik evil.shop'
+where dedupe_key = 'booking:00000000-0000-4000-8000-0000000000e5:booking_created:whatsapp';
+select is(
+  (select status || '/' || last_error_code from public.notifications
+   where dedupe_key = 'booking:00000000-0000-4000-8000-0000000000e5:booking_created:whatsapp'),
+  'cancelled/blocked_recipient_name_link',
   'the greeting name is checked too, on an update as well'
 );
-select lives_ok(
-  $$select internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'checked_in_thanks', 'whatsapp',
-      '{"session": "08.00-10.00 WIB", "total": "Rp 1.250.000"}')$$,
-  'times and amounts written with dots still pass'
+update public.notifications set status = 'queued' where dedupe_key = 'booking:00000000-0000-4000-8000-0000000000e5:booking_created:whatsapp';
+select is(
+  (select status::text from public.notifications where dedupe_key = 'booking:00000000-0000-4000-8000-0000000000e5:booking_created:whatsapp'),
+  'cancelled',
+  'a held message cannot be queued again while its text is refused'
+);
+update public.notifications set recipient_name = 'Budi', status = 'queued', last_error_code = null, last_error = null
+where dedupe_key = 'booking:00000000-0000-4000-8000-0000000000e5:booking_created:whatsapp';
+select is(
+  (select status::text from public.notifications where dedupe_key = 'booking:00000000-0000-4000-8000-0000000000e5:booking_created:whatsapp'),
+  'queued',
+  'once its text is clean it can'
 );
 select throws_ok(
   $$update public.notifications set recipient = '+6289999999999'
@@ -1376,6 +1397,58 @@ select lives_ok(
   'while emptying old params, as the prune does, works even after the booking''s contact changed'
 );
 update public.bookings set pic_email = 'budi@example.test' where id = '00000000-0000-4000-8000-0000000000e5';
+
+-- A settlement commits even when the booker's name would put a host in the greeting: the booking is paid
+-- and its ticket issued, and only the messages are held. These are the steps internal.apply_payment_event
+-- (P3.8.02) will take; its own pgTAP repeats this case.
+select set_config('app.in_rpc', '1', true);
+insert into public.bookings (id, booking_code, status, package_id, package_snapshot, rw_ids, booker_type, pic_name,
+  pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount, consent_version,
+  consented_at, expires_at, phone_verified_at, email_verified_at)
+values ('00000000-0000-4000-8000-0000000003b1', 'GSK-SETT1E01', 'pending_payment', '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school',
+  'gisik-bayar.top Budi', '+6281234567301', 'settle@example.test', 2, pg_temp.days_from_today(27),
+  pg_temp.days_from_today(27), 100000, 100000, 'v1', now(), now() + interval '2 hours', now(), now());
+insert into public.booking_legs (booking_id, rw_id, visit_session_id, leg_order, pax_count, status, quota_reserved_at)
+values ('00000000-0000-4000-8000-0000000003b1', 5, '00000000-0000-4000-8000-0000000000b1', 1, 2, 'reserved', now());
+insert into public.payments (id, booking_id, attempt_no, provider, order_id, gross_amount, status)
+values ('00000000-0000-4000-8000-0000000003b2', '00000000-0000-4000-8000-0000000003b1', 1, 'midtrans', 'GSK-SETT1E01-01', 100000, 'pending');
+select set_config('app.in_rpc', '', true);
+select lives_ok(
+  $q$do $settle$
+    begin
+      perform set_config('app.in_rpc', '1', true);
+      update public.payments set status = 'settled', settlement_time = now() where id = '00000000-0000-4000-8000-0000000003b2';
+      update public.bookings set status = 'paid', paid_at = now(), amount_paid = 100000 where id = '00000000-0000-4000-8000-0000000003b1';
+      insert into public.tickets_qr (booking_id, booking_leg_id, rw_id, visit_session_id, ticket_code, valid_on,
+        valid_from, valid_until, pax_count, key_id)
+      select l.booking_id, l.id, 5, l.visit_session_id, 'GSK-SETT1E01-05', pg_temp.days_from_today(27),
+             pg_temp.jakarta_time(27, '07:00'), pg_temp.jakarta_time(27, '12:00'), 2, 'k1'
+      from public.booking_legs l where l.booking_id = '00000000-0000-4000-8000-0000000003b1';
+      perform internal.enqueue_notification('00000000-0000-4000-8000-0000000003b1', 'payment_received_ticket', 'whatsapp', '{"link_scope": "view"}');
+      perform internal.enqueue_notification('00000000-0000-4000-8000-0000000003b1', 'payment_received_ticket', 'email', '{"link_scope": "view"}');
+      perform set_config('app.in_rpc', '', true);
+    end
+  $settle$$q$,
+  'the settlement runs through although the booker''s name holds a host'
+);
+select is(
+  (select b.status || ' ' || (select count(*) from public.tickets_qr t where t.booking_id = b.id and t.status = 'issued')
+   from public.bookings b where b.id = '00000000-0000-4000-8000-0000000003b1'),
+  'paid 1',
+  'the booking is paid and its ticket issued'
+);
+select is(
+  (select string_agg(channel || '=' || status || '/' || last_error_code, ' ' order by channel) from public.notifications
+   where booking_id = '00000000-0000-4000-8000-0000000003b1'),
+  'whatsapp=cancelled/blocked_recipient_name_link email=cancelled/blocked_recipient_name_link',
+  'only the ticket messages are held, with the reason'
+);
+select is(
+  (select count(*)::int from public.security_events
+   where event_type = 'notification_blocked' and details ->> 'booking_id' = '00000000-0000-4000-8000-0000000003b1'),
+  2,
+  'and reported for a person to look at'
+);
 
 -- ===== Scheduled jobs =====
 -- Fixtures are dated relative to today and start at 05:xx, so they never collide with the fixed-date

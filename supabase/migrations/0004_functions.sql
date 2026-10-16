@@ -1750,35 +1750,59 @@ revoke execute on function internal.reserve_session_quota(uuid, integer), intern
 
 -- ===== Notification outbox (docs/PRD.md §8.7, docs/Security.md GUEST-07, GUEST-08, Task P1.3.25) =====
 
--- notifications_guest_guard: the backstop for any outbox row, including ones written without
--- enqueue_notification, on insert and whenever its routing, params or greeting change. A booking's
--- message goes only to that booking's own contact; WhatsApp only once the number is verified (the OTP
--- that verifies it excepted); an unconfirmed email address gets view links only; params and
--- recipient_name carry no link in any form, no host (name.tld) and no IP address, because messages go
--- out from the kelurahan's own number and the worker mints every link itself; link_scope is one of the
--- five scopes. A row without link_scope gets no link at all from the worker. The recipient is checked
--- again only when the routing changes, so emptying old params during the prune still works after a
--- booking's contact has changed. The application validates the same free text earlier
--- (src/lib/notifications/templates.ts), so this backstop never has to stop a transition.
-create function internal.notifications_guest_guard() returns trigger
-  language plpgsql security definer
+-- Why an outbox message's text is refused, or NULL when it is fine: a link in any form, a host
+-- (name.tld) or an IPv4 address in params or recipient_name, or a link_scope outside the five the worker
+-- knows. Messages go out from the kelurahan's own number and the worker mints every link itself.
+-- src/lib/validations/free-text.ts checks the same text when a visitor types it.
+create function internal.refused_notification_text(p_params jsonb, p_recipient_name text) returns text
+  language plpgsql immutable
   set search_path = ''
 as $$
 declare
   link_pattern constant text := '(://|www\.|javascript:|data:|\m[[:alnum:]-]+\.[[:alpha:]]{2,}\M'
     || '|\m((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\M)';
+begin
+  if p_params::text ~* link_pattern then
+    return 'params_link';
+  elsif coalesce(p_recipient_name, '') ~* link_pattern then
+    return 'recipient_name_link';
+  elsif p_params ? 'link_scope'
+        and p_params ->> 'link_scope' not in ('pay', 'manage', 'view', 'review', 'certificate') then
+    return 'unknown_link_scope';
+  end if;
+  return null;
+end;
+$$;
+
+-- notifications_guest_guard: the backstop for any outbox row, including ones written without
+-- enqueue_notification, on insert and whenever its routing, text or status change. A booking's message
+-- goes only to that booking's own contact; WhatsApp only once the number is verified (the OTP that
+-- verifies it excepted); an unconfirmed email address gets view links only. Refused text never fails
+-- the transaction that queues the message, since a payment may be committing in it: the message is
+-- held as cancelled, with the reason in last_error_code, and reported as notification_blocked; it stays
+-- cancelled until its text is clean. The recipient is checked again only when the routing changes, so
+-- emptying old params during the prune still works after a booking's contact has changed.
+create function internal.notifications_guest_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  refusal text := internal.refused_notification_text(new.params, new.recipient_name);
   booking record;
   is_new_route boolean := tg_op = 'INSERT'
     or (new.booking_id, new.channel, new.template, new.recipient)
        is distinct from (old.booking_id, old.channel, old.template, old.recipient);
 begin
-  if new.params::text ~* link_pattern or coalesce(new.recipient_name, '') ~* link_pattern then
-    raise exception 'notification params and recipient_name never carry a link, host or IP address; the worker mints links from params.link_scope'
-      using errcode = '22023';
-  end if;
-  if new.params ? 'link_scope'
-     and new.params ->> 'link_scope' not in ('pay', 'manage', 'view', 'review', 'certificate') then
-    raise exception 'unknown link scope %', new.params ->> 'link_scope' using errcode = '22023';
+  if refusal is not null then
+    new.status := 'cancelled';
+    new.last_error_code := 'blocked_' || refusal;
+    new.last_error := 'held by notifications_guest_guard: the message text was refused';
+    if tg_op = 'INSERT' or old.last_error_code is distinct from new.last_error_code then
+      insert into public.security_events (event_type, severity, entity_type, entity_id, details)
+      values ('notification_blocked', 'medium', 'notifications', new.id::text,
+              jsonb_build_object('reason', refusal, 'template', new.template, 'channel', new.channel,
+                                 'booking_id', new.booking_id));
+    end if;
   end if;
   if new.booking_id is null then
     return new;
@@ -1801,7 +1825,8 @@ begin
 end;
 $$;
 create trigger notifications_guest_guard
-  before insert or update of booking_id, channel, template, recipient, recipient_name, params on public.notifications
+  before insert or update of booking_id, channel, template, recipient, recipient_name, params, status
+  on public.notifications
   for each row execute function internal.notifications_guest_guard();
 
 -- Queues one message about a booking for the outbox worker and returns its id. The recipient always
@@ -1845,7 +1870,7 @@ begin
 end;
 $$;
 
-revoke execute on function internal.notifications_guest_guard(),
+revoke execute on function internal.refused_notification_text(jsonb, text), internal.notifications_guest_guard(),
   internal.enqueue_notification(uuid, public.notification_template, public.notification_channel, jsonb)
   from public, anon, authenticated;
 
@@ -2479,7 +2504,7 @@ alter table public.security_events add constraint security_events_event_type_che
   'mfa_failed','mfa_enrolled','scanner_invalid_signature','scanner_lockout','rate_limited','turnstile_failed',
   'upload_rejected','role_changed','staff_disabled','key_rotated','export_downloaded','pii_revealed',
   'manual_checkin','manual_backfill','undo_check_in','cron_failed','notification_dead','price_changed',
-  'session_changed_with_bookings','quota_pressure','mfa_reset'));
+  'session_changed_with_bookings','quota_pressure','mfa_reset','notification_blocked'));
 
 create function internal.staff_change_delay() returns interval
   language sql immutable

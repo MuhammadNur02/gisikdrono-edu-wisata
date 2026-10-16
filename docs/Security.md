@@ -844,7 +844,7 @@ Signed URLs are never persisted, logged or placed in messages; `document.signed_
 | Login lockout spike | ≥ 10 `login_locked` in 15 min | medium |
 | Refund volume | > 3 refunds or > IDR 5 000 000 per day | medium |
 | Ledger or audit chain verification failed; protective trigger missing | any | critical |
-| Reconciliation issues open > 48 h; outbox `dead` rows; `cron_failed` | any | medium |
+| Reconciliation issues open > 48 h; outbox `dead` rows; `notification_blocked` (a message held for a link, host or IP address in its text); `cron_failed` | any | medium |
 | Webhook 503/5xx | ≥ 5 in 10 min | high |
 | Large booking (`total_amount > 20 000 000` or `pax > 150`) | any | info |
 
