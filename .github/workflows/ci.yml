@@ -72,13 +72,6 @@ jobs:
     name: security (gitleaks, semgrep, audit, bundle secrets)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    # Synthetic sandbox values so `next build` can validate the public env; nothing secret here.
-    env:
-      NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3000
-      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
-      NEXT_PUBLIC_TURNSTILE_SITE_KEY: 1x00000000000000000000AA
-      NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: '+6281200000000'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -106,6 +99,14 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm audit --prod --audit-level=high
+      - name: Sandbox env for the build
+        # next build loads every route module to read its config, and the job and webhook routes
+        # import the service-role client, which validates the server env on load. These are the
+        # obviously fake values of tests/fixtures/env.ts that the unit tests use; nothing secret.
+        run: >-
+          pnpm exec tsx -e "import { sandboxEnv } from './tests/fixtures/env';
+          for (const [name, value] of Object.entries(sandboxEnv)) console.log(name + '=' + value);"
+          >> "$GITHUB_ENV"
       - run: pnpm build
       - run: pnpm check:secrets
 
