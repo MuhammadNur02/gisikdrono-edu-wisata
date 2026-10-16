@@ -1,9 +1,11 @@
 import 'server-only';
 
-import { createHash, randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 
 import pino from 'pino';
 import type { DestinationStream, Logger } from 'pino';
+
+import { serverEnv } from '@/lib/env';
 
 // docs/Security.md §7.7: these never reach a log line, whatever object they arrive in.
 export const REDACTED_PATHS = [
@@ -22,7 +24,8 @@ export const REDACTED_PATHS = [
   '*.snap_token',
 ];
 
-// The only event names a log line may carry; docs/Security.md §11.1 plus the two operational ones.
+// The only event names a log line may carry: the 25 security_events types of docs/PRD.md §8.4.9 plus
+// the two operational ones.
 export const LOG_EVENTS = [
   'webhook_signature_invalid',
   'webhook_amount_mismatch',
@@ -42,11 +45,13 @@ export const LOG_EVENTS = [
   'export_downloaded',
   'pii_revealed',
   'manual_checkin',
+  'manual_backfill',
   'undo_check_in',
   'cron_failed',
   'notification_dead',
   'price_changed',
   'session_changed_with_bookings',
+  'quota_pressure',
   'internal_error',
   'job_run',
 ] as const;
@@ -88,9 +93,14 @@ export function createLogger(requestId: string, root: Logger = stdoutLogger) {
 }
 
 // Lets two log lines about the same person be matched without the address itself being stored.
+// Keyed with OTP_PEPPER because a plain sha256 of an email can be reversed by hashing guesses
+// (docs/Security.md §7.4, §7.7).
 export function hashEmailForLog(email: string): string {
   const normalised = email.trim().toLowerCase();
-  return createHash('sha256').update(normalised).digest('hex').slice(0, EMAIL_HASH_LENGTH);
+  return createHmac('sha256', serverEnv.OTP_PEPPER)
+    .update(normalised)
+    .digest('hex')
+    .slice(0, EMAIL_HASH_LENGTH);
 }
 
 export function redactLinkTokens(url: string): string {

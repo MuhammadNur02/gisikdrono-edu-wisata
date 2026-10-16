@@ -331,7 +331,7 @@ Priority uses MoSCoW: **M** must, **S** should, **C** could, **W** won't (this r
 | FR-BOOK-07 | `internal.create_booking` reserves quota atomically per leg (`internal.reserve_session_quota`, `ORDER BY id`, both-or-nothing for combo), snapshots prices, sets `expires_at`, writes `booking_events`, enqueues `booking_created` | M | 20 parallel bookings into capacity 10 -> exactly 10 succeed; combo never reserves one leg only; `QUOTA_EXCEEDED` returned as `ActionResult`, not an exception |
 | FR-BOOK-08 | Abuse caps: Turnstile on every public form; max 2 concurrent unpaid bookings per phone and per email; 5 bookings/day/phone; 10/day per IP+UA bucket; unpaid holds <= 50 % of a session's capacity (beyond: "bayar untuk konfirmasi" mode, hold created only when Snap reports `pending`); pax > 20 hold shortened to 30 min; pax > 60 flagged | M | Limits enforced in `rate_limit_buckets` + `create_booking`; `rate_limit_profile = 'strict'` tightens all windows; `quota_pressure` security event when a session's pending share > 60 % |
 | FR-BOOK-09 | Hold TTL: `pending_payment` bookings expire at `expires_at` (individual `booking.hold_minutes_individual` 120; institutions `booking.hold_hours_institution` 24, capped at first session start - 1 h); `internal.expire_stale_bookings` every 5 min with 5 min grace releases quota and enqueues `booking_expired` | M | `expires_at` written once by the function that starts the hold and never by a payment attempt; quota release idempotent via `quota_released_at` |
-| FR-BOOK-10 | Payment attempt: `internal.create_payment_attempt` (one `pending` per booking, previous order expired via `/v2/{order_id}/expire`, refused when < 5 min remain) -> Snap transaction created server-side -> `attach_snap_token` -> redirect to `snap_redirect_url` | M | `enabled_payments = ['qris','bca_va','bni_va','bri_va','permata_va','cimb_va','other_va']`; `customer_details` = PIC only; `expiry.duration` = minutes until `expires_at`; `callbacks.finish = /reservasi/<code>`; no `snap.js` on our origin |
+| FR-BOOK-10 | Payment attempt: `internal.create_payment_attempt` (one open attempt per booking: `initiated`, `pending` or `needs_review`; previous order expired via `/v2/{order_id}/expire`, refused when < 5 min remain) -> Snap transaction created server-side -> `attach_snap_token` -> redirect to `snap_redirect_url` | M | `enabled_payments = ['qris','bca_va','bni_va','bri_va','permata_va','cimb_va','other_va']`; `customer_details` = PIC only; `expiry.duration` = minutes until `expires_at`; `callbacks.finish = /reservasi/<code>`; no `snap.js` on our origin |
 | FR-BOOK-11 | Status hub `/reservasi/[bookingCode]` reads DB state only, polls every 5 s while a payment is `pending`, shows VA number / QRIS instructions, countdown to `expires_at` with `aria-live` | M | Query parameters from the Midtrans finish redirect are ignored; page is `force-dynamic`, `private, no-store` |
 | FR-BOOK-12 | Midtrans webhook pipeline (path token, rate limit, size, zod, SHA-512 signature with `timingSafeEqual`, merchant id, `payment_events` idempotency, amount check, Status API re-check, `internal.apply_payment_event`) per §10.1 | M | Replayed notification -> 200 no-op; tampered signature -> 403 + `webhook_rejections`; amount mismatch -> `needs_review`, never `paid`; business failures never return 500 |
 | FR-BOOK-13 | On settlement `internal.apply_payment_event` issues one `tickets_qr` row per leg (`ticket_code = <booking_code>-<rw 2 digits>`, `valid_on`, `valid_from/valid_until`, `key_id`) in the same transaction as `paid`, invoice/receipt numbers, ledger entries, outbox rows and audit | M | DB trigger rejects `tickets_qr` INSERT unless the booking is `paid` with a settled payment; combo booking has two tickets |
@@ -340,7 +340,7 @@ Priority uses MoSCoW: **M** must, **S** should, **C** could, **W** won't (this r
 | FR-BOOK-16 | Lookup `/reservasi/cari` with `booking_code` + phone or email re-sends the link to the channel on file and never displays data | M | Rate-limited 5/15 min per IP; identical response for hit and miss |
 | FR-BOOK-17 | Visitor cancellation of unpaid bookings from the `manage` page (`cancel_booking` with `actor_type = 'visitor'`) | M | Quota released; Midtrans order cancelled best-effort; `booking_cancelled` enqueued |
 | FR-BOOK-18 | Duplicate holds: a new booking by a phone that already holds 2 unpaid bookings is refused with "sudah ada reservasi dengan nomor ini, tautan dikirim ulang" and a resume link | M | The other hold's code is never returned in the response |
-| FR-BOOK-19 | Retry after `denied`/`failed`/`expired` attempt while the booking is still `pending_payment` creates attempt `NN+1` | M | Partial unique index allows one `pending` payment per booking |
+| FR-BOOK-19 | Retry after `denied`/`failed`/`expired` attempt while the booking is still `pending_payment` creates attempt `NN+1` | M | Partial unique index allows one open payment (`initiated`, `pending` or `needs_review`) per booking |
 | FR-BOOK-20 | Idempotency: `bookings.idempotency_key` (client UUID per wizard mount) returns the existing booking on resubmit | M | Double-submit creates one booking |
 | FR-BOOK-21 | Ticket page `/reservasi/[bookingCode]/tiket` renders each leg's QR (`https://<site>/v/<token>`) with gate label, date, session, pax and rules; PDF download through `api/documents/ticket/[id]` | M | QR image is inline SVG; page requires the `view` or `manage` cookie |
 | FR-BOOK-22 | Walk-in and admin-channel bookings created by staff (`channel = 'admin'`) through the same `internal.create_booking` with `requireRwAccess` | S | Admin bookings skip OTP but record `created_by`; cash payment path per FR-B2B-08 |
@@ -456,7 +456,7 @@ Priority uses MoSCoW: **M** must, **S** should, **C** could, **W** won't (this r
 | NFR-06 | Accessibility | WCAG 2.1 AA: `focus-visible` rings, landmarks, labelled hotspots, `alt_text` on every image, `aria-describedby`/`aria-invalid` on form errors, `aria-live` for countdowns and scan results, focus trap and restore in dialogs, `prefers-reduced-motion` honoured | axe in Playwright with zero serious violations; keyboard-only walkthrough of wizard and scanner |
 | NFR-07 | Observability | `pino` JSON logs with redaction paths (`booking.pic_phone`, `booking.pic_email`, `booking.pic_name`, `customer_details.*`, `participants[*].full_name`, `req.headers.authorization`, `req.headers.cookie`, `*.token`, `*.signature_key`, `*.snap_token`); Sentry (`sendDefaultPii: false`, tunnel `/monitoring`); `/api/health` returns 503 when the last successful cron is older than 15 min or the outbox backlog exceeds 200; external uptime monitor; `security_events` summarised every 5 min; job logs `{ job, processed, failed, runId }` | Redaction unit test with a real booking-shaped fixture; synthetic critical alert before launch |
 | NFR-08 | Backup and DR | Supabase Pro daily backups (PITR should); weekly encrypted dump (`age` with `BACKUP_AGE_PUBLIC_KEY`) to R2; quarterly restore drill documented; migrations forward-only; RPO <= 24 h, RTO <= 4 h for the database; Vercel instant rollback for the app | Restore drill record in `docs/Security.md` runbook; CI backup job green |
-| NFR-09 | Privacy (UU PDP No. 27/2022) | Collect only PIC name, phone, email, institution and optional participant name + group label (no NIK, birth date, address, photos of participants); consent with version and guardian attestation for minors; privacy notice with Singapore processors; DSR handling via verified channel; breach notification runbook 3x24 h; retention per FR-POST-08; masked staff views with audited reveals; PII never in URLs, QR payloads, logs, client bundles or error messages | `purge/retention` audit entries; redaction tests; privacy notice review by kelurahan |
+| NFR-09 | Privacy (UU PDP No. 27/2022) | Collect only PIC name, phone, email, institution and optional participant name + group label + role label (no NIK, birth date, address, photos of participants); consent with version and guardian attestation for minors; privacy notice with Singapore processors; DSR handling via verified channel; breach notification runbook 3x24 h; retention per FR-POST-08; masked staff views with audited reveals; PII never in URLs, QR payloads, logs, client bundles or error messages | `purge/retention` audit entries; redaction tests; privacy notice review by kelurahan |
 | NFR-10 | Availability and resilience | Booking flow >= 99.5 % monthly; WhatsApp outage never blocks ticket delivery (email in parallel) or payment (webhook returns 200 after persist); Midtrans outage degrades to "coba lagi" with the hold preserved; outbox retries with backoff 1/5/15/60/240 min up to 8 attempts; `payments-poll` recovers lost notifications; `reconcile-payments` nightly | Chaos test in staging: WhatsApp 5xx, Midtrans Status API timeout |
 | NFR-11 | Maintainability (clean code) | Rules in `CLAUDE.md` §4 are mandatory: descriptive names, functions <= 40 lines, files <= 300 lines, no magic values, strict layering UI -> action -> service -> data access -> DB, TypeScript `strict` without escape hatches, early returns, `ActionResult` errors, "why" comments only, no dead code, 100 % line coverage on `src/lib/{pricing,qr,links}` and `booking-state.ts` | ESLint flat config, `pnpm check`, coverage thresholds, PR checklist |
 | NFR-12 | Localisation and time | Public UI, messages and PDFs in Indonesian; identifiers, code and docs in English; all business dates in `Asia/Jakarta` (`APP_TZ`), money as integer IDR formatted by `formatIDR()`; dates formatted with `date-fns` locale `id` | Copy review per PR; unit tests for date and currency formatting |
@@ -593,7 +593,7 @@ create type public.alert_severity           as enum ('info','medium','high','cri
 
 ### 8.4 Tables (DDL)
 
-All tables get, in the same migration: `enable row level security`, `force row level security`, `revoke all … from anon, authenticated`, explicit grants, policies (§8.5), `set_updated_at` where `updated_at` exists, `log_audit` where marked (A), append-only trigger where marked (AO).
+Every table ends up with `enable row level security`, `force row level security`, `revoke all … from anon, authenticated`, explicit grants, policies (§8.5), `set_updated_at` where `updated_at` exists, `log_audit` where marked (A) and an append-only trigger where marked (AO). In the bootstrap set (§8.1) they are placed by dependency (decision of 2026-10-16): `0003_tables` enables and forces RLS, revokes the API roles and adds `set_updated_at` right after each `create table`, so every table denies everything from birth; `0004_functions` adds `log_audit` and the append-only triggers together with the functions they call; `0005_policies_grants` adds grants and policies, which need the helpers of 0004. Timestamped migrations after the bootstrap keep all of it in the same file (`CLAUDE.md` §6.4, Recipe D).
 
 #### 8.4.1 Configuration and staff
 
@@ -1028,7 +1028,7 @@ create table public.payments (
   unique (booking_id, attempt_no)
 );
 create index payments_booking_idx on public.payments (booking_id, status);
-create unique index payments_one_open_per_booking on public.payments (booking_id) where status in ('initiated','pending');
+create unique index payments_one_open_per_booking on public.payments (booking_id) where status in ('initiated','pending','needs_review');
 -- trigger payments_immutable_guard: gross_amount, order_id, provider, booking_id never change; after settled only
 --   refunded_amount/status may move (through internal.* only).
 
@@ -1537,7 +1537,7 @@ create table public.security_events (
   severity    public.alert_severity not null default 'info',
   actor_id    uuid,
   actor_role  text,
-  ip          inet,
+  ip_hash     text,                                         -- HMAC-SHA256(host(ip)) keyed with OTP_PEPPER (Security §7.4)
   user_agent  text,
   rw_id       smallint,
   entity_type text,
@@ -1631,7 +1631,7 @@ create index audit_logs_actor_idx  on public.audit_logs (actor_id, occurred_at d
 create table public.login_attempts (
   id           bigint generated always as identity primary key,
   user_id      uuid,
-  email        citext,
+  email_hash   text,                                -- HMAC-SHA256(lower(trim(email))) keyed with OTP_PEPPER (Security §5.5)
   ip           inet,
   success      boolean not null,
   reason       text check (reason in ('ok','bad_password','locked','mfa_failed','inactive')),

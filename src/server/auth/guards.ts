@@ -2,7 +2,7 @@ import 'server-only';
 
 import { z } from 'zod';
 
-import { APP_ROLES } from '@/db/enums';
+import { DB_ENUMS } from '@/db/enums';
 import type { AppRole } from '@/db/enums';
 import { fail } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
@@ -24,7 +24,7 @@ export type GuardResult = { ok: true; ctx: StaffContext } | ActionFailure;
 // app_role, app_rw_id and claims_version come from public.custom_access_token_hook (CLAUDE.md §6.2).
 const staffClaimsSchema = z.object({
   sub: z.string(),
-  app_role: z.enum(APP_ROLES).default('none'),
+  app_role: z.enum(DB_ENUMS.app_role).default('none'),
   app_rw_id: z.number().int().nullable().default(null),
   aal: z.enum(['aal1', 'aal2']),
   amr: z.array(z.object({ method: z.string(), timestamp: z.number() })).default([]),
