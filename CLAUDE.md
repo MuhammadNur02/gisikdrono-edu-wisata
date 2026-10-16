@@ -630,7 +630,7 @@ ESLint flat config (`next/core-web-vitals`, `typescript-eslint` strict-type-chec
 | `check` | `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm db:types:check` | yes |
 | `db` | `supabase start`, apply migrations, `pnpm db:test`, `pnpm test:integration` | yes |
 | `security` | semgrep, gitleaks, `pnpm audit`, `pnpm build` + `pnpm check:secrets` | yes |
-| `e2e` | Playwright against the Vercel preview (staging Supabase + Midtrans sandbox) | on PRs touching `booking\|payment\|qr\|scanner` |
+| `e2e` | Playwright against the Vercel preview (staging Supabase + Midtrans sandbox) | on PRs touching `booking\|payment\|qr\|scanner`, `supabase/migrations/**`, `src/server/services/**` or `src/lib/{pricing,qr,links,midtrans}/**` |
 
 Branch protection on `main`: PR required, all checks green, no force push, linear history. Pre-commit: Husky + lint-staged + commitlint + gitleaks.
 
