@@ -24,7 +24,7 @@ export const REDACTED_PATHS = [
   '*.snap_token',
 ];
 
-// The only event names a log line may carry: the 25 security_events types of docs/PRD.md §8.4.9 plus
+// The only event names a log line may carry: the 26 security_events types of docs/PRD.md §8.4.9 plus
 // the two operational ones.
 export const LOG_EVENTS = [
   'webhook_signature_invalid',
@@ -52,6 +52,7 @@ export const LOG_EVENTS = [
   'price_changed',
   'session_changed_with_bookings',
   'quota_pressure',
+  'mfa_reset',
   'internal_error',
   'job_run',
 ] as const;
