@@ -40,6 +40,7 @@ describe('mapError', () => {
     ['QUOTA_UNAVAILABLE', 'QUOTA_EXCEEDED'],
     ['STATE_INVALID', 'STATE_INVALID'],
     ['PRICE_MISMATCH', 'PRICE_MISMATCH'],
+    ['RATE_LIMITED', 'RATE_LIMITED'],
   ])('maps a raised exception with hint %s to %s', async (hint, code) => {
     expect((await mapError({ code: 'P0001', hint })).error.code).toBe(code);
   });

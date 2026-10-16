@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(253);
+select plan(266);
 
 -- Fixtures, rolled back at the end. The pepper is a throwaway local value.
 select vault.create_secret('local-test-pepper-not-a-real-secret-0000000', 'otp_pepper', 'test only');
@@ -1244,6 +1244,91 @@ select is(
    where action = 'bookings.update' and entity_id = '00000000-0000-4000-8000-000000001e08' order by id desc limit 1),
   true,
   'the anonymisation is audited by column name only'
+);
+
+-- ===== Session generation, UI events, booklet downloads =====
+
+-- 0005 grants these two to authenticated; the test grants them for itself until then.
+grant execute on function public.generate_visit_sessions(smallint, date, date), public.rpc_log_ui_event(text, uuid)
+  to authenticated;
+insert into public.session_templates (rw_id, weekday, label, start_time, end_time, capacity, is_active) values
+  (8, extract(dow from public.today_jkt() + 1)::smallint, 'Subuh', '04:00', '04:45', 30, true),
+  (8, extract(dow from public.today_jkt() + 1)::smallint, 'Libur', '04:30', '04:50', 30, false);
+
+-- Profile 0002 is the RW 08 admin by now (the guard tests moved it).
+select set_config('request.jwt.claims', (
+  select jsonb_build_object('sub', id, 'role', 'authenticated', 'aal', 'aal2', 'app_role', role,
+                            'app_rw_id', rw_id, 'claims_version', claims_version)::text
+  from public.profiles where id = '00000000-0000-4000-8000-000000000002'), true);
+set local role authenticated;
+select is(public.generate_visit_sessions(8::smallint, public.today_jkt(), public.today_jkt() + 13), 2,
+  'an RW admin turns the active template into two weeks of sessions');
+select is(public.generate_visit_sessions(8::smallint, public.today_jkt(), public.today_jkt() + 13), 0,
+  'running it again creates nothing new');
+select throws_ok(
+  $$select public.generate_visit_sessions(5::smallint, public.today_jkt(), public.today_jkt() + 13)$$,
+  '42501', null, 'but not for another RW'
+);
+select throws_ok(
+  $$select public.generate_visit_sessions(8::smallint, public.today_jkt(), public.today_jkt() + 400)$$,
+  '22023', null, 'and at most a year ahead'
+);
+select lives_ok($$select public.rpc_log_ui_event('scanner_opened', null)$$, 'staff log opening the scanner');
+select throws_ok(
+  $$select public.rpc_log_ui_event('export_downloaded', null)$$,
+  '22023', null, 'but no event outside the two the browser may write'
+);
+reset role;
+select is(
+  (select string_agg(label || ' ' || (created_by = '00000000-0000-4000-8000-000000000002')::text, ', ')
+   from public.visit_sessions where rw_id = 8 and start_time in ('04:00', '04:30')),
+  'Subuh true, Subuh true',
+  'only the active template is used, and the sessions record who generated them'
+);
+select lives_ok(
+  $$select public.generate_visit_sessions(5::smallint, public.today_jkt(), public.today_jkt() + 180)$$,
+  'the nightly job may generate for any RW'
+);
+select is(
+  (select jsonb_build_object('actor', actor_id, 'role', actor_role, 'entity', entity_type, 'metadata', metadata)
+   from public.audit_logs where action = 'ui.scanner_opened'),
+  '{"actor": "00000000-0000-4000-8000-000000000002", "role": "admin_rw", "entity": "scanner", "metadata": {"source": "client"}}'::jsonb,
+  'the UI event is logged under the signed-in user, marked as coming from the browser'
+);
+
+update public.rate_limit_buckets set count = 600 where key = 'ui_event:00000000-0000-4000-8000-000000000002';
+set local role authenticated;
+select throws_ok(
+  $$select public.rpc_log_ui_event('pii_revealed', '00000000-0000-4000-8000-0000000000e5')$$,
+  'P0001', 'too many UI events this hour', 'the 601st event in an hour is refused'
+);
+reset role;
+select set_config('request.jwt.claims', '', true);
+set local role authenticated;
+select throws_ok(
+  $$select public.rpc_log_ui_event('scanner_opened', null)$$,
+  '42501', null, 'a signed-in non-staff user logs nothing'
+);
+reset role;
+revoke execute on function public.generate_visit_sessions(smallint, date, date), public.rpc_log_ui_event(text, uuid)
+  from authenticated;
+
+insert into public.booklets (id, slug, title, pdf_path, status) values
+  ('00000000-0000-4000-8000-000000001b51', 'e-booklet-ecowastreme', 'E-Booklet', 'rw-05/booklet.pdf', 'published'),
+  ('00000000-0000-4000-8000-000000001b52', 'draf-booklet', 'Draf', 'rw-05/draf.pdf', 'draft');
+select internal.increment_booklet_download('00000000-0000-4000-8000-000000001b51');
+select internal.increment_booklet_download('00000000-0000-4000-8000-000000001b52');
+select is(
+  (select string_agg(slug || '=' || download_count, ' ' order by slug) from public.booklets
+   where id in ('00000000-0000-4000-8000-000000001b51', '00000000-0000-4000-8000-000000001b52')),
+  'draf-booklet=0 e-booklet-ecowastreme=1',
+  'a download counts for a published booklet only'
+);
+select is(
+  has_function_privilege('anon', 'internal.increment_booklet_download(uuid)', 'execute')
+  or has_function_privilege('authenticated', 'internal.increment_booklet_download(uuid)', 'execute'),
+  false,
+  'neither anon nor authenticated can call the counter'
 );
 
 -- ===== Append-only logs =====

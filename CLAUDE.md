@@ -360,7 +360,7 @@ export type ActionResult<T> =
 | zod failure | `VALIDATION` (with `fieldErrors`) |
 | Postgres `23505` unique violation | `CONFLICT` |
 | Postgres `P0001` with hint `QUOTA_UNAVAILABLE` | `QUOTA_EXCEEDED` |
-| Postgres `P0001` with hint `STATE_INVALID` / `PRICE_MISMATCH` | same code |
+| Postgres `P0001` with hint `STATE_INVALID` / `PRICE_MISMATCH` / `RATE_LIMITED` | same code |
 | `AppError` | its `code` |
 | Anything else | `INTERNAL`; logged with `requestId`, captured by Sentry, generic Indonesian message |
 

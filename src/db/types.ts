@@ -3390,6 +3390,10 @@ export type Database = {
       app_role: { Args: never; Returns: string }
       app_rw_id: { Args: never; Returns: number }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      generate_visit_sessions: {
+        Args: { p_from: string; p_rw_id: number; p_to: string }
+        Returns: number
+      }
       hook_password_verification_attempt: {
         Args: { event: Json }
         Returns: Json
@@ -3399,6 +3403,10 @@ export type Database = {
       is_superadmin: { Args: never; Returns: boolean }
       owns_any_rw: { Args: { p_rw_ids: number[] }; Returns: boolean }
       owns_rw: { Args: { p_rw_id: number }; Returns: boolean }
+      rpc_log_ui_event: {
+        Args: { p_entity_id: string; p_event: string }
+        Returns: undefined
+      }
       today_jkt: { Args: never; Returns: string }
     }
     Enums: {
