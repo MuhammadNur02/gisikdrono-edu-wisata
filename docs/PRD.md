@@ -76,7 +76,7 @@ A visiting teacher can find the programme on Google on Monday, download a visit 
 | # | Goal | Metric | Target (6 months after go-live) | Source |
 |---|---|---|---|---|
 | G1 | Grow bookings | Paid bookings per month | >= 40 | `visit_stats` |
-| G2 | Convert visitors | Wizard conversion (step `jadwal` started -> `paid`) | >= 35 % | `rpc_log_ui_event` + `bookings` |
+| G2 | Convert visitors | Wizard conversion (step `jadwal` started -> `paid`) | >= 35 % | `@vercel/analytics` custom events + `bookings` |
 | G3 | Fast ticketing | Settlement -> WhatsApp ticket delivered (p95) | <= 60 s | `payment_events.processed_at` -> `notifications.delivered_at` |
 | G4 | Fast gate | Scan `preview` -> `commit` per group (median) | <= 60 s | `ticket_scans` |
 | G5 | Never oversell | Sessions with `reserved_pax > capacity` | 0 (CHECK constraint) | `reconcile_session_counters` drift log |
@@ -856,8 +856,12 @@ create table public.bookings (
   booker_type         public.booker_type not null,
   institution_name    text,
   pic_name            text not null,
-  pic_phone           text not null check (pic_phone ~ '^\+62[0-9]{8,13}$'),
-  pic_email           citext not null,
+  pic_phone           text check (pic_phone ~ '^\+62[0-9]{8,13}$'),           -- NULL only after anonymisation
+  pic_email           citext,
+  pii_purged_at       timestamptz,                          -- set by internal.anonymise_booker_pii
+  phone_masked        text generated always as (case when pic_phone is null then null else left(pic_phone, 6) || '••••' || right(pic_phone, 2) end) stored,
+  email_masked        text generated always as (case when pic_email is null then null else left(pic_email::text, 1) || '***@' || split_part(pic_email::text, '@', 2) end) stored,
+  pic_first_name      text generated always as (split_part(pic_name, ' ', 1)) stored,
   pax_count           integer not null check (pax_count between 1 and 1000),
   visit_date          date not null,                        -- earliest leg date
   visit_date_end      date not null,                        -- latest leg date
@@ -896,7 +900,8 @@ create table public.bookings (
   updated_at          timestamptz not null default now(),
   constraint bookings_total_ok check (total_amount = subtotal_package + subtotal_addons - discount_amount and total_amount > 0),
   constraint bookings_hold_has_deadline check (status <> 'pending_payment' or expires_at is not null),
-  constraint bookings_dates_ok check (visit_date_end >= visit_date)
+  constraint bookings_dates_ok check (visit_date_end >= visit_date),
+  constraint bookings_contact_until_purged check (pii_purged_at is not null or (pic_phone is not null and pic_email is not null))
 );
 create index bookings_status_expiry_idx on public.bookings (expires_at) where status = 'pending_payment';
 create index bookings_visit_date_idx    on public.bookings (visit_date, status);
@@ -1654,7 +1659,7 @@ create table public.rate_limit_buckets (
 |---|---|---|
 | `v_session_availability` | `id, rw_id, session_date, start_time, end_time, label, capacity, remaining (capacity - reserved_pax), pending_share` for `status = 'open'` and `session_date >= today_jkt()` | anon (calendar, wizard, Realtime) |
 | `v_public_reviews` | `id, rating, title, body, reviewer_name ('Pengunjung' when anonymous, else first name), institution_name, rw_ids, is_featured, created_at` for `status = 'published'` | anon |
-| `v_bookings_staff` | booking columns with `pic_phone` masked to `+62…1234`, `pic_email` masked to `a***@domain`, `pic_name` first name; package name, leg sessions, payment status, ticket status | staff (scope via underlying RLS) |
+| `v_bookings_staff` | booking columns with the stored generated columns `phone_masked` (`+62812••••45`: first six and last two digits), `email_masked` (`a***@domain`) and `pic_first_name` instead of `pic_phone` / `pic_email` / `pic_name` (no API role holds SELECT on the raw contact columns; `rpc_reveal_booking_contact` is the only path); amounts only for superadmin; package name, leg sessions, payment status, ticket status | staff (scope via underlying RLS) |
 | `v_booking_admin` | datatable projection for `/dashboard/bookings` (joins `v_bookings_staff`, `payments`, `tickets_qr`, `invoices`) | staff |
 | `v_attendance_today` | per RW: today's bookings with ticket status, booked pax, checked-in pax, unpaid pax, manual flag | staff |
 | `v_booking_export` | flat export row without contact columns (`visits`, `attendance` exports) | staff via `rpc_create_export` |
@@ -1803,7 +1808,7 @@ grant update (full_name, phone, avatar_path) on public.profiles to authenticated
 | `revenue_rule_sum_guard`, `revenue_rules_immutable_once_used` | `revenue_share_rule_lines`, `revenue_share_rules` | §8.4.8 |
 | `append_only` | `booking_events`, `payment_events`, `webhook_rejections`, `package_price_history`, `ticket_scans`, `revenue_share_entries` (except `payout_batch_id`), `security_events`, `audit_logs`, `login_attempts`, `payment_adjustments` (except workflow columns) | Raises on UPDATE/DELETE |
 | `ledger_chain`, `audit_chain` | `revenue_share_entries`, `audit_logs` | Computes `prev_hash`/`entry_hash` on insert; verified by `internal.verify_ledger_chain` / `verify_audit_chain` |
-| `log_audit` | `bookings, booking_legs, booking_participants, payments, payment_adjustments, tickets_qr, certificates, quotations, invoices, tour_packages, products_umkm, umkm_vendors, visit_sessions, session_templates, profiles, staff_invites, rw_units, revenue_share_rules, revenue_share_rule_lines, payout_batches, site_settings, reviews, articles, hero_banners` | Row-level before/after of allow-listed columns into `audit_logs`; `actor_id = coalesce(auth.uid(), current_setting('app.actor_id', true)::uuid)`; rejects NULL actor for staff/service roles |
+| `log_audit` | `bookings, booking_legs, booking_participants, payments, payment_adjustments, tickets_qr, certificates, quotations, invoices, tour_packages, products_umkm, umkm_vendors, visit_sessions, session_templates, profiles, staff_invites, rw_units, revenue_share_rules, revenue_share_rule_lines, revenue_share_entries, payout_batches, site_settings, reviews, articles, hero_banners` (25 tables; `booking_participants` without `full_name`) | Row-level before/after of allow-listed columns into `audit_logs`; `actor_id = coalesce(auth.uid(), current_setting('app.actor_id', true)::uuid)`; rejects NULL actor for staff/service roles |
 | `set_updated_at` | every table with `updated_at` | — |
 
 ### 8.6 `site_settings` keys
@@ -1852,7 +1857,7 @@ grant update (full_name, phone, avatar_path) on public.profiles to authenticated
 | `rpc_reveal_booking_contact` | `(p_booking_id uuid, p_reason text) returns jsonb` | staff in scope | Returns unmasked PIC contact; security event `pii_revealed`; cap 50/day/user |
 | `rpc_get_participants` | `(p_booking_id uuid) returns setof public.booking_participants` | staff in scope | Window `visit_date - 7 d .. + 30 d`; row cap 300; audited |
 | `rpc_create_export` | `(p_kind export_kind, p_format text, p_filters jsonb, p_reason text) returns uuid` | superadmin (all kinds), admin_rw (`attendance`, own RW) | Validates caps (50 000 rows / 12 months, 10/h); inserts `exports`; the route handler renders the file |
-| `rpc_log_ui_event` | `(p_event text, p_props jsonb) returns void` | staff; visitor funnel events arrive through a rate-limited Server Action that calls it under the service role (`anon` has no execute grant) | Funnel events for G2 (no PII) |
+| `rpc_log_ui_event` | `(p_event text, p_entity_id uuid) returns void` | staff | `p_event` CHECKed against `('pii_revealed', 'scanner_opened')`; writes `audit_logs` with `action = 'ui.<event>'`, `actor_id = auth.uid()`, metadata `{source: 'client'}` ≤ 1 KB; 600 calls/hour per user; no `anon` grant. Visitor funnel events (G2) are measured by `@vercel/analytics`, not the database |
 | `propose_adjustment` / `approve_adjustment` / `apply_adjustment` | `(…) returns public.payment_adjustments` | superadmin | Dual control per FR-ADMIN-21; `apply_adjustment` writes `adjustment` ledger rows and `payments.refunded_amount` |
 | `set_staff_role` / `set_staff_status` / `reset_staff_mfa` | `(p_user_id uuid, …) returns void` | superadmin, fresh TOTP, never own row | Sets `app.privileged_rpc`; bumps `claims_version`; deletes sessions/factors; security events `role_changed`, `staff_disabled` |
 
@@ -1862,7 +1867,7 @@ No function is executable by `anon`. Public writes (OTP, bookings, reviews, DSR 
 
 | Function | Signature | Behaviour |
 |---|---|---|
-| `create_booking` | `(p_package_id uuid, p_session_ids uuid[], p_pax int, p_booker jsonb, p_addons jsonb, p_participants jsonb, p_mode text, p_channel booking_channel, p_idempotency_key text, p_otp_id uuid, p_consent jsonb, p_actor_id uuid, p_client_meta jsonb) returns jsonb` | Idempotency; package published and valid; one session per leg with matching RW, lead time and advance window; pax within limits; add-ons eligible; recomputes money and raises `PRICE_MISMATCH` against the client quote hash; abuse caps; generates `booking_code`; inserts booking, legs, addons, participants, `booking_events`; mode `pay`: requires verified OTP, reserves quota `ORDER BY id`, sets `expires_at`; mode `quote`: legs `unreserved`, no `expires_at`; enqueues `booking_created` / `quotation_ready` |
+| `create_booking` | `(p_package_id uuid, p_session_ids uuid[], p_pax int, p_booker jsonb, p_addons jsonb, p_participants jsonb, p_mode text, p_channel booking_channel, p_idempotency_key text, p_otp_id uuid, p_consent jsonb, p_actor_id uuid, p_client_meta jsonb) returns jsonb` | Idempotency; package published and valid; one session per leg with matching RW, lead time and advance window; pax within limits; add-ons eligible; recomputes money and raises `PRICE_MISMATCH` against the client quote hash; abuse caps; generates `booking_code`; inserts booking, legs, addons, participants, `booking_events`; mode `pay`: requires verified OTP, reserves quota with sessions locked `ORDER BY visit_session_id` (the same order `release_booking_quota` uses), sets `expires_at`; mode `quote`: legs `unreserved`, no `expires_at`; enqueues `booking_created` / `quotation_ready` |
 | `reserve_session_quota` | `(p_session_id uuid, p_pax int) returns void` | Conditional `UPDATE … WHERE status = 'open' and reserved_pax + p_pax <= capacity` under row lock; raises `QUOTA_UNAVAILABLE` (`P0001`) |
 | `release_booking_quota` | `(p_booking_id uuid) returns void` | Loops legs `ORDER BY visit_session_id`, subtracts pax, stamps `quota_released_at`; idempotent |
 | `create_payment_attempt` | `(p_booking_id uuid, p_actor_id uuid) returns public.payments` | `quoted`: reserves quota, sets `expires_at`, quotation `accepted`; refuses when < 5 min remain; expires previous open attempt; `attempt_no + 1`; `order_id` |
@@ -1884,9 +1889,10 @@ No function is executable by `anon`. Public writes (OTP, bookings, reviews, DSR 
 | `claim_notifications` | `(p_limit int) returns setof public.notifications` | `FOR UPDATE SKIP LOCKED`; requeues `sending` older than 10 min |
 | `complete_notification` / `fail_notification` | `(p_id uuid, p_provider_message_id text)` / `(p_id uuid, p_error_code text, p_error text, p_permanent boolean)` | Backoff 1/5/15/60/240 min; `dead_at` after 8 attempts or permanent error + `notification_dead` event |
 | `rate_limit_hit` | `(p_key text, p_limit int, p_window_seconds int) returns boolean` | Fixed-window counter in `rate_limit_buckets` |
-| `prune_operational_tables` | `() returns void` | `notifications` > 180 d, `webhook_rejections` > 30 d, `payment_events` > 24 mo, `audit_logs` > 24 mo (after chain checkpoint), `security_events` > 12 mo, `login_attempts` > 90 d, `rate_limit_buckets` > 1 d |
-| `purge_participants` | `() returns int` | Deletes `booking_participants` and participant-bearing PDFs (`certificates/<booking_id>/participant-*.pdf`, attendance exports) for `visit_date_end < today - 90 d`; certificate rows keep number/status with `participant_id = NULL`, `recipient_name = '[dihapus]'` and `purged_at` set; audited |
-| `anonymise_booker_pii` | `() returns int` | Unpaid-expired bookings: PII pseudonymised 7 d after expiry; all bookings: PIC name/phone/email replaced by irreversible hashes after `pii_retention_months`; audited |
+| `enqueue_notification` | `(p_booking_id uuid, p_template notification_template, p_channel notification_channel, p_params jsonb) returns uuid` | Inserts one outbox row (`dedupe_key = 'booking:<id>:<template>:<channel>'`, `on conflict do nothing`); recipient from `pic_phone` / `pic_email`; a `whatsapp` row for any template except `phone_otp` needs `phone_verified_at`, else skipped (GUEST-08); `params.link_scope` is forced to `view` for `email` rows while `email_verified_at` is NULL (the worker mints the link, never SQL) |
+| `prune_operational_tables` | `() returns void` | `notifications` > 180 d (their `params` nulled after 30 d), `webhook_rejections` > 30 d, `payment_events` > 24 mo (`customer_details` nulled inside `payload` after 24 mo), `audit_logs` > 24 mo (after chain checkpoint), `security_events` > 12 mo, `login_attempts` > 24 h, `rate_limit_buckets` > 1 d; runs under `app.purge = 'on'` so the append-only triggers allow it |
+| `purge_participants` | `() returns int` | For `visit_date_end < today - 90 d`: first marks the participant certificates (`participant_id = NULL`, `recipient_name = '[dihapus]'`, `purged_at`), then deletes the `booking_participants` rows (the certificate CHECK refuses the other order); also marks expired `exports` (`deleted_at`). The files (`certificates/<booking_id>/participant-*.pdf`, attendance exports, ticket PDFs > 12 months) are deleted afterwards by `api/jobs/purge-storage` through the Storage API, because Supabase blocks `delete from storage.objects`; audited |
+| `anonymise_booker_pii` | `() returns int` | Unpaid `expired`/`cancelled` bookings 7 d after expiry, and every booking after `pii_retention_months`: `pic_name = 'anon'`, `pic_phone` and `pic_email` NULL, `phone_verified_at` NULL, `pii_purged_at = now()`, `token_version + 1`; the masked generated columns follow automatically; invoices keep institution and amounts; audited under `app.audit_mode = 'names_only'` |
 | `verify_ledger_chain` / `verify_audit_chain` | `() returns jsonb` | Recomputes hashes; returns `{ok, checked, first_broken_id}`; failure -> critical alert |
 | `log_audit` | trigger function + `(p_action text, p_entity_type text, p_entity_id text, p_metadata jsonb)` helper | Writes `audit_logs` with chain hash |
 
@@ -1924,7 +1930,8 @@ create policy quarantine_write    on storage.objects for insert to authenticated
 | `30 16 * * *` (23:30 WIB) | `close_past_bookings` + `reconcile_session_counters` | SQL |
 | `0 17 * * *` (00:00 WIB) | `generate_visit_sessions` | `select public.generate_visit_sessions(id, public.today_jkt(), public.today_jkt() + 180) from public.rw_units where is_active;` |
 | `30 19 * * *` (02:30 WIB) | `reconcile-payments` | pg_net -> `api/jobs/reconcile-payments` (open items, 7-day paid re-verification, SQL invariants, `verify_ledger_chain`, `verify_audit_chain`, issues, digest) |
-| `0 19 * * *` (02:00 WIB) | `purge/retention` | `select internal.purge_participants(); select internal.anonymise_booker_pii();` + `guest_otps` > 24 h, `uploads-quarantine` > 24 h |
+| `0 19 * * *` (02:00 WIB) | `purge/retention` | `select internal.purge_participants(); select internal.anonymise_booker_pii();` + `guest_otps` > 24 h |
+| `15 19 * * *` (02:15 WIB) | `purge-storage` | pg_net -> `api/jobs/purge-storage`: deletes through the Storage API the files the retention run marked (participant PDFs, expired exports, ticket PDFs > 12 months) and `uploads-quarantine` objects > 24 h |
 | `15 * * * *` | prune `rate_limit_buckets` | `delete … where window_start < now() - interval '1 day'` |
 | `0 18 1 * *` | `prune_operational_tables` | `select internal.prune_operational_tables();` |
 

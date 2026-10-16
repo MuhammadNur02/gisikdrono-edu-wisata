@@ -455,7 +455,7 @@ Institutional owner account per provider (Vercel, Supabase organisation, GitHub 
 
 ### 6.1 Claims and helpers (AZ-01, AZ-09)
 
-Claims `app_role`, `app_rw_id`, `claims_version` come only from `public.custom_access_token_hook`; `user_metadata` and `app_metadata` are never read by policies. Helpers in `public` (SQL, `stable`, security invoker), always wrapped as `(select …)` in policies for initPlan caching:
+Claims `app_role`, `app_rw_id`, `claims_version` come only from `public.custom_access_token_hook`; `user_metadata` and `app_metadata` are never read by policies. Helpers in `public` (SQL, `stable`; all security invoker except `app_role()`, which must be `security definer` to read `profiles` without recursing through its own policies), always wrapped as `(select …)` in policies for initPlan caching. Grants: `today_jkt()` to `anon` and `authenticated` (anon policies call it); every other helper to `authenticated` only:
 
 ```sql
 create or replace function public.app_role() returns text language sql stable as $$
@@ -497,7 +497,7 @@ create or replace function public.aal2() returns boolean language sql stable as 
 ### 6.5 SECURITY DEFINER hygiene, views, actor attribution (AZ-05, AZ-13, AZ-14, AZ-15)
 
 - Every `SECURITY DEFINER` function: owner `postgres`, `set search_path = ''` with fully-qualified names, explicit role check as the first statement, inputs typed and bounded, no dynamic SQL, `revoke execute from public` then explicit grant. pgTAP lints `prosecdef` ⇒ `proconfig @> array['search_path=']`; Supabase Advisor `function_search_path_mutable` must be zero.
-- Every view is created `with (security_invoker = true)`; a migration lint fails on `create view` without it. Finance views (`v_revenue_recap_*`, `v_finance_daily`) are granted to superadmin only; `v_bookings_staff` shows `phone_masked` (`+62812••••45`), `email_masked`, no participants, and `paid`/`unpaid` without amounts for admin_rw **[RT]**.
+- Every view is created `with (security_invoker = true)`; a migration lint fails on `create view` without it. Finance views (`v_revenue_recap_*`, `v_finance_daily`) are granted to superadmin only; `v_bookings_staff` shows `phone_masked` (`+62812••••45`), `email_masked`, no participants, and `paid`/`unpaid` without amounts for admin_rw **[RT]**. Because the view runs as the invoker, the masks are stored generated columns on `bookings` (`phone_masked`, `email_masked`, `pic_first_name`) and no API role holds SELECT on `pic_phone`, `pic_email` or `pic_name`; the raw values leave the database only through `rpc_reveal_booking_contact`.
 - Staff RPCs derive the actor from `auth.uid()` and never accept actor or RW parameters; the scanner path uses the staff user's client, never the service role **[RT]**. Service-role writes always `set_config('app.actor_id', ctx.userId, true)` and `app.actor_role`; `internal.log_audit` rejects a NULL actor on staff-initiated paths **[RT]**. `internal.log_audit` is not callable by clients; the only client-facing event writer is `rpc_log_ui_event(action text, entity_id uuid)` whose `action` is CHECKed against `('pii_revealed', 'scanner_opened')`, `actor_id := auth.uid()`, 1 KB meta, 600/h per user, `source = 'client'` **[RT]**.
 
 ### 6.6 Masked views and reveal RPCs (AZ-12, DATA-04)
@@ -563,13 +563,14 @@ pg_cron 02:00 WIB daily as `postgres` with `set local app.purge = 'on'` and `set
 | Job | Rule |
 |---|---|
 | `purge_guest_otps` | delete where `expires_at < now() - 1 day` |
-| `purge_expired_unpaid_bookings` | `expired`/`cancelled` unpaid and older than 7 days: null `pic_*`, delete participants, keep aggregate row |
+| `purge_expired_unpaid_bookings` (part of `internal.anonymise_booker_pii`) | `expired`/`cancelled` unpaid and older than 7 days: `pic_name = 'anon'`, `pic_phone`/`pic_email` NULL, `pii_purged_at` set, delete participants, keep aggregate row |
 | `purge_participants` | visit date < today − 90 days: delete `booking_participants` rows **and** `documents/certificates/<booking_id>/participant-*.pdf`, attendance PDFs and the multi-page certificate bundle; `/reservasi/[code]/sertifikat` refuses after `visit_date + 90 d` **[RT]** |
-| `anonymise_bookings` | visit date < today − 24 months: `pic_name = 'anon'`, `pic_phone`/`pic_email` NULL, `phone_verified_at` NULL, `token_version + 1`; null `audit_logs.diff` for that booking; invoices keep institution and amounts |
+| `anonymise_bookings` (part of `internal.anonymise_booker_pii`) | visit date < today − `pii_retention_months` (24): `pic_name = 'anon'`, `pic_phone`/`pic_email` NULL, `phone_verified_at` NULL, `pii_purged_at` set, `token_version + 1`; invoices keep institution and amounts. The audit allow-list never copies contact columns, so there is no `audit_logs` diff to null |
 | `purge_notification_payloads` | null `notifications.params` older than 30 days |
 | `purge_documents` | tickets 12 months; exports 24 h; quotations/invoices 10 years |
 | `purge_payment_event_pii` | null `customer_details` inside `payment_events.payload` after 24 months |
-| `prune_operational_tables` (monthly) | `audit_logs`, `payment_events` > 24 months (hash chain anchors retained), `webhook_rejections` > 30 days, `rate_limit_buckets` > 1 day, `login_attempts` > 24 h |
+| `prune_operational_tables` (monthly) | `audit_logs`, `payment_events` > 24 months (hash chain anchors retained), `webhook_rejections` > 30 days, `rate_limit_buckets` > 1 day, `login_attempts` > 24 h; also nulls `notifications.params` > 30 days and `customer_details` in `payment_events.payload` > 24 months. Runs under `app.purge = 'on'`, the only setting the append-only triggers honour |
+| `purge-storage` (`api/jobs/purge-storage`, 02:15 WIB, pg_net + `CRON_SECRET`) | Deletes through the Storage API what SQL cannot (`delete from storage.objects` is blocked by Supabase): participant PDFs and attendance exports of purged bookings, exports past `expires_at`, ticket PDFs > 12 months, `uploads-quarantine` objects > 24 h |
 
 Each run writes `audit_logs.purge_run` with counts; pgTAP seeds back-dated rows and asserts the result; `cron.job` must contain every job. Backups retain data for their window (7 days daily; PITR when enabled), which the privacy notice states.
 
