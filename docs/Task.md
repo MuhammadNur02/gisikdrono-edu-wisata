@@ -311,7 +311,7 @@ Requirements: FR-PUB-22, NFR-05.
 | ID | Status | Task | Est | Dep | Owner |
 |---|---|---|---|---|---|
 | P2.3.01 | `[ ]` | `src/lib/queries/tags.ts` registry exactly: `packages:<rw or combo>`, `sessions:<rwId>:<YYYY-MM>`, `products:<rwId>`, `galleries:<rwId>`, `articles`, `banners`, `booklets`, `schedules`, `reviews`, `settings`, `booking:<id>`; every public query and every revalidating action imports constants from this file | S | P1.2.14 | Dev |
-| P2.3.02 | `[ ]` | `src/lib/queries/{rw-units,packages,products,vendors,articles,galleries,booklets,schedules,activity-points,banners,reviews,sessions,settings}.ts`: anon client inside `unstable_cache` with the registry tags and `revalidate: 3600`; functions return narrowed DTOs from `src/types` (never raw rows); `sessions.ts` reads `v_session_availability` uncached | M | P2.3.01 | Dev |
+| P2.3.02 | `[ ]` | `src/lib/queries/{rw-units,packages,products,vendors,articles,galleries,booklets,schedules,activity-points,banners,reviews,sessions,settings}.ts`: the session-less anon client (`src/lib/supabase/anon.ts`, the only client ESLint allows in `src/lib/queries`, so pages read as a visitor even for a signed-in staff member) inside `unstable_cache` with the registry tags and `revalidate: 3600`; functions return narrowed DTOs from `src/types` (never raw rows); `sessions.ts` reads `v_session_availability` uncached | M | P2.3.01 | Dev |
 | P2.3.03 | `[ ]` | `src/lib/images/supabase-loader.ts` (`/storage/v1/render/image/public/public-media/<path>?width=&quality=`) and `blur.ts`; `next/image` with mandatory `sizes`, hero `priority`, explicit `aspect-ratio`; widths 480 thumbs, 640 cards, 1280 hero | S | P2.3.02 | Dev |
 
 ### 3.4 P2.4 Public routes (ISR 3600 unless stated)

@@ -151,7 +151,7 @@ src/
     booking/ ticket/ certificates/ seo/ forms/ providers/
     admin/{shell,kpi,data-table,scanner,charts,status,calendar}/
   lib/
-    supabase/                  server.ts (cookies, RLS) | client.ts (browser, public only) | admin.ts (service role, allow-listed)
+    supabase/                  server.ts (cookies, RLS) | anon.ts (server, public reads, no session) | client.ts (browser, public only, no session) | admin.ts (service role, allow-listed)
     queries/                   cached public reads + tags.ts (revalidation tag registry)
     pricing/                   computeBookingQuote() - pure, 100 % coverage
     qr/                        sign.ts, verify.ts - the only place QR tokens are signed/verified
@@ -187,7 +187,7 @@ public/                        icons/, map/denah.svg, fonts/, og/
 | `src/app` | Route files, `layout.tsx`, `loading.tsx`, `error.tsx`, `generateMetadata`, route handlers | Business logic, SQL, pricing, signing, direct table writes, `'use client'` on `page.tsx` |
 | `src/components/ui` | shadcn-generated primitives | Hand-written components, domain logic, data fetching |
 | `src/components/*` | Presentational and island components; props are serialisable (ISO strings, not `Date`) | Imports of `src/server/**`, `src/lib/supabase/admin`, `server-only` modules |
-| `src/lib/queries` | Public cached reads wrapped in `unstable_cache` with tags from `tags.ts`, anon client only | Session-bound or service-role queries (never cache those) |
+| `src/lib/queries` | Public cached reads wrapped in `unstable_cache` with tags from `tags.ts`, through the session-less anon client `src/lib/supabase/anon.ts` only (ESLint) | Session-bound or service-role queries, `next/headers` (never cache those) |
 | `src/lib/pricing`, `src/lib/qr`, `src/lib/links` | Pure functions with 100 % line coverage | Side effects, I/O, React |
 | `src/lib/midtrans`, `src/lib/notifications`, `src/lib/email`, `src/lib/turnstile.ts` | The **only** modules allowed to call `fetch` to external hosts (base URLs from `src/lib/env.ts`) | Anything user-supplied as a URL |
 | `src/server/actions` | Server Actions following §5.2 | Raw `supabase.from(...).update` of status/money/quota columns; `redirect()` inside `try` |
@@ -292,7 +292,7 @@ These rules apply to all code and every commit. Language rules stay as in §3.3 
 | Live counters (session availability in the wizard, today's check-in count on the dashboard) | Client leaf that re-reads through the server (`router.refresh()` or a read-only Server Action on a 15 s interval) | The browser client (`src/lib/supabase/client.ts`) may subscribe to Realtime only on public, non-PII data (`v_session_availability`); staff counters never come from the browser client |
 | Anything touching secrets, service role, QR, links, pricing, PDF, Midtrans, notifications | **Server only**; module starts with `import 'server-only'` | Never imported by client files |
 
-Rules: `'use client'` only on leaf islands, never on `page.tsx`. Client components receive serialisable props (ISO strings, numbers, plain objects). Public pages export `revalidate` (3600; `/rw-08-kampung-seni-budaya/jadwal` 1800; `/e-booklet/*` 86400) plus tags. Booking, auth and dashboard routes export `dynamic = 'force-dynamic'` and send `Cache-Control: private, no-store` + `X-Robots-Tag: noindex`.
+Rules: `'use client'` only on leaf islands, never on `page.tsx`. Public pages read only through `src/lib/queries`: no Supabase client, no `src/server/**` and no `cookies()` under `src/app/(public)` (ESLint, `scripts/eslint-config.test.mjs`), so a signed-in staff member sees exactly the site a visitor sees. Client components receive serialisable props (ISO strings, numbers, plain objects). Public pages export `revalidate` (3600; `/rw-08-kampung-seni-budaya/jadwal` 1800; `/e-booklet/*` 86400) plus tags. Booking, auth and dashboard routes export `dynamic = 'force-dynamic'` and send `Cache-Control: private, no-store` + `X-Robots-Tag: noindex`.
 
 CSP follows the same split (docs/Security.md §8.2, decision of 2026-10-15). Private routes, listed in `src/config/routes.ts` (`/dashboard`, `/pesan`, `/reservasi`, `/login`, `/forgot-password`, `/reset-password`, `/mfa`, `/onboarding`, `/auth`, `/v`), get a per-request nonce with `'strict-dynamic'` from `src/middleware.ts`. Public ISR pages are rendered before any request exists, so they get a static CSP without a nonce (`script-src 'self' 'unsafe-inline'`). Never put an inline `next/script` or anything else that needs a nonce on a public page; never render raw HTML there either.
 
@@ -423,12 +423,13 @@ Never cache a query that uses the user session or the service-role client.
 
 ## 6. Supabase patterns
 
-### 6.1 The three clients
+### 6.1 The Supabase clients
 
 | File | Factory | Key | Allowed importers | Use |
 |---|---|---|---|---|
 | `src/lib/supabase/server.ts` | `createServerClient` + `cookies()` | anon | Server Components, Server Actions, route handlers | All user-facing reads and writes under RLS; staff RPCs (`public.*`) so `auth.uid()` is set |
-| `src/lib/supabase/client.ts` | `createBrowserClient` | anon | Client Components only | Public reads, Realtime on public data, signed-URL uploads. **Never** staff data, never bookings |
+| `src/lib/supabase/anon.ts` (`import 'server-only'`) | `createClient(url, anon key, { auth: { persistSession: false } })` | anon, no session | `src/lib/queries/**` only (ESLint) | Public reads as a visitor: no cookie and no session, so a signed-in staff member sees the same public site and every read can be cached for everyone |
+| `src/lib/supabase/client.ts` | `createClient(url, anon key, { auth: { persistSession: false } })` | anon, no session | Client Components only | Public reads, Realtime on public data, signed-URL uploads, without the session of whoever is signed in in that browser. **Never** staff data, never bookings |
 | `src/lib/supabase/admin.ts` (`import 'server-only'`) | `createClient(url, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })` | service role | `src/app/api/webhooks/**`, `src/app/api/jobs/**`, `src/server/services/{booking,payment,ticket,notification,document,export,staff}-service.ts`, `scripts/**` | Guest flows keyed by a verified token, `internal.*` functions, outbox worker |
 
 ESLint `no-restricted-imports` and a CI grep enforce the allow-list. Every importer of `admin.ts` carries a header comment stating why RLS cannot apply, and every query in it filters by an id derived from a verified token or signature. `admin.ts` reaches `internal.*` only through `public.svc_<name>` wrappers (decision of 2026-10-16): PostgREST exposes `public` alone, so each `internal` function the server calls gets a `security definer` wrapper named `svc_` + its own name in the same migration, executable by `service_role` only (revoked from `public`, `anon`, `authenticated`; pgTAP checks that no `svc_*` is callable by either), and `service_role` holds no right on `internal` itself. Never `.schema('internal')`. A PostgREST call cannot carry a `set_config` into the next one, so service-role writes pass the acting user to the wrapper (`p_actor_id`, e.g. `svc_log_audit`; `create_booking` takes `p_actor_id` itself) and audit rows never carry a NULL actor.
