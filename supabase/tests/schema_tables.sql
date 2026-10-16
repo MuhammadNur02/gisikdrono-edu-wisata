@@ -1,7 +1,7 @@
 -- Structure test for 0003_tables, extended group by group: exact columns, the types other code
 -- relies on, keys, and the CHECK / unique rules proven by trying to break them.
 begin;
-select plan(146);
+select plan(169);
 
 -- ===== Every table: RLS from birth, no API rights, updated_at kept by trigger =====
 
@@ -825,6 +825,118 @@ update public.certificates set purged_at = now(), recipient_name = '[dihapus]' w
 select lives_ok(
   $$delete from public.booking_participants where booking_id = '00000000-0000-4000-8000-0000000000e1' and seq_no = 1$$,
   'after the purge marks the certificate, the participant row can go and the certificate stays'
+);
+
+-- ===== Content and community (Task P1.2.10) =====
+
+select columns_are('public', 'galleries', array[
+  'id', 'rw_id', 'category', 'media_type', 'storage_path', 'thumbnail_path', 'video_url', 'width',
+  'height', 'blurhash', 'caption', 'alt_text', 'taken_at', 'booking_id', 'tags', 'status',
+  'sort_order', 'uploaded_by', 'created_at', 'updated_at'
+]);
+select columns_are('public', 'articles', array[
+  'id', 'rw_id', 'slug', 'title', 'excerpt', 'body_json', 'cover_path', 'category', 'tags',
+  'status', 'author_id', 'reviewed_by', 'published_at', 'seo_title', 'seo_description',
+  'reading_minutes', 'created_at', 'updated_at'
+]);
+select columns_are('public', 'booklets', array[
+  'id', 'rw_id', 'kind', 'slug', 'title', 'description', 'pdf_path', 'cover_path',
+  'page_images_prefix', 'page_count', 'file_size_bytes', 'download_count', 'status',
+  'published_at', 'created_by', 'created_at', 'updated_at'
+]);
+select columns_are('public', 'hero_banners', array[
+  'id', 'title', 'subtitle', 'cta_label', 'cta_href', 'image_path', 'mobile_image_path',
+  'product_id', 'sort_order', 'is_active', 'starts_at', 'ends_at', 'created_by', 'created_at',
+  'updated_at'
+]);
+select columns_are('public', 'activity_points', array[
+  'id', 'rw_id', 'slug', 'name', 'point_type', 'short_description', 'body_md', 'image_path',
+  'map_x', 'map_y', 'svg_hotspot_id', 'lat', 'lng', 'sort_order', 'status', 'created_at',
+  'updated_at'
+]);
+select columns_are('public', 'performance_schedules', array[
+  'id', 'rw_id', 'title', 'schedule_type', 'description_md', 'starts_at', 'ends_at', 'venue',
+  'recurrence_rule', 'image_path', 'package_id', 'status', 'created_by', 'created_at',
+  'updated_at'
+]);
+select columns_are('public', 'reviews', array[
+  'id', 'booking_id', 'rw_ids', 'rating', 'title', 'body', 'reviewer_name', 'institution_name',
+  'is_anonymous', 'status', 'is_featured', 'moderated_by', 'moderated_at', 'moderation_note',
+  'created_at', 'updated_at'
+]);
+select is(
+  (select count(*)::int from pg_indexes where schemaname = 'public'
+     and indexname = any (array['galleries_filter_idx', 'articles_public_idx', 'performance_schedules_time_idx', 'reviews_public_idx'])),
+  4,
+  'every index of the content and community group exists'
+);
+
+select throws_ok(
+  $$insert into public.galleries (rw_id, category, storage_path, alt_text) values (5, 'activity', 'rw-05/gallery/a.webp', 'ab')$$,
+  '23514', null, 'every gallery image has a real alt text (at least 3 characters)'
+);
+select throws_ok(
+  $$insert into public.galleries (rw_id, category, media_type, storage_path, video_url, alt_text)
+    values (5, 'event', 'video', 'rw-05/gallery/v.webp', 'https://evil.test/video', 'Tari tradisional')$$,
+  '23514', null, 'video links point to YouTube only'
+);
+select throws_ok(
+  $$insert into public.articles (slug, title) values ('judul-panjang', repeat('a', 161))$$,
+  '23514', null, 'an article title stays within 160 characters'
+);
+select throws_ok(
+  $$insert into public.articles (slug, title, seo_title) values ('seo-panjang', 'Judul', repeat('a', 71))$$,
+  '23514', null, 'an SEO title stays within 70 characters'
+);
+insert into public.articles (id, slug, title) values ('00000000-0000-4000-8000-000000000401', 'artikel-baru', 'Artikel baru');
+select is(
+  (select body_json from public.articles where id = '00000000-0000-4000-8000-000000000401'),
+  '{"type": "doc", "content": []}'::jsonb,
+  'a new article starts as an empty ProseMirror document, never HTML'
+);
+select throws_ok(
+  $$insert into public.hero_banners (title, image_path, cta_href) values ('Promo', 'kelurahan/hero.webp', '//evil.test')$$,
+  '23514', null, 'a banner link cannot be protocol-relative'
+);
+select throws_ok(
+  $$insert into public.hero_banners (title, image_path, cta_href) values ('Promo', 'kelurahan/hero.webp', 'https://evil.test')$$,
+  '23514', null, 'a banner link cannot leave the site'
+);
+select throws_ok(
+  $$insert into public.hero_banners (title, image_path, cta_href) values ('Promo', 'kelurahan/hero.webp', '/\evil.test')$$,
+  '23514', null, 'a banner link cannot use the backslash trick'
+);
+select lives_ok(
+  $$insert into public.hero_banners (title, image_path, cta_href) values ('Paket baru', 'kelurahan/hero.webp', '/paket-wisata')$$,
+  'a banner may link to a path on this site'
+);
+select throws_ok(
+  $$insert into public.activity_points (rw_id, slug, name, point_type, map_x) values (5, 'bank-sampah', 'Bank Sampah', 'bank_sampah', 101)$$,
+  '23514', null, 'floor-plan coordinates are percentages from 0 to 100'
+);
+select throws_ok(
+  $$insert into public.performance_schedules (rw_id, title, schedule_type, starts_at, ends_at)
+    values (8, 'Tari', 'dance_performance', '2026-11-12 09:00+07', '2026-11-12 09:00+07')$$,
+  '23514', null, 'a performance ends after it starts'
+);
+select throws_ok(
+  $$insert into public.reviews (booking_id, rw_ids, rating, body, reviewer_name) values ('00000000-0000-4000-8000-0000000000e1', '{5}', 6, 'Kunjungan yang seru sekali', 'Siti')$$,
+  '23514', null, 'a rating is 1 to 5 stars'
+);
+select throws_ok(
+  $$insert into public.reviews (booking_id, rw_ids, rating, body, reviewer_name) values ('00000000-0000-4000-8000-0000000000e1', '{5}', 5, 'Seru', 'Siti')$$,
+  '23514', null, 'a review says at least 10 characters'
+);
+insert into public.reviews (booking_id, rw_ids, rating, body, reviewer_name)
+values ('00000000-0000-4000-8000-0000000000e1', '{5}', 5, 'Kunjungan yang seru sekali', 'Siti');
+select throws_ok(
+  $$insert into public.reviews (booking_id, rw_ids, rating, body, reviewer_name) values ('00000000-0000-4000-8000-0000000000e1', '{5}', 4, 'Ulasan kedua untuk booking yang sama', 'Siti')$$,
+  '23505', null, 'a booking leaves one review'
+);
+select is(
+  (select status from public.reviews where booking_id = '00000000-0000-4000-8000-0000000000e1'),
+  'pending'::public.review_status,
+  'a new review waits for moderation'
 );
 
 select * from finish();

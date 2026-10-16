@@ -784,3 +784,193 @@ create unique index certificates_participant_once on public.certificates (partic
 alter table public.certificates enable row level security;
 alter table public.certificates force row level security;
 revoke all on public.certificates from anon, authenticated;
+
+
+-- ===== Content and community (docs/PRD.md §8.4.7, Task P1.2.10) =====
+
+-- galleries: one row = one media item; the integrated gallery is a filtered query.
+create table public.galleries (
+  id             uuid primary key default gen_random_uuid(),
+  rw_id          smallint references public.rw_units(id),      -- NULL = kelurahan
+  category       public.gallery_category not null,
+  media_type     public.media_type not null default 'image',
+  storage_path   text not null,                                -- public-media/rw-05/gallery/<uuid>.webp
+  thumbnail_path text,
+  video_url      text check (video_url is null or video_url ~ '^https://(www\.)?youtube\.com/'),
+  width          integer,
+  height         integer,
+  blurhash       text,
+  caption        text,
+  alt_text       text not null check (length(alt_text) between 3 and 200),
+  taken_at       date,
+  booking_id     uuid references public.bookings(id) on delete set null,
+  tags           text[] not null default '{}',
+  status         public.content_status not null default 'published',
+  sort_order     integer not null default 0,
+  uploaded_by    uuid references public.profiles(id),
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+create index galleries_filter_idx on public.galleries (status, rw_id, category, sort_order);
+alter table public.galleries enable row level security;
+alter table public.galleries force row level security;
+revoke all on public.galleries from anon, authenticated;
+create trigger set_updated_at before update on public.galleries
+  for each row execute function public.set_updated_at();
+
+-- articles (A): news & education; body is Tiptap/ProseMirror JSON rendered by an allowlisted renderer. No HTML stored.
+create table public.articles (
+  id              uuid primary key default gen_random_uuid(),
+  rw_id           smallint references public.rw_units(id),     -- NULL = Edu Center / kelurahan
+  slug            text not null unique check (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+  title           text not null check (length(title) <= 160),
+  excerpt         text check (length(excerpt) <= 300),
+  body_json       jsonb not null default '{"type":"doc","content":[]}',
+  cover_path      text,
+  category        public.article_category not null default 'news',
+  tags            text[] not null default '{}',
+  status          public.content_status not null default 'draft',
+  author_id       uuid references public.profiles(id),
+  reviewed_by     uuid references public.profiles(id),
+  published_at    timestamptz,
+  seo_title       text check (length(seo_title) <= 70),
+  seo_description text check (length(seo_description) <= 160),
+  reading_minutes smallint,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+create index articles_public_idx on public.articles (status, published_at desc);
+-- trigger articles_moderation_guard: non-superadmin cannot set 'published'; admin_rw edit of a published article -> 'pending_review'.
+alter table public.articles enable row level security;
+alter table public.articles force row level security;
+revoke all on public.articles from anon, authenticated;
+create trigger set_updated_at before update on public.articles
+  for each row execute function public.set_updated_at();
+
+-- booklets: e-booklet / visit proposal / price list PDFs + pre-rendered page images for the flipbook.
+create table public.booklets (
+  id                 uuid primary key default gen_random_uuid(),
+  rw_id              smallint references public.rw_units(id),   -- NULL = kelurahan
+  kind               public.booklet_kind not null default 'ebooklet',
+  slug               text not null unique check (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+  title              text not null,
+  description        text,
+  pdf_path           text not null,                              -- public-media/<owner>/booklets/<id>/booklet.pdf
+  cover_path         text,
+  page_images_prefix text,                                       -- public-media/<owner>/booklets/<id>/pages/
+  page_count         smallint,
+  file_size_bytes    bigint,
+  download_count     integer not null default 0,
+  status             public.content_status not null default 'draft',
+  published_at       timestamptz,
+  created_by         uuid references public.profiles(id),
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now()
+);
+alter table public.booklets enable row level security;
+alter table public.booklets force row level security;
+revoke all on public.booklets from anon, authenticated;
+create trigger set_updated_at before update on public.booklets
+  for each row execute function public.set_updated_at();
+
+-- hero_banners (A): home hero slides, optionally pointing at a featured UMKM product. Kelurahan-level.
+create table public.hero_banners (
+  id                uuid primary key default gen_random_uuid(),
+  title             text not null check (length(title) <= 90),
+  subtitle          text check (length(subtitle) <= 160),
+  cta_label         text check (length(cta_label) <= 30),
+  cta_href          text check (cta_href ~ '^/(?![/\\])'),      -- internal paths only
+  image_path        text not null,
+  mobile_image_path text,
+  product_id        uuid references public.products_umkm(id) on delete set null,
+  sort_order        smallint not null default 0,
+  is_active         boolean not null default true,
+  starts_at         timestamptz,
+  ends_at           timestamptz,
+  created_by        uuid references public.profiles(id),
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
+);
+alter table public.hero_banners enable row level security;
+alter table public.hero_banners force row level security;
+revoke all on public.hero_banners from anon, authenticated;
+create trigger set_updated_at before update on public.hero_banners
+  for each row execute function public.set_updated_at();
+
+-- activity_points: tourism points for the interactive floor plan (SVG hotspot) and the Leaflet map.
+create table public.activity_points (
+  id                uuid primary key default gen_random_uuid(),
+  rw_id             smallint not null references public.rw_units(id),
+  slug              text not null unique check (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+  name              text not null,
+  point_type        public.activity_point_type not null,
+  short_description text check (length(short_description) <= 200),
+  body_md           text,
+  image_path        text,
+  map_x             numeric(6,2) check (map_x between 0 and 100),
+  map_y             numeric(6,2) check (map_y between 0 and 100),
+  svg_hotspot_id    text,
+  lat               numeric(9,6),
+  lng               numeric(9,6),
+  sort_order        smallint not null default 0,
+  status            public.content_status not null default 'published',
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
+);
+alter table public.activity_points enable row level security;
+alter table public.activity_points force row level security;
+revoke all on public.activity_points from anon, authenticated;
+create trigger set_updated_at before update on public.activity_points
+  for each row execute function public.set_updated_at();
+
+-- performance_schedules: RW 08 performance & workshop calendar.
+create table public.performance_schedules (
+  id              uuid primary key default gen_random_uuid(),
+  rw_id           smallint not null references public.rw_units(id),
+  title           text not null,
+  schedule_type   public.schedule_type not null,
+  description_md  text,
+  starts_at       timestamptz not null,
+  ends_at         timestamptz not null check (ends_at > starts_at),
+  venue           text,
+  recurrence_rule text,                                          -- RFC 5545 RRULE or NULL
+  image_path      text,
+  package_id      uuid references public.tour_packages(id) on delete set null,
+  status          public.content_status not null default 'published',
+  created_by      uuid references public.profiles(id),
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+create index performance_schedules_time_idx on public.performance_schedules (rw_id, starts_at) where status = 'published';
+alter table public.performance_schedules enable row level security;
+alter table public.performance_schedules force row level security;
+revoke all on public.performance_schedules from anon, authenticated;
+create trigger set_updated_at before update on public.performance_schedules
+  for each row execute function public.set_updated_at();
+
+-- reviews (A): guest book + rating; one per booking, requires a used ticket; moderated by superadmin.
+create table public.reviews (
+  id               uuid primary key default gen_random_uuid(),
+  booking_id       uuid not null unique references public.bookings(id) on delete restrict,
+  rw_ids           smallint[] not null,
+  rating           smallint not null check (rating between 1 and 5),
+  title            text check (length(title) <= 120),
+  body             text not null check (length(body) between 10 and 2000),
+  reviewer_name    text not null check (length(reviewer_name) between 2 and 60),
+  institution_name text,
+  is_anonymous     boolean not null default false,
+  status           public.review_status not null default 'pending',
+  is_featured      boolean not null default false,
+  moderated_by     uuid references public.profiles(id),
+  moderated_at     timestamptz,
+  moderation_note  text,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now()
+);
+create index reviews_public_idx on public.reviews (status, is_featured, created_at desc);
+-- trigger reviews_moderation_stamp: on status change set moderated_by = auth.uid(), moderated_at = now().
+alter table public.reviews enable row level security;
+alter table public.reviews force row level security;
+revoke all on public.reviews from anon, authenticated;
+create trigger set_updated_at before update on public.reviews
+  for each row execute function public.set_updated_at();

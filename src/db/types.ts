@@ -34,6 +34,159 @@ export type Database = {
   }
   public: {
     Tables: {
+      activity_points: {
+        Row: {
+          body_md: string | null
+          created_at: string
+          id: string
+          image_path: string | null
+          lat: number | null
+          lng: number | null
+          map_x: number | null
+          map_y: number | null
+          name: string
+          point_type: Database["public"]["Enums"]["activity_point_type"]
+          rw_id: number
+          short_description: string | null
+          slug: string
+          sort_order: number
+          status: Database["public"]["Enums"]["content_status"]
+          svg_hotspot_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          body_md?: string | null
+          created_at?: string
+          id?: string
+          image_path?: string | null
+          lat?: number | null
+          lng?: number | null
+          map_x?: number | null
+          map_y?: number | null
+          name: string
+          point_type: Database["public"]["Enums"]["activity_point_type"]
+          rw_id: number
+          short_description?: string | null
+          slug: string
+          sort_order?: number
+          status?: Database["public"]["Enums"]["content_status"]
+          svg_hotspot_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          body_md?: string | null
+          created_at?: string
+          id?: string
+          image_path?: string | null
+          lat?: number | null
+          lng?: number | null
+          map_x?: number | null
+          map_y?: number | null
+          name?: string
+          point_type?: Database["public"]["Enums"]["activity_point_type"]
+          rw_id?: number
+          short_description?: string | null
+          slug?: string
+          sort_order?: number
+          status?: Database["public"]["Enums"]["content_status"]
+          svg_hotspot_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_points_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      articles: {
+        Row: {
+          author_id: string | null
+          body_json: Json
+          category: Database["public"]["Enums"]["article_category"]
+          cover_path: string | null
+          created_at: string
+          excerpt: string | null
+          id: string
+          published_at: string | null
+          reading_minutes: number | null
+          reviewed_by: string | null
+          rw_id: number | null
+          seo_description: string | null
+          seo_title: string | null
+          slug: string
+          status: Database["public"]["Enums"]["content_status"]
+          tags: string[]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          author_id?: string | null
+          body_json?: Json
+          category?: Database["public"]["Enums"]["article_category"]
+          cover_path?: string | null
+          created_at?: string
+          excerpt?: string | null
+          id?: string
+          published_at?: string | null
+          reading_minutes?: number | null
+          reviewed_by?: string | null
+          rw_id?: number | null
+          seo_description?: string | null
+          seo_title?: string | null
+          slug: string
+          status?: Database["public"]["Enums"]["content_status"]
+          tags?: string[]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          author_id?: string | null
+          body_json?: Json
+          category?: Database["public"]["Enums"]["article_category"]
+          cover_path?: string | null
+          created_at?: string
+          excerpt?: string | null
+          id?: string
+          published_at?: string | null
+          reading_minutes?: number | null
+          reviewed_by?: string | null
+          rw_id?: number | null
+          seo_description?: string | null
+          seo_title?: string | null
+          slug?: string
+          status?: Database["public"]["Enums"]["content_status"]
+          tags?: string[]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "articles_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "articles_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "articles_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       booking_addons: {
         Row: {
           booking_id: string
@@ -432,6 +585,81 @@ export type Database = {
           },
         ]
       }
+      booklets: {
+        Row: {
+          cover_path: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          download_count: number
+          file_size_bytes: number | null
+          id: string
+          kind: Database["public"]["Enums"]["booklet_kind"]
+          page_count: number | null
+          page_images_prefix: string | null
+          pdf_path: string
+          published_at: string | null
+          rw_id: number | null
+          slug: string
+          status: Database["public"]["Enums"]["content_status"]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          cover_path?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          download_count?: number
+          file_size_bytes?: number | null
+          id?: string
+          kind?: Database["public"]["Enums"]["booklet_kind"]
+          page_count?: number | null
+          page_images_prefix?: string | null
+          pdf_path: string
+          published_at?: string | null
+          rw_id?: number | null
+          slug: string
+          status?: Database["public"]["Enums"]["content_status"]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          cover_path?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          download_count?: number
+          file_size_bytes?: number | null
+          id?: string
+          kind?: Database["public"]["Enums"]["booklet_kind"]
+          page_count?: number | null
+          page_images_prefix?: string | null
+          pdf_path?: string
+          published_at?: string | null
+          rw_id?: number | null
+          slug?: string
+          status?: Database["public"]["Enums"]["content_status"]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booklets_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booklets_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       certificates: {
         Row: {
           booking_id: string
@@ -551,6 +779,97 @@ export type Database = {
         }
         Relationships: []
       }
+      galleries: {
+        Row: {
+          alt_text: string
+          blurhash: string | null
+          booking_id: string | null
+          caption: string | null
+          category: Database["public"]["Enums"]["gallery_category"]
+          created_at: string
+          height: number | null
+          id: string
+          media_type: Database["public"]["Enums"]["media_type"]
+          rw_id: number | null
+          sort_order: number
+          status: Database["public"]["Enums"]["content_status"]
+          storage_path: string
+          tags: string[]
+          taken_at: string | null
+          thumbnail_path: string | null
+          updated_at: string
+          uploaded_by: string | null
+          video_url: string | null
+          width: number | null
+        }
+        Insert: {
+          alt_text: string
+          blurhash?: string | null
+          booking_id?: string | null
+          caption?: string | null
+          category: Database["public"]["Enums"]["gallery_category"]
+          created_at?: string
+          height?: number | null
+          id?: string
+          media_type?: Database["public"]["Enums"]["media_type"]
+          rw_id?: number | null
+          sort_order?: number
+          status?: Database["public"]["Enums"]["content_status"]
+          storage_path: string
+          tags?: string[]
+          taken_at?: string | null
+          thumbnail_path?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+          video_url?: string | null
+          width?: number | null
+        }
+        Update: {
+          alt_text?: string
+          blurhash?: string | null
+          booking_id?: string | null
+          caption?: string | null
+          category?: Database["public"]["Enums"]["gallery_category"]
+          created_at?: string
+          height?: number | null
+          id?: string
+          media_type?: Database["public"]["Enums"]["media_type"]
+          rw_id?: number | null
+          sort_order?: number
+          status?: Database["public"]["Enums"]["content_status"]
+          storage_path?: string
+          tags?: string[]
+          taken_at?: string | null
+          thumbnail_path?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+          video_url?: string | null
+          width?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "galleries_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "galleries_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "galleries_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       guest_otps: {
         Row: {
           attempts: number
@@ -603,6 +922,75 @@ export type Database = {
             columns: ["booking_id"]
             isOneToOne: false
             referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hero_banners: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          cta_href: string | null
+          cta_label: string | null
+          ends_at: string | null
+          id: string
+          image_path: string
+          is_active: boolean
+          mobile_image_path: string | null
+          product_id: string | null
+          sort_order: number
+          starts_at: string | null
+          subtitle: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          cta_href?: string | null
+          cta_label?: string | null
+          ends_at?: string | null
+          id?: string
+          image_path: string
+          is_active?: boolean
+          mobile_image_path?: string | null
+          product_id?: string | null
+          sort_order?: number
+          starts_at?: string | null
+          subtitle?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          cta_href?: string | null
+          cta_label?: string | null
+          ends_at?: string | null
+          id?: string
+          image_path?: string
+          is_active?: boolean
+          mobile_image_path?: string | null
+          product_id?: string | null
+          sort_order?: number
+          starts_at?: string | null
+          subtitle?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hero_banners_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hero_banners_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products_umkm"
             referencedColumns: ["id"]
           },
         ]
@@ -993,6 +1381,82 @@ export type Database = {
           },
         ]
       }
+      performance_schedules: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description_md: string | null
+          ends_at: string
+          id: string
+          image_path: string | null
+          package_id: string | null
+          recurrence_rule: string | null
+          rw_id: number
+          schedule_type: Database["public"]["Enums"]["schedule_type"]
+          starts_at: string
+          status: Database["public"]["Enums"]["content_status"]
+          title: string
+          updated_at: string
+          venue: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description_md?: string | null
+          ends_at: string
+          id?: string
+          image_path?: string | null
+          package_id?: string | null
+          recurrence_rule?: string | null
+          rw_id: number
+          schedule_type: Database["public"]["Enums"]["schedule_type"]
+          starts_at: string
+          status?: Database["public"]["Enums"]["content_status"]
+          title: string
+          updated_at?: string
+          venue?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description_md?: string | null
+          ends_at?: string
+          id?: string
+          image_path?: string | null
+          package_id?: string | null
+          recurrence_rule?: string | null
+          rw_id?: number
+          schedule_type?: Database["public"]["Enums"]["schedule_type"]
+          starts_at?: string
+          status?: Database["public"]["Enums"]["content_status"]
+          title?: string
+          updated_at?: string
+          venue?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "performance_schedules_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "performance_schedules_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "tour_packages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "performance_schedules_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       products_umkm: {
         Row: {
           category: Database["public"]["Enums"]["product_category"]
@@ -1325,6 +1789,78 @@ export type Database = {
           {
             foreignKeyName: "reconciliation_runs_created_by_fkey"
             columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reviews: {
+        Row: {
+          body: string
+          booking_id: string
+          created_at: string
+          id: string
+          institution_name: string | null
+          is_anonymous: boolean
+          is_featured: boolean
+          moderated_at: string | null
+          moderated_by: string | null
+          moderation_note: string | null
+          rating: number
+          reviewer_name: string
+          rw_ids: number[]
+          status: Database["public"]["Enums"]["review_status"]
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          booking_id: string
+          created_at?: string
+          id?: string
+          institution_name?: string | null
+          is_anonymous?: boolean
+          is_featured?: boolean
+          moderated_at?: string | null
+          moderated_by?: string | null
+          moderation_note?: string | null
+          rating: number
+          reviewer_name: string
+          rw_ids: number[]
+          status?: Database["public"]["Enums"]["review_status"]
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          booking_id?: string
+          created_at?: string
+          id?: string
+          institution_name?: string | null
+          is_anonymous?: boolean
+          is_featured?: boolean
+          moderated_at?: string | null
+          moderated_by?: string | null
+          moderation_note?: string | null
+          rating?: number
+          reviewer_name?: string
+          rw_ids?: number[]
+          status?: Database["public"]["Enums"]["review_status"]
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reviews_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: true
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reviews_moderated_by_fkey"
+            columns: ["moderated_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
