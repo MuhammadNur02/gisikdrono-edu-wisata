@@ -175,6 +175,24 @@ export function svcExpireStaleBookings(adminClient: DatabaseClient): Promise<num
   return resultOf(adminClient.rpc('svc_expire_stale_bookings'));
 }
 
+export type PurgeableFile = { bucket: string; path: string };
+
+// Files the retention runs marked for deletion (docs/Security.md §7.3), oldest first.
+export function svcPurgeableFiles(
+  adminClient: DatabaseClient,
+  limit: number,
+): Promise<PurgeableFile[]> {
+  return resultOf(adminClient.rpc('svc_purgeable_files', { p_limit: limit }));
+}
+
+// Clears the paths of files that are gone; returns how many marked rows let go of one.
+export function svcForgetPurgedFiles(
+  adminClient: DatabaseClient,
+  paths: string[],
+): Promise<number> {
+  return resultOf(adminClient.rpc('svc_forget_purged_files', { p_paths: paths }));
+}
+
 // actorId is the staff member's profile id, or null when the server acts for a visitor; it is
 // required here so no call can forget it.
 export async function svcLogAudit(

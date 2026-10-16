@@ -2510,3 +2510,64 @@ create trigger midtrans_payload_minimise before insert or update of payload on p
 
 revoke execute on function internal.minimise_midtrans_payload(jsonb), internal.minimise_stored_midtrans_payload()
   from public, anon, authenticated;
+
+
+-- ===== Storage purge support (docs/Security.md §7.3, Task P1.3.25) =====
+-- Supabase refuses delete from storage.objects, so the retention runs only mark rows. The job
+-- api/jobs/purge-storage asks here for the marked files, deletes them through the Storage API, and
+-- then forgets their paths here, logged as cron. A file whose deletion failed is not forgotten, so
+-- the next run tries it again.
+
+create function internal.purgeable_files(p_limit integer) returns table (bucket text, path text)
+  language sql stable security definer
+  set search_path = ''
+as $$
+  (select 'documents', c.pdf_path from public.certificates c
+   where c.purged_at is not null and c.pdf_path is not null order by c.purged_at limit p_limit)
+  union all
+  (select 'documents', e.storage_path from public.exports e
+   where e.deleted_at is not null and e.storage_path is not null order by e.deleted_at limit p_limit)
+  union all
+  -- Ticket PDFs are kept for 12 months after the visit.
+  (select 'documents', b.ticket_pdf_path from public.bookings b
+   where b.ticket_pdf_path is not null and b.visit_date_end < (public.today_jkt() - interval '12 months')::date
+   order by b.visit_date_end limit p_limit);
+$$;
+
+-- Clears only paths that are still marked, so a wrong or replayed list cannot unlink a live file.
+create function internal.forget_purged_files(p_paths text[]) returns integer
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  forgotten integer := 0;
+  cleared integer;
+begin
+  perform internal.begin_scheduled_job();
+  update public.certificates set pdf_path = null where purged_at is not null and pdf_path = any (p_paths);
+  get diagnostics cleared = row_count;
+  forgotten := forgotten + cleared;
+  update public.exports set storage_path = null where deleted_at is not null and storage_path = any (p_paths);
+  get diagnostics cleared = row_count;
+  forgotten := forgotten + cleared;
+  update public.bookings set ticket_pdf_path = null
+  where ticket_pdf_path = any (p_paths) and visit_date_end < (public.today_jkt() - interval '12 months')::date;
+  get diagnostics cleared = row_count;
+  return forgotten + cleared;
+end;
+$$;
+
+create function public.svc_purgeable_files(p_limit integer) returns table (bucket text, path text)
+  language sql security definer
+  set search_path = ''
+as $$ select * from internal.purgeable_files(p_limit); $$;
+
+create function public.svc_forget_purged_files(p_paths text[]) returns integer
+  language sql security definer
+  set search_path = ''
+as $$ select internal.forget_purged_files(p_paths); $$;
+
+revoke execute on function internal.purgeable_files(integer), internal.forget_purged_files(text[]),
+  public.svc_purgeable_files(integer), public.svc_forget_purged_files(text[])
+  from public, anon, authenticated;
+grant execute on function public.svc_purgeable_files(integer), public.svc_forget_purged_files(text[]) to service_role;

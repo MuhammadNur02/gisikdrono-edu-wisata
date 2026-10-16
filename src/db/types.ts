@@ -4163,6 +4163,7 @@ export type Database = {
         Returns: string
       }
       svc_expire_stale_bookings: { Args: never; Returns: number }
+      svc_forget_purged_files: { Args: { p_paths: string[] }; Returns: number }
       svc_increment_booklet_download: {
         Args: { p_booklet_id: string }
         Returns: undefined
@@ -4176,6 +4177,13 @@ export type Database = {
           p_metadata?: Json
         }
         Returns: undefined
+      }
+      svc_purgeable_files: {
+        Args: { p_limit: number }
+        Returns: {
+          bucket: string
+          path: string
+        }[]
       }
       svc_rate_limit_hit: {
         Args: { p_key: string; p_limit: number; p_window_seconds: number }

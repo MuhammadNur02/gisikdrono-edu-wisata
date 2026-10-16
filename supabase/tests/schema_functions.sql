@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(333);
+select plan(338);
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -1253,6 +1253,50 @@ select is(
    where action = 'bookings.update' and entity_id = '00000000-0000-4000-8000-000000001e08' order by id desc limit 1),
   true,
   'the anonymisation is audited by column name only'
+);
+
+-- ===== Storage purge support =====
+-- What the retention runs above marked, with a file each, next to live files that must stay.
+
+update public.bookings set ticket_pdf_path = 'bookings/1e10/ticket-GSK-R0B01E10.pdf'
+where id = '00000000-0000-4000-8000-000000001e10';
+update public.bookings set ticket_pdf_path = 'bookings/1e07/ticket-GSK-R0B01E07.pdf'
+where id = '00000000-0000-4000-8000-000000001e07';
+update public.certificates set pdf_path = 'certificates/1e07/participant-1.pdf'
+where id = '00000000-0000-4000-8000-000000001a07';
+update public.certificates set pdf_path = 'certificates/e1/group.pdf' where id = '00000000-0000-4000-8000-000000000a01';
+update public.exports set storage_path = 'exports/0001/attendance-1.xlsx' where id = '00000000-0000-4000-8000-000000001a08';
+insert into public.exports (id, kind, format, requested_by, watermark, expires_at, storage_path)
+values ('00000000-0000-4000-8000-000000001a11', 'visits', 'xlsx', '00000000-0000-4000-8000-000000000001', 'uji',
+        now() + interval '1 hour', 'exports/0001/visits-live.xlsx');
+
+select is(
+  (select string_agg(bucket || ':' || path, ' ' order by path) from public.svc_purgeable_files(100)),
+  'documents:bookings/1e10/ticket-GSK-R0B01E10.pdf documents:certificates/1e07/participant-1.pdf '
+  || 'documents:exports/0001/attendance-1.xlsx',
+  'the job is handed the purged certificate, the expired export and the ticket PDF a year past its visit'
+);
+select is(
+  public.svc_forget_purged_files(array[
+    'certificates/1e07/participant-1.pdf', 'exports/0001/attendance-1.xlsx', 'bookings/1e10/ticket-GSK-R0B01E10.pdf',
+    'certificates/e1/group.pdf', 'exports/0001/visits-live.xlsx', 'bookings/1e07/ticket-GSK-R0B01E07.pdf']),
+  3,
+  'after deleting the files the job clears exactly the three marked paths'
+);
+select set_config('app.in_rpc', '', true), set_config('app.actor_role', '', true);
+select is((select count(*)::int from public.svc_purgeable_files(100)), 0, 'so the next run finds nothing left');
+select is(
+  (select pdf_path from public.certificates where id = '00000000-0000-4000-8000-000000000a01') || ' '
+  || (select storage_path from public.exports where id = '00000000-0000-4000-8000-000000001a11') || ' '
+  || (select ticket_pdf_path from public.bookings where id = '00000000-0000-4000-8000-000000001e07'),
+  'certificates/e1/group.pdf exports/0001/visits-live.xlsx bookings/1e07/ticket-GSK-R0B01E07.pdf',
+  'live files named in the same list keep their paths'
+);
+select is(
+  (select actor_role from public.audit_logs
+   where action = 'certificates.update' and entity_id = '00000000-0000-4000-8000-000000001a07' order by id desc limit 1),
+  'cron',
+  'and clearing a path is logged as the job'
 );
 
 -- ===== Session generation, UI events, booklet downloads =====
