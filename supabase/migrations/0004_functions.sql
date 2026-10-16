@@ -617,3 +617,225 @@ revoke execute on function internal.reviews_moderation_stamp() from public, anon
 revoke execute on function internal.quotations_limit_guard() from public, anon, authenticated;
 revoke execute on function internal.revenue_rule_sum_guard() from public, anon, authenticated;
 revoke execute on function internal.revenue_rules_immutable_once_used() from public, anon, authenticated;
+revoke execute on function internal.revenue_rule_lines_immutable_once_used() from public, anon, authenticated;
+revoke execute on function internal.visit_sessions_guard() from public, anon, authenticated;
+
+
+-- ===== Status fences and immutability (docs/PRD.md §8.1, §8.4.4–§8.4.6, Task P1.3.08, P1.3.09, P1.3.11) =====
+-- Transition functions announce themselves with app.in_rpc = '1', apply_adjustment with
+-- app.adjustment_id, and undo_check_in with app.undo_check_in = '1'. Nothing else moves a status, a
+-- quota counter or settled money, whoever the caller is.
+
+create function internal.in_rpc() returns boolean
+  language sql stable
+  set search_path = ''
+as $$ select coalesce(current_setting('app.in_rpc', true), '') = '1'; $$;
+
+create function internal.in_adjustment() returns boolean
+  language sql stable
+  set search_path = ''
+as $$ select nullif(current_setting('app.adjustment_id', true), '') is not null; $$;
+
+revoke execute on function internal.in_rpc(), internal.in_adjustment() from public, anon, authenticated;
+
+-- guard_status_writes: the columns named on each trigger change only inside a transition function.
+create function internal.guard_status_writes() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  fenced_column text;
+  before_row jsonb := to_jsonb(old);
+  after_row jsonb := to_jsonb(new);
+begin
+  if internal.in_rpc() then
+    return new;
+  end if;
+  foreach fenced_column in array tg_argv loop
+    if before_row -> fenced_column is distinct from after_row -> fenced_column then
+      raise exception '%.% is written only by the transition functions', tg_table_name, fenced_column
+        using errcode = '42501';
+    end if;
+  end loop;
+  return new;
+end;
+$$;
+create trigger guard_status_writes before update on public.bookings
+  for each row execute function internal.guard_status_writes('status');
+create trigger guard_status_writes before update on public.payments
+  for each row execute function internal.guard_status_writes('status');
+create trigger guard_status_writes before update on public.tickets_qr
+  for each row execute function internal.guard_status_writes('status');
+create trigger guard_status_writes before update on public.certificates
+  for each row execute function internal.guard_status_writes('status');
+create trigger guard_status_writes before update on public.booking_legs
+  for each row execute function internal.guard_status_writes('status');
+create trigger guard_status_writes before update on public.visit_sessions
+  for each row execute function internal.guard_status_writes('reserved_pax', 'checked_in_pax');
+
+-- bookings_immutable_guard: a booking keeps its identity for life, and its money once it is paid.
+create function internal.bookings_immutable_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if (new.rw_ids, new.package_id, new.booking_code, new.created_at, new.consent_version)
+     is distinct from (old.rw_ids, old.package_id, old.booking_code, old.created_at, old.consent_version) then
+    raise exception 'rw_ids, package_id, booking_code, created_at and consent_version never change'
+      using errcode = '42501';
+  end if;
+  if old.paid_at is not null and not internal.in_adjustment()
+     and (new.subtotal_package, new.subtotal_addons, new.discount_amount, new.discount_note,
+          new.total_amount, new.amount_paid, new.currency)
+         is distinct from
+         (old.subtotal_package, old.subtotal_addons, old.discount_amount, old.discount_note,
+          old.total_amount, old.amount_paid, old.currency) then
+    raise exception 'the money on a paid booking changes only through an approved adjustment'
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  return new;
+end;
+$$;
+create trigger bookings_immutable_guard before update on public.bookings
+  for each row execute function internal.bookings_immutable_guard();
+
+-- bookings_discount_guard: a discount is the superadmin's call, and only before the money moves.
+create function internal.bookings_discount_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if (new.discount_amount, new.discount_note) is distinct from (old.discount_amount, old.discount_note) then
+    if not internal.is_superadmin_or_system() then
+      raise exception 'only the superadmin gives a discount' using errcode = '42501';
+    end if;
+    if old.status not in ('quoted', 'pending_payment') then
+      raise exception 'a discount changes only while the booking is quoted or awaiting payment'
+        using errcode = 'P0001', hint = 'STATE_INVALID';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+create trigger bookings_discount_guard before update on public.bookings
+  for each row execute function internal.bookings_discount_guard();
+
+-- payments_immutable_guard: what was charged never changes; after settlement only the status and the
+-- refunded amount may move, and no payment row is ever deleted.
+create function internal.payments_immutable_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if tg_op = 'DELETE' then
+    raise exception 'payments are never deleted' using errcode = '42501';
+  end if;
+  if (new.gross_amount, new.order_id, new.provider, new.booking_id, new.attempt_no)
+     is distinct from (old.gross_amount, old.order_id, old.provider, old.booking_id, old.attempt_no) then
+    raise exception 'gross_amount, order_id, provider, booking_id and attempt_no never change'
+      using errcode = '42501';
+  end if;
+  if old.status = 'settled' and not internal.in_adjustment()
+     and (to_jsonb(new) - 'status' - 'refunded_amount' - 'updated_at')
+         is distinct from (to_jsonb(old) - 'status' - 'refunded_amount' - 'updated_at') then
+    raise exception 'a settled payment only changes its status and refunded amount'
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  return new;
+end;
+$$;
+create trigger payments_immutable_guard before update or delete on public.payments
+  for each row execute function internal.payments_immutable_guard();
+
+-- invoices_immutable_guard: an official number and its amounts stay as issued; a paid invoice may
+-- still be voided with a credit note, and an adjustment may correct it.
+create function internal.invoices_immutable_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if (new.booking_id, new.invoice_number) is distinct from (old.booking_id, old.invoice_number) then
+    raise exception 'booking_id and invoice_number never change' using errcode = '42501';
+  end if;
+  if old.paid_at is not null and not internal.in_adjustment()
+     and (new.amount_due, new.amount_paid, new.paid_at, new.payment_id, new.receipt_number, new.snapshot)
+         is distinct from
+         (old.amount_due, old.amount_paid, old.paid_at, old.payment_id, old.receipt_number, old.snapshot) then
+    raise exception 'a paid invoice changes only through an approved adjustment'
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  return new;
+end;
+$$;
+create trigger invoices_immutable_guard before update on public.invoices
+  for each row execute function internal.invoices_immutable_guard();
+
+-- booking_addons_freeze: once the booking is paid, the add-on lines are what was paid for.
+create function internal.booking_addons_freeze() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if exists (select 1 from public.bookings b where b.id = old.booking_id and b.paid_at is not null)
+     and not internal.in_adjustment()
+     and (new.booking_id, new.product_id, new.rw_id, new.vendor_id, new.product_name_snapshot,
+          new.unit_price, new.qty, new.line_total)
+         is distinct from
+         (old.booking_id, old.product_id, old.rw_id, old.vendor_id, old.product_name_snapshot,
+          old.unit_price, old.qty, old.line_total) then
+    raise exception 'the add-ons of a paid booking change only through an approved adjustment'
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  return new;
+end;
+$$;
+create trigger booking_addons_freeze before update on public.booking_addons
+  for each row execute function internal.booking_addons_freeze();
+
+-- tickets_require_paid_booking: a ticket needs money behind it.
+create function internal.tickets_require_paid_booking() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if not exists (
+       select 1 from public.bookings b where b.id = new.booking_id and b.status in ('paid', 'checked_in'))
+     or not exists (
+       select 1 from public.payments p where p.booking_id = new.booking_id and p.status = 'settled') then
+    raise exception 'a ticket is issued only for a paid booking with a settled payment'
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  return new;
+end;
+$$;
+create trigger tickets_require_paid_booking before insert on public.tickets_qr
+  for each row execute function internal.tickets_require_paid_booking();
+
+-- tickets_no_revive: a ticket that was used, revoked or expired stays that way, except that
+-- undo_check_in may take a used ticket back within its own window.
+create function internal.tickets_no_revive() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  undoing_check_in boolean := coalesce(current_setting('app.undo_check_in', true), '') = '1';
+begin
+  if (new.ticket_code, new.booking_id, new.booking_leg_id, new.rw_id)
+     is distinct from (old.ticket_code, old.booking_id, old.booking_leg_id, old.rw_id) then
+    raise exception 'ticket_code, booking_id, booking_leg_id and rw_id never change' using errcode = '42501';
+  end if;
+  if old.status in ('used', 'revoked', 'expired') and new.status = 'issued'
+     and not (old.status = 'used' and undoing_check_in) then
+    raise exception 'a ticket that was used, revoked or expired is not issued again'
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  return new;
+end;
+$$;
+create trigger tickets_no_revive before update on public.tickets_qr
+  for each row execute function internal.tickets_no_revive();
+
+revoke execute on function internal.guard_status_writes(), internal.bookings_immutable_guard(),
+  internal.bookings_discount_guard(), internal.payments_immutable_guard(), internal.invoices_immutable_guard(),
+  internal.booking_addons_freeze(), internal.tickets_require_paid_booking(), internal.tickets_no_revive()
+  from public, anon, authenticated;

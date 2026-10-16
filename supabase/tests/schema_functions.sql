@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(102);
+select plan(134);
 
 -- Fixtures, rolled back at the end. The pepper is a throwaway local value.
 select vault.create_secret('local-test-pepper-not-a-real-secret-0000000', 'otp_pepper', 'test only');
@@ -528,7 +528,10 @@ select lives_ok(
 -- Sessions with bookings.
 insert into public.booking_legs (booking_id, rw_id, visit_session_id, leg_order, pax_count, status, quota_reserved_at)
 values ('00000000-0000-4000-8000-0000000000e1', 5, '00000000-0000-4000-8000-0000000000b1', 1, 40, 'reserved', now());
+-- The counter is fenced since group 4; this fixture plays the transition function.
+select set_config('app.in_rpc', '1', true);
 update public.visit_sessions set reserved_pax = 40 where id = '00000000-0000-4000-8000-0000000000b1';
+select set_config('app.in_rpc', '', true);
 select throws_ok(
   $$delete from public.visit_sessions where id = '00000000-0000-4000-8000-0000000000b1'$$,
   'P0001', 'a session with bookings cannot be deleted', 'a booked session cannot be deleted'
@@ -563,6 +566,209 @@ select throws_ok(
   'select internal.visit_sessions_guard()', '0A000', 'trigger functions can only be called as triggers',
   'Postgres itself refuses to run a guard outside a trigger'
 );
+
+-- ===== Status fences and immutability (Task P1.3.08, P1.3.09, P1.3.11) =====
+
+select throws_ok(
+  $$update public.bookings set status = 'pending_payment', expires_at = now() + interval '2 hours'
+    where id = '00000000-0000-4000-8000-0000000000e1'$$,
+  '42501', 'bookings.status is written only by the transition functions',
+  'a booking status does not move outside a transition function'
+);
+select set_config('app.in_rpc', '1', true);
+select lives_ok(
+  $$update public.bookings set status = 'pending_payment', expires_at = now() + interval '2 hours'
+    where id = '00000000-0000-4000-8000-0000000000e1'$$,
+  'inside one it does'
+);
+select set_config('app.in_rpc', '', true);
+select throws_ok(
+  $$update public.bookings set booking_code = 'GSK-AAAAAAAA' where id = '00000000-0000-4000-8000-0000000000e1'$$,
+  '42501', null, 'a booking code never changes'
+);
+select throws_ok(
+  $$update public.bookings set rw_ids = '{5,8}' where id = '00000000-0000-4000-8000-0000000000e1'$$,
+  '42501', null, 'nor the RWs a booking belongs to'
+);
+
+insert into public.payments (id, booking_id, attempt_no, provider, order_id, gross_amount)
+values ('00000000-0000-4000-8000-0000000000f1', '00000000-0000-4000-8000-0000000000e1', 1, 'midtrans', 'GSK-7F3K9Q2M-01', 1000000);
+select throws_ok(
+  $$update public.payments set status = 'settled' where id = '00000000-0000-4000-8000-0000000000f1'$$,
+  '42501', null, 'a payment status does not move outside a transition function'
+);
+select set_config('app.in_rpc', '1', true);
+select lives_ok(
+  $$update public.payments set status = 'settled', settlement_time = now() where id = '00000000-0000-4000-8000-0000000000f1'$$,
+  'the transition settles it'
+);
+select throws_ok(
+  $$update public.payments set gross_amount = 999 where id = '00000000-0000-4000-8000-0000000000f1'$$,
+  '42501', null, 'what was charged never changes, not even inside a transition'
+);
+select throws_ok(
+  $$update public.payments set method = 'qris' where id = '00000000-0000-4000-8000-0000000000f1'$$,
+  'P0001', 'a settled payment only changes its status and refunded amount', 'a settled payment is frozen'
+);
+select throws_ok(
+  $$delete from public.payments where id = '00000000-0000-4000-8000-0000000000f1'$$,
+  '42501', 'payments are never deleted', 'and never deleted'
+);
+select lives_ok(
+  $$update public.bookings set status = 'paid', paid_at = now(), amount_paid = 1000000 where id = '00000000-0000-4000-8000-0000000000e1'$$,
+  'settlement marks the booking paid and records the amount in the same step'
+);
+select set_config('app.in_rpc', '', true);
+select throws_ok(
+  $$update public.bookings set subtotal_package = 900000, total_amount = 900000 where id = '00000000-0000-4000-8000-0000000000e1'$$,
+  'P0001', 'the money on a paid booking changes only through an approved adjustment', 'paid money is frozen'
+);
+select set_config('app.adjustment_id', '00000000-0000-4000-8000-000000000901', true);
+select lives_ok(
+  $$update public.bookings set subtotal_package = 900000, total_amount = 900000 where id = '00000000-0000-4000-8000-0000000000e1'$$,
+  'an approved adjustment may correct it'
+);
+select set_config('app.adjustment_id', '', true);
+
+-- Discounts: the superadmin's call, only before the money moves.
+grant select, update on public.bookings to authenticated;
+create policy test_open on public.bookings for all to authenticated using (true) with check (true);
+insert into public.bookings (id, booking_code, status, package_id, package_snapshot, rw_ids, booker_type,
+  pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
+  consent_version, consented_at)
+values ('00000000-0000-4000-8000-0000000000e5', 'GSK-7F3K9Q2N', 'quoted', '00000000-0000-4000-8000-0000000000c1',
+  '{}', '{5}', 'school', 'Budi Santoso', '+6281234567891', 'budi@example.test', 20,
+  '2026-11-13', '2026-11-13', 500000, 500000, 'v1', now());
+select set_config('request.jwt.claims',
+  '{"sub":"00000000-0000-4000-8000-000000000002","role":"authenticated","aal":"aal2","app_role":"admin_rw","app_rw_id":5,"claims_version":3}', true);
+set local role authenticated;
+select throws_ok(
+  $$update public.bookings set discount_amount = 50000, total_amount = 450000 where id = '00000000-0000-4000-8000-0000000000e5'$$,
+  '42501', 'only the superadmin gives a discount', 'an RW admin cannot give a discount'
+);
+reset role;
+select set_config('request.jwt.claims', jsonb_build_object(
+  'sub', '00000000-0000-4000-8000-000000000001', 'role', 'authenticated', 'aal', 'aal2', 'app_role', 'superadmin',
+  'claims_version', (select claims_version from public.profiles where id = '00000000-0000-4000-8000-000000000001')
+)::text, true);
+set local role authenticated;
+select lives_ok(
+  $$update public.bookings set discount_amount = 50000, total_amount = 450000 where id = '00000000-0000-4000-8000-0000000000e5'$$,
+  'the superadmin discounts a quoted booking'
+);
+select throws_ok(
+  $$update public.bookings set discount_amount = 100000, discount_note = 'terlambat' where id = '00000000-0000-4000-8000-0000000000e1'$$,
+  'P0001', 'a discount changes only while the booking is quoted or awaiting payment', 'but not a paid one'
+);
+reset role;
+select set_config('request.jwt.claims', '', true);
+
+-- Add-ons and invoices follow the booking's money.
+insert into public.products_umkm (id, rw_id, vendor_id, slug, name, category, price)
+values ('00000000-0000-4000-8000-0000000000d2', 5, '00000000-0000-4000-8000-0000000000d1', 'keripik-daun', 'Keripik', 'snack', 10000);
+insert into public.booking_addons (id, booking_id, product_id, rw_id, vendor_id, product_name_snapshot, unit_price, qty, line_total)
+values ('00000000-0000-4000-8000-000000000801', '00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-0000000000d2', 5,
+        '00000000-0000-4000-8000-0000000000d1', 'Keripik', 10000, 3, 30000);
+select throws_ok(
+  $$update public.booking_addons set qty = 5, line_total = 50000 where id = '00000000-0000-4000-8000-000000000801'$$,
+  'P0001', null, 'the add-ons of a paid booking are frozen'
+);
+select lives_ok(
+  $$update public.booking_addons set fulfillment_status = 'prepared' where id = '00000000-0000-4000-8000-000000000801'$$,
+  'but the kitchen may still mark them prepared'
+);
+insert into public.invoices (id, booking_id, invoice_number, amount_due, snapshot)
+values ('00000000-0000-4000-8000-000000000102', '00000000-0000-4000-8000-0000000000e1', 'INV/GSK/2026/10/0001', 1000000, '{}');
+update public.invoices set status = 'paid', paid_at = now(), amount_paid = 1000000, receipt_number = 'KW/GSK/2026/10/0001'
+where id = '00000000-0000-4000-8000-000000000102';
+select throws_ok(
+  $$update public.invoices set amount_due = 1 where id = '00000000-0000-4000-8000-000000000102'$$,
+  'P0001', 'a paid invoice changes only through an approved adjustment', 'a paid invoice is frozen'
+);
+select throws_ok(
+  $$update public.invoices set invoice_number = 'INV/GSK/2026/10/0099' where id = '00000000-0000-4000-8000-000000000102'$$,
+  '42501', null, 'an invoice number never changes'
+);
+select lives_ok(
+  $$update public.invoices set status = 'void', void_reason = 'dikoreksi dengan nota kredit', voided_at = now(),
+      credit_note_number = 'CN/GSK/2026/0001' where id = '00000000-0000-4000-8000-000000000102'$$,
+  'a paid invoice can still be voided with a credit note'
+);
+
+-- Quota counters and leg states.
+select throws_ok(
+  $$update public.visit_sessions set reserved_pax = 41 where id = '00000000-0000-4000-8000-0000000000b1'$$,
+  '42501', 'visit_sessions.reserved_pax is written only by the transition functions', 'the quota counter is fenced'
+);
+select throws_ok(
+  $$update public.booking_legs set status = 'checked_in', checked_in_at = now()
+    where booking_id = '00000000-0000-4000-8000-0000000000e1' and rw_id = 5$$,
+  '42501', null, 'a leg status is fenced'
+);
+select set_config('app.in_rpc', '1', true);
+select lives_ok(
+  $$update public.visit_sessions set reserved_pax = 41 where id = '00000000-0000-4000-8000-0000000000b1'$$,
+  'the transition functions move the counter'
+);
+select set_config('app.in_rpc', '', true);
+
+-- Tickets need money and never come back from the dead.
+select throws_ok(
+  $$insert into public.tickets_qr (booking_id, booking_leg_id, rw_id, visit_session_id, ticket_code, valid_on,
+      valid_from, valid_until, pax_count, key_id)
+    values ('00000000-0000-4000-8000-0000000000e5', (select id from public.booking_legs where booking_id = '00000000-0000-4000-8000-0000000000e1' limit 1),
+            5, '00000000-0000-4000-8000-0000000000b1', 'GSK-7F3K9Q2N-05', '2026-11-13',
+            '2026-11-13 07:00+07', '2026-11-13 12:00+07', 20, 'k1')$$,
+  'P0001', 'a ticket is issued only for a paid booking with a settled payment', 'no ticket for an unpaid booking'
+);
+insert into public.tickets_qr (id, booking_id, booking_leg_id, rw_id, visit_session_id, ticket_code, valid_on,
+  valid_from, valid_until, pax_count, key_id)
+select '00000000-0000-4000-8000-000000000201', '00000000-0000-4000-8000-0000000000e1', l.id, 5,
+       '00000000-0000-4000-8000-0000000000b1', 'GSK-7F3K9Q2M-05', '2026-11-12',
+       '2026-11-12 07:00+07', '2026-11-12 12:00+07', 40, 'k1'
+from public.booking_legs l where l.booking_id = '00000000-0000-4000-8000-0000000000e1' and l.rw_id = 5;
+select throws_ok(
+  $$update public.tickets_qr set status = 'used', checked_in_at = now() where id = '00000000-0000-4000-8000-000000000201'$$,
+  '42501', null, 'a ticket status is fenced'
+);
+select set_config('app.in_rpc', '1', true);
+select lives_ok(
+  $$update public.tickets_qr set status = 'used', checked_in_at = now() where id = '00000000-0000-4000-8000-000000000201'$$,
+  'check-in marks it used'
+);
+select throws_ok(
+  $$update public.tickets_qr set status = 'issued' where id = '00000000-0000-4000-8000-000000000201'$$,
+  'P0001', 'a ticket that was used, revoked or expired is not issued again', 'a used ticket does not revive'
+);
+select set_config('app.undo_check_in', '1', true);
+select lives_ok(
+  $$update public.tickets_qr set status = 'issued', checked_in_at = null where id = '00000000-0000-4000-8000-000000000201'$$,
+  'except through undo_check_in'
+);
+update public.tickets_qr set status = 'revoked', revoked_at = now() where id = '00000000-0000-4000-8000-000000000201';
+select throws_ok(
+  $$update public.tickets_qr set status = 'issued' where id = '00000000-0000-4000-8000-000000000201'$$,
+  'P0001', null, 'undo_check_in cannot revive a revoked ticket'
+);
+select set_config('app.undo_check_in', '', true);
+select throws_ok(
+  $$update public.tickets_qr set ticket_code = 'GSK-7F3K9Q2M-08' where id = '00000000-0000-4000-8000-000000000201'$$,
+  '42501', null, 'a ticket code never changes'
+);
+select set_config('app.in_rpc', '', true);
+
+insert into public.certificates (id, booking_id, kind, certificate_number, verify_code, recipient_name, visit_date, rw_ids)
+values ('00000000-0000-4000-8000-000000000a01', '00000000-0000-4000-8000-0000000000e1', 'group', 'SERT/GSK/2026/00001', 'CERTGROUP1', 'SD Negeri Gisikdrono 01', '2026-11-12', '{5}');
+select throws_ok(
+  $$update public.certificates set status = 'revoked', revoked_at = now() where id = '00000000-0000-4000-8000-000000000a01'$$,
+  '42501', null, 'a certificate status is fenced'
+);
+select set_config('app.in_rpc', '1', true);
+select lives_ok(
+  $$update public.certificates set status = 'revoked', revoked_at = now() where id = '00000000-0000-4000-8000-000000000a01'$$,
+  'revoke_certificate moves it'
+);
+select set_config('app.in_rpc', '', true);
 
 select * from finish();
 rollback;

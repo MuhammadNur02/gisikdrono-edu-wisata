@@ -2,6 +2,9 @@
 -- relies on, keys, and the CHECK / unique rules proven by trying to break them.
 begin;
 select plan(212);
+-- This file checks constraints and keys. The status fences of 0004 are tested in
+-- schema_functions.sql; here the fixtures play the transition functions.
+select set_config('app.in_rpc', '1', true);
 
 -- ===== Every table: RLS from birth, no API rights, updated_at kept by trigger =====
 
@@ -746,6 +749,9 @@ select is(
   'every index of the tickets, check-in and certificates group exists'
 );
 
+-- Since 0004 a ticket needs a paid booking with a settled payment behind it.
+update public.payments set status = 'settled', settlement_time = now() where order_id = 'GSK-7F3K9Q2M-02';
+update public.bookings set status = 'paid', paid_at = now(), amount_paid = 1000000 where id = '00000000-0000-4000-8000-0000000000e1';
 insert into public.tickets_qr (id, booking_id, booking_leg_id, rw_id, visit_session_id, ticket_code, valid_on,
   valid_from, valid_until, pax_count, key_id)
 values ('00000000-0000-4000-8000-000000000201', '00000000-0000-4000-8000-0000000000e1',
@@ -764,8 +770,17 @@ select throws_ok(
             '2026-11-12 00:00+07', '2026-11-12 12:00+07', 40, 'k1')$$,
   '23505', null, 'one ticket per booking leg'
 );
+-- The code is checked on insert; 0004 makes it immutable afterwards, so the format test uses a
+-- second leg.
+insert into public.booking_legs (id, booking_id, rw_id, visit_session_id, leg_order, pax_count)
+select '00000000-0000-4000-8000-0000000000e3', '00000000-0000-4000-8000-0000000000e1', 8, s.id, 2, 40
+from public.visit_sessions s where s.rw_id = 8 limit 1;
 select throws_ok(
-  $$update public.tickets_qr set ticket_code = 'GSK-7F3K9Q2M-5' where id = '00000000-0000-4000-8000-000000000201'$$,
+  $$insert into public.tickets_qr (booking_id, booking_leg_id, rw_id, visit_session_id, ticket_code, valid_on,
+      valid_from, valid_until, pax_count, key_id)
+    select '00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-0000000000e3', 8, s.id,
+           'GSK-7F3K9Q2M-8', '2026-11-12', '2026-11-12 00:00+07', '2026-11-12 12:00+07', 40, 'k1'
+    from public.visit_sessions s where s.rw_id = 8 limit 1$$,
   '23514', null, 'a ticket code is the booking code plus the two-digit RW'
 );
 select throws_ok(
