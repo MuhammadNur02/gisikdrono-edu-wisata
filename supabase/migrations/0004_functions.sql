@@ -1411,10 +1411,11 @@ as $$
   select (value #>> '{}')::bigint from public.site_settings where key = 'pricing.min_price_per_pax';
 $$;
 
--- A package pays at least the floor for every visitor: price_per_pax >= floor, and a flat group price
--- >= floor × min_pax, the fewest visitors it can be booked for (docs/Security.md REC-13). Only a
--- package whose price, basis or minimum is being set is checked, so raising the floor does not block
--- unrelated edits of older packages.
+-- A package pays at least the floor for every visitor it can take: price_per_pax >= floor, and a flat
+-- group price >= floor × max_pax, the largest group it can be booked for (docs/Security.md REC-13). The
+-- smallest group would not do: the RW admin who sets the price also sets min_pax, and min_pax = 1 would
+-- let one visitor's floor cover a full bus (review M1). Only a package whose price, basis or largest
+-- group is being set is checked, so raising the floor does not block unrelated edits of older packages.
 create function internal.tour_packages_price_floor() returns trigger
   language plpgsql security definer
   set search_path = ''
@@ -1423,23 +1424,23 @@ declare
   floor_price bigint := internal.price_floor();
 begin
   if tg_op = 'UPDATE'
-     and (new.price_per_pax, new.flat_price, new.pricing_basis, new.min_pax)
-         is not distinct from (old.price_per_pax, old.flat_price, old.pricing_basis, old.min_pax) then
+     and (new.price_per_pax, new.flat_price, new.pricing_basis, new.max_pax)
+         is not distinct from (old.price_per_pax, old.flat_price, old.pricing_basis, old.max_pax) then
     return new;
   end if;
   if new.price_per_pax < floor_price then
     raise exception 'a price per visitor may not go below IDR %', floor_price
       using errcode = 'check_violation', constraint = 'tour_packages_price_floor';
   end if;
-  if new.pricing_basis = 'flat_group' and new.flat_price < floor_price * new.min_pax then
-    raise exception 'a group price for at least % visitors may not go below IDR %', new.min_pax, floor_price * new.min_pax
+  if new.pricing_basis = 'flat_group' and new.flat_price < floor_price * new.max_pax then
+    raise exception 'a group price for up to % visitors may not go below IDR %', new.max_pax, floor_price * new.max_pax
       using errcode = 'check_violation', constraint = 'tour_packages_price_floor';
   end if;
   return new;
 end;
 $$;
 create trigger tour_packages_price_floor
-  before insert or update of price_per_pax, flat_price, pricing_basis, min_pax on public.tour_packages
+  before insert or update of price_per_pax, flat_price, pricing_basis, max_pax on public.tour_packages
   for each row execute function internal.tour_packages_price_floor();
 
 -- A volume tier prices each visitor, so it meets the same per-visitor floor.
@@ -1461,46 +1462,73 @@ $$;
 create trigger tour_packages_price_floor before insert or update of price_per_pax on public.tour_package_price_tiers
   for each row execute function internal.tour_package_tiers_price_floor();
 
-create function internal.record_price_change(
-  p_package_id uuid, p_tier_id uuid,
-  p_old_price_per_pax bigint, p_new_price_per_pax bigint, p_old_flat_price bigint, p_new_flat_price bigint
-) returns void
+-- Basis and group size change what a group pays as much as the price does, so the history keeps them
+-- next to the prices (review M1).
+alter table public.package_price_history
+  add column old_pricing_basis public.pricing_basis,
+  add column new_pricing_basis public.pricing_basis,
+  add column old_min_pax integer,
+  add column new_min_pax integer,
+  add column old_max_pax integer,
+  add column new_max_pax integer;
+
+-- One history entry and one price_changed event. p_before and p_after hold the pricing fields of a
+-- package, or the price of one tier; the event names only the fields that changed.
+create function internal.record_price_change(p_package_id uuid, p_tier_id uuid, p_before jsonb, p_after jsonb)
+  returns void
   language plpgsql security definer
   set search_path = ''
 as $$
+declare
+  field text;
+  changed jsonb := jsonb_strip_nulls(jsonb_build_object('tier_id', p_tier_id));
 begin
   insert into public.package_price_history (package_id, tier_id, changed_by, old_price_per_pax, new_price_per_pax,
-    old_flat_price, new_flat_price)
-  values (p_package_id, p_tier_id, internal.current_actor_id(), p_old_price_per_pax, p_new_price_per_pax,
-          p_old_flat_price, p_new_flat_price);
+    old_flat_price, new_flat_price, old_pricing_basis, new_pricing_basis, old_min_pax, new_min_pax, old_max_pax,
+    new_max_pax)
+  values (p_package_id, p_tier_id, internal.current_actor_id(),
+          (p_before ->> 'price_per_pax')::bigint, (p_after ->> 'price_per_pax')::bigint,
+          (p_before ->> 'flat_price')::bigint, (p_after ->> 'flat_price')::bigint,
+          (p_before ->> 'pricing_basis')::public.pricing_basis, (p_after ->> 'pricing_basis')::public.pricing_basis,
+          (p_before ->> 'min_pax')::integer, (p_after ->> 'min_pax')::integer,
+          (p_before ->> 'max_pax')::integer, (p_after ->> 'max_pax')::integer);
+
+  for field in select jsonb_object_keys(p_before || p_after) loop
+    if p_before -> field is distinct from p_after -> field then
+      changed := changed || jsonb_strip_nulls(jsonb_build_object('old_' || field, p_before -> field,
+                                                                 'new_' || field, p_after -> field));
+    end if;
+  end loop;
 
   insert into public.security_events (event_type, severity, actor_id, rw_id, entity_type, entity_id, details)
   values ('price_changed', 'info', internal.current_actor_id(),
           (select p.rw_id from public.tour_packages p where p.id = p_package_id), 'tour_packages', p_package_id::text,
-          jsonb_strip_nulls(jsonb_build_object(
-            'tier_id', p_tier_id,
-            'old_price_per_pax', p_old_price_per_pax, 'new_price_per_pax', p_new_price_per_pax,
-            'old_flat_price', p_old_flat_price, 'new_flat_price', p_new_flat_price)));
+          changed);
 end;
 $$;
 
--- tour_packages_price_history: every change of a package's price is an entry plus a price_changed
--- event. The first price is in audit_logs; leaving it out here keeps a draft that was never repriced
--- deletable, since a history entry holds its package.
+-- tour_packages_price_history: every change of what a package charges, its basis and group size
+-- included, is an entry plus a price_changed event. The first price is in audit_logs; leaving it out
+-- here keeps a draft that was never repriced deletable, since a history entry holds its package.
 create function internal.tour_packages_price_history() returns trigger
   language plpgsql security definer
   set search_path = ''
 as $$
 begin
-  if (new.price_per_pax, new.flat_price) is not distinct from (old.price_per_pax, old.flat_price) then
+  if (new.price_per_pax, new.flat_price, new.pricing_basis, new.min_pax, new.max_pax)
+     is not distinct from (old.price_per_pax, old.flat_price, old.pricing_basis, old.min_pax, old.max_pax) then
     return null;
   end if;
-  perform internal.record_price_change(new.id, null, old.price_per_pax, new.price_per_pax, old.flat_price,
-                                       new.flat_price);
+  perform internal.record_price_change(new.id, null,
+    jsonb_build_object('price_per_pax', old.price_per_pax, 'flat_price', old.flat_price,
+                       'pricing_basis', old.pricing_basis, 'min_pax', old.min_pax, 'max_pax', old.max_pax),
+    jsonb_build_object('price_per_pax', new.price_per_pax, 'flat_price', new.flat_price,
+                       'pricing_basis', new.pricing_basis, 'min_pax', new.min_pax, 'max_pax', new.max_pax));
   return null;
 end;
 $$;
-create trigger tour_packages_price_history after update of price_per_pax, flat_price on public.tour_packages
+create trigger tour_packages_price_history
+  after update of price_per_pax, flat_price, pricing_basis, min_pax, max_pax on public.tour_packages
   for each row execute function internal.tour_packages_price_history();
 
 -- Adding, repricing or removing a tier changes what some groups pay, so each is a price change.
@@ -1515,7 +1543,8 @@ begin
   end if;
   perform internal.record_price_change(coalesce(new.package_id, old.package_id),
                                        case when tg_op <> 'DELETE' then new.id end,
-                                       old.price_per_pax, new.price_per_pax, null, null);
+                                       jsonb_build_object('price_per_pax', old.price_per_pax),
+                                       jsonb_build_object('price_per_pax', new.price_per_pax));
   return null;
 end;
 $$;
@@ -1543,7 +1572,7 @@ create trigger products_umkm_price_changed after update of price on public.produ
 
 revoke execute on function internal.price_floor(), internal.tour_packages_price_floor(),
   internal.tour_package_tiers_price_floor(),
-  internal.record_price_change(uuid, uuid, bigint, bigint, bigint, bigint),
+  internal.record_price_change(uuid, uuid, jsonb, jsonb),
   internal.tour_packages_price_history(), internal.tour_package_tiers_price_history(),
   internal.products_umkm_price_changed()
   from public, anon, authenticated;

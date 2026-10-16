@@ -1598,9 +1598,15 @@ export type Database = {
           changed_by: string | null
           id: number
           new_flat_price: number | null
+          new_max_pax: number | null
+          new_min_pax: number | null
           new_price_per_pax: number | null
+          new_pricing_basis: Database["public"]["Enums"]["pricing_basis"] | null
           old_flat_price: number | null
+          old_max_pax: number | null
+          old_min_pax: number | null
           old_price_per_pax: number | null
+          old_pricing_basis: Database["public"]["Enums"]["pricing_basis"] | null
           package_id: string
           reason: string | null
           tier_id: string | null
@@ -1610,9 +1616,19 @@ export type Database = {
           changed_by?: string | null
           id?: never
           new_flat_price?: number | null
+          new_max_pax?: number | null
+          new_min_pax?: number | null
           new_price_per_pax?: number | null
+          new_pricing_basis?:
+            | Database["public"]["Enums"]["pricing_basis"]
+            | null
           old_flat_price?: number | null
+          old_max_pax?: number | null
+          old_min_pax?: number | null
           old_price_per_pax?: number | null
+          old_pricing_basis?:
+            | Database["public"]["Enums"]["pricing_basis"]
+            | null
           package_id: string
           reason?: string | null
           tier_id?: string | null
@@ -1622,9 +1638,19 @@ export type Database = {
           changed_by?: string | null
           id?: never
           new_flat_price?: number | null
+          new_max_pax?: number | null
+          new_min_pax?: number | null
           new_price_per_pax?: number | null
+          new_pricing_basis?:
+            | Database["public"]["Enums"]["pricing_basis"]
+            | null
           old_flat_price?: number | null
+          old_max_pax?: number | null
+          old_min_pax?: number | null
           old_price_per_pax?: number | null
+          old_pricing_basis?:
+            | Database["public"]["Enums"]["pricing_basis"]
+            | null
           package_id?: string
           reason?: string | null
           tier_id?: string | null

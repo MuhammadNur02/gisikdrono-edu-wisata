@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(401);
+select plan(405);
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -915,18 +915,23 @@ select throws_ok(
   '23514', null, 'nor start below it'
 );
 
--- REC-13 for group prices: a flat price covers at least min_pax visitors at the floor.
-insert into public.tour_packages (id, rw_id, category, slug, name, pricing_basis, flat_price, min_pax)
+-- REC-13 for group prices: a flat price covers its largest group at the floor (review M1).
+insert into public.tour_packages (id, rw_id, category, slug, name, pricing_basis, flat_price, min_pax, max_pax)
 values ('00000000-0000-4000-8000-0000000000c6', 5, 'institutional', 'paket-rombongan', 'Paket Rombongan',
-        'flat_group', 100000, 20);
+        'flat_group', 200000, 20, 40);
 select throws_ok(
-  $$update public.tour_packages set flat_price = 99999 where id = '00000000-0000-4000-8000-0000000000c6'$$,
-  '23514', 'a group price for at least 20 visitors may not go below IDR 100000',
-  'a group price below the floor for its smallest group is refused'
+  $$update public.tour_packages set flat_price = 199999 where id = '00000000-0000-4000-8000-0000000000c6'$$,
+  '23514', 'a group price for up to 40 visitors may not go below IDR 200000',
+  'a group price below the floor for its largest group is refused'
 );
 select throws_ok(
-  $$update public.tour_packages set min_pax = 21 where id = '00000000-0000-4000-8000-0000000000c6'$$,
-  '23514', null, 'and so is raising the smallest group above what the price covers'
+  $$update public.tour_packages set max_pax = 41 where id = '00000000-0000-4000-8000-0000000000c6'$$,
+  '23514', null, 'and so is taking a larger group than the price covers'
+);
+select throws_ok(
+  $$insert into public.tour_packages (rw_id, category, slug, name, pricing_basis, flat_price, min_pax, max_pax)
+    values (5, 'institutional', 'paket-satu-bus', 'Paket Satu Bus', 'flat_group', 5000, 1, 500)$$,
+  '23514', null, 'a smallest group of one does not let one visitor''s floor pay for a full bus'
 );
 select throws_ok(
   $$update public.tour_packages set pricing_basis = 'flat_group', flat_price = 1
@@ -951,6 +956,32 @@ select is(
   (select details from public.security_events where event_type = 'price_changed' and entity_id = '00000000-0000-4000-8000-0000000000c1'),
   '{"old_price_per_pax": 25000, "new_price_per_pax": 30000}'::jsonb,
   'a price change raises price_changed for the anomaly scan'
+);
+
+-- Basis and group size are price changes too (review M1).
+select set_config('app.actor_id', '00000000-0000-4000-8000-000000000002', true);
+update public.tour_packages set min_pax = 1 where id = '00000000-0000-4000-8000-0000000000c6';
+select set_config('app.actor_id', '', true);
+select is(
+  (select jsonb_build_object('min', jsonb_build_array(old_min_pax, new_min_pax), 'max', new_max_pax,
+            'basis', new_pricing_basis, 'flat', new_flat_price, 'by', changed_by)
+   from public.package_price_history where package_id = '00000000-0000-4000-8000-0000000000c6'),
+  '{"min": [20, 1], "max": 40, "basis": "flat_group", "flat": 200000, "by": "00000000-0000-4000-8000-000000000002"}'::jsonb,
+  'lowering the smallest group is a history entry, with the pricing it left in place'
+);
+select is(
+  (select details from public.security_events where event_type = 'price_changed' and entity_id = '00000000-0000-4000-8000-0000000000c6'),
+  '{"old_min_pax": 20, "new_min_pax": 1}'::jsonb,
+  'and a price_changed event naming only what changed'
+);
+update public.tour_packages set pricing_basis = 'per_pax', price_per_pax = 6000, max_pax = 30
+where id = '00000000-0000-4000-8000-0000000000c6';
+select is(
+  (select details from public.security_events where event_type = 'price_changed' and entity_id = '00000000-0000-4000-8000-0000000000c6'
+   order by id desc limit 1),
+  '{"old_pricing_basis": "flat_group", "new_pricing_basis": "per_pax", "new_price_per_pax": 6000,
+    "old_max_pax": 40, "new_max_pax": 30}'::jsonb,
+  'so is a change of basis and largest group'
 );
 update public.tour_packages set name = 'Eduwisata Ecowastreme', price_per_pax = 30000
 where id = '00000000-0000-4000-8000-0000000000c1';

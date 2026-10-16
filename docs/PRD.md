@@ -759,9 +759,10 @@ create index tour_packages_public_idx on public.tour_packages (status, is_featur
 create index tour_packages_rw_idx on public.tour_packages (rw_id);
 -- trigger tour_packages_legs_guard: auto-insert the single leg for non-combo; block publishing a combo with < 2 distinct RW legs.
 -- trigger tour_packages_price_floor: price_per_pax (and tiers) >= site_settings 'pricing.min_price_per_pax', and for
---   pricing_basis 'flat_group' flat_price >= pricing.min_price_per_pax * min_pax; fires on price_per_pax, flat_price,
---   pricing_basis and min_pax.
--- trigger tour_packages_price_history: any change of price_per_pax / flat_price inserts package_price_history + security event price_changed.
+--   pricing_basis 'flat_group' flat_price >= pricing.min_price_per_pax * max_pax (the largest group, since the same
+--   admin sets min_pax); fires on price_per_pax, flat_price, pricing_basis and max_pax.
+-- trigger tour_packages_price_history: any change of price_per_pax, flat_price, pricing_basis, min_pax or max_pax
+--   inserts package_price_history + security event price_changed naming the fields that changed.
 
 -- tour_package_legs: which RW(s) a package visits (1 row for RW packages, >= 2 for combo).
 create table public.tour_package_legs (
@@ -796,7 +797,13 @@ create table public.package_price_history (
   old_flat_price    bigint,
   new_flat_price    bigint,
   reason            text,
-  changed_at        timestamptz not null default now()
+  changed_at        timestamptz not null default now(),
+  old_pricing_basis public.pricing_basis,                 -- 0004 (review M1): basis and group size are price changes too
+  new_pricing_basis public.pricing_basis,
+  old_min_pax       integer,
+  new_min_pax       integer,
+  old_max_pax       integer,
+  new_max_pax       integer
 );
 create index package_price_history_pkg_idx on public.package_price_history (package_id, changed_at desc);
 
@@ -2259,8 +2266,8 @@ Rules: `rpc_create_export` (AAL2) validates caps (50 000 rows / 12 months, 10 ex
 
 | Control | Rule |
 |---|---|
-| Floor | Trigger rejects `price_per_pax` / tier prices below `pricing.min_price_per_pax`, and a `flat_group` `flat_price` below `pricing.min_price_per_pax × min_pax` (the smallest group it can be booked for); it fires whenever `price_per_pax`, `flat_price`, `pricing_basis` or `min_pax` changes |
-| History | Every price change writes `package_price_history` and a `price_changed` security event |
+| Floor | Trigger rejects `price_per_pax` / tier prices below `pricing.min_price_per_pax`, and a `flat_group` `flat_price` below `pricing.min_price_per_pax × max_pax` (the largest group it can be booked for; the same RW admin sets `min_pax`, so the smallest group would let one visitor's floor cover a full bus); it fires whenever `price_per_pax`, `flat_price`, `pricing_basis` or `max_pax` changes |
+| History | Every change of `price_per_pax`, `flat_price`, `pricing_basis`, `min_pax`, `max_pax` or a tier price writes `package_price_history` and a `price_changed` security event naming the fields that changed |
 | Snapshots | Bookings snapshot package and add-on prices at creation; catalogue edits never change a booking |
 | Anomaly rules (`anomaly-scan`) | Unit price < 50 % of the 30-day median; price changed -> booking created -> price restored within 7 d; add-on subtotal > 60 % of total; pax > 60 bookings |
 | Approval queue | Superadmin approval for admin_rw price changes (should; default off) |

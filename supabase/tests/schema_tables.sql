@@ -294,7 +294,8 @@ select columns_are('public', 'tour_package_price_tiers', array[
 ]);
 select columns_are('public', 'package_price_history', array[
   'id', 'package_id', 'tier_id', 'changed_by', 'old_price_per_pax', 'new_price_per_pax',
-  'old_flat_price', 'new_flat_price', 'reason', 'changed_at'
+  'old_flat_price', 'new_flat_price', 'reason', 'changed_at', 'old_pricing_basis', 'new_pricing_basis',
+  'old_min_pax', 'new_min_pax', 'old_max_pax', 'new_max_pax'
 ]);
 select columns_are('public', 'umkm_vendors', array[
   'id', 'rw_id', 'slug', 'name', 'owner_name', 'phone', 'description_md', 'logo_path',
