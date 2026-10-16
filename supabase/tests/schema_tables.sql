@@ -28,15 +28,16 @@ select is(
   'every public table has RLS enabled and forced'
 );
 
--- 0005_policies_grants is the first migration allowed to grant anything to the API roles.
+-- 0005 grants by column, so a column added later stays private until a migration grants it. The only
+-- table-level right is DELETE, for staff on the tables whose policies let them remove rows.
 select is(
   array(
-    select distinct table_name::text from information_schema.role_table_grants
+    select distinct grantee || ':' || privilege_type from information_schema.role_table_grants
     where table_schema = 'public' and grantee in ('anon', 'authenticated')
     order by 1
   ),
-  array[]::text[],
-  'anon and authenticated have no rights on any public table before 0005'
+  array['authenticated:DELETE'],
+  'anon and authenticated hold no table-level right but DELETE; everything else is granted by column'
 );
 
 select is(

@@ -1,0 +1,87 @@
+-- Personas for the RLS suites (docs/Security.md §6.9, Task P1.9.02). A suite includes this file inside its own
+-- transaction, writes its fixtures as postgres, and then becomes one persona at a time:
+--
+--   reset role;
+--   select pg_temp.act_as('admin_rw_05');
+--
+-- act_as switches to the persona's API role, anon or authenticated, never postgres, and sets
+-- request.jwt.claims the way GoTrue does: the standard claims plus what the real access-token hook adds
+-- (internal.staff_token_claims), so the helpers read exactly what they read in production. The personas are
+-- anon, none (signed in without a role), admin_rw_05 and admin_rw_08 (at AAL2, as the dashboard requires),
+-- admin_rw_05_aal1, superadmin_aal1 and superadmin_aal2.
+
+insert into public.rw_units (id, code, slug, name, theme_label) values
+  (5, 'RW05', 'rw-05-ecowastreme', 'RW 05 Ecowastreme', 'Ekowisata & Lingkungan'),
+  (8, 'RW08', 'rw-08-kampung-seni-budaya', 'RW 08 Kampung Seni Budaya', 'Seni & Budaya')
+on conflict (id) do nothing;
+
+insert into auth.users (id, email) values
+  ('00000000-0000-4000-8000-00000000f000', 'rls-none@example.test'),
+  ('00000000-0000-4000-8000-00000000f001', 'rls-super@example.test'),
+  ('00000000-0000-4000-8000-00000000f005', 'rls-admin05@example.test'),
+  ('00000000-0000-4000-8000-00000000f008', 'rls-admin08@example.test');
+insert into public.profiles (id, email, full_name, role, rw_id) values
+  ('00000000-0000-4000-8000-00000000f000', 'rls-none@example.test', 'Tanpa Peran', 'none', null),
+  ('00000000-0000-4000-8000-00000000f001', 'rls-super@example.test', 'Super RLS', 'superadmin', null),
+  ('00000000-0000-4000-8000-00000000f005', 'rls-admin05@example.test', 'Admin RLS 05', 'admin_rw', 5),
+  ('00000000-0000-4000-8000-00000000f008', 'rls-admin08@example.test', 'Admin RLS 08', 'admin_rw', 8);
+
+create function pg_temp.persona_id(p_persona text) returns uuid
+  language sql immutable
+as $$
+  select (case p_persona
+    when 'none' then '00000000-0000-4000-8000-00000000f000'
+    when 'superadmin_aal1' then '00000000-0000-4000-8000-00000000f001'
+    when 'superadmin_aal2' then '00000000-0000-4000-8000-00000000f001'
+    when 'admin_rw_05' then '00000000-0000-4000-8000-00000000f005'
+    when 'admin_rw_05_aal1' then '00000000-0000-4000-8000-00000000f005'
+    when 'admin_rw_08' then '00000000-0000-4000-8000-00000000f008'
+  end)::uuid;
+$$;
+
+create function pg_temp.act_as(p_persona text) returns void
+  language plpgsql
+as $$
+declare
+  user_id uuid := pg_temp.persona_id(p_persona);
+  is_aal2 boolean := p_persona in ('admin_rw_05', 'admin_rw_08', 'superadmin_aal2');
+  signed_in_at bigint := extract(epoch from now())::bigint - 120;
+begin
+  if p_persona = 'anon' then
+    perform set_config('request.jwt.claims', '{"iss": "supabase", "role": "anon"}', true);
+    perform set_config('role', 'anon', true);
+    return;
+  end if;
+  if user_id is null then
+    raise exception 'unknown persona %', p_persona;
+  end if;
+
+  perform set_config('request.jwt.claims', (jsonb_build_object(
+      'iss', 'supabase', 'aud', 'authenticated', 'sub', user_id, 'role', 'authenticated',
+      'email', (select u.email from auth.users u where u.id = user_id), 'session_id', gen_random_uuid(),
+      'is_anonymous', false, 'aal', case when is_aal2 then 'aal2' else 'aal1' end,
+      'amr', case when is_aal2
+                  then jsonb_build_array(jsonb_build_object('method', 'totp', 'timestamp', signed_in_at + 60),
+                                         jsonb_build_object('method', 'password', 'timestamp', signed_in_at))
+                  else jsonb_build_array(jsonb_build_object('method', 'password', 'timestamp', signed_in_at))
+             end)
+    || internal.staff_token_claims(user_id))::text, true);
+  perform set_config('role', 'authenticated', true);
+end;
+$$;
+
+-- How many rows a statement affects or returns for the current persona: RLS hides rows without an error,
+-- so a write that is filtered out shows up as 0.
+create function pg_temp.row_count(p_statement text) returns integer
+  language plpgsql
+as $$
+declare
+  affected integer;
+begin
+  execute p_statement;
+  get diagnostics affected = row_count;
+  return affected;
+end;
+$$;
+-- 0001 takes EXECUTE away from PUBLIC on every function postgres creates, pg_temp ones included.
+grant execute on function pg_temp.row_count(text) to anon, authenticated;
