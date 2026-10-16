@@ -432,6 +432,107 @@ export type Database = {
           },
         ]
       }
+      certificates: {
+        Row: {
+          booking_id: string
+          certificate_number: string
+          id: string
+          institution_name: string | null
+          issued_at: string
+          issued_by: string | null
+          kind: Database["public"]["Enums"]["certificate_kind"]
+          participant_id: string | null
+          pdf_path: string | null
+          purged_at: string | null
+          recipient_name: string
+          release_waived_by: string | null
+          released_at: string | null
+          rendered_at: string | null
+          revoke_reason: string | null
+          revoked_at: string | null
+          rw_ids: number[]
+          status: Database["public"]["Enums"]["certificate_status"]
+          template_version: number
+          verify_code: string
+          visit_date: string
+        }
+        Insert: {
+          booking_id: string
+          certificate_number: string
+          id?: string
+          institution_name?: string | null
+          issued_at?: string
+          issued_by?: string | null
+          kind: Database["public"]["Enums"]["certificate_kind"]
+          participant_id?: string | null
+          pdf_path?: string | null
+          purged_at?: string | null
+          recipient_name: string
+          release_waived_by?: string | null
+          released_at?: string | null
+          rendered_at?: string | null
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          rw_ids: number[]
+          status?: Database["public"]["Enums"]["certificate_status"]
+          template_version?: number
+          verify_code: string
+          visit_date: string
+        }
+        Update: {
+          booking_id?: string
+          certificate_number?: string
+          id?: string
+          institution_name?: string | null
+          issued_at?: string
+          issued_by?: string | null
+          kind?: Database["public"]["Enums"]["certificate_kind"]
+          participant_id?: string | null
+          pdf_path?: string | null
+          purged_at?: string | null
+          recipient_name?: string
+          release_waived_by?: string | null
+          released_at?: string | null
+          rendered_at?: string | null
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          rw_ids?: number[]
+          status?: Database["public"]["Enums"]["certificate_status"]
+          template_version?: number
+          verify_code?: string
+          visit_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "certificates_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "certificates_issued_by_fkey"
+            columns: ["issued_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "certificates_participant_id_fkey"
+            columns: ["participant_id"]
+            isOneToOne: false
+            referencedRelation: "booking_participants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "certificates_release_waived_by_fkey"
+            columns: ["release_waived_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       document_sequences: {
         Row: {
           kind: Database["public"]["Enums"]["document_kind"]
@@ -1441,6 +1542,203 @@ export type Database = {
             columns: ["rw_id"]
             isOneToOne: false
             referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ticket_scans: {
+        Row: {
+          attempt_id: string
+          attendee_count: number | null
+          device_info: Json
+          id: number
+          ip: unknown
+          override_reason: string | null
+          phase: Database["public"]["Enums"]["scan_phase"]
+          raw_payload: string | null
+          result: Database["public"]["Enums"]["scan_result"]
+          rw_id: number | null
+          scanned_at: string
+          scanned_by: string
+          source: string
+          ticket_id: string | null
+        }
+        Insert: {
+          attempt_id: string
+          attendee_count?: number | null
+          device_info?: Json
+          id?: never
+          ip?: unknown
+          override_reason?: string | null
+          phase: Database["public"]["Enums"]["scan_phase"]
+          raw_payload?: string | null
+          result: Database["public"]["Enums"]["scan_result"]
+          rw_id?: number | null
+          scanned_at?: string
+          scanned_by: string
+          source?: string
+          ticket_id?: string | null
+        }
+        Update: {
+          attempt_id?: string
+          attendee_count?: number | null
+          device_info?: Json
+          id?: never
+          ip?: unknown
+          override_reason?: string | null
+          phase?: Database["public"]["Enums"]["scan_phase"]
+          raw_payload?: string | null
+          result?: Database["public"]["Enums"]["scan_result"]
+          rw_id?: number | null
+          scanned_at?: string
+          scanned_by?: string
+          source?: string
+          ticket_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ticket_scans_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ticket_scans_scanned_by_fkey"
+            columns: ["scanned_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ticket_scans_ticket_id_fkey"
+            columns: ["ticket_id"]
+            isOneToOne: false
+            referencedRelation: "tickets_qr"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tickets_qr: {
+        Row: {
+          booking_id: string
+          booking_leg_id: string
+          check_in_note: string | null
+          checked_in_at: string | null
+          checked_in_by: string | null
+          checked_in_pax: number | null
+          id: string
+          issued_at: string
+          key_id: string
+          pax_count: number
+          revoke_reason: string | null
+          revoked_at: string | null
+          revoked_by: string | null
+          rw_id: number
+          status: Database["public"]["Enums"]["ticket_status"]
+          suspend_reason: string | null
+          suspended_at: string | null
+          ticket_code: string
+          unpaid_pax: number
+          updated_at: string
+          valid_from: string
+          valid_on: string
+          valid_until: string
+          visit_session_id: string
+        }
+        Insert: {
+          booking_id: string
+          booking_leg_id: string
+          check_in_note?: string | null
+          checked_in_at?: string | null
+          checked_in_by?: string | null
+          checked_in_pax?: number | null
+          id?: string
+          issued_at?: string
+          key_id: string
+          pax_count: number
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          revoked_by?: string | null
+          rw_id: number
+          status?: Database["public"]["Enums"]["ticket_status"]
+          suspend_reason?: string | null
+          suspended_at?: string | null
+          ticket_code: string
+          unpaid_pax?: number
+          updated_at?: string
+          valid_from: string
+          valid_on: string
+          valid_until: string
+          visit_session_id: string
+        }
+        Update: {
+          booking_id?: string
+          booking_leg_id?: string
+          check_in_note?: string | null
+          checked_in_at?: string | null
+          checked_in_by?: string | null
+          checked_in_pax?: number | null
+          id?: string
+          issued_at?: string
+          key_id?: string
+          pax_count?: number
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          revoked_by?: string | null
+          rw_id?: number
+          status?: Database["public"]["Enums"]["ticket_status"]
+          suspend_reason?: string | null
+          suspended_at?: string | null
+          ticket_code?: string
+          unpaid_pax?: number
+          updated_at?: string
+          valid_from?: string
+          valid_on?: string
+          valid_until?: string
+          visit_session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tickets_qr_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tickets_qr_booking_leg_id_fkey"
+            columns: ["booking_leg_id"]
+            isOneToOne: true
+            referencedRelation: "booking_legs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tickets_qr_checked_in_by_fkey"
+            columns: ["checked_in_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tickets_qr_revoked_by_fkey"
+            columns: ["revoked_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tickets_qr_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tickets_qr_visit_session_id_fkey"
+            columns: ["visit_session_id"]
+            isOneToOne: false
+            referencedRelation: "visit_sessions"
             referencedColumns: ["id"]
           },
         ]

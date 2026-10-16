@@ -688,3 +688,99 @@ create table public.document_sequences (
 alter table public.document_sequences enable row level security;
 alter table public.document_sequences force row level security;
 revoke all on public.document_sequences from anon, authenticated;
+
+
+-- ===== Tickets, check-in and certificates (docs/PRD.md §8.4.6, Task P1.2.09, P1.2.08) =====
+
+-- tickets_qr (A): one group ticket per booking leg, RW-bound. Issued only inside internal.apply_payment_event.
+create table public.tickets_qr (
+  id               uuid primary key default gen_random_uuid(),
+  booking_id       uuid not null references public.bookings(id) on delete restrict,
+  booking_leg_id   uuid not null unique references public.booking_legs(id) on delete restrict,
+  rw_id            smallint not null references public.rw_units(id),
+  visit_session_id uuid not null references public.visit_sessions(id),
+  ticket_code      text not null unique check (ticket_code ~ '^GSK-[0-9A-HJKMNP-TV-Z]{8}-[0-9]{2}$'),
+  status           public.ticket_status not null default 'issued',
+  valid_on         date not null,                                     -- the leg's session date
+  valid_from       timestamptz not null,                              -- session start - checkin.grace_before_minutes
+  valid_until      timestamptz not null,                              -- session end + checkin.grace_after_minutes
+  pax_count        integer not null check (pax_count >= 1),
+  key_id           text not null,                                     -- QR signing kid (QR_SIGNING_KEYS)
+  issued_at        timestamptz not null default now(),
+  checked_in_at    timestamptz,
+  checked_in_pax   integer check (checked_in_pax >= 0),
+  unpaid_pax       integer not null default 0 check (unpaid_pax >= 0),
+  checked_in_by    uuid references public.profiles(id),
+  check_in_note    text,
+  suspended_at     timestamptz,
+  suspend_reason   text,
+  revoked_at       timestamptz,
+  revoked_by       uuid references public.profiles(id),
+  revoke_reason    text,
+  updated_at       timestamptz not null default now(),
+  constraint tickets_qr_window_ok check (valid_until > valid_from)
+);
+create index tickets_qr_gate_idx    on public.tickets_qr (rw_id, valid_on, status);
+create index tickets_qr_booking_idx on public.tickets_qr (booking_id);
+-- trigger tickets_require_paid_booking (BEFORE INSERT): booking must be 'paid' with a 'settled' payment ("ticket needs money").
+-- trigger tickets_no_revive: used/revoked/expired -> issued is blocked except undo_check_in within 15 min.
+alter table public.tickets_qr enable row level security;
+alter table public.tickets_qr force row level security;
+revoke all on public.tickets_qr from anon, authenticated;
+create trigger set_updated_at before update on public.tickets_qr
+  for each row execute function public.set_updated_at();
+
+-- ticket_scans (AO): every validate / check-in attempt including rejections; attempt_id makes retries idempotent.
+create table public.ticket_scans (
+  id              bigint generated always as identity primary key,
+  attempt_id      uuid not null unique,                   -- client-generated per scan
+  ticket_id       uuid references public.tickets_qr(id),
+  rw_id           smallint references public.rw_units(id),   -- scanner's RW (NULL for superadmin)
+  scanned_by      uuid not null references public.profiles(id),
+  phase           public.scan_phase not null,
+  result          public.scan_result not null,
+  source          text not null default 'qr' check (source in ('qr','manual','manual_backfill')),
+  attendee_count  integer,
+  override_reason text,
+  raw_payload     text check (length(raw_payload) <= 128),
+  device_info     jsonb not null default '{}',
+  ip              inet,
+  scanned_at      timestamptz not null default now()
+);
+create index ticket_scans_rw_time_idx on public.ticket_scans (rw_id, scanned_at desc);
+create index ticket_scans_ticket_idx  on public.ticket_scans (ticket_id, scanned_at desc);
+alter table public.ticket_scans enable row level security;
+alter table public.ticket_scans force row level security;
+revoke all on public.ticket_scans from anon, authenticated;
+
+-- certificates (A): registry of group and participant certificates with public verification code.
+create table public.certificates (
+  id                 uuid primary key default gen_random_uuid(),
+  booking_id         uuid not null references public.bookings(id) on delete restrict,
+  participant_id     uuid references public.booking_participants(id) on delete set null,   -- NULL after purge_participants
+  kind               public.certificate_kind not null,
+  certificate_number text not null unique,                -- 'SERT/GSK/2026/00031'
+  verify_code        text not null unique,                -- 10-char Crockford base32, /verifikasi/[code]
+  status             public.certificate_status not null default 'issued',
+  recipient_name     text not null,
+  institution_name   text,
+  visit_date         date not null,
+  rw_ids             smallint[] not null,
+  template_version   smallint not null default 1,
+  pdf_path           text,                                -- rendered lazily on first download
+  rendered_at        timestamptz,
+  released_at        timestamptz,                         -- NULL while unpaid_pax > 0 and no waiver
+  release_waived_by  uuid references public.profiles(id),
+  issued_at          timestamptz not null default now(),
+  issued_by          uuid references public.profiles(id), -- NULL when auto-issued at check-in
+  revoked_at         timestamptz,
+  revoke_reason      text,
+  purged_at          timestamptz,                         -- set by internal.purge_participants: participant_id nulled, recipient_name '[dihapus]'
+  constraint certificates_kind_ok check (
+    (kind = 'group' and participant_id is null) or (kind = 'participant' and (participant_id is not null or purged_at is not null)))
+);
+create unique index certificates_group_once       on public.certificates (booking_id) where kind = 'group';
+create unique index certificates_participant_once on public.certificates (participant_id) where kind = 'participant';
+alter table public.certificates enable row level security;
+alter table public.certificates force row level security;
+revoke all on public.certificates from anon, authenticated;
