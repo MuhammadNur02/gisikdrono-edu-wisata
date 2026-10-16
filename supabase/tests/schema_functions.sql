@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(210);
+select plan(224);
 
 -- Fixtures, rolled back at the end. The pepper is a throwaway local value.
 select vault.create_secret('local-test-pepper-not-a-real-secret-0000000', 'otp_pepper', 'test only');
@@ -950,6 +950,88 @@ select is(internal.rate_limit_hit('test:otp:hash-b', 2, 3600), true, 'another ke
 select throws_ok(
   $$select internal.rate_limit_hit('test:otp:hash-a', 2, 0)$$,
   '22023', null, 'a window must be at least a second'
+);
+
+-- ===== Notification outbox =====
+
+-- GUEST-08: nothing but the OTP goes to WhatsApp before the number is verified.
+select is(
+  internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'booking_created', 'whatsapp', '{}'),
+  null,
+  'a WhatsApp message to an unverified number is skipped'
+);
+select is(
+  (select count(*)::int from public.notifications where booking_id = '00000000-0000-4000-8000-0000000000e5'),
+  0,
+  'and nothing is queued'
+);
+select isnt(
+  internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'phone_otp', 'whatsapp', '{"otp_ref": "a1"}'),
+  null,
+  'the OTP that verifies the number is the exception'
+);
+select is(
+  (select recipient || ' ' || recipient_name from public.notifications
+   where dedupe_key = 'booking:00000000-0000-4000-8000-0000000000e5:phone_otp:whatsapp'),
+  '+6281234567891 Budi',
+  'and goes to the booking''s own number, greeting the first name only'
+);
+select throws_ok(
+  $$insert into public.notifications (booking_id, channel, template, recipient, dedupe_key)
+    values ('00000000-0000-4000-8000-0000000000e6', 'whatsapp', 'booking_created', '+6281234567892', 'direct:1')$$,
+  '42501', 'WhatsApp goes only to a verified number', 'a direct insert cannot get around it'
+);
+update public.bookings set phone_verified_at = now() where id = '00000000-0000-4000-8000-0000000000e5';
+select isnt(
+  internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'booking_created', 'whatsapp', '{"link_scope": "manage"}'),
+  null,
+  'once verified, the number gets its manage link'
+);
+select is(
+  internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'booking_created', 'whatsapp', '{"link_scope": "manage"}'),
+  (select id from public.notifications where dedupe_key = 'booking:00000000-0000-4000-8000-0000000000e5:booking_created:whatsapp'),
+  'queueing the same message twice returns the row already queued'
+);
+
+-- An email address nobody has confirmed gets view links only, whatever the caller asked for.
+select lives_ok(
+  $$select internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'booking_created', 'email', '{"link_scope": "manage"}')$$,
+  'an unconfirmed email address is still told about the booking'
+);
+select is(
+  (select params ->> 'link_scope' from public.notifications
+   where dedupe_key = 'booking:00000000-0000-4000-8000-0000000000e5:booking_created:email'),
+  'view',
+  'but with a view link instead of manage'
+);
+update public.bookings set email_verified_at = now() where id = '00000000-0000-4000-8000-0000000000e5';
+select internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'payment_reminder', 'email', '{"link_scope": "pay"}');
+select is(
+  (select params ->> 'link_scope' from public.notifications
+   where dedupe_key = 'booking:00000000-0000-4000-8000-0000000000e5:payment_reminder:email'),
+  'pay',
+  'a confirmed address gets the link it was sent'
+);
+
+select throws_ok(
+  $$insert into public.notifications (booking_id, channel, template, recipient, dedupe_key)
+    values ('00000000-0000-4000-8000-0000000000e5', 'email', 'booking_created', 'someone.else@example.test', 'direct:2')$$,
+  '42501', null, 'a booking''s message never goes to another address'
+);
+select throws_ok(
+  $$select internal.enqueue_notification('00000000-0000-4000-8000-0000000000e5', 'review_invite', 'email',
+      '{"link": "https://gisikdrono.example/reservasi/GSK-7F3K9Q2N?t=abc"}')$$,
+  '22023', null, 'params never carry a URL'
+);
+select is(
+  internal.enqueue_notification('00000000-0000-4000-8000-0000000000e1', 'review_invite', 'email', '{}'),
+  null,
+  'an anonymised booking has no one left to write to'
+);
+select lives_ok(
+  $$insert into public.notifications (channel, template, recipient, params, dedupe_key)
+    values ('email', 'security_alert', 'alerts@example.test', '{"severity": "high"}', 'alert:fingerprint-1')$$,
+  'staff alerts, which belong to no booking, are queued as they are'
 );
 
 -- ===== Append-only logs =====

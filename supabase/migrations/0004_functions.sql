@@ -1489,3 +1489,87 @@ $$;
 revoke execute on function internal.reserve_session_quota(uuid, integer), internal.release_booking_quota(uuid),
   internal.next_document_number(public.document_kind, timestamptz), internal.rate_limit_hit(text, integer, integer)
   from public, anon, authenticated;
+
+
+-- ===== Notification outbox (docs/PRD.md §8.7, docs/Security.md GUEST-07, GUEST-08, Task P1.3.25) =====
+
+-- notifications_guest_guard: the backstop for any outbox row, including ones written without
+-- enqueue_notification. A booking's message goes only to that booking's own contact; WhatsApp only
+-- once the number is verified (the OTP that verifies it excepted); an unconfirmed email address gets
+-- view links only; and params never carry a URL, because the worker mints every link itself.
+create function internal.notifications_guest_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  booking record;
+begin
+  if new.params::text ~* 'https?://' then
+    raise exception 'notification params never carry a URL; the worker mints links from params.link_scope'
+      using errcode = '22023';
+  end if;
+  if new.booking_id is null then
+    return new;
+  end if;
+
+  select b.pic_phone, b.pic_email, b.phone_verified_at, b.email_verified_at into booking
+  from public.bookings b where b.id = new.booking_id;
+  if new.recipient is distinct from (case new.channel when 'whatsapp' then booking.pic_phone else booking.pic_email end) then
+    raise exception 'a booking''s message goes only to that booking''s own contact' using errcode = '42501';
+  end if;
+  if new.channel = 'whatsapp' and new.template <> 'phone_otp' and booking.phone_verified_at is null then
+    raise exception 'WhatsApp goes only to a verified number' using errcode = '42501';
+  end if;
+  if new.channel = 'email' and booking.email_verified_at is null and new.params ? 'link_scope' then
+    new.params := jsonb_set(new.params, '{link_scope}', '"view"');
+  end if;
+  return new;
+end;
+$$;
+create trigger notifications_guest_guard before insert on public.notifications
+  for each row execute function internal.notifications_guest_guard();
+
+-- Queues one message about a booking for the outbox worker and returns its id. The recipient always
+-- comes from the booking itself. Returns NULL instead of queueing when WhatsApp would go to an
+-- unverified number (GUEST-08) or when the contact has been anonymised; a repeat of the same
+-- template on the same channel returns the row already queued.
+create function internal.enqueue_notification(
+  p_booking_id uuid, p_template public.notification_template, p_channel public.notification_channel, p_params jsonb
+) returns uuid
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  booking record;
+  recipient text;
+  dedupe text := format('booking:%s:%s:%s', p_booking_id, p_template, p_channel);
+  notification_id uuid;
+begin
+  select b.pic_phone, b.pic_email, b.pic_first_name, b.phone_verified_at into booking
+  from public.bookings b where b.id = p_booking_id;
+  if not found then
+    raise exception 'booking % does not exist', p_booking_id using errcode = 'P0002';
+  end if;
+
+  if p_channel = 'whatsapp' and p_template <> 'phone_otp' and booking.phone_verified_at is null then
+    return null;
+  end if;
+  recipient := case p_channel when 'whatsapp' then booking.pic_phone else booking.pic_email end;
+  if recipient is null then
+    return null;
+  end if;
+
+  insert into public.notifications (booking_id, channel, template, recipient, recipient_name, params, dedupe_key)
+  values (p_booking_id, p_channel, p_template, recipient, booking.pic_first_name, coalesce(p_params, '{}'), dedupe)
+  on conflict (dedupe_key) do nothing
+  returning id into notification_id;
+  if notification_id is null then
+    select n.id into notification_id from public.notifications n where n.dedupe_key = dedupe;
+  end if;
+  return notification_id;
+end;
+$$;
+
+revoke execute on function internal.notifications_guest_guard(),
+  internal.enqueue_notification(uuid, public.notification_template, public.notification_channel, jsonb)
+  from public, anon, authenticated;
