@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(427);
+select plan(432);
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -300,6 +300,23 @@ select throws_ok(
   $$update public.profiles set email = 'other@example.test' where id = '00000000-0000-4000-8000-000000000002'$$,
   '42501', null, 'nor the email'
 );
+select throws_ok(
+  $$update public.profiles set promotion_requested_at = now() - interval '2 days',
+      promotion_requested_by = '00000000-0000-4000-8000-000000000001' where id = '00000000-0000-4000-8000-000000000002'$$,
+  '42501', 'promotion and MFA reset requests change only through their RPCs',
+  'nor a pending promotion, which a backdated request would let skip its 24-hour wait (review N1)'
+);
+select throws_ok(
+  $$update public.profiles set mfa_reset_requested_at = now() - interval '2 days' where id = '00000000-0000-4000-8000-000000000002'$$,
+  '42501', null, 'nor a pending MFA reset'
+);
+select is(
+  (select bool_or(has_column_privilege('authenticated', 'public.profiles', request_column, 'UPDATE'))
+   from unnest(array['mfa_reset_requested_at', 'mfa_reset_requested_by', 'promotion_requested_at',
+                     'promotion_requested_by']) as request_column),
+  false,
+  'and authenticated holds no UPDATE on the request columns'
+);
 select lives_ok(
   $$update public.profiles set full_name = 'Admin Lima Baru' where id = '00000000-0000-4000-8000-000000000002'$$,
   'ordinary profile fields change freely'
@@ -387,6 +404,13 @@ select throws_ok(
     values ('00000000-0000-4000-8000-000000000005', 'baru@example.test', 'Orang Baru', 'admin_rw', 5, true)$$,
   '42501', null, 'nor an RW admin'
 );
+select throws_ok(
+  $$insert into public.profiles (id, email, full_name, role, is_active, promotion_requested_at, promotion_requested_by)
+    values ('00000000-0000-4000-8000-000000000005', 'baru@example.test', 'Orang Baru', 'none', true, now() - interval '2 days',
+            '00000000-0000-4000-8000-000000000001')$$,
+  '42501', 'a new profile starts without a pending staff change',
+  'nor one carrying a backdated promotion request (review N1)'
+);
 select lives_ok(
   $$insert into public.profiles (id, email, full_name, role, is_active)
     values ('00000000-0000-4000-8000-000000000005', 'baru@example.test', 'Orang Baru', 'none', true)$$,
@@ -394,6 +418,13 @@ select lives_ok(
 );
 select set_config('app.actor_id', '', true);
 reset role;
+insert into auth.users (id, email) values ('00000000-0000-4000-8000-0000000a0e01', 'sistem@example.test');
+select throws_ok(
+  $$insert into public.profiles (id, email, full_name, mfa_reset_requested_at)
+    values ('00000000-0000-4000-8000-0000000a0e01', 'sistem@example.test', 'Lewat Sistem', now() - interval '2 days')$$,
+  '42501', 'a new profile starts without a pending staff change',
+  'not even the system starts a profile with a pending request'
+);
 
 -- ===== Guard triggers (Task P1.3.06, P1.3.07) =====
 
@@ -1963,8 +1994,10 @@ select is(
   2,
   'so the factors stay while the request waits'
 );
+select set_config('app.privileged_rpc', 'on', true);
 update public.profiles set mfa_reset_requested_at = now() - interval '25 hours'
 where id = '00000000-0000-4000-8000-000000000004';
+select set_config('app.privileged_rpc', '', true);
 set local role authenticated;
 select is(
   public.reset_staff_mfa('00000000-0000-4000-8000-000000000004') ->> 'stage',
@@ -2014,8 +2047,10 @@ select is(
   'a reset of the RW admin''s authenticator is requested'
 );
 reset role;
+select set_config('app.privileged_rpc', 'on', true);
 update public.profiles set mfa_reset_requested_at = now() - interval '8 days'
 where id = '00000000-0000-4000-8000-000000000002';
+select set_config('app.privileged_rpc', '', true);
 set local role authenticated;
 select is(
   public.reset_staff_mfa('00000000-0000-4000-8000-000000000002') ->> 'stage',
@@ -2079,8 +2114,10 @@ select is(
   'admin_rw',
   'so the role has not changed yet'
 );
+select set_config('app.privileged_rpc', 'on', true);
 update public.profiles set promotion_requested_at = now() - interval '25 hours'
 where id = '00000000-0000-4000-8000-000000000003';
+select set_config('app.privileged_rpc', '', true);
 set local role authenticated;
 select is(
   public.set_staff_role('00000000-0000-4000-8000-000000000003', 'superadmin') ->> 'stage',

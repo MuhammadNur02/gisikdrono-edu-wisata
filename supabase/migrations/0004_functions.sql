@@ -258,9 +258,18 @@ grant execute on function public.hook_password_verification_attempt(jsonb) to su
 
 -- ===== Self-escalation lock on profiles (docs/PRD.md §8.5.2–§8.5.3, Task P1.3.05) =====
 
+-- The pending staff changes that wait 24 hours ("Delayed staff changes" below). Their timestamps decide
+-- when a change may be applied, so they start NULL and only those RPCs write them (review N1).
+alter table public.profiles
+  add column mfa_reset_requested_at timestamptz,
+  add column mfa_reset_requested_by uuid references public.profiles(id),
+  add column promotion_requested_at timestamptz,
+  add column promotion_requested_by uuid references public.profiles(id);
+
 -- 0005 grants authenticated an UPDATE on full_name, phone and avatar_path only; the revoke here
 -- states the intent now and costs nothing.
-revoke update (role, rw_id, is_active, mfa_required, email, claims_version) on public.profiles from authenticated;
+revoke update (role, rw_id, is_active, mfa_required, email, claims_version, mfa_reset_requested_at,
+  mfa_reset_requested_by, promotion_requested_at, promotion_requested_by) on public.profiles from authenticated;
 
 -- Who is acting: the signed-in staff member, or the actor a service-role call declared.
 create function internal.current_actor_id() returns uuid
@@ -274,7 +283,8 @@ revoke execute on function internal.current_actor_id() from public, anon, authen
 -- Role, RW, status, MFA flag and email move only inside set_staff_role / set_staff_status, which
 -- announce themselves with app.privileged_rpc, never on the caller's own row, and never in a way
 -- that leaves the kelurahan without an active superadmin. Every such change bumps claims_version,
--- so tokens minted before it stop working at the next request.
+-- so tokens minted before it stop working at the next request. The pending promotion and MFA reset
+-- requests move only inside the RPCs that make, apply or cancel them, which set the same flag.
 create function internal.profiles_guard() returns trigger
   language plpgsql security definer
   set search_path = ''
@@ -285,8 +295,13 @@ declare
   loses_superadmin boolean;
 begin
   -- A profile created outside the privileged and system paths (migrations, seed, the Auth trigger)
-  -- starts without a role, so a service-role bug cannot mint staff, let alone a superadmin.
+  -- starts without a role, so a service-role bug cannot mint staff, let alone a superadmin. No new
+  -- profile starts with a pending request, whoever writes it: a backdated one would skip its wait.
   if tg_op = 'INSERT' then
+    if num_nonnulls(new.mfa_reset_requested_at, new.mfa_reset_requested_by, new.promotion_requested_at,
+                    new.promotion_requested_by) > 0 then
+      raise exception 'a new profile starts without a pending staff change' using errcode = '42501';
+    end if;
     if (new.role <> 'none' or new.rw_id is not null) and not is_privileged
        and coalesce(current_setting('role', true), 'none') <> 'none' then
       raise exception 'a new profile starts without a role; set_staff_role gives it one'
@@ -298,6 +313,13 @@ begin
   -- Going back would make tokens minted before a role change valid again.
   if new.claims_version < old.claims_version then
     raise exception 'claims_version never goes back' using errcode = '42501';
+  end if;
+
+  if (new.mfa_reset_requested_at, new.mfa_reset_requested_by, new.promotion_requested_at, new.promotion_requested_by)
+     is distinct from (old.mfa_reset_requested_at, old.mfa_reset_requested_by, old.promotion_requested_at,
+                       old.promotion_requested_by)
+     and not is_privileged then
+    raise exception 'promotion and MFA reset requests change only through their RPCs' using errcode = '42501';
   end if;
 
   protected_change := new.role is distinct from old.role
@@ -2293,7 +2315,9 @@ begin
   is_promotion := p_role = 'superadmin' and previous.role <> 'superadmin';
   if is_promotion and not internal.staff_change_is_due(previous.promotion_requested_at) then
     if previous.promotion_requested_at is null or internal.staff_change_has_lapsed(previous.promotion_requested_at) then
+      previous_settings := internal.push_settings('{"app.privileged_rpc": "on"}');
       update public.profiles set promotion_requested_at = now(), promotion_requested_by = auth.uid() where id = p_user_id;
+      perform internal.restore_settings(previous_settings);
       perform internal.record_staff_change_step(p_user_id, 'superadmin_promotion', 'requested');
       return internal.staff_change_requested();
     end if;
@@ -2449,12 +2473,6 @@ grant execute on function public.svc_rate_limit_hit(text, integer, integer),
 -- delivers out of band to SECURITY_ALERT_EMAIL / SECURITY_ALERT_WA_PHONE, so the kelurahan head can
 -- have the request cancelled in time.
 
-alter table public.profiles
-  add column mfa_reset_requested_at timestamptz,
-  add column mfa_reset_requested_by uuid references public.profiles(id),
-  add column promotion_requested_at timestamptz,
-  add column promotion_requested_by uuid references public.profiles(id);
-
 alter table public.security_events drop constraint security_events_event_type_check;
 alter table public.security_events add constraint security_events_event_type_check check (event_type in (
   'webhook_signature_invalid','webhook_amount_mismatch','status_disagreement','login_failed','login_locked',
@@ -2531,6 +2549,7 @@ create function public.reset_staff_mfa(p_user_id uuid) returns jsonb
   set search_path = ''
 as $$
 declare
+  previous_settings jsonb;
   requested_at timestamptz;
 begin
   perform internal.require_superadmin_step_up();
@@ -2544,7 +2563,9 @@ begin
 
   if not internal.staff_change_is_due(requested_at) then
     if requested_at is null or internal.staff_change_has_lapsed(requested_at) then
+      previous_settings := internal.push_settings('{"app.privileged_rpc": "on"}');
       update public.profiles set mfa_reset_requested_at = now(), mfa_reset_requested_by = auth.uid() where id = p_user_id;
+      perform internal.restore_settings(previous_settings);
       perform internal.record_staff_change_step(p_user_id, 'mfa_reset', 'requested');
       return internal.staff_change_requested();
     end if;
@@ -2554,9 +2575,11 @@ begin
 
   delete from auth.mfa_factors where user_id = p_user_id;
   delete from auth.sessions where user_id = p_user_id;
+  previous_settings := internal.push_settings('{"app.privileged_rpc": "on"}');
   update public.profiles
   set mfa_reset_requested_at = null, mfa_reset_requested_by = null, claims_version = claims_version + 1
   where id = p_user_id;
+  perform internal.restore_settings(previous_settings);
   perform internal.record_staff_change_step(p_user_id, 'mfa_reset', 'completed');
   return jsonb_build_object('stage', 'completed');
 end;
@@ -2568,6 +2591,9 @@ create function public.cancel_staff_mfa_reset(p_user_id uuid) returns void
   language plpgsql security definer
   set search_path = ''
 as $$
+declare
+  previous_settings jsonb;
+  was_pending boolean;
 begin
   if not (public.is_superadmin() or (auth.uid() = p_user_id and public.is_staff())) then
     raise exception 'only the superadmin or the staff member themselves cancels an MFA reset' using errcode = '42501';
@@ -2575,9 +2601,12 @@ begin
   if not internal.has_fresh_totp() then
     raise exception 'confirm with a fresh authenticator code first' using errcode = '42501';
   end if;
+  previous_settings := internal.push_settings('{"app.privileged_rpc": "on"}');
   update public.profiles set mfa_reset_requested_at = null, mfa_reset_requested_by = null
   where id = p_user_id and mfa_reset_requested_at is not null;
-  if not found then
+  was_pending := found;
+  perform internal.restore_settings(previous_settings);
+  if not was_pending then
     raise exception 'no MFA reset is pending for %', p_user_id using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
   perform internal.record_staff_change_step(p_user_id, 'mfa_reset', 'cancelled');
@@ -2589,11 +2618,17 @@ create function public.cancel_superadmin_promotion(p_user_id uuid) returns void
   language plpgsql security definer
   set search_path = ''
 as $$
+declare
+  previous_settings jsonb;
+  was_pending boolean;
 begin
   perform internal.require_superadmin_step_up();
+  previous_settings := internal.push_settings('{"app.privileged_rpc": "on"}');
   update public.profiles set promotion_requested_at = null, promotion_requested_by = null
   where id = p_user_id and promotion_requested_at is not null;
-  if not found then
+  was_pending := found;
+  perform internal.restore_settings(previous_settings);
+  if not was_pending then
     raise exception 'no promotion to superadmin is pending for %', p_user_id
       using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;

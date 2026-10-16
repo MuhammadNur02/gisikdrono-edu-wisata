@@ -635,9 +635,9 @@ create table public.profiles (
   claims_version integer not null default 1,        -- bumped on every role/RW/status change; copied into the JWT
   avatar_path    text,
   last_login_at  timestamptz,
-  mfa_reset_requested_at timestamptz,                        -- 0004: pending reset_staff_mfa, completes after 24 h
+  mfa_reset_requested_at timestamptz,                        -- 0004: pending reset_staff_mfa (24 h – 7 days); NULL on insert, written only by its RPCs
   mfa_reset_requested_by uuid references public.profiles(id),
-  promotion_requested_at timestamptz,                        -- 0004: pending promotion to superadmin (24 h – 7 days)
+  promotion_requested_at timestamptz,                        -- 0004: pending promotion to superadmin (24 h – 7 days); NULL on insert, written only by its RPCs
   promotion_requested_by uuid references public.profiles(id),
   created_by     uuid references public.profiles(id),
   created_at     timestamptz not null default now(),
@@ -1734,7 +1734,7 @@ Legend: S/I/U/D = select/insert/update/delete; "—" = denied; "fn" = only throu
 | Table | anon | admin_rw (own RW) | superadmin | AAL2 | svc-only writes |
 |---|---|---|---|---|---|
 | rw_units | S `is_active` (public columns via column grant) | S all; U own row content columns (trigger blocks treasury/contact-account, `code`, `slug`, `is_active`) | S/U all; I | — | — |
-| profiles | — | S own row + same RW; U own `full_name, phone, avatar_path` | S all; U (not `role, rw_id, is_active, mfa_required, claims_version` — fn `set_staff_role`, `set_staff_status`) | yes | insert by auth trigger |
+| profiles | — | S own row + same RW; U own `full_name, phone, avatar_path` | S all; U (not `role, rw_id, is_active, mfa_required, claims_version` — fn `set_staff_role`, `set_staff_status`; nor the pending-request columns — fn `set_staff_role`, `reset_staff_mfa`, `cancel_staff_mfa_reset`, `cancel_superadmin_promotion`) | yes | insert by auth trigger |
 | staff_invites | — | — | S/I; revoke via U `revoked_at` | yes | accept via onboarding (svc) |
 | site_settings | S `is_public` | S `is_public` | S/I/U/D | yes | — |
 | session_templates | — | S/I/U/D `owns_rw(rw_id)` | all | — | — |
