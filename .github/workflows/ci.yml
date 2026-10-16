@@ -147,8 +147,18 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - if: steps.scope.outputs.changed == 'true'
+        run: pnpm install --frozen-lockfile
+      - if: steps.scope.outputs.changed == 'true'
+        name: Sandbox server env for the build
+        # The same obviously fake values the security job builds with (tests/fixtures/env.ts); the public
+        # values stay as the job sets them above.
+        run: >-
+          pnpm exec tsx -e "import { sandboxEnv } from './tests/fixtures/env';
+          for (const [name, value] of Object.entries(sandboxEnv))
+          if (!name.startsWith('NEXT_PUBLIC_')) console.log(name + '=' + value);"
+          >> "$GITHUB_ENV"
+      - if: steps.scope.outputs.changed == 'true'
         run: |
-          pnpm install --frozen-lockfile
           pnpm exec playwright install --with-deps chromium
           pnpm build
           pnpm e2e --pass-with-no-tests
