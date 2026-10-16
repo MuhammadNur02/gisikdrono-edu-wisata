@@ -602,3 +602,156 @@ create policy reviews_staff_read on public.reviews for select to authenticated u
 create policy reviews_super_moderate on public.reviews for update to authenticated
   using ((select public.is_superadmin())) with check ((select public.is_superadmin()));
 create policy reviews_super_delete on public.reviews for delete to authenticated using ((select public.is_superadmin()));
+
+
+-- ===== Finance: revenue_share_rules, revenue_share_rule_lines, revenue_share_entries, payout_batches =====
+-- The ledger is the superadmin's. An RW admin reads only their own keys: their RW's treasury ('rw:<id>') and
+-- their RW's vendors, never the kelurahan's share, whatever rw_id an entry carries (STAFF-02), and in every
+-- period, so RW recaps count the whole history. Everything here needs AAL2.
+
+-- revenue_share_rules: the rules that apply to an RW admin's RW, packages and products; the superadmin writes
+-- them (revenue_rules_immutable_once_used, 0004, closes a used rule instead of changing it).
+grant select (id, scope, rw_id, package_id, product_id, name, effective_from, effective_to, is_active, created_by,
+  created_at, updated_at) on public.revenue_share_rules to authenticated;
+grant insert (scope, rw_id, package_id, product_id, name, effective_from, effective_to, is_active, created_by)
+  on public.revenue_share_rules to authenticated;
+grant update (scope, rw_id, package_id, product_id, name, effective_from, effective_to, is_active)
+  on public.revenue_share_rules to authenticated;
+grant delete on public.revenue_share_rules to authenticated;
+
+create policy revenue_share_rules_staff_read on public.revenue_share_rules for select to authenticated using (
+  (select public.owns_rw(rw_id))
+  or exists (select 1 from public.tour_packages p
+             where p.id = revenue_share_rules.package_id and p.rw_id = (select public.app_rw_id()))
+  or exists (select 1 from public.products_umkm pr
+             where pr.id = revenue_share_rules.product_id and pr.rw_id = (select public.app_rw_id()))
+);
+create policy revenue_share_rules_super_insert on public.revenue_share_rules for insert to authenticated
+  with check ((select public.is_superadmin()) and created_by = (select auth.uid()));
+create policy revenue_share_rules_super_update on public.revenue_share_rules for update to authenticated
+  using ((select public.is_superadmin())) with check ((select public.is_superadmin()));
+create policy revenue_share_rules_super_delete on public.revenue_share_rules for delete to authenticated
+  using ((select public.is_superadmin()));
+create policy revenue_share_rules_aal2 on public.revenue_share_rules as restrictive for all to authenticated
+  using ((select public.aal2()));
+
+grant select (id, rule_id, beneficiary, rw_id, vendor_id, pct) on public.revenue_share_rule_lines to authenticated;
+grant insert (rule_id, beneficiary, rw_id, vendor_id, pct) on public.revenue_share_rule_lines to authenticated;
+grant update (beneficiary, rw_id, vendor_id, pct) on public.revenue_share_rule_lines to authenticated;
+grant delete on public.revenue_share_rule_lines to authenticated;
+
+create policy revenue_share_rule_lines_staff_read on public.revenue_share_rule_lines for select to authenticated using (
+  exists (select 1 from public.revenue_share_rules r where r.id = revenue_share_rule_lines.rule_id)
+);
+create policy revenue_share_rule_lines_super_write on public.revenue_share_rule_lines for all to authenticated
+  using ((select public.is_superadmin())) with check ((select public.is_superadmin()));
+create policy revenue_share_rule_lines_aal2 on public.revenue_share_rule_lines as restrictive for all to authenticated
+  using ((select public.aal2()));
+
+-- revenue_share_entries: written by allocate_revenue_share and settled by settle_revenue_entries only.
+grant select (id, booking_id, payment_id, adjustment_id, entry_type, line_ref, booking_addon_id, rule_id, rule_version,
+  beneficiary, beneficiary_key, rw_id, vendor_id, base_amount, pct, amount, payout_batch_id, prev_hash, entry_hash,
+  created_at) on public.revenue_share_entries to authenticated;
+grant select on public.v_revenue_recap_daily, public.v_revenue_recap_by_party, public.v_revenue_recap_by_booking,
+  public.v_finance_daily to authenticated;
+
+create policy revenue_share_entries_staff_read on public.revenue_share_entries for select to authenticated using (
+  (select public.is_superadmin())
+  or ((select public.is_admin_rw())
+      and (beneficiary_key = 'rw:' || (select public.app_rw_id())
+           or (beneficiary = 'umkm_vendor'
+               and exists (select 1 from public.umkm_vendors v
+                           where v.id = revenue_share_entries.vendor_id and v.rw_id = (select public.app_rw_id())))))
+);
+create policy revenue_share_entries_aal2 on public.revenue_share_entries as restrictive for all to authenticated
+  using ((select public.aal2()));
+
+-- payout_batches: the superadmin records a payout in their own name; an RW admin sees the payouts to their keys.
+grant select (id, beneficiary_key, period_from, period_to, total_amount, paid_at, reference, proof_path, notes,
+  created_by, created_at) on public.payout_batches to authenticated;
+grant insert (beneficiary_key, period_from, period_to, total_amount, paid_at, reference, proof_path, notes, created_by)
+  on public.payout_batches to authenticated;
+grant update (paid_at, reference, proof_path, notes) on public.payout_batches to authenticated;
+
+create policy payout_batches_staff_read on public.payout_batches for select to authenticated using (
+  (select public.is_superadmin())
+  or ((select public.is_admin_rw())
+      and (beneficiary_key = 'rw:' || (select public.app_rw_id())
+           or exists (select 1 from public.umkm_vendors v
+                      where 'vendor:' || v.id = payout_batches.beneficiary_key and v.rw_id = (select public.app_rw_id()))))
+);
+create policy payout_batches_super_insert on public.payout_batches for insert to authenticated
+  with check ((select public.is_superadmin()) and created_by = (select auth.uid()));
+create policy payout_batches_super_update on public.payout_batches for update to authenticated
+  using ((select public.is_superadmin())) with check ((select public.is_superadmin()));
+create policy payout_batches_aal2 on public.payout_batches as restrictive for all to authenticated
+  using ((select public.aal2()));
+
+
+-- ===== Operations: notifications, security_events, security_alerts, exports, dsr_requests, audit_logs,
+--       login_attempts, rate_limit_buckets =====
+
+-- notifications: staff see whether a message about a booking they see went out, never to whom or with what:
+-- recipient, recipient_name, params and last_error are granted to nobody (decision of 2026-10-16). Messages
+-- without a booking (staff alerts) are the superadmin's.
+grant select (id, booking_id, channel, template, document_path, dedupe_key, status, attempts, max_attempts,
+  next_attempt_at, locked_at, last_error_code, dead_at, provider_message_id, provider_status, sent_at, delivered_at,
+  read_at, created_at, updated_at) on public.notifications to authenticated;
+create policy notifications_staff_read on public.notifications for select to authenticated using (
+  (select public.is_superadmin())
+  or exists (select 1 from public.bookings b where b.id = notifications.booking_id)
+);
+
+grant select (id, event_type, severity, actor_id, actor_role, ip_hash, user_agent, rw_id, entity_type, entity_id,
+  fingerprint, details, occurred_at) on public.security_events to authenticated;
+create policy security_events_super_read on public.security_events for select to authenticated
+  using ((select public.is_superadmin()));
+create policy security_events_aal2 on public.security_events as restrictive for all to authenticated
+  using ((select public.aal2()));
+
+-- security_alerts: acknowledged by the superadmin, in their own name.
+grant select (id, rule, severity, fingerprint, title, details, first_seen_at, last_seen_at, occurrences, notified_at,
+  acknowledged_by, acknowledged_at, created_at) on public.security_alerts to authenticated;
+grant update (acknowledged_by, acknowledged_at) on public.security_alerts to authenticated;
+create policy security_alerts_super_read on public.security_alerts for select to authenticated
+  using ((select public.is_superadmin()));
+create policy security_alerts_super_acknowledge on public.security_alerts for update to authenticated
+  using ((select public.is_superadmin()))
+  with check ((select public.is_superadmin()) and acknowledged_by = (select auth.uid()));
+create policy security_alerts_aal2 on public.security_alerts as restrictive for all to authenticated
+  using ((select public.aal2()));
+
+-- exports: requested through rpc_create_export (P4.6); a staff member sees their own, the superadmin all.
+grant select (id, kind, format, requested_by, rw_id, filters, reason, row_count, storage_path, watermark, expires_at,
+  downloaded_at, deleted_at, created_at) on public.exports to authenticated;
+create policy exports_staff_read on public.exports for select to authenticated using (
+  (select public.is_superadmin()) or ((select public.is_staff()) and requested_by = (select auth.uid()))
+);
+create policy exports_aal2 on public.exports as restrictive for all to authenticated using ((select public.aal2()));
+
+-- dsr_requests: a data subject's request names their phone or email, which the superadmin needs to answer it;
+-- the superadmin handles it in their own name.
+grant select (id, request_type, phone, email, booking_code, message, otp_id, verified_at, status, due_at, handled_by,
+  handled_at, resolution_note, created_at) on public.dsr_requests to authenticated;
+grant update (status, handled_by, handled_at, resolution_note) on public.dsr_requests to authenticated;
+create policy dsr_requests_super_read on public.dsr_requests for select to authenticated
+  using ((select public.is_superadmin()));
+create policy dsr_requests_super_handle on public.dsr_requests for update to authenticated
+  using ((select public.is_superadmin()))
+  with check ((select public.is_superadmin()) and handled_by = (select auth.uid()));
+create policy dsr_requests_aal2 on public.dsr_requests as restrictive for all to authenticated
+  using ((select public.aal2()));
+
+grant select (id, occurred_at, actor_id, actor_role, actor_ip, request_id, action, entity_type, entity_id, rw_id,
+  before, after, metadata, prev_hash, entry_hash) on public.audit_logs to authenticated;
+create policy audit_logs_super_read on public.audit_logs for select to authenticated using ((select public.is_superadmin()));
+create policy audit_logs_aal2 on public.audit_logs as restrictive for all to authenticated using ((select public.aal2()));
+
+-- login_attempts: the superadmin reads them to unlock an account (FR-ADMIN-18); they hold an email hash only.
+grant select (id, user_id, email_hash, ip, success, reason, attempted_at) on public.login_attempts to authenticated;
+create policy login_attempts_super_read on public.login_attempts for select to authenticated
+  using ((select public.is_superadmin()));
+create policy login_attempts_aal2 on public.login_attempts as restrictive for all to authenticated
+  using ((select public.aal2()));
+
+-- rate_limit_buckets: nothing at all; only rate_limit_hit touches it.
