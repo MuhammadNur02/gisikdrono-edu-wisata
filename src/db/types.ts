@@ -296,6 +296,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "booking_addons_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_addons_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_addons_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
+          },
+          {
             foreignKeyName: "booking_addons_product_id_fkey"
             columns: ["product_id"]
             isOneToOne: false
@@ -360,6 +381,27 @@ export type Database = {
             referencedRelation: "bookings"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "booking_events_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_events_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_events_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
+          },
         ]
       }
       booking_legs: {
@@ -408,10 +450,38 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "booking_legs_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_legs_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_legs_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
+          },
+          {
             foreignKeyName: "booking_legs_rw_id_fkey"
             columns: ["rw_id"]
             isOneToOne: false
             referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_legs_visit_session_id_fkey"
+            columns: ["visit_session_id"]
+            isOneToOne: false
+            referencedRelation: "v_session_availability"
             referencedColumns: ["id"]
           },
           {
@@ -461,6 +531,27 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "bookings"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_participants_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_participants_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_participants_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
           },
         ]
       }
@@ -805,6 +896,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "certificates_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "certificates_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "certificates_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
+          },
+          {
             foreignKeyName: "certificates_issued_by_fkey"
             columns: ["issued_by"]
             isOneToOne: false
@@ -1053,6 +1165,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "galleries_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "galleries_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "galleries_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
+          },
+          {
             foreignKeyName: "galleries_rw_id_fkey"
             columns: ["rw_id"]
             isOneToOne: false
@@ -1121,6 +1254,27 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "bookings"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "guest_otps_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "guest_otps_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "guest_otps_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
           },
         ]
       }
@@ -1269,6 +1423,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "invoices_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
+          },
+          {
             foreignKeyName: "invoices_payment_id_fkey"
             columns: ["payment_id"]
             isOneToOne: false
@@ -1393,6 +1568,27 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "bookings"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
           },
         ]
       }
@@ -1523,6 +1719,27 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "bookings"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_adjustments_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_adjustments_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_adjustments_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
           },
           {
             foreignKeyName: "payment_adjustments_payment_id_fkey"
@@ -1688,6 +1905,27 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "bookings"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
           },
           {
             foreignKeyName: "payments_recorded_by_fkey"
@@ -2046,6 +2284,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "quotations_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quotations_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quotations_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
+          },
+          {
             foreignKeyName: "quotations_issued_by_fkey"
             columns: ["issued_by"]
             isOneToOne: false
@@ -2119,6 +2378,27 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "bookings"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_issues_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_issues_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_issues_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
           },
           {
             foreignKeyName: "reconciliation_issues_payment_id_fkey"
@@ -2281,6 +2561,27 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "bookings"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "revenue_share_entries_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "revenue_share_entries_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "revenue_share_entries_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
           },
           {
             foreignKeyName: "revenue_share_entries_payment_id_fkey"
@@ -2454,6 +2755,7 @@ export type Database = {
           moderated_at: string | null
           moderated_by: string | null
           moderation_note: string | null
+          public_reviewer_name: string | null
           rating: number
           reviewer_name: string
           rw_ids: number[]
@@ -2472,6 +2774,7 @@ export type Database = {
           moderated_at?: string | null
           moderated_by?: string | null
           moderation_note?: string | null
+          public_reviewer_name?: string | null
           rating: number
           reviewer_name: string
           rw_ids: number[]
@@ -2490,6 +2793,7 @@ export type Database = {
           moderated_at?: string | null
           moderated_by?: string | null
           moderation_note?: string | null
+          public_reviewer_name?: string | null
           rating?: number
           reviewer_name?: string
           rw_ids?: number[]
@@ -2504,6 +2808,27 @@ export type Database = {
             isOneToOne: true
             referencedRelation: "bookings"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reviews_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: true
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reviews_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: true
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reviews_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: true
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
           },
           {
             foreignKeyName: "reviews_moderated_by_fkey"
@@ -2904,6 +3229,13 @@ export type Database = {
             referencedRelation: "tickets_qr"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "ticket_scans_ticket_id_fkey"
+            columns: ["ticket_id"]
+            isOneToOne: false
+            referencedRelation: "v_attendance_today"
+            referencedColumns: ["ticket_id"]
+          },
         ]
       }
       tickets_qr: {
@@ -2994,6 +3326,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "tickets_qr_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tickets_qr_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tickets_qr_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
+          },
+          {
             foreignKeyName: "tickets_qr_booking_leg_id_fkey"
             columns: ["booking_leg_id"]
             isOneToOne: true
@@ -3019,6 +3372,13 @@ export type Database = {
             columns: ["rw_id"]
             isOneToOne: false
             referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tickets_qr_visit_session_id_fkey"
+            columns: ["visit_session_id"]
+            isOneToOne: false
+            referencedRelation: "v_session_availability"
             referencedColumns: ["id"]
           },
           {
@@ -3396,7 +3756,344 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      v_attendance_today: {
+        Row: {
+          booked_pax: number | null
+          booker_type: Database["public"]["Enums"]["booker_type"] | null
+          booking_code: string | null
+          booking_id: string | null
+          checked_in_at: string | null
+          checked_in_pax: number | null
+          end_time: string | null
+          institution_name: string | null
+          is_manual: boolean | null
+          pic_first_name: string | null
+          rw_id: number | null
+          session_label: string | null
+          start_time: string | null
+          ticket_code: string | null
+          ticket_id: string | null
+          ticket_status: Database["public"]["Enums"]["ticket_status"] | null
+          unpaid_pax: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tickets_qr_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tickets_qr_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tickets_qr_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tickets_qr_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
+          },
+          {
+            foreignKeyName: "tickets_qr_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_booking_admin: {
+        Row: {
+          admin_notes: string | null
+          amount_paid: number | null
+          booker_type: Database["public"]["Enums"]["booker_type"] | null
+          booking_code: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          channel: Database["public"]["Enums"]["booking_channel"] | null
+          checked_in_at: string | null
+          completed_at: string | null
+          created_at: string | null
+          discount_amount: number | null
+          email_masked: string | null
+          expired_at: string | null
+          expires_at: string | null
+          id: string | null
+          institution_name: string | null
+          invoices: Json | null
+          is_anonymised: boolean | null
+          is_email_verified: boolean | null
+          is_phone_verified: boolean | null
+          legs: Json | null
+          needs_review: boolean | null
+          notes: string | null
+          package_id: string | null
+          package_name: string | null
+          paid_at: string | null
+          pax_count: number | null
+          payment_status: Database["public"]["Enums"]["payment_status"] | null
+          payments: Json | null
+          phone_masked: string | null
+          pic_first_name: string | null
+          quoted_at: string | null
+          refunded_at: string | null
+          review_reason: string | null
+          rw_ids: number[] | null
+          shows_amounts: boolean | null
+          status: Database["public"]["Enums"]["booking_status"] | null
+          subtotal_addons: number | null
+          subtotal_package: number | null
+          ticket_statuses: Json | null
+          tickets: Json | null
+          total_amount: number | null
+          visit_date: string | null
+          visit_date_end: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bookings_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "tour_packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_booking_export: {
+        Row: {
+          booker_type: Database["public"]["Enums"]["booker_type"] | null
+          booking_code: string | null
+          booking_status: Database["public"]["Enums"]["booking_status"] | null
+          checked_in_pax: number | null
+          institution_name: string | null
+          leg_pax: number | null
+          leg_status: Database["public"]["Enums"]["booking_leg_status"] | null
+          package_name: string | null
+          paid_at: string | null
+          rw_id: number | null
+          session_date: string | null
+          session_label: string | null
+          start_time: string | null
+          ticket_code: string | null
+          ticket_status: Database["public"]["Enums"]["ticket_status"] | null
+          total_amount: number | null
+          unpaid_pax: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_legs_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_bookings_staff: {
+        Row: {
+          admin_notes: string | null
+          amount_paid: number | null
+          booker_type: Database["public"]["Enums"]["booker_type"] | null
+          booking_code: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          channel: Database["public"]["Enums"]["booking_channel"] | null
+          checked_in_at: string | null
+          completed_at: string | null
+          created_at: string | null
+          discount_amount: number | null
+          email_masked: string | null
+          expired_at: string | null
+          expires_at: string | null
+          id: string | null
+          institution_name: string | null
+          is_anonymised: boolean | null
+          is_email_verified: boolean | null
+          is_phone_verified: boolean | null
+          legs: Json | null
+          needs_review: boolean | null
+          notes: string | null
+          package_id: string | null
+          package_name: string | null
+          paid_at: string | null
+          pax_count: number | null
+          payment_status: Database["public"]["Enums"]["payment_status"] | null
+          phone_masked: string | null
+          pic_first_name: string | null
+          quoted_at: string | null
+          refunded_at: string | null
+          review_reason: string | null
+          rw_ids: number[] | null
+          shows_amounts: boolean | null
+          status: Database["public"]["Enums"]["booking_status"] | null
+          subtotal_addons: number | null
+          subtotal_package: number | null
+          ticket_statuses: Json | null
+          total_amount: number | null
+          visit_date: string | null
+          visit_date_end: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bookings_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "tour_packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_finance_daily: {
+        Row: {
+          day: string | null
+          gross_settled: number | null
+          net: number | null
+          payments_count: number | null
+          qris_count: number | null
+          refunds: number | null
+          va_count: number | null
+        }
+        Relationships: []
+      }
+      v_public_reviews: {
+        Row: {
+          body: string | null
+          created_at: string | null
+          id: string | null
+          institution_name: string | null
+          is_featured: boolean | null
+          rating: number | null
+          reviewer_name: string | null
+          rw_ids: number[] | null
+          title: string | null
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string | null
+          id?: string | null
+          institution_name?: string | null
+          is_featured?: boolean | null
+          rating?: number | null
+          reviewer_name?: string | null
+          rw_ids?: number[] | null
+          title?: string | null
+        }
+        Update: {
+          body?: string | null
+          created_at?: string | null
+          id?: string | null
+          institution_name?: string | null
+          is_featured?: boolean | null
+          rating?: number | null
+          reviewer_name?: string | null
+          rw_ids?: number[] | null
+          title?: string | null
+        }
+        Relationships: []
+      }
+      v_revenue_recap_by_booking: {
+        Row: {
+          booking_code: string | null
+          booking_id: string | null
+          entries: Json | null
+          paid_at: string | null
+          total_amount: number | null
+        }
+        Relationships: []
+      }
+      v_revenue_recap_by_party: {
+        Row: {
+          accrued: number | null
+          beneficiary: Database["public"]["Enums"]["revenue_beneficiary"] | null
+          beneficiary_key: string | null
+          beneficiary_name: string | null
+          outstanding: number | null
+          paid_out: number | null
+          rw_id: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "revenue_share_entries_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_revenue_recap_daily: {
+        Row: {
+          beneficiary_key: string | null
+          bookings: number | null
+          day: string | null
+          net_amount: number | null
+          reversed_amount: number | null
+          rw_id: number | null
+          settled_amount: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "revenue_share_entries_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_session_availability: {
+        Row: {
+          capacity: number | null
+          end_time: string | null
+          id: string | null
+          label: string | null
+          remaining: number | null
+          rw_id: number | null
+          session_date: string | null
+          start_time: string | null
+        }
+        Insert: {
+          capacity?: number | null
+          end_time?: string | null
+          id?: string | null
+          label?: string | null
+          remaining?: never
+          rw_id?: number | null
+          session_date?: string | null
+          start_time?: string | null
+        }
+        Update: {
+          capacity?: number | null
+          end_time?: string | null
+          id?: string | null
+          label?: string | null
+          remaining?: never
+          rw_id?: number | null
+          session_date?: string | null
+          start_time?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "visit_sessions_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       aal2: { Args: never; Returns: boolean }

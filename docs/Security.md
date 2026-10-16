@@ -950,7 +950,7 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 | MON-06 | should | Runbooks R1/R2 + quarterly tabletop | Slow incident handling | §11.4 of this document | drill record | P5 - Security Testing |
 | MON-07 | must | Full alert rule set of §11.2 incl. price, session, reveal, check-in and lockout rules | Insider and abuse patterns undetected | `/api/jobs/anomaly-scan` | one seeded case per rule | P4 - Dashboards & CRUD |
 | STAFF-01 | must | Superadmin TOTP; finance routes and RLS require `aal2()` | Account takeover | middleware, restrictive policies | pgTAP aal1/aal2; e2e | P1 - DB & RLS |
-| STAFF-02 | must | admin_rw sees paid/unpaid only, no amounts | Cross-RW financial leakage | `v_bookings_staff` | pgTAP RW 05 vs 08 | P1 - DB & RLS |
+| STAFF-02 | must | admin_rw sees the amounts of their own RW's bookings (accepted, because they set those prices) but never the kelurahan ledger, adjustments or another RW's money; a combo's total, which holds the other RW's share, is superadmin-only (`v_bookings_staff.shows_amounts`), and RLS keeps the ledger to their own keys (decision of 2026-10-16) | Cross-RW financial leakage | `v_bookings_staff`, `v_booking_export`, ledger views, RLS on `revenue_share_entries` / `payment_adjustments` | pgTAP RW 05 vs 08 | P1 - DB & RLS |
 | STAFF-03 | must | Supabase org hygiene; migrations only | Dashboard tampering | org settings, process | quarterly checklist | P0 - Accounts |
 | STAFF-04 | must | Service-role client confined to the allow-list | RLS bypass spread | `src/lib/supabase/admin.ts`, ESLint, CI grep | lint in CI | P1 - Environment Setup |
 | STAFF-05 | should | Password/session policy | Weak credentials | Supabase Auth settings | checklist | P0 - Accounts |

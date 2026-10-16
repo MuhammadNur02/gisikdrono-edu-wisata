@@ -880,7 +880,9 @@ select columns_are('public', 'performance_schedules', array[
 select columns_are('public', 'reviews', array[
   'id', 'booking_id', 'rw_ids', 'rating', 'title', 'body', 'reviewer_name', 'institution_name',
   'is_anonymous', 'status', 'is_featured', 'moderated_by', 'moderated_at', 'moderation_note',
-  'created_at', 'updated_at'
+  'created_at', 'updated_at',
+  -- added by 0004: what v_public_reviews shows of the author
+  'public_reviewer_name'
 ]);
 select is(
   (select count(*)::int from pg_indexes where schemaname = 'public'

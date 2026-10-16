@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(299);
+select plan(319);
 
 -- Fixtures, rolled back at the end. The pepper is a throwaway local value.
 select vault.create_secret('local-test-pepper-not-a-real-secret-0000000', 'otp_pepper', 'test only');
@@ -1680,6 +1680,184 @@ select is(
    where booking_id = '00000000-0000-4000-8000-0000000000e5' and line_ref = 'package' and beneficiary_key = 'rw:5'),
   'verification stops at the edited row'
 );
+
+-- ===== Views =====
+
+select is(
+  (select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relkind = 'v'
+     and not coalesce(c.reloptions @> array['security_invoker=true'], false)),
+  0,
+  'every public view runs with the reader''s own rights'
+);
+select hasnt_column('public', 'v_session_availability', 'pending_share', 'anon''s availability carries no unpaid share');
+select hasnt_column('public', 'v_public_reviews', 'booking_id', 'a public review does not point at its booking');
+select hasnt_column('public', 'v_bookings_staff', 'pic_phone', 'the staff list has no raw phone');
+select hasnt_column('public', 'v_bookings_staff', 'pic_email', 'no raw email');
+select hasnt_column('public', 'v_bookings_staff', 'pic_name', 'and no full name');
+
+select is(
+  (select remaining from public.v_session_availability where id = '00000000-0000-4000-8000-000000001b03'),
+  20,
+  'an open future session shows the seats left'
+);
+select is(
+  (select count(*)::int from public.v_session_availability
+   where id in ('00000000-0000-4000-8000-000000001b01', '00000000-0000-4000-8000-0000000000b9')),
+  0,
+  'past and closed sessions are not offered'
+);
+
+insert into public.reviews (id, booking_id, rw_ids, rating, body, reviewer_name, institution_name, is_anonymous, status) values
+  ('00000000-0000-4000-8000-000000003a01', '00000000-0000-4000-8000-000000001e04', '{5}', 5,
+   'Anak-anak senang belajar memilah sampah.', 'Siti Rahmawati', 'SD Negeri Gisikdrono 01', false, 'published'),
+  ('00000000-0000-4000-8000-000000003a02', '00000000-0000-4000-8000-000000001e05', '{5}', 4,
+   'Kegiatan maggot sangat menarik.', 'Budi Santoso', 'SMP Negeri 2', true, 'published'),
+  ('00000000-0000-4000-8000-000000003a03', '00000000-0000-4000-8000-000000001e06', '{5}', 3,
+   'Masih menunggu moderasi ya.', 'Dewi Lestari', 'TK Pelita', false, 'pending');
+select is(
+  (select string_agg(reviewer_name || ' (' || institution_name || ')', ', ' order by rating desc) from public.v_public_reviews
+   where id in ('00000000-0000-4000-8000-000000003a01', '00000000-0000-4000-8000-000000003a02',
+                '00000000-0000-4000-8000-000000003a03')),
+  'Siti (SD Negeri Gisikdrono 01), Pengunjung (SMP Negeri 2)',
+  'published reviews show the first name, or Pengunjung when anonymous; pending ones not at all'
+);
+
+-- A combo visiting both RWs in five days, and a paid group at the gate today with a manual check-in.
+select set_config('app.in_rpc', '1', true);
+insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
+  ('00000000-0000-4000-8000-000000001b06', 5, public.today_jkt(), '05:50', '06:00', 'Hari ini', 40);
+insert into public.bookings (id, booking_code, status, package_id, package_snapshot, rw_ids, booker_type, pic_name,
+  pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount, consent_version,
+  consented_at, paid_at, amount_paid) values
+  ('00000000-0000-4000-8000-000000001e11', 'GSK-J0B01E11', 'quoted', '00000000-0000-4000-8000-0000000000c1', '{}', '{5,8}',
+   'school', 'Guru Kombo', '+628123450011', 'kombo@example.test', 4, public.today_jkt() + 5, public.today_jkt() + 5,
+   200000, 200000, 'v1', now(), null, 0),
+  ('00000000-0000-4000-8000-000000001e12', 'GSK-J0B01E12', 'paid', '00000000-0000-4000-8000-0000000000c1', '{}', '{5}',
+   'school', 'Guru Hari Ini', '+628123450012', 'hariini@example.test', 4, public.today_jkt(), public.today_jkt(),
+   100000, 100000, 'v1', now(), now() - interval '1 day', 100000);
+insert into public.booking_legs (booking_id, rw_id, visit_session_id, leg_order, pax_count, status, quota_reserved_at) values
+  ('00000000-0000-4000-8000-000000001e11', 5, '00000000-0000-4000-8000-000000001b04', 1, 4, 'unreserved', null),
+  ('00000000-0000-4000-8000-000000001e11', 8, '00000000-0000-4000-8000-000000001b05', 2, 4, 'unreserved', null),
+  ('00000000-0000-4000-8000-000000001e12', 5, '00000000-0000-4000-8000-000000001b06', 1, 4, 'reserved', now());
+insert into public.payments (booking_id, attempt_no, provider, order_id, gross_amount, status, method, settlement_time)
+values ('00000000-0000-4000-8000-000000001e12', 1, 'midtrans', 'GSK-J0B01E12-01', 100000, 'settled', 'qris', now());
+insert into public.tickets_qr (id, booking_id, booking_leg_id, rw_id, visit_session_id, ticket_code, valid_on,
+  valid_from, valid_until, pax_count, key_id, status, checked_in_pax, checked_in_at)
+select '00000000-0000-4000-8000-000000001d12', l.booking_id, l.id, 5, l.visit_session_id, 'GSK-J0B01E12-05',
+  public.today_jkt(), now() - interval '1 hour', now() + interval '3 hours', 4, 'k1', 'used', 4, now()
+from public.booking_legs l where l.booking_id = '00000000-0000-4000-8000-000000001e12';
+select set_config('app.in_rpc', '', true);
+insert into public.ticket_scans (attempt_id, ticket_id, rw_id, scanned_by, phase, result, source)
+values (gen_random_uuid(), '00000000-0000-4000-8000-000000001d12', 5, '00000000-0000-4000-8000-000000000002',
+        'check_in', 'ok', 'manual');
+
+-- 0005 brings the real grants and policies; until then the readers get open ones, so these tests
+-- exercise what the views themselves decide.
+do $$
+declare
+  base_table text;
+begin
+  foreach base_table in array array['tour_packages', 'booking_legs', 'visit_sessions', 'payments', 'tickets_qr',
+    'invoices', 'ticket_scans', 'revenue_share_entries', 'rw_units', 'umkm_vendors'] loop
+    execute format('grant select on public.%I to authenticated', base_table);
+    execute format('create policy test_view_read on public.%I for select to authenticated using (true)', base_table);
+  end loop;
+end;
+$$;
+grant select on public.v_bookings_staff, public.v_booking_admin, public.v_attendance_today, public.v_booking_export,
+  public.v_revenue_recap_daily, public.v_revenue_recap_by_party, public.v_revenue_recap_by_booking,
+  public.v_finance_daily to authenticated;
+
+select set_config('request.jwt.claims', (
+  select jsonb_build_object('sub', id, 'role', 'authenticated', 'aal', 'aal2', 'app_role', role,
+                            'app_rw_id', rw_id, 'claims_version', claims_version)::text
+  from public.profiles where id = '00000000-0000-4000-8000-000000000001'), true);
+set local role authenticated;
+select is(
+  (select string_agg(booking_code || ' ' || coalesce(total_amount::text, '-') || ' ' || shows_amounts, ', ' order by booking_code)
+   from public.v_bookings_staff where booking_code in ('GSK-J0B01E06', 'GSK-J0B01E11', 'GSK-R0B01E07')),
+  'GSK-J0B01E06 100000 true, GSK-J0B01E11 200000 true, GSK-R0B01E07 100000 true',
+  'the superadmin sees every booking with its money'
+);
+select is(
+  (select phone_masked || ' ' || email_masked || ' ' || pic_first_name from public.v_bookings_staff
+   where booking_code = 'GSK-J0B01E06'),
+  '+62812••••06 g***@example.test Guru',
+  'contacts appear masked'
+);
+select is(
+  (select (payments -> 0 ->> 'gross_amount') || ' ' || (tickets -> 0 ->> 'status') from public.v_booking_admin
+   where booking_code = 'GSK-J0B01E05'),
+  '100000 expired',
+  'the detail view adds payments and tickets'
+);
+select is(
+  (select jsonb_object_agg(beneficiary_key, jsonb_build_array(beneficiary_name, accrued, paid_out, outstanding))
+   from public.v_revenue_recap_by_party),
+  '{"kelurahan": [null, 135000, 135000, 0], "rw:5": ["RW 05 Ecowastreme", 1130000, 0, 1130000]}'::jsonb,
+  'the party recap sums the ledger, paid out and outstanding'
+);
+select is(
+  (select jsonb_array_length(entries) from public.v_revenue_recap_by_booking where booking_code = 'GSK-7F3K9Q2N'),
+  3,
+  'the booking recap lists a booking''s ledger entries'
+);
+select is(
+  (select qris_count >= 1 from public.v_finance_daily where day = public.today_jkt()),
+  true,
+  'the finance view counts today''s QRIS settlement'
+);
+reset role;
+
+-- The RW 05 admin (profile 0002 since the staff tests).
+select set_config('request.jwt.claims', (
+  select jsonb_build_object('sub', id, 'role', 'authenticated', 'aal', 'aal2', 'app_role', role,
+                            'app_rw_id', rw_id, 'claims_version', claims_version)::text
+  from public.profiles where id = '00000000-0000-4000-8000-000000000002'), true);
+set local role authenticated;
+select is(
+  (select string_agg(booking_code || ' ' || coalesce(total_amount::text, '-') || ' ' || shows_amounts, ', ' order by booking_code)
+   from public.v_bookings_staff
+   where booking_code in ('GSK-J0B01E02', 'GSK-J0B01E06', 'GSK-J0B01E11', 'GSK-R0B01E07')),
+  'GSK-J0B01E06 100000 true, GSK-J0B01E11 - false',
+  'an RW admin sees their own bookings in the window, with money only where the booking is theirs alone'
+);
+select is(
+  (select string_agg(rw_id::text, ' ') from public.v_booking_export where booking_code = 'GSK-J0B01E11'),
+  '5',
+  'a combo exports only the admin''s own leg'
+);
+select is(
+  (select booked_pax || ' ' || checked_in_pax || ' ' || is_manual from public.v_attendance_today
+   where booking_code = 'GSK-J0B01E12'),
+  '4 4 true',
+  'today''s gate list shows the group, its check-in and the manual flag'
+);
+select is(
+  (select string_agg(beneficiary_key, ' ') from public.v_revenue_recap_by_party),
+  'rw:5',
+  'the RW admin sees their RW''s ledger keys, never the kelurahan''s'
+);
+select is(
+  (select count(*)::int from public.v_revenue_recap_by_booking) + (select count(*)::int from public.v_finance_daily),
+  0,
+  'and none of the superadmin-only recaps'
+);
+reset role;
+select set_config('request.jwt.claims', '', true);
+
+do $$
+declare
+  base_table text;
+begin
+  foreach base_table in array array['tour_packages', 'booking_legs', 'visit_sessions', 'payments', 'tickets_qr',
+    'invoices', 'ticket_scans', 'revenue_share_entries', 'rw_units', 'umkm_vendors'] loop
+    execute format('drop policy test_view_read on public.%I', base_table);
+    execute format('revoke select on public.%I from authenticated', base_table);
+  end loop;
+end;
+$$;
 
 -- ===== Audit log =====
 

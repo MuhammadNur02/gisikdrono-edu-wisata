@@ -2203,3 +2203,161 @@ $$;
 
 revoke execute on function internal.record_mfa_reset_step(uuid, text), public.reset_staff_mfa(uuid)
   from public, anon, authenticated;
+
+
+-- ===== Views (docs/PRD.md §8.4.10, Task P1.3.22) =====
+-- Every view is security_invoker, so the reader's own grants and RLS apply to each table it reads
+-- (granted in 0005). A view therefore cannot hide a column its reader is granted; private values stay
+-- out of reach through column grants and stored generated columns instead (decision of 2026-10-16).
+-- The staff views also repeat their scope in WHERE, as the first line in front of RLS.
+
+-- What a public review shows of its author: 'Pengunjung' when anonymous, else the first name. anon is
+-- granted this column, never reviewer_name.
+alter table public.reviews add column public_reviewer_name text generated always as (
+  case when is_anonymous then 'Pengunjung' else split_part(btrim(reviewer_name), ' ', 1) end
+) stored;
+
+-- Bookable sessions for the calendar and the wizard. The share held by unpaid bookings is not here:
+-- computing it needs booking rows anon may not read, so create_booking enforces that rule itself and
+-- the staff dashboard computes the pressure on its own path.
+create view public.v_session_availability with (security_invoker = true) as
+select s.id, s.rw_id, s.session_date, s.start_time, s.end_time, s.label, s.capacity,
+       s.capacity - s.reserved_pax as remaining
+from public.visit_sessions s
+where s.status = 'open' and s.session_date >= public.today_jkt();
+
+create view public.v_public_reviews with (security_invoker = true) as
+select r.id, r.rating, r.title, r.body, r.public_reviewer_name as reviewer_name, r.institution_name, r.rw_ids,
+       r.is_featured, r.created_at
+from public.reviews r
+where r.status = 'published';
+
+-- The staff booking list. Contact details appear only masked; rpc_reveal_booking_contact is the one way
+-- to the real values. docs/Security.md STAFF-02: an RW admin sees the money of their own RW's bookings,
+-- because they set those prices, but a combo's total also holds the other RW's share, so only the
+-- superadmin sees it. An RW admin sees bookings visiting from a week ago to a month ahead.
+create view public.v_bookings_staff with (security_invoker = true) as
+select
+  b.id, b.booking_code, b.status, b.channel, b.package_id, p.name as package_name, b.rw_ids, b.booker_type,
+  b.institution_name, b.pic_first_name, b.phone_masked, b.email_masked,
+  b.phone_verified_at is not null as is_phone_verified, b.email_verified_at is not null as is_email_verified,
+  b.pii_purged_at is not null as is_anonymised,
+  b.pax_count, b.visit_date, b.visit_date_end, b.notes, b.admin_notes,
+  money.shows_amounts,
+  case when money.shows_amounts then b.subtotal_package end as subtotal_package,
+  case when money.shows_amounts then b.subtotal_addons end as subtotal_addons,
+  case when money.shows_amounts then b.discount_amount end as discount_amount,
+  case when money.shows_amounts then b.total_amount end as total_amount,
+  case when money.shows_amounts then b.amount_paid end as amount_paid,
+  b.expires_at, b.quoted_at, b.paid_at, b.checked_in_at, b.completed_at, b.cancelled_at, b.cancel_reason,
+  b.expired_at, b.refunded_at, b.needs_review, b.review_reason, b.created_at,
+  (select jsonb_agg(jsonb_build_object('rw_id', l.rw_id, 'session_date', s.session_date, 'start_time', s.start_time,
+                                       'label', s.label, 'pax', l.pax_count, 'status', l.status) order by l.leg_order)
+   from public.booking_legs l join public.visit_sessions s on s.id = l.visit_session_id
+   where l.booking_id = b.id) as legs,
+  (select py.status from public.payments py where py.booking_id = b.id order by py.attempt_no desc limit 1)
+    as payment_status,
+  (select jsonb_object_agg(t.rw_id, t.status) from public.tickets_qr t where t.booking_id = b.id) as ticket_statuses
+from public.bookings b
+join public.tour_packages p on p.id = b.package_id
+cross join lateral (
+  select (select public.is_superadmin()) or b.rw_ids = array[(select public.app_rw_id())] as shows_amounts
+) as money
+where (select public.is_superadmin())
+   or (public.owns_any_rw(b.rw_ids)
+       and b.visit_date_end >= (select public.today_jkt()) - 7 and b.visit_date <= (select public.today_jkt()) + 30);
+
+-- The booking detail page: the list row plus its payments, tickets and invoices.
+create view public.v_booking_admin with (security_invoker = true) as
+select v.*,
+  (select jsonb_agg(jsonb_build_object('attempt_no', py.attempt_no, 'method', py.method, 'status', py.status,
+                                       'order_id', py.order_id,
+                                       'gross_amount', case when v.shows_amounts then py.gross_amount end,
+                                       'settlement_time', py.settlement_time) order by py.attempt_no)
+   from public.payments py where py.booking_id = v.id) as payments,
+  (select jsonb_agg(jsonb_build_object('ticket_code', t.ticket_code, 'rw_id', t.rw_id, 'status', t.status,
+                                       'valid_on', t.valid_on, 'pax', t.pax_count, 'checked_in_pax', t.checked_in_pax,
+                                       'unpaid_pax', t.unpaid_pax, 'checked_in_at', t.checked_in_at) order by t.rw_id)
+   from public.tickets_qr t where t.booking_id = v.id) as tickets,
+  (select jsonb_agg(jsonb_build_object('invoice_number', i.invoice_number, 'status', i.status,
+                                       'receipt_number', i.receipt_number, 'credit_note_number', i.credit_note_number,
+                                       'issued_at', i.issued_at) order by i.issued_at)
+   from public.invoices i where i.booking_id = v.id) as invoices
+from public.v_bookings_staff v;
+
+-- Today's gate list per RW, one row per ticket.
+create view public.v_attendance_today with (security_invoker = true) as
+select t.rw_id, t.booking_id, b.booking_code, b.institution_name, b.pic_first_name, b.booker_type,
+       s.label as session_label, s.start_time, s.end_time,
+       t.id as ticket_id, t.ticket_code, t.status as ticket_status,
+       t.pax_count as booked_pax, t.checked_in_pax, t.unpaid_pax, t.checked_in_at,
+       exists (select 1 from public.ticket_scans sc
+               where sc.ticket_id = t.id and sc.source <> 'qr' and sc.result = 'ok') as is_manual
+from public.tickets_qr t
+join public.bookings b on b.id = t.booking_id
+join public.visit_sessions s on s.id = t.visit_session_id
+where t.valid_on = (select public.today_jkt())
+  and ((select public.is_superadmin()) or public.owns_rw(t.rw_id));
+
+-- One row per leg for the visits and attendance exports: no contact columns, and an RW admin gets
+-- only their own RW's legs, so a combo's other leg never reaches their file.
+create view public.v_booking_export with (security_invoker = true) as
+select b.booking_code, b.status as booking_status, p.name as package_name, b.booker_type, b.institution_name,
+       l.rw_id, s.session_date, s.start_time, s.label as session_label, l.pax_count as leg_pax, l.status as leg_status,
+       t.ticket_code, t.status as ticket_status, t.checked_in_pax, t.unpaid_pax, b.paid_at,
+       case when (select public.is_superadmin()) or b.rw_ids = array[(select public.app_rw_id())]
+            then b.total_amount end as total_amount
+from public.booking_legs l
+join public.bookings b on b.id = l.booking_id
+join public.tour_packages p on p.id = b.package_id
+join public.visit_sessions s on s.id = l.visit_session_id
+left join public.tickets_qr t on t.booking_leg_id = l.id
+where (select public.is_superadmin()) or public.owns_rw(l.rw_id);
+
+-- Ledger recaps (REC-07): amounts come from revenue_share_entries only. An RW admin sees the keys of
+-- their own RW (its treasury and its vendors), never the kelurahan's. sum() of bigint is numeric, so
+-- every money sum is cast back to integer rupiah.
+create view public.v_revenue_recap_daily with (security_invoker = true) as
+select (e.created_at at time zone 'Asia/Jakarta')::date as day, e.rw_id, e.beneficiary_key,
+       coalesce(sum(e.amount) filter (where e.entry_type = 'settlement'), 0)::bigint as settled_amount,
+       coalesce(sum(e.amount) filter (where e.entry_type = 'reversal'), 0)::bigint as reversed_amount,
+       sum(e.amount)::bigint as net_amount,
+       count(distinct e.booking_id) as bookings
+from public.revenue_share_entries e
+where (select public.is_superadmin()) or public.owns_rw(e.rw_id)
+group by 1, 2, 3;
+
+-- beneficiary_name is NULL for the kelurahan; the dashboard labels it from its own copy.
+create view public.v_revenue_recap_by_party with (security_invoker = true) as
+select e.beneficiary, e.beneficiary_key, coalesce(r.name, v.name) as beneficiary_name, e.rw_id,
+       sum(e.amount)::bigint as accrued,
+       coalesce(sum(e.amount) filter (where e.payout_batch_id is not null), 0)::bigint as paid_out,
+       (sum(e.amount) - coalesce(sum(e.amount) filter (where e.payout_batch_id is not null), 0))::bigint as outstanding
+from public.revenue_share_entries e
+left join public.rw_units r on e.beneficiary = 'rw_treasury' and r.id = e.rw_id
+left join public.umkm_vendors v on v.id = e.vendor_id
+where (select public.is_superadmin()) or public.owns_rw(e.rw_id)
+group by e.beneficiary, e.beneficiary_key, coalesce(r.name, v.name), e.rw_id;
+
+create view public.v_revenue_recap_by_booking with (security_invoker = true) as
+select b.id as booking_id, b.booking_code, b.paid_at, b.total_amount,
+       jsonb_agg(jsonb_build_object('id', e.id, 'entry_type', e.entry_type, 'beneficiary_key', e.beneficiary_key,
+                                    'line_ref', e.line_ref, 'amount', e.amount, 'created_at', e.created_at)
+                 order by e.id) as entries
+from public.revenue_share_entries e
+join public.bookings b on b.id = e.booking_id
+where (select public.is_superadmin())
+group by b.id;
+
+-- Payments per Jakarta day of settlement; a refund counts on the day of the payment it reverses.
+create view public.v_finance_daily with (security_invoker = true) as
+select (coalesce(py.settlement_time, py.transaction_time, py.created_at) at time zone 'Asia/Jakarta')::date as day,
+       sum(py.gross_amount)::bigint as gross_settled,
+       coalesce(sum(py.refunded_amount), 0)::bigint as refunds,
+       (sum(py.gross_amount) - coalesce(sum(py.refunded_amount), 0))::bigint as net,
+       count(*) as payments_count,
+       count(*) filter (where py.method = 'qris') as qris_count,
+       count(*) filter (where py.method = 'virtual_account') as va_count
+from public.payments py
+where py.status in ('settled', 'refunded', 'partially_refunded') and (select public.is_superadmin())
+group by 1;

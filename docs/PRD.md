@@ -1401,6 +1401,8 @@ create table public.reviews (
   reviewer_name    text not null check (length(reviewer_name) between 2 and 60),
   institution_name text,
   is_anonymous     boolean not null default false,
+  public_reviewer_name text generated always as (                   -- 0004: the only author column anon reads
+    case when is_anonymous then 'Pengunjung' else split_part(btrim(reviewer_name), ' ', 1) end) stored,
   status           public.review_status not null default 'pending',
   is_featured      boolean not null default false,
   moderated_by     uuid references public.profiles(id),
@@ -1660,9 +1662,9 @@ create table public.rate_limit_buckets (
 
 | View | Columns | Reader |
 |---|---|---|
-| `v_session_availability` | `id, rw_id, session_date, start_time, end_time, label, capacity, remaining (capacity - reserved_pax), pending_share` for `status = 'open'` and `session_date >= today_jkt()` | anon (calendar, wizard, Realtime) |
-| `v_public_reviews` | `id, rating, title, body, reviewer_name ('Pengunjung' when anonymous, else first name), institution_name, rw_ids, is_featured, created_at` for `status = 'published'` | anon |
-| `v_bookings_staff` | booking columns with the stored generated columns `phone_masked` (`+62812••••45`: first six and last two digits), `email_masked` (`a***@domain`) and `pic_first_name` instead of `pic_phone` / `pic_email` / `pic_name` (no API role holds SELECT on the raw contact columns; `rpc_reveal_booking_contact` is the only path); amounts only for superadmin; package name, leg sessions, payment status, ticket status | staff (scope via underlying RLS) |
+| `v_session_availability` | `id, rw_id, session_date, start_time, end_time, label, capacity, remaining (capacity - reserved_pax)` for `status = 'open'` and `session_date >= today_jkt()`; no unpaid share, since anon may not read bookings: `create_booking` enforces the 50 % rule and the staff dashboard computes `quota_pressure` on its own path (decision of 2026-10-16) | anon (calendar, wizard, Realtime) |
+| `v_public_reviews` | `id, rating, title, body, reviewer_name` (from the stored generated `reviews.public_reviewer_name`: 'Pengunjung' when anonymous, else first name; anon is never granted `reviewer_name`)`, institution_name, rw_ids, is_featured, created_at` for `status = 'published'` | anon |
+| `v_bookings_staff` | booking columns with the stored generated columns `phone_masked` (`+62812••••45`: first six and last two digits), `email_masked` (`a***@domain`) and `pic_first_name` instead of `pic_phone` / `pic_email` / `pic_name` (no API role holds SELECT on the raw contact columns; `rpc_reveal_booking_contact` is the only path); amounts per STAFF-02 (`shows_amounts`: superadmin always, admin_rw for single-RW bookings of their own RW, never a combo total; on screen only, since superadmin and admin_rw share the `authenticated` role); admin_rw rows from `visit_date − 7 d` to `+ 30 d`; package name, leg sessions, payment status, ticket status | staff (scope via underlying RLS, repeated in the view) |
 | `v_booking_admin` | datatable projection for `/dashboard/bookings` (joins `v_bookings_staff`, `payments`, `tickets_qr`, `invoices`) | staff |
 | `v_attendance_today` | per RW: today's bookings with ticket status, booked pax, checked-in pax, unpaid pax, manual flag | staff |
 | `v_booking_export` | flat export row without contact columns (`visits`, `attendance` exports) | staff via `rpc_create_export` |
