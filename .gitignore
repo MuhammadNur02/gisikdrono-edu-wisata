@@ -32,3 +32,6 @@ Thumbs.db
 
 # vercel
 .vercel/
+
+# Supabase Studio saves SQL editor snippets here; they are personal scratch work, not migrations
+supabase/snippets/
