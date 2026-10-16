@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(387);
+select plan(392);
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -1379,11 +1379,14 @@ select is(
 select set_config('app.in_rpc', '1', true);
 insert into public.bookings (id, booking_code, status, package_id, package_snapshot, rw_ids, booker_type, pic_name,
   pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount, consent_version,
-  consented_at, paid_at, amount_paid, expired_at, notes, source_ip)
+  consented_at, paid_at, amount_paid, expired_at, notes, source_ip, admin_notes, cancel_reason, review_reason,
+  discount_note)
 select ('00000000-0000-4000-8000-00000000' || code)::uuid, 'GSK-R0B0' || upper(code), status::public.booking_status,
   '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school', 'Kepala ' || code, '+6281234600' || right(code, 2),
   'kepala' || code || '@example.test', 4, visit, visit, 100000, 100000, 'v1', now(), paid,
-  case when paid is null then 0 else 100000 end, expired, 'Mohon kursi roda untuk Bu Ani', '10.0.0.1'
+  case when paid is null then 0 else 100000 end, expired, 'Mohon kursi roda untuk Bu Ani', '10.0.0.1',
+  'Pak Budi minta dihubungi sore', 'Dibatalkan oleh Bu Ani', 'Ditinjau atas permintaan Pak Budi',
+  'Potongan untuk rombongan Bu Ani'
 from (values
   ('1e07', 'completed', public.today_jkt() - 100, now() - interval '101 days', null::timestamptz),
   ('1e08', 'expired', public.today_jkt() + 30, null, now() - interval '8 days'),
@@ -1459,6 +1462,39 @@ select is(
    where id in ('00000000-0000-4000-8000-000000001a09', '00000000-0000-4000-8000-000000001a10')),
   'hash-new',
   'an OTP row is deleted the day after it expired'
+);
+select is(
+  (select string_agg(booking_code || '=' || coalesce(admin_notes, '-') || '/' || coalesce(cancel_reason, '-') || '/'
+                     || coalesce(review_reason, '-') || '/' || coalesce(discount_note, '-'), ' ' order by booking_code)
+   from public.bookings where booking_code in ('GSK-R0B01E08', 'GSK-R0B01E10')),
+  'GSK-R0B01E08=-/-/-/- GSK-R0B01E10=-/-/-/-',
+  'staff notes and the cancel, review and discount reasons go too, even on a paid booking'
+);
+
+-- Document snapshots name the institution, never a person or a way to reach one.
+select throws_ok(
+  $$insert into public.invoices (booking_id, invoice_number, amount_due, snapshot)
+    values ('00000000-0000-4000-8000-000000001e07', 'INV/GSK/2026/10/0101', 100000, '{"pic_phone": "+6281234600007"}')$$,
+  '23514', 'invoices.snapshot never holds a contact detail (name, email, phone or address)',
+  'an invoice snapshot cannot carry the booker''s phone'
+);
+select throws_ok(
+  $$insert into public.invoices (booking_id, invoice_number, amount_due, snapshot)
+    values ('00000000-0000-4000-8000-000000001e07', 'INV/GSK/2026/10/0102', 100000,
+            '{"buyer": {"institution_name": "SD Negeri 1", "kontak": {"nama": "Bu Ani"}}}')$$,
+  '23514', null, 'nor a name hidden deeper inside'
+);
+select throws_ok(
+  $$update public.quotations set snapshot = '{"lines": [{"product_name": "Paket", "customer_email": "x@example.test"}]}'
+    where quotation_number = 'SP/GSK/2026/10/0001'$$,
+  '23514', 'quotations.snapshot never holds a contact detail (name, email, phone or address)',
+  'and a quotation snapshot is held to the same rule'
+);
+select lives_ok(
+  $$insert into public.invoices (booking_id, invoice_number, amount_due, snapshot)
+    values ('00000000-0000-4000-8000-000000001e07', 'INV/GSK/2026/10/0103', 100000,
+            '{"institution_name": "SD Negeri 1", "lines": [{"product_name": "Paket Eduwisata", "amount": 100000}]}')$$,
+  'an institution, products and amounts are what a snapshot holds'
 );
 select is(
   (select before is null and after is null and metadata -> 'changed_columns' ? 'pic_phone' from public.audit_logs
@@ -2545,6 +2581,9 @@ insert into public.webhook_rejections (provider, reason, received_at) values ('m
 insert into public.login_attempts (success, reason, attempted_at) values (false, 'bad_password', now() - interval '2 days');
 insert into public.rate_limit_buckets (key, window_start, count) values ('test:old', now() - interval '2 days', 3);
 insert into public.security_events (event_type, occurred_at) values ('rate_limited', now() - interval '13 months');
+insert into public.ticket_scans (attempt_id, rw_id, scanned_by, phase, result, ip, scanned_at)
+values (gen_random_uuid(), 5, '00000000-0000-4000-8000-000000000002', 'validate', 'not_found', '10.0.0.9',
+        now() - interval '25 months');
 insert into public.payment_events (order_id, source, event_hash, payload, received_at)
 values ('GSK-7F3K9Q2M-01', 'webhook', 'event-hash-old', '{"customer_details": {"first_name": "Siti"}}', now() - interval '25 months');
 create temp table audit_rows_before_prune as select count(*) as n from public.audit_logs;
@@ -2558,9 +2597,10 @@ select is(
   + (select count(*)::int from public.login_attempts where attempted_at < now() - interval '24 hours')
   + (select count(*)::int from public.rate_limit_buckets where key = 'test:old')
   + (select count(*)::int from public.security_events where occurred_at < now() - interval '12 months')
-  + (select count(*)::int from public.payment_events where event_hash = 'event-hash-old'),
+  + (select count(*)::int from public.payment_events where event_hash = 'event-hash-old')
+  + (select count(*)::int from public.ticket_scans where scanned_at < now() - interval '24 months'),
   0,
-  'rows past their window are gone, an old payment event with its customer details'
+  'rows past their window are gone, scans that kept an officer''s IP for 24 months among them'
 );
 select is(
   (select params from public.notifications where dedupe_key = 'old:40-days'),

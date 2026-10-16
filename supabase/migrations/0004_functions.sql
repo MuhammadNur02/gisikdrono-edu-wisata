@@ -817,11 +817,14 @@ begin
       using errcode = '42501';
   end if;
   if old.paid_at is not null and not internal.in_adjustment()
-     and (new.subtotal_package, new.subtotal_addons, new.discount_amount, new.discount_note,
-          new.total_amount, new.amount_paid, new.currency)
-         is distinct from
-         (old.subtotal_package, old.subtotal_addons, old.discount_amount, old.discount_note,
-          old.total_amount, old.amount_paid, old.currency) then
+     and ((new.subtotal_package, new.subtotal_addons, new.discount_amount, new.total_amount, new.amount_paid,
+           new.currency)
+          is distinct from
+          (old.subtotal_package, old.subtotal_addons, old.discount_amount, old.total_amount, old.amount_paid,
+           old.currency)
+          -- The note explaining a discount is free text; only the retention run may clear it.
+          or (new.discount_note is distinct from old.discount_note
+              and not (internal.in_purge() and new.discount_note is null))) then
     raise exception 'the money on a paid booking changes only through an approved adjustment'
       using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
@@ -837,6 +840,11 @@ create function internal.bookings_discount_guard() returns trigger
   set search_path = ''
 as $$
 begin
+  -- The retention run clearing the free-text note is not a discount decision.
+  if internal.in_purge() and new.discount_note is null
+     and new.discount_amount is not distinct from old.discount_amount then
+    return new;
+  end if;
   if (new.discount_amount, new.discount_note) is distinct from (old.discount_amount, old.discount_note) then
     if not internal.is_superadmin_or_system() then
       raise exception 'only the superadmin gives a discount' using errcode = '42501';
@@ -1971,9 +1979,10 @@ $$;
 
 -- Two groups lose their booker's contact: unpaid bookings a week after they expired or were
 -- cancelled (with their participants, since they never visited), and every booking
--- pii_retention_months after its visit. Along with the contact go the verification stamps, the
--- visitor's free-text note, the IP and user agent, every guest link (token_version) and the outbox
--- rows that still name the contact. Expired OTP rows go the day after. A missing
+-- pii_retention_months after its visit. Along with the contact go the verification stamps, every
+-- free-text field that may name someone (the visitor's note, staff notes, cancel, review and discount
+-- reasons), the IP and user agent, every guest link (token_version) and the outbox rows that still
+-- name the contact. Expired OTP rows go the day after. A missing
 -- pii_retention_months skips the second group; 0008_seed writes it in every environment.
 create function internal.anonymise_booker_pii() returns integer
   language plpgsql security definer
@@ -1998,7 +2007,8 @@ begin
   with anonymised_bookings as (
     update public.bookings
     set pic_name = 'anon', pic_phone = null, pic_email = null, phone_verified_at = null, email_verified_at = null,
-        notes = null, source_ip = null, user_agent = null, pii_purged_at = now(), token_version = token_version + 1
+        notes = null, admin_notes = null, cancel_reason = null, review_reason = null, discount_note = null,
+        source_ip = null, user_agent = null, pii_purged_at = now(), token_version = token_version + 1
     where pii_purged_at is null
       and ((status in ('expired', 'cancelled') and paid_at is null and coalesce(expired_at, cancelled_at) < unpaid_cutoff)
            or visit_date_end < public.today_jkt() - make_interval(months => retention_months))
@@ -2056,6 +2066,10 @@ begin
   delete from public.rate_limit_buckets where window_start < now() - interval '1 day';
   get diagnostics pruned = row_count;
   counts := counts || jsonb_build_object('rate_limit_buckets', pruned);
+  -- Attendance itself stays in tickets_qr; the scan rows carry the officer's IP and device.
+  delete from public.ticket_scans where scanned_at < now() - interval '24 months';
+  get diagnostics pruned = row_count;
+  counts := counts || jsonb_build_object('ticket_scans', pruned);
 
   if not (chain ->> 'ok')::boolean then
     insert into public.security_events (event_type, severity, entity_type, entity_id, details)
@@ -2763,6 +2777,51 @@ $$;
 
 revoke execute on function internal.require_booking_pii_access(uuid), public.rpc_reveal_booking_contact(uuid, text),
   public.rpc_get_participants(uuid)
+  from public, anon, authenticated, service_role;
+
+
+-- ===== Contact-free document snapshots (docs/Security.md §7.2, review M7) =====
+-- A quotation or invoice snapshot is kept for years, and an invoice's is frozen once paid, so the
+-- retention run could never erase a contact stored there. Snapshots name the institution only: a key
+-- that names a person or reaches them (name, email, phone, address, in English or Indonesian) is
+-- refused at any depth. Lines name their product as product_name, the booker as institution_name.
+
+create function internal.jsonb_has_contact_key(p_value jsonb) returns boolean
+  language plpgsql immutable
+  set search_path = ''
+as $$
+begin
+  return case jsonb_typeof(p_value)
+    when 'object' then exists (
+      select 1 from jsonb_each(p_value) as field
+      where lower(field.key) ~ '^((pic|customer|contact|recipient|booker|participant)_)?(name|full_name|first_name|last_name|nama)$'
+         or lower(field.key) ~ '(email|e_mail|surel|phone|telepon|telp|whatsapp|address|alamat)'
+         or internal.jsonb_has_contact_key(field.value))
+    when 'array' then exists (
+      select 1 from jsonb_array_elements(p_value) as element(value) where internal.jsonb_has_contact_key(element.value))
+    else false
+  end;
+end;
+$$;
+
+create function internal.snapshot_without_contact() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if internal.jsonb_has_contact_key(new.snapshot) then
+    raise exception '%.snapshot never holds a contact detail (name, email, phone or address)', tg_table_name
+      using errcode = 'check_violation', constraint = 'snapshot_without_contact';
+  end if;
+  return new;
+end;
+$$;
+create trigger snapshot_without_contact before insert or update of snapshot on public.invoices
+  for each row execute function internal.snapshot_without_contact();
+create trigger snapshot_without_contact before insert or update of snapshot on public.quotations
+  for each row execute function internal.snapshot_without_contact();
+
+revoke execute on function internal.jsonb_has_contact_key(jsonb), internal.snapshot_without_contact()
   from public, anon, authenticated, service_role;
 
 
