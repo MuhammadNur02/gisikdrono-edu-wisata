@@ -2,6 +2,15 @@
 -- relies on, keys, and the CHECK / unique rules proven by trying to break them.
 begin;
 select plan(212);
+-- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
+-- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
+create function pg_temp.days_from_today(p_days integer) returns date
+  language sql stable
+as $$ select public.today_jkt() + p_days; $$;
+create function pg_temp.jakarta_time(p_days integer, p_time time) returns timestamptz
+  language sql stable
+as $$ select (public.today_jkt() + p_days + p_time) at time zone 'Asia/Jakarta'; $$;
+grant execute on function pg_temp.days_from_today(integer), pg_temp.jakarta_time(integer, time) to public;
 -- This file checks constraints and keys. The status fences of 0004 are tested in
 -- schema_functions.sql; here the fixtures play the transition functions.
 select set_config('app.in_rpc', '1', true);
@@ -231,7 +240,7 @@ select throws_ok(
 );
 
 insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity, template_id)
-values ('00000000-0000-4000-8000-0000000000b1', 5, '2026-11-12', '08:00', '10:00', 'Sesi Pagi', 10,
+values ('00000000-0000-4000-8000-0000000000b1', 5, pg_temp.days_from_today(27), '08:00', '10:00', 'Sesi Pagi', 10,
         '00000000-0000-4000-8000-0000000000a1');
 
 select is(
@@ -241,7 +250,7 @@ select is(
 );
 select throws_ok(
   $$insert into public.visit_sessions (rw_id, session_date, start_time, end_time, label, capacity, reserved_pax)
-    values (8, '2026-11-12', '13:00', '15:00', 'x', 10, 11)$$,
+    values (8, pg_temp.days_from_today(27), '13:00', '15:00', 'x', 10, 11)$$,
   '23514', null, 'a session is never created oversold'
 );
 select throws_ok(
@@ -254,12 +263,12 @@ select throws_ok(
 );
 select throws_ok(
   $$insert into public.visit_sessions (rw_id, session_date, start_time, end_time, label, capacity)
-    values (5, '2026-11-12', '08:00', '09:00', 'dobel', 10)$$,
+    values (5, pg_temp.days_from_today(27), '08:00', '09:00', 'dobel', 10)$$,
   '23505', null, 'one session per RW, date and start time'
 );
 select lives_ok(
   $$insert into public.visit_sessions (rw_id, session_date, start_time, end_time, label, capacity)
-    values (8, '2026-11-12', '08:00', '10:00', 'Sesi Pagi RW 08', 10)$$,
+    values (8, pg_temp.days_from_today(27), '08:00', '10:00', 'Sesi Pagi RW 08', 10)$$,
   'another RW may use the same date and start time'
 );
 delete from public.session_templates where id = '00000000-0000-4000-8000-0000000000a1';
@@ -439,7 +448,7 @@ select lives_ok(
       consent_version, consented_at, idempotency_key)
     values ('00000000-0000-4000-8000-0000000000e1', 'GSK-7F3K9Q2M', 'quoted', '00000000-0000-4000-8000-0000000000c1',
       '{"name": "Eduwisata"}', '{5}', 'school', 'Siti Rahmawati', '+6281234567890', 'siti@example.test', 40,
-      '2026-11-12', '2026-11-12', 1000000, 1000000, 'v1', now(), 'wizard-1')$$,
+      pg_temp.days_from_today(27), pg_temp.days_from_today(27), 1000000, 1000000, 'v1', now(), 'wizard-1')$$,
   'a complete quoted booking is accepted'
 );
 select throws_ok(
@@ -447,7 +456,7 @@ select throws_ok(
       pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
       consent_version, consented_at)
     values ('GSK-7F3K9Q2A', 'quoted', '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school',
-      'x', '+6281234567890', 'x@example.test', 40, '2026-11-12', '2026-11-12', 1000000, 999000, 'v1', now())$$,
+      'x', '+6281234567890', 'x@example.test', 40, pg_temp.days_from_today(27), pg_temp.days_from_today(27), 1000000, 999000, 'v1', now())$$,
   '23514', null, 'the total must equal package + add-ons - discount'
 );
 select throws_ok(
@@ -455,7 +464,7 @@ select throws_ok(
       pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
       consent_version, consented_at)
     values ('GSK-7F3K9Q2B', 'quoted', '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school',
-      'x', '+6281234567890', 'x@example.test', 40, '2026-11-12', '2026-11-12', 0, 0, 'v1', now())$$,
+      'x', '+6281234567890', 'x@example.test', 40, pg_temp.days_from_today(27), pg_temp.days_from_today(27), 0, 0, 'v1', now())$$,
   '23514', null, 'a booking is never free'
 );
 select throws_ok(
@@ -463,7 +472,7 @@ select throws_ok(
       pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
       consent_version, consented_at)
     values ('GSK-7F3K9Q2C', 'pending_payment', '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school',
-      'x', '+6281234567890', 'x@example.test', 40, '2026-11-12', '2026-11-12', 1000000, 1000000, 'v1', now())$$,
+      'x', '+6281234567890', 'x@example.test', 40, pg_temp.days_from_today(27), pg_temp.days_from_today(27), 1000000, 1000000, 'v1', now())$$,
   '23514', null, 'a hold always has a deadline (expires_at)'
 );
 select throws_ok(
@@ -471,7 +480,7 @@ select throws_ok(
       pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
       consent_version, consented_at)
     values ('GSK-7F3K9Q2D', 'quoted', '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school',
-      'x', '+6281234567890', 'x@example.test', 40, '2026-11-12', '2026-11-11', 1000000, 1000000, 'v1', now())$$,
+      'x', '+6281234567890', 'x@example.test', 40, pg_temp.days_from_today(27), pg_temp.days_from_today(26), 1000000, 1000000, 'v1', now())$$,
   '23514', null, 'the last visit date is never before the first'
 );
 select throws_ok(
@@ -479,7 +488,7 @@ select throws_ok(
       pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
       consent_version, consented_at)
     values ('GSK-ILOU1234', 'quoted', '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school',
-      'x', '+6281234567890', 'x@example.test', 40, '2026-11-12', '2026-11-12', 1000000, 1000000, 'v1', now())$$,
+      'x', '+6281234567890', 'x@example.test', 40, pg_temp.days_from_today(27), pg_temp.days_from_today(27), 1000000, 1000000, 'v1', now())$$,
   '23514', null, 'booking codes use Crockford base32 (no I, L, O, U)'
 );
 select throws_ok(
@@ -487,7 +496,7 @@ select throws_ok(
       pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
       consent_version, consented_at, currency)
     values ('GSK-7F3K9Q2E', 'quoted', '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school',
-      'x', '+6281234567890', 'x@example.test', 40, '2026-11-12', '2026-11-12', 1000000, 1000000, 'v1', now(), 'USD')$$,
+      'x', '+6281234567890', 'x@example.test', 40, pg_temp.days_from_today(27), pg_temp.days_from_today(27), 1000000, 1000000, 'v1', now(), 'USD')$$,
   '23514', null, 'bookings are always in IDR'
 );
 select throws_ok(
@@ -495,7 +504,7 @@ select throws_ok(
       pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
       consent_version, consented_at, idempotency_key)
     values ('GSK-7F3K9Q2F', 'quoted', '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school',
-      'x', '+6281234567890', 'x@example.test', 40, '2026-11-12', '2026-11-12', 1000000, 1000000, 'v1', now(), 'wizard-1')$$,
+      'x', '+6281234567890', 'x@example.test', 40, pg_temp.days_from_today(27), pg_temp.days_from_today(27), 1000000, 1000000, 'v1', now(), 'wizard-1')$$,
   '23505', null, 'the same wizard submission cannot create a second booking'
 );
 
@@ -680,7 +689,7 @@ select throws_ok(
   '23514', null, 'an adjustment reason has at least 10 characters'
 );
 
-insert into public.reconciliation_runs (id, run_date, source) values ('00000000-0000-4000-8000-000000000101', '2026-11-12', 'nightly');
+insert into public.reconciliation_runs (id, run_date, source) values ('00000000-0000-4000-8000-000000000101', pg_temp.days_from_today(27), 'nightly');
 select throws_ok(
   $$insert into public.reconciliation_issues (run_id, issue_type, severity)
     values ('00000000-0000-4000-8000-000000000101', 'something_else', 'high')$$,
@@ -690,15 +699,15 @@ select throws_ok(
 -- Since 0004, quotations_limit_guard wants a verified phone first.
 update public.bookings set phone_verified_at = now() where id = '00000000-0000-4000-8000-0000000000e1';
 insert into public.quotations (booking_id, quotation_number, verify_code, valid_until, snapshot)
-values ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0001', 'ABCDEFGH12', '2026-11-01', '{}');
+values ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0001', 'ABCDEFGH12', pg_temp.days_from_today(16), '{}');
 select throws_ok(
   $$insert into public.quotations (booking_id, quotation_number, verify_code, valid_until, snapshot)
-    values ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0002', 'ABCDEFGH13', '2026-11-01', '{}')$$,
+    values ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0002', 'ABCDEFGH13', pg_temp.days_from_today(16), '{}')$$,
   '23505', null, 'each quotation version exists once per booking'
 );
 select throws_ok(
   $$insert into public.quotations (booking_id, quotation_number, verify_code, valid_until, snapshot, version)
-    values ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0003', 'ABCDEFGH14', '2026-11-01', '{}', 4)$$,
+    values ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0003', 'ABCDEFGH14', pg_temp.days_from_today(16), '{}', 4)$$,
   '23514', null, 'a booking has at most three quotation versions'
 );
 
@@ -758,7 +767,7 @@ insert into public.tickets_qr (id, booking_id, booking_leg_id, rw_id, visit_sess
   valid_from, valid_until, pax_count, key_id)
 values ('00000000-0000-4000-8000-000000000201', '00000000-0000-4000-8000-0000000000e1',
         '00000000-0000-4000-8000-0000000000e2', 5, '00000000-0000-4000-8000-0000000000b1', 'GSK-7F3K9Q2M-05',
-        '2026-11-12', '2026-11-12 00:00+07', '2026-11-12 12:00+07', 40, 'k1');
+        pg_temp.days_from_today(27), pg_temp.jakarta_time(27, '00:00'), pg_temp.jakarta_time(27, '12:00'), 40, 'k1');
 select is(
   (select status from public.tickets_qr where id = '00000000-0000-4000-8000-000000000201'),
   'issued'::public.ticket_status,
@@ -768,8 +777,8 @@ select throws_ok(
   $$insert into public.tickets_qr (booking_id, booking_leg_id, rw_id, visit_session_id, ticket_code, valid_on,
       valid_from, valid_until, pax_count, key_id)
     values ('00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-0000000000e2', 5,
-            '00000000-0000-4000-8000-0000000000b1', 'GSK-7F3K9Q2M-06', '2026-11-12',
-            '2026-11-12 00:00+07', '2026-11-12 12:00+07', 40, 'k1')$$,
+            '00000000-0000-4000-8000-0000000000b1', 'GSK-7F3K9Q2M-06', pg_temp.days_from_today(27),
+            pg_temp.jakarta_time(27, '00:00'), pg_temp.jakarta_time(27, '12:00'), 40, 'k1')$$,
   '23505', null, 'one ticket per booking leg'
 );
 -- The code is checked on insert; 0004 makes it immutable afterwards, so the format test uses a
@@ -781,7 +790,7 @@ select throws_ok(
   $$insert into public.tickets_qr (booking_id, booking_leg_id, rw_id, visit_session_id, ticket_code, valid_on,
       valid_from, valid_until, pax_count, key_id)
     select '00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-0000000000e3', 8, s.id,
-           'GSK-7F3K9Q2M-8', '2026-11-12', '2026-11-12 00:00+07', '2026-11-12 12:00+07', 40, 'k1'
+           'GSK-7F3K9Q2M-8', pg_temp.days_from_today(27), pg_temp.jakarta_time(27, '00:00'), pg_temp.jakarta_time(27, '12:00'), 40, 'k1'
     from public.visit_sessions s where s.rw_id = 8 limit 1$$,
   '23514', null, 'a ticket code is the booking code plus the two-digit RW'
 );
@@ -815,23 +824,23 @@ select throws_ok(
 );
 
 insert into public.certificates (booking_id, kind, certificate_number, verify_code, recipient_name, visit_date, rw_ids)
-values ('00000000-0000-4000-8000-0000000000e1', 'group', 'SERT/GSK/2026/00001', 'CERTGROUP1', 'SD Negeri Gisikdrono 01', '2026-11-12', '{5}');
+values ('00000000-0000-4000-8000-0000000000e1', 'group', 'SERT/GSK/2026/00001', 'CERTGROUP1', 'SD Negeri Gisikdrono 01', pg_temp.days_from_today(27), '{5}');
 select throws_ok(
   $$insert into public.certificates (booking_id, kind, certificate_number, verify_code, recipient_name, visit_date, rw_ids)
-    values ('00000000-0000-4000-8000-0000000000e1', 'group', 'SERT/GSK/2026/00002', 'CERTGROUP2', 'x', '2026-11-12', '{5}')$$,
+    values ('00000000-0000-4000-8000-0000000000e1', 'group', 'SERT/GSK/2026/00002', 'CERTGROUP2', 'x', pg_temp.days_from_today(27), '{5}')$$,
   '23505', null, 'a booking gets one group certificate'
 );
 select throws_ok(
   $$insert into public.certificates (booking_id, kind, certificate_number, verify_code, recipient_name, visit_date, rw_ids)
-    values ('00000000-0000-4000-8000-0000000000e1', 'participant', 'SERT/GSK/2026/00003', 'CERTPART01', 'x', '2026-11-12', '{5}')$$,
+    values ('00000000-0000-4000-8000-0000000000e1', 'participant', 'SERT/GSK/2026/00003', 'CERTPART01', 'x', pg_temp.days_from_today(27), '{5}')$$,
   '23514', null, 'a participant certificate names its participant'
 );
 insert into public.certificates (booking_id, participant_id, kind, certificate_number, verify_code, recipient_name, visit_date, rw_ids)
-select '00000000-0000-4000-8000-0000000000e1', id, 'participant', 'SERT/GSK/2026/00004', 'CERTPART02', full_name, '2026-11-12', '{5}'
+select '00000000-0000-4000-8000-0000000000e1', id, 'participant', 'SERT/GSK/2026/00004', 'CERTPART02', full_name, pg_temp.days_from_today(27), '{5}'
 from public.booking_participants where booking_id = '00000000-0000-4000-8000-0000000000e1' and seq_no = 1;
 select throws_ok(
   $$insert into public.certificates (booking_id, participant_id, kind, certificate_number, verify_code, recipient_name, visit_date, rw_ids)
-    select '00000000-0000-4000-8000-0000000000e1', id, 'participant', 'SERT/GSK/2026/00005', 'CERTPART03', full_name, '2026-11-12', '{5}'
+    select '00000000-0000-4000-8000-0000000000e1', id, 'participant', 'SERT/GSK/2026/00005', 'CERTPART03', full_name, pg_temp.days_from_today(27), '{5}'
     from public.booking_participants where booking_id = '00000000-0000-4000-8000-0000000000e1' and seq_no = 1$$,
   '23505', null, 'a participant gets one certificate'
 );
@@ -936,7 +945,7 @@ select throws_ok(
 );
 select throws_ok(
   $$insert into public.performance_schedules (rw_id, title, schedule_type, starts_at, ends_at)
-    values (8, 'Tari', 'dance_performance', '2026-11-12 09:00+07', '2026-11-12 09:00+07')$$,
+    values (8, 'Tari', 'dance_performance', pg_temp.jakarta_time(27, '09:00'), pg_temp.jakarta_time(27, '09:00'))$$,
   '23514', null, 'a performance ends after it starts'
 );
 select throws_ok(
@@ -995,7 +1004,7 @@ select throws_ok(
 );
 select throws_ok(
   $$insert into public.revenue_share_rules (scope, rw_id, name, effective_from, effective_to)
-    values ('package_default', 5, 'Mundur', '2026-11-01', '2026-10-01')$$,
+    values ('package_default', 5, 'Mundur', pg_temp.days_from_today(16), pg_temp.days_from_today(-14))$$,
   '23514', null, 'a rule period never ends before it starts'
 );
 
@@ -1019,7 +1028,7 @@ select throws_ok(
 
 select throws_ok(
   $$insert into public.payout_batches (beneficiary_key, period_from, period_to, total_amount, created_by)
-    values ('rw:5', '2026-11-30', '2026-11-01', 800000, '00000000-0000-4000-8000-000000000001')$$,
+    values ('rw:5', pg_temp.days_from_today(45), pg_temp.days_from_today(16), 800000, '00000000-0000-4000-8000-000000000001')$$,
   '23514', null, 'a payout period never ends before it starts'
 );
 
@@ -1171,9 +1180,9 @@ select throws_ok(
   $$insert into public.login_attempts (email_hash, success, reason) values ('hmac-of-email', false, 'typo')$$,
   '23514', null, 'login attempts use a known reason'
 );
-insert into public.rate_limit_buckets (key, window_start, count) values ('otp:phone:abc', '2026-11-12 09:00+07', 1);
+insert into public.rate_limit_buckets (key, window_start, count) values ('otp:phone:abc', pg_temp.jakarta_time(27, '09:00'), 1);
 select throws_ok(
-  $$insert into public.rate_limit_buckets (key, window_start, count) values ('otp:phone:abc', '2026-11-12 09:00+07', 1)$$,
+  $$insert into public.rate_limit_buckets (key, window_start, count) values ('otp:phone:abc', pg_temp.jakarta_time(27, '09:00'), 1)$$,
   '23505', null, 'one counter per key and window'
 );
 

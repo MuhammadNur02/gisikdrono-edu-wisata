@@ -3,6 +3,15 @@
 -- anyone but Auth.
 begin;
 select plan(330);
+-- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
+-- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
+create function pg_temp.days_from_today(p_days integer) returns date
+  language sql stable
+as $$ select public.today_jkt() + p_days; $$;
+create function pg_temp.jakarta_time(p_days integer, p_time time) returns timestamptz
+  language sql stable
+as $$ select (public.today_jkt() + p_days + p_time) at time zone 'Asia/Jakarta'; $$;
+grant execute on function pg_temp.days_from_today(integer), pg_temp.jakarta_time(integer, time) to public;
 
 -- Fixtures, rolled back at the end. The pepper is a throwaway local value.
 select vault.create_secret('local-test-pepper-not-a-real-secret-0000000', 'otp_pepper', 'test only');
@@ -27,7 +36,7 @@ insert into public.bookings (id, booking_code, status, package_id, package_snaps
   consent_version, consented_at)
 values ('00000000-0000-4000-8000-0000000000e1', 'GSK-7F3K9Q2M', 'quoted', '00000000-0000-4000-8000-0000000000c1',
   '{}', '{5}', 'school', 'Siti Rahmawati', '+6281234567890', 'siti.rahmawati@example.test', 40,
-  '2026-11-12', '2026-11-12', 1000000, 1000000, 'v1', now());
+  pg_temp.days_from_today(27), pg_temp.days_from_today(27), 1000000, 1000000, 'v1', now());
 
 select is(
   (select phone_masked || ' | ' || email_masked || ' | ' || pic_first_name
@@ -40,7 +49,7 @@ select throws_ok(
       pic_name, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
       consent_version, consented_at)
     values ('GSK-7F3K9Q2A', 'quoted', '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school',
-      'x', 'x@example.test', 40, '2026-11-12', '2026-11-12', 1000000, 1000000, 'v1', now())$$,
+      'x', 'x@example.test', 40, pg_temp.days_from_today(27), pg_temp.days_from_today(27), 1000000, 1000000, 'v1', now())$$,
   '23514', null, 'a booking without a phone is refused until it has been anonymised'
 );
 update public.bookings set pic_phone = null, pic_email = null, pic_name = 'anon', pii_purged_at = now()
@@ -345,8 +354,8 @@ values ('00000000-0000-4000-8000-0000000000d1', 5, 'pkk-rw-05', 'PKK RW 05');
 insert into public.articles (id, slug, title, status, rw_id)
 values ('00000000-0000-4000-8000-000000000401', 'berita-lama', 'Berita lama', 'published', 5);
 insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity)
-values ('00000000-0000-4000-8000-0000000000b1', 5, '2026-11-12', '08:00', '10:00', 'Sesi Pagi', 40),
-       ('00000000-0000-4000-8000-0000000000b2', 5, '2026-11-13', '08:00', '10:00', 'Sesi Pagi', 40);
+values ('00000000-0000-4000-8000-0000000000b1', 5, pg_temp.days_from_today(27), '08:00', '10:00', 'Sesi Pagi', 40),
+       ('00000000-0000-4000-8000-0000000000b2', 5, pg_temp.days_from_today(28), '08:00', '10:00', 'Sesi Pagi', 40);
 
 -- As the RW 05 admin.
 select set_config('request.jwt.claims',
@@ -470,18 +479,18 @@ select set_config('app.actor_id', '', true);
 -- Quotations: verified phone first, three versions at most.
 select throws_ok(
   $$insert into public.quotations (booking_id, quotation_number, verify_code, valid_until, snapshot)
-    values ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0001', 'ABCDEFGH11', '2026-11-01', '{}')$$,
+    values ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0001', 'ABCDEFGH11', pg_temp.days_from_today(16), '{}')$$,
   'P0001', 'a quotation is issued only after the phone number is verified',
   'no quotation before the phone is verified'
 );
 update public.bookings set phone_verified_at = now() where id = '00000000-0000-4000-8000-0000000000e1';
 insert into public.quotations (booking_id, quotation_number, verify_code, valid_until, snapshot, version) values
-  ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0001', 'ABCDEFGH11', '2026-11-01', '{}', 1),
-  ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0002', 'ABCDEFGH12', '2026-11-01', '{}', 2),
-  ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0003', 'ABCDEFGH13', '2026-11-01', '{}', 3);
+  ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0001', 'ABCDEFGH11', pg_temp.days_from_today(16), '{}', 1),
+  ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0002', 'ABCDEFGH12', pg_temp.days_from_today(16), '{}', 2),
+  ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0003', 'ABCDEFGH13', pg_temp.days_from_today(16), '{}', 3);
 select throws_ok(
   $$insert into public.quotations (booking_id, quotation_number, verify_code, valid_until, snapshot, version)
-    values ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0004', 'ABCDEFGH14', '2026-11-01', '{}', 1)$$,
+    values ('00000000-0000-4000-8000-0000000000e1', 'SP/GSK/2026/10/0004', 'ABCDEFGH14', pg_temp.days_from_today(16), '{}', 1)$$,
   'P0001', 'a booking gets at most three quotation versions',
   'the fourth quotation is refused'
 );
@@ -521,7 +530,7 @@ select throws_ok(
   'P0001', null, 'nor can its lines move'
 );
 select lives_ok(
-  $$update public.revenue_share_rules set effective_to = '2026-12-31', is_active = false where id = '00000000-0000-4000-8000-000000000501'$$,
+  $$update public.revenue_share_rules set effective_to = pg_temp.days_from_today(76), is_active = false where id = '00000000-0000-4000-8000-000000000501'$$,
   'but it can be closed to make room for a new version'
 );
 
@@ -638,7 +647,7 @@ insert into public.bookings (id, booking_code, status, package_id, package_snaps
   consent_version, consented_at)
 values ('00000000-0000-4000-8000-0000000000e5', 'GSK-7F3K9Q2N', 'quoted', '00000000-0000-4000-8000-0000000000c1',
   '{}', '{5}', 'school', 'Budi Santoso', '+6281234567891', 'budi@example.test', 20,
-  '2026-11-13', '2026-11-13', 500000, 500000, 'v1', now());
+  pg_temp.days_from_today(28), pg_temp.days_from_today(28), 500000, 500000, 'v1', now());
 select set_config('request.jwt.claims',
   '{"sub":"00000000-0000-4000-8000-000000000002","role":"authenticated","aal":"aal2","app_role":"admin_rw","app_rw_id":5,"claims_version":3}', true);
 set local role authenticated;
@@ -717,15 +726,15 @@ select throws_ok(
   $$insert into public.tickets_qr (booking_id, booking_leg_id, rw_id, visit_session_id, ticket_code, valid_on,
       valid_from, valid_until, pax_count, key_id)
     values ('00000000-0000-4000-8000-0000000000e5', (select id from public.booking_legs where booking_id = '00000000-0000-4000-8000-0000000000e1' limit 1),
-            5, '00000000-0000-4000-8000-0000000000b1', 'GSK-7F3K9Q2N-05', '2026-11-13',
-            '2026-11-13 07:00+07', '2026-11-13 12:00+07', 20, 'k1')$$,
+            5, '00000000-0000-4000-8000-0000000000b1', 'GSK-7F3K9Q2N-05', pg_temp.days_from_today(28),
+            pg_temp.jakarta_time(28, '07:00'), pg_temp.jakarta_time(28, '12:00'), 20, 'k1')$$,
   'P0001', 'a ticket is issued only for a paid booking with a settled payment', 'no ticket for an unpaid booking'
 );
 insert into public.tickets_qr (id, booking_id, booking_leg_id, rw_id, visit_session_id, ticket_code, valid_on,
   valid_from, valid_until, pax_count, key_id)
 select '00000000-0000-4000-8000-000000000201', '00000000-0000-4000-8000-0000000000e1', l.id, 5,
-       '00000000-0000-4000-8000-0000000000b1', 'GSK-7F3K9Q2M-05', '2026-11-12',
-       '2026-11-12 07:00+07', '2026-11-12 12:00+07', 40, 'k1'
+       '00000000-0000-4000-8000-0000000000b1', 'GSK-7F3K9Q2M-05', pg_temp.days_from_today(27),
+       pg_temp.jakarta_time(27, '07:00'), pg_temp.jakarta_time(27, '12:00'), 40, 'k1'
 from public.booking_legs l where l.booking_id = '00000000-0000-4000-8000-0000000000e1' and l.rw_id = 5;
 select throws_ok(
   $$update public.tickets_qr set status = 'used', checked_in_at = now() where id = '00000000-0000-4000-8000-000000000201'$$,
@@ -758,7 +767,7 @@ select throws_ok(
 select set_config('app.in_rpc', '', true);
 
 insert into public.certificates (id, booking_id, kind, certificate_number, verify_code, recipient_name, visit_date, rw_ids)
-values ('00000000-0000-4000-8000-000000000a01', '00000000-0000-4000-8000-0000000000e1', 'group', 'SERT/GSK/2026/00001', 'CERTGROUP1', 'SD Negeri Gisikdrono 01', '2026-11-12', '{5}');
+values ('00000000-0000-4000-8000-000000000a01', '00000000-0000-4000-8000-0000000000e1', 'group', 'SERT/GSK/2026/00001', 'CERTGROUP1', 'SD Negeri Gisikdrono 01', pg_temp.days_from_today(27), '{5}');
 select throws_ok(
   $$update public.certificates set status = 'revoked', revoked_at = now() where id = '00000000-0000-4000-8000-000000000a01'$$,
   '42501', null, 'a certificate status is fenced'
@@ -852,9 +861,9 @@ select lives_ok(
 -- ===== Quota =====
 
 insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity, status) values
-  ('00000000-0000-4000-8000-0000000000b5', 5, '2026-11-20', '08:00', '10:00', 'Sesi Pagi', 10, 'open'),
-  ('00000000-0000-4000-8000-0000000000b8', 8, '2026-11-20', '13:00', '15:00', 'Sesi Siang', 10, 'open'),
-  ('00000000-0000-4000-8000-0000000000b9', 5, '2026-11-21', '08:00', '10:00', 'Sesi Ditutup', 10, 'closed');
+  ('00000000-0000-4000-8000-0000000000b5', 5, pg_temp.days_from_today(35), '08:00', '10:00', 'Sesi Pagi', 10, 'open'),
+  ('00000000-0000-4000-8000-0000000000b8', 8, pg_temp.days_from_today(35), '13:00', '15:00', 'Sesi Siang', 10, 'open'),
+  ('00000000-0000-4000-8000-0000000000b9', 5, pg_temp.days_from_today(36), '08:00', '10:00', 'Sesi Ditutup', 10, 'closed');
 select lives_ok(
   $$select internal.reserve_session_quota('00000000-0000-4000-8000-0000000000b5', 6)$$,
   'a session with room takes the reservation'
@@ -888,7 +897,7 @@ insert into public.bookings (id, booking_code, status, package_id, package_snaps
   consent_version, consented_at, expires_at)
 values ('00000000-0000-4000-8000-0000000000e6', 'GSK-7F3K9Q2P', 'pending_payment', '00000000-0000-4000-8000-0000000000c1',
   '{}', '{5,8}', 'school', 'Dewi Lestari', '+6281234567892', 'dewi@example.test', 3,
-  '2026-11-20', '2026-11-20', 75000, 75000, 'v1', now(), now() + interval '2 hours');
+  pg_temp.days_from_today(35), pg_temp.days_from_today(35), 75000, 75000, 'v1', now(), now() + interval '2 hours');
 insert into public.booking_legs (booking_id, rw_id, visit_session_id, leg_order, pax_count, status, quota_reserved_at) values
   ('00000000-0000-4000-8000-0000000000e6', 5, '00000000-0000-4000-8000-0000000000b5', 1, 3, 'reserved', now()),
   ('00000000-0000-4000-8000-0000000000e6', 8, '00000000-0000-4000-8000-0000000000b8', 2, 3, 'reserved', now());
@@ -1620,7 +1629,7 @@ select is(
 -- ===== Ledger hash chain =====
 
 insert into public.payout_batches (id, beneficiary_key, period_from, period_to, total_amount, created_by)
-values ('00000000-0000-4000-8000-000000000b01', 'kelurahan', '2026-11-01', '2026-11-30', 300000,
+values ('00000000-0000-4000-8000-000000000b01', 'kelurahan', pg_temp.days_from_today(16), pg_temp.days_from_today(45), 300000,
         '00000000-0000-4000-8000-000000000001');
 -- The rule-in-use test above already wrote one ledger row for e1; these three follow it.
 insert into public.revenue_share_entries (booking_id, entry_type, line_ref, rule_version, beneficiary, beneficiary_key,
