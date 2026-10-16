@@ -852,13 +852,16 @@ as $$ select coalesce(current_setting('app.purge', true), '') = 'on'; $$;
 revoke execute on function internal.in_purge() from public, anon, authenticated;
 
 -- The trigger arguments name the columns that may still change. A name ending in ':once' may only be
--- filled in from NULL (revenue_share_entries.payout_batch_id when a payout settles it).
+-- filled in from NULL (revenue_share_entries.payout_batch_id when a payout settles it); one ending in
+-- ':cleared' may only become NULL (package_price_history.tier_id, cleared by its FK when a tier is
+-- deleted).
 create function internal.append_only() returns trigger
   language plpgsql security definer
   set search_path = ''
 as $$
 declare
   allowed text;
+  column_name text;
   frozen_old jsonb;
   frozen_new jsonb;
 begin
@@ -873,14 +876,17 @@ begin
   frozen_new := to_jsonb(new);
   -- tg_argv is NULL, not an empty array, when the trigger names no columns.
   foreach allowed in array coalesce(tg_argv, '{}') loop
-    if allowed like '%:once' then
-      allowed := split_part(allowed, ':', 1);
-      if frozen_old -> allowed <> 'null'::jsonb and frozen_old -> allowed is distinct from frozen_new -> allowed then
-        raise exception '%.% is set once and never changed', tg_table_name, allowed using errcode = '42501';
+    column_name := split_part(allowed, ':', 1);
+    if frozen_old -> column_name is distinct from frozen_new -> column_name then
+      if allowed like '%:once' and frozen_old -> column_name <> 'null'::jsonb then
+        raise exception '%.% is set once and never changed', tg_table_name, column_name using errcode = '42501';
+      end if;
+      if allowed like '%:cleared' and frozen_new -> column_name <> 'null'::jsonb then
+        raise exception '%.% may only be cleared', tg_table_name, column_name using errcode = '42501';
       end if;
     end if;
-    frozen_old := frozen_old - allowed;
-    frozen_new := frozen_new - allowed;
+    frozen_old := frozen_old - column_name;
+    frozen_new := frozen_new - column_name;
   end loop;
 
   if frozen_old is distinct from frozen_new then
@@ -898,7 +904,7 @@ create trigger append_only before update or delete on public.payment_events
 create trigger append_only before update or delete on public.webhook_rejections
   for each row execute function internal.append_only();
 create trigger append_only before update or delete on public.package_price_history
-  for each row execute function internal.append_only();
+  for each row execute function internal.append_only('tier_id:cleared');
 create trigger append_only before update or delete on public.ticket_scans
   for each row execute function internal.append_only();
 create trigger append_only before update or delete on public.revenue_share_entries
@@ -1247,3 +1253,126 @@ begin
   end loop;
 end;
 $$;
+
+
+-- ===== Price governance (docs/PRD.md §8.4.3, docs/Security.md REC-13, Task P1.3.12) =====
+-- An RW admin who drops a package to IDR 1, books it and restores the price would skim the shares of
+-- the kelurahan and the RW treasury. The floor blocks the first step; the history and the
+-- price_changed events let the anomaly scan see the pattern when the floor itself is not enough.
+
+-- NULL when the setting is missing, which leaves prices unfloored; 0008_seed writes it in every
+-- environment, and only the superadmin can remove it.
+create function internal.price_floor() returns bigint
+  language sql stable
+  set search_path = ''
+as $$
+  select (value #>> '{}')::bigint from public.site_settings where key = 'pricing.min_price_per_pax';
+$$;
+
+-- Shared by tour_packages and tour_package_price_tiers, which both carry price_per_pax. Only a price
+-- that is being set is checked, so raising the floor does not block unrelated edits of older packages.
+create function internal.tour_packages_price_floor() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  floor_price bigint := internal.price_floor();
+begin
+  if new.price_per_pax < floor_price
+     and (tg_op = 'INSERT' or new.price_per_pax is distinct from old.price_per_pax) then
+    raise exception 'a price per visitor may not go below IDR %', floor_price
+      using errcode = 'check_violation', constraint = 'tour_packages_price_floor';
+  end if;
+  return new;
+end;
+$$;
+create trigger tour_packages_price_floor before insert or update of price_per_pax on public.tour_packages
+  for each row execute function internal.tour_packages_price_floor();
+create trigger tour_packages_price_floor before insert or update of price_per_pax on public.tour_package_price_tiers
+  for each row execute function internal.tour_packages_price_floor();
+
+create function internal.record_price_change(
+  p_package_id uuid, p_tier_id uuid,
+  p_old_price_per_pax bigint, p_new_price_per_pax bigint, p_old_flat_price bigint, p_new_flat_price bigint
+) returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  insert into public.package_price_history (package_id, tier_id, changed_by, old_price_per_pax, new_price_per_pax,
+    old_flat_price, new_flat_price)
+  values (p_package_id, p_tier_id, internal.current_actor_id(), p_old_price_per_pax, p_new_price_per_pax,
+          p_old_flat_price, p_new_flat_price);
+
+  insert into public.security_events (event_type, severity, actor_id, rw_id, entity_type, entity_id, details)
+  values ('price_changed', 'info', internal.current_actor_id(),
+          (select p.rw_id from public.tour_packages p where p.id = p_package_id), 'tour_packages', p_package_id::text,
+          jsonb_strip_nulls(jsonb_build_object(
+            'tier_id', p_tier_id,
+            'old_price_per_pax', p_old_price_per_pax, 'new_price_per_pax', p_new_price_per_pax,
+            'old_flat_price', p_old_flat_price, 'new_flat_price', p_new_flat_price)));
+end;
+$$;
+
+-- tour_packages_price_history: every change of a package's price is an entry plus a price_changed
+-- event. The first price is in audit_logs; leaving it out here keeps a draft that was never repriced
+-- deletable, since a history entry holds its package.
+create function internal.tour_packages_price_history() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if (new.price_per_pax, new.flat_price) is not distinct from (old.price_per_pax, old.flat_price) then
+    return null;
+  end if;
+  perform internal.record_price_change(new.id, null, old.price_per_pax, new.price_per_pax, old.flat_price,
+                                       new.flat_price);
+  return null;
+end;
+$$;
+create trigger tour_packages_price_history after update of price_per_pax, flat_price on public.tour_packages
+  for each row execute function internal.tour_packages_price_history();
+
+-- Adding, repricing or removing a tier changes what some groups pay, so each is a price change.
+-- A removed tier no longer exists for the entry to point at; its FK clears the older entries too.
+create function internal.tour_package_tiers_price_history() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if tg_op = 'UPDATE' and new.price_per_pax is not distinct from old.price_per_pax then
+    return null;
+  end if;
+  perform internal.record_price_change(coalesce(new.package_id, old.package_id),
+                                       case when tg_op <> 'DELETE' then new.id end,
+                                       old.price_per_pax, new.price_per_pax, null, null);
+  return null;
+end;
+$$;
+create trigger tour_packages_price_history after insert or update of price_per_pax or delete
+  on public.tour_package_price_tiers
+  for each row execute function internal.tour_package_tiers_price_history();
+
+-- package_price_history needs a package, so a product's price change is recorded as a price_changed
+-- event; its before and after values are in audit_logs.
+create function internal.products_umkm_price_changed() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if new.price is distinct from old.price then
+    insert into public.security_events (event_type, severity, actor_id, rw_id, entity_type, entity_id, details)
+    values ('price_changed', 'info', internal.current_actor_id(), new.rw_id, 'products_umkm', new.id::text,
+            jsonb_build_object('old_price', old.price, 'new_price', new.price));
+  end if;
+  return null;
+end;
+$$;
+create trigger products_umkm_price_changed after update of price on public.products_umkm
+  for each row execute function internal.products_umkm_price_changed();
+
+revoke execute on function internal.price_floor(), internal.tour_packages_price_floor(),
+  internal.record_price_change(uuid, uuid, bigint, bigint, bigint, bigint),
+  internal.tour_packages_price_history(), internal.tour_package_tiers_price_history(),
+  internal.products_umkm_price_changed()
+  from public, anon, authenticated;

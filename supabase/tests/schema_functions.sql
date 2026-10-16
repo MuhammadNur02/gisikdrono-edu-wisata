@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(174);
+select plan(186);
 
 -- Fixtures, rolled back at the end. The pepper is a throwaway local value.
 select vault.create_secret('local-test-pepper-not-a-real-secret-0000000', 'otp_pepper', 'test only');
@@ -769,6 +769,85 @@ select lives_ok(
   'revoke_certificate moves it'
 );
 select set_config('app.in_rpc', '', true);
+
+-- ===== Price governance =====
+
+insert into public.site_settings (key, value) values ('pricing.min_price_per_pax', '5000')
+on conflict (key) do update set value = excluded.value;
+select throws_ok(
+  $$update public.tour_packages set price_per_pax = 1 where id = '00000000-0000-4000-8000-0000000000c1'$$,
+  '23514', 'a price per visitor may not go below IDR 5000', 'a package cannot drop below the price floor'
+);
+select throws_ok(
+  $$insert into public.tour_packages (rw_id, category, slug, name, price_per_pax)
+    values (5, 'regular', 'paket-murah', 'Paket Murah', 4999)$$,
+  '23514', null, 'nor start below it'
+);
+
+select set_config('app.actor_id', '00000000-0000-4000-8000-000000000002', true);
+update public.tour_packages set price_per_pax = 30000 where id = '00000000-0000-4000-8000-0000000000c1';
+select set_config('app.actor_id', '', true);
+select is(
+  (select jsonb_agg(jsonb_build_object('old', old_price_per_pax, 'new', new_price_per_pax, 'by', changed_by) order by id)
+   from public.package_price_history where package_id = '00000000-0000-4000-8000-0000000000c1'),
+  '[{"old": 25000, "new": 30000, "by": "00000000-0000-4000-8000-000000000002"}]'::jsonb,
+  'the history records the change and who made it'
+);
+select is(
+  (select details from public.security_events where event_type = 'price_changed' and entity_id = '00000000-0000-4000-8000-0000000000c1'),
+  '{"old_price_per_pax": 25000, "new_price_per_pax": 30000}'::jsonb,
+  'a price change raises price_changed for the anomaly scan'
+);
+update public.tour_packages set name = 'Eduwisata Ecowastreme', price_per_pax = 30000
+where id = '00000000-0000-4000-8000-0000000000c1';
+select is(
+  (select count(*)::int from public.package_price_history where package_id = '00000000-0000-4000-8000-0000000000c1'),
+  1,
+  'saving other fields with an unchanged price adds nothing'
+);
+
+select throws_ok(
+  $$insert into public.tour_package_price_tiers (package_id, min_pax, max_pax, price_per_pax)
+    values ('00000000-0000-4000-8000-0000000000c1', 50, null, 4000)$$,
+  '23514', null, 'a volume tier cannot go below the floor either'
+);
+insert into public.tour_package_price_tiers (id, package_id, min_pax, max_pax, price_per_pax)
+values ('00000000-0000-4000-8000-000000000c11', '00000000-0000-4000-8000-0000000000c1', 50, null, 20000);
+select is(
+  (select tier_id::text || ' ' || new_price_per_pax from public.package_price_history
+   where package_id = '00000000-0000-4000-8000-0000000000c1' order by id desc limit 1),
+  '00000000-0000-4000-8000-000000000c11 20000',
+  'a new tier is recorded against the tier'
+);
+select lives_ok(
+  $$delete from public.tour_package_price_tiers where id = '00000000-0000-4000-8000-000000000c11'$$,
+  'a tier with history can still be removed'
+);
+select is(
+  (select jsonb_agg(jsonb_build_object('tier', tier_id, 'old', old_price_per_pax, 'new', new_price_per_pax) order by id)
+   from public.package_price_history
+   where package_id = '00000000-0000-4000-8000-0000000000c1' and 20000 in (old_price_per_pax, new_price_per_pax)),
+  '[{"tier": null, "old": null, "new": 20000}, {"tier": null, "old": 20000, "new": null}]'::jsonb,
+  'the removal is recorded, and the older entry lets go of the deleted tier'
+);
+select throws_ok(
+  $$update public.package_price_history set tier_id = gen_random_uuid()
+    where package_id = '00000000-0000-4000-8000-0000000000c1' and new_price_per_pax = 30000$$,
+  '42501', 'package_price_history.tier_id may only be cleared', 'but a history entry is never pointed at another tier'
+);
+
+update public.products_umkm set price = 12000 where id = '00000000-0000-4000-8000-0000000000d2';
+select is(
+  (select details from public.security_events where event_type = 'price_changed' and entity_id = '00000000-0000-4000-8000-0000000000d2'),
+  '{"old_price": 10000, "new_price": 12000}'::jsonb,
+  'a product price change raises price_changed as well'
+);
+
+delete from public.site_settings where key = 'pricing.min_price_per_pax';
+select lives_ok(
+  $$update public.tour_packages set price_per_pax = 1000 where id = '00000000-0000-4000-8000-0000000000c1'$$,
+  'without the setting there is no floor, which is why 0008_seed writes it everywhere'
+);
 
 -- ===== Append-only logs =====
 
