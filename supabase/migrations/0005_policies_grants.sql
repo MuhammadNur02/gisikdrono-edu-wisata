@@ -367,3 +367,102 @@ create policy booking_events_staff_read on public.booking_events for select to a
 );
 
 -- guest_otps: nothing at all; only issue_phone_otp and verify_phone_otp touch it.
+
+
+-- ===== Payments and documents: payments, payment_events, webhook_rejections, payment_adjustments,
+--       reconciliation_runs, reconciliation_issues, quotations, invoices, document_sequences =====
+-- Every write here belongs to the transition functions and the jobs. Staff read a payment where they read its
+-- booking, with the amounts of their own RW (STAFF-02), but never the hosted pay link, the snap token, the VA
+-- number or the stored Midtrans reply, which carries the VA number too (decision of 2026-10-16). Everything
+-- about money needs AAL2; events, rejections, adjustments and reconciliation are the superadmin's alone.
+
+grant select (id, booking_id, attempt_no, provider, method, status, order_id, provider_txn_id, gross_amount,
+  payment_type_raw, va_bank, transaction_time, settlement_time, expiry_time, fraud_status, status_code,
+  manual_proof_path, manual_reference, recorded_by, refunded_amount, created_at, updated_at)
+  on public.payments to authenticated;
+create policy payments_staff_read on public.payments for select to authenticated using (
+  exists (select 1 from public.bookings b where b.id = payments.booking_id)
+);
+create policy payments_aal2 on public.payments as restrictive for all to authenticated using ((select public.aal2()));
+
+grant select (id, payment_id, order_id, source, event_hash, transaction_status, fraud_status, status_code,
+  gross_amount_raw, payload, received_at, processed_at, processing_result) on public.payment_events to authenticated;
+create policy payment_events_super_read on public.payment_events for select to authenticated
+  using ((select public.is_superadmin()));
+create policy payment_events_aal2 on public.payment_events as restrictive for all to authenticated
+  using ((select public.aal2()));
+
+grant select (id, provider, reason, order_id, status_code, body_sha256, ip, user_agent, received_at)
+  on public.webhook_rejections to authenticated;
+create policy webhook_rejections_super_read on public.webhook_rejections for select to authenticated
+  using ((select public.is_superadmin()));
+create policy webhook_rejections_aal2 on public.webhook_rejections as restrictive for all to authenticated
+  using ((select public.aal2()));
+
+-- payment_adjustments: proposed, approved and applied through their RPCs (P4.7.03).
+grant select (id, booking_id, payment_id, type, status, amount, reason, evidence_path, proposed_by, proposed_at,
+  approved_by, approved_at, rejected_reason, apply_not_before, applied_at) on public.payment_adjustments to authenticated;
+create policy payment_adjustments_super_read on public.payment_adjustments for select to authenticated
+  using ((select public.is_superadmin()));
+create policy payment_adjustments_aal2 on public.payment_adjustments as restrictive for all to authenticated
+  using ((select public.aal2()));
+
+grant select (id, run_date, source, started_at, finished_at, payments_checked, issues_found, ledger_chain_ok,
+  audit_chain_ok, summary, created_by) on public.reconciliation_runs to authenticated;
+create policy reconciliation_runs_super_read on public.reconciliation_runs for select to authenticated
+  using ((select public.is_superadmin()));
+create policy reconciliation_runs_aal2 on public.reconciliation_runs as restrictive for all to authenticated
+  using ((select public.aal2()));
+
+-- reconciliation_issues: the superadmin resolves an issue in their own name.
+grant select (id, run_id, booking_id, payment_id, issue_type, severity, details, resolved_at, resolved_by,
+  resolution_note, created_at) on public.reconciliation_issues to authenticated;
+grant update (resolved_at, resolved_by, resolution_note) on public.reconciliation_issues to authenticated;
+create policy reconciliation_issues_super_read on public.reconciliation_issues for select to authenticated
+  using ((select public.is_superadmin()));
+create policy reconciliation_issues_super_resolve on public.reconciliation_issues for update to authenticated
+  using ((select public.is_superadmin()))
+  with check ((select public.is_superadmin()) and resolved_by = (select auth.uid()));
+create policy reconciliation_issues_aal2 on public.reconciliation_issues as restrictive for all to authenticated
+  using ((select public.aal2()));
+
+-- quotations and invoices: read where their booking is; their snapshots hold no contact (0004).
+grant select (id, booking_id, quotation_number, verify_code, version, status, issued_at, valid_until, snapshot,
+  pdf_path, issued_by) on public.quotations to authenticated;
+create policy quotations_staff_read on public.quotations for select to authenticated using (
+  exists (select 1 from public.bookings b where b.id = quotations.booking_id)
+);
+
+grant select (id, booking_id, invoice_number, status, issued_at, due_date, amount_due, amount_paid, paid_at,
+  payment_id, receipt_number, credit_note_number, snapshot, pdf_path, receipt_pdf_path, credit_note_pdf_path,
+  void_reason, voided_at, created_at, updated_at) on public.invoices to authenticated;
+create policy invoices_staff_read on public.invoices for select to authenticated using (
+  exists (select 1 from public.bookings b where b.id = invoices.booking_id)
+);
+
+-- document_sequences: nothing at all; only next_document_number touches it.
+
+
+-- ===== Tickets: tickets_qr, ticket_scans, certificates, v_attendance_today =====
+-- Each RW's gate sees its own tickets and scans, without the booking window, since a ticket carries no
+-- personal data; check-in itself goes through check_in_ticket (P4.4). A participant certificate names a
+-- participant, often a child, so recipient_name is granted to nobody (decision of 2026-10-16).
+
+grant select (id, booking_id, booking_leg_id, rw_id, visit_session_id, ticket_code, status, valid_on, valid_from,
+  valid_until, pax_count, key_id, issued_at, checked_in_at, checked_in_pax, unpaid_pax, checked_in_by, check_in_note,
+  suspended_at, suspend_reason, revoked_at, revoked_by, revoke_reason, updated_at) on public.tickets_qr to authenticated;
+create policy tickets_qr_staff_read on public.tickets_qr for select to authenticated
+  using ((select public.owns_rw(rw_id)));
+
+grant select (id, attempt_id, ticket_id, rw_id, scanned_by, phase, result, source, attendee_count, override_reason,
+  raw_payload, device_info, ip, scanned_at) on public.ticket_scans to authenticated;
+create policy ticket_scans_staff_read on public.ticket_scans for select to authenticated
+  using ((select public.owns_rw(rw_id)));
+
+grant select (id, booking_id, participant_id, kind, certificate_number, verify_code, status, institution_name,
+  visit_date, rw_ids, template_version, pdf_path, rendered_at, released_at, release_waived_by, issued_at, issued_by,
+  revoked_at, revoke_reason, purged_at) on public.certificates to authenticated;
+create policy certificates_staff_read on public.certificates for select to authenticated
+  using ((select public.owns_any_rw(rw_ids)));
+
+grant select on public.v_attendance_today to authenticated;
