@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execSync } from 'node:child_process';
 
 import { z } from 'zod';
 
@@ -16,11 +16,8 @@ let cachedStack: LocalStack | undefined;
 
 export function localStack(): LocalStack {
   if (cachedStack) return cachedStack;
-  const output = execFileSync('supabase', ['status', '-o', 'json'], {
-    encoding: 'utf8',
-    // On Windows the CLI may be a .cmd shim, which only a shell can start.
-    shell: process.platform === 'win32',
-  });
+  // A fixed command through the shell, because on Windows the CLI may be a .cmd shim.
+  const output = execSync('supabase status -o json', { encoding: 'utf8' });
   const status = statusSchema.parse(JSON.parse(output));
   cachedStack = {
     apiUrl: status.API_URL,
