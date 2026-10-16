@@ -1,9 +1,11 @@
 import 'server-only';
 
-import { createHash, randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 
 import pino from 'pino';
 import type { DestinationStream, Logger } from 'pino';
+
+import { serverEnv } from '@/lib/env';
 
 // docs/Security.md §7.7: these never reach a log line, whatever object they arrive in.
 export const REDACTED_PATHS = [
@@ -91,9 +93,14 @@ export function createLogger(requestId: string, root: Logger = stdoutLogger) {
 }
 
 // Lets two log lines about the same person be matched without the address itself being stored.
+// Keyed with OTP_PEPPER because a plain sha256 of an email can be reversed by hashing guesses
+// (docs/Security.md §7.4, §7.7).
 export function hashEmailForLog(email: string): string {
   const normalised = email.trim().toLowerCase();
-  return createHash('sha256').update(normalised).digest('hex').slice(0, EMAIL_HASH_LENGTH);
+  return createHmac('sha256', serverEnv.OTP_PEPPER)
+    .update(normalised)
+    .digest('hex')
+    .slice(0, EMAIL_HASH_LENGTH);
 }
 
 export function redactLinkTokens(url: string): string {

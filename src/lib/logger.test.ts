@@ -1,3 +1,5 @@
+import { createHash, createHmac } from 'node:crypto';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -9,6 +11,7 @@ import {
 } from '@/lib/logger';
 
 import { bookingRow, participantRows } from '../../tests/fixtures/booking';
+import { sandboxEnv } from '../../tests/fixtures/env';
 
 function captureLogLines() {
   const lines: string[] = [];
@@ -93,6 +96,15 @@ describe('hashEmailForLog', () => {
     const hash = hashEmailForLog('Siti.Rahmawati@Example.test ');
     expect(hash).toHaveLength(12);
     expect(hash).toBe(hashEmailForLog('siti.rahmawati@example.test'));
+  });
+
+  it('is keyed with OTP_PEPPER, so it cannot be reproduced by hashing guessed addresses', () => {
+    const email = 'siti.rahmawati@example.test';
+    const keyed = createHmac('sha256', sandboxEnv.OTP_PEPPER).update(email).digest('hex');
+    const unkeyed = createHash('sha256').update(email).digest('hex');
+
+    expect(hashEmailForLog(email)).toBe(keyed.slice(0, 12));
+    expect(hashEmailForLog(email)).not.toBe(unkeyed.slice(0, 12));
   });
 });
 

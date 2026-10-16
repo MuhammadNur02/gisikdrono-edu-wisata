@@ -599,7 +599,7 @@ At rest Supabase AES-256; in transit TLS 1.2+ with HSTS; `sslmode=require` for a
 
 ### 7.7 Logging redaction (DATA-05, DATA-13)
 
-`src/lib/logger.ts` (pino JSON) redacts the concrete paths `booking.pic_phone`, `booking.pic_email`, `booking.pic_name`, `customer_details.*`, `participants[*].full_name`, `req.headers.authorization`, `req.headers.cookie`, `*.token`, `*.signature_key`, `*.snap_token`; a lint rule bans logging whole `bookings`/`booking_participants` objects (ids and hashes only); emails appear as `sha256(email).slice(0,12)`; link tokens are redacted in logs (`/v/[token]`, `t=[token]`); the redactor is unit-tested against a real booking fixture **[RT]**. Sentry: `sendDefaultPii: false`, `beforeSend` strips cookies/headers/bodies, `tunnelRoute: '/monitoring'`.
+`src/lib/logger.ts` (pino JSON) redacts the concrete paths `booking.pic_phone`, `booking.pic_email`, `booking.pic_name`, `customer_details.*`, `participants[*].full_name`, `req.headers.authorization`, `req.headers.cookie`, `*.token`, `*.signature_key`, `*.snap_token`; a lint rule bans logging whole `bookings`/`booking_participants` objects (ids and hashes only); emails appear as the first 12 hex characters of HMAC-SHA256 keyed with `OTP_PEPPER` over the lower-cased, trimmed address (`hashEmailForLog`), never a plain sha256, for the same reason as §7.4; link tokens are redacted in logs (`/v/[token]`, `t=[token]`); the redactor is unit-tested against a real booking fixture **[RT]**. Sentry: `sendDefaultPii: false`, `beforeSend` strips cookies/headers/bodies, `tunnelRoute: '/monitoring'`.
 
 ### 7.8 Backups and resilience (RES-01, RES-02)
 
