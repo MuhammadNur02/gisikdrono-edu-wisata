@@ -1381,6 +1381,56 @@ export type Database = {
           },
         ]
       }
+      payout_batches: {
+        Row: {
+          beneficiary_key: string
+          created_at: string
+          created_by: string
+          id: string
+          notes: string | null
+          paid_at: string | null
+          period_from: string
+          period_to: string
+          proof_path: string | null
+          reference: string | null
+          total_amount: number
+        }
+        Insert: {
+          beneficiary_key: string
+          created_at?: string
+          created_by: string
+          id?: string
+          notes?: string | null
+          paid_at?: string | null
+          period_from: string
+          period_to: string
+          proof_path?: string | null
+          reference?: string | null
+          total_amount: number
+        }
+        Update: {
+          beneficiary_key?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          notes?: string | null
+          paid_at?: string | null
+          period_from?: string
+          period_to?: string
+          proof_path?: string | null
+          reference?: string | null
+          total_amount?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payout_batches_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       performance_schedules: {
         Row: {
           created_at: string
@@ -1791,6 +1841,255 @@ export type Database = {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      revenue_share_entries: {
+        Row: {
+          adjustment_id: string | null
+          amount: number
+          base_amount: number
+          beneficiary: Database["public"]["Enums"]["revenue_beneficiary"]
+          beneficiary_key: string
+          booking_addon_id: string | null
+          booking_id: string
+          created_at: string
+          entry_hash: string
+          entry_type: Database["public"]["Enums"]["revenue_entry_type"]
+          id: number
+          line_ref: string
+          payment_id: string | null
+          payout_batch_id: string | null
+          pct: number
+          prev_hash: string | null
+          rule_id: string | null
+          rule_version: Json
+          rw_id: number | null
+          vendor_id: string | null
+        }
+        Insert: {
+          adjustment_id?: string | null
+          amount: number
+          base_amount: number
+          beneficiary: Database["public"]["Enums"]["revenue_beneficiary"]
+          beneficiary_key: string
+          booking_addon_id?: string | null
+          booking_id: string
+          created_at?: string
+          entry_hash: string
+          entry_type: Database["public"]["Enums"]["revenue_entry_type"]
+          id?: never
+          line_ref: string
+          payment_id?: string | null
+          payout_batch_id?: string | null
+          pct: number
+          prev_hash?: string | null
+          rule_id?: string | null
+          rule_version: Json
+          rw_id?: number | null
+          vendor_id?: string | null
+        }
+        Update: {
+          adjustment_id?: string | null
+          amount?: number
+          base_amount?: number
+          beneficiary?: Database["public"]["Enums"]["revenue_beneficiary"]
+          beneficiary_key?: string
+          booking_addon_id?: string | null
+          booking_id?: string
+          created_at?: string
+          entry_hash?: string
+          entry_type?: Database["public"]["Enums"]["revenue_entry_type"]
+          id?: never
+          line_ref?: string
+          payment_id?: string | null
+          payout_batch_id?: string | null
+          pct?: number
+          prev_hash?: string | null
+          rule_id?: string | null
+          rule_version?: Json
+          rw_id?: number | null
+          vendor_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "revenue_share_entries_adjustment_id_fkey"
+            columns: ["adjustment_id"]
+            isOneToOne: false
+            referencedRelation: "payment_adjustments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "revenue_share_entries_booking_addon_id_fkey"
+            columns: ["booking_addon_id"]
+            isOneToOne: false
+            referencedRelation: "booking_addons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "revenue_share_entries_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "revenue_share_entries_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "revenue_share_entries_payout_batch_id_fkey"
+            columns: ["payout_batch_id"]
+            isOneToOne: false
+            referencedRelation: "payout_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "revenue_share_entries_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "revenue_share_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "revenue_share_entries_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "revenue_share_entries_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "umkm_vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      revenue_share_rule_lines: {
+        Row: {
+          beneficiary: Database["public"]["Enums"]["revenue_beneficiary"]
+          id: string
+          pct: number
+          rule_id: string
+          rw_id: number | null
+          vendor_id: string | null
+        }
+        Insert: {
+          beneficiary: Database["public"]["Enums"]["revenue_beneficiary"]
+          id?: string
+          pct: number
+          rule_id: string
+          rw_id?: number | null
+          vendor_id?: string | null
+        }
+        Update: {
+          beneficiary?: Database["public"]["Enums"]["revenue_beneficiary"]
+          id?: string
+          pct?: number
+          rule_id?: string
+          rw_id?: number | null
+          vendor_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "revenue_share_rule_lines_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "revenue_share_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "revenue_share_rule_lines_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "revenue_share_rule_lines_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "umkm_vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      revenue_share_rules: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          effective_from: string
+          effective_to: string | null
+          id: string
+          is_active: boolean
+          name: string
+          package_id: string | null
+          product_id: string | null
+          rw_id: number | null
+          scope: Database["public"]["Enums"]["revenue_rule_scope"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          package_id?: string | null
+          product_id?: string | null
+          rw_id?: number | null
+          scope: Database["public"]["Enums"]["revenue_rule_scope"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          package_id?: string | null
+          product_id?: string | null
+          rw_id?: number | null
+          scope?: Database["public"]["Enums"]["revenue_rule_scope"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "revenue_share_rules_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "revenue_share_rules_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "tour_packages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "revenue_share_rules_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products_umkm"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "revenue_share_rules_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
             referencedColumns: ["id"]
           },
         ]

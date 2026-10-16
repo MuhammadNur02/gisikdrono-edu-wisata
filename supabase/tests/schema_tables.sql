@@ -1,7 +1,7 @@
 -- Structure test for 0003_tables, extended group by group: exact columns, the types other code
 -- relies on, keys, and the CHECK / unique rules proven by trying to break them.
 begin;
-select plan(169);
+select plan(187);
 
 -- ===== Every table: RLS from birth, no API rights, updated_at kept by trigger =====
 
@@ -937,6 +937,117 @@ select is(
   (select status from public.reviews where booking_id = '00000000-0000-4000-8000-0000000000e1'),
   'pending'::public.review_status,
   'a new review waits for moderation'
+);
+
+-- ===== Revenue share and payouts (Task P1.2.11) =====
+
+select columns_are('public', 'revenue_share_rules', array[
+  'id', 'scope', 'rw_id', 'package_id', 'product_id', 'name', 'effective_from', 'effective_to',
+  'is_active', 'created_by', 'created_at', 'updated_at'
+]);
+select columns_are('public', 'revenue_share_rule_lines', array[
+  'id', 'rule_id', 'beneficiary', 'rw_id', 'vendor_id', 'pct'
+]);
+select columns_are('public', 'payout_batches', array[
+  'id', 'beneficiary_key', 'period_from', 'period_to', 'total_amount', 'paid_at', 'reference',
+  'proof_path', 'notes', 'created_by', 'created_at'
+]);
+select columns_are('public', 'revenue_share_entries', array[
+  'id', 'booking_id', 'payment_id', 'adjustment_id', 'entry_type', 'line_ref', 'booking_addon_id',
+  'rule_id', 'rule_version', 'beneficiary', 'beneficiary_key', 'rw_id', 'vendor_id', 'base_amount',
+  'pct', 'amount', 'payout_batch_id', 'prev_hash', 'entry_hash', 'created_at'
+]);
+select is(
+  (select count(*)::int from pg_indexes where schemaname = 'public'
+     and indexname = any (array['revenue_entries_settlement_once', 'revenue_entries_beneficiary_idx', 'revenue_entries_payout_idx'])),
+  3,
+  'every index of the revenue share and payouts group exists'
+);
+
+select throws_ok(
+  $$insert into public.revenue_share_rules (scope, name) values ('package', 'Paket tanpa paket')$$,
+  '23514', null, 'a package rule names its package'
+);
+select throws_ok(
+  $$insert into public.revenue_share_rules (scope, package_id, name)
+    values ('package_default', '00000000-0000-4000-8000-0000000000c1', 'Default dengan paket')$$,
+  '23514', null, 'a default rule is not tied to one package'
+);
+select throws_ok(
+  $$insert into public.revenue_share_rules (scope, rw_id, name, effective_from, effective_to)
+    values ('package_default', 5, 'Mundur', '2026-11-01', '2026-10-01')$$,
+  '23514', null, 'a rule period never ends before it starts'
+);
+
+insert into public.revenue_share_rules (id, scope, rw_id, name)
+values ('00000000-0000-4000-8000-000000000501', 'package_default', 5, 'Default RW 05');
+select throws_ok(
+  $$insert into public.revenue_share_rule_lines (rule_id, beneficiary, rw_id, pct)
+    values ('00000000-0000-4000-8000-000000000501', 'kelurahan', 5, 20)$$,
+  '23514', null, 'the kelurahan share is not tied to an RW'
+);
+select throws_ok(
+  $$insert into public.revenue_share_rule_lines (rule_id, beneficiary, pct)
+    values ('00000000-0000-4000-8000-000000000501', 'rw_treasury', 80)$$,
+  '23514', null, 'an RW treasury share names its RW'
+);
+select throws_ok(
+  $$insert into public.revenue_share_rule_lines (rule_id, beneficiary, pct)
+    values ('00000000-0000-4000-8000-000000000501', 'kelurahan', 100.01)$$,
+  '23514', null, 'a share is at most 100 %'
+);
+
+select throws_ok(
+  $$insert into public.payout_batches (beneficiary_key, period_from, period_to, total_amount, created_by)
+    values ('rw:5', '2026-11-30', '2026-11-01', 800000, '00000000-0000-4000-8000-000000000001')$$,
+  '23514', null, 'a payout period never ends before it starts'
+);
+
+insert into public.revenue_share_entries (booking_id, entry_type, line_ref, rule_version, beneficiary, beneficiary_key,
+  rw_id, base_amount, pct, amount, entry_hash)
+values ('00000000-0000-4000-8000-0000000000e1', 'settlement', 'package', '{}', 'rw_treasury', 'rw:5',
+        5, 1000000, 80, 800000, 'hash-entry-1');
+select throws_ok(
+  $$insert into public.revenue_share_entries (booking_id, entry_type, line_ref, rule_version, beneficiary, beneficiary_key,
+      rw_id, base_amount, pct, amount, entry_hash)
+    values ('00000000-0000-4000-8000-0000000000e1', 'settlement', 'package', '{}', 'rw_treasury', 'rw:5',
+            5, 1000000, 80, 800000, 'hash-entry-2')$$,
+  '23505', null, 'a booking line is settled to a beneficiary once'
+);
+select lives_ok(
+  $$insert into public.revenue_share_entries (booking_id, entry_type, line_ref, rule_version, beneficiary, beneficiary_key,
+      rw_id, base_amount, pct, amount, entry_hash)
+    values ('00000000-0000-4000-8000-0000000000e1', 'reversal', 'package', '{}', 'rw_treasury', 'rw:5',
+            5, 1000000, 80, -800000, 'hash-entry-3')$$,
+  'a refund adds a negative reversal row instead of editing the settlement'
+);
+select throws_ok(
+  $$insert into public.revenue_share_entries (booking_id, entry_type, line_ref, rule_version, beneficiary, beneficiary_key,
+      base_amount, pct, amount, entry_hash)
+    values ('00000000-0000-4000-8000-0000000000e1', 'settlement', 'addon:x', '{}', 'kelurahan', 'kelurahan',
+            1000000, 20, -200000, 'hash-entry-4')$$,
+  '23514', null, 'a settlement row is never negative'
+);
+select throws_ok(
+  $$insert into public.revenue_share_entries (booking_id, entry_type, line_ref, rule_version, beneficiary, beneficiary_key,
+      base_amount, pct, amount, entry_hash)
+    values ('00000000-0000-4000-8000-0000000000e1', 'reversal', 'addon:x', '{}', 'kelurahan', 'kelurahan',
+            1000000, 20, 200000, 'hash-entry-5')$$,
+  '23514', null, 'a reversal row is never positive'
+);
+select throws_ok(
+  $$insert into public.revenue_share_entries (booking_id, entry_type, line_ref, rule_version, beneficiary, beneficiary_key,
+      base_amount, pct, amount, entry_hash)
+    values ('00000000-0000-4000-8000-0000000000e1', 'adjustment', 'package', '{}', 'kelurahan', 'kelurahan',
+            1000000, 20, 5000, 'hash-entry-6')$$,
+  '23514', null, 'an adjustment row points at its approved adjustment'
+);
+select throws_ok(
+  $$insert into public.revenue_share_entries (booking_id, entry_type, line_ref, rule_version, beneficiary, beneficiary_key,
+      base_amount, pct, amount, entry_hash)
+    values ('00000000-0000-4000-8000-0000000000e1', 'settlement', 'addon:y', '{}', 'kelurahan', 'kelurahan',
+            1000000, 20, 200000, 'hash-entry-1')$$,
+  '23505', null, 'every ledger row has its own chain hash'
 );
 
 select * from finish();

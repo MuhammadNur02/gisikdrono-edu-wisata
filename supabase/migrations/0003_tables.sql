@@ -974,3 +974,102 @@ alter table public.reviews force row level security;
 revoke all on public.reviews from anon, authenticated;
 create trigger set_updated_at before update on public.reviews
   for each row execute function public.set_updated_at();
+
+
+-- ===== Revenue share and payouts (docs/PRD.md §8.4.8, Task P1.2.11) =====
+
+-- revenue_share_rules (A) + revenue_share_rule_lines (A): configurable split as a set of lines summing to 100 %.
+-- Rules are immutable once referenced by a ledger entry (trigger); changes create a new rule version via effective_from/to.
+create table public.revenue_share_rules (
+  id             uuid primary key default gen_random_uuid(),
+  scope          public.revenue_rule_scope not null,
+  rw_id          smallint references public.rw_units(id),      -- for *_default scopes (NULL = global / combo)
+  package_id     uuid references public.tour_packages(id) on delete cascade,
+  product_id     uuid references public.products_umkm(id) on delete cascade,
+  name           text not null,
+  effective_from date not null default current_date,
+  effective_to   date,
+  is_active      boolean not null default true,
+  created_by     uuid references public.profiles(id),
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now(),
+  constraint revenue_rule_target_ok check (
+    (scope in ('package_default','addon_default') and package_id is null and product_id is null) or
+    (scope = 'package' and package_id is not null and product_id is null) or
+    (scope = 'product' and product_id is not null and package_id is null)),
+  constraint revenue_rule_period_ok check (effective_to is null or effective_to >= effective_from)
+);
+alter table public.revenue_share_rules enable row level security;
+alter table public.revenue_share_rules force row level security;
+revoke all on public.revenue_share_rules from anon, authenticated;
+create trigger set_updated_at before update on public.revenue_share_rules
+  for each row execute function public.set_updated_at();
+
+create table public.revenue_share_rule_lines (
+  id          uuid primary key default gen_random_uuid(),
+  rule_id     uuid not null references public.revenue_share_rules(id) on delete cascade,
+  beneficiary public.revenue_beneficiary not null,
+  rw_id       smallint references public.rw_units(id),
+  vendor_id   uuid references public.umkm_vendors(id),
+  pct         numeric(5,2) not null check (pct >= 0 and pct <= 100),
+  constraint rule_line_target_ok check (
+    (beneficiary = 'kelurahan' and rw_id is null and vendor_id is null) or
+    (beneficiary = 'rw_treasury' and rw_id is not null and vendor_id is null) or
+    (beneficiary = 'umkm_vendor' and rw_id is null))                 -- vendor_id NULL = "the product's vendor"
+);
+-- constraint trigger revenue_rule_sum_guard (deferrable initially deferred): sum(pct) per rule = 100.00.
+alter table public.revenue_share_rule_lines enable row level security;
+alter table public.revenue_share_rule_lines force row level security;
+revoke all on public.revenue_share_rule_lines from anon, authenticated;
+
+-- payout_batches (A): superadmin records an actual transfer to an RW treasury / vendor with proof.
+create table public.payout_batches (
+  id              uuid primary key default gen_random_uuid(),
+  beneficiary_key text not null,                               -- 'kelurahan' | 'rw:5' | 'vendor:<uuid>'
+  period_from     date not null,
+  period_to       date not null check (period_to >= period_from),
+  total_amount    bigint not null check (total_amount >= 0),
+  paid_at         timestamptz,
+  reference       text,
+  proof_path      text,                                        -- documents/payouts/<id>/proof.pdf
+  notes           text,
+  created_by      uuid not null references public.profiles(id),
+  created_at      timestamptz not null default now()
+);
+alter table public.payout_batches enable row level security;
+alter table public.payout_batches force row level security;
+revoke all on public.payout_batches from anon, authenticated;
+
+-- revenue_share_entries (AO): append-only, hash-chained ledger. Reversal = negative row; never updated.
+create table public.revenue_share_entries (
+  id               bigint generated always as identity primary key,    -- chain order
+  booking_id       uuid not null references public.bookings(id) on delete restrict,
+  payment_id       uuid references public.payments(id),
+  adjustment_id    uuid references public.payment_adjustments(id),
+  entry_type       public.revenue_entry_type not null,
+  line_ref         text not null,                                      -- 'package' | 'addon:<booking_addon_id>'
+  booking_addon_id uuid references public.booking_addons(id),
+  rule_id          uuid references public.revenue_share_rules(id),
+  rule_version     jsonb not null,                                     -- snapshot of the rule lines applied
+  beneficiary      public.revenue_beneficiary not null,
+  beneficiary_key  text not null,                                      -- 'kelurahan' | 'rw:5' | 'vendor:<uuid>'
+  rw_id            smallint references public.rw_units(id),
+  vendor_id        uuid references public.umkm_vendors(id),
+  base_amount      bigint not null,
+  pct              numeric(5,2) not null,
+  amount           bigint not null,                                    -- largest-remainder rounding; negative for reversal
+  payout_batch_id  uuid references public.payout_batches(id),
+  prev_hash        text,
+  entry_hash       text not null unique,                               -- sha256(prev_hash || canonical row)
+  created_at       timestamptz not null default now(),
+  constraint revenue_entries_sign_ok check (
+    (entry_type = 'settlement' and amount >= 0) or (entry_type = 'reversal' and amount <= 0) or entry_type = 'adjustment'),
+  constraint revenue_entries_adjustment_ref check (entry_type <> 'adjustment' or adjustment_id is not null)
+);
+create unique index revenue_entries_settlement_once on public.revenue_share_entries (booking_id, line_ref, beneficiary_key) where entry_type = 'settlement';
+create index revenue_entries_beneficiary_idx on public.revenue_share_entries (beneficiary_key, created_at);
+create index revenue_entries_payout_idx on public.revenue_share_entries (payout_batch_id) where payout_batch_id is null;
+-- Only payout_batch_id may be set (once, from NULL) by settle_revenue_entries; every other column is immutable.
+alter table public.revenue_share_entries enable row level security;
+alter table public.revenue_share_entries force row level security;
+revoke all on public.revenue_share_entries from anon, authenticated;
