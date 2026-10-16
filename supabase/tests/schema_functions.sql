@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(413);
+select plan(417);
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -1601,30 +1601,61 @@ select is(
   'staff notes and the cancel, review and discount reasons go too, even on a paid booking'
 );
 
--- Document snapshots name the institution, never a person or a way to reach one.
+-- Document snapshots keep to the one shape of docs/PRD.md §8.4.5 and name the institution, never a
+-- person or a way to reach one (review M7).
 select throws_ok(
   $$insert into public.invoices (booking_id, invoice_number, amount_due, snapshot)
-    values ('00000000-0000-4000-8000-000000001e07', 'INV/GSK/2026/10/0101', 100000, '{"pic_phone": "+6281234600007"}')$$,
-  '23514', 'invoices.snapshot never holds a contact detail (name, email, phone or address)',
-  'an invoice snapshot cannot carry the booker''s phone'
+    values ('00000000-0000-4000-8000-000000001e07', 'INV/GSK/2026/10/0101', 100000, '{"pic": "Budi Santoso"}')$$,
+  '23514', 'invoices.snapshot: unknown key pic',
+  'a key outside the document shape is refused, whatever it is called'
 );
 select throws_ok(
   $$insert into public.invoices (booking_id, invoice_number, amount_due, snapshot)
     values ('00000000-0000-4000-8000-000000001e07', 'INV/GSK/2026/10/0102', 100000,
-            '{"buyer": {"institution_name": "SD Negeri 1", "kontak": {"nama": "Bu Ani"}}}')$$,
-  '23514', null, 'nor a name hidden deeper inside'
+            '{"lines": [{"product_name": "Paket Eduwisata", "kontak": "Bu Ani"}]}')$$,
+  '23514', 'invoices.snapshot: unknown key lines.kontak', 'at any depth'
 );
 select throws_ok(
-  $$update public.quotations set snapshot = '{"lines": [{"product_name": "Paket", "customer_email": "x@example.test"}]}'
+  $$insert into public.invoices (booking_id, invoice_number, amount_due, snapshot)
+    values ('00000000-0000-4000-8000-000000001e07', 'INV/GSK/2026/10/0102', 100000,
+            '{"institution_name": "SD Negeri 1, hubungi 0812-3456-7890"}')$$,
+  '23514', 'invoices.snapshot: institution_name looks like an email address or a phone number',
+  'a phone number inside an allowed field is refused'
+);
+select throws_ok(
+  $$update public.quotations set snapshot = '{"lines": [{"product_name": "Kirim ke ani@example.test"}]}'
     where quotation_number = 'SP/GSK/2026/10/0001'$$,
-  '23514', 'quotations.snapshot never holds a contact detail (name, email, phone or address)',
-  'and a quotation snapshot is held to the same rule'
+  '23514', 'quotations.snapshot: lines.product_name looks like an email address or a phone number',
+  'and so is an email address, in a quotation too'
+);
+select throws_ok(
+  $$insert into public.invoices (booking_id, invoice_number, amount_due, snapshot)
+    values ('00000000-0000-4000-8000-000000001e07', 'INV/GSK/2026/10/0102', 100000, '{"total_amount": 6281234567890}')$$,
+  '23514', null, 'even a phone number written as a number'
+);
+select throws_ok(
+  $$insert into public.invoices (booking_id, invoice_number, amount_due, snapshot)
+    values ('00000000-0000-4000-8000-000000001e07', 'INV/GSK/2026/10/0102', 100000,
+            jsonb_build_object('institution_name', repeat('x', 301)))$$,
+  '23514', 'invoices.snapshot: institution_name is longer than 300 characters', 'and so is free text past 300 characters'
+);
+select throws_ok(
+  $$insert into public.invoices (booking_id, invoice_number, amount_due, snapshot)
+    values ('00000000-0000-4000-8000-000000001e07', 'INV/GSK/2026/10/0102', 100000, '{"sessions": "pagi"}')$$,
+  '23514', 'invoices.snapshot: sessions must be an object', 'a section keeps its own shape'
 );
 select lives_ok(
   $$insert into public.invoices (booking_id, invoice_number, amount_due, snapshot)
-    values ('00000000-0000-4000-8000-000000001e07', 'INV/GSK/2026/10/0103', 100000,
-            '{"institution_name": "SD Negeri 1", "lines": [{"product_name": "Paket Eduwisata", "amount": 100000}]}')$$,
-  'an institution, products and amounts are what a snapshot holds'
+    values ('00000000-0000-4000-8000-000000001e07', 'INV/GSK/2026/10/0103', 100000, '{
+      "booking_code": "GSK-08123456", "institution_name": "SD Negeri 1 Gisikdrono", "booker_type": "school",
+      "package_name": "Eduwisata Ecowastreme", "rw_names": ["RW 05 Ecowastreme"], "visit_date": "2026-11-02",
+      "sessions": [{"rw_name": "RW 05", "session_date": "2026-11-02", "start_time": "08:00", "end_time": "10:00"}],
+      "pax_count": 4, "lines": [{"kind": "package", "product_name": "Eduwisata Ecowastreme", "qty": 4,
+      "unit_price": 25000, "line_total": 100000}], "total_amount": 100000, "currency": "IDR",
+      "payment": {"method": "qris", "order_id": "GSK-08123456-01", "paid_at": "2026-10-20T09:15:00+07:00"},
+      "credit_note": {"number": "CN/GSK/2026/0812", "amount": 100000},
+      "signatory_name": "Lurah Gisikdrono", "signatory_title": "Lurah"}')$$,
+  'the document fields pass, codes, numbers and times included'
 );
 select is(
   (select before is null and after is null and metadata -> 'changed_columns' ? 'pic_phone' from public.audit_logs

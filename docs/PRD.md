@@ -1142,7 +1142,7 @@ create table public.quotations (
   status           public.quotation_status not null default 'issued',
   issued_at        timestamptz not null default now(),
   valid_until      date not null,
-  snapshot         jsonb not null,                         -- whitelisted, length-limited fields only
+  snapshot         jsonb not null,                         -- the document snapshot shape below
   pdf_path         text,
   issued_by        uuid references public.profiles(id),    -- NULL when visitor self-generated
   unique (booking_id, version)
@@ -1172,6 +1172,22 @@ create table public.invoices (
   updated_at            timestamptz not null default now()
 );
 create unique index invoices_one_live_per_booking on public.invoices (booking_id) where status <> 'void';
+
+-- Document snapshot (quotations.snapshot, invoices.snapshot): one fixed shape, enforced by the trigger
+-- snapshot_without_contact (review M7). Every key is optional and no other key is allowed at any depth; no value
+-- looks like an email address or an Indonesian phone number (+62 / 62 / 08) or runs past 300 characters. The
+-- booker appears as institution_name only. quotation.tsx, invoice.tsx, receipt.tsx and the credit note render
+-- from these fields, and P3 builds every snapshot to this shape:
+--   booking_code, institution_name, booker_type, package_name, package_category, pricing_basis, rw_names[],
+--   visit_date, visit_date_end,
+--   sessions[]: {rw_name, session_date, start_time, end_time},
+--   pax_count,
+--   lines[]: {kind ('package' | 'addon'), product_name, qty, unit_price, line_total},
+--   subtotal_package, subtotal_addons, discount_amount, total_amount, currency,
+--   valid_until (quotation), due_date (invoice),
+--   payment: {method, va_bank, order_id, paid_at, amount_paid} (invoice and receipt),
+--   credit_note: {number, issued_at, amount} (invoice after a refund),
+--   signatory_name, signatory_title (the kelurahan official at issue time), template_version
 
 -- document_sequences: gapless per-kind-per-period numbering under row lock (internal.next_document_number only).
 create table public.document_sequences (
@@ -1825,7 +1841,7 @@ grant update (full_name, phone, avatar_path) on public.profiles to authenticated
 | `articles_moderation_guard`, `reviews_moderation_stamp` | `articles`, `reviews` | §8.4.7 |
 | `revenue_rule_sum_guard`, `revenue_rules_immutable_once_used` | `revenue_share_rule_lines`, `revenue_share_rules` | §8.4.8 |
 | `notifications_guest_guard` | `notifications` (BEFORE INSERT, and UPDATE of `booking_id`, `channel`, `template`, `recipient`, `params`) | Backstop for GUEST-07/GUEST-08 on every outbox row, not only those from `enqueue_notification`: a booking's row goes only to that booking's `pic_phone` / `pic_email` (checked again whenever the routing changes); `whatsapp` rows except `phone_otp` need `phone_verified_at`; `params.link_scope` must be `pay`, `manage`, `view`, `review` or `certificate` and becomes `view` on `email` rows while `email_verified_at` is NULL; a row without `link_scope` gets no link from the worker; `params` holding a URL in any form (`://`, `www.`, `javascript:`, `data:`, a bare domain) are refused |
-| `snapshot_without_contact` | `invoices`, `quotations` (`snapshot`, BEFORE INSERT/UPDATE) | Refuses a snapshot holding a contact key at any depth: `name`, `full_name`, `first_name`, `last_name`, `nama` (alone or after `pic_`, `customer_`, `contact_`, `recipient_`, `booker_`, `participant_`), or any key containing `email`, `surel`, `phone`, `telepon`, `telp`, `whatsapp`, `address`, `alamat`. Snapshots carry `institution_name`, `product_name` and amounts, because a paid invoice's snapshot is frozen for 10 years and retention could never erase a contact in it |
+| `snapshot_without_contact` | `invoices`, `quotations` (`snapshot`, BEFORE INSERT/UPDATE) | Holds the snapshot to the one document shape of §8.4.5 (an allow-list): any other key is refused at any depth, and so is any value that looks like an email address or an Indonesian phone number (`+62` / `62` / `08`) or runs past 300 characters. The booker appears as `institution_name` only, because a paid invoice's snapshot is frozen for 10 years and retention could never erase a contact in it |
 | `midtrans_payload_minimise` | `payments` (`last_payload`), `payment_events` (`payload`), BEFORE INSERT/UPDATE | Keeps only the keys reconciliation reads (an allow-list: order, amount, status, time, payment type, VA, acquirer, refund and item fields, with nested objects limited to their own known keys) and drops everything else Midtrans sends, including `customer_details`, addresses, custom fields, `signature_key` and any key a future version adds (`docs/Security.md` §7.2) |
 | `append_only` | `booking_events`, `payment_events` (except `processed_at`, `processing_result`), `webhook_rejections`, `package_price_history`, `ticket_scans`, `revenue_share_entries` (except `payout_batch_id`, set once from NULL), `security_events`, `audit_logs`, `login_attempts`, `payment_adjustments` (own function: the proposal columns never change, the workflow columns move until `applied`, then the row is final) | Raises on UPDATE/DELETE, plus a statement trigger on TRUNCATE; only `app.purge = 'on'` (the retention runs) passes; UPDATE/DELETE/TRUNCATE are also revoked from `anon`, `authenticated` and `service_role` |
 | `ledger_chain`, `audit_chain` | `revenue_share_entries`, `audit_logs` | Computes `prev_hash`/`entry_hash` on insert; verified by `internal.verify_ledger_chain` / `verify_audit_chain` |

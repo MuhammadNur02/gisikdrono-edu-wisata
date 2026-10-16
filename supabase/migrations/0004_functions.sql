@@ -2845,27 +2845,81 @@ revoke execute on function internal.require_booking_pii_access(uuid), public.rpc
   from public, anon, authenticated, service_role;
 
 
--- ===== Contact-free document snapshots (docs/Security.md §7.2, review M7) =====
+-- ===== Contact-free document snapshots (docs/PRD.md §8.4.5, docs/Security.md §7.2, review M7) =====
 -- A quotation or invoice snapshot is kept for years, and an invoice's is frozen once paid, so the
--- retention run could never erase a contact stored there. Snapshots name the institution only: a key
--- that names a person or reaches them (name, email, phone, address, in English or Indonesian) is
--- refused at any depth. Lines name their product as product_name, the booker as institution_name.
+-- retention run could never erase a contact stored there. A snapshot therefore has one fixed shape, the
+-- document fields of docs/PRD.md §8.4.5 and nothing else: any other key is refused at any depth, and so
+-- is any value that looks like an email address or an Indonesian phone number (+62 / 62 / 08), or runs
+-- past 300 characters. The booker appears as institution_name only.
 
-create function internal.jsonb_has_contact_key(p_value jsonb) returns boolean
+-- A leaf (true) holds a plain value or a list of plain values; a nested shape holds an object, or a
+-- list of objects, with only those keys.
+create function internal.document_snapshot_shape() returns jsonb
+  language sql immutable
+  set search_path = ''
+as $$
+  select '{
+    "booking_code": true, "institution_name": true, "booker_type": true, "package_name": true,
+    "package_category": true, "pricing_basis": true, "rw_names": true, "visit_date": true, "visit_date_end": true,
+    "sessions": {"rw_name": true, "session_date": true, "start_time": true, "end_time": true},
+    "pax_count": true,
+    "lines": {"kind": true, "product_name": true, "qty": true, "unit_price": true, "line_total": true},
+    "subtotal_package": true, "subtotal_addons": true, "discount_amount": true, "total_amount": true, "currency": true,
+    "valid_until": true, "due_date": true,
+    "payment": {"method": true, "va_bank": true, "order_id": true, "paid_at": true, "amount_paid": true},
+    "credit_note": {"number": true, "issued_at": true, "amount": true},
+    "signatory_name": true, "signatory_title": true, "template_version": true
+  }'::jsonb;
+$$;
+
+-- The first thing wrong with p_value against p_shape, or NULL. The message names the key, never the
+-- value, since the value may be the very contact detail being refused. A phone number counts only
+-- where it does not continue a code (GSK-08123456 or INV/GSK/2026/10/0812 are not phones).
+create function internal.snapshot_problem(p_value jsonb, p_shape jsonb, p_path text) returns text
   language plpgsql immutable
   set search_path = ''
 as $$
+declare
+  email_pattern constant text := '[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}';
+  phone_pattern constant text := '(^|[^[:alnum:]/-])(\+ ?62|62|0)[ .-]?8([ .-]?[0-9]){7,11}([^[:alnum:]]|$)';
+  field record;
+  element jsonb;
+  problem text;
+  plain_value text;
 begin
-  return case jsonb_typeof(p_value)
-    when 'object' then exists (
-      select 1 from jsonb_each(p_value) as field
-      where lower(field.key) ~ '^((pic|customer|contact|recipient|booker|participant)_)?(name|full_name|first_name|last_name|nama)$'
-         or lower(field.key) ~ '(email|e_mail|surel|phone|telepon|telp|whatsapp|address|alamat)'
-         or internal.jsonb_has_contact_key(field.value))
-    when 'array' then exists (
-      select 1 from jsonb_array_elements(p_value) as element(value) where internal.jsonb_has_contact_key(element.value))
-    else false
-  end;
+  case jsonb_typeof(p_value)
+    when 'object' then
+      if jsonb_typeof(p_shape) <> 'object' then
+        return p_path || ' must be a plain value';
+      end if;
+      for field in select key, value from jsonb_each(p_value) loop
+        if not p_shape ? field.key then
+          return 'unknown key ' || ltrim(p_path || '.' || field.key, '.');
+        end if;
+        problem := internal.snapshot_problem(field.value, p_shape -> field.key, ltrim(p_path || '.' || field.key, '.'));
+        if problem is not null then
+          return problem;
+        end if;
+      end loop;
+    when 'array' then
+      for element in select value from jsonb_array_elements(p_value) loop
+        problem := case when jsonb_typeof(element) = 'array' then p_path || ' nests a list in a list'
+                        else internal.snapshot_problem(element, p_shape, p_path) end;
+        if problem is not null then
+          return problem;
+        end if;
+      end loop;
+    else
+      plain_value := p_value #>> '{}';
+      if jsonb_typeof(p_shape) = 'object' then
+        return p_path || ' must be an object';
+      elsif length(plain_value) > 300 then
+        return p_path || ' is longer than 300 characters';
+      elsif plain_value ~* email_pattern or plain_value ~ phone_pattern then
+        return p_path || ' looks like an email address or a phone number';
+      end if;
+  end case;
+  return null;
 end;
 $$;
 
@@ -2873,9 +2927,13 @@ create function internal.snapshot_without_contact() returns trigger
   language plpgsql security definer
   set search_path = ''
 as $$
+declare
+  problem text := case when jsonb_typeof(new.snapshot) = 'object'
+                       then internal.snapshot_problem(new.snapshot, internal.document_snapshot_shape(), '')
+                       else 'the snapshot must be an object' end;
 begin
-  if internal.jsonb_has_contact_key(new.snapshot) then
-    raise exception '%.snapshot never holds a contact detail (name, email, phone or address)', tg_table_name
+  if problem is not null then
+    raise exception '%.snapshot: %', tg_table_name, problem
       using errcode = 'check_violation', constraint = 'snapshot_without_contact';
   end if;
   return new;
@@ -2886,7 +2944,8 @@ create trigger snapshot_without_contact before insert or update of snapshot on p
 create trigger snapshot_without_contact before insert or update of snapshot on public.quotations
   for each row execute function internal.snapshot_without_contact();
 
-revoke execute on function internal.jsonb_has_contact_key(jsonb), internal.snapshot_without_contact()
+revoke execute on function internal.document_snapshot_shape(), internal.snapshot_problem(jsonb, jsonb, text),
+  internal.snapshot_without_contact()
   from public, anon, authenticated, service_role;
 
 
