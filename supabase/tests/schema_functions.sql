@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(224);
+select plan(253);
 
 -- Fixtures, rolled back at the end. The pepper is a throwaway local value.
 select vault.create_secret('local-test-pepper-not-a-real-secret-0000000', 'otp_pepper', 'test only');
@@ -1034,6 +1034,218 @@ select lives_ok(
   'staff alerts, which belong to no booking, are queued as they are'
 );
 
+-- ===== Scheduled jobs =====
+-- Fixtures are dated relative to today and start at 05:xx, so they never collide with the fixed-date
+-- sessions above. The jobs touch every row, so the assertions look at these rows only.
+
+insert into public.site_settings (key, value) values ('booking.quotation_valid_days', '14'), ('pii_retention_months', '24')
+on conflict (key) do update set value = excluded.value;
+select set_config('app.in_rpc', '1', true);
+insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity, reserved_pax) values
+  ('00000000-0000-4000-8000-000000001b01', 5, public.today_jkt() - 3, '05:00', '06:00', 'Lampau', 40, 0),
+  ('00000000-0000-4000-8000-000000001b02', 5, public.today_jkt() + 1, '05:10', '06:00', 'Besok', 40, 0),
+  ('00000000-0000-4000-8000-000000001b03', 5, public.today_jkt() + 10, '05:20', '06:00', 'Nanti', 20, 4),
+  ('00000000-0000-4000-8000-000000001b04', 5, public.today_jkt() + 5, '05:30', '06:00', 'Terlalu tinggi', 10, 5),
+  ('00000000-0000-4000-8000-000000001b05', 8, public.today_jkt() + 5, '05:40', '06:00', 'Terlalu rendah', 10, 0);
+insert into public.bookings (id, booking_code, status, package_id, package_snapshot, rw_ids, booker_type, pic_name,
+  pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount, consent_version,
+  consented_at, expires_at, phone_verified_at, paid_at, amount_paid, created_at)
+select ('00000000-0000-4000-8000-00000000' || code)::uuid, 'GSK-J0B0' || upper(code), status::public.booking_status,
+  '00000000-0000-4000-8000-0000000000c1', '{}', rw_ids::smallint[], 'school', 'Guru ' || code, '+6281234500' || right(code, 2),
+  'guru' || code || '@example.test', 4, visit, visit, 100000, 100000, 'v1', now(), expires, verified,
+  case when status in ('paid', 'checked_in') then now() - interval '5 days' end,
+  case when status in ('paid', 'checked_in') then 100000 else 0 end, created
+from (values
+  ('1e01', 'pending_payment', '{5}', public.today_jkt() + 10, now() - interval '10 minutes', now(), now()),
+  ('1e02', 'pending_payment', '{8}', public.today_jkt() + 5, now() - interval '2 minutes', null::timestamptz, now()),
+  ('1e03', 'quoted', '{5}', public.today_jkt() + 20, null, null, now() - interval '30 days'),
+  ('1e04', 'checked_in', '{5}', public.today_jkt() - 3, null, now(), now() - interval '10 days'),
+  ('1e05', 'paid', '{5}', public.today_jkt() - 3, null, now(), now() - interval '10 days'),
+  ('1e06', 'paid', '{5}', public.today_jkt() + 1, null, now(), now() - interval '10 days')
+) as fixture(code, status, rw_ids, visit, expires, verified, created);
+insert into public.booking_legs (booking_id, rw_id, visit_session_id, leg_order, pax_count, status, quota_reserved_at) values
+  ('00000000-0000-4000-8000-000000001e01', 5, '00000000-0000-4000-8000-000000001b03', 1, 4, 'reserved', now()),
+  ('00000000-0000-4000-8000-000000001e02', 8, '00000000-0000-4000-8000-000000001b05', 1, 2, 'reserved', now()),
+  ('00000000-0000-4000-8000-000000001e04', 5, '00000000-0000-4000-8000-000000001b01', 1, 4, 'checked_in', now()),
+  ('00000000-0000-4000-8000-000000001e05', 5, '00000000-0000-4000-8000-000000001b01', 1, 4, 'reserved', now()),
+  ('00000000-0000-4000-8000-000000001e06', 5, '00000000-0000-4000-8000-000000001b02', 1, 4, 'reserved', now());
+insert into public.payments (id, booking_id, attempt_no, provider, order_id, gross_amount, status) values
+  ('00000000-0000-4000-8000-000000001f01', '00000000-0000-4000-8000-000000001e01', 1, 'midtrans', 'GSK-J0B01E01-01', 100000, 'pending'),
+  ('00000000-0000-4000-8000-000000001f05', '00000000-0000-4000-8000-000000001e05', 1, 'midtrans', 'GSK-J0B01E05-01', 100000, 'settled');
+insert into public.tickets_qr (id, booking_id, booking_leg_id, rw_id, visit_session_id, ticket_code, valid_on,
+  valid_from, valid_until, pax_count, key_id)
+select '00000000-0000-4000-8000-000000001d05', l.booking_id, l.id, 5, l.visit_session_id, 'GSK-J0B01E05-05',
+  public.today_jkt() - 3, now() - interval '3 days 2 hours', now() - interval '3 days', 4, 'k1'
+from public.booking_legs l where l.booking_id = '00000000-0000-4000-8000-000000001e05';
+select set_config('app.in_rpc', '', true);
+
+select internal.expire_stale_bookings();
+select set_config('app.in_rpc', '', true), set_config('app.actor_role', '', true);
+select is(
+  (select string_agg(b.booking_code || '=' || b.status, ' ' order by b.booking_code) from public.bookings b
+   where b.id in ('00000000-0000-4000-8000-000000001e01', '00000000-0000-4000-8000-000000001e02',
+                  '00000000-0000-4000-8000-000000001e03')),
+  'GSK-J0B01E01=expired GSK-J0B01E02=pending_payment GSK-J0B01E03=expired',
+  'a lapsed hold and a lapsed quotation expire; a hold two minutes past its deadline gets its grace'
+);
+select is(
+  (select reserved_pax from public.visit_sessions where id = '00000000-0000-4000-8000-000000001b03'),
+  0,
+  'the expired hold gives its seats back'
+);
+select is(
+  (select status::text from public.payments where id = '00000000-0000-4000-8000-000000001f01'),
+  'expired',
+  'and its open payment expires with it'
+);
+select is(
+  (select string_agg(reason, ' ' order by reason) from public.booking_events
+   where booking_id in ('00000000-0000-4000-8000-000000001e01', '00000000-0000-4000-8000-000000001e03')
+     and to_status = 'expired' and actor_type = 'cron'),
+  'hold_lapsed quotation_lapsed',
+  'each expiry lands in the booking timeline with its reason'
+);
+select is(
+  (select string_agg(channel::text, ' ' order by channel) from public.notifications
+   where booking_id = '00000000-0000-4000-8000-000000001e01' and template = 'booking_expired'),
+  'whatsapp email',
+  'and the visitor is told on both channels'
+);
+
+select internal.close_past_bookings();
+select set_config('app.in_rpc', '', true), set_config('app.actor_role', '', true);
+select is(
+  (select string_agg(booking_code || '=' || status, ' ' order by booking_code) from public.bookings
+   where id in ('00000000-0000-4000-8000-000000001e04', '00000000-0000-4000-8000-000000001e05')),
+  'GSK-J0B01E04=completed GSK-J0B01E05=no_show',
+  'after the visit day a group that came is completed and one that never came is a no-show'
+);
+select is(
+  (select jsonb_object_agg(channel, params ->> 'link_scope') from public.notifications
+   where booking_id = '00000000-0000-4000-8000-000000001e04' and template = 'review_invite'),
+  '{"whatsapp": "review", "email": "view"}'::jsonb,
+  'the review invite carries a review link on the verified number, a view link to the unconfirmed email'
+);
+select is(
+  (select status::text from public.tickets_qr where id = '00000000-0000-4000-8000-000000001d05'),
+  'expired',
+  'a ticket past its window expires'
+);
+
+select internal.enqueue_visit_reminders();
+select set_config('app.in_rpc', '', true), set_config('app.actor_role', '', true);
+select is(
+  (select string_agg(b.booking_code, ' ' order by b.booking_code) from public.notifications n
+   join public.bookings b on b.id = n.booking_id
+   where n.template = 'visit_reminder_d1' and n.channel = 'whatsapp' and b.booking_code like 'GSK-J0B0%'),
+  'GSK-J0B01E06',
+  'only the paid booking visiting tomorrow is reminded'
+);
+
+select internal.reconcile_session_counters();
+select set_config('app.in_rpc', '', true), set_config('app.actor_role', '', true);
+select is(
+  (select string_agg(label || '=' || reserved_pax, ' ' order by label) from public.visit_sessions
+   where id in ('00000000-0000-4000-8000-000000001b04', '00000000-0000-4000-8000-000000001b05')),
+  'Terlalu rendah=0 Terlalu tinggi=0',
+  'a counter that is too high is corrected; one that is too low is left alone'
+);
+select is(
+  (select jsonb_agg(metadata - 'audit_mode' order by entity_id) from public.audit_logs
+   where action = 'quota.drift'
+     and entity_id in ('00000000-0000-4000-8000-000000001b04', '00000000-0000-4000-8000-000000001b05')),
+  '[{"stored": 5, "held": 0, "corrected": true}, {"stored": 0, "held": 2, "corrected": false}]'::jsonb,
+  'both drifts are logged for a person to look at'
+);
+
+-- ===== Retention =====
+
+select set_config('app.in_rpc', '1', true);
+insert into public.bookings (id, booking_code, status, package_id, package_snapshot, rw_ids, booker_type, pic_name,
+  pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount, consent_version,
+  consented_at, paid_at, amount_paid, expired_at, notes, source_ip)
+select ('00000000-0000-4000-8000-00000000' || code)::uuid, 'GSK-R0B0' || upper(code), status::public.booking_status,
+  '00000000-0000-4000-8000-0000000000c1', '{}', '{5}', 'school', 'Kepala ' || code, '+6281234600' || right(code, 2),
+  'kepala' || code || '@example.test', 4, visit, visit, 100000, 100000, 'v1', now(), paid,
+  case when paid is null then 0 else 100000 end, expired, 'Mohon kursi roda untuk Bu Ani', '10.0.0.1'
+from (values
+  ('1e07', 'completed', public.today_jkt() - 100, now() - interval '101 days', null::timestamptz),
+  ('1e08', 'expired', public.today_jkt() + 30, null, now() - interval '8 days'),
+  ('1e09', 'expired', public.today_jkt() + 30, null, now() - interval '2 days'),
+  ('1e10', 'completed', (public.today_jkt() - interval '25 months')::date, now() - interval '26 months', null)
+) as fixture(code, status, visit, paid, expired);
+select set_config('app.in_rpc', '', true);
+insert into public.booking_participants (id, booking_id, seq_no, full_name, role_label) values
+  ('00000000-0000-4000-8000-000000001c01', '00000000-0000-4000-8000-000000001e07', 1, 'Rina Wulandari', 'student'),
+  ('00000000-0000-4000-8000-000000001c02', '00000000-0000-4000-8000-000000001e07', 2, 'Joko Susilo', 'student'),
+  ('00000000-0000-4000-8000-000000001c03', '00000000-0000-4000-8000-000000001e08', 1, 'Tari Puspita', 'student');
+insert into public.certificates (id, booking_id, participant_id, kind, certificate_number, verify_code, recipient_name, visit_date, rw_ids)
+values ('00000000-0000-4000-8000-000000001a07', '00000000-0000-4000-8000-000000001e07', '00000000-0000-4000-8000-000000001c01',
+        'participant', 'SERT/GSK/2026/00907', 'R7PXRGE001', 'Rina Wulandari', public.today_jkt() - 100, '{5}');
+insert into public.exports (id, kind, format, requested_by, watermark, expires_at)
+values ('00000000-0000-4000-8000-000000001a08', 'attendance', 'xlsx', '00000000-0000-4000-8000-000000000001', 'uji', now() - interval '1 hour');
+select internal.enqueue_notification('00000000-0000-4000-8000-000000001e08', 'booking_expired', 'email', '{}');
+insert into public.guest_otps (id, purpose, phone, code_hash, expires_at) values
+  ('00000000-0000-4000-8000-000000001a09', 'booking_phone', '+6281234609999', 'hash-old', now() - interval '2 days'),
+  ('00000000-0000-4000-8000-000000001a10', 'booking_phone', '+6281234609998', 'hash-new', now() + interval '5 minutes');
+
+select internal.purge_participants();
+select set_config('app.purge', '', true), set_config('app.audit_mode', '', true), set_config('app.in_rpc', '', true),
+  set_config('app.actor_role', '', true);
+select is(
+  (select count(*)::int from public.booking_participants where booking_id = '00000000-0000-4000-8000-000000001e07'),
+  0,
+  'participant names go 90 days after the visit'
+);
+select is(
+  (select jsonb_build_object('participant', participant_id, 'name', recipient_name, 'purged', purged_at is not null)
+   from public.certificates where id = '00000000-0000-4000-8000-000000001a07'),
+  '{"participant": null, "name": "[dihapus]", "purged": true}'::jsonb,
+  'their certificates keep the number but lose the name, marked for purge-storage'
+);
+select is(
+  (select deleted_at is not null from public.exports where id = '00000000-0000-4000-8000-000000001a08'),
+  true,
+  'an expired export is marked for purge-storage'
+);
+select is(
+  (select metadata ->> 'job' from public.audit_logs where action = 'purge_run' and metadata ->> 'job' = 'purge_participants'),
+  'purge_participants',
+  'the run leaves one purge_run row with its counts'
+);
+
+select internal.anonymise_booker_pii();
+select set_config('app.purge', '', true), set_config('app.audit_mode', '', true), set_config('app.in_rpc', '', true),
+  set_config('app.actor_role', '', true);
+select is(
+  (select string_agg(booking_code || '=' || pic_name || '/' || coalesce(pic_phone, '-') || '/' || coalesce(notes, '-')
+                     || '/' || coalesce(host(source_ip), '-') || '/' || token_version, ' ' order by booking_code)
+   from public.bookings where booking_code like 'GSK-R0B0%'),
+  'GSK-R0B01E07=Kepala 1e07/+628123460007/Mohon kursi roda untuk Bu Ani/10.0.0.1/1 '
+  || 'GSK-R0B01E08=anon/-/-/-/2 '
+  || 'GSK-R0B01E09=Kepala 1e09/+628123460009/Mohon kursi roda untuk Bu Ani/10.0.0.1/1 '
+  || 'GSK-R0B01E10=anon/-/-/-/2',
+  'unpaid bookings lose the contact a week after expiry, every booking 24 months after the visit, and their links stop working'
+);
+select is(
+  (select count(*)::int from public.booking_participants where booking_id = '00000000-0000-4000-8000-000000001e08')
+  + (select count(*)::int from public.notifications where booking_id = '00000000-0000-4000-8000-000000001e08'),
+  0,
+  'the participants and queued messages of an anonymised unpaid booking go with it'
+);
+select is(
+  (select string_agg(code_hash, ' ') from public.guest_otps
+   where id in ('00000000-0000-4000-8000-000000001a09', '00000000-0000-4000-8000-000000001a10')),
+  'hash-new',
+  'an OTP row is deleted the day after it expired'
+);
+select is(
+  (select before is null and after is null and metadata -> 'changed_columns' ? 'pic_phone' from public.audit_logs
+   where action = 'bookings.update' and entity_id = '00000000-0000-4000-8000-000000001e08' order by id desc limit 1),
+  true,
+  'the anonymisation is audited by column name only'
+);
+
 -- ===== Append-only logs =====
 
 insert into public.booking_events (booking_id, to_status, actor_type)
@@ -1213,9 +1425,10 @@ select is(
 insert into public.booking_participants (booking_id, seq_no, full_name, group_label, role_label)
 values ('00000000-0000-4000-8000-0000000000e5', 1, 'Andi Pratama', 'Kelas 5A', 'student');
 select is(
-  (select (after ? 'full_name') or after::text like '%Andi%' from public.audit_logs where action = 'booking_participants.insert'),
+  (select bool_or((after ? 'full_name') or after::text ~ '(Andi|Rina|Joko|Tari)') from public.audit_logs
+   where action = 'booking_participants.insert'),
   false,
-  'a participant is logged without the name'
+  'participants are logged without their names'
 );
 
 insert into public.site_settings (key, value, is_public) values ('contact.whatsapp_number', '"+6281333334444"', true)
@@ -1276,7 +1489,7 @@ select lives_ok(
   'jobs write application events through the helper'
 );
 select is(
-  (select actor_role || ' ' || (metadata ->> 'deleted') from public.audit_logs where action = 'purge_run'),
+  (select actor_role || ' ' || (metadata ->> 'deleted') from public.audit_logs where action = 'purge_run' and metadata ? 'deleted'),
   'cron 0',
   'and the event lands with its metadata'
 );
@@ -1308,6 +1521,82 @@ select is(
   0,
   'no phone number or email address reached the audit log'
 );
+
+-- ===== Pruning operational tables =====
+-- Last, because it deletes audit rows the sections above read. The chain is still broken by the
+-- tamper test, which is the first case.
+
+insert into public.notifications (channel, template, recipient, params, dedupe_key, created_at) values
+  ('email', 'security_alert', 'alerts@example.test', '{"severity": "high"}', 'old:200-days', now() - interval '200 days'),
+  ('email', 'security_alert', 'alerts@example.test', '{"severity": "high"}', 'old:40-days', now() - interval '40 days');
+insert into public.webhook_rejections (provider, reason, received_at) values ('midtrans', 'signature_invalid', now() - interval '40 days');
+insert into public.login_attempts (success, reason, attempted_at) values (false, 'bad_password', now() - interval '2 days');
+insert into public.rate_limit_buckets (key, window_start, count) values ('test:old', now() - interval '2 days', 3);
+insert into public.security_events (event_type, occurred_at) values ('rate_limited', now() - interval '13 months');
+insert into public.payment_events (order_id, source, event_hash, payload, received_at)
+values ('GSK-7F3K9Q2M-01', 'webhook', 'event-hash-old', '{"customer_details": {"first_name": "Siti"}}', now() - interval '25 months');
+create temp table audit_rows_before_prune as select count(*) as n from public.audit_logs;
+
+select lives_ok($$select internal.prune_operational_tables()$$, 'the monthly prune runs');
+select set_config('app.purge', '', true), set_config('app.audit_mode', '', true), set_config('app.in_rpc', '', true),
+  set_config('app.actor_role', '', true);
+select is(
+  (select count(*)::int from public.notifications where dedupe_key = 'old:200-days')
+  + (select count(*)::int from public.webhook_rejections where received_at < now() - interval '30 days')
+  + (select count(*)::int from public.login_attempts where attempted_at < now() - interval '24 hours')
+  + (select count(*)::int from public.rate_limit_buckets where key = 'test:old')
+  + (select count(*)::int from public.security_events where occurred_at < now() - interval '12 months')
+  + (select count(*)::int from public.payment_events where event_hash = 'event-hash-old'),
+  0,
+  'rows past their window are gone, an old payment event with its customer details'
+);
+select is(
+  (select params from public.notifications where dedupe_key = 'old:40-days'),
+  '{}'::jsonb,
+  'a month-old message keeps its row but loses its params'
+);
+select is(
+  (select details ->> 'reason' from public.security_events where event_type = 'cron_failed' and entity_type = 'audit_logs'),
+  'audit_chain_broken',
+  'a broken audit chain is reported instead of pruned'
+);
+select is(
+  (select count(*) from public.audit_logs),
+  (select n + 1 from audit_rows_before_prune),
+  'so no audit row is deleted; only the run''s own row is added'
+);
+
+-- Put the erased actor back, then age one row past 24 months.
+alter table public.audit_logs disable trigger append_only;
+update public.audit_logs set actor_role = 'service', actor_id = '00000000-0000-4000-8000-000000000002'
+where id = (select max(id) from public.audit_logs where action = 'session_templates.insert');
+alter table public.audit_logs enable trigger append_only;
+select is((internal.verify_audit_chain() ->> 'ok')::boolean, true, 'restoring the row repairs the chain');
+insert into public.audit_logs (occurred_at, actor_role, action, entity_type)
+values (now() - interval '25 months', 'cron', 'test.old', 'test');
+create temp table old_audit_row as select id, entry_hash from public.audit_logs where action = 'test.old';
+select internal.log_audit('test.recent', 'test', null, '{}');
+
+select internal.prune_operational_tables();
+select set_config('app.purge', '', true), set_config('app.audit_mode', '', true), set_config('app.in_rpc', '', true),
+  set_config('app.actor_role', '', true);
+select is(
+  (select count(*)::int from public.audit_logs where id <= (select id from old_audit_row)),
+  0,
+  'with an intact chain, audit rows older than 24 months are pruned'
+);
+select is(
+  (select jsonb_build_object('id', (metadata ->> 'audit_anchor_id')::bigint, 'hash', metadata ->> 'audit_anchor_hash')
+   from public.audit_logs where action = 'purge_run' order by id desc limit 1),
+  (select jsonb_build_object('id', id, 'hash', entry_hash) from old_audit_row),
+  'the run keeps the last pruned row''s hash as the new anchor'
+);
+select is(
+  (select prev_hash from public.audit_logs order by id limit 1),
+  (select entry_hash from old_audit_row),
+  'the first remaining row links to that anchor'
+);
+select is((internal.verify_audit_chain() ->> 'ok')::boolean, true, 'and what remains still verifies');
 
 select * from finish();
 rollback;

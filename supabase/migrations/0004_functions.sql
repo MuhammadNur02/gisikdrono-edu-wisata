@@ -1573,3 +1573,312 @@ $$;
 revoke execute on function internal.notifications_guest_guard(),
   internal.enqueue_notification(uuid, public.notification_template, public.notification_channel, jsonb)
   from public, anon, authenticated;
+
+
+-- ===== Scheduled jobs (docs/PRD.md §8.7, §8.9, Task P1.3.18) =====
+-- Scheduled work belongs to no person. pg_cron runs it as postgres and the job routes run it as the
+-- service role; either way it is logged as cron, and like any transition it may move statuses and
+-- counters. Each run is its own transaction, so the settings below end with it.
+
+create function internal.begin_scheduled_job() returns void
+  language plpgsql
+  set search_path = ''
+as $$
+begin
+  perform set_config('app.actor_role', 'cron', true);
+  perform set_config('app.in_rpc', '1', true);
+end;
+$$;
+
+-- An unpaid hold expires five minutes after its deadline, leaving a late Midtrans notification time
+-- to land first; a quotation expires the day after its validity. Rows another worker holds are
+-- skipped and picked up by the next run.
+create function internal.expire_stale_bookings() returns integer
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  quotation_days integer := (select (value #>> '{}')::integer from public.site_settings
+                             where key = 'booking.quotation_valid_days');
+  stale record;
+  expired_count integer := 0;
+begin
+  perform internal.begin_scheduled_job();
+  for stale in
+    select b.id, b.status
+    from public.bookings b
+    where (b.status = 'pending_payment' and b.expires_at < now() - interval '5 minutes')
+       or (b.status = 'quoted' and coalesce(
+             (select max(q.valid_until) from public.quotations q where q.booking_id = b.id and q.status = 'issued'),
+             (b.created_at at time zone 'Asia/Jakarta')::date + quotation_days
+           ) < public.today_jkt())
+    order by b.id
+    for update skip locked
+  loop
+    update public.bookings set status = 'expired', expired_at = now() where id = stale.id;
+    perform internal.release_booking_quota(stale.id);
+    update public.payments set status = 'expired' where booking_id = stale.id and status in ('initiated', 'pending');
+    update public.quotations set status = 'expired' where booking_id = stale.id and status = 'issued';
+    insert into public.booking_events (booking_id, from_status, to_status, actor_type, reason)
+    values (stale.id, stale.status, 'expired', 'cron',
+            case when stale.status = 'quoted' then 'quotation_lapsed' else 'hold_lapsed' end);
+    perform internal.enqueue_notification(stale.id, 'booking_expired', 'whatsapp', '{}');
+    perform internal.enqueue_notification(stale.id, 'booking_expired', 'email', '{}');
+    expired_count := expired_count + 1;
+  end loop;
+  return expired_count;
+end;
+$$;
+
+-- After the last visit day: a group that came is completed and invited to review; a paid group that
+-- never showed up is a no-show. Tickets past their window stop scanning.
+create function internal.close_past_bookings() returns integer
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  past record;
+  next_status public.booking_status;
+  closed_count integer := 0;
+begin
+  perform internal.begin_scheduled_job();
+  for past in
+    select b.id, b.status
+    from public.bookings b
+    where b.status in ('checked_in', 'paid') and b.visit_date_end < public.today_jkt()
+    order by b.id
+    for update skip locked
+  loop
+    if past.status = 'checked_in' then
+      next_status := 'completed';
+      update public.bookings set status = next_status, completed_at = now() where id = past.id;
+      perform internal.enqueue_notification(past.id, 'review_invite', 'whatsapp', '{"link_scope": "review"}');
+      perform internal.enqueue_notification(past.id, 'review_invite', 'email', '{"link_scope": "review"}');
+    else
+      next_status := 'no_show';
+      update public.bookings set status = next_status where id = past.id;
+    end if;
+    insert into public.booking_events (booking_id, from_status, to_status, actor_type)
+    values (past.id, past.status, next_status, 'cron');
+    closed_count := closed_count + 1;
+  end loop;
+
+  update public.tickets_qr set status = 'expired' where status = 'issued' and valid_until < now();
+  return closed_count;
+end;
+$$;
+
+create function internal.enqueue_visit_reminders() returns integer
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  due record;
+  reminded_count integer := 0;
+begin
+  perform internal.begin_scheduled_job();
+  for due in
+    select distinct b.id
+    from public.bookings b
+    join public.booking_legs l on l.booking_id = b.id
+    join public.visit_sessions s on s.id = l.visit_session_id
+    where b.status = 'paid' and s.session_date = public.today_jkt() + 1
+  loop
+    perform internal.enqueue_notification(due.id, 'visit_reminder_d1', 'whatsapp', '{"link_scope": "view"}');
+    perform internal.enqueue_notification(due.id, 'visit_reminder_d1', 'email', '{"link_scope": "view"}');
+    reminded_count := reminded_count + 1;
+  end loop;
+  return reminded_count;
+end;
+$$;
+
+-- Compares each upcoming session's counter with the seats its legs actually hold. A counter that is
+-- too high is corrected, since it only turns visitors away; one that is too low is left for a person
+-- to look at, because raising it could push a session past capacity. Both are logged as quota.drift.
+create function internal.reconcile_session_counters() returns integer
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  upcoming record;
+  stored integer;
+  held integer;
+  drift_count integer := 0;
+begin
+  perform internal.begin_scheduled_job();
+  for upcoming in
+    select s.id from public.visit_sessions s where s.session_date >= public.today_jkt() order by s.id
+  loop
+    select s.reserved_pax into stored from public.visit_sessions s where s.id = upcoming.id for update;
+    select coalesce(sum(l.pax_count), 0) into held
+    from public.booking_legs l
+    where l.visit_session_id = upcoming.id and l.status in ('reserved', 'checked_in');
+    continue when stored = held;
+
+    if stored > held then
+      update public.visit_sessions set reserved_pax = held where id = upcoming.id;
+    end if;
+    perform internal.log_audit('quota.drift', 'visit_sessions', upcoming.id::text,
+      jsonb_build_object('stored', stored, 'held', held, 'corrected', stored > held));
+    drift_count := drift_count + 1;
+  end loop;
+  return drift_count;
+end;
+$$;
+
+
+-- ===== Retention (docs/PRD.md §8.7, docs/Security.md §7.3, Task P1.3.19) =====
+-- A retention run passes the append-only triggers and keeps every erased value out of the audit log.
+-- Each run ends with one purge_run audit row carrying its counts. Storage objects cannot be deleted
+-- from SQL; api/jobs/purge-storage removes the files of whatever these runs marked.
+
+create function internal.begin_retention_run() returns void
+  language plpgsql
+  set search_path = ''
+as $$
+begin
+  perform internal.begin_scheduled_job();
+  perform set_config('app.purge', 'on', true);
+  perform set_config('app.audit_mode', 'names_only', true);
+end;
+$$;
+
+-- Participant names go 90 days after the visit. Their certificates are unlinked first, because a
+-- participant certificate must either point at its participant or be marked purged.
+create function internal.purge_participants() returns integer
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  cutoff date := public.today_jkt() - 90;
+  certificates_marked integer;
+  participants_deleted integer;
+  exports_marked integer;
+begin
+  perform internal.begin_retention_run();
+
+  update public.certificates c set participant_id = null, recipient_name = '[dihapus]', purged_at = now()
+  from public.bookings b
+  where b.id = c.booking_id and b.visit_date_end < cutoff and c.kind = 'participant' and c.purged_at is null;
+  get diagnostics certificates_marked = row_count;
+
+  delete from public.booking_participants p using public.bookings b
+  where b.id = p.booking_id and b.visit_date_end < cutoff;
+  get diagnostics participants_deleted = row_count;
+
+  update public.exports set deleted_at = now() where deleted_at is null and expires_at < now();
+  get diagnostics exports_marked = row_count;
+
+  perform internal.log_audit('purge_run', 'booking_participants', null, jsonb_build_object(
+    'job', 'purge_participants', 'participants_deleted', participants_deleted,
+    'certificates_marked', certificates_marked, 'exports_marked', exports_marked));
+  return participants_deleted;
+end;
+$$;
+
+-- Two groups lose their booker's contact: unpaid bookings a week after they expired or were
+-- cancelled (with their participants, since they never visited), and every booking
+-- pii_retention_months after its visit. Along with the contact go the verification stamps, the
+-- visitor's free-text note, the IP and user agent, every guest link (token_version) and the outbox
+-- rows that still name the contact. Expired OTP rows go the day after. A missing
+-- pii_retention_months skips the second group; 0008_seed writes it in every environment.
+create function internal.anonymise_booker_pii() returns integer
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  retention_months integer := (select (value #>> '{}')::integer from public.site_settings
+                               where key = 'pii_retention_months');
+  unpaid_cutoff timestamptz := now() - interval '7 days';
+  anonymised integer;
+  participants_deleted integer;
+  otps_deleted integer;
+begin
+  perform internal.begin_retention_run();
+
+  delete from public.booking_participants p using public.bookings b
+  where b.id = p.booking_id and b.status in ('expired', 'cancelled') and b.paid_at is null
+    and coalesce(b.expired_at, b.cancelled_at) < unpaid_cutoff;
+  get diagnostics participants_deleted = row_count;
+
+  with anonymised_bookings as (
+    update public.bookings
+    set pic_name = 'anon', pic_phone = null, pic_email = null, phone_verified_at = null, email_verified_at = null,
+        notes = null, source_ip = null, user_agent = null, pii_purged_at = now(), token_version = token_version + 1
+    where pii_purged_at is null
+      and ((status in ('expired', 'cancelled') and paid_at is null and coalesce(expired_at, cancelled_at) < unpaid_cutoff)
+           or visit_date_end < public.today_jkt() - make_interval(months => retention_months))
+    returning id
+  ), forgotten_messages as (
+    delete from public.notifications n using anonymised_bookings a where n.booking_id = a.id
+  )
+  select count(*) into anonymised from anonymised_bookings;
+
+  delete from public.guest_otps where expires_at < now() - interval '1 day';
+  get diagnostics otps_deleted = row_count;
+
+  perform internal.log_audit('purge_run', 'bookings', null, jsonb_build_object(
+    'job', 'anonymise_booker_pii', 'bookings_anonymised', anonymised,
+    'participants_deleted', participants_deleted, 'otps_deleted', otps_deleted));
+  return anonymised;
+end;
+$$;
+
+-- Operational tables shrink to their windows. The audit log is pruned only while its chain still
+-- verifies, so pruning never destroys the evidence of tampering; the hash of the last pruned row is
+-- kept in the purge_run row as the new anchor. payment_events go whole after 24 months, customer
+-- details included.
+create function internal.prune_operational_tables() returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  audit_cutoff_id bigint := (select max(a.id) from public.audit_logs a where a.occurred_at < now() - interval '24 months');
+  anchor_hash text := (select a.entry_hash from public.audit_logs a where a.id = audit_cutoff_id);
+  chain jsonb := internal.verify_audit_chain();
+  counts jsonb := '{}';
+  pruned integer;
+begin
+  perform internal.begin_retention_run();
+
+  update public.notifications set params = '{}' where created_at < now() - interval '30 days' and params <> '{}';
+  delete from public.notifications where created_at < now() - interval '180 days';
+  get diagnostics pruned = row_count;
+  counts := counts || jsonb_build_object('notifications', pruned);
+  delete from public.webhook_rejections where received_at < now() - interval '30 days';
+  get diagnostics pruned = row_count;
+  counts := counts || jsonb_build_object('webhook_rejections', pruned);
+  delete from public.payment_events where received_at < now() - interval '24 months';
+  get diagnostics pruned = row_count;
+  counts := counts || jsonb_build_object('payment_events', pruned);
+  delete from public.security_events where occurred_at < now() - interval '12 months';
+  get diagnostics pruned = row_count;
+  counts := counts || jsonb_build_object('security_events', pruned);
+  delete from public.login_attempts where attempted_at < now() - interval '24 hours';
+  get diagnostics pruned = row_count;
+  counts := counts || jsonb_build_object('login_attempts', pruned);
+  delete from public.rate_limit_buckets where window_start < now() - interval '1 day';
+  get diagnostics pruned = row_count;
+  counts := counts || jsonb_build_object('rate_limit_buckets', pruned);
+
+  if not (chain ->> 'ok')::boolean then
+    insert into public.security_events (event_type, severity, entity_type, entity_id, details)
+    values ('cron_failed', 'high', 'audit_logs', chain ->> 'first_broken_id',
+            jsonb_build_object('job', 'prune_operational_tables', 'reason', 'audit_chain_broken'));
+  elsif audit_cutoff_id is not null then
+    delete from public.audit_logs where id <= audit_cutoff_id;
+    get diagnostics pruned = row_count;
+    counts := counts || jsonb_build_object('audit_logs', pruned, 'audit_anchor_id', audit_cutoff_id,
+                                           'audit_anchor_hash', anchor_hash);
+  end if;
+
+  perform internal.log_audit('purge_run', 'operational_tables', null,
+    jsonb_build_object('job', 'prune_operational_tables') || counts);
+end;
+$$;
+
+revoke execute on function internal.begin_scheduled_job(), internal.expire_stale_bookings(),
+  internal.close_past_bookings(), internal.enqueue_visit_reminders(), internal.reconcile_session_counters(),
+  internal.begin_retention_run(), internal.purge_participants(), internal.anonymise_booker_pii(),
+  internal.prune_operational_tables()
+  from public, anon, authenticated;
