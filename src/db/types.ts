@@ -3407,6 +3407,18 @@ export type Database = {
         Args: { p_entity_id: string; p_event: string }
         Returns: undefined
       }
+      set_staff_role: {
+        Args: {
+          p_role: Database["public"]["Enums"]["app_role"]
+          p_rw_id: number
+          p_user_id: string
+        }
+        Returns: undefined
+      }
+      set_staff_status: {
+        Args: { p_is_active: boolean; p_reason: string; p_user_id: string }
+        Returns: undefined
+      }
       today_jkt: { Args: never; Returns: string }
     }
     Enums: {

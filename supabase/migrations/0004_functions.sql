@@ -121,8 +121,11 @@ create function internal.staff_token_claims(p_user_id uuid) returns jsonb
   language sql stable security definer
   set search_path = ''
 as $$
+  -- A second verified factor means someone else may have enrolled theirs (AUTH-12): the account carries
+  -- no role until the superadmin resets its MFA.
   select case
     when p.id is null or not p.is_active
+      or (select count(*) from auth.mfa_factors f where f.user_id = p.id and f.status = 'verified') > 1
       then jsonb_build_object('app_role', 'none', 'app_rw_id', null, 'claims_version', 0)
     else jsonb_build_object('app_role', p.role::text, 'app_rw_id', p.rw_id, 'claims_version', p.claims_version)
   end
@@ -1951,4 +1954,102 @@ $$;
 
 revoke execute on function public.generate_visit_sessions(smallint, date, date),
   public.rpc_log_ui_event(text, uuid), internal.increment_booklet_download(uuid)
+  from public, anon, authenticated;
+
+
+-- ===== Staff management (docs/PRD.md §8.7, docs/Security.md §5.3, §5.6, Task P1.3.21) =====
+
+-- AUTH-11: an authenticator code verified in the last five minutes, not just an AAL2 session that may
+-- have been left open on a desk.
+create function internal.has_fresh_totp() returns boolean
+  language sql stable
+  set search_path = ''
+as $$
+  select public.aal2() and exists (
+    select 1
+    from jsonb_array_elements(coalesce(auth.jwt() -> 'amr', '[]'::jsonb)) as method
+    where method ->> 'method' = 'totp' and (method ->> 'timestamp')::bigint > extract(epoch from now()) - 300
+  );
+$$;
+
+create function internal.require_superadmin_step_up() returns void
+  language plpgsql
+  set search_path = ''
+as $$
+begin
+  if not public.is_superadmin() then
+    raise exception 'only the superadmin manages staff' using errcode = '42501';
+  end if;
+  if not internal.has_fresh_totp() then
+    raise exception 'confirm with a fresh authenticator code first' using errcode = '42501';
+  end if;
+end;
+$$;
+
+-- Moves a staff member to another role or RW. profiles_guard refuses the caller's own row and the last
+-- active superadmin, and bumps claims_version so tokens minted before the change stop working; the
+-- open sessions are ended too, so the next request has to sign in again.
+create function public.set_staff_role(p_user_id uuid, p_role public.app_role, p_rw_id smallint) returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  previous record;
+begin
+  perform internal.require_superadmin_step_up();
+  if (p_role = 'admin_rw') <> (p_rw_id is not null) then
+    raise exception 'an RW admin needs an RW, and only an RW admin has one' using errcode = '22023';
+  end if;
+  select p.role, p.rw_id into previous from public.profiles p where p.id = p_user_id;
+  if not found then
+    raise exception 'no staff profile %', p_user_id using errcode = 'P0002';
+  end if;
+
+  perform set_config('app.privileged_rpc', 'on', true);
+  update public.profiles set role = p_role, rw_id = p_rw_id where id = p_user_id;
+  perform set_config('app.privileged_rpc', '', true);
+  delete from auth.sessions where user_id = p_user_id;
+
+  insert into public.security_events (event_type, severity, actor_id, rw_id, entity_type, entity_id, details)
+  values ('role_changed', 'high', auth.uid(), coalesce(p_rw_id, previous.rw_id), 'profiles', p_user_id::text,
+          jsonb_build_object('from_role', previous.role, 'to_role', p_role,
+                             'from_rw_id', previous.rw_id, 'to_rw_id', p_rw_id));
+end;
+$$;
+
+-- Deactivates or reactivates a staff member, with a reason for the audit log. Deactivation ends every
+-- session and removes every MFA factor, so a returning officer enrols again; banning the Auth user is
+-- the staff service's next step through the Auth admin API (docs/Security.md §5.6).
+create function public.set_staff_status(p_user_id uuid, p_is_active boolean, p_reason text) returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  staff_rw_id smallint;
+begin
+  perform internal.require_superadmin_step_up();
+  if p_is_active is null or length(btrim(coalesce(p_reason, ''))) not between 3 and 300 then
+    raise exception 'a status change needs a reason of 3 to 300 characters' using errcode = '22023';
+  end if;
+
+  perform set_config('app.privileged_rpc', 'on', true);
+  update public.profiles set is_active = p_is_active where id = p_user_id returning rw_id into staff_rw_id;
+  if not found then
+    raise exception 'no staff profile %', p_user_id using errcode = 'P0002';
+  end if;
+  perform set_config('app.privileged_rpc', '', true);
+
+  if not p_is_active then
+    delete from auth.sessions where user_id = p_user_id;
+    delete from auth.mfa_factors where user_id = p_user_id;
+    insert into public.security_events (event_type, severity, actor_id, rw_id, entity_type, entity_id)
+    values ('staff_disabled', 'high', auth.uid(), staff_rw_id, 'profiles', p_user_id::text);
+  end if;
+  perform internal.log_audit(case when p_is_active then 'staff.reactivated' else 'staff.deactivated' end,
+    'profiles', p_user_id::text, jsonb_build_object('reason', btrim(p_reason)));
+end;
+$$;
+
+revoke execute on function internal.has_fresh_totp(), internal.require_superadmin_step_up(),
+  public.set_staff_role(uuid, public.app_role, smallint), public.set_staff_status(uuid, boolean, text)
   from public, anon, authenticated;

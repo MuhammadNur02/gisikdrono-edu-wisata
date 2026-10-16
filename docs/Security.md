@@ -406,7 +406,7 @@ Supabase Auth is used **only by staff** (`superadmin`, `admin_rw`). Visitors nev
 
 ### 5.3 Step-up for critical actions (AUTH-11)
 
-Actions that require a fresh TOTP verification within the last **5 minutes** (`supabase.auth.mfa.challengeAndVerify`, then the RPC checks `(auth.jwt() -> 'amr' -> 0 ->> 'timestamp')::int > extract(epoch from now()) - 300`): `inviteStaffAction`, `set_staff_status` (deactivate/reactivate), `set_staff_role`, `reset_staff_mfa`, `rpc_create_export` with contact columns, `site_settings` edits of financial keys, `revenue_share_rules` changes, `approve_adjustment` / `apply_adjustment`, `record_refund`, `undo_check_in`, `revoke_ticket`, `revoke_certificate`. The staff UI auto-locks after 10 min idle on the client in addition to the server inactivity timeout.
+Actions that require a fresh TOTP verification within the last **5 minutes** (`supabase.auth.mfa.challengeAndVerify`, then the RPC calls `internal.has_fresh_totp()`: `aal2()` and an `amr` entry with `method = 'totp'` whose `timestamp` is within the last 300 s, so neither a fresh password nor an old AAL2 session counts): `inviteStaffAction`, `set_staff_status` (deactivate/reactivate), `set_staff_role`, `reset_staff_mfa`, `rpc_create_export` with contact columns, `site_settings` edits of financial keys, `revenue_share_rules` changes, `approve_adjustment` / `apply_adjustment`, `record_refund`, `undo_check_in`, `revoke_ticket`, `revoke_certificate`. The staff UI auto-locks after 10 min idle on the client in addition to the server inactivity timeout.
 
 ### 5.4 Sessions and cookies (AUTH-04, AUTH-05)
 

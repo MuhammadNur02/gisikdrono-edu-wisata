@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(266);
+select plan(279);
 
 -- Fixtures, rolled back at the end. The pepper is a throwaway local value.
 select vault.create_secret('local-test-pepper-not-a-real-secret-0000000', 'otp_pepper', 'test only');
@@ -1329,6 +1329,104 @@ select is(
   or has_function_privilege('authenticated', 'internal.increment_booklet_download(uuid)', 'execute'),
   false,
   'neither anon nor authenticated can call the counter'
+);
+
+-- ===== Staff management =====
+
+grant execute on function public.set_staff_role(uuid, public.app_role, smallint),
+  public.set_staff_status(uuid, boolean, text) to authenticated;
+insert into auth.sessions (id, user_id) values ('00000000-0000-4000-8000-000000002a01', '00000000-0000-4000-8000-000000000002');
+insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at)
+values ('00000000-0000-4000-8000-000000002a02', '00000000-0000-4000-8000-000000000002', 'HP Admin', 'totp', 'verified', now(), now());
+
+-- The superadmin's token, with the method and age of its last verification as parameters.
+create temp table step_up_claims as
+select method, seconds_ago, jsonb_build_object('sub', p.id, 'role', 'authenticated', 'aal', 'aal2', 'app_role', p.role,
+         'claims_version', p.claims_version,
+         'amr', jsonb_build_array(jsonb_build_object('method', method, 'timestamp', extract(epoch from now())::bigint - seconds_ago)))::text as claims
+from public.profiles p, (values ('totp', 60), ('totp', 600), ('password', 10)) as step_up(method, seconds_ago)
+where p.id = '00000000-0000-4000-8000-000000000001';
+
+select set_config('request.jwt.claims', (select claims from step_up_claims where method = 'totp' and seconds_ago = 60), true);
+set local role authenticated;
+select lives_ok(
+  $$select public.set_staff_role('00000000-0000-4000-8000-000000000002', 'admin_rw', 5::smallint)$$,
+  'the superadmin, a minute after a TOTP check, moves an admin to another RW'
+);
+select throws_ok(
+  $$select public.set_staff_role('00000000-0000-4000-8000-000000000002', 'admin_rw', null)$$,
+  '22023', null, 'an RW admin needs an RW'
+);
+select throws_ok(
+  $$select public.set_staff_role('00000000-0000-4000-8000-000000000001', 'admin_rw', 5::smallint)$$,
+  '42501', null, 'the superadmin never changes their own row'
+);
+select throws_ok(
+  $$select public.set_staff_status('00000000-0000-4000-8000-000000000002', false, 'x')$$,
+  '22023', null, 'a status change needs a reason'
+);
+select lives_ok(
+  $$select public.set_staff_status('00000000-0000-4000-8000-000000000002', false, 'Pindah tugas ke kecamatan')$$,
+  'the superadmin deactivates an admin'
+);
+reset role;
+select is(
+  (select role || ' ' || rw_id || ' ' || is_active || ' v' || claims_version from public.profiles
+   where id = '00000000-0000-4000-8000-000000000002'),
+  'admin_rw 5 false v6',
+  'the profile moved, was deactivated, and its claims_version went up twice'
+);
+select is(
+  (select count(*)::int from auth.sessions where user_id = '00000000-0000-4000-8000-000000000002')
+  + (select count(*)::int from auth.mfa_factors where user_id = '00000000-0000-4000-8000-000000000002'),
+  0,
+  'its sessions are ended and its factors removed'
+);
+select is(
+  (select jsonb_object_agg(event_type, details) from public.security_events
+   where entity_id = '00000000-0000-4000-8000-000000000002' and event_type in ('role_changed', 'staff_disabled')),
+  '{"role_changed": {"from_role": "admin_rw", "to_role": "admin_rw", "from_rw_id": 8, "to_rw_id": 5}, "staff_disabled": {}}'::jsonb,
+  'both changes raise security events'
+);
+select is(
+  (select actor_role || ': ' || (metadata ->> 'reason') from public.audit_logs where action = 'staff.deactivated'),
+  'superadmin: Pindah tugas ke kecamatan',
+  'and the deactivation is audited with its reason'
+);
+
+select set_config('request.jwt.claims', (select claims from step_up_claims where method = 'totp' and seconds_ago = 600), true);
+set local role authenticated;
+select throws_ok(
+  $$select public.set_staff_status('00000000-0000-4000-8000-000000000002', true, 'Kembali bertugas')$$,
+  '42501', 'confirm with a fresh authenticator code first', 'a TOTP check from ten minutes ago is not fresh enough'
+);
+reset role;
+select set_config('request.jwt.claims', (select claims from step_up_claims where method = 'password'), true);
+set local role authenticated;
+select throws_ok(
+  $$select public.set_staff_status('00000000-0000-4000-8000-000000000002', true, 'Kembali bertugas')$$,
+  '42501', 'confirm with a fresh authenticator code first', 'nor is a fresh password'
+);
+reset role;
+select set_config('request.jwt.claims', (select claims from step_up_claims where method = 'totp' and seconds_ago = 60), true);
+set local role authenticated;
+select lives_ok(
+  $$select public.set_staff_status('00000000-0000-4000-8000-000000000002', true, 'Kembali bertugas')$$,
+  'a fresh check reactivates the admin'
+);
+reset role;
+select set_config('request.jwt.claims', '', true);
+revoke execute on function public.set_staff_role(uuid, public.app_role, smallint),
+  public.set_staff_status(uuid, boolean, text) from authenticated;
+
+-- AUTH-12: two verified factors on one account carry no role.
+insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at) values
+  ('00000000-0000-4000-8000-000000002a03', '00000000-0000-4000-8000-000000000004', 'HP Utama', 'totp', 'verified', now(), now()),
+  ('00000000-0000-4000-8000-000000002a04', '00000000-0000-4000-8000-000000000004', 'HP Lain', 'totp', 'verified', now(), now());
+select is(
+  internal.staff_token_claims('00000000-0000-4000-8000-000000000004') ->> 'app_role',
+  'none',
+  'an account with a second verified factor gets no role until its MFA is reset'
 );
 
 -- ===== Append-only logs =====
