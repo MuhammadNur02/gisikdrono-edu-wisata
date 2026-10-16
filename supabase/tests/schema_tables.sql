@@ -1,7 +1,7 @@
 -- Structure test for 0003_tables, extended group by group: exact columns, the types other code
 -- relies on, keys, and the CHECK / unique rules proven by trying to break them.
 begin;
-select plan(49);
+select plan(74);
 
 -- ===== Every table: RLS from birth, no API rights, updated_at kept by trigger =====
 
@@ -40,6 +40,19 @@ select is(
   ),
   array[]::text[],
   'every table with updated_at has the set_updated_at trigger'
+);
+
+-- docs/PRD.md §8.1: money is whole IDR in bigint, and money columns are named *_amount, *_price, *_total.
+select is(
+  array(
+    select table_name || '.' || column_name from information_schema.columns
+    where table_schema = 'public'
+      and (column_name ~ '(^|_)(amount|price|total)$' or column_name ~ 'price_per_pax$')
+      and data_type <> 'bigint'
+    order by 1
+  ),
+  array[]::text[],
+  'every money column is bigint'
 );
 
 -- ===== Configuration and staff (Task P1.2.03) =====
@@ -249,6 +262,130 @@ select is(
   (select template_id from public.visit_sessions where id = '00000000-0000-4000-8000-0000000000b1'),
   null,
   'the session survives its template, with template_id cleared'
+);
+
+-- ===== Catalogue (Task P1.2.05) =====
+
+select columns_are('public', 'tour_packages', array[
+  'id', 'rw_id', 'category', 'slug', 'name', 'tagline', 'description_md', 'highlights',
+  'inclusions', 'itinerary', 'duration_minutes', 'pricing_basis', 'price_per_pax', 'flat_price',
+  'min_pax', 'max_pax', 'image_paths', 'is_featured', 'status', 'sort_order', 'valid_from',
+  'valid_to', 'created_by', 'updated_by', 'created_at', 'updated_at'
+]);
+select columns_are('public', 'tour_package_legs', array[
+  'id', 'package_id', 'rw_id', 'leg_order', 'duration_minutes', 'notes'
+]);
+select columns_are('public', 'tour_package_price_tiers', array[
+  'id', 'package_id', 'min_pax', 'max_pax', 'price_per_pax'
+]);
+select columns_are('public', 'package_price_history', array[
+  'id', 'package_id', 'tier_id', 'changed_by', 'old_price_per_pax', 'new_price_per_pax',
+  'old_flat_price', 'new_flat_price', 'reason', 'changed_at'
+]);
+select columns_are('public', 'umkm_vendors', array[
+  'id', 'rw_id', 'slug', 'name', 'owner_name', 'phone', 'description_md', 'logo_path',
+  'bank_name', 'bank_account_number', 'bank_account_holder', 'is_active', 'created_by',
+  'created_at', 'updated_at'
+]);
+select columns_are('public', 'products_umkm', array[
+  'id', 'rw_id', 'vendor_id', 'slug', 'name', 'category', 'description_md', 'price', 'unit_label',
+  'min_order_qty', 'max_order_qty', 'lead_time_days', 'is_addon_eligible', 'is_available',
+  'is_featured', 'image_paths', 'status', 'sort_order', 'created_by', 'created_at', 'updated_at'
+]);
+select has_index('public', 'tour_packages', 'tour_packages_public_idx', 'tour_packages has its public listing index');
+select has_index('public', 'products_umkm', 'products_umkm_public_idx', 'products_umkm has its public listing index');
+select has_index('public', 'package_price_history', 'package_price_history_pkg_idx', 'price history is indexed per package');
+
+select throws_ok(
+  $$insert into public.tour_packages (rw_id, category, slug, name, price_per_pax)
+    values (5, 'combo', 'combo-salah', 'x', 25000)$$,
+  '23514', null, 'a combo package belongs to the kelurahan, not to one RW'
+);
+select throws_ok(
+  $$insert into public.tour_packages (category, slug, name, price_per_pax)
+    values ('regular', 'tanpa-rw', 'x', 25000)$$,
+  '23514', null, 'a non-combo package needs its RW'
+);
+select throws_ok(
+  $$insert into public.tour_packages (rw_id, category, slug, name)
+    values (5, 'regular', 'tanpa-harga', 'x')$$,
+  '23514', null, 'a per-pax package needs price_per_pax'
+);
+select throws_ok(
+  $$insert into public.tour_packages (rw_id, category, slug, name, price_per_pax, min_pax, max_pax)
+    values (5, 'regular', 'pax-terbalik', 'x', 25000, 50, 10)$$,
+  '23514', null, 'max_pax is never below min_pax'
+);
+select lives_ok(
+  $$insert into public.tour_packages (category, slug, name, pricing_basis, flat_price)
+    values ('combo', 'paket-kombinasi', 'Kombinasi', 'flat_group', 1500000)$$,
+  'a flat-priced combo without RW is accepted'
+);
+
+insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax)
+values ('00000000-0000-4000-8000-0000000000c1', 5, 'regular', 'eduwisata-ecowastreme', 'Eduwisata', 25000);
+insert into public.tour_package_legs (package_id, rw_id, leg_order)
+values ('00000000-0000-4000-8000-0000000000c1', 5, 1);
+
+select throws_ok(
+  $$insert into public.tour_package_legs (package_id, rw_id, leg_order) values ('00000000-0000-4000-8000-0000000000c1', 5, 2)$$,
+  '23505', null, 'a package visits each RW once'
+);
+select throws_ok(
+  $$insert into public.tour_package_legs (package_id, rw_id, leg_order) values ('00000000-0000-4000-8000-0000000000c1', 8, 1)$$,
+  '23505', null, 'leg order is unique within a package'
+);
+select throws_ok(
+  $$insert into public.tour_package_legs (package_id, rw_id, leg_order) values ('00000000-0000-4000-8000-0000000000c1', 8, 0)$$,
+  '23514', null, 'leg order starts at 1'
+);
+
+insert into public.tour_package_price_tiers (package_id, min_pax, max_pax, price_per_pax)
+values ('00000000-0000-4000-8000-0000000000c1', 1, 20, 25000);
+select lives_ok(
+  $$insert into public.tour_package_price_tiers (package_id, min_pax, max_pax, price_per_pax)
+    values ('00000000-0000-4000-8000-0000000000c1', 21, null, 20000)$$,
+  'an adjacent open-ended tier is accepted'
+);
+select throws_ok(
+  $$insert into public.tour_package_price_tiers (package_id, min_pax, max_pax, price_per_pax)
+    values ('00000000-0000-4000-8000-0000000000c1', 20, 30, 22000)$$,
+  '23P01', null, 'tiers touching the same pax count are refused'
+);
+select throws_ok(
+  $$insert into public.tour_package_price_tiers (package_id, min_pax, max_pax, price_per_pax)
+    values ('00000000-0000-4000-8000-0000000000c1', 500, 600, 15000)$$,
+  '23P01', null, 'a tier inside an open-ended tier is refused'
+);
+
+insert into public.package_price_history (package_id, old_price_per_pax, new_price_per_pax)
+values ('00000000-0000-4000-8000-0000000000c1', 20000, 25000);
+select throws_ok(
+  $$delete from public.tour_packages where id = '00000000-0000-4000-8000-0000000000c1'$$,
+  '23503', null, 'a package with price history cannot be deleted'
+);
+insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax)
+values ('00000000-0000-4000-8000-0000000000c2', 8, 'regular', 'paket-uji-hapus', 'Uji', 30000);
+insert into public.tour_package_legs (package_id, rw_id, leg_order)
+values ('00000000-0000-4000-8000-0000000000c2', 8, 1);
+delete from public.tour_packages where id = '00000000-0000-4000-8000-0000000000c2';
+select is(
+  (select count(*) from public.tour_package_legs where package_id = '00000000-0000-4000-8000-0000000000c2'),
+  0::bigint,
+  'deleting a draft package takes its legs with it'
+);
+
+insert into public.umkm_vendors (id, rw_id, slug, name)
+values ('00000000-0000-4000-8000-0000000000d1', 5, 'pkk-rw-05', 'PKK RW 05');
+select throws_ok(
+  $$insert into public.products_umkm (rw_id, vendor_id, slug, name, category, price, min_order_qty, max_order_qty)
+    values (5, '00000000-0000-4000-8000-0000000000d1', 'kompos', 'Kompos', 'compost', 15000, 10, 5)$$,
+  '23514', null, 'max_order_qty is never below min_order_qty'
+);
+select throws_ok(
+  $$insert into public.products_umkm (rw_id, vendor_id, slug, name, category, price)
+    values (5, '00000000-0000-4000-8000-0000000000d1', 'kompos', 'Kompos', 'compost', -1)$$,
+  '23514', null, 'a product price is never negative'
 );
 
 select * from finish();

@@ -34,6 +34,161 @@ export type Database = {
   }
   public: {
     Tables: {
+      package_price_history: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          id: number
+          new_flat_price: number | null
+          new_price_per_pax: number | null
+          old_flat_price: number | null
+          old_price_per_pax: number | null
+          package_id: string
+          reason: string | null
+          tier_id: string | null
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          id?: never
+          new_flat_price?: number | null
+          new_price_per_pax?: number | null
+          old_flat_price?: number | null
+          old_price_per_pax?: number | null
+          package_id: string
+          reason?: string | null
+          tier_id?: string | null
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          id?: never
+          new_flat_price?: number | null
+          new_price_per_pax?: number | null
+          old_flat_price?: number | null
+          old_price_per_pax?: number | null
+          package_id?: string
+          reason?: string | null
+          tier_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "package_price_history_changed_by_fkey"
+            columns: ["changed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "package_price_history_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "tour_packages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "package_price_history_tier_id_fkey"
+            columns: ["tier_id"]
+            isOneToOne: false
+            referencedRelation: "tour_package_price_tiers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      products_umkm: {
+        Row: {
+          category: Database["public"]["Enums"]["product_category"]
+          created_at: string
+          created_by: string | null
+          description_md: string | null
+          id: string
+          image_paths: string[]
+          is_addon_eligible: boolean
+          is_available: boolean
+          is_featured: boolean
+          lead_time_days: number
+          max_order_qty: number | null
+          min_order_qty: number
+          name: string
+          price: number
+          rw_id: number
+          slug: string
+          sort_order: number
+          status: Database["public"]["Enums"]["content_status"]
+          unit_label: string
+          updated_at: string
+          vendor_id: string
+        }
+        Insert: {
+          category: Database["public"]["Enums"]["product_category"]
+          created_at?: string
+          created_by?: string | null
+          description_md?: string | null
+          id?: string
+          image_paths?: string[]
+          is_addon_eligible?: boolean
+          is_available?: boolean
+          is_featured?: boolean
+          lead_time_days?: number
+          max_order_qty?: number | null
+          min_order_qty?: number
+          name: string
+          price: number
+          rw_id: number
+          slug: string
+          sort_order?: number
+          status?: Database["public"]["Enums"]["content_status"]
+          unit_label?: string
+          updated_at?: string
+          vendor_id: string
+        }
+        Update: {
+          category?: Database["public"]["Enums"]["product_category"]
+          created_at?: string
+          created_by?: string | null
+          description_md?: string | null
+          id?: string
+          image_paths?: string[]
+          is_addon_eligible?: boolean
+          is_available?: boolean
+          is_featured?: boolean
+          lead_time_days?: number
+          max_order_qty?: number | null
+          min_order_qty?: number
+          name?: string
+          price?: number
+          rw_id?: number
+          slug?: string
+          sort_order?: number
+          status?: Database["public"]["Enums"]["content_status"]
+          unit_label?: string
+          updated_at?: string
+          vendor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "products_umkm_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "products_umkm_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "products_umkm_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "umkm_vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_path: string | null
@@ -308,6 +463,258 @@ export type Database = {
           },
           {
             foreignKeyName: "staff_invites_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tour_package_legs: {
+        Row: {
+          duration_minutes: number | null
+          id: string
+          leg_order: number
+          notes: string | null
+          package_id: string
+          rw_id: number
+        }
+        Insert: {
+          duration_minutes?: number | null
+          id?: string
+          leg_order: number
+          notes?: string | null
+          package_id: string
+          rw_id: number
+        }
+        Update: {
+          duration_minutes?: number | null
+          id?: string
+          leg_order?: number
+          notes?: string | null
+          package_id?: string
+          rw_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tour_package_legs_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "tour_packages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tour_package_legs_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tour_package_price_tiers: {
+        Row: {
+          id: string
+          max_pax: number | null
+          min_pax: number
+          package_id: string
+          price_per_pax: number
+        }
+        Insert: {
+          id?: string
+          max_pax?: number | null
+          min_pax: number
+          package_id: string
+          price_per_pax: number
+        }
+        Update: {
+          id?: string
+          max_pax?: number | null
+          min_pax?: number
+          package_id?: string
+          price_per_pax?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tour_package_price_tiers_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "tour_packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tour_packages: {
+        Row: {
+          category: Database["public"]["Enums"]["package_category"]
+          created_at: string
+          created_by: string | null
+          description_md: string | null
+          duration_minutes: number | null
+          flat_price: number | null
+          highlights: string[]
+          id: string
+          image_paths: string[]
+          inclusions: string[]
+          is_featured: boolean
+          itinerary: Json
+          max_pax: number
+          min_pax: number
+          name: string
+          price_per_pax: number | null
+          pricing_basis: Database["public"]["Enums"]["pricing_basis"]
+          rw_id: number | null
+          slug: string
+          sort_order: number
+          status: Database["public"]["Enums"]["content_status"]
+          tagline: string | null
+          updated_at: string
+          updated_by: string | null
+          valid_from: string | null
+          valid_to: string | null
+        }
+        Insert: {
+          category: Database["public"]["Enums"]["package_category"]
+          created_at?: string
+          created_by?: string | null
+          description_md?: string | null
+          duration_minutes?: number | null
+          flat_price?: number | null
+          highlights?: string[]
+          id?: string
+          image_paths?: string[]
+          inclusions?: string[]
+          is_featured?: boolean
+          itinerary?: Json
+          max_pax?: number
+          min_pax?: number
+          name: string
+          price_per_pax?: number | null
+          pricing_basis?: Database["public"]["Enums"]["pricing_basis"]
+          rw_id?: number | null
+          slug: string
+          sort_order?: number
+          status?: Database["public"]["Enums"]["content_status"]
+          tagline?: string | null
+          updated_at?: string
+          updated_by?: string | null
+          valid_from?: string | null
+          valid_to?: string | null
+        }
+        Update: {
+          category?: Database["public"]["Enums"]["package_category"]
+          created_at?: string
+          created_by?: string | null
+          description_md?: string | null
+          duration_minutes?: number | null
+          flat_price?: number | null
+          highlights?: string[]
+          id?: string
+          image_paths?: string[]
+          inclusions?: string[]
+          is_featured?: boolean
+          itinerary?: Json
+          max_pax?: number
+          min_pax?: number
+          name?: string
+          price_per_pax?: number | null
+          pricing_basis?: Database["public"]["Enums"]["pricing_basis"]
+          rw_id?: number | null
+          slug?: string
+          sort_order?: number
+          status?: Database["public"]["Enums"]["content_status"]
+          tagline?: string | null
+          updated_at?: string
+          updated_by?: string | null
+          valid_from?: string | null
+          valid_to?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tour_packages_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tour_packages_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tour_packages_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      umkm_vendors: {
+        Row: {
+          bank_account_holder: string | null
+          bank_account_number: string | null
+          bank_name: string | null
+          created_at: string
+          created_by: string | null
+          description_md: string | null
+          id: string
+          is_active: boolean
+          logo_path: string | null
+          name: string
+          owner_name: string | null
+          phone: string | null
+          rw_id: number
+          slug: string
+          updated_at: string
+        }
+        Insert: {
+          bank_account_holder?: string | null
+          bank_account_number?: string | null
+          bank_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          description_md?: string | null
+          id?: string
+          is_active?: boolean
+          logo_path?: string | null
+          name: string
+          owner_name?: string | null
+          phone?: string | null
+          rw_id: number
+          slug: string
+          updated_at?: string
+        }
+        Update: {
+          bank_account_holder?: string | null
+          bank_account_number?: string | null
+          bank_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          description_md?: string | null
+          id?: string
+          is_active?: boolean
+          logo_path?: string | null
+          name?: string
+          owner_name?: string | null
+          phone?: string | null
+          rw_id?: number
+          slug?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "umkm_vendors_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "umkm_vendors_rw_id_fkey"
             columns: ["rw_id"]
             isOneToOne: false
             referencedRelation: "rw_units"
