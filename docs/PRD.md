@@ -1733,25 +1733,25 @@ Legend: S/I/U/D = select/insert/update/delete; "—" = denied; "fn" = only throu
 
 | Table | anon | admin_rw (own RW) | superadmin | AAL2 | svc-only writes |
 |---|---|---|---|---|---|
-| rw_units | S `is_active` (public columns via column grant) | S all; U own row content columns (trigger blocks treasury/contact-account, `code`, `slug`, `is_active`) | S/U all; I | — | — |
+| rw_units | S `is_active` (public columns via column grant) | S all (public columns); U own row content columns (`code`, `slug`, `is_active` not granted; `rw_units_guard` as well) | S all (public columns); U content columns; I. The treasury columns are granted to no API role: the superadmin edits them through an RPC that comes with the finance pages (P4; decision of 2026-10-16) | — | — |
 | profiles | — | S own row + same RW; U own `full_name, phone, avatar_path` | S all; U (not `role, rw_id, is_active, mfa_required, claims_version` — fn `set_staff_role`, `set_staff_status`; nor the pending-request columns — fn `set_staff_role`, `reset_staff_mfa`, `cancel_staff_mfa_reset`, `cancel_superadmin_promotion`) | yes | insert by auth trigger |
 | staff_invites | — | — | S/I; revoke via U `revoked_at` | yes | accept via onboarding (svc) |
 | site_settings | S `is_public` | S `is_public` | S/I/U/D | yes | — |
 | session_templates | — | S/I/U/D `owns_rw(rw_id)` | all | — | — |
 | visit_sessions | S via `v_session_availability` | S/I/U/D `owns_rw(rw_id)`; column grant excludes `reserved_pax, checked_in_pax`; trigger guard | all (same rule) | — | counters |
 | tour_packages | S `published` | S own or leg in own RW (combo read-only); I/U `owns_rw(rw_id)` | all | — | — |
-| tour_package_legs | S (published parent) | S as parent; I/U/D via parent ownership, parent not combo | all | — | — |
+| tour_package_legs | S (published parent) | S/I/U/D `owns_rw(rw_id)` of the leg itself, so the other RW's leg of a combo stays hidden; trigger `tour_package_legs_guard` keeps a combo's legs to the superadmin and an RW package's leg in its RW | all | — | — |
 | tour_package_price_tiers | S (published parent) | I/U/D via parent ownership | all | — | — |
 | package_price_history | — | S own packages | S | — | insert by trigger |
-| umkm_vendors | S `is_active` (public columns) | S/I/U `owns_rw(rw_id)` (bank columns excluded by column grant) | all | — | — |
+| umkm_vendors | S `is_active` (public columns: no owner name or phone) | S/I/U `owns_rw(rw_id)`; the bank columns are granted to no API role | all but the bank columns, which the superadmin edits through an RPC in P4 (decision of 2026-10-16); D | — | — |
 | products_umkm | S `published` | S/I/U `owns_rw(rw_id)` | all | — | — |
-| bookings | — | S via `v_bookings_staff` (`owns_any_rw(rw_ids)`); U `admin_notes`; I fn `create_booking` (walk-in) | S all; U `admin_notes, discount_amount, discount_note` | — | all transitions |
+| bookings | — | S by column, without `pic_name`, `pic_phone`, `pic_email`, `source_ip`, `user_agent`, `idempotency_key`, where `owns_any_rw(rw_ids)` and the visit falls between today − 7 and today + 30 days (decision of 2026-10-16), read through `v_bookings_staff`; U `admin_notes`; I fn `create_booking` (walk-in) | S every row, same columns; U `admin_notes` (a discount recomputes the total, so it waits for its own RPC, P4.3.08) | — | all transitions |
 | booking_legs | — | S `owns_rw(rw_id)` | S | — | all writes |
 | booking_addons | — | S `owns_rw(rw_id)`; U `fulfillment_status` | S; U same | — | insert |
-| booking_participants | — | fn `rpc_get_participants`; I/U where booking in scope (name corrections) | S/I/U | yes | visitor writes via svc |
+| booking_participants | — | fn `rpc_get_participants` only: no grant (corrections arrive with their UI) | fn `rpc_get_participants` only | yes | visitor writes via svc |
 | booking_events | — | S where booking in scope | S | — | insert |
 | guest_otps | — | — | — | — | all (svc) |
-| payments | — | S where booking in scope (`snap_token`, `va_number` excluded by column grant) | S all | yes | all writes |
+| payments | — | S where booking in scope; `snap_token`, `snap_redirect_url`, `va_number` and `last_payload` are granted to no API role | S every row, same columns | yes | all writes |
 | payment_events | — | — | S | yes | insert |
 | webhook_rejections | — | — | S | yes | insert |
 | payment_adjustments | — | — | S; fn propose/approve/apply | yes | — |
@@ -1761,7 +1761,7 @@ Legend: S/I/U/D = select/insert/update/delete; "—" = denied; "fn" = only throu
 | document_sequences | — | — | — | — | `next_document_number` |
 | tickets_qr | — | S `owns_rw(rw_id)`; fn `check_in_ticket` | S; fn `revoke_ticket`, `undo_check_in` | — | issuance, revoke on refund |
 | ticket_scans | — | S `owns_rw(rw_id)` | S | — | insert via fn |
-| certificates | — | S `owns_any_rw(rw_ids)`; fn `issue_certificates` | S; fn `revoke_certificate` | — | pdf_path, released_at |
+| certificates | — | S `owns_any_rw(rw_ids)` without `recipient_name`, which is granted to no API role; fn `issue_certificates` | S, same columns; fn `revoke_certificate` | — | pdf_path, released_at |
 | reviews | S `published` via `v_public_reviews` | S `owns_any_rw(rw_ids)` | S all; U `status, is_featured, moderation_note`; D | — | visitor insert via `submit_review` |
 | galleries | S `published` | S/I/U/D `owns_rw(rw_id)` | all | — | — |
 | articles | S `published` | S/I/U `owns_rw(rw_id)` (trigger: no publish) | all | — | — |
@@ -1770,9 +1770,9 @@ Legend: S/I/U/D = select/insert/update/delete; "—" = denied; "fn" = only throu
 | activity_points | S `published` | S/I/U/D `owns_rw(rw_id)` | all | — | — |
 | performance_schedules | S `published` | S/I/U/D `owns_rw(rw_id)` | all | — | — |
 | revenue_share_rules / _lines | — | S rules for own RW / own packages / own products | all | yes | — |
-| revenue_share_entries | — | S `rw_id = app_rw_id()` or vendor in own RW | S; fn `settle_revenue_entries` | yes | insert |
+| revenue_share_entries | — | S their own keys only: `beneficiary_key = 'rw:<own RW>'` or a vendor of their RW, never the kelurahan's key, whatever the row's `rw_id` (STAFF-02) | S; fn `settle_revenue_entries` | yes | insert |
 | payout_batches | — | S own `beneficiary_key`s | S/I/U | yes | — |
-| notifications | — | S where booking in scope; fn `request_notification_resend` | S; same fn | — | worker |
+| notifications | — | S where booking in scope, without `recipient`, `recipient_name`, `params` and `last_error`, which are granted to no API role (decision of 2026-10-16); fn `request_notification_resend` | S every row, same columns; same fn | — | worker |
 | security_events | — | — | S | yes | insert |
 | security_alerts | — | — | S; U `acknowledged_*` | yes | insert (job) |
 | exports | — | S own rows; fn `rpc_create_export` (attendance only) | S all; fn | yes | file lifecycle |
@@ -1781,26 +1781,30 @@ Legend: S/I/U/D = select/insert/update/delete; "—" = denied; "fn" = only throu
 | login_attempts | — | — | S | yes | insert by auth hook |
 | rate_limit_buckets | — | — | — | — | `rate_limit_hit` |
 
+Public reads are policies `to anon` only: staff read through their own scope, so an RW admin sees no other RW's rows even where they are published. Every grant lists its columns (`0005_policies_grants.sql`), so a column added later stays private until a migration grants it, and a row created through the API carries its creator's own id in `created_by` (`uploaded_by`, `author_id`).
+
 Representative policy for an RW-scoped content table:
 
 ```sql
 alter table public.tour_packages enable row level security;
 alter table public.tour_packages force row level security;
 revoke all on public.tour_packages from anon, authenticated;
-grant select on public.tour_packages to anon, authenticated;
-grant insert, update on public.tour_packages to authenticated;
+grant select (id, rw_id, category, slug, name, ...) on public.tour_packages to anon;   -- every column listed
+grant select (..., created_by, updated_by), insert (..., created_by), update (..., updated_by)
+  on public.tour_packages to authenticated;
 grant delete on public.tour_packages to authenticated;   -- policy limits to superadmin
 
 create policy tour_packages_public_read on public.tour_packages
-  for select to anon, authenticated using (status = 'published');
+  for select to anon using (status = 'published');
 create policy tour_packages_staff_read on public.tour_packages
   for select to authenticated using (
     (select public.owns_rw(rw_id))
     or exists (select 1 from public.tour_package_legs l where l.package_id = tour_packages.id and l.rw_id = (select public.app_rw_id())));
 create policy tour_packages_staff_insert on public.tour_packages
-  for insert to authenticated with check ((select public.owns_rw(rw_id)));
+  for insert to authenticated with check ((select public.owns_rw(rw_id)) and created_by = (select auth.uid()));
 create policy tour_packages_staff_update on public.tour_packages
-  for update to authenticated using ((select public.owns_rw(rw_id))) with check ((select public.owns_rw(rw_id)));
+  for update to authenticated using ((select public.owns_rw(rw_id)))
+  with check ((select public.owns_rw(rw_id)) and updated_by = (select auth.uid()));
 create policy tour_packages_super_delete on public.tour_packages
   for delete to authenticated using ((select public.is_superadmin()));
 ```
@@ -1835,6 +1839,7 @@ grant update (full_name, phone, avatar_path) on public.profiles to authenticated
 | `payments_immutable_guard`, `invoices_immutable_guard`, `booking_addons_freeze` | `payments`, `invoices`, `booking_addons` | Financial columns frozen after settlement |
 | `visit_sessions_guard` | `visit_sessions` | §8.4.2 |
 | `tour_packages_legs_guard`, `tour_packages_price_floor`, `tour_packages_price_history` | `tour_packages`, `tour_package_price_tiers` | §8.4.3 |
+| `tour_package_legs_guard` | `tour_package_legs` (BEFORE INSERT/UPDATE/DELETE, 0005) | A combo's legs change only for the superadmin or the system; an RW package's leg stays in the package's RW. It is a trigger because the package's read policy asks the legs, and Postgres refuses policies that ask each other |
 | `products_umkm_vendor_rw_guard` | `products_umkm` | `vendor.rw_id = product.rw_id` |
 | `quotations_limit_guard` | `quotations` | Max 3 per booking; requires `bookings.phone_verified_at` |
 | `tickets_require_paid_booking`, `tickets_no_revive` | `tickets_qr` | §8.4.6 |
