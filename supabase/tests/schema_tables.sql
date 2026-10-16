@@ -1,7 +1,7 @@
 -- Structure test for 0003_tables, extended group by group: exact columns, the types other code
 -- relies on, keys, and the CHECK / unique rules proven by trying to break them.
 begin;
-select plan(187);
+select plan(210);
 
 -- ===== Every table: RLS from birth, no API rights, updated_at kept by trigger =====
 
@@ -1048,6 +1048,122 @@ select throws_ok(
     values ('00000000-0000-4000-8000-0000000000e1', 'settlement', 'addon:y', '{}', 'kelurahan', 'kelurahan',
             1000000, 20, 200000, 'hash-entry-1')$$,
   '23505', null, 'every ledger row has its own chain hash'
+);
+
+-- ===== Messaging, security, audit and infrastructure (Task P1.2.12) =====
+
+select columns_are('public', 'notifications', array[
+  'id', 'booking_id', 'channel', 'template', 'recipient', 'recipient_name', 'params',
+  'document_path', 'dedupe_key', 'status', 'attempts', 'max_attempts', 'next_attempt_at',
+  'locked_at', 'last_error_code', 'last_error', 'dead_at', 'provider_message_id',
+  'provider_status', 'sent_at', 'delivered_at', 'read_at', 'created_at', 'updated_at'
+]);
+select columns_are('public', 'security_events', array[
+  'id', 'event_type', 'severity', 'actor_id', 'actor_role', 'ip_hash', 'user_agent', 'rw_id',
+  'entity_type', 'entity_id', 'fingerprint', 'details', 'occurred_at'
+]);
+select columns_are('public', 'security_alerts', array[
+  'id', 'rule', 'severity', 'fingerprint', 'title', 'details', 'first_seen_at', 'last_seen_at',
+  'occurrences', 'notified_at', 'acknowledged_by', 'acknowledged_at', 'created_at'
+]);
+select columns_are('public', 'exports', array[
+  'id', 'kind', 'format', 'requested_by', 'rw_id', 'filters', 'reason', 'row_count',
+  'storage_path', 'watermark', 'expires_at', 'downloaded_at', 'deleted_at', 'created_at'
+]);
+select columns_are('public', 'dsr_requests', array[
+  'id', 'request_type', 'phone', 'email', 'booking_code', 'message', 'otp_id', 'verified_at',
+  'status', 'due_at', 'handled_by', 'handled_at', 'resolution_note', 'created_at'
+]);
+select columns_are('public', 'audit_logs', array[
+  'id', 'occurred_at', 'actor_id', 'actor_role', 'actor_ip', 'request_id', 'action', 'entity_type',
+  'entity_id', 'rw_id', 'before', 'after', 'metadata', 'prev_hash', 'entry_hash'
+]);
+select columns_are('public', 'login_attempts', array[
+  'id', 'user_id', 'email_hash', 'ip', 'success', 'reason', 'attempted_at'
+]);
+select columns_are('public', 'rate_limit_buckets', array[
+  'key', 'window_start', 'count'
+]);
+select is(
+  (select count(*)::int from pg_indexes where schemaname = 'public'
+     and indexname = any (array['notifications_queue_idx', 'notifications_provider_idx', 'notifications_booking_idx', 'security_events_type_time_idx', 'security_alerts_open_fingerprint', 'exports_user_time_idx', 'audit_logs_entity_idx', 'audit_logs_actor_idx', 'login_attempts_user_time_idx'])),
+  9,
+  'every index of the messaging, security, audit and infrastructure group exists'
+);
+
+insert into public.notifications (id, booking_id, channel, template, recipient, dedupe_key)
+values ('00000000-0000-4000-8000-000000000601', '00000000-0000-4000-8000-0000000000e1', 'whatsapp',
+        'payment_received_ticket', '+6281234567890',
+        'booking:00000000-0000-4000-8000-0000000000e1:payment_received_ticket:whatsapp');
+select is(
+  (select status::text || '/' || max_attempts::text from public.notifications where id = '00000000-0000-4000-8000-000000000601'),
+  'queued/8',
+  'a new notification is queued with 8 attempts'
+);
+select throws_ok(
+  $$insert into public.notifications (booking_id, channel, template, recipient, dedupe_key)
+    values ('00000000-0000-4000-8000-0000000000e1', 'whatsapp', 'payment_received_ticket', '+6281234567890',
+            'booking:00000000-0000-4000-8000-0000000000e1:payment_received_ticket:whatsapp')$$,
+  '23505', null, 'the same message is never queued twice (dedupe_key)'
+);
+
+select throws_ok(
+  $$insert into public.security_events (event_type) values ('something_happened')$$,
+  '23514', null, 'security events use one of the 25 known types'
+);
+select lives_ok(
+  $$insert into public.security_events (event_type, severity, ip_hash) values ('quota_pressure', 'medium', 'hmac-of-ip')$$,
+  'quota_pressure is a known security event type'
+);
+
+insert into public.security_alerts (rule, severity, fingerprint, title)
+values ('login_lockout_spike', 'high', 'fp-1', 'Lonjakan akun terkunci');
+select throws_ok(
+  $$insert into public.security_alerts (rule, severity, fingerprint, title) values ('login_lockout_spike', 'high', 'fp-1', 'Lagi')$$,
+  '23505', null, 'one open alert per fingerprint (repeats count up instead)'
+);
+update public.security_alerts set acknowledged_at = now(), acknowledged_by = '00000000-0000-4000-8000-000000000001'
+where fingerprint = 'fp-1';
+select lives_ok(
+  $$insert into public.security_alerts (rule, severity, fingerprint, title) values ('login_lockout_spike', 'high', 'fp-1', 'Lagi')$$,
+  'after acknowledging, the same fingerprint can alert again'
+);
+
+select throws_ok(
+  $$insert into public.exports (kind, format, requested_by, watermark, expires_at)
+    values ('visits', 'docx', '00000000-0000-4000-8000-000000000001', 'Diekspor oleh Super Admin', now() + interval '24 hours')$$,
+  '23514', null, 'exports are xlsx, csv or pdf'
+);
+select throws_ok(
+  $$insert into public.dsr_requests (request_type, due_at) values ('access', now() + interval '3 days')$$,
+  '23514', null, 'a data request comes with a phone or an email to answer'
+);
+select throws_ok(
+  $$insert into public.dsr_requests (request_type, email, due_at) values ('sell_my_data', 'x@example.test', now() + interval '3 days')$$,
+  '23514', null, 'a data request uses one of the UU PDP request types'
+);
+
+select throws_ok(
+  $$insert into public.audit_logs (actor_role, action, entity_type, entry_hash) values ('superadmin', 'bookings.update', 'bookings', 'audit-1')$$,
+  '23514', null, 'a staff action in the audit log always names its actor'
+);
+select lives_ok(
+  $$insert into public.audit_logs (actor_role, action, entity_type, entry_hash) values ('cron', 'purge_run', 'booking_participants', 'audit-2')$$,
+  'a cron action may have no actor'
+);
+select throws_ok(
+  $$insert into public.audit_logs (actor_role, action, entity_type, entry_hash) values ('cron', 'purge_run', 'booking_participants', 'audit-2')$$,
+  '23505', null, 'every audit row has its own chain hash'
+);
+
+select throws_ok(
+  $$insert into public.login_attempts (email_hash, success, reason) values ('hmac-of-email', false, 'typo')$$,
+  '23514', null, 'login attempts use a known reason'
+);
+insert into public.rate_limit_buckets (key, window_start, count) values ('otp:phone:abc', '2026-11-12 09:00+07', 1);
+select throws_ok(
+  $$insert into public.rate_limit_buckets (key, window_start, count) values ('otp:phone:abc', '2026-11-12 09:00+07', 1)$$,
+  '23505', null, 'one counter per key and window'
 );
 
 select * from finish();

@@ -1073,3 +1073,185 @@ create index revenue_entries_payout_idx on public.revenue_share_entries (payout_
 alter table public.revenue_share_entries enable row level security;
 alter table public.revenue_share_entries force row level security;
 revoke all on public.revenue_share_entries from anon, authenticated;
+
+
+-- ===== Messaging, security, audit and infrastructure (docs/PRD.md §8.4.9, Task P1.2.12) =====
+
+-- notifications: transactional outbox for WhatsApp + email; drained by api/jobs/process-notifications.
+create table public.notifications (
+  id                  uuid primary key default gen_random_uuid(),
+  booking_id          uuid references public.bookings(id) on delete restrict,
+  channel             public.notification_channel not null,
+  template            public.notification_template not null,
+  recipient           text not null,                       -- E.164 phone or email
+  recipient_name      text,
+  params              jsonb not null default '{}',         -- template variables; no URLs or digit runs in free text
+  document_path       text,                                -- documents/... PDF for the WhatsApp document header only
+  dedupe_key          text not null unique,                -- 'booking:<id>:payment_received_ticket:whatsapp'
+  status              public.notification_status not null default 'queued',
+  attempts            smallint not null default 0,
+  max_attempts        smallint not null default 8,
+  next_attempt_at     timestamptz not null default now(),
+  locked_at           timestamptz,
+  last_error_code     text,
+  last_error          text,
+  dead_at             timestamptz,                         -- set when attempts are exhausted or the error is permanent
+  provider_message_id text,
+  provider_status     text,
+  sent_at             timestamptz,
+  delivered_at        timestamptz,
+  read_at             timestamptz,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now()
+);
+create index notifications_queue_idx    on public.notifications (next_attempt_at) where status in ('queued','failed') and dead_at is null;
+create index notifications_provider_idx on public.notifications (provider_message_id);
+create index notifications_booking_idx  on public.notifications (booking_id);
+alter table public.notifications enable row level security;
+alter table public.notifications force row level security;
+revoke all on public.notifications from anon, authenticated;
+create trigger set_updated_at before update on public.notifications
+  for each row execute function public.set_updated_at();
+
+-- security_events (AO): typed security log read by the anomaly scan and the 5-minute summariser.
+create table public.security_events (
+  id          bigint generated always as identity primary key,
+  event_type  text not null check (event_type in (
+    'webhook_signature_invalid','webhook_amount_mismatch','status_disagreement','login_failed','login_locked',
+    'mfa_failed','mfa_enrolled','scanner_invalid_signature','scanner_lockout','rate_limited','turnstile_failed',
+    'upload_rejected','role_changed','staff_disabled','key_rotated','export_downloaded','pii_revealed',
+    'manual_checkin','manual_backfill','undo_check_in','cron_failed','notification_dead','price_changed',
+    'session_changed_with_bookings','quota_pressure')),
+  severity    public.alert_severity not null default 'info',
+  actor_id    uuid,
+  actor_role  text,
+  ip_hash     text,                                         -- HMAC-SHA256(host(ip)) keyed with OTP_PEPPER (Security §7.4)
+  user_agent  text,
+  rw_id       smallint,
+  entity_type text,
+  entity_id   text,
+  fingerprint text,
+  details     jsonb not null default '{}',                 -- never PII; ids and hashes only
+  occurred_at timestamptz not null default now()
+);
+create index security_events_type_time_idx on public.security_events (event_type, occurred_at desc);
+alter table public.security_events enable row level security;
+alter table public.security_events force row level security;
+revoke all on public.security_events from anon, authenticated;
+
+-- security_alerts: deduplicated alerts raised by api/jobs/anomaly-scan; shown on /dashboard/security-alerts.
+create table public.security_alerts (
+  id              uuid primary key default gen_random_uuid(),
+  rule            text not null,
+  severity        public.alert_severity not null,
+  fingerprint     text not null,
+  title           text not null,
+  details         jsonb not null default '{}',
+  first_seen_at   timestamptz not null default now(),
+  last_seen_at    timestamptz not null default now(),
+  occurrences     integer not null default 1,
+  notified_at     timestamptz,                             -- out-of-band delivery timestamp for high/critical
+  acknowledged_by uuid references public.profiles(id),
+  acknowledged_at timestamptz,
+  created_at      timestamptz not null default now()
+);
+create unique index security_alerts_open_fingerprint on public.security_alerts (fingerprint) where acknowledged_at is null;
+-- Same fingerprint within 60 min increments occurrences instead of creating a new row.
+alter table public.security_alerts enable row level security;
+alter table public.security_alerts force row level security;
+revoke all on public.security_alerts from anon, authenticated;
+
+-- exports: who exported what and why; file auto-deleted after 24 h.
+create table public.exports (
+  id            uuid primary key default gen_random_uuid(),
+  kind          public.export_kind not null,
+  format        text not null check (format in ('xlsx','csv','pdf')),
+  requested_by  uuid not null references public.profiles(id),
+  rw_id         smallint references public.rw_units(id),
+  filters       jsonb not null default '{}',
+  reason        text check (length(reason) <= 300),
+  row_count     integer,
+  storage_path  text,                                      -- documents/exports/<profile_id>/<yyyymmdd-hhmmss>-<kind>.<ext>
+  watermark     text not null,                             -- 'Diekspor oleh <nama> <timestamp WIB>'
+  expires_at    timestamptz not null,                      -- created_at + 24 h
+  downloaded_at timestamptz,
+  deleted_at    timestamptz,
+  created_at    timestamptz not null default now()
+);
+create index exports_user_time_idx on public.exports (requested_by, created_at desc);
+alter table public.exports enable row level security;
+alter table public.exports force row level security;
+revoke all on public.exports from anon, authenticated;
+
+-- dsr_requests: data-subject requests (UU PDP) submitted on /privasi/permintaan after OTP identity check.
+create table public.dsr_requests (
+  id              uuid primary key default gen_random_uuid(),
+  request_type    text not null check (request_type in ('access','rectification','erasure','restriction','withdraw_consent')),
+  phone           text check (phone ~ '^\+62[0-9]{8,13}$'),
+  email           citext,
+  booking_code    text,
+  message         text check (length(message) <= 2000),
+  otp_id          uuid references public.guest_otps(id) on delete set null,   -- guest_otps are pruned after 24 h
+  verified_at     timestamptz,
+  status          text not null default 'received' check (status in ('received','in_progress','completed','rejected')),
+  due_at          timestamptz not null,                    -- created_at + 3 days (3x24 h response window)
+  handled_by      uuid references public.profiles(id),
+  handled_at      timestamptz,
+  resolution_note text,
+  created_at      timestamptz not null default now(),
+  constraint dsr_requests_contact_ok check (phone is not null or email is not null)
+);
+alter table public.dsr_requests enable row level security;
+alter table public.dsr_requests force row level security;
+revoke all on public.dsr_requests from anon, authenticated;
+
+-- audit_logs (AO): append-only, hash-chained; row-level before/after limited to an allow-list of columns per table.
+create table public.audit_logs (
+  id          bigint generated always as identity primary key,
+  occurred_at timestamptz not null default now(),
+  actor_id    uuid,
+  actor_role  text not null check (actor_role in ('superadmin','admin_rw','service','cron','visitor','anon')),
+  actor_ip    inet,
+  request_id  text,
+  action      text not null,                               -- 'bookings.update', 'booking.cancel', 'export.visits', 'quota.drift', ...
+  entity_type text not null,
+  entity_id   text,
+  rw_id       smallint,
+  before      jsonb,
+  after       jsonb,
+  metadata    jsonb not null default '{}',
+  prev_hash   text,
+  entry_hash  text not null unique,
+  constraint audit_logs_actor_ok check (actor_role in ('cron','visitor','anon') or actor_id is not null)
+);
+create index audit_logs_entity_idx on public.audit_logs (entity_type, entity_id, occurred_at desc);
+create index audit_logs_actor_idx  on public.audit_logs (actor_id, occurred_at desc);
+alter table public.audit_logs enable row level security;
+alter table public.audit_logs force row level security;
+revoke all on public.audit_logs from anon, authenticated;
+
+-- login_attempts (AO): written by public.hook_password_verification_attempt; drives the in-Auth lockout.
+create table public.login_attempts (
+  id           bigint generated always as identity primary key,
+  user_id      uuid,
+  email_hash   text,                                -- HMAC-SHA256(lower(trim(email))) keyed with OTP_PEPPER (Security §5.5)
+  ip           inet,
+  success      boolean not null,
+  reason       text check (reason in ('ok','bad_password','locked','mfa_failed','inactive')),
+  attempted_at timestamptz not null default now()
+);
+create index login_attempts_user_time_idx on public.login_attempts (user_id, attempted_at desc);
+alter table public.login_attempts enable row level security;
+alter table public.login_attempts force row level security;
+revoke all on public.login_attempts from anon, authenticated;
+
+-- rate_limit_buckets: fixed-window counters; the only limiter (no external vendor). Pruned hourly.
+create table public.rate_limit_buckets (
+  key          text not null,
+  window_start timestamptz not null,
+  count        integer not null default 0,
+  primary key (key, window_start)
+);
+alter table public.rate_limit_buckets enable row level security;
+alter table public.rate_limit_buckets force row level security;
+revoke all on public.rate_limit_buckets from anon, authenticated;
