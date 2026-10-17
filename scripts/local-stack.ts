@@ -9,11 +9,17 @@ const statusSchema = z.object({
   API_URL: z.url(),
   ANON_KEY: z.string().min(1),
   SERVICE_ROLE_KEY: z.string().min(1),
+  JWT_SECRET: z.string().min(1),
 });
 
 const LOCAL_HOSTNAMES = new Set(['127.0.0.1', 'localhost']);
 
-export type LocalStack = { apiUrl: string; anonKey: string; serviceRoleKey: string };
+export type LocalStack = {
+  apiUrl: string;
+  anonKey: string;
+  serviceRoleKey: string;
+  jwtSecret: string;
+};
 
 let cachedStack: LocalStack | undefined;
 
@@ -33,6 +39,7 @@ export function localStack(): LocalStack {
     apiUrl: status.API_URL,
     anonKey: status.ANON_KEY,
     serviceRoleKey: status.SERVICE_ROLE_KEY,
+    jwtSecret: status.JWT_SECRET,
   };
   return cachedStack;
 }
