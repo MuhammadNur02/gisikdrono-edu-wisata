@@ -26,7 +26,7 @@ const tabsTriggerVariants = cva(
     variants: {
       variant: {
         underline:
-          'px-1 after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-primary after:opacity-0 data-[state=active]:after:opacity-100',
+          'px-1 after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-primary after:opacity-0 after:transition-opacity after:duration-200 data-[state=active]:after:opacity-100',
         pill: 'rounded-lg px-3 data-[state=active]:bg-background data-[state=active]:shadow-sm',
       },
     },

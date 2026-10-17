@@ -82,3 +82,35 @@ describe('src/lib/queries uses the session-less anon client only', () => {
     ).toBe(true);
   });
 });
+
+describe('motion follows docs/StyleGuide.md §7', () => {
+  const fullMotion = "import { motion } from 'motion/react';";
+  const lazyMotion = "import { m } from 'motion/react';";
+
+  it.each([
+    'src/components/marketing/hero.tsx',
+    'src/components/ui/tabs.tsx',
+    'src/app/(public)/page.tsx',
+    'src/app/(admin)/dashboard/page.tsx',
+  ])('the full motion component is refused in %s', async (filePath) => {
+    expect(await isRefused(filePath, fullMotion)).toBe(true);
+  });
+
+  it('marketing components animate with m', async () => {
+    expect(await isRefused('src/components/marketing/hero.tsx', lazyMotion)).toBe(false);
+  });
+
+  it.each([
+    'src/components/admin/data-table/data-table.tsx',
+    'src/components/forms/phone-input.tsx',
+    'src/components/admin/shell/app-sidebar.tsx',
+    'src/components/admin/charts/revenue-chart.tsx',
+  ])('%s does not animate at all', async (filePath) => {
+    expect(await isRefused(filePath, lazyMotion)).toBe(true);
+    expect(await isRefused(filePath, "import * as m from 'motion/react-m';")).toBe(true);
+  });
+
+  it('the motion tokens may use the full motion component', async () => {
+    expect(await isRefused('src/lib/motion/variants.ts', fullMotion)).toBe(false);
+  });
+});
