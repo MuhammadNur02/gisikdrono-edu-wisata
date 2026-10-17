@@ -1962,21 +1962,27 @@ Auth hooks (`supabase_auth_admin`): `public.custom_access_token_hook(event jsonb
 
 | Bucket | Visibility | Content | Path | Access rules |
 |---|---|---|---|---|
-| `uploads-quarantine` | private | Raw admin uploads via 5-min signed upload URL | `rw-05/<uuid>`, `rw-08/<uuid>`, `kelurahan/<uuid>` | `api/uploads/finalize` re-encodes images (sharp: strip EXIF, max 1600 px, webp, magic-byte check) or scans PDFs (`pdf-lib` catalog walk rejecting `/OpenAction /AA /JavaScript /JS /Launch /EmbeddedFile /RichMedia` and non-allow-listed `/URI`), moves to `public-media`, deletes the object; hourly purge > 24 h; SVG rejected |
-| `public-media` | public | Gallery, products, packages, hero, articles, activity points, booklets (PDF + `pages/0001.webp`), staff avatars | `rw-05/…`, `rw-08/…`, `kelurahan/…` then `gallery/<uuid>.webp`, `products/<id>/<uuid>.webp`, `packages/<id>/<uuid>.webp`, `articles/<id>/<uuid>.webp`, `hero/<uuid>.webp`, `activity-points/<id>/<uuid>.webp`, `booklets/<id>/booklet.pdf`, `staff/<profile_id>.webp` | anon read; staff write own prefix via `storage_owner_prefix_ok(name)`; booklet PDFs served as attachment |
-| `documents` | private | Tickets, quotations, invoices, receipts, credit notes, certificates, payment/payout proofs, adjustment evidence, exports | `bookings/<id>/…`, `certificates/<booking_id>/…`, `payouts/<batch>/…`, `exports/<profile_id>/…` | No anon/authenticated policies; server-issued signed URLs after authorisation: 600 s tickets/certificates, 900 s invoices, 300 s exports, 60 min WhatsApp document header; never persisted or messaged |
+| `uploads-quarantine` | private, 50 MB, `image/jpeg`, `image/png`, `image/webp`, `application/pdf` | Raw admin uploads via 5-min signed upload URL | `rw-05/<uuid>`, `rw-08/<uuid>`, `kelurahan/<uuid>` | No policy for any API role (the signed URL is the only way in; 0006, decision of 2026-10-17); `api/uploads/sign` holds images to 10 MB; `api/uploads/finalize` reads it with the service role, re-encodes images (sharp: strip EXIF, max 1600 px, webp, magic-byte check) or scans PDFs (`pdf-lib` catalog walk rejecting `/OpenAction /AA /JavaScript /JS /Launch /EmbeddedFile /RichMedia` and non-allow-listed `/URI`), moves to `public-media`, deletes the object; hourly purge > 24 h; SVG rejected |
+| `public-media` | public, 50 MB, `image/webp`, `application/pdf` (what finalize writes) | Gallery, products, packages, hero, articles, activity points, booklets (PDF + `pages/0001.webp`), staff avatars | `rw-05/…`, `rw-08/…`, `kelurahan/…` then `gallery/<uuid>.webp`, `products/<id>/<uuid>.webp`, `packages/<id>/<uuid>.webp`, `articles/<id>/<uuid>.webp`, `hero/<uuid>.webp`, `activity-points/<id>/<uuid>.webp`, `booklets/<id>/booklet.pdf`, `staff/<profile_id>.webp` | anon read; staff at AAL2 write own prefix via `storage_owner_prefix_ok(name)`; booklet PDFs served as attachment |
+| `documents` | private, 20 MB, any type (server-written PDFs, proof photos, CSV/XLSX exports) | Tickets, quotations, invoices, receipts, credit notes, certificates, payment/payout proofs, adjustment evidence, exports | `bookings/<id>/…`, `certificates/<booking_id>/…`, `payouts/<batch>/…`, `exports/<profile_id>/…` | No anon/authenticated policies; server-issued signed URLs after authorisation: 600 s tickets/certificates, 900 s invoices, 300 s exports, 60 min WhatsApp document header; never persisted or messaged |
 
 ```sql
+-- 0006_storage.sql: executable by authenticated only.
 create or replace function public.storage_owner_prefix_ok(p_name text) returns boolean language sql stable as $$
   select public.is_superadmin()
       or (public.is_admin_rw() and split_part(p_name, '/', 1) = 'rw-' || lpad(public.app_rw_id()::text, 2, '0')) $$;
 create policy public_media_read   on storage.objects for select to anon, authenticated using (bucket_id = 'public-media');
-create policy public_media_write  on storage.objects for insert to authenticated with check (bucket_id = 'public-media' and public.storage_owner_prefix_ok(name));
-create policy public_media_update on storage.objects for update to authenticated using (bucket_id = 'public-media' and public.storage_owner_prefix_ok(name));
-create policy public_media_delete on storage.objects for delete to authenticated using (bucket_id = 'public-media' and public.storage_owner_prefix_ok(name));
-create policy quarantine_write    on storage.objects for insert to authenticated with check (bucket_id = 'uploads-quarantine' and public.storage_owner_prefix_ok(name));
--- 'documents': no policies for anon / authenticated.
+create policy public_media_insert on storage.objects for insert to authenticated
+  with check (bucket_id = 'public-media' and (select public.aal2()) and public.storage_owner_prefix_ok(name));
+create policy public_media_update on storage.objects for update to authenticated
+  using (bucket_id = 'public-media' and (select public.aal2()) and public.storage_owner_prefix_ok(name))
+  with check (bucket_id = 'public-media' and (select public.aal2()) and public.storage_owner_prefix_ok(name));
+create policy public_media_delete on storage.objects for delete to authenticated
+  using (bucket_id = 'public-media' and (select public.aal2()) and public.storage_owner_prefix_ok(name));
+-- 'uploads-quarantine' and 'documents': no policies for anon / authenticated.
 ```
+
+Writes need AAL2 like every staff command (§8.5.2), and an update is checked before and after, so an object never moves into another RW's prefix. The quarantine has no client policy: Security §6.8 and §8.4 keep it to the server-bound signed upload URL and the service-role finalize (decision of 2026-10-17, which settles the quarantine insert policy this section once listed).
 
 ### 8.9 Scheduled jobs (pg_cron; times stored in UTC = WIB - 7)
 

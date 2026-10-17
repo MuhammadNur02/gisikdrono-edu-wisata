@@ -536,8 +536,8 @@ Masking happens server-side; the full value never reaches the client until the r
 
 | Bucket | Policies |
 |---|---|
-| `public-media` | `select` to anon/authenticated; insert/update/delete to authenticated only where `storage_owner_prefix_ok(name)` (first path segment `rw-05/`, `rw-08/`, or superadmin for `kelurahan/`) |
-| `uploads-quarantine` | no client policies; `createSignedUploadUrl` (5 min) with the path bound to `rw-XX/<uuid>` server-side; hourly purge > 24 h |
+| `public-media` | `select` to anon/authenticated; insert/update/delete to authenticated only where `storage_owner_prefix_ok(name)` at AAL2 (an update checked before and after, so nothing moves into another RW's prefix; 0006) (first path segment `rw-05/`, `rw-08/`, or superadmin for `kelurahan/`) |
+| `uploads-quarantine` | 50 MB, JPEG/PNG/WebP/PDF; no client policies (0006, decision of 2026-10-17); `createSignedUploadUrl` (5 min) with the path bound to `rw-XX/<uuid>` server-side; hourly purge > 24 h |
 | `documents` | **no** anon/authenticated policies; server-issued signed URLs only after authorisation: tickets/certificates 600 s, invoices 900 s, exports 300 s, WhatsApp document header 60 min; URLs never persisted or placed in messages; every issuance for invoices/certificates/exports logs `document.signed_url` |
 
 ### 6.9 Isolation tests (AZ-08)
@@ -716,7 +716,7 @@ Vercel: Firewall managed rulesets on; Deployment Protection (Vercel Authenticati
 ### 8.4 Upload pipeline (UPL-01, UPL-02, UPL-05)
 
 1. `POST /api/uploads/sign` → `requireRwAccess(rwId)`; allow-list `image/jpeg|png|webp` ≤ 10 MB or `application/pdf` ≤ 50 MB (booklets); server-generated object path `rw-XX/<uuid>`; `createSignedUploadUrl` on `uploads-quarantine`, 5 min.
-2. Client uploads directly; bucket `file_size_limit` and `allowed_mime_types` mirror the allow-list.
+2. Client uploads directly; the quarantine bucket allows 50 MB and `image/jpeg|png|webp`, `application/pdf` (one size limit per bucket, so the 10 MB image limit lives in step 1); `public-media` takes only what step 3 writes, WebP and PDF (0006).
 3. `POST /api/uploads/finalize` → re-check prefix ownership; download with the service role; verify magic bytes with `file-type` (declared MIME is untrusted); images re-encoded with `sharp` (`rotate()`, strip EXIF/GPS, max 1600 px, WebP + thumbnail) into `public-media`; PDFs parsed with `pdf-lib` (catalog walk after object-stream decoding: reject `/OpenAction`, `/AA`, `/JavaScript`, `/JS`, `/Launch`, `/EmbeddedFile`, `/RichMedia`, and any `/URI` not on the allow-list) **[RT]**, pages rasterised to `pages/0001.webp` for the flipbook, PDF served as attachment; quarantine object deleted; failures emit `upload_rejected`.
 4. `image/svg+xml` is rejected everywhere; users never upload PDFs other than booklets (admin only). No AV at launch (admin-only sources, re-encoding destroys payloads); *could*: VirusTotal hash lookup.
 
