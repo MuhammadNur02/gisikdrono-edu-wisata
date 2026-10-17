@@ -175,7 +175,7 @@ src/
 supabase/
   migrations/                  0001_extensions ... 0008_seed, then <YYYYMMDDHHMMSS>_<slug>.sql
   config.toml tests/            pgTAP (rls_*.sql, triggers, append-only, concurrency, enumeration); no seed.sql (pnpm db:seed)
-scripts/                       seed-dev.ts + seed-dev.sql, dev-accounts.ts, local-stack.ts, midtrans-simulate.ts, midtrans-status.ts, wa-send-test.ts, check-client-bundle-secrets.mjs
+scripts/                       seed-dev.ts + seed-dev.sql, dev-accounts.ts, local-stack.ts, midtrans-simulate.ts, midtrans-status.ts, wa-send-test.ts, check-client-bundle-secrets.mjs, check-table-tests.mjs
 tests/                         integration/ (Vitest against supabase start), e2e/ (Playwright), fixtures/
 public/                        icons/, map/denah.svg, fonts/, og/
 ```
@@ -475,7 +475,7 @@ SECURITY DEFINER hygiene: owner `postgres`, `set search_path = ''` with fully-qu
 
 - Bootstrap set `supabase/migrations/0001_extensions ... 0008_seed`; afterwards `<YYYYMMDDHHMMSS>_<slug>.sql`, one concern per file, forward-only (fix with a new migration, never edit an applied one).
 - The bootstrap set follows `docs/PRD.md` §8.1 and §8.4, split by dependency (decision of 2026-10-16): `0003_tables` creates each table with RLS enabled and forced, a revoke for `anon` and `authenticated` and `set_updated_at`, so it denies everything from birth; `0004_functions` adds `log_audit` and append-only triggers with their functions; `0005_policies_grants` adds grants and policies. The rule below and Recipe D apply to the timestamped migrations that come after the bootstrap.
-- A migration that adds a table includes, in the same file: enable + force RLS, revokes, explicit grants, policies, `rw_id smallint` when RW-scoped (`NULL` = kelurahan-level), audit trigger when it holds PII or money, append-only trigger when it is a ledger/log, and is accompanied by a pgTAP test under `supabase/tests/`. CI fails otherwise.
+- A migration that adds a table includes, in the same file: enable + force RLS, revokes, explicit grants, policies, `rw_id smallint` when RW-scoped (`NULL` = kelurahan-level), audit trigger when it holds PII or money, append-only trigger when it is a ledger/log, and is accompanied by a pgTAP test under `supabase/tests/`. CI fails otherwise (`pnpm check:table-tests`, and `rls_enumeration.sql` for RLS, grants and definer hygiene).
 - `supabase/migrations/0008_seed.sql` = reference data for every environment (`rw_units` 5 and 8, every `site_settings` key of `docs/PRD.md` §8.6, the A4 `revenue_share_rules` defaults). A value the kelurahan has not given yet is a placeholder that `internal.placeholder_site_settings()` flags; production's `/api/health` and the go-live checklist fail while any is left. There is no `supabase/seed.sql`, and `[db.seed]` is off in `config.toml`, so `supabase db reset` seeds nothing anywhere (security review of PR #5). The development data comes from `pnpm db:seed` (`scripts/seed-dev.ts` running `scripts/seed-dev.sql` in one transaction), local and CI only: it takes the stack's address from `supabase status` and refuses anything but 127.0.0.1; it marks a fresh database with the Vault secret `environment = 'local'`, then calls `internal.require_local_database()`, which fails closed on a database marked anything else (the marker is read through an allow-list, `local` / `staging` / `production`, case and spaces ignored); it writes the DEV-ONLY staff accounts (superadmin, admin_rw 05, admin_rw 08, with a verified TOTP factor; the password and secret live only in `scripts/dev-accounts.ts` and `README.md`) and the demo content, which therefore never needs an `is_demo` flag, skipping whatever already exists; and it prints the accounts with the current TOTP code.
 - pg_cron schedules are defined only in migrations and call `SECURITY DEFINER` functions with no dynamic SQL.
 
@@ -614,7 +614,7 @@ Full detail lives in `docs/StyleGuide.md`; these are the non-negotiables.
 | Pure logic | Vitest (colocated `*.test.ts`) | `src/lib/pricing`, `src/lib/qr`, `src/lib/links`, `src/lib/midtrans/{verify-signature,map-status}`, `src/server/services/booking-state.ts`, `src/lib/env.ts` matrix, logger redaction (real booking fixture), `escapeLike`, `safeRedirect`, phone/codes utils | 100 % lines on `src/lib/{pricing,qr,links}` and `booking-state.ts`; tamper, wrong kid, expired, wrong version cases |
 | Schemas | Vitest | `src/lib/validations/*.test.ts` | Extra fields rejected (`.strict()`), boundary values |
 | Database | pgTAP (`supabase test db`) | `supabase/tests/` | RLS matrix (anon / admin_rw 05 / admin_rw 08 / superadmin aal1 & aal2 / none), cross-RW selects return 0 rows, `profiles.role` not self-updatable, append-only triggers raise, `check_in_ticket` second call -> `already_used`, concurrent `create_booking` over capacity fails, no table without RLS, no function exposed outside the allow-list |
-| Integration | Vitest against `supabase start` | `tests/integration/` | 20 parallel bookings into capacity 10 -> exactly 10 succeed; combo reserves both legs or none; `expire_stale_bookings` frees quota; late settlement -> re-reserve or `needs_review`; ledger sums equal totals; `rls.jwt.test.ts` with four real JWTs |
+| Integration | Vitest against `supabase start` | `tests/integration/` | 20 parallel bookings into capacity 10 -> exactly 10 succeed; combo reserves both legs or none; `expire_stale_bookings` frees quota; late settlement -> re-reserve or `needs_review`; ledger sums equal totals; `rls-http.test.ts` with four real JWTs (the anon key and the AAL2 tokens of the three development staff accounts) |
 | End-to-end | Playwright | `tests/e2e/` | Booking wizard to Snap redirect; settlement via `scripts/midtrans-simulate.ts`; ticket page + QR; outbox row; scanner `preview` + `commit`; certificate availability; scanner with mocked camera |
 | Security smoke | Playwright on preview | `tests/e2e/security.spec.ts` | Headers/CSP; `/dashboard` unauthenticated -> `/login`; admin_rw 05 opening RW 08 resource -> 403; webhooks/jobs without credentials -> 401/403; cross-origin Server Action -> 403; `.svg` upload rejected; XSS canary article renders as text; `/reservasi/<random>` -> 404 |
 
@@ -628,7 +628,7 @@ ESLint flat config (`next/core-web-vitals`, `typescript-eslint` strict-type-chec
 
 | Job | Runs | Required on `main` |
 |---|---|---|
-| `check` | `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm db:types:check` | yes |
+| `check` | `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm check:table-tests`, `pnpm db:types:check` | yes |
 | `db` | `supabase start`, apply migrations, `pnpm db:test`, `pnpm test:integration` | yes |
 | `security` | semgrep, gitleaks, `pnpm audit`, `pnpm build` + `pnpm check:secrets` | yes |
 | `e2e` | Playwright against the Vercel preview (staging Supabase + Midtrans sandbox) | on PRs touching `booking\|payment\|qr\|scanner`, `supabase/migrations/**`, `src/server/services/**` or `src/lib/{pricing,qr,links,midtrans}/**` |
@@ -676,9 +676,9 @@ PRD requirement cited; migration + RLS + pgTAP merged; types regenerated; valida
 | `pnpm typecheck` | `tsc --noEmit` (strict, `noUncheckedIndexedAccess`) |
 | `pnpm test` / `test:watch` | Vitest unit suite / watch mode |
 | `pnpm test:integration` | Vitest integration suite against `supabase start` |
-| `pnpm test:rls` | RLS isolation subset: pgTAP `rls_*.sql` + `tests/integration/rls.jwt.test.ts` |
+| `pnpm test:rls` | RLS isolation subset: pgTAP `rls_*.sql` + `tests/integration/rls-http.test.ts` |
 | `pnpm e2e` / `e2e:ui` | Playwright headless / UI mode |
-| `pnpm check` | `lint` + `typecheck` + `test` + `db:types:check` (run before every push) |
+| `pnpm check` | `lint` + `typecheck` + `test` + `check:table-tests` + `db:types:check` (run before every push) |
 | `pnpm db:start` / `db:stop` / `db:status` | Supabase CLI local stack |
 | `pnpm db:reset` | `supabase db reset` + `db:seed` + `db:types` |
 | `pnpm db:migrate:new <slug>` | Create an empty timestamped migration |
@@ -693,6 +693,7 @@ PRD requirement cited; migration + RLS + pgTAP merged; types regenerated; valida
 | `pnpm wa:send-test -- --to +62... --template <name>` | Send a WhatsApp template to a test number |
 | `pnpm email:preview` | React Email dev server |
 | `pnpm check:secrets` | Scan `.next/static` for server key / service-role fingerprints after build |
+| `pnpm check:table-tests` | `scripts/check-table-tests.mjs`: fails when a migration creates a table that no `supabase/tests/*.sql` file names |
 | `pnpm shadcn add <component>` | Add a shadcn primitive into `src/components/ui` |
 | `pnpm analyze` | Bundle analyzer against the first-load JS budgets |
 
