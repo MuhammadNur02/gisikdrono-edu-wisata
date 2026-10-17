@@ -20,4 +20,15 @@ export const copy = {
   validation: {
     freeText: 'Tulis tanpa tautan, alamat situs, email, atau nomor telepon, ya.',
   },
+  // Labels the base components read out to screen readers and show on their own controls.
+  ui: {
+    close: 'Tutup',
+    loading: 'Sedang diproses',
+    previousSlide: 'Slide sebelumnya',
+    nextSlide: 'Slide berikutnya',
+    commandTitle: 'Cari menu',
+    commandDescription: 'Ketik nama menu atau tindakan yang Anda cari.',
+    commandPlaceholder: 'Cari menu atau tindakan...',
+    commandEmpty: 'Tidak ada yang cocok.',
+  },
 };
