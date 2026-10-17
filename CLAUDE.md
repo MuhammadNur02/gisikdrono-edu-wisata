@@ -53,12 +53,14 @@ The platform is operated by a small municipal team: one Superadmin Kelurahan and
 |---|---|---|
 | Runtime | Node 22 LTS, pnpm 10 (`--frozen-lockfile`) | `.npmrc`: `ignore-scripts=true`, `min-release-age=7` (npm, days); `pnpm-workspace.yaml`: `onlyBuiltDependencies: [sharp]`, `minimumReleaseAge: 10080` (pnpm, 7 days in minutes) |
 | Framework | Next.js 15 App Router, React 19, TypeScript 5 `strict` + `noUncheckedIndexedAccess` | Path alias `@/*` -> `src/*` |
-| Styling | Tailwind CSS v4 (tokens as CSS variables consumed via `@theme inline`), shadcn/ui `new-york`, `tw-animate-css` | Tokens in `src/styles/globals.css` |
+| Styling | Tailwind CSS v4 (tokens as CSS variables consumed via `@theme inline`), shadcn/ui `new-york`, `tw-animate-css`, `@tailwindcss/typography` (`prose prose-slate` for articles and Markdown descriptions) | Tokens in `src/styles/globals.css` |
+| UI primitives | `shadcn` CLI (dev) generating `src/components/ui` on `radix-ui`, `vaul` (drawer), `cmdk` (command), `embla-carousel-react`, `react-day-picker` (calendar), `sonner` (toasts), `next-themes`; `class-variance-authority` for variants, `clsx` + `tailwind-merge` behind `cn()`, `lucide-react` icons | `cn()` is `src/lib/utils/cn.ts` (it knows the type-scale steps); never the `cn` npm package the shadcn CLI may offer |
 | Motion | `motion` package (`import { motion } from 'motion/react'`) | `MotionConfig reducedMotion="user"` + `LazyMotion` |
 | Data | Supabase: Postgres + RLS, Auth (staff only, TOTP), Storage; `@supabase/supabase-js` v2 + `@supabase/ssr` | Region `ap-southeast-1`; separate `staging` and `production` projects |
 | Forms & validation | `zod` (`.strict()` schemas), `react-hook-form` + `@hookform/resolvers` | Schemas shared client/server in `src/lib/validations` |
 | Env validation | `@t3-oss/env-nextjs` + `zod` | `src/lib/env.ts` (`serverEnv`, server-only) extends `src/lib/public-env.ts` (`publicEnv`, `NEXT_PUBLIC_*` only); see §7.7 |
 | Tables, charts, URL state | `@tanstack/react-table`, Recharts via shadcn Chart, `nuqs` | Dashboard only |
+| Long lists | `@tanstack/react-virtual` | `ParticipantsEditor` (up to `booking.max_pax` rows, docs/StyleGuide.md §5.6) |
 | Dates | `date-fns` + `@date-fns/tz`, locale `id`, `APP_TZ = 'Asia/Jakarta'` | DB `timestamptz`; visit dates `date` |
 | Payments | Midtrans Snap, **redirect mode**, thin typed fetch wrapper in `src/lib/midtrans/client.ts` (no SDK) | QRIS + Virtual Account only |
 | Messaging | Meta WhatsApp Business Cloud API (Graph v21+), Resend + React Email | Outbox table `notifications` |
@@ -146,7 +148,7 @@ src/
     auth/{callback,signout}/   route handlers
     sitemap.ts robots.ts manifest.ts opengraph-image.tsx layout.tsx not-found.tsx error.tsx global-error.tsx
   components/
-    ui/                        shadcn primitives (generated; theme-level edits only)
+    ui/                        shadcn primitives (generated; theme-level edits only) + thin compositions (ResponsiveDialog)
     layout/ marketing/ map/ gallery/ booklet/ packages/ products/ articles/ reviews/
     booking/ ticket/ certificates/ seo/ forms/ providers/
     admin/{shell,kpi,data-table,scanner,charts,status,calendar}/
@@ -185,7 +187,7 @@ public/                        icons/, map/denah.svg, fonts/, og/
 | Folder | Put here | Never put here |
 |---|---|---|
 | `src/app` | Route files, `layout.tsx`, `loading.tsx`, `error.tsx`, `generateMetadata`, route handlers | Business logic, SQL, pricing, signing, direct table writes, `'use client'` on `page.tsx` |
-| `src/components/ui` | shadcn-generated primitives | Hand-written components, domain logic, data fetching |
+| `src/components/ui` | shadcn-generated primitives (theme-level edits only) and thin compositions of them that hold no domain logic, such as `ResponsiveDialog` (Dialog >= md, Drawer < md) (decision of 2026-10-17) | Domain components (they belong in the domain folders), domain logic, data fetching |
 | `src/components/*` | Presentational and island components; props are serialisable (ISO strings, not `Date`) | Imports of `src/server/**`, `src/lib/supabase/admin`, `server-only` modules |
 | `src/lib/queries` | Public cached reads wrapped in `unstable_cache` with tags from `tags.ts`, through the session-less anon client `src/lib/supabase/anon.ts` only (ESLint) | Session-bound or service-role queries, `next/headers` (never cache those) |
 | `src/lib/pricing`, `src/lib/qr`, `src/lib/links` | Pure functions with 100 % line coverage | Side effects, I/O, React |
@@ -206,7 +208,7 @@ public/                        icons/, map/denah.svg, fonts/, og/
 | Thing | Convention | Example |
 |---|---|---|
 | Files | kebab-case | `session-picker.tsx`, `booking-service.ts` |
-| Components | PascalCase, one default export per file | `SessionPicker` |
+| Components | PascalCase, named exports (`export function SessionPicker`); default exports only where Next.js requires them: route files (`page`, `layout`, `template`, `loading`, `error`, `not-found`, `default`, `route`) and metadata files (`sitemap`, `robots`, `manifest`, `opengraph-image`) (decision of 2026-10-17) | `SessionPicker` |
 | Hooks | `use-*.ts`, `useX` | `use-scanner.ts` |
 | Server Actions | `<verb><Noun>Action` | `createBookingAction` |
 | Services | `src/server/services/<domain>-service.ts` | `payment-service.ts` |

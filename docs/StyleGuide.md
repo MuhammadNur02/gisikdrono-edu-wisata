@@ -365,7 +365,7 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
 | `rounded-xl` / `rounded-2xl` / `rounded-full` | `--radius-xl` / `--radius-2xl` | surfaces / modals / badges |
 | `font-display` / `font-sans` | `--font-display` / `--font-sans` | headings / body |
 
-shadcn `components.json`: `"style": "new-york"`, `"tailwind": { "css": "src/styles/globals.css", "baseColor": "slate", "cssVariables": true }`, aliases `@/components`, `@/components/ui`, `@/lib/utils/cn` (utils), `@/lib`, `@/hooks`. `cn()` lives in `src/lib/utils/cn.ts` and is imported from that path; there is no barrel `src/lib/utils/index.ts`. Generated primitives in `src/components/ui` receive theme-level edits only; product behaviour is composed in domain folders.
+shadcn `components.json`: `"style": "new-york"`, `"tailwind": { "css": "src/styles/globals.css", "baseColor": "slate", "cssVariables": true }`, aliases `@/components`, `@/components/ui`, `@/lib/utils/cn` (utils), `@/lib`, `@/hooks`. `cn()` lives in `src/lib/utils/cn.ts` and is imported from that path; there is no barrel `src/lib/utils/index.ts`. Generated primitives in `src/components/ui` receive theme-level edits only; thin compositions of them without domain logic, such as `ResponsiveDialog`, live there too (CLAUDE.md §3.2); product behaviour is composed in domain folders.
 
 ### 2.5 Contrast notes (WCAG 2.1)
 
@@ -562,7 +562,7 @@ Don't nest cards; don't put more than one primary action in a card; don't use `g
 
 ### 5.5 Tabs
 
-Public: underline style, `TabsList` transparent with `border-b border-border`, trigger `text-body-sm text-muted-foreground data-[state=active]:text-foreground`, indicator `m.div layoutId="tab-indicator"` (`h-0.5 bg-primary`, 200 ms). Admin filters: pill style, `bg-muted rounded-xl p-1`, active `bg-background shadow-sm`. Tabs reflect URL state through `nuqs` (`?tab=`) so they are shareable; keyboard arrow navigation comes from Radix. Sizes: one height (`h-10` trigger); states: `active`, `hover`, `focus-visible`, `disabled`. Do: ≤ 5 triggers, label every tab with a noun (`Deskripsi`, `Jadwal`, `Ulasan`). Don't: use tabs for sequential steps (that is `BookingStepper`), hide the primary action inside a non-default tab, animate content height.
+Public: underline style, `TabsList` transparent with `border-b border-border`, trigger `text-body-sm text-muted-foreground data-[state=active]:text-foreground`, indicator a 2 px `bg-primary` underline on the active trigger (an `after:` pseudo-element) that fades in with CSS over 200 ms (`after:transition-opacity after:duration-200`). It does not slide: a sliding `layoutId` indicator needs Motion's `domMax` features, and §7.1 loads only `domAnimation` (decision of 2026-10-17). Admin filters: pill style, `bg-muted rounded-xl p-1`, active `bg-background shadow-sm`. Tabs reflect URL state through `nuqs` (`?tab=`) so they are shareable; keyboard arrow navigation comes from Radix. Sizes: one height (`h-10` trigger, `min-h-11` below `md` for the touch target); states: `active`, `hover`, `focus-visible`, `disabled`. Do: ≤ 5 triggers, label every tab with a noun (`Deskripsi`, `Jadwal`, `Ulasan`). Don't: use tabs for sequential steps (that is `BookingStepper`), hide the primary action inside a non-default tab, animate content height.
 
 ```tsx
 const [tab, setTab] = useQueryState('tab', parseAsStringLiteral(['deskripsi', 'jadwal', 'ulasan']).withDefault('deskripsi'));
@@ -574,7 +574,7 @@ const [tab, setTab] = useQueryState('tab', parseAsStringLiteral(['deskripsi', 'j
 
 ### 5.6 Inputs (`src/components/forms/*`)
 
-Base: h-10 `rounded-xl border border-input bg-background px-3 text-body-sm`, placeholder `text-muted-foreground`, focus ring, `aria-invalid` + `border-destructive` on error, helper `text-caption text-muted-foreground`, error `text-caption text-destructive` linked with `aria-describedby`. Labels `text-body-sm font-medium`, required marker `*` with sr-only `wajib`. All forms use shadcn `Form` + react-hook-form + zod schemas from `src/lib/validations`; every public form includes an invisible Turnstile widget before the submit button.
+Base: h-10 (h-11 below `md`) `rounded-xl border border-input bg-background px-3`, text `text-base` (16 px) below `md` and `text-body-sm` from `md`, because iOS Safari zooms the page into any field set below 16 px (decision of 2026-10-17); placeholder `text-muted-foreground`, focus ring, `aria-invalid` + `border-destructive` on error, helper `text-caption text-muted-foreground`, error `text-caption text-destructive` linked with `aria-describedby`. Labels `text-body-sm font-medium`, required marker `*` with sr-only `wajib`. All forms use shadcn `Form` + react-hook-form + zod schemas from `src/lib/validations`; every public form includes an invisible Turnstile widget before the submit button.
 
 | Component | Anatomy and rules |
 |---|---|
@@ -903,7 +903,7 @@ export function MotionProvider({ children }: { children: React.ReactNode }) {
 | `duration.long` | 500 ms | hero secondary elements, dialog enter |
 | `duration.max` | 700 ms | flipbook page, map zoom-to-hotspot; nothing exceeds this |
 | `ease.outExpo` | `[0.16, 1, 0.3, 1]` | entrances |
-| `ease.inOut` | `[0.65, 0, 0.35, 1]` | layout moves, tab indicator |
+| `ease.inOut` | `[0.65, 0, 0.35, 1]` | layout moves |
 | `spring.soft` | `{ type: 'spring', stiffness: 300, damping: 30 }` | drawers, sheets, dialogs |
 | `spring.snappy` | `{ type: 'spring', stiffness: 400, damping: 25 }` | hover lift, hotspot scale |
 | stagger | `staggerChildren: 0.06`, `delayChildren: 0.1`, cap 8 items | card grids, feature lists |
@@ -953,7 +953,7 @@ export const staggerContainer = (count: number): Variants => ({
 
 | Allowed | Banned |
 |---|---|
-| Section reveals (`whileInView`, once), card hover lift, dialog/drawer/sheet enter–exit through `AnimatePresence`, tab indicator `layoutId`, KPI count-up once on mount, `ScanResultSheet`, toasts (sonner built-in), WhatsAppFab entrance, hotspot focus scale, hero secondary elements | DataTable rows (no enter/exit/reorder; sorting is instant), form fields and validation messages (CSS `transition-colors` only), sidebar nav (CSS only), Recharts in admin (`isAnimationActive={false}`), flipbook internals (library owns it), the LCP element (hero H1 and first image), height-auto animations above the fold, anything on `/dashboard/scanner` except the result sheet, skeletons (pulse only), carousels beyond embla's own transform |
+| Section reveals (`whileInView`, once), card hover lift, dialog/drawer/sheet enter–exit through `AnimatePresence`, KPI count-up once on mount, `ScanResultSheet`, toasts (sonner built-in), WhatsAppFab entrance, hotspot focus scale, hero secondary elements | DataTable rows (no enter/exit/reorder; sorting is instant), form fields and validation messages (CSS `transition-colors` only), sidebar nav (CSS only), the tab indicator (a CSS fade, §5.5), Recharts in admin (`isAnimationActive={false}`), flipbook internals (library owns it), the LCP element (hero H1 and first image), height-auto animations above the fold, anything on `/dashboard/scanner` except the result sheet, skeletons (pulse only), carousels beyond embla's own transform |
 
 ### 7.4 Reduced motion
 

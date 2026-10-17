@@ -48,13 +48,38 @@ const anonClientBan = {
   message: 'The session-less anon client serves src/lib/queries only (CLAUDE.md §6.1).',
 };
 
+// docs/StyleGuide.md §7.1: LazyMotion runs in strict mode, so components animate with `m` and the full
+// `motion` component (the whole bundle) is reserved for src/lib/motion.
+const fullMotionBan = {
+  name: 'motion/react',
+  importNames: ['motion'],
+  message: 'Animate with m from motion/react; LazyMotion is strict (docs/StyleGuide.md §7.1).',
+};
+
+// docs/StyleGuide.md §7.3: tables, forms, the sidebar and charts never animate (CSS transitions only).
+const noMotionMessage =
+  'Tables, forms, the sidebar and charts do not animate; use CSS transition-colors (docs/StyleGuide.md §7.3).';
+const stillSurfaceFiles = [
+  'src/components/admin/data-table/**',
+  'src/components/forms/**',
+  'src/components/admin/shell/*sidebar*',
+  'src/components/admin/charts/**',
+];
+const stillSurfaceBans = [
+  { name: 'motion/react', importNames: ['m', 'motion'], message: noMotionMessage },
+  { name: 'motion/react-m', message: noMotionMessage },
+];
+
 // The public site reads as a visitor does, through src/lib/queries and the session-less anon client, so a
 // signed-in staff member sees exactly the site a visitor sees and every page can be cached for everyone.
 const publicSiteReadMessage =
   'Public pages read through @/lib/queries, which uses the session-less anon client (CLAUDE.md §3.2, §6.1).';
 
 const publicPageBans = {
-  paths: [{ name: 'next/headers', importNames: ['cookies'], message: publicSiteReadMessage }],
+  paths: [
+    { name: 'next/headers', importNames: ['cookies'], message: publicSiteReadMessage },
+    fullMotionBan,
+  ],
   patterns: [
     { group: ['@/lib/supabase/*', '**/supabase/*', '@supabase/*'], message: publicSiteReadMessage },
     { group: ['@/server/*', '@/server/**'], message: publicSiteReadMessage },
@@ -199,7 +224,10 @@ export default defineConfig([
           alphabetize: { order: 'asc', caseInsensitive: true },
         },
       ],
-      'no-restricted-imports': ['error', { patterns: [serviceRoleClientBan, anonClientBan] }],
+      'no-restricted-imports': [
+        'error',
+        { paths: [fullMotionBan], patterns: [serviceRoleClientBan, anonClientBan] },
+      ],
     },
   },
   {
@@ -207,8 +235,28 @@ export default defineConfig([
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [serviceRoleClientBan, serverLayerBan, anonClientBan] },
+        { paths: [fullMotionBan], patterns: [serviceRoleClientBan, serverLayerBan, anonClientBan] },
       ],
+    },
+  },
+  {
+    files: stillSurfaceFiles,
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: stillSurfaceBans,
+          patterns: [serviceRoleClientBan, serverLayerBan, anonClientBan],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/lib/motion/**'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [serviceRoleClientBan, anonClientBan] }],
+      // Motion tokens are the one place durations, easings and distances are written as numbers.
+      '@typescript-eslint/no-magic-numbers': 'off',
     },
   },
   {
@@ -217,7 +265,7 @@ export default defineConfig([
       'no-restricted-imports': [
         'error',
         {
-          paths: [createBrowserClientBan],
+          paths: [createBrowserClientBan, fullMotionBan],
           patterns: [serviceRoleClientBan, browserClientBan, anonClientBan],
         },
       ],

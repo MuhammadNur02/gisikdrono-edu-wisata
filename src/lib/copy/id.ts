@@ -20,4 +20,56 @@ export const copy = {
   validation: {
     freeText: 'Tulis tanpa tautan, alamat situs, email, atau nomor telepon, ya.',
   },
+  // Labels the base components read out to screen readers and show on their own controls.
+  ui: {
+    close: 'Tutup',
+    loading: 'Sedang diproses',
+    previousSlide: 'Slide sebelumnya',
+    nextSlide: 'Slide berikutnya',
+    commandTitle: 'Cari menu',
+    commandDescription: 'Ketik nama menu atau tindakan yang Anda cari.',
+    commandPlaceholder: 'Cari menu atau tindakan...',
+    commandEmpty: 'Tidak ada yang cocok.',
+  },
+  forms: {
+    required: 'wajib',
+    phone: { placeholder: '812-3456-7890' },
+    stepper: { decrease: 'Kurangi', increase: 'Tambah' },
+    datePicker: {
+      placeholder: 'Pilih tanggal kunjungan',
+      busyLegend: 'Hampir penuh',
+    },
+    session: {
+      remaining: (remaining: number, capacity: number) =>
+        `Sisa ${String(remaining)} dari ${String(capacity)}`,
+      full: 'Penuh',
+      tooSmall: 'Kuota tidak cukup untuk rombongan Anda',
+    },
+    participants: {
+      name: 'Nama',
+      group: 'Kelas/Kelompok',
+      nameOf: (row: number) => `Nama peserta ${String(row)}`,
+      groupOf: (row: number) => `Kelas atau kelompok peserta ${String(row)}`,
+      remove: (row: number) => `Hapus peserta ${String(row)}`,
+      add: 'Tambah peserta',
+      count: (count: number, max: number) => `${String(count)} dari ${String(max)} peserta`,
+      pasteHint: 'Bisa langsung tempel dari spreadsheet: kolom nama, lalu kelas atau kelompok.',
+      duplicateRow: 'Nama ini sama dengan baris lain',
+      duplicates: (count: number) =>
+        `${String(count)} nama tercatat lebih dari sekali. Cek lagi, ya.`,
+      truncated: 'Sebagian baris tidak ditambahkan karena melebihi jumlah peserta.',
+    },
+    image: {
+      choose: 'Tarik foto ke sini atau pilih file',
+      hint: 'JPG, PNG, atau WebP, maksimal 10 MB.',
+      svg: 'Format SVG tidak didukung',
+      type: 'Format file ini tidak didukung. Gunakan JPG, PNG, atau WebP.',
+      size: 'Ukuran file melebihi 10 MB.',
+      failed: 'Foto gagal diunggah. Coba lagi sebentar lagi, ya.',
+      uploading: 'Mengunggah foto...',
+      remove: 'Hapus foto',
+      altLabel: 'Deskripsi foto',
+      altHint: 'Jelaskan isi foto untuk pengguna pembaca layar (3–200 karakter).',
+    },
+  },
 };
