@@ -147,6 +147,9 @@ importers:
       react-email:
         specifier: ^6.11.1
         version: 6.11.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      schema-dts:
+        specifier: ^2.1.0
+        version: 2.1.0
       shadcn:
         specifier: ^4.21.4
         version: 4.21.4
@@ -4537,6 +4540,13 @@ packages:
 
   scheduler@0.28.0:
     resolution: {integrity: sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw==}
+
+  schema-dts-lib@1.1.0:
+    resolution: {integrity: sha512-Nx00FDPHDimSENMznVpADeYUJDsqlMiO9wcs2S+giggNTm5+ruNkM4m9z9qCk6xUJT+ThDM3NxxpwfHfFk1G+Q==}
+    engines: {node: '>=14.0.0'}
+
+  schema-dts@2.1.0:
+    resolution: {integrity: sha512-Y/NvOvuJUZwrm+EmNqJF3M+bRufERJs1h5GJPLilUuK5D5b53ttU+XZgIjEFaAVRToh+ib+cQawFmxKC5Jt9ow==}
 
   selderee@0.11.0:
     resolution: {integrity: sha512-5TF+l7p4+OsnP8BCCvSyZiSPc4x4//p5uPwK8TCnVPJYRmU2aYKMpOXvw8zM5a5JvuuCGN1jmsMwuU2W02ukfA==}
@@ -9546,6 +9556,12 @@ snapshots:
   safer-buffer@2.1.2: {}
 
   scheduler@0.28.0: {}
+
+  schema-dts-lib@1.1.0: {}
+
+  schema-dts@2.1.0:
+    dependencies:
+      schema-dts-lib: 1.1.0
 
   selderee@0.11.0:
     dependencies:

@@ -15,6 +15,7 @@
   --primary: 221.2 83.2% 53.3%;
   --primary-foreground: 0 0% 100%;
   --primary-hover: 224.3 76.3% 48%;
+  --primary-text: 221.2 83.2% 53.3%;
   --secondary: 213.8 100% 96.9%;
   --secondary-foreground: 226.2 70.7% 40.2%;
   --muted: 210 40% 96.1%;
@@ -83,6 +84,7 @@
   --primary: 221.2 83.2% 53.3%;
   --primary-foreground: 0 0% 100%;
   --primary-hover: 217.2 91.2% 59.8%;
+  --primary-text: 213.1 93.9% 67.8%;
   --secondary: 217.2 32.6% 17.5%;
   --secondary-foreground: 210 40% 98%;
   --muted: 217.2 32.6% 17.5%;
@@ -148,6 +150,7 @@
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
   --color-primary-hover: hsl(var(--primary-hover));
+  --color-primary-text: hsl(var(--primary-text));
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));
   --color-muted: hsl(var(--muted));

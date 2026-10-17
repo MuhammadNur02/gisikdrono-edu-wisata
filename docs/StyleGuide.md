@@ -65,7 +65,7 @@ The site has to look like Gisikdrono, not like a template. These rules hold for 
 | G6 | No generic marketing phrases | Avoid lines such as "temukan keajaiban", "pengalaman tak terlupakan", "solusi terbaik" or "jelajahi dunia". Copy names the place, the activity, the people and the numbers, with the numbers taken from the CMS: `Pilah sampah di Bank Sampah RW 05, {durasi} menit, untuk {min}–{maks} siswa`. |
 | G7 | No three identical cards as the default layout | Marketing sections follow their content: photo and text alternating, a mosaic, a timeline. Collections (package, product and article lists) keep the card grid of §4.2. |
 | G8 | Every activity photo says where or what | A caption (`galleries.caption`, or the activity or place name) sits under or over every photo of an activity; `alt_text` alone is not enough. |
-| G9 | At most one primary call to action per screen | One `Button variant="default"` in view at a time (§5.1); everything else is `secondary`, `outline` or a link. |
+| G9 | At most one primary call to action per screen | One `Button variant="default"` in view at a time (§5.1); everything else is `secondary`, `outline` or a link. The header's `Pesan Kunjungan` is therefore `secondary`, so the page's own CTA stays the only primary (decision of 2026-10-17). |
 
 ## 2. Design tokens
 
@@ -84,6 +84,7 @@ Tokens live in `src/styles/globals.css` as HSL triplets on `:root` and `.dark`, 
 | `--primary` | #2563EB | `221.2 83.2% 53.3%` | #2563EB | `221.2 83.2% 53.3%` |
 | `--primary-foreground` | #FFFFFF | `0 0% 100%` | #FFFFFF | `0 0% 100%` |
 | `--primary-hover` (custom) | #1D4ED8 | `224.3 76.3% 48%` | #3B82F6 | `217.2 91.2% 59.8%` |
+| `--primary-text` (custom) | #2563EB | `221.2 83.2% 53.3%` | #60A5FA | `213.1 93.9% 67.8%` |
 | `--secondary` | #EFF6FF | `213.8 100% 96.9%` | #1E293B | `217.2 32.6% 17.5%` |
 | `--secondary-foreground` | #1E40AF | `226.2 70.7% 40.2%` | #F8FAFC | `210 40% 98%` |
 | `--muted` | #F1F5F9 | `210 40% 96.1%` | #1E293B | `217.2 32.6% 17.5%` |
@@ -163,6 +164,7 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
   --primary: 221.2 83.2% 53.3%;
   --primary-foreground: 0 0% 100%;
   --primary-hover: 224.3 76.3% 48%;
+  --primary-text: 221.2 83.2% 53.3%;
   --secondary: 213.8 100% 96.9%;
   --secondary-foreground: 226.2 70.7% 40.2%;
   --muted: 210 40% 96.1%;
@@ -231,6 +233,7 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
   --primary: 221.2 83.2% 53.3%;
   --primary-foreground: 0 0% 100%;
   --primary-hover: 217.2 91.2% 59.8%;
+  --primary-text: 213.1 93.9% 67.8%;
   --secondary: 217.2 32.6% 17.5%;
   --secondary-foreground: 210 40% 98%;
   --muted: 217.2 32.6% 17.5%;
@@ -295,6 +298,7 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
   --color-primary-hover: hsl(var(--primary-hover));
+  --color-primary-text: hsl(var(--primary-text));
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));
   --color-muted: hsl(var(--muted));
@@ -397,6 +401,7 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
 | `bg-primary text-primary-foreground hover:bg-primary-hover` | `--primary*` | primary buttons, active nav |
 | `bg-secondary text-secondary-foreground` | `--secondary*` | secondary buttons, icon tiles |
 | `text-muted-foreground` | `--muted-foreground` | helper text, meta rows |
+| `text-primary-text` | `--primary-text` | blue text: overlines, eyebrows, inline links, the `link` button (never `text-primary`, which fails on dark surfaces) |
 | `ring-ring ring-offset-background` | `--ring` | focus ring |
 | `bg-success-soft text-success-soft-foreground` (and warning/info/danger/neutral) | semantic soft pair | badges, status cells |
 | `bg-sidebar text-sidebar-foreground` | `--sidebar-*` | shadcn `Sidebar` |
@@ -414,7 +419,9 @@ shadcn `components.json`: `"style": "new-york"`, `"tailwind": { "css": "src/styl
 |---|---|---|
 | `--foreground` #0F172A on #FFFFFF | 16.9:1 | AAA body text |
 | `--primary-foreground` #FFFFFF on `--primary` #2563EB | 5.17:1 | AA text, both modes |
-| `--primary` #2563EB on `--background` #09090B (dark) | 3.8:1 | AA for UI components and large text only; never body text |
+| `--primary` #2563EB on `--background` #09090B (dark) | 3.85:1 | AA for UI components and large text only; never body text, so blue text uses `--primary-text` |
+| `--primary-text` on `--background` / `--card` / `--muted` (light: #2563EB) | 5.17 / 5.17 / 4.72 (4.75 on `--brand-ice`) | AA text; same blue as `--primary` |
+| `--primary-text` on `--background` / `--card` / `--muted` (dark: #60A5FA) | 7.83 / 7.02 / 5.75 | AA text (decision of 2026-10-17: overlines and links in dark mode) |
 | `--primary-hover` #3B82F6 with white (dark) | 3.7:1 | transient hover state only |
 | `--muted-foreground` #71717A on #FFFFFF | 4.8:1 | AA; keep ≥ 12 px |
 | `--muted-foreground` #94A3B8 on #09090B (dark) | 7.8:1 | AA |
@@ -580,7 +587,7 @@ Blur budget: at most three blurred layers in any viewport. Dark mode replaces sh
 | `secondary` | `bg-secondary text-secondary-foreground hover:bg-secondary/80` | Detail, Lihat Paket (next to a primary) |
 | `outline` | `border border-border bg-background hover:bg-accent` | filters, Batal, secondary hero CTA |
 | `ghost` | `hover:bg-accent` | row actions, toolbar |
-| `link` | `text-primary underline-offset-4 hover:underline` | inline navigation |
+| `link` | `text-primary-text underline-offset-4 hover:underline` | inline navigation |
 | `destructive` | `bg-destructive text-destructive-foreground` | Batalkan reservasi, Hapus (always behind AlertDialog) |
 | `success` | `bg-success text-success-foreground` | WhatsApp CTA (`Chat WhatsApp`), Konfirmasi Check-in |
 
@@ -756,7 +763,7 @@ One `TicketCard` per `tickets_qr` row: header `Tiket RW 05 · Ecowastreme`, `QrD
 
 ### 5.16 WhatsAppFab (`src/components/layout/whatsapp-fab.tsx`)
 
-Fixed `bottom-6 right-6` (`bottom-20` when a sticky mobile CTA is present), 56 px `rounded-full bg-success text-success-foreground shadow-card-hover`, `MessageCircle` icon, `aria-label="Chat WhatsApp kelurahan"`, link `https://wa.me/{NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER}?text=` with a prefilled Indonesian greeting that names the current page. Enters with `scaleIn` after 1 s; hidden on `(booking)` checkout pages and the whole admin area. States: hidden (first second, reduced-motion renders immediately), resting, hover (`shadow-modal`), focus ring. Do: keep it the only fixed element on public pages besides the header. Don't: open a chat widget or collect a phone number on the site itself; the link hands over to WhatsApp.
+Fixed `bottom-6 right-6` (`bottom-20` when a sticky mobile CTA is present), 56 px `rounded-full bg-success text-success-foreground shadow-card-hover`, `MessageCircle` icon, `aria-label="Chat WhatsApp kelurahan"`, link `https://wa.me/{NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER}?text=` with a prefilled Indonesian greeting that names the current page. Enters with `scaleIn` after 1 s; hidden on `(booking)` checkout pages and the whole admin area. States: hidden (first second, reduced-motion renders immediately), resting, hover (`shadow-modal`), focus ring. The footer ends with `pb-24` (96 px, more than the button's 56 px plus its 24 px offset), so at the bottom of every page the button floats over empty space instead of the legal links (decision of 2026-10-17). Do: keep it the only fixed element on public pages besides the header. Don't: open a chat widget or collect a phone number on the site itself; the link hands over to WhatsApp.
 
 ```tsx
 <WhatsAppFab pageTitle={metadata.title} />  // builds wa.me/{NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER}?text=Halo, saya ingin bertanya tentang {pageTitle}
@@ -1163,7 +1170,7 @@ Code-split with `next/dynamic` (`ssr: false` where DOM-only): Leaflet map, `reac
 
 | Surface | Below `md` | `md` and above |
 |---|---|---|
-| Site header | logo + `Pesan` button + menu Sheet | full nav, sticky blur |
+| Site header | below `xl`: logo + `Pesan` button (`Pesan Kunjungan` from `md`) + menu Sheet | from `xl`: full nav, sticky blur (six links, the wordmark and the button only fit from about 1100 px; decision of 2026-10-17) |
 | Hero | text stacked over the carousel, `text-display-xl` at 2.5 rem | two columns |
 | Package detail | sticky bottom CTA bar (`Pesan Sekarang` + price) above `WhatsAppFab` | sidebar card with price and CTA |
 | Booking wizard | stepper collapsed to `Langkah 2/4`, full-width fields, inline DatePicker | horizontal stepper, Popover DatePicker |

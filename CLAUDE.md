@@ -62,6 +62,7 @@ The platform is operated by a small municipal team: one Superadmin Kelurahan and
 | Tables, charts, URL state | `@tanstack/react-table`, Recharts via shadcn Chart, `nuqs` | Dashboard only |
 | Long lists | `@tanstack/react-virtual` | `ParticipantsEditor` (up to `booking.max_pax` rows, docs/StyleGuide.md §5.6) |
 | Dates | `date-fns` + `@date-fns/tz`, locale `id`, `APP_TZ = 'Asia/Jakarta'` | DB `timestamptz`; visit dates `date` |
+| Structured data | `schema-dts` (types only, dev dependency) | JSON-LD builders in `src/lib/seo/json-ld.ts`, rendered by `src/components/seo/json-ld.tsx` |
 | Payments | Midtrans Snap, **redirect mode**, thin typed fetch wrapper in `src/lib/midtrans/client.ts` (no SDK) | QRIS + Virtual Account only |
 | Messaging | Meta WhatsApp Business Cloud API (Graph v21+), Resend + React Email | Outbox table `notifications` |
 | Documents | `@react-pdf/renderer`, `pdf-lib`, `qrcode`, `exceljs` | Node route handlers only |
@@ -177,7 +178,7 @@ src/
 supabase/
   migrations/                  0001_extensions ... 0008_seed, then <YYYYMMDDHHMMSS>_<slug>.sql
   config.toml tests/            pgTAP (rls_*.sql, triggers, append-only, concurrency, enumeration); no seed.sql (pnpm db:seed)
-scripts/                       seed-dev.ts + seed-dev.sql, dev-accounts.ts, local-stack.ts, midtrans-simulate.ts, midtrans-status.ts, wa-send-test.ts, check-client-bundle-secrets.mjs, check-table-tests.mjs
+scripts/                       seed-dev.ts + seed-dev.sql, dev-accounts.ts, local-stack.ts, midtrans-simulate.ts, midtrans-status.ts, wa-send-test.ts, check-client-bundle-secrets.mjs, check-table-tests.mjs, gen-db-types.mjs
 tests/                         integration/ (Vitest against supabase start), e2e/ (Playwright), fixtures/
 public/                        icons/, map/denah.svg, fonts/, og/
 ```
@@ -467,7 +468,7 @@ SECURITY DEFINER hygiene: owner `postgres`, `set search_path = ''` with fully-qu
 
 ### 6.3 Typed `Database`, queries and services
 
-- `src/db/types.ts` is generated (`pnpm db:types` = `supabase gen types typescript --local > src/db/types.ts`) and committed; CI `db:types:check` fails on drift. Never hand-edit.
+- `src/db/types.ts` is generated (`pnpm db:types` = `scripts/gen-db-types.mjs`, which runs `supabase gen types typescript --local` into a temporary file and replaces `types.ts` only when the command succeeds, so a database timeout never leaves it empty) and committed; CI `db:types:check` fails on drift. Never hand-edit.
 - `src/db/enums.ts` mirrors Postgres enums (source of truth is the migration). `src/db/rpc.ts` holds typed wrappers for `public.*` and `internal.*` functions.
 - `src/lib/queries/<domain>.ts`: public cached reads returning narrowed DTOs (never raw rows with PII). `src/server/services/<domain>-service.ts`: staff and guest orchestration. Staff PII is read through `v_bookings_staff` + `rpc_reveal_booking_contact(booking_id, reason)` (audited, daily cap 50) + `rpc_get_participants(booking_id)`; never via raw `SELECT` on `bookings`.
 - Use supabase-js builder methods with validated values only; `.or()` / `.filter()` with non-literal input are banned; use `escapeLike()` for `ilike`.
@@ -577,7 +578,7 @@ Attempts (`internal.create_payment_attempt` + `attach_snap_token`): at most one 
 ### 7.7 Secrets & env — owner `src/lib/env.ts`
 
 - All env access goes through `src/lib/env.ts` (`serverEnv`, behind `import 'server-only'`) and `src/lib/public-env.ts` (`publicEnv`, `NEXT_PUBLIC_*` only, safe for client components because Next.js inlines those names). `process.env` elsewhere is an ESLint error; the one exception is `next.config.ts`, which runs at build time and reads only the `npm_lifecycle_event` build switch. `NODE_ENV` and `VERCEL_ENV` come from `publicEnv` as shared values.
-- Fail-fast matrix: `VERCEL_ENV=production` <=> `MIDTRANS_IS_PRODUCTION=true` <=> keys prefixed `Mid-server-` / `Mid-client-`; otherwise `SB-` prefixes. Any `NEXT_PUBLIC_` name containing `SECRET|KEY|TOKEN` outside the known public keys fails CI.
+- Fail-fast matrix: `VERCEL_ENV=production` <=> `MIDTRANS_IS_PRODUCTION=true` <=> keys prefixed `Mid-server-` / `Mid-client-`; otherwise `SB-` prefixes. A production build also refuses a sample `NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER` (six zeros in a row, `findPublicEnvProblems` in `src/lib/public-env.ts`). Any `NEXT_PUBLIC_` name containing `SECRET|KEY|TOKEN` outside the known public keys fails CI.
 - `pnpm check:secrets` scans `.next/static` for `Mid-server-`, `service_role`, `MIDTRANS_SERVER_KEY` after build. gitleaks runs pre-commit and in CI.
 - `experimental.taint` + `experimental_taintUniqueValue` on the service key and `CRON_SECRET`. Secrets are never pasted into issues, chats, docs or seed files.
 
@@ -597,7 +598,7 @@ Attempts (`internal.create_payment_attempt` + `attach_snap_token`): at most one 
 
 Full detail lives in `docs/StyleGuide.md`; these are the non-negotiables.
 
-- **Tokens only.** Colours, radii, shadows, spacing and type come from CSS variables in `src/styles/globals.css` (`--primary`, `--background`, `--brand-deep`, `--brand-royal`, `--brand-ice`, the RW accents `--rw05*` / `--rw08*` (RW labels, map hotspots and RW tags only, through `src/config/rw.ts`; never CTAs, statuses or body text, `docs/StyleGuide.md` §2.7), semantic `success|warning|info|danger|neutral` with `-foreground` / `-soft`, `--radius 0.75rem`). No hex values or arbitrary Tailwind values in components.
+- **Tokens only.** Colours, radii, shadows, spacing and type come from CSS variables in `src/styles/globals.css` (`--primary`, `--primary-text` for blue text such as overlines and links, `--background`, `--brand-deep`, `--brand-royal`, `--brand-ice`, the RW accents `--rw05*` / `--rw08*` (RW labels, map hotspots and RW tags only, through `src/config/rw.ts`; never CTAs, statuses or body text, `docs/StyleGuide.md` §2.7), semantic `success|warning|info|danger|neutral` with `-foreground` / `-soft`, `--radius 0.75rem`). No hex values or arbitrary Tailwind values in components.
 - **shadcn primitives first.** Compose from `src/components/ui`; extend via variants (`Button`: `default|secondary|outline|ghost|link|destructive|success`, sizes `sm|default|lg|xl|icon`; `Card`: `base|interactive|glass|feature`). `ResponsiveDialog` = Dialog >= md, Drawer < md. `StatusBadge` maps enum values through `src/config/status.ts`; never hand-colour a status.
 - **Motion tokens.** Use variants from `src/lib/motion/variants.ts` (`fadeIn, fadeInUp, fadeInDown, scaleIn, slideInRight, staggerContainer`) and durations micro 150 / short 200 / base 300 / long 500 / max 700 ms. Never animate tables, forms, the sidebar, charts or the LCP element. Respect `prefers-reduced-motion`.
 - **Dashboard shell.** Sidebar 264/72 px, Topbar, `QuickScannerBar`, `KpiCard` + `Sparkline`, `DataTable` (TanStack + `nuqs`), empty/skeleton/error states per segment. Superadmin sees `RwSwitcher`; admin_rw never does.
@@ -687,7 +688,7 @@ PRD requirement cited; migration + RLS + pgTAP merged; types regenerated; valida
 | `pnpm db:migrate:new <slug>` | Create an empty timestamped migration |
 | `pnpm db:diff <slug>` | `supabase db diff -f` from local schema changes (review before committing) |
 | `pnpm db:push` | `supabase db push --linked` to staging/production; **CI only** |
-| `pnpm db:types` / `db:types:check` | Regenerate `src/db/types.ts` / fail on drift |
+| `pnpm db:types` / `db:types:check` | Regenerate `src/db/types.ts` through `scripts/gen-db-types.mjs` (temporary file, replaced only on success) / fail on drift |
 | `pnpm db:seed` | `tsx scripts/seed-dev.ts`: development accounts and demo content (local only; refuses non-127.0.0.1 and any database not marked local) |
 | `pnpm db:test` | `supabase test db` (all pgTAP suites) |
 | `pnpm midtrans:simulate -- --order <code> --status settlement\|expire\|deny` | Post a correctly signed sandbox notification to the local webhook |

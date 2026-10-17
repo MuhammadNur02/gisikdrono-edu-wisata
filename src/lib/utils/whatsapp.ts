@@ -1,0 +1,20 @@
+import { WHATSAPP_FAB_HIDDEN_PREFIXES } from '@/config/routes';
+import { isPathUnder } from '@/lib/utils/paths';
+
+const WHATSAPP_CHAT_BASE_URL = 'https://wa.me/';
+
+// wa.me wants the number as bare digits: +6281234567890 becomes 6281234567890.
+export function buildWhatsAppChatUrl(phoneE164: string, message: string): string {
+  const digits = phoneE164.replace(/\D/g, '');
+  return `${WHATSAPP_CHAT_BASE_URL}${digits}?text=${encodeURIComponent(message)}`;
+}
+
+// The page title carries the site name after the template's separator; the greeting names the page alone.
+export function pageTopicFromTitle(documentTitle: string, siteName: string): string {
+  const topic = documentTitle.split(' | ')[0]?.trim() ?? '';
+  return topic === '' ? siteName : topic;
+}
+
+export function isWhatsAppFabHidden(pathname: string): boolean {
+  return WHATSAPP_FAB_HIDDEN_PREFIXES.some((prefix) => isPathUnder(pathname, prefix));
+}

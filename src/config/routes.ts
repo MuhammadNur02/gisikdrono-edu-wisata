@@ -12,3 +12,7 @@ export const PRIVATE_ROUTE_PREFIXES = [
   '/auth',
   '/v',
 ] as const;
+
+// The WhatsApp button stays off checkout and the dashboard (docs/StyleGuide.md §5.16): a booking in progress
+// has its own help, and staff have no use for the visitor chat.
+export const WHATSAPP_FAB_HIDDEN_PREFIXES = ['/pesan', '/reservasi', '/dashboard'] as const;
