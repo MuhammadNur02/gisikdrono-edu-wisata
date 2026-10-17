@@ -413,7 +413,7 @@ Priority uses MoSCoW: **M** must, **S** should, **C** could, **W** won't (this r
 | FR-ADMIN-13 | Performance schedules (RW 08 and superadmin): title, type, start/end, venue, recurrence rule, image, bookable package link | M | Nav item hidden for admin_rw 05 |
 | FR-ADMIN-14 | Activity points: name, type, description, image, SVG hotspot id, lat/lng, order, status | M | Hotspot id validated against `public/map/denah.svg` ids list |
 | FR-ADMIN-15 | Pages: RW profile fields (`rw_units` content columns: tagline, description, vision, hero image, contact) | M | Treasury and account columns are not editable here (trigger) |
-| FR-ADMIN-16 | Upload pipeline: `api/uploads/sign` issues a 5-min signed upload URL into `uploads-quarantine/rw-XX/<uuid>`; `api/uploads/finalize` re-encodes images with sharp (strip EXIF, max 1600 px, webp, magic-byte check) or scans PDFs, moves to `public-media`, deletes the quarantine object; SVG rejected; hourly purge > 24 h | M | Staff can only write under their own prefix (`storage_owner_prefix_ok`) |
+| FR-ADMIN-16 | Upload pipeline: `api/uploads/sign` issues a 5-min signed upload URL into `uploads-quarantine/rw-XX/<uuid>`; `api/uploads/finalize` re-encodes images with sharp (strip EXIF, max 1600 px, webp, magic-byte check) or scans PDFs, moves to `public-media`, deletes the quarantine object; SVG rejected; hourly purge > 24 h | M | `api/uploads/sign` binds a staff upload to their own RW's prefix after `requireRwAccess`; staff hold no Storage policy, so finalize is the only writer of `public-media` |
 | FR-ADMIN-17 | Notification history per booking with status, provider id, error and "Kirim ulang" (`request_notification_resend`) | M | Resend creates a new outbox row with `:resend:<n>` suffix; respects `whatsapp_enabled` / `email_enabled` |
 
 #### 6.6.2 Superadmin Kelurahan
@@ -1688,17 +1688,21 @@ create table public.rate_limit_buckets (
   primary key (key, window_start)
 );
 
--- job_heartbeats (0007): each scheduled job's last success and failure, written only by internal.record_job_run
--- (database jobs when they return, application job routes through svc_record_job_run). /api/health reads it.
+-- job_heartbeats (0007): one row per scheduled job, inserted by the migration, with how long it may go without a
+-- success; written only by internal.record_job_run (database jobs when they return, application job routes through
+-- svc_record_job_run) and by internal.call_job / settle_job_response (the pg_net request being followed).
+-- /api/health reads it through svc_job_health(); the service role holds no DML on it.
 create table public.job_heartbeats (
-  job             text primary key check (job in ('expire_stale_bookings','process-notifications','payments-poll',
-                    'anomaly-scan','enqueue_visit_reminders','close_past_bookings','generate_visit_sessions',
-                    'reconcile-payments','purge/retention','purge-storage','prune_rate_limit_buckets',
-                    'prune_operational_tables')),
-  last_success_at timestamptz,
-  last_failure_at timestamptz,
-  last_error_code text check (length(last_error_code) <= 64),
-  updated_at      timestamptz not null default now()
+  job               text primary key,
+  kind              text not null check (kind in ('database', 'application')),
+  max_age           interval not null,
+  watching_since    timestamptz not null default now(),
+  last_success_at   timestamptz,
+  last_failure_at   timestamptz,
+  last_error_code   text check (length(last_error_code) <= 64),
+  last_request_id   bigint,
+  last_requested_at timestamptz,
+  updated_at        timestamptz not null default now()
 );
 ```
 
@@ -1800,7 +1804,7 @@ Legend: S/I/U/D = select/insert/update/delete; "—" = denied; "fn" = only throu
 | audit_logs | — | — | S | yes | insert by triggers / fn |
 | login_attempts | — | — | S | yes | insert by auth hook |
 | rate_limit_buckets | — | — | — | — | `rate_limit_hit` |
-| job_heartbeats | — | — | S | yes | `record_job_run` (database jobs; application job routes through `svc_record_job_run`) |
+| job_heartbeats | — | — | S | yes | `record_job_run` (database jobs; application job routes through `svc_record_job_run`), `call_job` / `settle_job_response` for the pg_net request; no DML for `service_role` |
 
 Public reads are policies `to anon` only: staff read through their own scope, so an RW admin sees no other RW's rows even where they are published. Every grant lists its columns (`0005_policies_grants.sql`), so a column added later stays private until a migration grants it, and a row created through the API carries its creator's own id in `created_by` (`uploaded_by`, `author_id`). A foreign key checks its row past RLS, so a reference an RW admin writes (`visit_sessions.template_id`, `galleries.booking_id`, `performance_schedules.package_id`) is held to their RW by a trigger, which answers a missing row and another RW's row alike.
 
@@ -1967,9 +1971,11 @@ No function is executable by `anon`. Public writes (OTP, bookings, reviews, DSR 
 | `enqueue_notification` | `(p_booking_id uuid, p_template notification_template, p_channel notification_channel, p_params jsonb) returns uuid` | Inserts one outbox row (`dedupe_key = 'booking:<id>:<template>:<channel>'`, `on conflict do nothing`); recipient from `pic_phone` / `pic_email`; a `whatsapp` row for any template except `phone_otp` needs `phone_verified_at`, else skipped (GUEST-08); `params.link_scope` is forced to `view` for `email` rows while `email_verified_at` is NULL (the worker mints the link, never SQL) |
 | `prune_operational_tables` | `() returns void` | `notifications` > 180 d (their `params` emptied after 30 d), `webhook_rejections` > 30 d, `payment_events` > 24 mo (deleted whole; they never hold customer details, see `midtrans_payload_minimise`), `audit_logs` > 24 mo only while `verify_audit_chain()` passes (the id and hash of the last pruned row are kept in the `purge_run` row as the new anchor; a broken chain raises `cron_failed` instead), `security_events` > 12 mo, `login_attempts` > 24 h, `rate_limit_buckets` > 1 d, `ticket_scans` > 24 mo (attendance itself stays in `tickets_qr`); runs under `app.purge = 'on'` so the append-only triggers allow it |
 | `run_scheduled_job` | `(p_job text) returns void` | 0007: runs one database job of §8.9 from a fixed list (no dynamic SQL) and records its heartbeat; a failing job is rolled back, recorded as a failure with its SQLSTATE and left for its next run |
-| `call_job` | `(p_job text) returns bigint` | 0007: posts one application job to its `/api/jobs` route with `jobs_base_url` and `cron_secret` from Vault; without them returns NULL, quietly only where the Vault secret `environment` is `'local'`, as a failed run (`secret_missing`) everywhere else |
-| `record_job_run` | `(p_job text, p_succeeded boolean, p_error_code text) returns void` | 0007: updates `job_heartbeats`; a failure is also a `cron_failed` security event. Reached by the server as `svc_record_job_run` |
-| `environment` | `() returns text` | 0007: the Vault secret `environment` (`local`, `staging`, `production`), NULL when unset, which counts as hosted |
+| `call_job` | `(p_job text) returns bigint` | 0007: settles the job's previous request, then posts it to its `/api/jobs` route with `jobs_base_url` and `cron_secret` from Vault and keeps the pg_net request id; without the secrets returns NULL, quietly only where `environment()` is `'local'`, as a failed run (`secret_missing`) everywhere else; refuses a `jobs_base_url` that is not `https://` outside a local database (`insecure_base_url`) |
+| `settle_job_response` / `check_job_responses` | `(p_job text) returns void` / `() returns void` | 0007: reads the answer to an application job's last request in `net._http_response`; 400 or worse that the route did not report itself, a timeout, a transport error, or no answer within 15 min is a failed run (`http_<status>`, `timeout`, `request_failed`, `no_response`); `check_job_responses` settles every application job every 5 min |
+| `record_job_run` | `(p_job text, p_succeeded boolean, p_error_code text) returns void` | 0007: updates `job_heartbeats`; a failure is also a `cron_failed` security event. Reached by the server as `svc_record_job_run`, for application jobs only |
+| `environment` | `() returns text` | 0007: the Vault secret `environment` through an allow-list, lower-cased and trimmed: `local`, `staging`, `production`, or `unrecognised` for anything else; NULL when unset. Only `local` counts as a developer's database |
+| `require_local_database` | `() returns void` | 0008: raises 42501 unless `environment()` is `local`, so the development seed (`pnpm db:seed`) fails closed on any other database |
 | `purgeable_files` / `forget_purged_files` | `(p_limit int) returns table (bucket text, path text)` / `(p_paths text[]) returns int` | The files the retention runs marked (purged participant certificates' `pdf_path`, deleted exports' `storage_path`, `ticket_pdf_path` 12 months after the visit), oldest first; after `api/jobs/purge-storage` deletes them through the Storage API it clears the paths that are still marked, logged as cron; reached through `svc_purgeable_files` / `svc_forget_purged_files` |
 | `purge_participants` | `() returns int` | For `visit_date_end < today - 90 d`: first marks the participant certificates (`participant_id = NULL`, `recipient_name = '[dihapus]'`, `purged_at`), then deletes the `booking_participants` rows (the certificate CHECK refuses the other order); also marks expired `exports` (`deleted_at`). The files (`certificates/<booking_id>/participant-*.pdf`, attendance exports, ticket PDFs > 12 months) are deleted afterwards by `api/jobs/purge-storage` through the Storage API, because Supabase blocks `delete from storage.objects`; audited |
 | `anonymise_booker_pii` | `() returns int` | Unpaid `expired`/`cancelled` bookings 7 d after expiry (their participants deleted too), and every booking `pii_retention_months` after the visit (a missing setting stops the whole run with an error, 0005): `pic_name = 'anon'`, `pic_phone` and `pic_email` NULL, `phone_verified_at` and `email_verified_at` NULL, `notes`, `admin_notes`, `cancel_reason`, `review_reason`, `discount_note`, `source_ip`, `user_agent` NULL (the money guards let only the retention run clear `discount_note` on a paid booking), `booking_addons.notes` NULL (0005), `pii_purged_at = now()`, `token_version + 1`, and their `notifications` rows deleted; `guest_otps` deleted 1 d after `expires_at`; the masked generated columns follow automatically; invoices keep institution and amounts; audited under `app.audit_mode = 'names_only'` |
@@ -1983,26 +1989,10 @@ Auth hooks (`supabase_auth_admin`): `public.custom_access_token_hook(event jsonb
 | Bucket | Visibility | Content | Path | Access rules |
 |---|---|---|---|---|
 | `uploads-quarantine` | private, 50 MB, `image/jpeg`, `image/png`, `image/webp`, `application/pdf` | Raw admin uploads via 5-min signed upload URL | `rw-05/<uuid>`, `rw-08/<uuid>`, `kelurahan/<uuid>` | No policy for any API role (the signed URL is the only way in; 0006, decision of 2026-10-17); `api/uploads/sign` holds images to 10 MB; `api/uploads/finalize` reads it with the service role, re-encodes images (sharp: strip EXIF, max 1600 px, webp, magic-byte check) or scans PDFs (`pdf-lib` catalog walk rejecting `/OpenAction /AA /JavaScript /JS /Launch /EmbeddedFile /RichMedia` and non-allow-listed `/URI`), moves to `public-media`, deletes the object; hourly purge > 24 h; SVG rejected |
-| `public-media` | public, 50 MB, `image/webp`, `application/pdf` (what finalize writes) | Gallery, products, packages, hero, articles, activity points, booklets (PDF + `pages/0001.webp`), staff avatars | `rw-05/…`, `rw-08/…`, `kelurahan/…` then `gallery/<uuid>.webp`, `products/<id>/<uuid>.webp`, `packages/<id>/<uuid>.webp`, `articles/<id>/<uuid>.webp`, `hero/<uuid>.webp`, `activity-points/<id>/<uuid>.webp`, `booklets/<id>/booklet.pdf`, `staff/<profile_id>.webp` | anon read; staff at AAL2 write own prefix via `storage_owner_prefix_ok(name)`; booklet PDFs served as attachment |
-| `documents` | private, 20 MB, any type (server-written PDFs, proof photos, CSV/XLSX exports) | Tickets, quotations, invoices, receipts, credit notes, certificates, payment/payout proofs, adjustment evidence, exports | `bookings/<id>/…`, `certificates/<booking_id>/…`, `payouts/<batch>/…`, `exports/<profile_id>/…` | No anon/authenticated policies; server-issued signed URLs after authorisation: 600 s tickets/certificates, 900 s invoices, 300 s exports, 60 min WhatsApp document header; never persisted or messaged |
+| `public-media` | public, 50 MB, `image/webp`, `application/pdf` (what finalize writes) | Gallery, products, packages, hero, articles, activity points, booklets (PDF + `pages/0001.webp`), staff avatars | `rw-05/…`, `rw-08/…`, `kelurahan/…` then `gallery/<uuid>.webp`, `products/<id>/<uuid>.webp`, `packages/<id>/<uuid>.webp`, `articles/<id>/<uuid>.webp`, `hero/<uuid>.webp`, `activity-points/<id>/<uuid>.webp`, `booklets/<id>/booklet.pdf`, `staff/<profile_id>.webp` | No policy for any API role (security review of PR #5): `api/uploads/finalize` with the service role is the only writer, so no file reaches the public site without being re-encoded or scanned; anyone downloads a file by its URL, nobody lists the bucket, so a draft's files cannot be browsed; booklet PDFs served as attachment |
+| `documents` | private, 20 MB, `application/pdf`, `image/jpeg`, `image/png`, `image/webp`, `text/csv`, XLSX (server-written PDFs, proof photos, exports) | Tickets, quotations, invoices, receipts, credit notes, certificates, payment/payout proofs, adjustment evidence, exports | `bookings/<id>/…`, `certificates/<booking_id>/…`, `payouts/<batch>/…`, `exports/<profile_id>/…` | No anon/authenticated policies; server-issued signed URLs after authorisation, each kind only from its own folder (`createDocumentSignedUrl`): 600 s tickets/certificates, 900 s invoices, 300 s exports, 60 min WhatsApp document header; never persisted or messaged |
 
-```sql
--- 0006_storage.sql: executable by authenticated only.
-create or replace function public.storage_owner_prefix_ok(p_name text) returns boolean language sql stable as $$
-  select public.is_superadmin()
-      or (public.is_admin_rw() and split_part(p_name, '/', 1) = 'rw-' || lpad(public.app_rw_id()::text, 2, '0')) $$;
-create policy public_media_read   on storage.objects for select to anon, authenticated using (bucket_id = 'public-media');
-create policy public_media_insert on storage.objects for insert to authenticated
-  with check (bucket_id = 'public-media' and (select public.aal2()) and public.storage_owner_prefix_ok(name));
-create policy public_media_update on storage.objects for update to authenticated
-  using (bucket_id = 'public-media' and (select public.aal2()) and public.storage_owner_prefix_ok(name))
-  with check (bucket_id = 'public-media' and (select public.aal2()) and public.storage_owner_prefix_ok(name));
-create policy public_media_delete on storage.objects for delete to authenticated
-  using (bucket_id = 'public-media' and (select public.aal2()) and public.storage_owner_prefix_ok(name));
--- 'uploads-quarantine' and 'documents': no policies for anon / authenticated.
-```
-
-Writes need AAL2 like every staff command (§8.5.2), and an update is checked before and after, so an object never moves into another RW's prefix. The quarantine has no client policy: Security §6.8 and §8.4 keep it to the server-bound signed upload URL and the service-role finalize (decision of 2026-10-17, which settles the quarantine insert policy this section once listed).
+`0006_storage.sql` creates the three buckets and nothing else: no API role holds any policy on `storage.objects` or `storage.buckets`, so every upload goes through the server-bound signed URL of `api/uploads/sign` and every published file through the service-role finalize (security review of PR #5, which replaces the staff write policies on `public-media` and their `storage_owner_prefix_ok` helper; Security §6.8 and §8.4). `supabase/tests/rls_storage.sql` checks that no persona can write, rename, delete or list anything in any bucket.
 
 ### 8.9 Scheduled jobs (pg_cron; times stored in UTC = WIB - 7)
 
@@ -2014,16 +2004,17 @@ Every schedule is one call (`0007_cron.sql`): a database job runs through `inter
 | `* * * * *` | `process-notifications` | `call_job`: `POST <jobs_base_url>/api/jobs/process-notifications`, `Authorization: Bearer` from Vault |
 | `*/5 * * * *` | `payments-poll` | `call_job`: `GET api/jobs/payments-poll` (Status API for `pending` > 2 min; self-heal paid-without-tickets) |
 | `*/5 * * * *` | `anomaly-scan` | `call_job`: `GET api/jobs/anomaly-scan` |
+| `*/5 * * * *` | `check_job_responses` | `run_scheduled_job`: `internal.check_job_responses()` reads each application job's answer in `net._http_response` |
 | `0 2 * * *` (09:00 WIB) | `enqueue_visit_reminders` | `run_scheduled_job`: `internal.enqueue_visit_reminders()` |
 | `30 16 * * *` (23:30 WIB) | `close_past_bookings` | `run_scheduled_job`: `internal.close_past_bookings()` then `internal.reconcile_session_counters()` |
 | `0 17 * * *` (00:00 WIB) | `generate_visit_sessions` | `run_scheduled_job`: `public.generate_visit_sessions(id, today_jkt(), today_jkt() + booking.max_advance_days)` for every active `rw_units` row |
 | `30 19 * * *` (02:30 WIB) | `reconcile-payments` | `call_job`: `GET api/jobs/reconcile-payments` (open items, 7-day paid re-verification, SQL invariants, `verify_ledger_chain`, `verify_audit_chain`, issues, digest) |
 | `0 19 * * *` (02:00 WIB) | `purge/retention` | `run_scheduled_job`: `internal.purge_participants()` then `internal.anonymise_booker_pii()` (which also deletes `guest_otps` > 24 h) |
-| `15 19 * * *` (02:15 WIB) | `purge-storage` | `call_job`: `GET api/jobs/purge-storage`: deletes through the Storage API the files the retention run marked (participant PDFs, expired exports, ticket PDFs > 12 months) and `uploads-quarantine` objects > 24 h |
+| `15 * * * *` (hourly; 02:15 WIB follows the retention run) | `purge-storage` | `call_job`: `GET api/jobs/purge-storage`: deletes through the Storage API the files the retention run marked (participant PDFs, expired exports, ticket PDFs > 12 months) and `uploads-quarantine` objects > 24 h |
 | `15 * * * *` | `prune_rate_limit_buckets` | `run_scheduled_job`: deletes `rate_limit_buckets` rows whose window started more than a day ago |
 | `0 18 1 * *` | `prune_operational_tables` | `run_scheduled_job`: `internal.prune_operational_tables()` |
 
-Every run leaves a heartbeat in `job_heartbeats`: a database job when it returns, an application job when its route finishes and reports through `svc_record_job_run`. A failed run, a failing route and an application job whose Vault secrets are missing are recorded as failures and as `security_events` of type `cron_failed`; only a database whose Vault secret `environment` is `'local'` skips application jobs quietly when it has no secrets (decision of 2026-10-17). `/api/health` returns 503 when `expire_stale_bookings`, `process-notifications` or `payments-poll` has not succeeded for 15 min (Task P3.11.07), so the outbox and payment polling cannot stop unnoticed.
+Every job has a row in `job_heartbeats` with its `kind` and `max_age` (15 min for the five-minute jobs, 2 h for the hourly ones, 26 h for the nightly ones, 32 days for the monthly prune). A database job records its run when it returns; an application job's route reports through `svc_record_job_run`, which accepts application jobs only, and `call_job` keeps the pg_net request id so that `check_job_responses` (and the job's next call) can turn an answer of 400 or worse, a timeout, a transport error or no answer within 15 min into a failed run (`http_<status>`, `timeout`, `request_failed`, `no_response`). A failed run, and an application job whose Vault secrets are missing or whose `jobs_base_url` is not HTTPS, is recorded as a failure and as a `security_events` row of type `cron_failed`. Only a database whose Vault secret `environment` reads `local` (an allow-list of `local`, `staging`, `production`, case and spaces ignored) skips application jobs quietly when it has no secrets (decisions of 2026-10-17 and of the security review of PR #5). `svc_job_health()` reports a job as stalled once it has gone longer than its `max_age` without a success, and `/api/health` returns 503 while any job is stalled (Task P3.11.07), so no job can stop unnoticed.
 
 ---
 ## 9. Booking and payment state machine
