@@ -1117,6 +1117,7 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 | 17 | Data residency (A10) confirmed in writing by the kelurahan/Diskominfo, or hosting moved to an Indonesian region | written confirmation |
 | 18 | Vendor consoles: institutional owner accounts, org-level MFA, Bitwarden vault populated, quarterly review scheduled | SEC-05 checklist |
 | 19 | No seeded placeholder left in `site_settings` on `gisikdrono-prod`: `select * from internal.placeholder_site_settings()` returns no row (production's `/api/health` answers 503 otherwise), and the Vault secret `environment` is `production` | query result in the release PR |
+| 20 | Hosted-only Auth settings on `gisikdrono-prod`, which `supabase/config.toml` cannot carry: sign-up and sign-in limit 10 per 5 minutes per IP, Turnstile captcha with the Auth widget key, custom SMTP through Resend on `mail.<domain>`, TOTP enroll and verify on with phone MFA off, leaked-password protection on, and the rest of `config.toml` mirrored (sign-ups off, 12-character passwords, JWT 900 s, sessions 12 h / 2 h, redirect allow-list `/auth/callback`, both hooks, `max_rows` 100) (Task P0.1.14–P0.1.18) | dashboard screenshots + `GET /auth/v1/settings` output in the release PR |
 
 ### 13.2 Review cadence
 
