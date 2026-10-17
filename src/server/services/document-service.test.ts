@@ -5,6 +5,7 @@ import type { Database } from '@/db/types';
 
 import {
   createDocumentSignedUrl,
+  isDocumentPathFor,
   purgeMarkedFiles,
   SIGNED_URL_TTL_SECONDS,
 } from './document-service';
@@ -156,6 +157,32 @@ describe('createDocumentSignedUrl', () => {
       { expiresIn: 600 },
       { expiresIn: 3600 },
     ]);
+  });
+
+  it.each([
+    ['ticket', 'bookings/b1/ticket.pdf', true],
+    ['certificate', 'certificates/b1/participant-01.pdf', true],
+    ['export', 'exports/p1/visits-2026-10.xlsx', true],
+    ['whatsapp_document_header', 'certificates/b1/group.pdf', true],
+    ['ticket', 'exports/p1/visits-2026-10.xlsx', false],
+    ['invoice', 'payouts/2026-10/batch.csv', false],
+    ['ticket', 'bookings/../exports/p1/visits.xlsx', false],
+    ['ticket', 'bookings/b1/../../exports/p1/visits.xlsx', false],
+    ['ticket', '/bookings/b1/ticket.pdf', false],
+    ['ticket', 'bookings//ticket.pdf', false],
+    ['ticket', 'bookings/ticket.pdf', false],
+    ['ticket', 'bookings/b1/.hidden', false],
+  ] as const)('%s may be signed from %s: %s', (kind, path, allowed) => {
+    expect(isDocumentPathFor(kind, path)).toBe(allowed);
+  });
+
+  it("refuses a path outside its kind's folder before asking Storage", async () => {
+    const { client, requests } = clientWith({});
+
+    await expect(
+      createDocumentSignedUrl(client, 'exports/p1/visits.xlsx', 'ticket'),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect(requests).toEqual([]);
   });
 
   it('fails when Storage refuses, so no route ever redirects to a URL that does not work', async () => {
