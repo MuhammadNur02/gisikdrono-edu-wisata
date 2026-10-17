@@ -1430,24 +1430,39 @@ export type Database = {
       job_heartbeats: {
         Row: {
           job: string
+          kind: string
           last_error_code: string | null
           last_failure_at: string | null
+          last_request_id: number | null
+          last_requested_at: string | null
           last_success_at: string | null
+          max_age: string
           updated_at: string
+          watching_since: string
         }
         Insert: {
           job: string
+          kind: string
           last_error_code?: string | null
           last_failure_at?: string | null
+          last_request_id?: number | null
+          last_requested_at?: string | null
           last_success_at?: string | null
+          max_age: string
           updated_at?: string
+          watching_since?: string
         }
         Update: {
           job?: string
+          kind?: string
           last_error_code?: string | null
           last_failure_at?: string | null
+          last_request_id?: number | null
+          last_requested_at?: string | null
           last_success_at?: string | null
+          max_age?: string
           updated_at?: string
+          watching_since?: string
         }
         Relationships: []
       }
@@ -4200,7 +4215,6 @@ export type Database = {
         Args: { p_is_active: boolean; p_reason: string; p_user_id: string }
         Returns: undefined
       }
-      storage_owner_prefix_ok: { Args: { p_name: string }; Returns: boolean }
       svc_enqueue_notification: {
         Args: {
           p_booking_id: string
@@ -4219,18 +4233,13 @@ export type Database = {
       svc_job_health: {
         Args: never
         Returns: {
+          is_stalled: boolean
           job: string
-          last_error_code: string | null
-          last_failure_at: string | null
-          last_success_at: string | null
-          updated_at: string
+          kind: string
+          last_error_code: string
+          last_failure_at: string
+          last_success_at: string
         }[]
-        SetofOptions: {
-          from: "*"
-          to: "job_heartbeats"
-          isOneToOne: false
-          isSetofReturn: true
-        }
       }
       svc_log_audit: {
         Args: {

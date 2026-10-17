@@ -15,6 +15,7 @@ export const maxDuration = 60;
 
 const JOB_NAME = 'purge-storage';
 const RUN_FAILED = 'run_failed';
+const FILES_LEFT_BEHIND = 'files_not_deleted';
 
 export async function GET(request: Request): Promise<Response> {
   if (!hasValidCronSecret(request.headers.get('authorization'))) {
@@ -26,9 +27,19 @@ export async function GET(request: Request): Promise<Response> {
   const adminClient = createSupabaseAdminClient();
   try {
     const report = await purgeMarkedFiles(adminClient);
-    // A file that could not be deleted stays marked for the next run, so the run itself succeeded.
-    await svcRecordJobRun(adminClient, { job: JOB_NAME, succeeded: true });
-    log.info('job_run', { job: JOB_NAME, runId, ...report });
+    // A file that could not be deleted stays marked and is tried again next hour, but the run counts as failed,
+    // so a file that keeps refusing raises an alert instead of lingering past its retention date unnoticed.
+    if (report.failed > 0) {
+      await svcRecordJobRun(adminClient, {
+        job: JOB_NAME,
+        succeeded: false,
+        errorCode: FILES_LEFT_BEHIND,
+      });
+      log.error('cron_failed', { job: JOB_NAME, runId, ...report });
+    } else {
+      await svcRecordJobRun(adminClient, { job: JOB_NAME, succeeded: true });
+      log.info('job_run', { job: JOB_NAME, runId, ...report });
+    }
     return Response.json({ runId, ...report });
   } catch {
     // 503 makes the next scheduled call try again; the marked rows are still there.

@@ -34,14 +34,27 @@ describe('GET /api/jobs/purge-storage', () => {
   });
 
   it('runs the purge for pg_cron, reports the counts and records the success', async () => {
+    vi.mocked(purgeMarkedFiles).mockResolvedValue({ processed: 3, failed: 0 });
+
+    const response = await callJob(`Bearer ${serverEnv.CRON_SECRET}`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ processed: 3, failed: 0 });
+    expect(purgeMarkedFiles).toHaveBeenCalledTimes(1);
+    expect(svcRecordJobRun).toHaveBeenCalledWith({}, { job: 'purge-storage', succeeded: true });
+  });
+
+  it('records a run that left files behind as failed, so the alert fires while they wait for the next try', async () => {
     vi.mocked(purgeMarkedFiles).mockResolvedValue({ processed: 3, failed: 1 });
 
     const response = await callJob(`Bearer ${serverEnv.CRON_SECRET}`);
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ processed: 3, failed: 1 });
-    expect(purgeMarkedFiles).toHaveBeenCalledTimes(1);
-    expect(svcRecordJobRun).toHaveBeenCalledWith({}, { job: 'purge-storage', succeeded: true });
+    expect(svcRecordJobRun).toHaveBeenCalledWith(
+      {},
+      { job: 'purge-storage', succeeded: false, errorCode: 'files_not_deleted' },
+    );
   });
 
   it('answers 503 when the run fails and records the failure, so the next call retries', async () => {
