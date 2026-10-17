@@ -110,7 +110,19 @@ jobs:
           pnpm exec tsx -e "import { sandboxEnv } from './tests/fixtures/env';
           for (const [name, value] of Object.entries(sandboxEnv)) console.log(name + '=' + value);"
           >> "$GITHUB_ENV"
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
+        with:
+          version: 2.117.0
+      - name: Local Supabase for the prerendered public pages
+        id: stack
+        # The public layout and pages read the database while next build prerenders them (ISR, Task
+        # P2.3.02), as a Vercel build reads its own project. The migrations' reference data is enough.
+        run: |
+          supabase start
+          echo "anon_key=$(supabase status -o json | jq -r .ANON_KEY)" >> "$GITHUB_OUTPUT"
       - run: pnpm build
+        env:
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.stack.outputs.anon_key }}
       - run: pnpm check:secrets
 
   e2e:
@@ -121,7 +133,7 @@ jobs:
     env:
       NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3000
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+      # NEXT_PUBLIC_SUPABASE_ANON_KEY comes from the local stack, on the build step.
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: 1x00000000000000000000AA
       NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: '+6281200000000'
     steps:
@@ -161,6 +173,21 @@ jobs:
           if (!name.startsWith('NEXT_PUBLIC_')) console.log(name + '=' + value);"
           >> "$GITHUB_ENV"
       - if: steps.scope.outputs.changed == 'true'
+        uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
+        with:
+          version: 2.117.0
+      - if: steps.scope.outputs.changed == 'true'
+        name: Local Supabase with the demo content
+        id: stack
+        # next build prerenders the public pages from the database, and the flows under test need the
+        # demo packages and sessions of pnpm db:seed.
+        run: |
+          supabase start
+          pnpm db:seed
+          echo "anon_key=$(supabase status -o json | jq -r .ANON_KEY)" >> "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.changed == 'true'
+        env:
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.stack.outputs.anon_key }}
         run: |
           pnpm exec playwright install --with-deps chromium
           pnpm build

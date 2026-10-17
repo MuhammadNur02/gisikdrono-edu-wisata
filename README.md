@@ -42,6 +42,10 @@ Every variable is checked at boot by `src/lib/env.ts` and `src/lib/public-env.ts
 
 `pnpm db:reset` rebuilds the local database from the migrations and then runs `pnpm db:seed`, which marks it local, writes the development staff accounts below and some demo content (packages, products, sessions, articles). Run `pnpm db:seed` on its own after `pnpm db:start` on a fresh clone; running it again changes nothing. The pg_cron jobs of `0007_cron.sql` run locally too; the ones that call the application stay quiet until you give them Vault secrets (`docs/runbooks/cron.md`).
 
+The demo content has no photos of its own, so the hero and gallery slots say `Foto menyusul`. If you have the folder of development photos, `pnpm db:seed --media <folder>` re-encodes the ones `scripts/demo-media.ts` names (WebP, at most 1600 px, metadata removed, the same step `api/uploads/finalize` uses) into the local `public-media` bucket and adds the hero banner and the RW 05 gallery rows. The photos stay outside the repository: never copy them into it, into `tests/fixtures` or into a commit, because the consent of the people in them is still being arranged.
+
+The public pages are prerendered from the database, so `pnpm build` needs the local stack running (`pnpm db:start`), as CI starts one before its builds. Images are resized by Supabase's own transformer (`[storage.image_transformation]` in `supabase/config.toml`, the Pro plan on staging and production).
+
 ### Local development accounts
 
 `pnpm db:seed` (`scripts/seed-dev.ts` with `scripts/seed-dev.sql`) creates three staff accounts with a verified TOTP factor. They exist only on your local database and in CI: the script takes its address from `supabase status` and refuses anything but `127.0.0.1`, and its SQL refuses any database whose Vault secret `environment` says anything but `local`, so these known credentials never reach an online project. The Supabase CLI's own seed is switched off, so `supabase db reset` writes no account anywhere. The credentials are not in `.env.example` on purpose.

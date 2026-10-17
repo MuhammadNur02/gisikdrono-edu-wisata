@@ -62,6 +62,7 @@ The platform is operated by a small municipal team: one Superadmin Kelurahan and
 | Tables, charts, URL state | `@tanstack/react-table`, Recharts via shadcn Chart, `nuqs` | Dashboard only |
 | Long lists | `@tanstack/react-virtual` | `ParticipantsEditor` (up to `booking.max_pax` rows, docs/StyleGuide.md §5.6) |
 | Dates | `date-fns` + `@date-fns/tz`, locale `id`, `APP_TZ = 'Asia/Jakarta'` | DB `timestamptz`; visit dates `date` |
+| Images | `next/image` with the custom loader `src/lib/images/supabase-loader.ts` (Supabase `render/image`, Pro plan); `sharp` re-encodes in `src/lib/images/re-encode.ts` (shared by `api/uploads/finalize` and `pnpm db:seed --media`); `blurhash` encodes the placeholder there and `src/lib/images/blur.ts` reads its average colour for the slot background (no `blurDataURL`: the CSP has no `data:` in `img-src`) | `sharp` and `blur.ts` server only |
 | Structured data | `schema-dts` (types only, dev dependency) | JSON-LD builders in `src/lib/seo/json-ld.ts`, rendered by `src/components/seo/json-ld.tsx` |
 | Payments | Midtrans Snap, **redirect mode**, thin typed fetch wrapper in `src/lib/midtrans/client.ts` (no SDK) | QRIS + Virtual Account only |
 | Messaging | Meta WhatsApp Business Cloud API (Graph v21+), Resend + React Email | Outbox table `notifications` |
@@ -398,7 +399,9 @@ No CORS headers on any route. All handlers reject bodies above their cap and par
 | `packages:<rw\|combo>` | package create/update/archive, price change |
 | `sessions:<rwId>:<YYYY-MM>` | session generate/edit/close |
 | `products:<rwId>` | product CRUD |
-| `galleries:<rwId>` | gallery CRUD |
+| `galleries:<rwId\|kelurahan>` | gallery CRUD; `kelurahan` for a photo with `rw_id` NULL (decision of 2026-10-18) |
+| `rw-units` | RW page content in `rw_units` (the `pages` action) (decision of 2026-10-18) |
+| `activity-points:<rwId>` | activity point CRUD (decision of 2026-10-18) |
 | `articles` | article publish/unpublish |
 | `banners` | hero banner CRUD |
 | `booklets` | booklet upload/publish |
@@ -488,6 +491,7 @@ SECURITY DEFINER hygiene: owner `postgres`, `set search_path = ''` with fully-qu
 pnpm db:start          # supabase start (Docker)
 pnpm db:reset          # drop + migrate + db:seed + db:types
 pnpm db:seed           # local only: DEV-ONLY staff accounts + demo content, prints the current TOTP code
+pnpm db:seed --media <folder>  # also re-encodes the demo photos of scripts/demo-media.ts (never committed)
 pnpm dev               # http://localhost:3000
 pnpm tunnel            # cloudflared: receive Midtrans sandbox webhooks locally
 pnpm midtrans:simulate -- --order GSK-7F3K9Q2M-01 --status settlement
@@ -689,7 +693,7 @@ PRD requirement cited; migration + RLS + pgTAP merged; types regenerated; valida
 | `pnpm db:diff <slug>` | `supabase db diff -f` from local schema changes (review before committing) |
 | `pnpm db:push` | `supabase db push --linked` to staging/production; **CI only** |
 | `pnpm db:types` / `db:types:check` | Regenerate `src/db/types.ts` through `scripts/gen-db-types.mjs` (temporary file, replaced only on success) / fail on drift |
-| `pnpm db:seed` | `tsx scripts/seed-dev.ts`: development accounts and demo content (local only; refuses non-127.0.0.1 and any database not marked local) |
+| `pnpm db:seed` | `tsx scripts/seed-dev.ts`: development accounts and demo content (local only; refuses non-127.0.0.1 and any database not marked local); `--media <folder>` re-encodes the demo photos named in `scripts/demo-media.ts` from that folder into the local `public-media` bucket, through the same step as `api/uploads/finalize` |
 | `pnpm db:test` | `supabase test db` (all pgTAP suites) |
 | `pnpm midtrans:simulate -- --order <code> --status settlement\|expire\|deny` | Post a correctly signed sandbox notification to the local webhook |
 | `pnpm midtrans:status -- --order <code>` | Query the Midtrans Status API for an order |
@@ -961,7 +965,7 @@ Codes: `booking_code` = `GSK-` + 8 chars Crockford base32 (`GSK-7F3K9Q2M`); `pay
 | Buckets | `uploads-quarantine`, `public-media`, `documents` |
 | pg_cron jobs | `expire_stale_bookings */5`, `process-notifications * * * * *` (pg_net), `payments-poll */5` (pg_net), `enqueue_visit_reminders 09:00 WIB`, `close_past_bookings + reconcile_session_counters 23:30 WIB`, `generate_visit_sessions 00:00 WIB`, `reconcile-payments 02:30 WIB` (pg_net), `anomaly-scan */5` (pg_net), `check_job_responses */5` (reads the pg_net answers), `purge/retention 02:00 WIB` (`purge_participants` + `anonymise_booker_pii` + `guest_otps` > 24 h), `purge-storage` hourly at :15, so 02:15 WIB after the retention run (pg_net; deletes the files the retention run marked plus `uploads-quarantine` > 24 h), `prune_rate_limit_buckets hourly`, `prune_operational_tables monthly`; every database job runs as `internal.run_scheduled_job('<job>')` and every pg_net job as `internal.call_job('<job>')` (0007), each leaving a heartbeat in `job_heartbeats`, which `svc_job_health()` reports as stalled once a job passes its `max_age` without a success |
 | WhatsApp templates (language `id`) | `gsk_otp_v1`, `gsk_booking_created_v1`, `gsk_quotation_ready_v1`, `gsk_payment_reminder_v1`, `gsk_ticket_issued_v1`, `gsk_booking_expired_v1`, `gsk_booking_cancelled_v1`, `gsk_visit_reminder_d1_v1`, `gsk_checked_in_thanks_v1`, `gsk_certificate_ready_v1`, `gsk_review_invite_v1`, `gsk_refund_processed_v1`, `gsk_admin_new_paid_booking_v1`, `gsk_security_alert_v1` |
-| Revalidation tags | `packages:<rw\|combo>`, `sessions:<rwId>:<YYYY-MM>`, `products:<rwId>`, `galleries:<rwId>`, `articles`, `banners`, `booklets`, `schedules`, `reviews`, `settings`, `booking:<id>` |
+| Revalidation tags | `packages:<rw\|combo>`, `sessions:<rwId>:<YYYY-MM>`, `products:<rwId>`, `galleries:<rwId\|kelurahan>`, `rw-units`, `activity-points:<rwId>`, `articles`, `banners`, `booklets`, `schedules`, `reviews`, `settings`, `booking:<id>` |
 | Security control prefixes | `PAY, WH, REC, BOOK, AUTH, AZ, GUEST, DATA, PDP, APP, HDR, RL, UPL, SEC, DB, QR, SC, OPS, MON, STAFF, DOC, RES` |
 
 ### A.5 Env vars (names)

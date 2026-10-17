@@ -5,12 +5,14 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { WhatsAppFab } from '@/components/layout/whatsapp-fab';
 import { ThemeProvider } from '@/components/providers/theme-provider';
 import { copy } from '@/lib/copy/id';
+import { getPublicSiteSettings } from '@/lib/queries/settings';
 
 const MAIN_CONTENT_ID = 'konten';
 
 // Each page renders its own BreadcrumbList through PageHeader: a layout is shared by many pages and
 // cannot know the current page's name without reading the request, which would end ISR.
-export default function PublicLayout({ children }: Readonly<{ children: ReactNode }>) {
+export default async function PublicLayout({ children }: Readonly<{ children: ReactNode }>) {
+  const settings = await getPublicSiteSettings();
   return (
     <ThemeProvider scope="public">
       <div className="flex min-h-dvh flex-col">
@@ -24,7 +26,9 @@ export default function PublicLayout({ children }: Readonly<{ children: ReactNod
         <main id={MAIN_CONTENT_ID} className="flex-1">
           {children}
         </main>
-        <SiteFooter />
+        <SiteFooter
+          contact={{ email: settings.contactEmail, address: settings.kelurahanAddress }}
+        />
         <WhatsAppFab />
       </div>
     </ThemeProvider>

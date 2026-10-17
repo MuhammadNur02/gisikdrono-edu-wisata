@@ -62,6 +62,10 @@ describe('supabase/config.toml', () => {
     expect(existsSync(fileURLToPath(new URL('../supabase/seed.sql', import.meta.url)))).toBe(false);
   });
 
+  it('resizes images like the Pro plan, which the public image loader relies on', () => {
+    expect(config('storage.image_transformation')).toEqual({ enabled: true });
+  });
+
   it('runs the access-token and password-attempt hooks of 0004', () => {
     expect(config('auth.hook.custom_access_token')).toEqual({
       enabled: true,

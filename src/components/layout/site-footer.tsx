@@ -1,4 +1,4 @@
-import { MapPin, MessageCircle, ShieldCheck } from 'lucide-react';
+import { Mail, MapPin, MessageCircle, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 
 import { Container } from '@/components/layout/container';
@@ -57,33 +57,58 @@ function FooterNav() {
   );
 }
 
-// The street address, email and office hours are site_settings values the public queries of
-// Task P2.3.02 will read; until then the footer says they are on their way instead of guessing.
-function FooterContact() {
+const contactLinkClassName =
+  'flex min-h-11 gap-2 rounded-md text-body-sm text-muted-foreground transition-colors hover:text-foreground';
+
+function FooterWhatsApp() {
   const chatUrl = buildWhatsAppChatUrl(
     siteConfig.whatsappContactNumber,
     copy.layout.whatsAppGreeting(siteConfig.name),
   );
   return (
+    <a href={chatUrl} target="_blank" rel="noopener noreferrer" className={contactLinkClassName}>
+      <MessageCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
+      <span>
+        <span className="block">{copy.layout.footerWhatsApp}</span>
+        <span className="block font-medium whitespace-nowrap text-foreground tabular-nums">
+          {formatPhone(siteConfig.whatsappContactNumber)}
+        </span>
+      </span>
+    </a>
+  );
+}
+
+function FooterEmail({ email }: { email: string }) {
+  return (
+    <a href={`mailto:${email}`} className={contactLinkClassName}>
+      <Mail aria-hidden className="mt-0.5 size-4 shrink-0" />
+      <span className="min-w-0">
+        <span className="block">{copy.layout.footerEmail}</span>
+        <span className="block font-medium break-all text-foreground">{email}</span>
+      </span>
+    </a>
+  );
+}
+
+export interface FooterContactDetails {
+  // From site_settings; NULL while the value is missing or still the seeded sample.
+  email: string | null;
+  address: string | null;
+}
+
+// Office hours have no site_settings key yet, so the footer says they are on their way instead of guessing.
+function FooterContact({ contact }: { contact: FooterContactDetails }) {
+  return (
     <div className="space-y-3 xl:order-last xl:col-span-2">
       <h2 className="text-overline text-foreground">{copy.layout.footerContactTitle}</h2>
-      <a
-        href={chatUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex min-h-11 gap-2 rounded-md text-body-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <MessageCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
-        <span>
-          <span className="block">{copy.layout.footerWhatsApp}</span>
-          <span className="block font-medium whitespace-nowrap text-foreground tabular-nums">
-            {formatPhone(siteConfig.whatsappContactNumber)}
-          </span>
-        </span>
-      </a>
+      <FooterWhatsApp />
+      {contact.email ? <FooterEmail email={contact.email} /> : null}
       <p className="flex gap-2 text-body-sm text-muted-foreground">
         <MapPin aria-hidden className="mt-0.5 size-4 shrink-0" />
-        {copy.layout.footerAddressPending}
+        <span>
+          <span className="block">{contact.address ?? copy.layout.footerAddressPending}</span>
+          <span className="block">{copy.layout.footerHoursPending}</span>
+        </span>
       </p>
     </div>
   );
@@ -111,14 +136,14 @@ function FooterBottom() {
   );
 }
 
-export function SiteFooter() {
+export function SiteFooter({ contact }: { contact: FooterContactDetails }) {
   return (
     <footer className="border-t border-border bg-muted/40">
       {/* Below xl the contact block sits beside the intro and the links take a full row; from xl all three
           share one row, links in the middle. */}
       <Container className="grid gap-10 py-12 md:grid-cols-2 md:py-16 xl:grid-cols-12 xl:gap-x-8">
         <FooterIntro />
-        <FooterContact />
+        <FooterContact contact={contact} />
         <FooterNav />
       </Container>
       <FooterBottom />

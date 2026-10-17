@@ -1,6 +1,7 @@
 import bundleAnalyzer from '@next/bundle-analyzer';
 import type { NextConfig } from 'next';
 
+import { IMAGE_DEVICE_WIDTHS } from './src/config/images';
 import { PRIVATE_ROUTE_PREFIXES } from './src/config/routes';
 import { publicEnv } from './src/lib/public-env';
 
@@ -37,6 +38,11 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
   images: {
+    // Supabase's transformer resizes public-media images (docs/StyleGuide.md §8.2), so Next.js' own
+    // optimiser and its remotePatterns check never run; the pattern stays pinned all the same.
+    loader: 'custom',
+    loaderFile: './src/lib/images/supabase-loader.ts',
+    deviceSizes: IMAGE_DEVICE_WIDTHS,
     remotePatterns: [
       {
         protocol: supabaseUrl.protocol === 'http:' ? 'http' : 'https',
