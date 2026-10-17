@@ -4152,6 +4152,10 @@ export type Database = {
         Args: { event: Json }
         Returns: Json
       }
+      invite_superadmin: {
+        Args: { p_email: string; p_invite_code_hash: string }
+        Returns: Json
+      }
       is_admin_rw: { Args: never; Returns: boolean }
       is_staff: { Args: never; Returns: boolean }
       is_superadmin: { Args: never; Returns: boolean }

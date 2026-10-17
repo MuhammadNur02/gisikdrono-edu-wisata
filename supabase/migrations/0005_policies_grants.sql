@@ -127,6 +127,109 @@ create policy staff_invites_super_insert on public.staff_invites for insert to a
 create policy staff_invites_super_revoke on public.staff_invites for update to authenticated
   using ((select public.is_superadmin())) with check ((select public.is_superadmin()));
 
+-- A superadmin invite hands over the whole kelurahan, so it waits like a promotion to superadmin (review L9,
+-- decision of 2026-10-17): it is created only through invite_superadmin, never by a plain insert, and can be
+-- accepted no sooner than 24 hours after it was made. Each step (requested, completed when accepted, cancelled
+-- when revoked) raises the critical alert set_staff_role raises, which goes out of band, so the kelurahan head
+-- can have it revoked in time. A revoked invite of any role stays revoked for everyone: a new invite is made
+-- instead. An invite never changes whom it invites, as what, or who made it.
+create function internal.record_superadmin_invite_step(p_invite_id uuid, p_stage text) returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  step jsonb := jsonb_build_object('change', 'superadmin_invite', 'stage', p_stage, 'invite_id', p_invite_id,
+                                   'by', auth.uid());
+  title text := case p_stage
+    when 'requested' then 'Permintaan undangan superadmin'
+    when 'completed' then 'Undangan superadmin diterima'
+    when 'cancelled' then 'Undangan superadmin dicabut'
+  end;
+begin
+  insert into public.security_events (event_type, severity, actor_id, entity_type, entity_id, details)
+  values ('role_changed', 'critical', auth.uid(), 'staff_invites', p_invite_id::text, step);
+
+  insert into public.security_alerts (rule, severity, fingerprint, title, details)
+  values ('superadmin_invite', 'critical', 'superadmin_invite:' || p_invite_id, title, step)
+  on conflict (fingerprint) where acknowledged_at is null do update
+  set title = excluded.title, details = excluded.details, last_seen_at = now(),
+      occurrences = public.security_alerts.occurrences + 1, notified_at = null;
+
+  perform internal.log_audit('staff.superadmin_invite_' || p_stage, 'staff_invites', p_invite_id::text,
+                             step - 'invite_id');
+end;
+$$;
+
+create function internal.staff_invites_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if tg_op = 'INSERT' then
+    if new.role = 'superadmin' and coalesce(current_setting('app.privileged_rpc', true), '') <> 'on' then
+      raise exception 'a superadmin is invited only through invite_superadmin, which waits 24 hours'
+        using errcode = '42501';
+    end if;
+    return new;
+  end if;
+
+  if (new.email, new.role, new.rw_id, new.invite_code_hash, new.created_by, new.created_at)
+     is distinct from (old.email, old.role, old.rw_id, old.invite_code_hash, old.created_by, old.created_at) then
+    raise exception 'an invite never changes whom it invites, as what, or who made it' using errcode = '42501';
+  end if;
+  if old.revoked_at is not null and new.revoked_at is distinct from old.revoked_at then
+    raise exception 'a revoked invite stays revoked; make a new invite instead'
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  if old.accepted_at is null and new.accepted_at is not null then
+    if new.revoked_at is not null then
+      raise exception 'a revoked invite cannot be accepted' using errcode = 'P0001', hint = 'STATE_INVALID';
+    end if;
+    if new.role = 'superadmin' and now() < new.created_at + internal.staff_change_delay() then
+      raise exception 'this superadmin invite can be accepted after %', new.created_at + internal.staff_change_delay()
+        using errcode = 'P0001', hint = 'STATE_INVALID';
+    end if;
+  end if;
+
+  if new.role = 'superadmin' and old.revoked_at is null and new.revoked_at is not null then
+    perform internal.record_superadmin_invite_step(new.id, 'cancelled');
+  elsif new.role = 'superadmin' and old.accepted_at is null and new.accepted_at is not null then
+    perform internal.record_superadmin_invite_step(new.id, 'completed');
+  end if;
+  return new;
+end;
+$$;
+create trigger staff_invites_guard before insert or update on public.staff_invites
+  for each row execute function internal.staff_invites_guard();
+
+-- The superadmin, with a fresh TOTP code, invites another superadmin. The invite exists at once, so its code
+-- can be shown once in the UI as for any invite, but staff_invites_guard lets it be accepted only 24 hours
+-- later, within its 72 hours. Returns the stage reached, as set_staff_role does.
+create function public.invite_superadmin(p_email text, p_invite_code_hash text) returns jsonb
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  previous_settings jsonb;
+  invite record;
+begin
+  perform internal.require_superadmin_step_up();
+  previous_settings := internal.push_settings('{"app.privileged_rpc": "on"}');
+  insert into public.staff_invites (email, role, rw_id, invite_code_hash, expires_at, created_by)
+  values (p_email, 'superadmin', null, p_invite_code_hash, now() + interval '72 hours', auth.uid())
+  returning id, created_at, expires_at into invite;
+  perform internal.restore_settings(previous_settings);
+  perform internal.record_superadmin_invite_step(invite.id, 'requested');
+  return jsonb_build_object('stage', 'requested', 'invite_id', invite.id,
+                            'completes_after', invite.created_at + internal.staff_change_delay(),
+                            'lapses_after', invite.expires_at);
+end;
+$$;
+revoke execute on function internal.record_superadmin_invite_step(uuid, text), internal.staff_invites_guard(),
+  public.invite_superadmin(text, text)
+  from public, anon, authenticated, service_role;
+grant execute on function public.invite_superadmin(text, text) to authenticated;
+
 -- site_settings: public keys for everyone, the rest for the superadmin, who alone writes them. Whoever writes
 -- a setting signs it with their own id, with a fresh TOTP code (end of file). Only the keys docs/PRD.md §8.6
 -- marks public may be public, so a slipped flag never publishes a private value such as the payout account.

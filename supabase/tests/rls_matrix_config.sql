@@ -1,7 +1,7 @@
 -- RLS matrix for the configuration tables: rw_units, profiles, staff_invites, site_settings (docs/PRD.md §8.5.2,
 -- Task P1.4.01, P1.4.05, P1.4.06, P1.9.02). Every check runs as an API role with GoTrue-shaped claims.
 begin;
-select plan(49);
+select plan(65);
 \ir helpers/rls_personas.psql
 
 update public.rw_units set treasury_account_number = '1230005' where id = 5;
@@ -75,6 +75,8 @@ select is(
 select throws_ok($$insert into public.site_settings (key, value, updated_by)
   values ('rls.mine', '"x"', '00000000-0000-4000-8000-00000000f005')$$, '42501', null, 'and writes none');
 select is((select count(*)::int from public.staff_invites where email::text like 'calon%'), 0, 'sees no invite');
+select throws_ok($$select public.invite_superadmin('rw-naik@example.test', 'hash-rls-rw')$$, '42501',
+  'only the superadmin manages staff', 'and invites no superadmin');
 
 -- ===== admin_rw 05 without AAL2 =====
 reset role;
@@ -103,8 +105,11 @@ select pg_temp.act_as('superadmin_stale_totp');
 select is((select count(*)::int from public.site_settings where key in ('seo.default_description', 'rls.private')), 2,
   'a superadmin whose code is two hours old still reads every setting');
 select throws_ok($$insert into public.staff_invites (email, role, rw_id, invite_code_hash, expires_at, created_by)
-  values ('calon-lima@example.test', 'superadmin', null, 'hash-rls-5', now() + interval '24 hours',
-          '00000000-0000-4000-8000-00000000f001')$$, '42501', null, 'but invites nobody without a fresh code');
+  values ('calon-lima@example.test', 'admin_rw', 8, 'hash-rls-5', now() + interval '24 hours',
+          '00000000-0000-4000-8000-00000000f001')$$, '42501', 'new row violates row-level security policy "staff_invites_fresh_totp_insert" for table "staff_invites"',
+  'but invites nobody without a fresh code');
+select throws_ok($$select public.invite_superadmin('calon-enam@example.test', 'hash-rls-6')$$, '42501',
+  'confirm with a fresh authenticator code first', 'not even a superadmin through the RPC');
 select is(pg_temp.row_count($$update public.staff_invites set revoked_at = now() where email = 'calon@example.test'$$), 0,
   'revokes no invite');
 select throws_ok($$insert into public.site_settings (key, value, updated_by)
@@ -128,6 +133,33 @@ select throws_ok($$insert into public.staff_invites (email, role, rw_id, invite_
 select throws_ok($$insert into public.staff_invites (email, role, rw_id, invite_code_hash, expires_at, created_by)
   values ('calon-empat@example.test', 'admin_rw', 8, 'hash-rls-4', now() + interval '73 hours',
           '00000000-0000-4000-8000-00000000f001')$$, '23514', null, 'for 72 hours at most');
+-- A superadmin invite waits 24 hours like a promotion (review L9, decision of 2026-10-17).
+select throws_ok($$insert into public.staff_invites (email, role, rw_id, invite_code_hash, expires_at, created_by)
+  values ('super-langsung@example.test', 'superadmin', null, 'hash-rls-s0', now() + interval '72 hours',
+          '00000000-0000-4000-8000-00000000f001')$$, '42501',
+  'a superadmin is invited only through invite_superadmin, which waits 24 hours',
+  'even with a fresh code, a superadmin is never invited by a plain insert');
+select is((select public.invite_superadmin('super-baru@example.test', 'hash-rls-s1') ->> 'stage'), 'requested',
+  'only through invite_superadmin, which records the request');
+select is(
+  (select a.title from public.security_alerts a join public.staff_invites i on a.details ->> 'invite_id' = i.id::text
+   where a.rule = 'superadmin_invite' and i.email = 'super-baru@example.test'),
+  'Permintaan undangan superadmin',
+  'and raises the same critical alert as a promotion to superadmin'
+);
+select lives_ok($$select public.invite_superadmin('super-dua@example.test', 'hash-rls-s2')$$, 'a second request');
+select is(pg_temp.row_count($$update public.staff_invites set revoked_at = now() where email = 'calon@example.test'$$), 1,
+  'revokes an invite');
+select throws_ok($$update public.staff_invites set revoked_at = null where email = 'calon@example.test'$$, 'P0001',
+  'a revoked invite stays revoked; make a new invite instead', 'and never brings it back');
+select is(pg_temp.row_count($$update public.staff_invites set revoked_at = now() where email = 'super-baru@example.test'$$), 1,
+  'revokes a superadmin invite');
+select is(
+  (select a.title from public.security_alerts a join public.staff_invites i on a.details ->> 'invite_id' = i.id::text
+   where a.rule = 'superadmin_invite' and i.email = 'super-baru@example.test'),
+  'Undangan superadmin dicabut',
+  'which the alert reports as cancelled'
+);
 select throws_ok($$select invite_code_hash from public.staff_invites$$, '42501', null,
   'and never reads an invite code''s hash back');
 select is(pg_temp.row_count($$update public.site_settings set value = '"baru"',
@@ -151,6 +183,31 @@ select throws_ok($$update public.site_settings set value = 'null', updated_by = 
   'nor empties one');
 select is(pg_temp.row_count($$delete from public.site_settings where key = 'rls.private'$$), 1,
   'but removes an ordinary setting');
+
+-- ===== outside the API: the invite rules hold for the database owner too =====
+reset role;
+select throws_ok($$update public.staff_invites set revoked_at = null where email = 'calon@example.test'$$, 'P0001',
+  'a revoked invite stays revoked; make a new invite instead', 'nobody brings a revoked invite back, not even postgres');
+select throws_ok($$update public.staff_invites set accepted_at = now() where email = 'calon@example.test'$$, 'P0001',
+  'a revoked invite cannot be accepted', 'nor accepts one');
+select throws_ok($$update public.staff_invites set role = 'superadmin', rw_id = null where email = 'calon-dua@example.test'$$,
+  '42501', 'an invite never changes whom it invites, as what, or who made it',
+  'and an RW admin invite never becomes a superadmin invite');
+select throws_ok($$update public.staff_invites set accepted_at = now() where email = 'super-dua@example.test'$$, 'P0001', null,
+  'a superadmin invite cannot be accepted within 24 hours of the request');
+-- A day later, as the onboarding service will accept it.
+alter table public.staff_invites disable trigger staff_invites_guard;
+update public.staff_invites set created_at = now() - interval '25 hours', expires_at = now() + interval '47 hours'
+where email = 'super-dua@example.test';
+alter table public.staff_invites enable trigger staff_invites_guard;
+select lives_ok($$update public.staff_invites set accepted_at = now(), accepted_user_id = '00000000-0000-4000-8000-00000000f000'
+  where email = 'super-dua@example.test'$$, 'but can a day later');
+select is(
+  (select a.title from public.security_alerts a join public.staff_invites i on a.details ->> 'invite_id' = i.id::text
+   where a.rule = 'superadmin_invite' and i.email = 'super-dua@example.test'),
+  'Undangan superadmin diterima',
+  'which the alert reports as completed'
+);
 
 select * from finish();
 rollback;

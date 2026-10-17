@@ -283,8 +283,9 @@ select is(
     order by 1
   ),
   array['public.aal2', 'public.app_role', 'public.app_rw_id', 'public.cancel_staff_mfa_reset',
-        'public.cancel_superadmin_promotion', 'public.fresh_totp', 'public.generate_visit_sessions', 'public.is_admin_rw',
-        'public.is_staff', 'public.is_superadmin', 'public.owns_any_rw', 'public.owns_rw', 'public.reset_staff_mfa',
+        'public.cancel_superadmin_promotion', 'public.fresh_totp', 'public.generate_visit_sessions',
+        'public.invite_superadmin', 'public.is_admin_rw', 'public.is_staff', 'public.is_superadmin', 'public.owns_any_rw',
+        'public.owns_rw', 'public.reset_staff_mfa',
         'public.rpc_get_participants', 'public.rpc_log_ui_event', 'public.rpc_reveal_booking_contact',
         'public.set_staff_role', 'public.set_staff_status', 'public.today_jkt'],
   'authenticated can execute the ten RLS helpers and the staff RPCs granted in 0005, nothing else'

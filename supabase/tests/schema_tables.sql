@@ -162,11 +162,14 @@ select throws_ok(
     values ('new@example.test', 'none', 'hash-0', now() + interval '72 hours', '00000000-0000-4000-8000-000000000001')$$,
   '23514', null, 'an invite never grants the none role'
 );
+-- 0005 lets only invite_superadmin make a superadmin invite; under its flag the table's own rules still hold.
+select set_config('app.privileged_rpc', 'on', true);
 select throws_ok(
   $$insert into public.staff_invites (email, role, rw_id, invite_code_hash, expires_at, created_by)
     values ('new@example.test', 'superadmin', 8, 'hash-1', now() + interval '72 hours', '00000000-0000-4000-8000-000000000001')$$,
   '23514', null, 'a superadmin invite has no RW'
 );
+select set_config('app.privileged_rpc', '', true);
 insert into public.staff_invites (email, role, rw_id, invite_code_hash, expires_at, created_by)
 values ('new@example.test', 'admin_rw', 8, 'hash-2', now() + interval '72 hours', '00000000-0000-4000-8000-000000000001');
 select throws_ok(
