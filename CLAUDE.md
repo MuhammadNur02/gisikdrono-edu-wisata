@@ -123,7 +123,7 @@ flowchart LR
 | 3. Mutation | `src/server/actions/<domain>.ts` | Mandatory order (§5.2): validate -> guard -> service -> revalidate -> `ActionResult`. |
 | 4. Orchestration | `src/server/services/<domain>-service.ts` | Calls data access and RPCs; only the allow-listed services may use the service-role client. |
 | 5. Data access | `src/lib/supabase/server.ts` under RLS, or `public.*` / `internal.*` RPCs | Status columns and quota counters are written only inside `internal.*` functions. |
-| 6. Database | Postgres with RLS **enabled and forced** on every table | Deny-by-default grants; helpers `app_role()`, `app_rw_id()`, `is_superadmin()`, `owns_rw()`; AAL2 restrictive policies on finance/PII tables. |
+| 6. Database | Postgres with RLS **enabled and forced** on every table | Deny-by-default grants; helpers `app_role()`, `app_rw_id()`, `is_superadmin()`, `owns_rw()`; an AAL2 restrictive policy on every table `authenticated` may touch. |
 | 7. Side effects | `notifications` outbox, `documents` bucket, `booking_events`, `audit_logs` | Written in the same transaction as the state change; delivery is asynchronous. |
 | Machine callers | `api/webhooks/*`, `api/jobs/*` | Outside auth middleware; verify signature or `CRON_SECRET` first, read raw body, persist, then process. |
 
@@ -151,7 +151,7 @@ src/
     booking/ ticket/ certificates/ seo/ forms/ providers/
     admin/{shell,kpi,data-table,scanner,charts,status,calendar}/
   lib/
-    supabase/                  server.ts (cookies, RLS) | client.ts (browser, public only) | admin.ts (service role, allow-listed)
+    supabase/                  server.ts (cookies, RLS) | anon.ts (server, public reads, no session) | client.ts (browser, public only, no session) | admin.ts (service role, allow-listed)
     queries/                   cached public reads + tags.ts (revalidation tag registry)
     pricing/                   computeBookingQuote() - pure, 100 % coverage
     qr/                        sign.ts, verify.ts - the only place QR tokens are signed/verified
@@ -187,7 +187,7 @@ public/                        icons/, map/denah.svg, fonts/, og/
 | `src/app` | Route files, `layout.tsx`, `loading.tsx`, `error.tsx`, `generateMetadata`, route handlers | Business logic, SQL, pricing, signing, direct table writes, `'use client'` on `page.tsx` |
 | `src/components/ui` | shadcn-generated primitives | Hand-written components, domain logic, data fetching |
 | `src/components/*` | Presentational and island components; props are serialisable (ISO strings, not `Date`) | Imports of `src/server/**`, `src/lib/supabase/admin`, `server-only` modules |
-| `src/lib/queries` | Public cached reads wrapped in `unstable_cache` with tags from `tags.ts`, anon client only | Session-bound or service-role queries (never cache those) |
+| `src/lib/queries` | Public cached reads wrapped in `unstable_cache` with tags from `tags.ts`, through the session-less anon client `src/lib/supabase/anon.ts` only (ESLint) | Session-bound or service-role queries, `next/headers` (never cache those) |
 | `src/lib/pricing`, `src/lib/qr`, `src/lib/links` | Pure functions with 100 % line coverage | Side effects, I/O, React |
 | `src/lib/midtrans`, `src/lib/notifications`, `src/lib/email`, `src/lib/turnstile.ts` | The **only** modules allowed to call `fetch` to external hosts (base URLs from `src/lib/env.ts`) | Anything user-supplied as a URL |
 | `src/server/actions` | Server Actions following §5.2 | Raw `supabase.from(...).update` of status/money/quota columns; `redirect()` inside `try` |
@@ -292,7 +292,7 @@ These rules apply to all code and every commit. Language rules stay as in §3.3 
 | Live counters (session availability in the wizard, today's check-in count on the dashboard) | Client leaf that re-reads through the server (`router.refresh()` or a read-only Server Action on a 15 s interval) | The browser client (`src/lib/supabase/client.ts`) may subscribe to Realtime only on public, non-PII data (`v_session_availability`); staff counters never come from the browser client |
 | Anything touching secrets, service role, QR, links, pricing, PDF, Midtrans, notifications | **Server only**; module starts with `import 'server-only'` | Never imported by client files |
 
-Rules: `'use client'` only on leaf islands, never on `page.tsx`. Client components receive serialisable props (ISO strings, numbers, plain objects). Public pages export `revalidate` (3600; `/rw-08-kampung-seni-budaya/jadwal` 1800; `/e-booklet/*` 86400) plus tags. Booking, auth and dashboard routes export `dynamic = 'force-dynamic'` and send `Cache-Control: private, no-store` + `X-Robots-Tag: noindex`.
+Rules: `'use client'` only on leaf islands, never on `page.tsx`. Public pages read only through `src/lib/queries`: no Supabase client, no `src/server/**` and no `cookies()` under `src/app/(public)` (ESLint, `scripts/eslint-config.test.mjs`), so a signed-in staff member sees exactly the site a visitor sees. Client components receive serialisable props (ISO strings, numbers, plain objects). Public pages export `revalidate` (3600; `/rw-08-kampung-seni-budaya/jadwal` 1800; `/e-booklet/*` 86400) plus tags. Booking, auth and dashboard routes export `dynamic = 'force-dynamic'` and send `Cache-Control: private, no-store` + `X-Robots-Tag: noindex`.
 
 CSP follows the same split (docs/Security.md §8.2, decision of 2026-10-15). Private routes, listed in `src/config/routes.ts` (`/dashboard`, `/pesan`, `/reservasi`, `/login`, `/forgot-password`, `/reset-password`, `/mfa`, `/onboarding`, `/auth`, `/v`), get a per-request nonce with `'strict-dynamic'` from `src/middleware.ts`. Public ISR pages are rendered before any request exists, so they get a static CSP without a nonce (`script-src 'self' 'unsafe-inline'`). Never put an inline `next/script` or anything else that needs a nonce on a public page; never render raw HTML there either.
 
@@ -423,22 +423,23 @@ Never cache a query that uses the user session or the service-role client.
 
 ## 6. Supabase patterns
 
-### 6.1 The three clients
+### 6.1 The Supabase clients
 
 | File | Factory | Key | Allowed importers | Use |
 |---|---|---|---|---|
 | `src/lib/supabase/server.ts` | `createServerClient` + `cookies()` | anon | Server Components, Server Actions, route handlers | All user-facing reads and writes under RLS; staff RPCs (`public.*`) so `auth.uid()` is set |
-| `src/lib/supabase/client.ts` | `createBrowserClient` | anon | Client Components only | Public reads, Realtime on public data, signed-URL uploads. **Never** staff data, never bookings |
+| `src/lib/supabase/anon.ts` (`import 'server-only'`) | `createClient(url, anon key, { auth: { persistSession: false } })` | anon, no session | `src/lib/queries/**` only (ESLint) | Public reads as a visitor: no cookie and no session, so a signed-in staff member sees the same public site and every read can be cached for everyone |
+| `src/lib/supabase/client.ts` | `createClient(url, anon key, { auth: { persistSession: false } })` | anon, no session | Client Components only | Public reads, Realtime on public data, signed-URL uploads, without the session of whoever is signed in in that browser. **Never** staff data, never bookings |
 | `src/lib/supabase/admin.ts` (`import 'server-only'`) | `createClient(url, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })` | service role | `src/app/api/webhooks/**`, `src/app/api/jobs/**`, `src/server/services/{booking,payment,ticket,notification,document,export,staff}-service.ts`, `scripts/**` | Guest flows keyed by a verified token, `internal.*` functions, outbox worker |
 
 ESLint `no-restricted-imports` and a CI grep enforce the allow-list. Every importer of `admin.ts` carries a header comment stating why RLS cannot apply, and every query in it filters by an id derived from a verified token or signature. `admin.ts` reaches `internal.*` only through `public.svc_<name>` wrappers (decision of 2026-10-16): PostgREST exposes `public` alone, so each `internal` function the server calls gets a `security definer` wrapper named `svc_` + its own name in the same migration, executable by `service_role` only (revoked from `public`, `anon`, `authenticated`; pgTAP checks that no `svc_*` is callable by either), and `service_role` holds no right on `internal` itself. Never `.schema('internal')`. A PostgREST call cannot carry a `set_config` into the next one, so service-role writes pass the acting user to the wrapper (`p_actor_id`, e.g. `svc_log_audit`; `create_booking` takes `p_actor_id` itself) and audit rows never carry a NULL actor.
 
 ### 6.2 RLS reliance and the `getUser()` rule
 
-- RLS is **enabled and forced** on every table; `revoke all ... from anon, authenticated` then minimal grants; functions revoked from `public` by default. CI pgTAP fails when a table lacks RLS, when any function is executable by `anon` (none is: public writes go through Server Actions or route handlers that call `internal.*` under the service role), or when a function is executable by `authenticated` outside the staff-RPC allow-list. Stable read-only RLS helpers are the one exception to the function-grant rule: `today_jkt()` is granted to `anon` and `authenticated` because anon policies call it; `app_role()`, `app_rw_id()`, `is_superadmin()`, `is_admin_rw()`, `is_staff()`, `owns_rw(rw_id)`, `owns_any_rw(rw_ids)` and `aal2()` are granted to `authenticated` only. `app_role()` is the only helper that is `security definer` (it reads `profiles`, so an invoker version would recurse through the `profiles` policies); it skips the role-check line of the definer template. The pgTAP allow-list of P1.9.01 names exactly this list.
+- RLS is **enabled and forced** on every table; `revoke all ... from anon, authenticated` then minimal grants; functions revoked from `public` by default. CI pgTAP fails when a table lacks RLS, when any function is executable by `anon` (none is: public writes go through Server Actions or route handlers that call `internal.*` under the service role), or when a function is executable by `authenticated` outside the staff-RPC allow-list. Stable read-only RLS helpers are the one exception to the function-grant rule: `today_jkt()` is granted to `anon` and `authenticated` because anon policies call it; `app_role()`, `app_rw_id()`, `is_superadmin()`, `is_admin_rw()`, `is_staff()`, `owns_rw(rw_id)`, `owns_any_rw(rw_ids)`, `aal2()` and `fresh_totp()` are granted to `authenticated` only. `app_role()` is the only helper that is `security definer` (it reads `profiles`, so an invoker version would recurse through the `profiles` policies); it skips the role-check line of the definer template. The pgTAP allow-list of P1.9.01 names exactly this list.
 - Two schemas: `public` (tables, views, staff-callable RPCs, and the `svc_*` wrappers executable by `service_role` only) and `internal` (SECURITY DEFINER transition functions, not exposed to PostgREST, executed by `postgres` for pg_cron and reached by the server only through the `svc_*` wrappers).
 - Authorise with `supabase.auth.getUser()` and RLS. Never `getSession()` for authorization, never client-side role checks alone, never `user_metadata` in policies.
-- Claims `app_role`, `app_rw_id`, `claims_version` come from `public.custom_access_token_hook`; helpers `app_role()`, `app_rw_id()`, `is_superadmin()`, `is_admin_rw()`, `is_staff()`, `owns_rw(rw_id)`, `owns_any_rw(rw_ids)`, `aal2()`, `today_jkt()` are wrapped as `(select ...)` in policies.
+- Claims `app_role`, `app_rw_id`, `claims_version` come from `public.custom_access_token_hook`; helpers `app_role()`, `app_rw_id()`, `is_superadmin()`, `is_admin_rw()`, `is_staff()`, `owns_rw(rw_id)`, `owns_any_rw(rw_ids)`, `aal2()`, `fresh_totp()`, `today_jkt()` are wrapped as `(select ...)` in policies.
 - Application guards are the first line; RLS is the second. Both are required.
 
 Policy template for an RW-scoped content table:
@@ -584,7 +585,7 @@ Attempts (`internal.create_payment_attempt` + `attach_snap_token`): at most one 
 - Staff accounts are invite-only (`staff_invites`, public sign-up disabled). TOTP MFA is mandatory for **every** staff role (`superadmin` and `admin_rw`): `(admin)/dashboard/layout.tsx` redirects AAL1 sessions to `/mfa/verify` (or `/mfa/enroll` when no factor exists); enrolment happens only at onboarding or at AAL2; the password-verification hook `public.hook_password_verification_attempt` enforces lockout inside Auth.
 - Staff RPCs (`public.*`, granted to `authenticated`) re-check scope inside the function. `internal.*` functions are executed only by the service role from allow-listed services or by cron.
 - `profiles.role`, `rw_id`, `is_active`, `mfa_required` are not updatable by `authenticated`; changes go through `set_staff_role` / `set_staff_status` (superadmin, fresh TOTP <= 5 min, never own row). Deactivation also removes the role and RW; a returning officer gets them back only through `set_staff_role`. Every change bumps `claims_version` and deletes sessions.
-- Finance and PII tables (`payments`, `payment_adjustments`, `revenue_share_*`, `exports`, `audit_logs`, `site_settings`, `profiles`, `booking_participants`) carry restrictive AAL2 policies.
+- Every table `authenticated` holds a right on carries a restrictive AAL2 policy `<table>_aal2` (decision of 2026-10-17), so no staff read or write works at AAL1; a migration that grants a new table to `authenticated` adds its policy in the same file (`rls_hygiene.sql` fails otherwise). The superadmin's writes to `staff_invites`, `site_settings`, `revenue_share_rules`, `revenue_share_rule_lines` and the acknowledgement of `security_alerts` also need `fresh_totp()` (a TOTP code from the last five minutes) through restrictive per-command policies `<table>_fresh_totp_<command>` (docs/Security.md §5.3). A superadmin is invited only through `invite_superadmin` (accepted no sooner than 24 h later, with the promotion alerts), and a revoked invite is never revoked back (`staff_invites_guard`).
 - Rich text is Tiptap/ProseMirror JSON in `articles.body_json` rendered by an allowlisted React renderer; `react/no-danger: error`; HTML is never stored. SVG uploads are rejected.
 - Hardening defaults in `next.config.ts`: `poweredByHeader: false`, `productionBrowserSourceMaps: false`, `images.remotePatterns` pinned, `experimental.serverActions.bodySizeLimit '512kb'`, `allowedOrigins` empty, CSP built in `src/middleware.ts` from `src/lib/csp.ts` (nonce + `strict-dynamic` on the private routes of `src/config/routes.ts`, static policy without a nonce on public ISR pages), HSTS, `frame-ancestors 'none'`, COOP/CORP `same-origin`. `safeRedirect()` accepts only `^/(?![/\\])`. Supabase Auth redirect allow-list = `/auth/callback` only.
 
@@ -630,7 +631,7 @@ ESLint flat config (`next/core-web-vitals`, `typescript-eslint` strict-type-chec
 | `check` | `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm db:types:check` | yes |
 | `db` | `supabase start`, apply migrations, `pnpm db:test`, `pnpm test:integration` | yes |
 | `security` | semgrep, gitleaks, `pnpm audit`, `pnpm build` + `pnpm check:secrets` | yes |
-| `e2e` | Playwright against the Vercel preview (staging Supabase + Midtrans sandbox) | on PRs touching `booking\|payment\|qr\|scanner` |
+| `e2e` | Playwright against the Vercel preview (staging Supabase + Midtrans sandbox) | on PRs touching `booking\|payment\|qr\|scanner`, `supabase/migrations/**`, `src/server/services/**` or `src/lib/{pricing,qr,links,midtrans}/**` |
 
 Branch protection on `main`: PR required, all checks green, no force push, linear history. Pre-commit: Husky + lint-staged + commitlint + gitleaks.
 
@@ -809,7 +810,7 @@ supabase/migrations/<YYYYMMDDHHMMSS>_<table>.sql:
   revoke all on public.<table> from anon, authenticated; explicit grants.
 - Policies: anon/authenticated read only published rows (if public content);
   staff via (select public.is_superadmin()) or (select public.owns_rw(rw_id));
-  restrictive AAL2 policy if the table holds money or PII.
+  restrictive AAL2 policy <table>_aal2 whenever authenticated is granted anything on it.
 - Audit trigger (log_audit) if PII or money; append-only trigger if it is a log or ledger.
 Then: supabase/tests/<table>.sql pgTAP (RLS enabled, cross-RW 0 rows, write denied for wrong role),
 pnpm db:types, mirror enums in src/db/enums.ts, DTO in src/types/<table>.ts,
@@ -946,11 +947,11 @@ Codes: `booking_code` = `GSK-` + 8 chars Crockford base32 (`GSK-7F3K9Q2M`); `pay
 
 | Kind | Names |
 |---|---|
-| Staff RPCs (`public`, re-check scope) | `validate_ticket`, `check_in_ticket`, `undo_check_in`, `mark_booking_paid_manually`, `cancel_booking`, `extend_booking_hold`, `reactivate_booking`, `record_refund`, `resolve_booking_review`, `issue_certificates`, `revoke_ticket`, `revoke_certificate`, `settle_revenue_entries`, `revenue_recap`, `visit_stats`, `generate_visit_sessions`, `request_notification_resend`, `rpc_reveal_booking_contact`, `rpc_get_participants`, `rpc_create_export`, `rpc_log_ui_event`, `propose_adjustment`, `approve_adjustment`, `apply_adjustment`, `set_staff_role`, `set_staff_status`, `reset_staff_mfa`, `cancel_staff_mfa_reset`, `cancel_superadmin_promotion` |
+| Staff RPCs (`public`, re-check scope) | `validate_ticket`, `check_in_ticket`, `undo_check_in`, `mark_booking_paid_manually`, `cancel_booking`, `extend_booking_hold`, `reactivate_booking`, `record_refund`, `resolve_booking_review`, `issue_certificates`, `revoke_ticket`, `revoke_certificate`, `settle_revenue_entries`, `revenue_recap`, `visit_stats`, `generate_visit_sessions`, `request_notification_resend`, `rpc_reveal_booking_contact`, `rpc_get_participants`, `rpc_create_export`, `rpc_log_ui_event`, `propose_adjustment`, `approve_adjustment`, `apply_adjustment`, `set_staff_role`, `set_staff_status`, `reset_staff_mfa`, `cancel_staff_mfa_reset`, `cancel_superadmin_promotion`, `invite_superadmin` |
 | Service-role entry points (`public`, `service_role` only) | `svc_rate_limit_hit`, `svc_enqueue_notification`, `svc_increment_booklet_download`, `svc_expire_stale_bookings`, `svc_log_audit`, `svc_purgeable_files`, `svc_forget_purged_files`; every later `internal` function the server calls adds `svc_<its name>` |
 | Internal functions (`internal`, cron / via `svc_*`) | `create_booking`, `reserve_session_quota`, `release_booking_quota`, `create_payment_attempt`, `attach_snap_token`, `apply_payment_event`, `record_payment_failure`, `create_quotation`, `next_document_number`, `allocate_revenue_share`, `reverse_revenue_share`, `issue_phone_otp`, `verify_phone_otp`, `submit_review`, `expire_stale_bookings`, `close_past_bookings`, `enqueue_visit_reminders`, `reconcile_session_counters`, `increment_booklet_download`, `claim_notifications`, `complete_notification`, `fail_notification`, `enqueue_notification`, `rate_limit_hit`, `prune_operational_tables`, `purge_participants`, `anonymise_booker_pii`, `purgeable_files`, `forget_purged_files`, `verify_ledger_chain`, `verify_audit_chain`, `log_audit`, `hash_email`, `staff_token_claims`, `record_login_attempt` (the last three are the bodies behind the Auth hooks and the keyed email hash; owned by `postgres`, never granted) |
 | Auth hooks | `public.custom_access_token_hook`, `public.hook_password_verification_attempt` |
-| RLS and storage helpers (`public`) | `app_role()`, `app_rw_id()`, `is_superadmin()`, `is_admin_rw()`, `is_staff()`, `owns_rw(rw_id)`, `owns_any_rw(rw_ids)`, `aal2()`, `today_jkt()`, `storage_owner_prefix_ok(name)` |
+| RLS and storage helpers (`public`) | `app_role()`, `app_rw_id()`, `is_superadmin()`, `is_admin_rw()`, `is_staff()`, `owns_rw(rw_id)`, `owns_any_rw(rw_ids)`, `aal2()`, `fresh_totp()`, `today_jkt()`, `storage_owner_prefix_ok(name)` |
 | Views | `v_session_availability`, `v_public_reviews`, `v_bookings_staff`, `v_booking_admin`, `v_attendance_today`, `v_booking_export`, `v_revenue_recap_daily`, `v_revenue_recap_by_party`, `v_revenue_recap_by_booking`, `v_finance_daily` |
 | Buckets | `uploads-quarantine`, `public-media`, `documents` |
 | pg_cron jobs | `expire_stale_bookings */5`, `process-notifications * * * * *` (pg_net), `payments-poll */5` (pg_net), `enqueue_visit_reminders 09:00 WIB`, `close_past_bookings + reconcile_session_counters 23:30 WIB`, `generate_visit_sessions 00:00 WIB`, `reconcile-payments 02:30 WIB` (pg_net), `anomaly-scan */5` (pg_net), `purge/retention 02:00 WIB` (`purge_participants` + `anonymise_booker_pii` + `guest_otps` > 24 h), `purge-storage 02:15 WIB` (pg_net; deletes the files the retention run marked plus `uploads-quarantine` > 24 h), `prune rate_limit_buckets hourly`, `prune_operational_tables monthly` |

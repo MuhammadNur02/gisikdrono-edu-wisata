@@ -126,12 +126,15 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Did booking, payment, QR or scanner code change?
+      # Migrations, services and the money, QR and link libraries change what the booking flow does even when
+      # no file name says booking, so they run the suite as well.
+      - name: Did booking, payment, QR, scanner, migration or service code change?
         id: scope
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
-          if git diff --name-only "origin/$BASE_REF...HEAD" | grep -Eq 'booking|payment|qr|scanner'; then
+          if git diff --name-only "origin/$BASE_REF...HEAD" \
+            | grep -Eq 'booking|payment|qr|scanner|^supabase/migrations/|^src/server/services/|^src/lib/(pricing|qr|links|midtrans)/'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -144,8 +147,18 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - if: steps.scope.outputs.changed == 'true'
+        run: pnpm install --frozen-lockfile
+      - if: steps.scope.outputs.changed == 'true'
+        name: Sandbox server env for the build
+        # The same obviously fake values the security job builds with (tests/fixtures/env.ts); the public
+        # values stay as the job sets them above.
+        run: >-
+          pnpm exec tsx -e "import { sandboxEnv } from './tests/fixtures/env';
+          for (const [name, value] of Object.entries(sandboxEnv))
+          if (!name.startsWith('NEXT_PUBLIC_')) console.log(name + '=' + value);"
+          >> "$GITHUB_ENV"
+      - if: steps.scope.outputs.changed == 'true'
         run: |
-          pnpm install --frozen-lockfile
           pnpm exec playwright install --with-deps chromium
           pnpm build
           pnpm e2e --pass-with-no-tests

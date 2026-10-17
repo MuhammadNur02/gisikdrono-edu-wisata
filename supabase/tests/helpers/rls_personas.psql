@@ -1,0 +1,98 @@
+-- Personas for the RLS suites (docs/Security.md §6.9, Task P1.9.02). A suite includes this file inside its own
+-- transaction, writes its fixtures as postgres, and then becomes one persona at a time:
+--
+--   reset role;
+--   select pg_temp.act_as('admin_rw_05');
+--
+-- act_as switches to the persona's API role, anon or authenticated, never postgres, and sets
+-- request.jwt.claims the way GoTrue does: the standard claims plus what the real access-token hook adds
+-- (internal.staff_token_claims), so the helpers read exactly what they read in production. The personas are
+-- anon, none (signed in without a role), admin_rw_05 and admin_rw_08, all at AAL2 as the dashboard requires,
+-- so their checks test the role and never just the missing factor, and admin_rw_05_aal1, superadmin_aal1,
+-- superadmin_aal2 and superadmin_stale_totp. The AAL2 personas verified their TOTP code a minute ago;
+-- superadmin_stale_totp did two hours ago, an AAL2 session left open on a desk, which reads but cannot take the
+-- steps that need a fresh code (public.fresh_totp, docs/Security.md §5.3).
+--
+-- A suite counts and lists its own fixture rows only (by id, code, slug or key), never a whole table, so the
+-- reference rows of 0008_seed and the rows of other suites never change its answers.
+
+insert into public.rw_units (id, code, slug, name, theme_label) values
+  (5, 'RW05', 'rw-05-ecowastreme', 'RW 05 Ecowastreme', 'Ekowisata & Lingkungan'),
+  (8, 'RW08', 'rw-08-kampung-seni-budaya', 'RW 08 Kampung Seni Budaya', 'Seni & Budaya')
+on conflict (id) do nothing;
+-- Every package write checks the price floor, which refuses to run without its setting (0005).
+insert into public.site_settings (key, value) values ('pricing.min_price_per_pax', '5000') on conflict (key) do nothing;
+
+insert into auth.users (id, email) values
+  ('00000000-0000-4000-8000-00000000f000', 'rls-none@example.test'),
+  ('00000000-0000-4000-8000-00000000f001', 'rls-super@example.test'),
+  ('00000000-0000-4000-8000-00000000f005', 'rls-admin05@example.test'),
+  ('00000000-0000-4000-8000-00000000f008', 'rls-admin08@example.test');
+insert into public.profiles (id, email, full_name, role, rw_id) values
+  ('00000000-0000-4000-8000-00000000f000', 'rls-none@example.test', 'Tanpa Peran', 'none', null),
+  ('00000000-0000-4000-8000-00000000f001', 'rls-super@example.test', 'Super RLS', 'superadmin', null),
+  ('00000000-0000-4000-8000-00000000f005', 'rls-admin05@example.test', 'Admin RLS 05', 'admin_rw', 5),
+  ('00000000-0000-4000-8000-00000000f008', 'rls-admin08@example.test', 'Admin RLS 08', 'admin_rw', 8);
+
+create function pg_temp.persona_id(p_persona text) returns uuid
+  language sql immutable
+as $$
+  select (case p_persona
+    when 'none' then '00000000-0000-4000-8000-00000000f000'
+    when 'superadmin_aal1' then '00000000-0000-4000-8000-00000000f001'
+    when 'superadmin_aal2' then '00000000-0000-4000-8000-00000000f001'
+    when 'superadmin_stale_totp' then '00000000-0000-4000-8000-00000000f001'
+    when 'admin_rw_05' then '00000000-0000-4000-8000-00000000f005'
+    when 'admin_rw_05_aal1' then '00000000-0000-4000-8000-00000000f005'
+    when 'admin_rw_08' then '00000000-0000-4000-8000-00000000f008'
+  end)::uuid;
+$$;
+
+create function pg_temp.act_as(p_persona text) returns void
+  language plpgsql
+as $$
+declare
+  user_id uuid := pg_temp.persona_id(p_persona);
+  is_aal2 boolean := p_persona in ('none', 'admin_rw_05', 'admin_rw_08', 'superadmin_aal2', 'superadmin_stale_totp');
+  totp_verified_at bigint := extract(epoch from now())::bigint
+                             - case when p_persona = 'superadmin_stale_totp' then 7200 else 60 end;
+  signed_in_at bigint := totp_verified_at - 60;
+begin
+  if p_persona = 'anon' then
+    perform set_config('request.jwt.claims', '{"iss": "supabase", "role": "anon"}', true);
+    perform set_config('role', 'anon', true);
+    return;
+  end if;
+  if user_id is null then
+    raise exception 'unknown persona %', p_persona;
+  end if;
+
+  perform set_config('request.jwt.claims', (jsonb_build_object(
+      'iss', 'supabase', 'aud', 'authenticated', 'sub', user_id, 'role', 'authenticated',
+      'email', (select u.email from auth.users u where u.id = user_id), 'session_id', gen_random_uuid(),
+      'is_anonymous', false, 'aal', case when is_aal2 then 'aal2' else 'aal1' end,
+      'amr', case when is_aal2
+                  then jsonb_build_array(jsonb_build_object('method', 'totp', 'timestamp', totp_verified_at),
+                                         jsonb_build_object('method', 'password', 'timestamp', signed_in_at))
+                  else jsonb_build_array(jsonb_build_object('method', 'password', 'timestamp', signed_in_at))
+             end)
+    || internal.staff_token_claims(user_id))::text, true);
+  perform set_config('role', 'authenticated', true);
+end;
+$$;
+
+-- How many rows a statement affects or returns for the current persona: RLS hides rows without an error,
+-- so a write that is filtered out shows up as 0.
+create function pg_temp.row_count(p_statement text) returns integer
+  language plpgsql
+as $$
+declare
+  affected integer;
+begin
+  execute p_statement;
+  get diagnostics affected = row_count;
+  return affected;
+end;
+$$;
+-- 0001 takes EXECUTE away from PUBLIC on every function postgres creates, pg_temp ones included.
+grant execute on function pg_temp.row_count(text) to anon, authenticated;

@@ -2,7 +2,9 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(435);
+select plan(438);
+-- Every package write checks the price floor, which refuses to run without its setting (0005).
+insert into public.site_settings (key, value) values ('pricing.min_price_per_pax', '5000') on conflict (key) do nothing;
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -280,9 +282,13 @@ select is(
       and has_function_privilege('authenticated', p.oid, 'execute')
     order by 1
   ),
-  array['public.aal2', 'public.app_role', 'public.app_rw_id', 'public.is_admin_rw', 'public.is_staff',
-        'public.is_superadmin', 'public.owns_any_rw', 'public.owns_rw', 'public.today_jkt'],
-  'authenticated can execute the nine RLS helpers and nothing else before 0005'
+  array['public.aal2', 'public.app_role', 'public.app_rw_id', 'public.cancel_staff_mfa_reset',
+        'public.cancel_superadmin_promotion', 'public.fresh_totp', 'public.generate_visit_sessions',
+        'public.invite_superadmin', 'public.is_admin_rw', 'public.is_staff', 'public.is_superadmin', 'public.owns_any_rw',
+        'public.owns_rw', 'public.reset_staff_mfa',
+        'public.rpc_get_participants', 'public.rpc_log_ui_event', 'public.rpc_reveal_booking_contact',
+        'public.set_staff_role', 'public.set_staff_status', 'public.today_jkt'],
+  'authenticated can execute the ten RLS helpers and the staff RPCs granted in 0005, nothing else'
 );
 
 -- ===== profiles_guard (Task P1.3.05) =====
@@ -448,9 +454,15 @@ insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time
 values ('00000000-0000-4000-8000-0000000000b1', 5, pg_temp.days_from_today(27), '08:00', '10:00', 'Sesi Pagi', 40),
        ('00000000-0000-4000-8000-0000000000b2', 5, pg_temp.days_from_today(28), '08:00', '10:00', 'Sesi Pagi', 40);
 
--- As the RW 05 admin.
-select set_config('request.jwt.claims',
-  '{"sub":"00000000-0000-4000-8000-000000000002","role":"authenticated","aal":"aal2","app_role":"admin_rw","app_rw_id":5,"claims_version":3}', true);
+-- As an RW 05 admin of this section's own, with the claims their profile holds: the staff tests above moved
+-- profile 0002 to RW 08, so its old hand-written claims named no real admin_rw at all.
+insert into auth.users (id, email) values ('00000000-0000-4000-8000-0000000a0e05', 'penjaga05@example.test');
+insert into public.profiles (id, email, full_name, role, rw_id)
+values ('00000000-0000-4000-8000-0000000a0e05', 'penjaga05@example.test', 'Penjaga RW 05', 'admin_rw', 5);
+select set_config('request.jwt.claims', (
+  select jsonb_build_object('sub', id, 'role', 'authenticated', 'aal', 'aal2', 'app_role', role,
+                            'app_rw_id', rw_id, 'claims_version', claims_version)::text
+  from public.profiles where id = '00000000-0000-4000-8000-0000000a0e05'), true);
 set local role authenticated;
 select lives_ok(
   $$update public.rw_units set tagline = 'Hijau dan bersih' where id = 5$$,
@@ -1130,11 +1142,21 @@ select is(
   'a product price change raises price_changed as well'
 );
 
-delete from public.site_settings where key = 'pricing.min_price_per_pax';
-select lives_ok(
-  $$update public.tour_packages set price_per_pax = 1000 where id = '00000000-0000-4000-8000-0000000000c1'$$,
-  'without the setting there is no floor, which is why 0008_seed writes it everywhere'
+-- 0005 (review of 0005, finding 3): the floor is never switched off. Its setting cannot be removed, and were it
+-- missing all the same, a price write would fail rather than go unchecked.
+select throws_ok(
+  $$delete from public.site_settings where key = 'pricing.min_price_per_pax'$$,
+  'P0001', 'site setting pricing.min_price_per_pax is required and cannot be removed',
+  'the price floor''s setting cannot be removed'
 );
+alter table public.site_settings disable trigger site_settings_required_keys;
+delete from public.site_settings where key = 'pricing.min_price_per_pax';
+select throws_ok(
+  $$update public.tour_packages set price_per_pax = 1000 where id = '00000000-0000-4000-8000-0000000000c1'$$,
+  '55000', null, 'and without it no package price is written at all'
+);
+insert into public.site_settings (key, value) values ('pricing.min_price_per_pax', '5000');
+alter table public.site_settings enable trigger site_settings_required_keys;
 
 -- ===== Quota =====
 
@@ -1656,6 +1678,11 @@ insert into public.booking_participants (id, booking_id, seq_no, full_name, role
   ('00000000-0000-4000-8000-000000001c01', '00000000-0000-4000-8000-000000001e07', 1, 'Rina Wulandari', 'student'),
   ('00000000-0000-4000-8000-000000001c02', '00000000-0000-4000-8000-000000001e07', 2, 'Joko Susilo', 'student'),
   ('00000000-0000-4000-8000-000000001c03', '00000000-0000-4000-8000-000000001e08', 1, 'Tari Puspita', 'student');
+insert into public.booking_addons (booking_id, product_id, rw_id, vendor_id, product_name_snapshot, unit_price, qty,
+  line_total, notes)
+select ('00000000-0000-4000-8000-00000000' || code)::uuid, '00000000-0000-4000-8000-0000000000d2', 5,
+       '00000000-0000-4000-8000-0000000000d1', 'Keripik', 10000, 1, 10000, 'Antar ke Bu Ani di aula'
+from unnest(array['1e07', '1e08', '1e10']) as code;
 insert into public.certificates (id, booking_id, participant_id, kind, certificate_number, verify_code, recipient_name, visit_date, rw_ids)
 values ('00000000-0000-4000-8000-000000001a07', '00000000-0000-4000-8000-000000001e07', '00000000-0000-4000-8000-000000001c01',
         'participant', 'SERT/GSK/2026/00907', 'R7PXRGE001', 'Rina Wulandari', public.today_jkt() - 100, '{5}');
@@ -1696,6 +1723,14 @@ select is(
   'the run leaves one purge_run row with its counts'
 );
 
+-- 0005 (review of 0005, finding 3): without its retention setting the run stops instead of keeping every contact.
+alter table public.site_settings disable trigger site_settings_required_keys;
+delete from public.site_settings where key = 'pii_retention_months';
+select throws_ok($$select internal.anonymise_booker_pii()$$, '55000', null,
+  'without pii_retention_months the anonymisation run fails instead of keeping every contact');
+insert into public.site_settings (key, value) values ('pii_retention_months', '24');
+alter table public.site_settings enable trigger site_settings_required_keys;
+
 select internal.anonymise_booker_pii();
 select set_config('app.purge', '', true), set_config('app.audit_mode', '', true), set_config('app.in_rpc', '', true),
   set_config('app.actor_role', '', true);
@@ -1727,6 +1762,14 @@ select is(
    from public.bookings where booking_code in ('GSK-R0B01E08', 'GSK-R0B01E10')),
   'GSK-R0B01E08=-/-/-/- GSK-R0B01E10=-/-/-/-',
   'staff notes and the cancel, review and discount reasons go too, even on a paid booking'
+);
+select is(
+  (select string_agg(right(booking_id::text, 4) || '=' || coalesce(notes, '-'), ' ' order by booking_id)
+   from public.booking_addons
+   where booking_id in ('00000000-0000-4000-8000-000000001e07', '00000000-0000-4000-8000-000000001e08',
+                        '00000000-0000-4000-8000-000000001e10')),
+  '1e07=Antar ke Bu Ani di aula 1e08=- 1e10=-',
+  'and so do the notes the visitor left on their add-ons (review of 0005, L3)'
 );
 
 -- Document snapshots keep to the one shape of docs/PRD.md §8.4.5 and name the institution, never a
@@ -2272,7 +2315,7 @@ select is(
   (select string_agg(p.proname, ', ' order by p.proname) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and not p.proname like 'svc_%' and p.prorettype <> 'trigger'::regtype
      and p.proname not in ('app_role', 'app_rw_id', 'is_superadmin', 'is_admin_rw', 'is_staff', 'owns_rw',
-                           'owns_any_rw', 'aal2', 'today_jkt')
+                           'owns_any_rw', 'aal2', 'fresh_totp', 'today_jkt')
      and has_function_privilege('service_role', p.oid, 'execute')),
   null,
   'the service role can call no staff RPC and neither Auth hook, only its svc_ entry points'
@@ -2629,10 +2672,11 @@ select is(
   'contacts appear masked'
 );
 select is(
-  (select (payments -> 0 ->> 'gross_amount') || ' ' || (tickets -> 0 ->> 'status') from public.v_booking_admin
-   where booking_code = 'GSK-J0B01E05'),
-  '100000 expired',
-  'the detail view adds payments and tickets'
+  (select (payments -> 0 ->> 'order_id') || ' ' || (payments -> 0 ->> 'status') || ' ' || (payments -> 0 ? 'gross_amount')
+          || ' ' || (tickets -> 0 ->> 'status')
+   from public.v_booking_admin where booking_code = 'GSK-J0B01E05'),
+  'GSK-J0B01E05-01 settled false expired',
+  'the detail view adds payments, without their amounts since the review of 0005, and tickets'
 );
 select is(
   (select jsonb_object_agg(beneficiary_key, jsonb_build_array(beneficiary_name, accrued, paid_out, outstanding))
@@ -2743,7 +2787,7 @@ select ok(
 );
 select is(
   (select details ->> 'reason' from public.security_events
-   where event_type = 'pii_revealed' and entity_id = '00000000-0000-4000-8000-000000001e06'),
+   where event_type = 'pii_revealed' and entity_id = '00000000-0000-4000-8000-000000001e06' and details ? 'reason'),
   'Konfirmasi jumlah peserta',
   'each reveal is a security event with its reason'
 );
@@ -2754,9 +2798,10 @@ select is(
   'and each participant read is audited with its row count'
 );
 
--- Forty-eight more reveals today bring the admin to 49; the 50th raises an alert, the 51st is refused.
+-- Forty-seven more reveals today bring the admin to 49 (the contact reveal and the participant read above
+-- count too); the 50th raises an alert, the 51st is refused.
 insert into public.security_events (event_type, actor_id, entity_type, entity_id)
-select 'pii_revealed', '00000000-0000-4000-8000-000000000002', 'bookings', 'earlier-' || n from generate_series(1, 48) n;
+select 'pii_revealed', '00000000-0000-4000-8000-000000000002', 'bookings', 'earlier-' || n from generate_series(1, 47) n;
 set local role authenticated;
 select lives_ok(
   $$select public.rpc_reveal_booking_contact('00000000-0000-4000-8000-000000001e06', 'Konfirmasi ulang jadwal')$$,
@@ -2764,7 +2809,7 @@ select lives_ok(
 );
 select throws_ok(
   $$select public.rpc_reveal_booking_contact('00000000-0000-4000-8000-000000001e06', 'Konfirmasi ulang jadwal')$$,
-  'P0001', 'the daily limit of 50 contact reveals is reached', 'the 51st is refused'
+  'P0001', 'the daily limit of 50 personal-data reveals is reached', 'the 51st is refused'
 );
 reset role;
 select is(

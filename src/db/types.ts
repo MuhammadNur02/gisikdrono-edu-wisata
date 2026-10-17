@@ -3865,7 +3865,6 @@ export type Database = {
           checked_in_at: string | null
           completed_at: string | null
           created_at: string | null
-          discount_amount: number | null
           email_masked: string | null
           expired_at: string | null
           expires_at: string | null
@@ -3892,7 +3891,6 @@ export type Database = {
           rw_ids: number[] | null
           shows_amounts: boolean | null
           status: Database["public"]["Enums"]["booking_status"] | null
-          subtotal_addons: number | null
           subtotal_package: number | null
           ticket_statuses: Json | null
           tickets: Json | null
@@ -3952,7 +3950,6 @@ export type Database = {
           checked_in_at: string | null
           completed_at: string | null
           created_at: string | null
-          discount_amount: number | null
           email_masked: string | null
           expired_at: string | null
           expires_at: string | null
@@ -3977,7 +3974,6 @@ export type Database = {
           rw_ids: number[] | null
           shows_amounts: boolean | null
           status: Database["public"]["Enums"]["booking_status"] | null
-          subtotal_addons: number | null
           subtotal_package: number | null
           ticket_statuses: Json | null
           total_amount: number | null
@@ -4147,12 +4143,17 @@ export type Database = {
         Returns: undefined
       }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      fresh_totp: { Args: never; Returns: boolean }
       generate_visit_sessions: {
         Args: { p_from: string; p_rw_id: number; p_to: string }
         Returns: number
       }
       hook_password_verification_attempt: {
         Args: { event: Json }
+        Returns: Json
+      }
+      invite_superadmin: {
+        Args: { p_email: string; p_invite_code_hash: string }
         Returns: Json
       }
       is_admin_rw: { Args: never; Returns: boolean }

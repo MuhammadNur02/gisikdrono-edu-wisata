@@ -1,7 +1,9 @@
 -- Structure test for 0003_tables, extended group by group: exact columns, the types other code
 -- relies on, keys, and the CHECK / unique rules proven by trying to break them.
 begin;
-select plan(212);
+select plan(213);
+-- Every package write checks the price floor, which refuses to run without its setting (0005).
+insert into public.site_settings (key, value) values ('pricing.min_price_per_pax', '5000') on conflict (key) do nothing;
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date
@@ -28,15 +30,17 @@ select is(
   'every public table has RLS enabled and forced'
 );
 
--- 0005_policies_grants is the first migration allowed to grant anything to the API roles.
+-- 0005 grants by column, so a column added later stays private until a migration grants it. The only
+-- table-level right is DELETE, for staff on the tables whose policies let them remove rows.
 select is(
   array(
-    select distinct table_name::text from information_schema.role_table_grants
-    where table_schema = 'public' and grantee in ('anon', 'authenticated')
+    select distinct g.grantee || ':' || g.privilege_type from information_schema.role_table_grants g
+    join information_schema.tables t on t.table_schema = g.table_schema and t.table_name = g.table_name
+    where g.table_schema = 'public' and g.grantee in ('anon', 'authenticated') and t.table_type = 'BASE TABLE'
     order by 1
   ),
-  array[]::text[],
-  'anon and authenticated have no rights on any public table before 0005'
+  array['authenticated:DELETE'],
+  'anon and authenticated hold no table-level right but DELETE; everything else is granted by column'
 );
 
 select is(
@@ -158,11 +162,14 @@ select throws_ok(
     values ('new@example.test', 'none', 'hash-0', now() + interval '72 hours', '00000000-0000-4000-8000-000000000001')$$,
   '23514', null, 'an invite never grants the none role'
 );
+-- 0005 lets only invite_superadmin make a superadmin invite; under its flag the table's own rules still hold.
+select set_config('app.privileged_rpc', 'on', true);
 select throws_ok(
   $$insert into public.staff_invites (email, role, rw_id, invite_code_hash, expires_at, created_by)
     values ('new@example.test', 'superadmin', 8, 'hash-1', now() + interval '72 hours', '00000000-0000-4000-8000-000000000001')$$,
   '23514', null, 'a superadmin invite has no RW'
 );
+select set_config('app.privileged_rpc', '', true);
 insert into public.staff_invites (email, role, rw_id, invite_code_hash, expires_at, created_by)
 values ('new@example.test', 'admin_rw', 8, 'hash-2', now() + interval '72 hours', '00000000-0000-4000-8000-000000000001');
 select throws_ok(
@@ -345,12 +352,16 @@ select throws_ok(
   $$insert into public.tour_package_legs (package_id, rw_id, leg_order) values ('00000000-0000-4000-8000-0000000000c1', 5, 2)$$,
   '23505', null, 'a package visits each RW once'
 );
+-- A combo takes legs in several RWs (an RW package keeps its single leg in its own RW, tour_package_legs_guard).
+insert into public.tour_packages (id, category, slug, name, pricing_basis, flat_price)
+values ('00000000-0000-4000-8000-0000000000c9', 'combo', 'kombinasi-urutan', 'Kombinasi Urutan', 'flat_group', 1500000);
+insert into public.tour_package_legs (package_id, rw_id, leg_order) values ('00000000-0000-4000-8000-0000000000c9', 5, 1);
 select throws_ok(
-  $$insert into public.tour_package_legs (package_id, rw_id, leg_order) values ('00000000-0000-4000-8000-0000000000c1', 8, 1)$$,
+  $$insert into public.tour_package_legs (package_id, rw_id, leg_order) values ('00000000-0000-4000-8000-0000000000c9', 8, 1)$$,
   '23505', null, 'leg order is unique within a package'
 );
 select throws_ok(
-  $$insert into public.tour_package_legs (package_id, rw_id, leg_order) values ('00000000-0000-4000-8000-0000000000c1', 8, 0)$$,
+  $$insert into public.tour_package_legs (package_id, rw_id, leg_order) values ('00000000-0000-4000-8000-0000000000c9', 8, 0)$$,
   '23514', null, 'leg order starts at 1'
 );
 
@@ -816,10 +827,19 @@ select throws_ok(
             '00000000-0000-4000-8000-000000000002', 'check_in', 'ok')$$,
   '23505', null, 'a retried scan attempt cannot be recorded twice'
 );
+-- 0005 (review L2): for a valid ticket the scanned string is the signed token, so it is kept only as a digest.
 select throws_ok(
   $$insert into public.ticket_scans (attempt_id, scanned_by, phase, result, raw_payload)
-    values (gen_random_uuid(), '00000000-0000-4000-8000-000000000002', 'validate', 'invalid_signature', repeat('x', 129))$$,
-  '23514', null, 'only the first 128 characters of a scanned payload are kept'
+    values (gen_random_uuid(), '00000000-0000-4000-8000-000000000002', 'validate', 'invalid_signature',
+            'https://example.test/v/GSK.k1.AAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB')$$,
+  '23514', null, 'a scanned payload is never kept as it was scanned'
+);
+select lives_ok(
+  $$insert into public.ticket_scans (attempt_id, scanned_by, phase, result, raw_payload)
+    values (gen_random_uuid(), '00000000-0000-4000-8000-000000000002', 'validate', 'invalid_signature',
+            encode(sha256(convert_to('https://example.test/v/GSK.k1.AAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBB',
+                                     'UTF8')), 'hex'))$$,
+  'only as the sha256 hex of the scanned string'
 );
 select throws_ok(
   $$insert into public.ticket_scans (attempt_id, scanned_by, phase, result, source)

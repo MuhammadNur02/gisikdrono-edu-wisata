@@ -1,14 +1,15 @@
 import { randomUUID } from 'node:crypto';
 
 import { createClient } from '@supabase/supabase-js';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { localStack, runSql } from './helpers/local-stack';
 
 // Signs in through GoTrue on the local stack with both hooks enabled in supabase/config.toml, so the
 // hooks run exactly as Auth calls them (docs/Security.md §5.5). Profiles keep their auth user
-// (ON DELETE RESTRICT), so every test makes its own account with a fresh address.
+// (ON DELETE RESTRICT), so every test makes its own account with a fresh address, and the suite removes
+// everything it wrote afterwards, so the pgTAP suites always meet the database as the migrations left it.
 
 const PASSWORD = 'Hook-test-password-123!';
 const WRONG_PASSWORD = 'not-the-right-password';
@@ -26,19 +27,49 @@ function claimsOf(accessToken: string) {
   return staffClaimsSchema.parse(JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')));
 }
 
-async function createAccount(): Promise<{ id: string; email: string }> {
+const createdUserIds: string[] = [];
+
+function adminClient() {
   const { apiUrl, serviceRoleKey } = localStack();
-  const admin = createClient(apiUrl, serviceRoleKey, {
+  return createClient(apiUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+}
+
+async function createAccount(): Promise<{ id: string; email: string }> {
   const email = `hook-${randomUUID()}@example.test`;
-  const { data, error } = await admin.auth.admin.createUser({
+  const { data, error } = await adminClient().auth.admin.createUser({
     email,
     password: PASSWORD,
     email_confirm: true,
   });
   if (error) throw error;
+  createdUserIds.push(data.user.id);
   return { id: data.user.id, email };
+}
+
+async function lastAuditId(): Promise<number> {
+  const rows = await runSql('select coalesce(max(id), 0) as id from public.audit_logs');
+  return z.array(z.object({ id: z.coerce.number() })).parse(rows)[0]?.id ?? 0;
+}
+
+// Login attempts, security events and audit rows are append-only, so they go under the retention flag.
+// The audit log is hash-chained: only the rows after the suite began are removed, which keeps the chain
+// whole, and integration files run one at a time (vitest.config.ts) so no other suite's rows are among them.
+async function removeWhatTheSuiteWrote(auditIdBefore: number, rwUnitCreated: boolean) {
+  const userIds = `'{${createdUserIds.join(',')}}'::uuid[]`;
+  await runSql(`begin;
+    select set_config('app.purge', 'on', true);
+    delete from public.login_attempts where user_id = any(${userIds});
+    delete from public.security_events where actor_id = any(${userIds});
+    delete from public.profiles where id = any(${userIds});
+    ${rwUnitCreated ? 'delete from public.rw_units where id = 5;' : ''}
+    delete from public.audit_logs where id > ${String(auditIdBefore)};
+    commit;`);
+  for (const userId of createdUserIds) {
+    const { error } = await adminClient().auth.admin.deleteUser(userId);
+    if (error) throw error;
+  }
 }
 
 function signIn(email: string, password: string) {
@@ -60,11 +91,20 @@ async function loginReasons(userId: string): Promise<string[]> {
 }
 
 describe('Auth hooks through GoTrue', () => {
+  let auditIdBefore = 0;
+  let rwUnitCreated = false;
+
   beforeAll(async () => {
-    await runSql(`insert into public.rw_units (id, code, slug, name, theme_label)
+    auditIdBefore = await lastAuditId();
+    const inserted = await runSql(`insert into public.rw_units (id, code, slug, name, theme_label)
       values (5, 'RW05', 'rw-05-ecowastreme', 'RW 05 Ecowastreme', 'Ekowisata & Lingkungan')
-      on conflict (id) do nothing`);
+      on conflict (id) do nothing returning id`);
+    rwUnitCreated = inserted.length > 0;
   });
+
+  afterAll(async () => {
+    await removeWhatTheSuiteWrote(auditIdBefore, rwUnitCreated);
+  }, SLOW_TEST_MS);
 
   it('signs a staff member in with the role, RW and claims_version of their profile', async () => {
     const account = await createAccount();

@@ -43,6 +43,47 @@ const createBrowserClientBan = {
   message: browserClientBan.message,
 };
 
+const anonClientBan = {
+  group: ['@/lib/supabase/anon', '**/supabase/anon'],
+  message: 'The session-less anon client serves src/lib/queries only (CLAUDE.md §6.1).',
+};
+
+// The public site reads as a visitor does, through src/lib/queries and the session-less anon client, so a
+// signed-in staff member sees exactly the site a visitor sees and every page can be cached for everyone.
+const publicSiteReadMessage =
+  'Public pages read through @/lib/queries, which uses the session-less anon client (CLAUDE.md §3.2, §6.1).';
+
+const publicPageBans = {
+  paths: [{ name: 'next/headers', importNames: ['cookies'], message: publicSiteReadMessage }],
+  patterns: [
+    { group: ['@/lib/supabase/*', '**/supabase/*', '@supabase/*'], message: publicSiteReadMessage },
+    { group: ['@/server/*', '@/server/**'], message: publicSiteReadMessage },
+  ],
+};
+
+const queriesBans = {
+  paths: [
+    {
+      name: 'next/headers',
+      message: 'src/lib/queries never reads the request: its reads are cached for everyone.',
+    },
+    { name: '@supabase/ssr', message: 'src/lib/queries reads through @/lib/supabase/anon only.' },
+  ],
+  patterns: [
+    serviceRoleClientBan,
+    {
+      group: [
+        '@/lib/supabase/server',
+        '**/supabase/server',
+        '@/lib/supabase/client',
+        '**/supabase/client',
+      ],
+      message:
+        'src/lib/queries reads through @/lib/supabase/anon only, never a session or the browser client.',
+    },
+  ],
+};
+
 const namingRules = [
   { selector: 'default', format: ['camelCase'], leadingUnderscore: 'allow' },
   { selector: 'variable', format: ['camelCase', 'UPPER_CASE', 'PascalCase'] },
@@ -158,13 +199,16 @@ export default defineConfig([
           alphabetize: { order: 'asc', caseInsensitive: true },
         },
       ],
-      'no-restricted-imports': ['error', { patterns: [serviceRoleClientBan] }],
+      'no-restricted-imports': ['error', { patterns: [serviceRoleClientBan, anonClientBan] }],
     },
   },
   {
     files: ['src/components/**', 'src/hooks/**'],
     rules: {
-      'no-restricted-imports': ['error', { patterns: [serviceRoleClientBan, serverLayerBan] }],
+      'no-restricted-imports': [
+        'error',
+        { patterns: [serviceRoleClientBan, serverLayerBan, anonClientBan] },
+      ],
     },
   },
   {
@@ -172,9 +216,25 @@ export default defineConfig([
     rules: {
       'no-restricted-imports': [
         'error',
-        { paths: [createBrowserClientBan], patterns: [serviceRoleClientBan, browserClientBan] },
+        {
+          paths: [createBrowserClientBan],
+          patterns: [serviceRoleClientBan, browserClientBan, anonClientBan],
+        },
       ],
     },
+  },
+  {
+    files: ['src/app/(public)/**'],
+    rules: { 'no-restricted-imports': ['error', publicPageBans] },
+  },
+  {
+    files: ['src/lib/queries/**'],
+    rules: { 'no-restricted-imports': ['error', queriesBans] },
+  },
+  {
+    // The anon client's own test proves it reads as a visitor.
+    files: ['src/lib/supabase/anon.test.ts'],
+    rules: { 'no-restricted-imports': ['error', { patterns: [serviceRoleClientBan] }] },
   },
   {
     files: serviceRoleAllowList,
