@@ -177,7 +177,7 @@ src/
 supabase/
   migrations/                  0001_extensions ... 0008_seed, then <YYYYMMDDHHMMSS>_<slug>.sql
   config.toml tests/            pgTAP (rls_*.sql, triggers, append-only, concurrency, enumeration); no seed.sql (pnpm db:seed)
-scripts/                       seed-dev.ts + seed-dev.sql, dev-accounts.ts, local-stack.ts, midtrans-simulate.ts, midtrans-status.ts, wa-send-test.ts, check-client-bundle-secrets.mjs, check-table-tests.mjs
+scripts/                       seed-dev.ts + seed-dev.sql, dev-accounts.ts, local-stack.ts, midtrans-simulate.ts, midtrans-status.ts, wa-send-test.ts, check-client-bundle-secrets.mjs, check-table-tests.mjs, gen-db-types.mjs
 tests/                         integration/ (Vitest against supabase start), e2e/ (Playwright), fixtures/
 public/                        icons/, map/denah.svg, fonts/, og/
 ```
@@ -467,7 +467,7 @@ SECURITY DEFINER hygiene: owner `postgres`, `set search_path = ''` with fully-qu
 
 ### 6.3 Typed `Database`, queries and services
 
-- `src/db/types.ts` is generated (`pnpm db:types` = `supabase gen types typescript --local > src/db/types.ts`) and committed; CI `db:types:check` fails on drift. Never hand-edit.
+- `src/db/types.ts` is generated (`pnpm db:types` = `scripts/gen-db-types.mjs`, which runs `supabase gen types typescript --local` into a temporary file and replaces `types.ts` only when the command succeeds, so a database timeout never leaves it empty) and committed; CI `db:types:check` fails on drift. Never hand-edit.
 - `src/db/enums.ts` mirrors Postgres enums (source of truth is the migration). `src/db/rpc.ts` holds typed wrappers for `public.*` and `internal.*` functions.
 - `src/lib/queries/<domain>.ts`: public cached reads returning narrowed DTOs (never raw rows with PII). `src/server/services/<domain>-service.ts`: staff and guest orchestration. Staff PII is read through `v_bookings_staff` + `rpc_reveal_booking_contact(booking_id, reason)` (audited, daily cap 50) + `rpc_get_participants(booking_id)`; never via raw `SELECT` on `bookings`.
 - Use supabase-js builder methods with validated values only; `.or()` / `.filter()` with non-literal input are banned; use `escapeLike()` for `ilike`.
@@ -687,7 +687,7 @@ PRD requirement cited; migration + RLS + pgTAP merged; types regenerated; valida
 | `pnpm db:migrate:new <slug>` | Create an empty timestamped migration |
 | `pnpm db:diff <slug>` | `supabase db diff -f` from local schema changes (review before committing) |
 | `pnpm db:push` | `supabase db push --linked` to staging/production; **CI only** |
-| `pnpm db:types` / `db:types:check` | Regenerate `src/db/types.ts` / fail on drift |
+| `pnpm db:types` / `db:types:check` | Regenerate `src/db/types.ts` through `scripts/gen-db-types.mjs` (temporary file, replaced only on success) / fail on drift |
 | `pnpm db:seed` | `tsx scripts/seed-dev.ts`: development accounts and demo content (local only; refuses non-127.0.0.1 and any database not marked local) |
 | `pnpm db:test` | `supabase test db` (all pgTAP suites) |
 | `pnpm midtrans:simulate -- --order <code> --status settlement\|expire\|deny` | Post a correctly signed sandbox notification to the local webhook |
