@@ -1116,6 +1116,7 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 | 16 | OWASP ZAP baseline against staging plus manual IDOR/role tests from §6.9 (external penetration test if budget allows) | findings closed or accepted |
 | 17 | Data residency (A10) confirmed in writing by the kelurahan/Diskominfo, or hosting moved to an Indonesian region | written confirmation |
 | 18 | Vendor consoles: institutional owner accounts, org-level MFA, Bitwarden vault populated, quarterly review scheduled | SEC-05 checklist |
+| 19 | No seeded placeholder left in `site_settings` on `gisikdrono-prod`: `select * from internal.placeholder_site_settings()` returns no row (production's `/api/health` answers 503 otherwise), and the Vault secret `environment` is `production` | query result in the release PR |
 
 ### 13.2 Review cadence
 

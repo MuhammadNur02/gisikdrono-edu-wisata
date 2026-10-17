@@ -109,7 +109,7 @@ Requirements: NFR-09; assumptions A4, A5, A7, A9, A10, A11, A12.
 | P0.4.02 | `[ ]` | A11 domain ownership and A12 Midtrans merchant legal entity + settlement bank account confirmed in writing; masked account recorded later in `site_settings.finance.expected_payout_account_masked` (REC-02) | S | — | Kelurahan |
 | P0.4.03 | `[ ]` | Name the Pejabat Pelindungan Data (data-protection contact) and create mailboxes `privasi@<domain>` and `keamanan@<domain>`; set `SECURITY_ALERT_EMAIL` and `SECURITY_ALERT_WA_PHONE` (PDP-02) | S | P0.2.01 | Kelurahan |
 | P0.4.04 | `[ ]` | Confirm at least two named superadmin officers (dual control for adjustments, MFA recovery) or formally accept the single-superadmin compensating control (24 h delay + email to the kelurahan head) (REC-09) | S | — | Kelurahan |
-| P0.4.05 | `[ ]` | Confirm defaults that feed the seed: revenue-share splits A4, hold TTLs A5, retention A7, manual-payment policy A9, refund policy wording for `/privasi` and the ticket PDF | S | — | Kelurahan |
+| P0.4.05 | `[ ]` | (From 0008: until confirmed, the contact number and email, the signatory's name and the expected payout account are seeded placeholders that production's `/api/health` and go-live check #19 refuse.) Confirm defaults that feed the seed: revenue-share splits A4, hold TTLs A5, retention A7, manual-payment policy A9, refund policy wording for `/privasi` and the ticket PDF | S | — | Kelurahan |
 
 ### 1.5 Phase 0 exit criteria
 
@@ -253,8 +253,8 @@ Requirements: NFR-12; assumption A4.
 
 | ID | Status | Task | Est | Dep | Owner |
 |---|---|---|---|---|---|
-| P1.8.01 | `[ ]` | (From 0005: `pricing.min_price_per_pax`, `booking.quotation_valid_days` and `pii_retention_months` must be seeded in every environment, since package writes and the retention run now fail without them.) `0008_seed.sql` reference data for every environment: `rw_units` (`5` RW 05 Ecowastreme, `8` RW 08 Kampung Seni Budaya), `site_settings` defaults (`booking_enabled true`, `whatsapp_enabled`, `email_enabled`, `maintenance_mode false`, `rate_limit_profile normal`, `checkin.grace_before_minutes 60`, `checkin.grace_after_minutes 120`, `booking.hold_minutes_individual 120`, `booking.hold_hours_institution 24`, `booking.quotation_valid_days 14`, `booking.min_lead_hours 12`, `booking.max_advance_days 180`, `booking.max_pax 500`, `pricing.min_price_per_pax`, `pii_retention_months 24`, `finance.expected_payout_account_masked`, public contact and SEO keys), default `revenue_share_rules` + lines per A4 (package kelurahan 20 / RW treasury 80; add-on vendor 90 / RW treasury 10; combo kelurahan 20 / RW 05 40 / RW 08 40) | S | P1.6.03, P0.4.05 | Dev |
-| P1.8.02 | `[ ]` | `supabase/seed.sql` + `scripts/seed-dev.ts` (`pnpm db:seed`, refuses to run unless the Supabase URL is `127.0.0.1`): local staff users superadmin, admin_rw 05, admin_rw 08 (profiles with `claims_version 1`), sample `session_templates`, demo packages, products, galleries, articles, booklets; `pnpm db:reset` = drop + migrate + seed + `db:types` | S | P1.8.01 | Dev |
+| P1.8.01 | `[x]` | (Done in `0008_seed.sql`, decisions of 2026-10-17: values the kelurahan has not given yet are placeholders that cannot pass for the real thing, listed by `internal.placeholder_site_settings()` and its `svc_` wrapper for production's `/api/health`, and required empty by go-live check #19; existing rows are never overwritten; `supabase/tests/schema_seed.sql`.) (From 0005: `pricing.min_price_per_pax`, `booking.quotation_valid_days` and `pii_retention_months` must be seeded in every environment, since package writes and the retention run now fail without them.) `0008_seed.sql` reference data for every environment: `rw_units` (`5` RW 05 Ecowastreme, `8` RW 08 Kampung Seni Budaya), `site_settings` defaults (`booking_enabled true`, `whatsapp_enabled`, `email_enabled`, `maintenance_mode false`, `rate_limit_profile normal`, `checkin.grace_before_minutes 60`, `checkin.grace_after_minutes 120`, `booking.hold_minutes_individual 120`, `booking.hold_hours_institution 24`, `booking.quotation_valid_days 14`, `booking.min_lead_hours 12`, `booking.max_advance_days 180`, `booking.max_pax 500`, `pricing.min_price_per_pax`, `pii_retention_months 24`, `finance.expected_payout_account_masked`, public contact and SEO keys), default `revenue_share_rules` + lines per A4 (package kelurahan 20 / RW treasury 80; add-on vendor 90 / RW treasury 10; combo kelurahan 20 / RW 05 40 / RW 08 40) | S | P1.6.03, P0.4.05 | Dev |
+| P1.8.02 | `[x]` | (Done, decisions of 2026-10-17: `supabase/seed.sql` itself writes the DEV-ONLY staff accounts with a verified TOTP factor, since only the system path may give a profile its role, and the demo content, so no `is_demo` column is needed; its first statement `internal.require_development_database()` refuses a database whose Vault secret `environment` is staging or production, and it marks the database local; `pnpm db:seed` prints the accounts and the current TOTP code, refusing anything but 127.0.0.1; credentials in `README.md` only; `scripts/dev-accounts.test.mjs`, `tests/integration/dev-accounts.test.ts`.) `supabase/seed.sql` + `scripts/seed-dev.ts` (`pnpm db:seed`, refuses to run unless the Supabase URL is `127.0.0.1`): local staff users superadmin, admin_rw 05, admin_rw 08 (profiles with `claims_version 1`), sample `session_templates`, demo packages, products, galleries, articles, booklets; `pnpm db:reset` = drop + migrate + seed + `db:types` | S | P1.8.01 | Dev |
 
 ### 2.9 P1.9 pgTAP suites (`supabase/tests/`)
 
@@ -770,7 +770,7 @@ Requirements: NFR-08, NFR-10; assumptions A10, A11, A12.
 | P5.7.03 | `[ ]` | Midtrans production: notification URL `https://<domain>/api/webhooks/midtrans/<MIDTRANS_WEBHOOK_PATH_TOKEN>`, payment methods QRIS + VA only, one real IDR 10 000 QRIS payment → tickets issued → refunded through `record_refund` with a credit note; `site_settings.finance.expected_payout_account_masked` set; WhatsApp production templates approved and test-sent; first DMARC aggregate report received (PAY-16, EP-03, REC-08) | M | P5.7.02 | Dev, Kelurahan |
 | P5.7.04 | `[ ]` | DNS cutover: apex + `www` → Vercel production, `staging.<domain>` kept behind Vercel Authentication; after one clean week add `preload` to HSTS and submit the domain at hstspreload.org (HDR-02) | S | P5.7.03 | Dev |
 | P5.7.05 | `[ ]` | Monitoring live on production: uptime monitor on `/api/health` (5-min interval, 503 = alert), Sentry production project with error-rate alert rules and `sendDefaultPii: false`, Vercel function failure alerts, Supabase resource alerts, log drain to Better Stack or Axiom (should) (OPS-03, MON-05) | S | P5.7.02 | Dev |
-| P5.7.06 | `[ ]` | Appendix C go-live checklist executed with evidence attached to the release PR and signed by the product owner; `is_demo` content removed; real `rw_units`, `site_settings` and `revenue_share_rules` verified on production (OPS-05) | S | P5.7.04 | Superadmin, Kelurahan |
+| P5.7.06 | `[ ]` | Appendix C go-live checklist executed with evidence attached to the release PR and signed by the product owner; real `rw_units`, `site_settings` (no placeholder left, Appendix C #19) and `revenue_share_rules` verified on production; demo content never reaches it, since it lives in `supabase/seed.sql`, which refuses staging and production (OPS-05) | S | P5.7.04 | Superadmin, Kelurahan |
 | P5.7.07 | `[ ]` | Staff launch: ≥ 2 superadmin accounts (or the compensating control acknowledged in writing), admin_rw 05 and 08 onboarded with TOTP, scanner PWA installed on officer phones, runbooks printed and handed over, on-call owner for R1 / R2 named, dry-run visit day with one test booking from hold to certificate (OPS-04) | M | P5.7.06 | Superadmin, Kelurahan |
 
 ### 6.8 P5.8 Post-launch cadence and backlog
@@ -859,7 +859,7 @@ Every template maps 1:1 to a `notification_template` value (`admin_booking_needs
 
 ## Appendix C — Go-live security checklist (cross-referenced to `docs/Security.md` §13.1)
 
-All 18 items must pass with evidence attached to the release PR and the product owner's sign-off (P5.7.06).
+All 19 items must pass with evidence attached to the release PR and the product owner's sign-off (P5.7.06).
 
 | § 13.1 # | Check (summary) | Evidence produced by | Task(s) |
 |---|---|---|---|
@@ -881,6 +881,7 @@ All 18 items must pass with evidence attached to the release PR and the product 
 | 16 | ZAP baseline + manual IDOR / role tests (external pentest if funded) | findings register | P5.5.01, P5.2.02, P5.5.06 |
 | 17 | A10 data residency confirmed in writing | written confirmation | P0.4.01 |
 | 18 | Vendor consoles institutional with MFA; vault populated; quarterly review scheduled | SEC-05 checklist | P0.1.01, P0.3.01, P5.8.01 |
+| 19 | No seeded `site_settings` placeholder left on production (`internal.placeholder_site_settings()` empty); Vault `environment = 'production'` | query result | P1.8.01, P3.11.07, P5.7.06 |
 
 ## Appendix D — Control-ID coverage index
 

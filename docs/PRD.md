@@ -1900,6 +1900,8 @@ Only the keys marked public below may have `is_public = true` (CHECK `site_setti
 | `certificate.template_version` | `1` | no | Certificate layout version |
 | `seo.default_description` | seeded | yes | Fallback meta description |
 
+`0008_seed.sql` writes every key above. Where the kelurahan has not given the value yet (Task P0.4.05) it writes a placeholder that cannot pass for the real thing: an `example.invalid` address, an all-zero phone number, bracketed fill-in text, or the example payout account above. `internal.placeholder_site_settings()` lists the keys still holding one; production's `/api/health` answers 503 while the list is not empty (Task P3.11.07), and the go-live checklist requires it to be empty (`docs/Security.md` §13.1 #19).
+
 ### 8.7 Function and RPC catalogue
 
 #### 8.7.1 Staff RPCs (`public`, `grant execute to authenticated`, scope re-checked inside)
