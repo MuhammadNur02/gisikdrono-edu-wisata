@@ -51,6 +51,22 @@ Domain terms used throughout: **RW** (Rukun Warga, the neighbourhood unit that o
 | 21st.dev | Minimal marketing sections, `rounded-xl` surfaces, soft `border-border`, backdrop-blur cards, restrained micro-interactions | Decorative gradients, text shimmer, parallax, anything animating the LCP element |
 | UI8.net dashboards | Collapsible icon-rail sidebar, KPI cards with sparkline and trend chip, faceted data tables, high whitespace ratio, floating action bars | Glassmorphism on data surfaces, animated charts, more than three blurred layers |
 
+### 1.3 Anti-generic rules (no AI slop)
+
+The site has to look like Gisikdrono, not like a template. These rules hold for every public page, every admin screen and every document, and they win over a component default or a tool's suggestion.
+
+| # | Rule | In practice |
+|---|---|---|
+| G1 | No stock or AI-generated images of people or places | Only real Gisikdrono photos from `public-media`. Until a photo exists, show a `bg-muted` box with the words `Foto menyusul`, never a stand-in image. |
+| G2 | No gradient text, no purple or indigo gradients, no decorative blobs or orbs, no glow effects | The only decorative backgrounds are the dot-grid SVG and the ice-to-background gradient of §8.5. |
+| G3 | Glass cards only over the hero photo, at most one per screen | `Card variant="glass"` sits on the hero image and nowhere else (§5.2). Blurred sticky bars (§4.3) are not cards and keep their own budget. |
+| G4 | No emoji as UI icons | Icons are `lucide-react` only (§8.1). Emoji may appear inside content people wrote themselves, such as a review. |
+| G5 | Never invent facts | No made-up numbers, years, names, testimonials, statistics or partner logos. Every fact comes from the CMS. Demo content exists only in the development seed (`pnpm db:seed`, local and CI, CLAUDE.md §6.4), which never reaches staging or production. |
+| G6 | No generic marketing phrases | Avoid lines such as "temukan keajaiban", "pengalaman tak terlupakan", "solusi terbaik" or "jelajahi dunia". Copy names the place, the activity, the people and the numbers, with the numbers taken from the CMS: `Pilah sampah di Bank Sampah RW 05, {durasi} menit, untuk {min}–{maks} siswa`. |
+| G7 | No three identical cards as the default layout | Marketing sections follow their content: photo and text alternating, a mosaic, a timeline. Collections (package, product and article lists) keep the card grid of §4.2. |
+| G8 | Every activity photo says where or what | A caption (`galleries.caption`, or the activity or place name) sits under or over every photo of an activity; `alt_text` alone is not enough. |
+| G9 | At most one primary call to action per screen | One `Button variant="default"` in view at a time (§5.1); everything else is `secondary`, `outline` or a link. |
+
 ## 2. Design tokens
 
 Tokens live in `src/styles/globals.css` as HSL triplets on `:root` and `.dark`, and are exposed to Tailwind CSS v4 through `@theme inline`. Components use utilities (`bg-primary`, `text-muted-foreground`, `shadow-card`) or `hsl(var(--token))`, never a literal colour.
@@ -174,6 +190,14 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
   --brand-deep: 222.2 47.4% 11.2%;
   --brand-royal: 226.2 70.7% 40.2%;
   --brand-ice: 213.8 100% 96.9%;
+  --rw05: 89.2 55.1% 27.1%;
+  --rw05-foreground: 0 0% 100%;
+  --rw05-soft: 88 42.9% 93.1%;
+  --rw05-soft-foreground: 89.2 55.1% 27.1%;
+  --rw08: 22.9 58.6% 34.1%;
+  --rw08-foreground: 0 0% 100%;
+  --rw08-soft: 28.6 60% 93.1%;
+  --rw08-soft-foreground: 22.9 58.6% 34.1%;
   --success: 142.1 76.2% 36.3%;
   --success-foreground: 0 0% 100%;
   --success-soft: 140.6 84.2% 92.5%;
@@ -233,6 +257,14 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
   --sidebar-accent-foreground: 210 40% 98%;
   --sidebar-border: 217.2 32.6% 17.5%;
   --sidebar-ring: 217.2 91.2% 59.8%;
+  --rw05: 87.3 43.3% 59.2%;
+  --rw05-foreground: 240 10% 3.9%;
+  --rw05-soft: 97.5 28.6% 11%;
+  --rw05-soft-foreground: 87.3 43.3% 59.2%;
+  --rw08: 27.3 64.4% 65.9%;
+  --rw08-foreground: 240 10% 3.9%;
+  --rw08-soft: 24.5 35.5% 12.2%;
+  --rw08-soft-foreground: 27.3 64.4% 65.9%;
   --success: 142.1 70.6% 45.3%;
   --success-foreground: 222.2 47.4% 11.2%;
   --success-soft: 142 70% 45% / 0.15;
@@ -290,6 +322,14 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
   --color-brand-deep: hsl(var(--brand-deep));
   --color-brand-royal: hsl(var(--brand-royal));
   --color-brand-ice: hsl(var(--brand-ice));
+  --color-rw05: hsl(var(--rw05));
+  --color-rw05-foreground: hsl(var(--rw05-foreground));
+  --color-rw05-soft: hsl(var(--rw05-soft));
+  --color-rw05-soft-foreground: hsl(var(--rw05-soft-foreground));
+  --color-rw08: hsl(var(--rw08));
+  --color-rw08-foreground: hsl(var(--rw08-foreground));
+  --color-rw08-soft: hsl(var(--rw08-soft));
+  --color-rw08-soft-foreground: hsl(var(--rw08-soft-foreground));
   --color-success: hsl(var(--success));
   --color-success-foreground: hsl(var(--success-foreground));
   --color-success-soft: hsl(var(--success-soft));
@@ -362,6 +402,7 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
 | `bg-sidebar text-sidebar-foreground` | `--sidebar-*` | shadcn `Sidebar` |
 | `fill-chart-1` … `stroke-chart-5` | `--chart-n` | Recharts via `ChartContainer` `config.color` |
 | `bg-brand-deep text-white` / `from-brand-ice` | brand customs | CTA band, hero gradient |
+| `text-rw05` / `bg-rw08-soft text-rw08-soft-foreground` (through `src/config/rw.ts`) | `--rw05*`, `--rw08*` | RW eyebrow, RW tag, map hotspot (§2.7) |
 | `rounded-xl` / `rounded-2xl` / `rounded-full` | `--radius-xl` / `--radius-2xl` | surfaces / modals / badges |
 | `font-display` / `font-sans` | `--font-display` / `--font-sans` | headings / body |
 
@@ -383,10 +424,42 @@ shadcn `components.json`: `"style": "new-york"`, `"tailwind": { "css": "src/styl
 | success / warning / info / danger / neutral soft pairs (dark; 15 % tint composited over `--card` #0F172A, neutral over #1E293B) | 8.0 / 8.3 / 8.1 / 8.2 / 9.8 | AA, badge-safe |
 | `--warning-foreground` #0F172A on `--warning` #D97706 (light) | 5.6:1 | AA text; the only strong fill with dark text in light mode |
 | strong `--success` #16A34A / `--info` #0284C7 with white | 3.3 / 4.1 | large text (≥ 24 px, or ≥ 18.66 px bold) only |
+| `--rw05-foreground` on `--rw05` / `--rw08-foreground` on `--rw08` (light: white on #466B1F / #8A4B24) | 6.2 / 6.8 | AA text |
+| RW soft pairs (light: #466B1F on #EEF5E6, #8A4B24 on #F8EDE3) | 5.6 / 5.9 | AA, tag-safe |
+| RW accents as text on `--background` / `--card` / `--muted` (light) | RW 05 6.2 / 6.2 / 5.7 · RW 08 6.8 / 6.8 / 6.2 | AA |
+| RW fill pairs (dark: #09090B on #9BC46A / #E0A370) | 10.0 / 9.1 | AA text |
+| RW soft pairs (dark: #9BC46A on #1A2414, #E0A370 on #2A1D14) | 8.0 / 7.5 | AA, tag-safe |
+| RW accents as text on `--background` / `--card` / `--muted` (dark) | RW 05 10.0 / 8.9 / 7.3 · RW 08 9.1 / 8.2 / 6.7 | AA |
 
 ### 2.6 Theme behaviour
 
 `next-themes` with `attribute="class"`, provided once by `src/components/providers/theme-provider.tsx`; the `<html>` element carries `suppressHydrationWarning`. The `(public)`, `(booking)` and `(auth)` route groups render with `forcedTheme="light"` (open decision D3), so a staff member's dark preference never leaks into the public site through the shared `localStorage` key. The `(admin)` group uses `defaultTheme="system"`, `enableSystem` and `storageKey="gsk-admin-theme"`; the toggle lives only in the sidebar footer. Dark mode never uses drop shadows: cards get `dark:border-white/5` as a highlight instead.
+
+### 2.7 RW accent colours
+
+Each RW has an accent so a visitor can tell RW 05 (Ecowastreme, green) from RW 08 (Kampung Seni Budaya, terracotta) at a glance. The accents follow the same shape as the semantic families: a fill, the text on that fill, a tinted background and the text on that tint.
+
+| Family | Variable | Light HEX | Light HSL | Dark HEX | Dark HSL |
+|---|---|---|---|---|---|
+| RW 05 | `--rw05` | #466B1F | `89.2 55.1% 27.1%` | #9BC46A | `87.3 43.3% 59.2%` |
+| | `--rw05-foreground` | #FFFFFF | `0 0% 100%` | #09090B | `240 10% 3.9%` |
+| | `--rw05-soft` | #EEF5E6 | `88 42.9% 93.1%` | #1A2414 | `97.5 28.6% 11%` |
+| | `--rw05-soft-foreground` | #466B1F | `89.2 55.1% 27.1%` | #9BC46A | `87.3 43.3% 59.2%` |
+| RW 08 | `--rw08` | #8A4B24 | `22.9 58.6% 34.1%` | #E0A370 | `27.3 64.4% 65.9%` |
+| | `--rw08-foreground` | #FFFFFF | `0 0% 100%` | #09090B | `240 10% 3.9%` |
+| | `--rw08-soft` | #F8EDE3 | `28.6 60% 93.1%` | #2A1D14 | `24.5 35.5% 12.2%` |
+| | `--rw08-soft-foreground` | #8A4B24 | `22.9 58.6% 34.1%` | #E0A370 | `27.3 64.4% 65.9%` |
+
+Use them only where the RW itself is the point:
+
+- the RW eyebrow or label (`RW 05 · Ecowastreme`) and the title accent on an RW page;
+- map hotspots of that RW (fill pair);
+- the RW tag on a package card (soft pair);
+- a combo package shows both accents, RW 05 first.
+
+Never use them for call-to-action buttons (those stay `--primary`), for statuses (those use the semantic families of §2.2 through `src/config/status.ts`), or as paragraph text colour.
+
+Components never write these classes by hand. `src/config/rw.ts` maps `rw_id` 5 and 8 to their classes (`RW_ACCENTS[rwId].text`, `.fill`, `.soft`, `.border`), so a new RW or a colour change touches one file.
 
 ## 3. Typography
 
@@ -529,7 +602,7 @@ Anatomy: `Card` (`rounded-xl border border-border bg-card shadow-card dark:borde
 |---|---|
 | `base` | static container |
 | `interactive` | whole card is a link; hover `-translate-y-0.5 shadow-card-hover` over 200 ms; focus ring on the card |
-| `glass` | `bg-white/70 backdrop-blur-md` over imagery (hero, map overlay) |
+| `glass` | `bg-white/70 backdrop-blur-md` over the hero photo only, at most one per screen (§1.3 G3) |
 | `feature` | 40 px icon tile `rounded-lg bg-secondary text-secondary-foreground` + title + description |
 
 Don't nest cards; don't put more than one primary action in a card; don't use `glass` on data-bearing surfaces. States: resting, hover (`interactive` only), focus-visible (`interactive` only), disabled (`opacity-60`, used by `sold-out` package cards).
