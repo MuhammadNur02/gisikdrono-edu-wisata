@@ -1,9 +1,127 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@plugin '@tailwindcss/typography';
 
 @custom-variant dark (&:is(.dark *));
 
-/* The :root and .dark token values arrive in P2.1.01 (docs/StyleGuide.md §2.3); this block only wires names to Tailwind. */
+/* Values are copied from docs/StyleGuide.md §2.1-§2.3; change the StyleGuide first, then this file. */
+:root {
+  --background: 0 0% 100%;
+  --foreground: 222.2 47.4% 11.2%;
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 47.4% 11.2%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 47.4% 11.2%;
+  --primary: 221.2 83.2% 53.3%;
+  --primary-foreground: 0 0% 100%;
+  --primary-hover: 224.3 76.3% 48%;
+  --secondary: 213.8 100% 96.9%;
+  --secondary-foreground: 226.2 70.7% 40.2%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 240 3.8% 46.1%;
+  --accent: 213.8 100% 96.9%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+  --destructive: 0 72.2% 50.6%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 221.2 83.2% 53.3%;
+  --chart-1: 221.2 83.2% 53.3%;
+  --chart-2: 226.2 70.7% 40.2%;
+  --chart-3: 198.6 88.7% 48.4%;
+  --chart-4: 160.1 84.1% 39.4%;
+  --chart-5: 37.7 92.1% 50.2%;
+  --sidebar-background: 0 0% 100%;
+  --sidebar-foreground: 215.3 25% 26.7%;
+  --sidebar-primary: 221.2 83.2% 53.3%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 213.8 100% 96.9%;
+  --sidebar-accent-foreground: 226.2 70.7% 40.2%;
+  --sidebar-border: 214.3 31.8% 91.4%;
+  --sidebar-ring: 221.2 83.2% 53.3%;
+  --brand-deep: 222.2 47.4% 11.2%;
+  --brand-royal: 226.2 70.7% 40.2%;
+  --brand-ice: 213.8 100% 96.9%;
+  --success: 142.1 76.2% 36.3%;
+  --success-foreground: 0 0% 100%;
+  --success-soft: 140.6 84.2% 92.5%;
+  --success-soft-foreground: 142.4 71.8% 29.2%;
+  --warning: 32.1 94.6% 43.7%;
+  --warning-foreground: 222.2 47.4% 11.2%;
+  --warning-soft: 48 96.5% 88.8%;
+  --warning-soft-foreground: 26 90.5% 37.1%;
+  --info: 200.4 98% 39.4%;
+  --info-foreground: 0 0% 100%;
+  --info-soft: 204 93.8% 93.7%;
+  --info-soft-foreground: 201.3 96.3% 32.2%;
+  --danger: var(--destructive);
+  --danger-foreground: var(--destructive-foreground);
+  --danger-soft: 0 93.3% 94.1%;
+  --danger-soft-foreground: 0 73.7% 41.8%;
+  --neutral: 240 3.8% 46.1%;
+  --neutral-foreground: 0 0% 100%;
+  --neutral-soft: 210 40% 96.1%;
+  --neutral-soft-foreground: 240 5.3% 26.1%;
+  --radius: 0.75rem;
+}
+
+.dark {
+  --background: 240 10% 3.9%;
+  --foreground: 210 40% 98%;
+  --card: 222.2 47.4% 11.2%;
+  --card-foreground: 210 40% 98%;
+  --popover: 222.2 47.4% 11.2%;
+  --popover-foreground: 210 40% 98%;
+  --primary: 221.2 83.2% 53.3%;
+  --primary-foreground: 0 0% 100%;
+  --primary-hover: 217.2 91.2% 59.8%;
+  --secondary: 217.2 32.6% 17.5%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 217.2 32.6% 17.5%;
+  --muted-foreground: 215 20.2% 65.1%;
+  --accent: 217.2 32.6% 17.5%;
+  --accent-foreground: 210 40% 98%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 217.2 32.6% 17.5%;
+  --input: 217.2 32.6% 17.5%;
+  --ring: 217.2 91.2% 59.8%;
+  /* Re-declared because a var() resolves where it is declared: the :root alias would keep the light red. */
+  --danger: var(--destructive);
+  --danger-foreground: var(--destructive-foreground);
+  --chart-1: 217.2 91.2% 59.8%;
+  --chart-2: 213.1 93.9% 67.8%;
+  --chart-3: 198.4 93.2% 59.6%;
+  --chart-4: 158.1 64.4% 51.6%;
+  --chart-5: 43.3 96.4% 56.3%;
+  --sidebar-background: 240 10% 3.9%;
+  --sidebar-foreground: 215 20.2% 65.1%;
+  --sidebar-primary: 221.2 83.2% 53.3%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 217.2 32.6% 17.5%;
+  --sidebar-accent-foreground: 210 40% 98%;
+  --sidebar-border: 217.2 32.6% 17.5%;
+  --sidebar-ring: 217.2 91.2% 59.8%;
+  --success: 142.1 70.6% 45.3%;
+  --success-foreground: 222.2 47.4% 11.2%;
+  --success-soft: 142 70% 45% / 0.15;
+  --success-soft-foreground: 141.9 69.2% 58%;
+  --warning: 37.7 92.1% 50.2%;
+  --warning-foreground: 222.2 47.4% 11.2%;
+  --warning-soft: 38 92% 50% / 0.15;
+  --warning-soft-foreground: 43.3 96.4% 56.3%;
+  --info: 198.4 93.2% 59.6%;
+  --info-foreground: 222.2 47.4% 11.2%;
+  --info-soft: 198 93% 60% / 0.15;
+  --info-soft-foreground: 199.4 95.5% 73.9%;
+  --danger-soft: 0 84% 60% / 0.15;
+  --danger-soft-foreground: 0 93.5% 81.8%;
+  --neutral: 215 20.2% 65.1%;
+  --neutral-foreground: 222.2 47.4% 11.2%;
+  --neutral-soft: 217.2 32.6% 17.5%;
+  --neutral-soft-foreground: 212.7 26.8% 83.9%;
+}
+
 @theme inline {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
@@ -75,3 +193,116 @@
   --shadow-card-hover: 0 8px 24px rgb(15 23 42 / 0.08);
   --shadow-modal: 0 24px 48px rgb(15 23 42 / 0.18);
 }
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply scroll-smooth motion-reduce:scroll-auto;
+  }
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display;
+  }
+  :focus-visible {
+    @apply ring-2 ring-ring ring-offset-2 ring-offset-background outline-none;
+  }
+}
+
+/* Type scale: one class per step, mobile value first, desktop from md (48rem). */
+@utility text-display-xl {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 2.5rem;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  @media (width >= 48rem) {
+    font-size: 3.75rem;
+    line-height: 1.05;
+  }
+}
+@utility text-display-lg {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 2.25rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  @media (width >= 48rem) {
+    font-size: 3rem;
+    line-height: 1.1;
+  }
+}
+@utility text-h1 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.875rem;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  @media (width >= 48rem) {
+    font-size: 2.25rem;
+  }
+}
+@utility text-h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.5rem;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  @media (width >= 48rem) {
+    font-size: 1.875rem;
+  }
+}
+@utility text-h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.25rem;
+  line-height: 1.33;
+  letter-spacing: -0.01em;
+  @media (width >= 48rem) {
+    font-size: 1.5rem;
+  }
+}
+@utility text-h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.125rem;
+  line-height: 1.4;
+  @media (width >= 48rem) {
+    font-size: 1.25rem;
+  }
+}
+@utility text-body-lg {
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  @media (width >= 48rem) {
+    font-size: 1.125rem;
+  }
+}
+@utility text-body {
+  font-size: 1rem;
+  line-height: 1.6;
+}
+@utility text-body-sm {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+@utility text-caption {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+}
+@utility text-overline {
+  font-size: 0.75rem;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+/* Tabular figures use the built-in `tabular-nums` utility; no custom alias. */

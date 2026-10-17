@@ -53,7 +53,7 @@ The platform is operated by a small municipal team: one Superadmin Kelurahan and
 |---|---|---|
 | Runtime | Node 22 LTS, pnpm 10 (`--frozen-lockfile`) | `.npmrc`: `ignore-scripts=true`, `min-release-age=7` (npm, days); `pnpm-workspace.yaml`: `onlyBuiltDependencies: [sharp]`, `minimumReleaseAge: 10080` (pnpm, 7 days in minutes) |
 | Framework | Next.js 15 App Router, React 19, TypeScript 5 `strict` + `noUncheckedIndexedAccess` | Path alias `@/*` -> `src/*` |
-| Styling | Tailwind CSS v4 (tokens as CSS variables consumed via `@theme inline`), shadcn/ui `new-york`, `tw-animate-css` | Tokens in `src/styles/globals.css` |
+| Styling | Tailwind CSS v4 (tokens as CSS variables consumed via `@theme inline`), shadcn/ui `new-york`, `tw-animate-css`, `@tailwindcss/typography` (`prose prose-slate` for articles and Markdown descriptions) | Tokens in `src/styles/globals.css` |
 | Motion | `motion` package (`import { motion } from 'motion/react'`) | `MotionConfig reducedMotion="user"` + `LazyMotion` |
 | Data | Supabase: Postgres + RLS, Auth (staff only, TOTP), Storage; `@supabase/supabase-js` v2 + `@supabase/ssr` | Region `ap-southeast-1`; separate `staging` and `production` projects |
 | Forms & validation | `zod` (`.strict()` schemas), `react-hook-form` + `@hookform/resolvers` | Schemas shared client/server in `src/lib/validations` |
