@@ -1452,6 +1452,30 @@ export type Database = {
           },
         ]
       }
+      job_heartbeats: {
+        Row: {
+          job: string
+          last_error_code: string | null
+          last_failure_at: string | null
+          last_success_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          job: string
+          last_error_code?: string | null
+          last_failure_at?: string | null
+          last_success_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          job?: string
+          last_error_code?: string | null
+          last_failure_at?: string | null
+          last_success_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       login_attempts: {
         Row: {
           attempted_at: string
@@ -4201,6 +4225,7 @@ export type Database = {
         Args: { p_is_active: boolean; p_reason: string; p_user_id: string }
         Returns: undefined
       }
+      storage_owner_prefix_ok: { Args: { p_name: string }; Returns: boolean }
       svc_enqueue_notification: {
         Args: {
           p_booking_id: string
@@ -4215,6 +4240,22 @@ export type Database = {
       svc_increment_booklet_download: {
         Args: { p_booklet_id: string }
         Returns: undefined
+      }
+      svc_job_health: {
+        Args: never
+        Returns: {
+          job: string
+          last_error_code: string | null
+          last_failure_at: string | null
+          last_success_at: string | null
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "job_heartbeats"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       svc_log_audit: {
         Args: {
@@ -4236,6 +4277,10 @@ export type Database = {
       svc_rate_limit_hit: {
         Args: { p_key: string; p_limit: number; p_window_seconds: number }
         Returns: boolean
+      }
+      svc_record_job_run: {
+        Args: { p_error_code?: string; p_job: string; p_succeeded: boolean }
+        Returns: undefined
       }
       today_jkt: { Args: never; Returns: string }
     }

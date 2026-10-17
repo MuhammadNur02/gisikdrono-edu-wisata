@@ -734,6 +734,7 @@ Vercel: Firewall managed rulesets on; Deployment Protection (Vercel Authenticati
 | `BOOKING_LINK_SECRET`, `OTP_PEPPER` | S; `OTP_PEPPER` also in Supabase Vault (`otp_pepper`) | all | 12 months (links are short-lived; rotating `OTP_PEPPER` voids open OTPs and restarts lockout counting and IP correlation) |
 | `PARTICIPANT_PII_KEYS`, `PARTICIPANT_PII_ACTIVE_KID` | S (should) | all | 12 months, versioned |
 | `CRON_SECRET` | S + Supabase Vault | prod, preview | 12 months; atomic |
+| Vault only: `environment` (`staging` / `production`), `jobs_base_url` | Supabase Vault | per project | on change of domain; not secret but environment-specific, so never in a migration or seed (`supabase/seed.sql` writes `environment = 'local'` on a developer database only) |
 | `TURNSTILE_SECRET_KEY` | S | all | 12 months (Cloudflare grace period) |
 | `SECURITY_ALERT_EMAIL`, `SECURITY_ALERT_WA_PHONE` | S | all | n/a |
 
@@ -855,7 +856,7 @@ Signed URLs are never persisted, logged or placed in messages; `document.signed_
 
 ### 11.3 Delivery, health and heartbeat (OPS-03, OPS-06)
 
-Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5 s timeout from the job/route (and an optional Telegram bot HTTP call from the function and from `pg_net`), falling back to the outbox only on failure, so a stalled outbox cannot silence its own alarm **[RT]**. `/api/health` returns **503** when the last successful cron run is older than 15 min, the outbox backlog exceeds the threshold, or `select 1` fails; Better Stack/UptimeRobot checks it every 5 min with email + Telegram. Hourly synthetic WhatsApp/email to a kelurahan-owned test number (*should*). Sentry alerts: new issue under `api/webhooks/*` or `api/jobs/*`, error rate > 2 % for 5 min, any `fatal` from the security-event writer. pg_cron failures (`cron.job_run_details`) surface as `cron_failed` events; Supabase resource alerts on.
+Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5 s timeout from the job/route (and an optional Telegram bot HTTP call from the function and from `pg_net`), falling back to the outbox only on failure, so a stalled outbox cannot silence its own alarm **[RT]**. `/api/health` returns **503** when the last successful cron run is older than 15 min, the outbox backlog exceeds the threshold, or `select 1` fails; Better Stack/UptimeRobot checks it every 5 min with email + Telegram. Hourly synthetic WhatsApp/email to a kelurahan-owned test number (*should*). Sentry alerts: new issue under `api/webhooks/*` or `api/jobs/*`, error rate > 2 % for 5 min, any `fatal` from the security-event writer. pg_cron failures surface as `cron_failed` events: every job leaves a heartbeat in `job_heartbeats` (a database job when it returns, an application job route through `svc_record_job_run` when it finishes), and a failed run, a failing route or an application job whose Vault secrets are missing is a failure and a `cron_failed` event; only a database whose Vault secret `environment` is `'local'` skips application jobs quietly without secrets, and a database without that secret counts as hosted (0007, decision of 2026-10-17; `docs/runbooks/cron.md`). Supabase resource alerts on.
 
 ### 11.4 Runbooks (this section is the authoritative text; each runbook is also printed as a one-page card for the kelurahan office; MON-06, OPS-04)
 

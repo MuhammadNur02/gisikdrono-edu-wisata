@@ -204,6 +204,29 @@ export function svcExpireStaleBookings(adminClient: DatabaseClient): Promise<num
   return resultOf(adminClient.rpc('svc_expire_stale_bookings'));
 }
 
+// The jobs pg_cron runs through their /api/jobs route (0007, internal.call_job).
+export type ApplicationJob =
+  | 'process-notifications'
+  | 'payments-poll'
+  | 'anomaly-scan'
+  | 'reconcile-payments'
+  | 'purge-storage';
+
+// A job route reports how its run ended; /api/health watches the last success (docs/PRD.md §8.9), and a
+// failure is also a cron_failed security event.
+export async function svcRecordJobRun(
+  adminClient: DatabaseClient,
+  run: { job: ApplicationJob; succeeded: boolean; errorCode?: string },
+): Promise<void> {
+  await resultOf(
+    adminClient.rpc('svc_record_job_run', {
+      p_job: run.job,
+      p_succeeded: run.succeeded,
+      p_error_code: run.errorCode,
+    }),
+  );
+}
+
 export type PurgeableFile = { bucket: string; path: string };
 
 // Files the retention runs marked for deletion (docs/Security.md §7.3), oldest first.

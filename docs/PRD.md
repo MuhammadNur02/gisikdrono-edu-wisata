@@ -1687,6 +1687,19 @@ create table public.rate_limit_buckets (
   count        integer not null default 0,
   primary key (key, window_start)
 );
+
+-- job_heartbeats (0007): each scheduled job's last success and failure, written only by internal.record_job_run
+-- (database jobs when they return, application job routes through svc_record_job_run). /api/health reads it.
+create table public.job_heartbeats (
+  job             text primary key check (job in ('expire_stale_bookings','process-notifications','payments-poll',
+                    'anomaly-scan','enqueue_visit_reminders','close_past_bookings','generate_visit_sessions',
+                    'reconcile-payments','purge/retention','purge-storage','prune_rate_limit_buckets',
+                    'prune_operational_tables')),
+  last_success_at timestamptz,
+  last_failure_at timestamptz,
+  last_error_code text check (length(last_error_code) <= 64),
+  updated_at      timestamptz not null default now()
+);
 ```
 
 #### 8.4.10 Views (all `with (security_invoker = true)`)
@@ -1787,6 +1800,7 @@ Legend: S/I/U/D = select/insert/update/delete; "—" = denied; "fn" = only throu
 | audit_logs | — | — | S | yes | insert by triggers / fn |
 | login_attempts | — | — | S | yes | insert by auth hook |
 | rate_limit_buckets | — | — | — | — | `rate_limit_hit` |
+| job_heartbeats | — | — | S | yes | `record_job_run` (database jobs; application job routes through `svc_record_job_run`) |
 
 Public reads are policies `to anon` only: staff read through their own scope, so an RW admin sees no other RW's rows even where they are published. Every grant lists its columns (`0005_policies_grants.sql`), so a column added later stays private until a migration grants it, and a row created through the API carries its creator's own id in `created_by` (`uploaded_by`, `author_id`). A foreign key checks its row past RLS, so a reference an RW admin writes (`visit_sessions.template_id`, `galleries.booking_id`, `performance_schedules.package_id`) is held to their RW by a trigger, which answers a missing row and another RW's row alike.
 
@@ -1848,7 +1862,7 @@ grant update (full_name, phone, avatar_path) on public.profiles to authenticated
 | `tour_packages_legs_guard`, `tour_packages_price_floor`, `tour_packages_price_history` | `tour_packages`, `tour_package_price_tiers` | §8.4.3 |
 | `tour_package_legs_guard` | `tour_package_legs` (BEFORE INSERT/UPDATE/DELETE, 0005) | Outside the superadmin and the system, a leg changes only on a package of the caller's own RW: a combo, another RW's package and a missing one get the same `42501`, so the guard reveals nothing; an RW package's leg stays in the package's RW. It is a trigger because the package's read policy asks the legs, and Postgres refuses policies that ask each other |
 | `staff_invites_guard` | `staff_invites` (BEFORE INSERT/UPDATE, 0005) | A `superadmin` invite is inserted only inside `invite_superadmin` (`app.privileged_rpc`), by nobody else, the database owner included; an invite never changes its email, role, RW, code hash, creator or creation time; a revoked invite is never un-revoked or accepted, by anyone; a `superadmin` invite is accepted no sooner than `created_at + 24 h`; revoking or accepting a `superadmin` invite raises the critical `superadmin_invite` alert |
-| `site_settings_required_keys` | `site_settings` (BEFORE INSERT/UPDATE/DELETE, 0005) | `pricing.min_price_per_pax`, `booking.quotation_valid_days` and `pii_retention_months`, which functions read, are never deleted or renamed and always hold a JSON number; `internal.price_floor()` and `anonymise_booker_pii` also raise when their setting is missing, so neither the price floor nor the retention can fail open |
+| `site_settings_required_keys` | `site_settings` (BEFORE INSERT/UPDATE/DELETE, 0005; 0007 adds `booking.max_advance_days`) | `pricing.min_price_per_pax`, `booking.quotation_valid_days`, `pii_retention_months` and `booking.max_advance_days`, which functions read, are never deleted or renamed and always hold a JSON number; `internal.price_floor()` and `anonymise_booker_pii` also raise when their setting is missing, so neither the price floor nor the retention can fail open |
 | `security_alerts_acknowledge_stamp` | `security_alerts` (BEFORE UPDATE of `acknowledged_by`, 0005) | `acknowledged_at = now()` whenever `acknowledged_by` changes; the client is granted `acknowledged_by` only, so no acknowledgement can be dated back |
 | `visit_sessions_template_rw_guard`, `galleries_booking_rw_guard`, `performance_schedules_package_rw_guard` | `visit_sessions.template_id`, `galleries.booking_id`, `performance_schedules.package_id` (BEFORE INSERT and UPDATE of the column or `rw_id`, 0005) | Outside the superadmin and the system, the referenced template, booking or package belongs to the row's RW (a booking: `rw_id = any (rw_ids)`); a missing row gets the same `42501` as another RW's, so the check reveals nothing |
 | `products_umkm_vendor_rw_guard` | `products_umkm` | `vendor.rw_id = product.rw_id` |
@@ -1866,7 +1880,7 @@ grant update (full_name, phone, avatar_path) on public.profiles to authenticated
 
 ### 8.6 `site_settings` keys
 
-Only the keys marked public below may have `is_public = true` (CHECK `site_settings_public_keys`, 0005), so a slipped flag never publishes a private value. `pricing.min_price_per_pax`, `booking.quotation_valid_days` and `pii_retention_months` are read by functions and can be changed but never removed (`site_settings_required_keys`); every write to this table needs a fresh TOTP (§8.5.2).
+Only the keys marked public below may have `is_public = true` (CHECK `site_settings_public_keys`, 0005), so a slipped flag never publishes a private value. `pricing.min_price_per_pax`, `booking.quotation_valid_days`, `pii_retention_months` and `booking.max_advance_days` (read by the nightly session job since 0007) are read by functions and can be changed but never removed (`site_settings_required_keys`); every write to this table needs a fresh TOTP (§8.5.2).
 
 | Key | Default | Public | Purpose |
 |---|---|---|---|
@@ -1950,6 +1964,10 @@ No function is executable by `anon`. Public writes (OTP, bookings, reviews, DSR 
 | `rate_limit_hit` | `(p_key text, p_limit int, p_window_seconds int) returns boolean` | Fixed-window counter in `rate_limit_buckets` |
 | `enqueue_notification` | `(p_booking_id uuid, p_template notification_template, p_channel notification_channel, p_params jsonb) returns uuid` | Inserts one outbox row (`dedupe_key = 'booking:<id>:<template>:<channel>'`, `on conflict do nothing`); recipient from `pic_phone` / `pic_email`; a `whatsapp` row for any template except `phone_otp` needs `phone_verified_at`, else skipped (GUEST-08); `params.link_scope` is forced to `view` for `email` rows while `email_verified_at` is NULL (the worker mints the link, never SQL) |
 | `prune_operational_tables` | `() returns void` | `notifications` > 180 d (their `params` emptied after 30 d), `webhook_rejections` > 30 d, `payment_events` > 24 mo (deleted whole; they never hold customer details, see `midtrans_payload_minimise`), `audit_logs` > 24 mo only while `verify_audit_chain()` passes (the id and hash of the last pruned row are kept in the `purge_run` row as the new anchor; a broken chain raises `cron_failed` instead), `security_events` > 12 mo, `login_attempts` > 24 h, `rate_limit_buckets` > 1 d, `ticket_scans` > 24 mo (attendance itself stays in `tickets_qr`); runs under `app.purge = 'on'` so the append-only triggers allow it |
+| `run_scheduled_job` | `(p_job text) returns void` | 0007: runs one database job of §8.9 from a fixed list (no dynamic SQL) and records its heartbeat; a failing job is rolled back, recorded as a failure with its SQLSTATE and left for its next run |
+| `call_job` | `(p_job text) returns bigint` | 0007: posts one application job to its `/api/jobs` route with `jobs_base_url` and `cron_secret` from Vault; without them returns NULL, quietly only where the Vault secret `environment` is `'local'`, as a failed run (`secret_missing`) everywhere else |
+| `record_job_run` | `(p_job text, p_succeeded boolean, p_error_code text) returns void` | 0007: updates `job_heartbeats`; a failure is also a `cron_failed` security event. Reached by the server as `svc_record_job_run` |
+| `environment` | `() returns text` | 0007: the Vault secret `environment` (`local`, `staging`, `production`), NULL when unset, which counts as hosted |
 | `purgeable_files` / `forget_purged_files` | `(p_limit int) returns table (bucket text, path text)` / `(p_paths text[]) returns int` | The files the retention runs marked (purged participant certificates' `pdf_path`, deleted exports' `storage_path`, `ticket_pdf_path` 12 months after the visit), oldest first; after `api/jobs/purge-storage` deletes them through the Storage API it clears the paths that are still marked, logged as cron; reached through `svc_purgeable_files` / `svc_forget_purged_files` |
 | `purge_participants` | `() returns int` | For `visit_date_end < today - 90 d`: first marks the participant certificates (`participant_id = NULL`, `recipient_name = '[dihapus]'`, `purged_at`), then deletes the `booking_participants` rows (the certificate CHECK refuses the other order); also marks expired `exports` (`deleted_at`). The files (`certificates/<booking_id>/participant-*.pdf`, attendance exports, ticket PDFs > 12 months) are deleted afterwards by `api/jobs/purge-storage` through the Storage API, because Supabase blocks `delete from storage.objects`; audited |
 | `anonymise_booker_pii` | `() returns int` | Unpaid `expired`/`cancelled` bookings 7 d after expiry (their participants deleted too), and every booking `pii_retention_months` after the visit (a missing setting stops the whole run with an error, 0005): `pic_name = 'anon'`, `pic_phone` and `pic_email` NULL, `phone_verified_at` and `email_verified_at` NULL, `notes`, `admin_notes`, `cancel_reason`, `review_reason`, `discount_note`, `source_ip`, `user_agent` NULL (the money guards let only the retention run clear `discount_note` on a paid booking), `booking_addons.notes` NULL (0005), `pii_purged_at = now()`, `token_version + 1`, and their `notifications` rows deleted; `guest_otps` deleted 1 d after `expires_at`; the masked generated columns follow automatically; invoices keep institution and amounts; audited under `app.audit_mode = 'names_only'` |
@@ -1986,22 +2004,24 @@ Writes need AAL2 like every staff command (§8.5.2), and an update is checked be
 
 ### 8.9 Scheduled jobs (pg_cron; times stored in UTC = WIB - 7)
 
+Every schedule is one call (`0007_cron.sql`): a database job runs through `internal.run_scheduled_job('<job>')`, which calls its function from a fixed list, and an application job through `internal.call_job('<job>')`, which posts to its route with the `cron_secret` bearer and the `jobs_base_url` from Vault (`docs/runbooks/cron.md`).
+
 | Schedule (UTC) | Job | Mechanism |
 |---|---|---|
-| `*/5 * * * *` | `expire_stale_bookings` | `select internal.expire_stale_bookings();` |
-| `* * * * *` | `process-notifications` | `net.http_post('<SITE_URL>/api/jobs/process-notifications', Authorization: Bearer CRON_SECRET from Vault)` |
-| `*/5 * * * *` | `payments-poll` | pg_net -> `api/jobs/payments-poll` (Status API for `pending` > 2 min; self-heal paid-without-tickets) |
-| `*/5 * * * *` | `anomaly-scan` | pg_net -> `api/jobs/anomaly-scan` |
-| `0 2 * * *` (09:00 WIB) | `enqueue_visit_reminders` | `select internal.enqueue_visit_reminders();` |
-| `30 16 * * *` (23:30 WIB) | `close_past_bookings` + `reconcile_session_counters` | SQL |
-| `0 17 * * *` (00:00 WIB) | `generate_visit_sessions` | `select public.generate_visit_sessions(id, public.today_jkt(), public.today_jkt() + 180) from public.rw_units where is_active;` |
-| `30 19 * * *` (02:30 WIB) | `reconcile-payments` | pg_net -> `api/jobs/reconcile-payments` (open items, 7-day paid re-verification, SQL invariants, `verify_ledger_chain`, `verify_audit_chain`, issues, digest) |
-| `0 19 * * *` (02:00 WIB) | `purge/retention` | `select internal.purge_participants(); select internal.anonymise_booker_pii();` + `guest_otps` > 24 h |
-| `15 19 * * *` (02:15 WIB) | `purge-storage` | pg_net -> `api/jobs/purge-storage`: deletes through the Storage API the files the retention run marked (participant PDFs, expired exports, ticket PDFs > 12 months) and `uploads-quarantine` objects > 24 h |
-| `15 * * * *` | prune `rate_limit_buckets` | `delete … where window_start < now() - interval '1 day'` |
-| `0 18 1 * *` | `prune_operational_tables` | `select internal.prune_operational_tables();` |
+| `*/5 * * * *` | `expire_stale_bookings` | `run_scheduled_job`: `internal.expire_stale_bookings()` |
+| `* * * * *` | `process-notifications` | `call_job`: `POST <jobs_base_url>/api/jobs/process-notifications`, `Authorization: Bearer` from Vault |
+| `*/5 * * * *` | `payments-poll` | `call_job`: `GET api/jobs/payments-poll` (Status API for `pending` > 2 min; self-heal paid-without-tickets) |
+| `*/5 * * * *` | `anomaly-scan` | `call_job`: `GET api/jobs/anomaly-scan` |
+| `0 2 * * *` (09:00 WIB) | `enqueue_visit_reminders` | `run_scheduled_job`: `internal.enqueue_visit_reminders()` |
+| `30 16 * * *` (23:30 WIB) | `close_past_bookings` | `run_scheduled_job`: `internal.close_past_bookings()` then `internal.reconcile_session_counters()` |
+| `0 17 * * *` (00:00 WIB) | `generate_visit_sessions` | `run_scheduled_job`: `public.generate_visit_sessions(id, today_jkt(), today_jkt() + booking.max_advance_days)` for every active `rw_units` row |
+| `30 19 * * *` (02:30 WIB) | `reconcile-payments` | `call_job`: `GET api/jobs/reconcile-payments` (open items, 7-day paid re-verification, SQL invariants, `verify_ledger_chain`, `verify_audit_chain`, issues, digest) |
+| `0 19 * * *` (02:00 WIB) | `purge/retention` | `run_scheduled_job`: `internal.purge_participants()` then `internal.anonymise_booker_pii()` (which also deletes `guest_otps` > 24 h) |
+| `15 19 * * *` (02:15 WIB) | `purge-storage` | `call_job`: `GET api/jobs/purge-storage`: deletes through the Storage API the files the retention run marked (participant PDFs, expired exports, ticket PDFs > 12 months) and `uploads-quarantine` objects > 24 h |
+| `15 * * * *` | `prune_rate_limit_buckets` | `run_scheduled_job`: deletes `rate_limit_buckets` rows whose window started more than a day ago |
+| `0 18 1 * *` | `prune_operational_tables` | `run_scheduled_job`: `internal.prune_operational_tables()` |
 
-Every job writes a heartbeat row (`security_events` type `cron_failed` on error); `/api/health` returns 503 when the last successful run of `expire_stale_bookings` or `process-notifications` is older than 15 min.
+Every run leaves a heartbeat in `job_heartbeats`: a database job when it returns, an application job when its route finishes and reports through `svc_record_job_run`. A failed run, a failing route and an application job whose Vault secrets are missing are recorded as failures and as `security_events` of type `cron_failed`; only a database whose Vault secret `environment` is `'local'` skips application jobs quietly when it has no secrets (decision of 2026-10-17). `/api/health` returns 503 when `expire_stale_bookings`, `process-notifications` or `payments-poll` has not succeeded for 15 min (Task P3.11.07), so the outbox and payment polling cannot stop unnoticed.
 
 ---
 ## 9. Booking and payment state machine
