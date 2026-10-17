@@ -41,10 +41,12 @@
     "analyze": "next build"
   },
   "dependencies": {
+    "@date-fns/tz": "^1.5.0",
     "@hookform/resolvers": "^5.9.1",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.3",
     "@t3-oss/env-nextjs": "^0.13.11",
+    "@tanstack/react-virtual": "^3.14.14",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
