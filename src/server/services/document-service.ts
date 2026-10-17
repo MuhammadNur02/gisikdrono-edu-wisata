@@ -16,6 +16,37 @@ const QUARANTINE_BUCKET = 'uploads-quarantine';
 const QUARANTINE_PREFIXES = ['rw-05', 'rw-08', 'kelurahan'] as const;
 const MS_PER_HOUR = 3_600_000;
 const QUARANTINE_MAX_AGE_HOURS = 24;
+const DOCUMENTS_BUCKET = 'documents';
+
+// How long a signed URL to a private document stays valid (docs/Security.md §10.3). The WhatsApp document
+// header lives longest because Meta fetches the file some time after the message is queued.
+export const SIGNED_URL_TTL_SECONDS = {
+  ticket: 600,
+  certificate: 600,
+  invoice: 900,
+  quotation: 900,
+  receipt: 900,
+  credit_note: 900,
+  export: 300,
+  whatsapp_document_header: 3600,
+} as const;
+
+export type SignedDocumentKind = keyof typeof SIGNED_URL_TTL_SECONDS;
+
+// The one place a signed URL into the documents bucket is minted. The caller has already authorised the
+// reader for this document; the URL is handed straight back in a redirect and never stored, logged or
+// written into a message (CLAUDE.md §6.6).
+export async function createDocumentSignedUrl(
+  adminClient: DatabaseClient,
+  path: string,
+  kind: SignedDocumentKind,
+): Promise<string> {
+  const { data, error } = await adminClient.storage
+    .from(DOCUMENTS_BUCKET)
+    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS[kind]);
+  if (error) throw error;
+  return data.signedUrl;
+}
 
 // The api/jobs/purge-storage run (docs/Security.md §7.3). SQL cannot delete storage objects, so the
 // retention runs mark rows and this deletes their files through the Storage API, then lets the rows
