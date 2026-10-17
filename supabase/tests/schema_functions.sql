@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(440);
+select plan(431);
 -- Every package write checks the price floor, which refuses to run without its setting (0005).
 insert into public.site_settings (key, value) values ('pricing.min_price_per_pax', '5000') on conflict (key) do nothing;
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
@@ -246,56 +246,7 @@ select is(
 );
 
 -- ===== Definer template (Task P1.3.04) =====
-
-select is(
-  array(
-    select n.nspname || '.' || p.proname from pg_proc p
-    join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname in ('public', 'internal')
-      and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like 'search_path=%')
-    order by 1
-  ),
-  array[]::text[],
-  'every function in public and internal pins search_path'
-);
-select is(
-  array(
-    select n.nspname || '.' || p.proname from pg_proc p
-    join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname in ('public', 'internal') and p.prosecdef
-      and pg_get_userbyid(p.proowner) <> 'postgres'
-    order by 1
-  ),
-  array[]::text[],
-  'every security definer function is owned by postgres'
-);
-select is(
-  array(
-    select n.nspname || '.' || p.proname from pg_proc p
-    join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname in ('public', 'internal')
-      and has_function_privilege('anon', p.oid, 'execute')
-    order by 1
-  ),
-  array['public.today_jkt'],
-  'anon can execute today_jkt() and nothing else'
-);
-select is(
-  array(
-    select n.nspname || '.' || p.proname from pg_proc p
-    join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname in ('public', 'internal')
-      and has_function_privilege('authenticated', p.oid, 'execute')
-    order by 1
-  ),
-  array['public.aal2', 'public.app_role', 'public.app_rw_id', 'public.cancel_staff_mfa_reset',
-        'public.cancel_superadmin_promotion', 'public.fresh_totp', 'public.generate_visit_sessions',
-        'public.invite_superadmin', 'public.is_admin_rw', 'public.is_staff', 'public.is_superadmin', 'public.owns_any_rw',
-        'public.owns_rw', 'public.reset_staff_mfa',
-        'public.rpc_get_participants', 'public.rpc_log_ui_event', 'public.rpc_reveal_booking_contact',
-        'public.set_staff_role', 'public.set_staff_status', 'public.today_jkt'],
-  'authenticated can execute the ten RLS helpers and the staff RPCs granted in 0005, nothing else'
-);
+-- Search paths, owners and the execute allow-lists are enumerated over the whole catalogue in rls_enumeration.sql.
 
 -- ===== profiles_guard (Task P1.3.05) =====
 
@@ -2327,36 +2278,7 @@ revoke execute on function public.reset_staff_mfa(uuid), public.cancel_staff_mfa
   public.set_staff_status(uuid, boolean, text) from authenticated;
 
 -- ===== Service-role entry points =====
-
-select is(
-  (select string_agg(p.proname, ', ' order by p.proname) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public' and not p.proname like 'svc_%' and p.prorettype <> 'trigger'::regtype
-     and p.proname not in ('app_role', 'app_rw_id', 'is_superadmin', 'is_admin_rw', 'is_staff', 'owns_rw',
-                           'owns_any_rw', 'aal2', 'fresh_totp', 'today_jkt')
-     and has_function_privilege('service_role', p.oid, 'execute')),
-  null,
-  'the service role can call no staff RPC and neither Auth hook, only its svc_ entry points'
-);
-
-select is(
-  (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public' and p.proname like 'svc\_%'
-     and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'))),
-  0,
-  'no svc_ function is executable by anon or authenticated'
-);
-select is(
-  (select bool_and(has_function_privilege('service_role', p.oid, 'execute') and p.prosecdef)
-   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public' and p.proname like 'svc\_%'),
-  true,
-  'every svc_ function is security definer and executable by the service role'
-);
-select is(
-  has_schema_privilege('service_role', 'internal', 'usage'),
-  false,
-  'so the service role needs no right on internal itself'
-);
+-- Which svc_ functions exist and who may execute them is enumerated in rls_enumeration.sql.
 
 set local role anon;
 select throws_ok($$select public.svc_rate_limit_hit('test:svc', 5, 60)$$, '42501', null, 'anon cannot call a svc_ function');
@@ -2585,13 +2507,6 @@ select is(
 
 -- ===== Views =====
 
-select is(
-  (select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace
-   where n.nspname = 'public' and c.relkind = 'v'
-     and not coalesce(c.reloptions @> array['security_invoker=true'], false)),
-  0,
-  'every public view runs with the reader''s own rights'
-);
 select hasnt_column('public', 'v_session_availability', 'pending_share', 'anon''s availability carries no unpaid share');
 select hasnt_column('public', 'v_public_reviews', 'booking_id', 'a public review does not point at its booking');
 select hasnt_column('public', 'v_bookings_staff', 'pic_phone', 'the staff list has no raw phone');

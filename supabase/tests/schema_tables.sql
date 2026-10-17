@@ -1,7 +1,7 @@
 -- Structure test for 0003_tables, extended group by group: exact columns, the types other code
 -- relies on, keys, and the CHECK / unique rules proven by trying to break them.
 begin;
-select plan(213);
+select plan(212);
 -- Every package write checks the price floor, which refuses to run without its setting (0005).
 insert into public.site_settings (key, value) values ('pricing.min_price_per_pax', '5000') on conflict (key) do nothing;
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
@@ -19,17 +19,7 @@ select set_config('app.in_rpc', '1', true);
 
 -- ===== Every table: RLS from birth, no API rights, updated_at kept by trigger =====
 
-select is(
-  array(
-    select c.relname::text from pg_class c
-    where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'
-      and not (c.relrowsecurity and c.relforcerowsecurity)
-    order by 1
-  ),
-  array[]::text[],
-  'every public table has RLS enabled and forced'
-);
-
+-- RLS on every table is enumerated in rls_enumeration.sql.
 -- 0005 grants by column, so a column added later stays private until a migration grants it. The only
 -- table-level right is DELETE, for staff on the tables whose policies let them remove rows.
 select is(
