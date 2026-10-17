@@ -62,6 +62,7 @@ The platform is operated by a small municipal team: one Superadmin Kelurahan and
 | Tables, charts, URL state | `@tanstack/react-table`, Recharts via shadcn Chart, `nuqs` | Dashboard only |
 | Long lists | `@tanstack/react-virtual` | `ParticipantsEditor` (up to `booking.max_pax` rows, docs/StyleGuide.md §5.6) |
 | Dates | `date-fns` + `@date-fns/tz`, locale `id`, `APP_TZ = 'Asia/Jakarta'` | DB `timestamptz`; visit dates `date` |
+| Structured data | `schema-dts` (types only, dev dependency) | JSON-LD builders in `src/lib/seo/json-ld.ts`, rendered by `src/components/seo/json-ld.tsx` |
 | Payments | Midtrans Snap, **redirect mode**, thin typed fetch wrapper in `src/lib/midtrans/client.ts` (no SDK) | QRIS + Virtual Account only |
 | Messaging | Meta WhatsApp Business Cloud API (Graph v21+), Resend + React Email | Outbox table `notifications` |
 | Documents | `@react-pdf/renderer`, `pdf-lib`, `qrcode`, `exceljs` | Node route handlers only |
