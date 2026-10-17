@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { localStack, runSql } from './helpers/local-stack';
+import { localStack, runSql } from '../../scripts/local-stack';
 
 // Signs in through GoTrue on the local stack with both hooks enabled in supabase/config.toml, so the
 // hooks run exactly as Auth calls them (docs/Security.md §5.5). Profiles keep their auth user

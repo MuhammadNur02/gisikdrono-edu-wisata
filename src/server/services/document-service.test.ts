@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { Database } from '@/db/types';
 
-import { purgeMarkedFiles } from './document-service';
+import {
+  createDocumentSignedUrl,
+  isDocumentPathFor,
+  purgeMarkedFiles,
+  SIGNED_URL_TTL_SECONDS,
+} from './document-service';
 
 type Reply = { status: number; body: unknown };
 type RecordedRequest = { method: string; path: string; body: unknown };
@@ -116,5 +121,75 @@ describe('purgeMarkedFiles', () => {
     });
 
     await expect(purgeMarkedFiles(client, NOW)).rejects.toBeDefined();
+  });
+});
+
+describe('createDocumentSignedUrl', () => {
+  const ticketPath = 'bookings/b1/ticket-GSK-7F3K9Q2M-05.pdf';
+  const signRoute = `POST /storage/v1/object/sign/documents/${ticketPath}`;
+
+  it('keeps the lifetimes of docs/Security.md §10.3', () => {
+    expect(SIGNED_URL_TTL_SECONDS).toEqual({
+      ticket: 600,
+      certificate: 600,
+      invoice: 900,
+      quotation: 900,
+      receipt: 900,
+      credit_note: 900,
+      export: 300,
+      whatsapp_document_header: 3600,
+    });
+  });
+
+  it('signs the documents object for the lifetime of its kind', async () => {
+    const { client, requests } = clientWith({
+      [signRoute]: {
+        status: 200,
+        body: { signedURL: `/object/sign/documents/${ticketPath}?token=t1` },
+      },
+    });
+
+    await expect(createDocumentSignedUrl(client, ticketPath, 'ticket')).resolves.toBe(
+      `http://supabase.test/storage/v1/object/sign/documents/${ticketPath}?token=t1`,
+    );
+    await createDocumentSignedUrl(client, ticketPath, 'whatsapp_document_header');
+    expect(bodiesOf(requests, 'POST', `/storage/v1/object/sign/documents/${ticketPath}`)).toEqual([
+      { expiresIn: 600 },
+      { expiresIn: 3600 },
+    ]);
+  });
+
+  it.each([
+    ['ticket', 'bookings/b1/ticket.pdf', true],
+    ['certificate', 'certificates/b1/participant-01.pdf', true],
+    ['export', 'exports/p1/visits-2026-10.xlsx', true],
+    ['whatsapp_document_header', 'certificates/b1/group.pdf', true],
+    ['ticket', 'exports/p1/visits-2026-10.xlsx', false],
+    ['invoice', 'payouts/2026-10/batch.csv', false],
+    ['ticket', 'bookings/../exports/p1/visits.xlsx', false],
+    ['ticket', 'bookings/b1/../../exports/p1/visits.xlsx', false],
+    ['ticket', '/bookings/b1/ticket.pdf', false],
+    ['ticket', 'bookings//ticket.pdf', false],
+    ['ticket', 'bookings/ticket.pdf', false],
+    ['ticket', 'bookings/b1/.hidden', false],
+  ] as const)('%s may be signed from %s: %s', (kind, path, allowed) => {
+    expect(isDocumentPathFor(kind, path)).toBe(allowed);
+  });
+
+  it("refuses a path outside its kind's folder before asking Storage", async () => {
+    const { client, requests } = clientWith({});
+
+    await expect(
+      createDocumentSignedUrl(client, 'exports/p1/visits.xlsx', 'ticket'),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect(requests).toEqual([]);
+  });
+
+  it('fails when Storage refuses, so no route ever redirects to a URL that does not work', async () => {
+    const { client } = clientWith({
+      [signRoute]: { status: 400, body: { message: 'Object not found' } },
+    });
+
+    await expect(createDocumentSignedUrl(client, ticketPath, 'ticket')).rejects.toBeDefined();
   });
 });

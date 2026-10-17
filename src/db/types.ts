@@ -7,31 +7,6 @@ export type Json =
   | Json[]
 
 export type Database = {
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       activity_points: {
@@ -1451,6 +1426,45 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      job_heartbeats: {
+        Row: {
+          job: string
+          kind: string
+          last_error_code: string | null
+          last_failure_at: string | null
+          last_request_id: number | null
+          last_requested_at: string | null
+          last_success_at: string | null
+          max_age: string
+          updated_at: string
+          watching_since: string
+        }
+        Insert: {
+          job: string
+          kind: string
+          last_error_code?: string | null
+          last_failure_at?: string | null
+          last_request_id?: number | null
+          last_requested_at?: string | null
+          last_success_at?: string | null
+          max_age: string
+          updated_at?: string
+          watching_since?: string
+        }
+        Update: {
+          job?: string
+          kind?: string
+          last_error_code?: string | null
+          last_failure_at?: string | null
+          last_request_id?: number | null
+          last_requested_at?: string | null
+          last_success_at?: string | null
+          max_age?: string
+          updated_at?: string
+          watching_since?: string
+        }
+        Relationships: []
       }
       login_attempts: {
         Row: {
@@ -4216,6 +4230,17 @@ export type Database = {
         Args: { p_booklet_id: string }
         Returns: undefined
       }
+      svc_job_health: {
+        Args: never
+        Returns: {
+          is_stalled: boolean
+          job: string
+          kind: string
+          last_error_code: string
+          last_failure_at: string
+          last_success_at: string
+        }[]
+      }
       svc_log_audit: {
         Args: {
           p_action: string
@@ -4226,6 +4251,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      svc_placeholder_site_settings: { Args: never; Returns: string[] }
       svc_purgeable_files: {
         Args: { p_limit: number }
         Returns: {
@@ -4236,6 +4262,10 @@ export type Database = {
       svc_rate_limit_hit: {
         Args: { p_key: string; p_limit: number; p_window_seconds: number }
         Returns: boolean
+      }
+      svc_record_job_run: {
+        Args: { p_error_code?: string; p_job: string; p_succeeded: boolean }
+        Returns: undefined
       }
       today_jkt: { Args: never; Returns: string }
     }
@@ -4513,9 +4543,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       activity_point_type: [

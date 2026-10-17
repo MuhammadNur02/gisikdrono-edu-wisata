@@ -2,7 +2,7 @@
 -- function here, so internal.* bodies are called directly; the public hooks are checked to refuse
 -- anyone but Auth.
 begin;
-select plan(438);
+select plan(440);
 -- Every package write checks the price floor, which refuses to run without its setting (0005).
 insert into public.site_settings (key, value) values ('pricing.min_price_per_pax', '5000') on conflict (key) do nothing;
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
@@ -42,6 +42,12 @@ insert into public.profiles (id, email, full_name, role, rw_id, is_active, claim
   ('00000000-0000-4000-8000-000000000001', 'superadmin@example.test', 'Super Admin', 'superadmin', null, true, 1),
   ('00000000-0000-4000-8000-000000000002', 'admin05@example.test', 'Admin Lima', 'admin_rw', 5, true, 3),
   ('00000000-0000-4000-8000-000000000003', 'former@example.test', 'Mantan Staf', 'admin_rw', 8, false, 1);
+-- The staff tests below need profile 0001 to be the only active superadmin. The development seed adds one of its
+-- own, which this suite deactivates through the privileged path, inside its transaction.
+select set_config('app.privileged_rpc', 'on', true);
+update public.profiles set is_active = false, role = 'none', rw_id = null
+where role = 'superadmin' and id <> '00000000-0000-4000-8000-000000000001';
+select set_config('app.privileged_rpc', '', true);
 
 -- ===== Contact masks on bookings =====
 
@@ -1894,10 +1900,21 @@ select set_config('request.jwt.claims', (
                             'app_rw_id', rw_id, 'claims_version', claims_version)::text
   from public.profiles where id = '00000000-0000-4000-8000-000000000002'), true);
 set local role authenticated;
-select is(public.generate_visit_sessions(8::smallint, public.today_jkt(), public.today_jkt() + 13), 2,
-  'an RW admin turns the active template into two weeks of sessions');
-select is(public.generate_visit_sessions(8::smallint, public.today_jkt(), public.today_jkt() + 13), 0,
-  'running it again creates nothing new');
+-- The development seed has RW 08 templates of its own, so the checks count this suite's template only.
+select lives_ok($$select public.generate_visit_sessions(8::smallint, public.today_jkt(), public.today_jkt() + 13)$$,
+  'an RW admin generates their RW''s sessions');
+select is(
+  (select count(*)::int from public.visit_sessions where rw_id = 8 and label = 'Subuh' and start_time = '04:00'),
+  2,
+  'turning the active template into two weeks of sessions'
+);
+select lives_ok($$select public.generate_visit_sessions(8::smallint, public.today_jkt(), public.today_jkt() + 13)$$,
+  'running it again');
+select is(
+  (select count(*)::int from public.visit_sessions where rw_id = 8 and label = 'Subuh' and start_time = '04:00'),
+  2,
+  'creates nothing new'
+);
 select throws_ok(
   $$select public.generate_visit_sessions(5::smallint, public.today_jkt(), public.today_jkt() + 13)$$,
   '42501', null, 'but not for another RW'

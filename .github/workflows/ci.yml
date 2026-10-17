@@ -58,6 +58,8 @@ jobs:
           version: 2.117.0
       - name: Start Supabase and apply every migration
         run: supabase start
+      - name: Development accounts and demo content (local stack only)
+        run: pnpm db:seed
       - name: pgTAP
         # The first pgTAP files arrive with the P1.2 migrations; from then on this always runs.
         run: |

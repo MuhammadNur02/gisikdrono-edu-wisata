@@ -174,8 +174,8 @@ src/
   middleware.ts
 supabase/
   migrations/                  0001_extensions ... 0008_seed, then <YYYYMMDDHHMMSS>_<slug>.sql
-  seed.sql config.toml tests/  pgTAP (rls_*.sql, triggers, append-only, concurrency, enumeration)
-scripts/                       seed-dev.ts, midtrans-simulate.ts, midtrans-status.ts, wa-send-test.ts, check-client-bundle-secrets.mjs
+  config.toml tests/            pgTAP (rls_*.sql, triggers, append-only, concurrency, enumeration); no seed.sql (pnpm db:seed)
+scripts/                       seed-dev.ts + seed-dev.sql, dev-accounts.ts, local-stack.ts, midtrans-simulate.ts, midtrans-status.ts, wa-send-test.ts, check-client-bundle-secrets.mjs
 tests/                         integration/ (Vitest against supabase start), e2e/ (Playwright), fixtures/
 public/                        icons/, map/denah.svg, fonts/, og/
 ```
@@ -197,7 +197,7 @@ public/                        icons/, map/denah.svg, fonts/, og/
 | `src/hooks` | `use-*.ts` client hooks (camera, media query, debounced URL state, countdown) | Data fetching from Supabase, business rules, anything importing `src/server/**` |
 | `src/config` | Constants, nav per role, status maps, site metadata | Secrets, runtime toggles (those live in `site_settings`) |
 | `supabase/migrations` | Tables + RLS + grants + triggers + pgTAP-covered functions, one concern per file | Edits to an applied migration; data fixes without a new migration |
-| `scripts` | Local/CI tooling; `seed-dev.ts` refuses non-local `SUPABASE_URL` | Production data manipulation |
+| `scripts` | Local/CI tooling; `seed-dev.ts` reaches the local stack only (`local-stack.ts` refuses anything but 127.0.0.1) | Production data manipulation |
 | `tests` | `integration/` (Vitest against `supabase start`), `e2e/` (Playwright), `fixtures/` (synthetic data only; a real booking-shaped fixture for the redaction test) | Real PII, real keys, production URLs; unit tests (those are colocated `*.test.ts` next to the module) |
 | `docs` | `PRD.md`, `Task.md`, `StyleGuide.md`, `Security.md`, `notifications.md` (template texts for Meta approval) | Secrets, env values, generated artefacts, copies of code that drift from `src` |
 
@@ -436,7 +436,7 @@ ESLint `no-restricted-imports` and a CI grep enforce the allow-list. Every impor
 
 ### 6.2 RLS reliance and the `getUser()` rule
 
-- RLS is **enabled and forced** on every table; `revoke all ... from anon, authenticated` then minimal grants; functions revoked from `public` by default. CI pgTAP fails when a table lacks RLS, when any function is executable by `anon` (none is: public writes go through Server Actions or route handlers that call `internal.*` under the service role), or when a function is executable by `authenticated` outside the staff-RPC allow-list. Stable read-only RLS helpers are the one exception to the function-grant rule: `today_jkt()` is granted to `anon` and `authenticated` because anon policies call it; `app_role()`, `app_rw_id()`, `is_superadmin()`, `is_admin_rw()`, `is_staff()`, `owns_rw(rw_id)`, `owns_any_rw(rw_ids)`, `aal2()` and `fresh_totp()` are granted to `authenticated` only. `app_role()` is the only helper that is `security definer` (it reads `profiles`, so an invoker version would recurse through the `profiles` policies); it skips the role-check line of the definer template. The pgTAP allow-list of P1.9.01 names exactly this list.
+- RLS is **enabled and forced** on every table; `revoke all ... from anon, authenticated` then minimal grants; functions revoked from `public` by default. CI pgTAP fails when a table lacks RLS, when any function is executable by `anon` (none is: public writes go through Server Actions or route handlers that call `internal.*` under the service role), or when a function is executable by `authenticated` outside the staff-RPC allow-list. Stable read-only RLS helpers are the one exception to the function-grant rule: `today_jkt()` is granted to `anon` and `authenticated` because anon policies call it; `app_role()`, `app_rw_id()`, `is_superadmin()`, `is_admin_rw()`, `is_staff()`, `owns_rw(rw_id)`, `owns_any_rw(rw_ids)`, `aal2()` and `fresh_totp()` are granted to `authenticated` only. No storage helper exists: no API role holds a policy on `storage.objects` (§6.6). `app_role()` is the only helper that is `security definer` (it reads `profiles`, so an invoker version would recurse through the `profiles` policies); it skips the role-check line of the definer template. The pgTAP allow-list of P1.9.01 names exactly this list.
 - Two schemas: `public` (tables, views, staff-callable RPCs, and the `svc_*` wrappers executable by `service_role` only) and `internal` (SECURITY DEFINER transition functions, not exposed to PostgREST, executed by `postgres` for pg_cron and reached by the server only through the `svc_*` wrappers).
 - Authorise with `supabase.auth.getUser()` and RLS. Never `getSession()` for authorization, never client-side role checks alone, never `user_metadata` in policies.
 - Claims `app_role`, `app_rw_id`, `claims_version` come from `public.custom_access_token_hook`; helpers `app_role()`, `app_rw_id()`, `is_superadmin()`, `is_admin_rw()`, `is_staff()`, `owns_rw(rw_id)`, `owns_any_rw(rw_ids)`, `aal2()`, `fresh_totp()`, `today_jkt()` are wrapped as `(select ...)` in policies.
@@ -476,15 +476,15 @@ SECURITY DEFINER hygiene: owner `postgres`, `set search_path = ''` with fully-qu
 - Bootstrap set `supabase/migrations/0001_extensions ... 0008_seed`; afterwards `<YYYYMMDDHHMMSS>_<slug>.sql`, one concern per file, forward-only (fix with a new migration, never edit an applied one).
 - The bootstrap set follows `docs/PRD.md` §8.1 and §8.4, split by dependency (decision of 2026-10-16): `0003_tables` creates each table with RLS enabled and forced, a revoke for `anon` and `authenticated` and `set_updated_at`, so it denies everything from birth; `0004_functions` adds `log_audit` and append-only triggers with their functions; `0005_policies_grants` adds grants and policies. The rule below and Recipe D apply to the timestamped migrations that come after the bootstrap.
 - A migration that adds a table includes, in the same file: enable + force RLS, revokes, explicit grants, policies, `rw_id smallint` when RW-scoped (`NULL` = kelurahan-level), audit trigger when it holds PII or money, append-only trigger when it is a ledger/log, and is accompanied by a pgTAP test under `supabase/tests/`. CI fails otherwise.
-- `supabase/seed.sql` = reference data only (`rw_units` 5 and 8, `site_settings`, `revenue_share_rules` defaults, demo content flagged `is_demo`). `scripts/seed-dev.ts` creates local staff users (superadmin, admin_rw 05, admin_rw 08) and refuses to run unless `SUPABASE_URL` points at `127.0.0.1`.
+- `supabase/migrations/0008_seed.sql` = reference data for every environment (`rw_units` 5 and 8, every `site_settings` key of `docs/PRD.md` §8.6, the A4 `revenue_share_rules` defaults). A value the kelurahan has not given yet is a placeholder that `internal.placeholder_site_settings()` flags; production's `/api/health` and the go-live checklist fail while any is left. There is no `supabase/seed.sql`, and `[db.seed]` is off in `config.toml`, so `supabase db reset` seeds nothing anywhere (security review of PR #5). The development data comes from `pnpm db:seed` (`scripts/seed-dev.ts` running `scripts/seed-dev.sql` in one transaction), local and CI only: it takes the stack's address from `supabase status` and refuses anything but 127.0.0.1; it marks a fresh database with the Vault secret `environment = 'local'`, then calls `internal.require_local_database()`, which fails closed on a database marked anything else (the marker is read through an allow-list, `local` / `staging` / `production`, case and spaces ignored); it writes the DEV-ONLY staff accounts (superadmin, admin_rw 05, admin_rw 08, with a verified TOTP factor; the password and secret live only in `scripts/dev-accounts.ts` and `README.md`) and the demo content, which therefore never needs an `is_demo` flag, skipping whatever already exists; and it prints the accounts with the current TOTP code.
 - pg_cron schedules are defined only in migrations and call `SECURITY DEFINER` functions with no dynamic SQL.
 
 ### 6.5 Local development loop
 
 ```bash
 pnpm db:start          # supabase start (Docker)
-pnpm db:reset          # drop + migrate + seed + db:types
-pnpm db:seed           # local staff users
+pnpm db:reset          # drop + migrate + db:seed + db:types
+pnpm db:seed           # local only: DEV-ONLY staff accounts + demo content, prints the current TOTP code
 pnpm dev               # http://localhost:3000
 pnpm tunnel            # cloudflared: receive Midtrans sandbox webhooks locally
 pnpm midtrans:simulate -- --order GSK-7F3K9Q2M-01 --status settlement
@@ -499,7 +499,7 @@ pnpm check             # lint + typecheck + unit + types drift
 | Bucket | Visibility | Path | Rule |
 |---|---|---|---|
 | `uploads-quarantine` | private | `rw-05/<uuid>`, `rw-08/<uuid>`, `kelurahan/<uuid>` | Raw admin uploads via 5-min signed upload URL; `finalize` re-encodes/scans then deletes; hourly purge > 24 h |
-| `public-media` | public | `rw-05/...`, `rw-08/...`, `kelurahan/...` | Gallery, products, packages, hero, articles, activity points, booklet PDF + `pages/0001.webp`, avatars; staff write own prefix only (storage policies call `public.storage_owner_prefix_ok(name)`) |
+| `public-media` | public | `rw-05/...`, `rw-08/...`, `kelurahan/...` | Gallery, products, packages, hero, articles, activity points, booklet PDF + `pages/0001.webp`, avatars; written only by `api/uploads/finalize` with the service role, never listed (no policy on `storage.objects` for any API role; files are fetched by URL) |
 | `documents` | private | `bookings/<id>/...`, `certificates/<booking_id>/...`, `payouts/<batch>/...`, `exports/<profile_id>/...` | No anon/authenticated policies; server-issued signed URLs only after authorisation: 600 s tickets/certificates, 900 s invoices, 300 s exports, 60 min WhatsApp document header. Signed URLs are never persisted or messaged. |
 
 ---
@@ -680,12 +680,12 @@ PRD requirement cited; migration + RLS + pgTAP merged; types regenerated; valida
 | `pnpm e2e` / `e2e:ui` | Playwright headless / UI mode |
 | `pnpm check` | `lint` + `typecheck` + `test` + `db:types:check` (run before every push) |
 | `pnpm db:start` / `db:stop` / `db:status` | Supabase CLI local stack |
-| `pnpm db:reset` | `supabase db reset` + seed + `db:types` |
+| `pnpm db:reset` | `supabase db reset` + `db:seed` + `db:types` |
 | `pnpm db:migrate:new <slug>` | Create an empty timestamped migration |
 | `pnpm db:diff <slug>` | `supabase db diff -f` from local schema changes (review before committing) |
 | `pnpm db:push` | `supabase db push --linked` to staging/production; **CI only** |
 | `pnpm db:types` / `db:types:check` | Regenerate `src/db/types.ts` / fail on drift |
-| `pnpm db:seed` | `tsx scripts/seed-dev.ts` (local only; refuses non-127.0.0.1) |
+| `pnpm db:seed` | `tsx scripts/seed-dev.ts`: development accounts and demo content (local only; refuses non-127.0.0.1 and any database not marked local) |
 | `pnpm db:test` | `supabase test db` (all pgTAP suites) |
 | `pnpm midtrans:simulate -- --order <code> --status settlement\|expire\|deny` | Post a correctly signed sandbox notification to the local webhook |
 | `pnpm midtrans:status -- --order <code>` | Query the Midtrans Status API for an order |
@@ -884,7 +884,7 @@ Do not guess, do not invent a placeholder name, and do not disable a lint rule t
 | Content | `galleries`, `articles`, `booklets`, `hero_banners`, `activity_points`, `performance_schedules` |
 | Community | `reviews` |
 | Finance | `revenue_share_rules`, `revenue_share_rule_lines`, `revenue_share_entries`, `payout_batches` |
-| Ops | `notifications`, `security_events`, `security_alerts`, `exports`, `dsr_requests`, `audit_logs`, `login_attempts`, `rate_limit_buckets` |
+| Ops | `notifications`, `security_events`, `security_alerts`, `exports`, `dsr_requests`, `audit_logs`, `login_attempts`, `rate_limit_buckets`, `job_heartbeats` |
 
 Codes: `booking_code` = `GSK-` + 8 chars Crockford base32 (`GSK-7F3K9Q2M`); `payments.order_id` = `<booking_code>-NN`; `ticket_code` = `<booking_code>-<rw 2 digits>`; `SP/GSK/YYYY/MM/NNNN` quotation, `INV/GSK/YYYY/MM/NNNN` invoice, `KW/GSK/YYYY/MM/NNNN` receipt, `CN/GSK/YYYY/NNNN` credit note, `SERT/GSK/YYYY/NNNNN` certificate; `quotations.verify_code` and `certificates.verify_code` = 10 chars Crockford base32, random, used only in the public verify URL `/verifikasi/[code]`.
 
@@ -948,13 +948,13 @@ Codes: `booking_code` = `GSK-` + 8 chars Crockford base32 (`GSK-7F3K9Q2M`); `pay
 | Kind | Names |
 |---|---|
 | Staff RPCs (`public`, re-check scope) | `validate_ticket`, `check_in_ticket`, `undo_check_in`, `mark_booking_paid_manually`, `cancel_booking`, `extend_booking_hold`, `reactivate_booking`, `record_refund`, `resolve_booking_review`, `issue_certificates`, `revoke_ticket`, `revoke_certificate`, `settle_revenue_entries`, `revenue_recap`, `visit_stats`, `generate_visit_sessions`, `request_notification_resend`, `rpc_reveal_booking_contact`, `rpc_get_participants`, `rpc_create_export`, `rpc_log_ui_event`, `propose_adjustment`, `approve_adjustment`, `apply_adjustment`, `set_staff_role`, `set_staff_status`, `reset_staff_mfa`, `cancel_staff_mfa_reset`, `cancel_superadmin_promotion`, `invite_superadmin` |
-| Service-role entry points (`public`, `service_role` only) | `svc_rate_limit_hit`, `svc_enqueue_notification`, `svc_increment_booklet_download`, `svc_expire_stale_bookings`, `svc_log_audit`, `svc_purgeable_files`, `svc_forget_purged_files`; every later `internal` function the server calls adds `svc_<its name>` |
-| Internal functions (`internal`, cron / via `svc_*`) | `create_booking`, `reserve_session_quota`, `release_booking_quota`, `create_payment_attempt`, `attach_snap_token`, `apply_payment_event`, `record_payment_failure`, `create_quotation`, `next_document_number`, `allocate_revenue_share`, `reverse_revenue_share`, `issue_phone_otp`, `verify_phone_otp`, `submit_review`, `expire_stale_bookings`, `close_past_bookings`, `enqueue_visit_reminders`, `reconcile_session_counters`, `increment_booklet_download`, `claim_notifications`, `complete_notification`, `fail_notification`, `enqueue_notification`, `rate_limit_hit`, `prune_operational_tables`, `purge_participants`, `anonymise_booker_pii`, `purgeable_files`, `forget_purged_files`, `verify_ledger_chain`, `verify_audit_chain`, `log_audit`, `hash_email`, `staff_token_claims`, `record_login_attempt` (the last three are the bodies behind the Auth hooks and the keyed email hash; owned by `postgres`, never granted) |
+| Service-role entry points (`public`, `service_role` only) | `svc_rate_limit_hit`, `svc_enqueue_notification`, `svc_increment_booklet_download`, `svc_expire_stale_bookings`, `svc_log_audit`, `svc_purgeable_files`, `svc_forget_purged_files`, `svc_record_job_run`, `svc_job_health`, `svc_placeholder_site_settings`; every later `internal` function the server calls adds `svc_<its name>` |
+| Internal functions (`internal`, cron / via `svc_*`) | `create_booking`, `reserve_session_quota`, `release_booking_quota`, `create_payment_attempt`, `attach_snap_token`, `apply_payment_event`, `record_payment_failure`, `create_quotation`, `next_document_number`, `allocate_revenue_share`, `reverse_revenue_share`, `issue_phone_otp`, `verify_phone_otp`, `submit_review`, `expire_stale_bookings`, `close_past_bookings`, `enqueue_visit_reminders`, `reconcile_session_counters`, `increment_booklet_download`, `claim_notifications`, `complete_notification`, `fail_notification`, `enqueue_notification`, `rate_limit_hit`, `prune_operational_tables`, `purge_participants`, `anonymise_booker_pii`, `purgeable_files`, `forget_purged_files`, `verify_ledger_chain`, `verify_audit_chain`, `log_audit`, `hash_email`, `run_scheduled_job`, `call_job`, `settle_job_response`, `check_job_responses`, `record_job_run`, `environment` (0007: the scheduled jobs, their heartbeats, the pg_net answers and the Vault `environment` marker), `placeholder_site_settings`, `require_local_database` (0008: seed placeholders and the fail-closed development seed guard), `staff_token_claims`, `record_login_attempt` (the last three are the bodies behind the Auth hooks and the keyed email hash; owned by `postgres`, never granted) |
 | Auth hooks | `public.custom_access_token_hook`, `public.hook_password_verification_attempt` |
-| RLS and storage helpers (`public`) | `app_role()`, `app_rw_id()`, `is_superadmin()`, `is_admin_rw()`, `is_staff()`, `owns_rw(rw_id)`, `owns_any_rw(rw_ids)`, `aal2()`, `fresh_totp()`, `today_jkt()`, `storage_owner_prefix_ok(name)` |
+| RLS helpers (`public`) | `app_role()`, `app_rw_id()`, `is_superadmin()`, `is_admin_rw()`, `is_staff()`, `owns_rw(rw_id)`, `owns_any_rw(rw_ids)`, `aal2()`, `fresh_totp()`, `today_jkt()` |
 | Views | `v_session_availability`, `v_public_reviews`, `v_bookings_staff`, `v_booking_admin`, `v_attendance_today`, `v_booking_export`, `v_revenue_recap_daily`, `v_revenue_recap_by_party`, `v_revenue_recap_by_booking`, `v_finance_daily` |
 | Buckets | `uploads-quarantine`, `public-media`, `documents` |
-| pg_cron jobs | `expire_stale_bookings */5`, `process-notifications * * * * *` (pg_net), `payments-poll */5` (pg_net), `enqueue_visit_reminders 09:00 WIB`, `close_past_bookings + reconcile_session_counters 23:30 WIB`, `generate_visit_sessions 00:00 WIB`, `reconcile-payments 02:30 WIB` (pg_net), `anomaly-scan */5` (pg_net), `purge/retention 02:00 WIB` (`purge_participants` + `anonymise_booker_pii` + `guest_otps` > 24 h), `purge-storage 02:15 WIB` (pg_net; deletes the files the retention run marked plus `uploads-quarantine` > 24 h), `prune rate_limit_buckets hourly`, `prune_operational_tables monthly` |
+| pg_cron jobs | `expire_stale_bookings */5`, `process-notifications * * * * *` (pg_net), `payments-poll */5` (pg_net), `enqueue_visit_reminders 09:00 WIB`, `close_past_bookings + reconcile_session_counters 23:30 WIB`, `generate_visit_sessions 00:00 WIB`, `reconcile-payments 02:30 WIB` (pg_net), `anomaly-scan */5` (pg_net), `check_job_responses */5` (reads the pg_net answers), `purge/retention 02:00 WIB` (`purge_participants` + `anonymise_booker_pii` + `guest_otps` > 24 h), `purge-storage` hourly at :15, so 02:15 WIB after the retention run (pg_net; deletes the files the retention run marked plus `uploads-quarantine` > 24 h), `prune_rate_limit_buckets hourly`, `prune_operational_tables monthly`; every database job runs as `internal.run_scheduled_job('<job>')` and every pg_net job as `internal.call_job('<job>')` (0007), each leaving a heartbeat in `job_heartbeats`, which `svc_job_health()` reports as stalled once a job passes its `max_age` without a success |
 | WhatsApp templates (language `id`) | `gsk_otp_v1`, `gsk_booking_created_v1`, `gsk_quotation_ready_v1`, `gsk_payment_reminder_v1`, `gsk_ticket_issued_v1`, `gsk_booking_expired_v1`, `gsk_booking_cancelled_v1`, `gsk_visit_reminder_d1_v1`, `gsk_checked_in_thanks_v1`, `gsk_certificate_ready_v1`, `gsk_review_invite_v1`, `gsk_refund_processed_v1`, `gsk_admin_new_paid_booking_v1`, `gsk_security_alert_v1` |
 | Revalidation tags | `packages:<rw\|combo>`, `sessions:<rwId>:<YYYY-MM>`, `products:<rwId>`, `galleries:<rwId>`, `articles`, `banners`, `booklets`, `schedules`, `reviews`, `settings`, `booking:<id>` |
 | Security control prefixes | `PAY, WH, REC, BOOK, AUTH, AZ, GUEST, DATA, PDP, APP, HDR, RL, UPL, SEC, DB, QR, SC, OPS, MON, STAFF, DOC, RES` |

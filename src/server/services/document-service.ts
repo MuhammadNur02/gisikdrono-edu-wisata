@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { svcForgetPurgedFiles, svcPurgeableFiles } from '@/db/rpc';
 import type { PurgeableFile } from '@/db/rpc';
 import type { Database } from '@/db/types';
+import { AppError } from '@/lib/errors';
 
 type DatabaseClient = SupabaseClient<Database>;
 
@@ -16,6 +17,67 @@ const QUARANTINE_BUCKET = 'uploads-quarantine';
 const QUARANTINE_PREFIXES = ['rw-05', 'rw-08', 'kelurahan'] as const;
 const MS_PER_HOUR = 3_600_000;
 const QUARANTINE_MAX_AGE_HOURS = 24;
+const DOCUMENTS_BUCKET = 'documents';
+
+// How long a signed URL to a private document stays valid (docs/Security.md §10.3). The WhatsApp document
+// header lives longest because Meta fetches the file some time after the message is queued.
+export const SIGNED_URL_TTL_SECONDS = {
+  ticket: 600,
+  certificate: 600,
+  invoice: 900,
+  quotation: 900,
+  receipt: 900,
+  credit_note: 900,
+  export: 300,
+  whatsapp_document_header: 3600,
+} as const;
+
+export type SignedDocumentKind = keyof typeof SIGNED_URL_TTL_SECONDS;
+
+// The folders of the documents bucket each kind may be signed from (CLAUDE.md §6.6): booking papers under
+// bookings/<id>/, certificates under certificates/<booking_id>/, exports under exports/<profile_id>/. Payout
+// files are never handed out by URL.
+const DOCUMENT_FOLDERS_BY_KIND: Record<SignedDocumentKind, readonly string[]> = {
+  ticket: ['bookings'],
+  certificate: ['certificates'],
+  invoice: ['bookings'],
+  quotation: ['bookings'],
+  receipt: ['bookings'],
+  credit_note: ['bookings'],
+  export: ['exports'],
+  whatsapp_document_header: ['bookings', 'certificates'],
+};
+// A segment starts with a letter or digit, so neither "." nor ".." can climb out of its folder.
+const PATH_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const MIN_DOCUMENT_SEGMENTS = 3;
+
+export function isDocumentPathFor(kind: SignedDocumentKind, path: string): boolean {
+  const segments = path.split('/');
+  const [folder] = segments;
+  return (
+    segments.length >= MIN_DOCUMENT_SEGMENTS &&
+    folder !== undefined &&
+    DOCUMENT_FOLDERS_BY_KIND[kind].includes(folder) &&
+    segments.every((segment) => PATH_SEGMENT.test(segment))
+  );
+}
+
+// The one place a signed URL into the documents bucket is minted. The caller has already authorised the
+// reader for this document; the URL is handed straight back in a redirect and never stored, logged or
+// written into a message (CLAUDE.md §6.6). A path outside the kind's own folder is refused, so a bug in a
+// caller cannot turn a ticket link into a link to someone's export.
+export async function createDocumentSignedUrl(
+  adminClient: DatabaseClient,
+  path: string,
+  kind: SignedDocumentKind,
+): Promise<string> {
+  if (!isDocumentPathFor(kind, path)) throw new AppError('NOT_FOUND');
+  const { data, error } = await adminClient.storage
+    .from(DOCUMENTS_BUCKET)
+    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS[kind]);
+  if (error) throw error;
+  return data.signedUrl;
+}
 
 // The api/jobs/purge-storage run (docs/Security.md §7.3). SQL cannot delete storage objects, so the
 // retention runs mark rows and this deletes their files through the Storage API, then lets the rows
