@@ -1,7 +1,7 @@
 -- RLS matrix for the configuration tables: rw_units, profiles, staff_invites, site_settings (docs/PRD.md §8.5.2,
 -- Task P1.4.01, P1.4.05, P1.4.06, P1.9.02). Every check runs as an API role with GoTrue-shaped claims.
 begin;
-select plan(40);
+select plan(49);
 \ir helpers/rls_personas.psql
 
 update public.rw_units set treasury_account_number = '1230005' where id = 5;
@@ -97,6 +97,22 @@ select is((select count(*)::int from public.rw_units where id in (5, 8, 9)), 0, 
 select throws_ok($$insert into public.rw_units (id, code, slug, name, theme_label)
   values (11, 'RW11', 'rw-11-uji', 'RW 11 Uji', 'Uji')$$, '42501', null, 'nor adds one');
 
+-- ===== superadmin at AAL2 with a TOTP code two hours old (docs/Security.md §5.3) =====
+reset role;
+select pg_temp.act_as('superadmin_stale_totp');
+select is((select count(*)::int from public.site_settings where key in ('seo.default_description', 'rls.private')), 2,
+  'a superadmin whose code is two hours old still reads every setting');
+select throws_ok($$insert into public.staff_invites (email, role, rw_id, invite_code_hash, expires_at, created_by)
+  values ('calon-lima@example.test', 'superadmin', null, 'hash-rls-5', now() + interval '24 hours',
+          '00000000-0000-4000-8000-00000000f001')$$, '42501', null, 'but invites nobody without a fresh code');
+select is(pg_temp.row_count($$update public.staff_invites set revoked_at = now() where email = 'calon@example.test'$$), 0,
+  'revokes no invite');
+select throws_ok($$insert into public.site_settings (key, value, updated_by)
+  values ('rls.basi', '"x"', '00000000-0000-4000-8000-00000000f001')$$, '42501', null, 'adds no setting');
+select is(pg_temp.row_count($$update public.site_settings set value = '"basi"',
+  updated_by = '00000000-0000-4000-8000-00000000f001' where key = 'rls.private'$$), 0, 'changes none');
+select is(pg_temp.row_count($$delete from public.site_settings where key = 'rls.private'$$), 0, 'and removes none');
+
 -- ===== superadmin at AAL2 =====
 reset role;
 select pg_temp.act_as('superadmin_aal2');
@@ -127,6 +143,14 @@ select throws_ok($$select treasury_account_number from public.rw_units$$, '42501
 select throws_ok($$update public.profiles set role = 'admin_rw', rw_id = 5
   where id = '00000000-0000-4000-8000-00000000f000'$$, '42501', null,
   'changes no role by a plain update; that is set_staff_role''s job');
+select throws_ok($$delete from public.site_settings where key = 'pricing.min_price_per_pax'$$, 'P0001',
+  'site setting pricing.min_price_per_pax is required and cannot be removed',
+  'removes no setting a function needs, the price floor among them');
+select throws_ok($$update public.site_settings set value = 'null', updated_by = '00000000-0000-4000-8000-00000000f001'
+  where key = 'pricing.min_price_per_pax'$$, '23514', 'site setting pricing.min_price_per_pax must be a number',
+  'nor empties one');
+select is(pg_temp.row_count($$delete from public.site_settings where key = 'rls.private'$$), 1,
+  'but removes an ordinary setting');
 
 select * from finish();
 rollback;

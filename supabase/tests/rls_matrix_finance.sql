@@ -2,7 +2,7 @@
 -- recap views (docs/PRD.md §8.5.2, docs/Security.md STAFF-01, STAFF-02, Task P1.4.03, P1.4.05, P1.9.02). Every check
 -- runs as an API role.
 begin;
-select plan(25);
+select plan(28);
 \ir helpers/rls_personas.psql
 
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax) values
@@ -159,6 +159,18 @@ select is(
   0,
   'a superadmin without AAL2 sees no finance row'
 );
+
+-- ===== superadmin at AAL2 with a TOTP code two hours old (docs/Security.md §5.3) =====
+reset role;
+select pg_temp.act_as('superadmin_stale_totp');
+select is((select count(*)::int from public.revenue_share_rules where pg_temp.is_fixture_rule(id)), 5,
+  'a superadmin whose code is two hours old reads every rule');
+select throws_ok($$insert into public.revenue_share_rules (scope, rw_id, name, created_by)
+  values ('addon_default', 8, 'Tambahan RW 08', '00000000-0000-4000-8000-00000000f001')$$, '42501', null,
+  'but writes no rule without a fresh code');
+select is(pg_temp.row_count($$update public.revenue_share_rule_lines set pct = 0
+  where rule_id = '00000000-0000-4000-8000-0000ad000005' and beneficiary = 'kelurahan'$$), 0,
+  'and moves no share between the parties');
 
 -- ===== superadmin at AAL2 =====
 reset role;

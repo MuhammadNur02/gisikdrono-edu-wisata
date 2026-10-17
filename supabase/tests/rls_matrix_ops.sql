@@ -2,7 +2,7 @@
 -- login_attempts, rate_limit_buckets (docs/PRD.md §8.5.2, docs/Security.md AUD-02, Task P1.4.04, P1.4.05, P1.9.02).
 -- Every check runs as an API role.
 begin;
-select plan(27);
+select plan(30);
 \ir helpers/rls_personas.psql
 
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax) values
@@ -116,6 +116,13 @@ select is(
   'a superadmin without AAL2 sees no audit row, event, alert, export, request or login attempt'
 );
 
+-- ===== superadmin at AAL2 with a TOTP code two hours old (docs/Security.md §5.3) =====
+reset role;
+select pg_temp.act_as('superadmin_stale_totp');
+select is(pg_temp.row_count($$update public.security_alerts set acknowledged_by = '00000000-0000-4000-8000-00000000f001'
+  where id = '00000000-0000-4000-8000-0000af000001'$$), 0,
+  'an alert is not acknowledged without a fresh code, so a session left open cannot silence it');
+
 -- ===== superadmin at AAL2 =====
 reset role;
 select pg_temp.act_as('superadmin_aal2');
@@ -126,9 +133,16 @@ select ok((select count(*) from public.audit_logs where pg_temp.is_fixture_audit
 select is((select count(*)::int from public.login_attempts where user_id = '00000000-0000-4000-8000-00000000f005'), 1,
   'and the login attempts behind a lockout');
 select is((select count(*)::int from public.exports where watermark like 'Diekspor oleh % RLS%'), 2, 'every export');
-select is(pg_temp.row_count($$update public.security_alerts set acknowledged_at = now(),
-  acknowledged_by = '00000000-0000-4000-8000-00000000f001' where id = '00000000-0000-4000-8000-0000af000001'$$), 1,
-  'acknowledges an alert in their own name');
+select throws_ok($$update public.security_alerts set acknowledged_at = now() - interval '3 days'
+  where id = '00000000-0000-4000-8000-0000af000001'$$, '42501', null,
+  'dates no acknowledgement: the moment is the database''s');
+select is(pg_temp.row_count($$update public.security_alerts set acknowledged_by = '00000000-0000-4000-8000-00000000f001'
+  where id = '00000000-0000-4000-8000-0000af000001'$$), 1, 'acknowledges an alert in their own name');
+select is(
+  (select acknowledged_at = now() from public.security_alerts where id = '00000000-0000-4000-8000-0000af000001'),
+  true,
+  'stamped with the moment it happened'
+);
 select throws_ok($$update public.security_alerts set acknowledged_by = '00000000-0000-4000-8000-00000000f005'
   where id = '00000000-0000-4000-8000-0000af000001'$$, '42501', null, 'never in someone else''s');
 select is(pg_temp.row_count($$update public.dsr_requests set status = 'in_progress', handled_at = now(),

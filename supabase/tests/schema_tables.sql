@@ -2,6 +2,8 @@
 -- relies on, keys, and the CHECK / unique rules proven by trying to break them.
 begin;
 select plan(213);
+-- Every package write checks the price floor, which refuses to run without its setting (0005).
+insert into public.site_settings (key, value) values ('pricing.min_price_per_pax', '5000') on conflict (key) do nothing;
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
 -- next_document_number keeps fixed instants: it formats the moment it is given and never reads today.
 create function pg_temp.days_from_today(p_days integer) returns date

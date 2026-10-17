@@ -3,7 +3,7 @@
 -- with the admin_rw window of a week back to a month ahead (decision of 2026-10-16). Every check runs as an
 -- API role.
 begin;
-select plan(35);
+select plan(42);
 \ir helpers/rls_personas.psql
 
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax, status) values
@@ -101,6 +101,8 @@ select throws_ok($$select pic_name, pic_phone, pic_email from public.bookings$$,
   'never a booker''s contact');
 select throws_ok($$select source_ip, user_agent, idempotency_key from public.bookings$$, '42501', null,
   'nor the IP, device or idempotency key');
+select throws_ok($$select subtotal_addons, discount_amount, discount_note from public.bookings$$, '42501', null,
+  'nor the add-on subtotal or the discount, which for a combo are RW 08''s sales and a negotiated price');
 select is(
   (select phone_masked from public.bookings where booking_code = 'GSK-W5000001'),
   '+62812••••01',
@@ -142,6 +144,8 @@ select is(
   'b5000001:Kompos=30000,bc000001:Kompos=60000',
   'their own RW''s add-on lines only, a combo''s included, never RW 08''s line of it (STAFF-02)'
 );
+select throws_ok($$select notes from public.booking_addons$$, '42501', null,
+  'without the visitor''s note on a line, which would outlast the booking window');
 select is(pg_temp.row_count($$update public.booking_addons set fulfillment_status = 'prepared'
   where booking_id = '00000000-0000-4000-8000-0000b5000001'$$), 1, 'which they mark prepared');
 select is(pg_temp.row_count($$update public.booking_addons set fulfillment_status = 'prepared'
@@ -157,6 +161,32 @@ select is(
   (select count(*)::int from public.rpc_get_participants('00000000-0000-4000-8000-0000b5000001')),
   1,
   'only through the audited RPC, whose own window today''s visit always meets'
+);
+reset role;
+select is(
+  (select count(*)::int from public.security_events
+   where event_type = 'pii_revealed' and actor_id = '00000000-0000-4000-8000-00000000f005'
+     and entity_id = '00000000-0000-4000-8000-0000b5000001' and details ->> 'count' = 'participants'),
+  1,
+  'each participant read is a pii_revealed event, so the anomaly scan sees it (docs/Security.md §6.6)'
+);
+-- Forty-eight earlier reveals bring the admin to 49 today: participant reads and contact reveals spend one
+-- daily budget of 50.
+insert into public.security_events (event_type, actor_id, entity_type, entity_id)
+select 'pii_revealed', '00000000-0000-4000-8000-00000000f005', 'bookings', 'earlier-' || n from generate_series(1, 48) n;
+select pg_temp.act_as('admin_rw_05');
+select lives_ok($$select * from public.rpc_get_participants('00000000-0000-4000-8000-0000b5000001')$$,
+  'the 50th reveal of the day still goes through');
+select throws_ok($$select * from public.rpc_get_participants('00000000-0000-4000-8000-0000b5000001')$$, 'P0001',
+  'the daily limit of 50 personal-data reveals is reached', 'the 51st participant read is refused');
+select throws_ok($$select public.rpc_reveal_booking_contact('00000000-0000-4000-8000-0000b5000001', 'Konfirmasi jadwal')$$,
+  'P0001', 'the daily limit of 50 personal-data reveals is reached', 'and so is a contact reveal, from the same budget');
+reset role;
+select is(
+  (select severity::text from public.security_alerts
+   where fingerprint = 'pii_reveal_cap:00000000-0000-4000-8000-00000000f005:' || public.today_jkt()),
+  'high',
+  'reaching the cap raised a high alert'
 );
 
 -- ===== admin_rw 08 =====

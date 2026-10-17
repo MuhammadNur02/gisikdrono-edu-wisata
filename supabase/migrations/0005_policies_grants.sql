@@ -35,12 +35,34 @@ revoke all on all tables in schema public from anon, authenticated;
 revoke all on all sequences in schema public from anon, authenticated;
 revoke all on schema internal from public, anon, authenticated, service_role;
 
+-- fresh_totp(): an authenticator code verified in the last five minutes, not just an AAL2 session that may have
+-- been left open on a desk (AUTH-11, docs/Security.md §5.3). The superadmin's own writes ask for it through
+-- restrictive policies at the end of this file, so it is an RLS helper callable by authenticated. It is the one
+-- copy of the rule: internal.has_fresh_totp, which the 0004 staff RPCs call, now asks it.
+create function public.fresh_totp() returns boolean
+  language sql stable
+  set search_path = ''
+as $$
+  select public.aal2() and exists (
+    select 1
+    from jsonb_array_elements(coalesce(auth.jwt() -> 'amr', '[]'::jsonb)) as method
+    where method ->> 'method' = 'totp' and (method ->> 'timestamp')::bigint > extract(epoch from now()) - 300
+  );
+$$;
+create or replace function internal.has_fresh_totp() returns boolean
+  language sql stable
+  set search_path = ''
+as $$
+  select public.fresh_totp();
+$$;
+
 -- Functions: the RLS helpers and the staff RPCs that exist so far. A later staff RPC is granted in the
 -- migration that creates it; the svc_* wrappers stay service_role only, as 0004 granted them.
 revoke all on all functions in schema public from public, anon, authenticated;
 grant execute on function public.today_jkt() to anon, authenticated;
 grant execute on function public.app_role(), public.app_rw_id(), public.is_superadmin(), public.is_admin_rw(),
-  public.is_staff(), public.owns_rw(smallint), public.owns_any_rw(smallint[]), public.aal2() to authenticated;
+  public.is_staff(), public.owns_rw(smallint), public.owns_any_rw(smallint[]), public.aal2(), public.fresh_totp()
+  to authenticated;
 grant execute on function public.generate_visit_sessions(smallint, date, date), public.rpc_log_ui_event(text, uuid),
   public.set_staff_role(uuid, public.app_role, smallint), public.set_staff_status(uuid, boolean, text),
   public.reset_staff_mfa(uuid), public.cancel_staff_mfa_reset(uuid), public.cancel_superadmin_promotion(uuid),
@@ -90,7 +112,7 @@ create policy profiles_update_own on public.profiles for update to authenticated
 -- staff_invites: the superadmin's alone (FR-ADMIN-01). An invite names its creator and is later only revoked;
 -- accepting one happens in the onboarding service. The code's hash is written once and read by no API role,
 -- so nobody can try codes against it offline; onboarding compares it inside the database. An invite lives
--- 72 hours at most, whatever expiry its creator sends.
+-- 72 hours at most, whatever expiry its creator sends, and writing one needs a fresh TOTP code (end of file).
 grant select (id, email, role, rw_id, expires_at, accepted_at, accepted_user_id, revoked_at, created_by, created_at)
   on public.staff_invites to authenticated;
 grant insert (email, role, rw_id, invite_code_hash, expires_at, created_by) on public.staff_invites to authenticated;
@@ -106,8 +128,8 @@ create policy staff_invites_super_revoke on public.staff_invites for update to a
   using ((select public.is_superadmin())) with check ((select public.is_superadmin()));
 
 -- site_settings: public keys for everyone, the rest for the superadmin, who alone writes them. Whoever writes
--- a setting signs it with their own id. Only the keys docs/PRD.md §8.6 marks public may be public, so a
--- slipped flag never publishes a private value such as the payout account.
+-- a setting signs it with their own id, with a fresh TOTP code (end of file). Only the keys docs/PRD.md §8.6
+-- marks public may be public, so a slipped flag never publishes a private value such as the payout account.
 alter table public.site_settings add constraint site_settings_public_keys check (
   not is_public or key in ('booking_enabled', 'maintenance_mode', 'booking.min_lead_hours', 'booking.max_advance_days',
                            'booking.max_pax', 'contact.whatsapp_number', 'contact.email', 'kelurahan.address',
@@ -128,6 +150,49 @@ create policy site_settings_super_update on public.site_settings for update to a
   using ((select public.is_superadmin())) with check ((select public.is_superadmin()) and updated_by = (select auth.uid()));
 create policy site_settings_super_delete on public.site_settings for delete to authenticated
   using ((select public.is_superadmin()));
+
+-- Three settings are read by functions that cannot run safely without them: the price floor, how long a
+-- quotation holds and how long a booker's contact is kept. Anyone may change them, nobody may remove them or
+-- set them to anything but a number, so a stale session cannot quietly switch the floor or the retention off.
+create function internal.site_settings_required_keys() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  required_keys constant text[] := array['pricing.min_price_per_pax', 'booking.quotation_valid_days',
+                                         'pii_retention_months'];
+begin
+  if tg_op <> 'INSERT' and old.key = any (required_keys) and (tg_op = 'DELETE' or new.key <> old.key) then
+    raise exception 'site setting % is required and cannot be removed', old.key
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  if tg_op <> 'DELETE' and new.key = any (required_keys) and jsonb_typeof(new.value) <> 'number' then
+    raise exception 'site setting % must be a number', new.key using errcode = 'check_violation';
+  end if;
+  return coalesce(new, old);
+end;
+$$;
+create trigger site_settings_required_keys before insert or update or delete on public.site_settings
+  for each row execute function internal.site_settings_required_keys();
+revoke execute on function internal.site_settings_required_keys() from public, anon, authenticated, service_role;
+
+-- price_floor() replaces its 0004 version, which returned NULL without the setting and so left every price
+-- unfloored: a package write now fails until the floor exists (0008_seed writes it in every environment).
+create or replace function internal.price_floor() returns bigint
+  language plpgsql stable
+  set search_path = ''
+as $$
+declare
+  floor_price bigint := (select (value #>> '{}')::bigint from public.site_settings
+                         where key = 'pricing.min_price_per_pax');
+begin
+  if floor_price is null then
+    raise exception 'site setting pricing.min_price_per_pax is missing, so no price can be checked against the floor'
+      using errcode = 'object_not_in_prerequisite_state';
+  end if;
+  return floor_price;
+end;
+$$;
 
 
 -- ===== Sessions: session_templates, visit_sessions, v_session_availability =====
@@ -226,7 +291,9 @@ create policy tour_packages_super_delete on public.tour_packages for delete to a
 -- tour_package_legs: a leg belongs to the RW it visits, so an RW admin never sees the other RW's leg of a
 -- combo. The package's read policy asks the legs, and Postgres refuses policies that ask each other, so the
 -- rules that need the package itself (a combo's legs are the superadmin's; an RW package visits its own RW
--- only) sit in the trigger tour_package_legs_guard below.
+-- only) sit in the trigger tour_package_legs_guard below. An RW admin who names a package that is not one of
+-- their RW's, a combo, another RW's package or one that does not exist, gets one answer for all three, so the
+-- guard tells them nothing about packages they cannot read.
 grant select (id, package_id, rw_id, leg_order, duration_minutes, notes) on public.tour_package_legs to anon, authenticated;
 grant insert (package_id, rw_id, leg_order, duration_minutes, notes) on public.tour_package_legs to authenticated;
 grant update (leg_order, duration_minutes, notes) on public.tour_package_legs to authenticated;
@@ -246,8 +313,8 @@ declare
   package record;
 begin
   select p.category, p.rw_id into package from public.tour_packages p where p.id = coalesce(new.package_id, old.package_id);
-  if package.category = 'combo' and not internal.is_superadmin_or_system() then
-    raise exception 'only the superadmin changes the legs of a combo package' using errcode = '42501';
+  if not internal.is_superadmin_or_system() and (package.rw_id is null or not public.owns_rw(package.rw_id)) then
+    raise exception 'an RW admin changes the legs of their own RW''s packages only' using errcode = '42501';
   end if;
   if tg_op <> 'DELETE' and package.category <> 'combo' and new.rw_id is distinct from package.rw_id then
     raise exception 'an RW package visits its own RW only' using errcode = 'P0001', hint = 'STATE_INVALID';
@@ -340,18 +407,82 @@ create policy products_umkm_super_delete on public.products_umkm for delete to a
 -- nobody and leave the database only through rpc_reveal_booking_contact and rpc_get_participants, which audit
 -- every read. An RW admin sees a booking that visits their RW from a week before its visit until a month
 -- ahead; the superadmin sees every booking (decision of 2026-10-16). Today's visits, and so today's check-in
--- and certificates, always fall inside that window. The legs and add-ons, which carry no personal data, are
--- scoped by RW alone, so visit statistics and RW recaps can count every period.
-
+-- and certificates, always fall inside that window. The legs and add-ons are scoped by RW alone, so visit
+-- statistics and RW recaps can count every period; an add-on's note, the one free text among them, is
+-- granted to nobody.
+--
+-- A booking's total stays readable, a combo's included (accepted risk R14: its prices are published). The
+-- add-on subtotal, the discount and its note are not: for a combo they are the other RW's sales and a price the
+-- superadmin negotiated, which no published price explains, and the note is free text. The superadmin reads
+-- them through the finance RPC of P4.7.01.
 grant select (id, booking_code, status, channel, package_id, package_snapshot, rw_ids, booker_type, institution_name,
-  pax_count, visit_date, visit_date_end, notes, subtotal_package, subtotal_addons, discount_amount, discount_note,
-  total_amount, amount_paid, currency, expires_at, quoted_at, paid_at, checked_in_at, completed_at, cancelled_at,
-  cancelled_by, cancel_reason, expired_at, refunded_at, needs_review, review_reason, phone_verified_at,
-  email_verified_at, consent_version, consented_at, token_version, ticket_pdf_path, admin_notes, created_by,
-  created_at, updated_at, pii_purged_at, phone_masked, email_masked, pic_first_name) on public.bookings to authenticated;
+  pax_count, visit_date, visit_date_end, notes, subtotal_package, total_amount, amount_paid, currency, expires_at,
+  quoted_at, paid_at, checked_in_at, completed_at, cancelled_at, cancelled_by, cancel_reason, expired_at, refunded_at,
+  needs_review, review_reason, phone_verified_at, email_verified_at, consent_version, consented_at, token_version,
+  ticket_pdf_path, admin_notes, created_by, created_at, updated_at, pii_purged_at, phone_masked, email_masked,
+  pic_first_name) on public.bookings to authenticated;
 -- A discount also recomputes the total, so it waits for its own RPC (P4); staff write notes only.
 grant update (admin_notes) on public.bookings to authenticated;
-grant select on public.v_bookings_staff, public.v_booking_admin, public.v_booking_export to authenticated;
+
+-- v_bookings_staff and v_booking_admin replace their 0004 versions. Both read with their invoker's rights, so
+-- every column withheld here and below leaves them too: the add-on subtotal and the discount, and each payment's
+-- amount. A view cannot lose a column in place, so both are dropped and created again. The staff booking
+-- list: contact details appear only masked, rpc_reveal_booking_contact being the one way to the real values.
+-- docs/Security.md STAFF-02: an RW admin sees the money of their own RW's bookings, because they set those
+-- prices, but a combo's total also holds the other RW's share, so only the superadmin sees it on screen. An RW
+-- admin sees bookings visiting from a week ago to a month ahead.
+drop view public.v_booking_admin;
+drop view public.v_bookings_staff;
+create view public.v_bookings_staff with (security_invoker = true) as
+select
+  b.id, b.booking_code, b.status, b.channel, b.package_id, p.name as package_name, b.rw_ids, b.booker_type,
+  b.institution_name, b.pic_first_name, b.phone_masked, b.email_masked,
+  b.phone_verified_at is not null as is_phone_verified, b.email_verified_at is not null as is_email_verified,
+  b.pii_purged_at is not null as is_anonymised,
+  b.pax_count, b.visit_date, b.visit_date_end, b.notes, b.admin_notes,
+  money.shows_amounts,
+  case when money.shows_amounts then b.subtotal_package end as subtotal_package,
+  case when money.shows_amounts then b.total_amount end as total_amount,
+  case when money.shows_amounts then b.amount_paid end as amount_paid,
+  b.expires_at, b.quoted_at, b.paid_at, b.checked_in_at, b.completed_at, b.cancelled_at, b.cancel_reason,
+  b.expired_at, b.refunded_at, b.needs_review, b.review_reason, b.created_at,
+  (select jsonb_agg(jsonb_build_object('rw_id', l.rw_id, 'session_date', s.session_date, 'start_time', s.start_time,
+                                       'label', s.label, 'pax', l.pax_count, 'status', l.status) order by l.leg_order)
+   from public.booking_legs l join public.visit_sessions s on s.id = l.visit_session_id
+   where l.booking_id = b.id) as legs,
+  (select py.status from public.payments py where py.booking_id = b.id order by py.attempt_no desc limit 1)
+    as payment_status,
+  (select jsonb_object_agg(t.rw_id, t.status) from public.tickets_qr t where t.booking_id = b.id) as ticket_statuses
+from public.bookings b
+join public.tour_packages p on p.id = b.package_id
+cross join lateral (
+  select (select public.is_superadmin()) or b.rw_ids = array[(select public.app_rw_id())] as shows_amounts
+) as money
+where (select public.is_superadmin())
+   or (public.owns_any_rw(b.rw_ids)
+       and b.visit_date_end >= (select public.today_jkt()) - 7 and b.visit_date <= (select public.today_jkt()) + 30);
+
+-- The booking detail page: the list row plus its payments, tickets and invoices, the payments without their
+-- amounts.
+create view public.v_booking_admin with (security_invoker = true) as
+select v.*,
+  (select jsonb_agg(jsonb_build_object('attempt_no', py.attempt_no, 'method', py.method, 'status', py.status,
+                                       'order_id', py.order_id, 'settlement_time', py.settlement_time)
+                    order by py.attempt_no)
+   from public.payments py where py.booking_id = v.id) as payments,
+  (select jsonb_agg(jsonb_build_object('ticket_code', t.ticket_code, 'rw_id', t.rw_id, 'status', t.status,
+                                       'valid_on', t.valid_on, 'pax', t.pax_count, 'checked_in_pax', t.checked_in_pax,
+                                       'unpaid_pax', t.unpaid_pax, 'checked_in_at', t.checked_in_at) order by t.rw_id)
+   from public.tickets_qr t where t.booking_id = v.id) as tickets,
+  (select jsonb_agg(jsonb_build_object('invoice_number', i.invoice_number, 'status', i.status,
+                                       'receipt_number', i.receipt_number, 'credit_note_number', i.credit_note_number,
+                                       'issued_at', i.issued_at) order by i.issued_at)
+   from public.invoices i where i.booking_id = v.id) as invoices
+from public.v_bookings_staff v;
+
+-- v_booking_export feeds the exports, which carry a watermark, a rate limit and an audit row, so it is
+-- granted to nobody and read by rpc_create_export (P4.6.01).
+grant select on public.v_bookings_staff, public.v_booking_admin to authenticated;
 
 create policy bookings_staff_read on public.bookings for select to authenticated using (
   (select public.is_superadmin())
@@ -374,8 +505,10 @@ create policy booking_legs_staff_read on public.booking_legs for select to authe
   using ((select public.owns_rw(rw_id)));
 
 -- booking_addons: the kitchen of each RW marks its own lines prepared or handed over. These lines are the money
--- an RW admin reads per booking: their own RW's, never the other RW's lines of a combo (STAFF-02).
-grant select (id, booking_id, product_id, rw_id, vendor_id, product_name_snapshot, unit_price, qty, line_total, notes,
+-- an RW admin reads per booking: their own RW's, never the other RW's lines of a combo (STAFF-02). A line's note
+-- is the visitor's free text and the lines have no booking window, so the note is granted to nobody; the kitchen
+-- reads it inside the window through the booking detail RPC of P4.3.02.
+grant select (id, booking_id, product_id, rw_id, vendor_id, product_name_snapshot, unit_price, qty, line_total,
   fulfillment_status, created_at, updated_at) on public.booking_addons to authenticated;
 grant update (fulfillment_status) on public.booking_addons to authenticated;
 create policy booking_addons_staff_read on public.booking_addons for select to authenticated
@@ -383,15 +516,16 @@ create policy booking_addons_staff_read on public.booking_addons for select to a
 create policy booking_addons_staff_fulfil on public.booking_addons for update to authenticated
   using ((select public.owns_rw(rw_id))) with check ((select public.owns_rw(rw_id)));
 
--- anonymise_booker_pii replaces its 0004 version, which left an add-on's note in place: the note is the
--- visitor's own text for the kitchen, read by the RW admin, and may name someone, so it now goes with the
--- booker's contact. The function keeps its 0004 grants. Two groups lose their booker's contact: unpaid
--- bookings a week after they expired or were cancelled (with their participants, since they never visited),
--- and every booking pii_retention_months after its visit. Along with the contact go the verification stamps,
--- every free-text field that may name someone (the visitor's notes on the booking and its add-ons, staff
--- notes, cancel, review and discount reasons), the IP and user agent, every guest link (token_version) and the
--- outbox rows that still name the contact. Expired OTP rows go the day after. A missing pii_retention_months
--- skips the second group; 0008_seed writes it in every environment.
+-- anonymise_booker_pii replaces its 0004 version, which left an add-on's note in place and skipped the
+-- retention group when pii_retention_months was missing. The note is the visitor's own text for the kitchen and
+-- may name someone, so it now goes with the booker's contact, and a missing setting stops the whole run with an
+-- error instead of keeping every contact (0008_seed writes it in every environment, and
+-- site_settings_required_keys keeps it there). The function keeps its 0004 grants. Two groups lose their
+-- booker's contact: unpaid bookings a week after they expired or were cancelled (with their participants,
+-- since they never visited), and every booking pii_retention_months after its visit. Along with the contact go
+-- the verification stamps, every free-text field that may name someone (the visitor's notes on the booking and
+-- its add-ons, staff notes, cancel, review and discount reasons), the IP and user agent, every guest link
+-- (token_version) and the outbox rows that still name the contact. Expired OTP rows go the day after.
 create or replace function internal.anonymise_booker_pii() returns integer
   language plpgsql security definer
   set search_path = ''
@@ -405,6 +539,10 @@ declare
   participants_deleted integer;
   otps_deleted integer;
 begin
+  if retention_months is null then
+    raise exception 'site setting pii_retention_months is missing, so no booker contact can be erased on time'
+      using errcode = 'object_not_in_prerequisite_state';
+  end if;
   previous_settings := internal.begin_retention_run();
 
   delete from public.booking_participants p using public.bookings b
@@ -443,6 +581,79 @@ $$;
 -- booking_participants: no grant at all; names only through rpc_get_participants, corrections with their UI
 -- (decision of 2026-10-16). It still gets the AAL2 policy at the end of the file, ready for the day a grant
 -- is added.
+
+-- rpc_reveal_booking_contact and rpc_get_participants replace their 0004 versions, so that both spend one daily
+-- budget of personal-data reveals per staff member (docs/Security.md §6.6, MON-07): the 0004 participant read
+-- was audited but wrote no pii_revealed event, so it escaped the cap and the anomaly scan. Each reveal is a
+-- pii_revealed security event; the 50th of the caller's Jakarta day also raises an alert, and the 51st is
+-- refused. (A refused call cannot write anything, which is why the alert comes with the 50th.)
+create function internal.record_pii_reveal(p_booking_id uuid, p_rw_id smallint, p_details jsonb) returns void
+  language plpgsql
+  set search_path = ''
+as $$
+declare
+  daily_cap constant integer := 50;
+  revealed_today integer;
+begin
+  -- One staff member's reveals take turns, so parallel calls cannot all count below the cap.
+  perform pg_advisory_xact_lock(hashtext('pii_reveal:' || auth.uid()::text));
+  select count(*) into revealed_today from public.security_events e
+  where e.event_type = 'pii_revealed' and e.actor_id = auth.uid()
+    and e.occurred_at >= public.today_jkt()::timestamp at time zone 'Asia/Jakarta';
+  if revealed_today >= daily_cap then
+    raise exception 'the daily limit of % personal-data reveals is reached', daily_cap
+      using errcode = 'P0001', hint = 'RATE_LIMITED';
+  end if;
+
+  insert into public.security_events (event_type, severity, actor_id, rw_id, entity_type, entity_id, details)
+  values ('pii_revealed', 'info', auth.uid(), p_rw_id, 'bookings', p_booking_id::text, p_details);
+  if revealed_today + 1 >= daily_cap then
+    insert into public.security_alerts (rule, severity, fingerprint, title, details)
+    values ('pii_reveal_cap', 'high', 'pii_reveal_cap:' || auth.uid() || ':' || public.today_jkt(),
+            'Batas harian buka data pribadi tercapai', jsonb_build_object('actor_id', auth.uid(), 'cap', daily_cap))
+    on conflict (fingerprint) where acknowledged_at is null do nothing;
+  end if;
+end;
+$$;
+revoke execute on function internal.record_pii_reveal(uuid, smallint, jsonb) from public, anon, authenticated, service_role;
+
+-- The booker's full contact for one booking, with the reason the staff member gave.
+create or replace function public.rpc_reveal_booking_contact(p_booking_id uuid, p_reason text) returns jsonb
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  rw_ids smallint[] := internal.require_booking_pii_access(p_booking_id);
+  contact jsonb;
+begin
+  if length(btrim(coalesce(p_reason, ''))) not between 3 and 300 then
+    raise exception 'a reveal needs a reason of 3 to 300 characters' using errcode = '22023';
+  end if;
+  perform internal.record_pii_reveal(p_booking_id, rw_ids[1], jsonb_build_object('reason', btrim(p_reason)));
+  select jsonb_build_object('pic_name', b.pic_name, 'pic_phone', b.pic_phone, 'pic_email', b.pic_email) into contact
+  from public.bookings b where b.id = p_booking_id;
+  return contact;
+end;
+$$;
+
+-- The participant list of one booking, at most 300 rows, counted as one reveal and audited with its rows.
+create or replace function public.rpc_get_participants(p_booking_id uuid) returns setof public.booking_participants
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  row_cap constant integer := 300;
+  rw_ids smallint[] := internal.require_booking_pii_access(p_booking_id);
+  returned integer;
+begin
+  perform internal.record_pii_reveal(p_booking_id, rw_ids[1], jsonb_build_object('count', 'participants'));
+  return query
+    select p.* from public.booking_participants p where p.booking_id = p_booking_id order by p.seq_no limit row_cap;
+  get diagnostics returned = row_count;
+  perform internal.log_audit('participants.read', 'bookings', p_booking_id::text,
+    jsonb_build_object('rows', returned, 'rw_id', rw_ids[1]));
+end;
+$$;
 
 -- booking_events: a booking's timeline, visible wherever the booking itself is.
 grant select (id, booking_id, from_status, to_status, actor_type, actor_id, reason, payload, occurred_at)
@@ -518,25 +729,6 @@ create policy invoices_staff_read on public.invoices for select to authenticated
   exists (select 1 from public.bookings b where b.id = invoices.booking_id)
 );
 
--- The booking detail view reads its invoker's columns, so the 0004 version, which listed each payment's
--- amount, would now refuse every reader. It lists the payments without their amounts; the booking's own
--- amounts stay in the row, per shows_amounts.
-create or replace view public.v_booking_admin with (security_invoker = true) as
-select v.*,
-  (select jsonb_agg(jsonb_build_object('attempt_no', py.attempt_no, 'method', py.method, 'status', py.status,
-                                       'order_id', py.order_id, 'settlement_time', py.settlement_time)
-                    order by py.attempt_no)
-   from public.payments py where py.booking_id = v.id) as payments,
-  (select jsonb_agg(jsonb_build_object('ticket_code', t.ticket_code, 'rw_id', t.rw_id, 'status', t.status,
-                                       'valid_on', t.valid_on, 'pax', t.pax_count, 'checked_in_pax', t.checked_in_pax,
-                                       'unpaid_pax', t.unpaid_pax, 'checked_in_at', t.checked_in_at) order by t.rw_id)
-   from public.tickets_qr t where t.booking_id = v.id) as tickets,
-  (select jsonb_agg(jsonb_build_object('invoice_number', i.invoice_number, 'status', i.status,
-                                       'receipt_number', i.receipt_number, 'credit_note_number', i.credit_note_number,
-                                       'issued_at', i.issued_at) order by i.issued_at)
-   from public.invoices i where i.booking_id = v.id) as invoices
-from public.v_bookings_staff v;
-
 -- document_sequences: nothing at all; only next_document_number touches it.
 
 
@@ -553,17 +745,23 @@ create policy tickets_qr_staff_read on public.tickets_qr for select to authentic
 
 -- ticket_scans: what an officer scanned is kept only as the sha256 hex of the scanned string, so a scan log is
 -- never a list of working tickets: for a valid ticket the string is the signed token itself. 0003 kept its
--- first 128 characters. The digest still matches repeated scans of one string, and no API role reads it.
+-- first 128 characters. The digest still matches repeated scans of one string, and no API role reads it. The
+-- officer's IP address and device are personal data of a colleague, kept for the security review, so they are
+-- granted to nobody either.
 alter table public.ticket_scans drop constraint ticket_scans_raw_payload_check;
 alter table public.ticket_scans add constraint ticket_scans_raw_payload_sha256 check (raw_payload ~ '^[0-9a-f]{64}$');
 grant select (id, attempt_id, ticket_id, rw_id, scanned_by, phase, result, source, attendee_count, override_reason,
-  device_info, ip, scanned_at) on public.ticket_scans to authenticated;
+  scanned_at) on public.ticket_scans to authenticated;
 create policy ticket_scans_staff_read on public.ticket_scans for select to authenticated
   using ((select public.owns_rw(rw_id)));
 
-grant select (id, booking_id, participant_id, kind, certificate_number, verify_code, status, institution_name,
-  visit_date, rw_ids, template_version, pdf_path, rendered_at, released_at, release_waived_by, issued_at, issued_by,
-  revoked_at, revoke_reason, purged_at) on public.certificates to authenticated;
+-- certificates: the verify code opens /verifikasi/[code], which shows a participant certificate's name (FR-PUB-20),
+-- and the certificates have no booking window, so an RW admin holding every code of their RW could read names
+-- the window and rpc_get_participants keep from them. The code is granted to nobody; the server builds the
+-- verification URL it prints on the PDF.
+grant select (id, booking_id, participant_id, kind, certificate_number, status, institution_name, visit_date, rw_ids,
+  template_version, pdf_path, rendered_at, released_at, release_waived_by, issued_at, issued_by, revoked_at,
+  revoke_reason, purged_at) on public.certificates to authenticated;
 create policy certificates_staff_read on public.certificates for select to authenticated
   using ((select public.owns_any_rw(rw_ids)));
 
@@ -748,7 +946,8 @@ create policy reviews_super_delete on public.reviews for delete to authenticated
 -- period, so RW recaps count the whole history.
 
 -- revenue_share_rules: the rules that apply to an RW admin's RW, packages and products; the superadmin writes
--- them (revenue_rules_immutable_once_used, 0004, closes a used rule instead of changing it).
+-- them and their lines with a fresh TOTP code (end of file; revenue_rules_immutable_once_used, 0004, closes a
+-- used rule instead of changing it).
 grant select (id, scope, rw_id, package_id, product_id, name, effective_from, effective_to, is_active, created_by,
   created_at, updated_at) on public.revenue_share_rules to authenticated;
 grant insert (scope, rw_id, package_id, product_id, name, effective_from, effective_to, is_active, created_by)
@@ -839,15 +1038,33 @@ grant select (id, event_type, severity, actor_id, actor_role, ip_hash, user_agen
 create policy security_events_super_read on public.security_events for select to authenticated
   using ((select public.is_superadmin()));
 
--- security_alerts: acknowledged by the superadmin, in their own name.
+-- security_alerts: acknowledged by the superadmin, in their own name and with a fresh authenticator code (end
+-- of file), since an acknowledged alert stops calling for attention. The moment is the database's: the client
+-- writes acknowledged_by only, and security_alerts_acknowledge_stamp sets acknowledged_at to now(), so nobody
+-- can date an acknowledgement back.
 grant select (id, rule, severity, fingerprint, title, details, first_seen_at, last_seen_at, occurrences, notified_at,
   acknowledged_by, acknowledged_at, created_at) on public.security_alerts to authenticated;
-grant update (acknowledged_by, acknowledged_at) on public.security_alerts to authenticated;
+grant update (acknowledged_by) on public.security_alerts to authenticated;
 create policy security_alerts_super_read on public.security_alerts for select to authenticated
   using ((select public.is_superadmin()));
 create policy security_alerts_super_acknowledge on public.security_alerts for update to authenticated
   using ((select public.is_superadmin()))
   with check ((select public.is_superadmin()) and acknowledged_by = (select auth.uid()));
+
+create function internal.security_alerts_acknowledge_stamp() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if new.acknowledged_by is distinct from old.acknowledged_by then
+    new.acknowledged_at := case when new.acknowledged_by is null then null else now() end;
+  end if;
+  return new;
+end;
+$$;
+create trigger security_alerts_acknowledge_stamp before update of acknowledged_by on public.security_alerts
+  for each row execute function internal.security_alerts_acknowledge_stamp();
+revoke execute on function internal.security_alerts_acknowledge_stamp() from public, anon, authenticated, service_role;
 
 -- exports: requested through rpc_create_export (P4.6); a staff member sees their own, the superadmin all.
 grant select (id, kind, format, requested_by, rw_id, filters, reason, row_count, storage_path, watermark, expires_at,
@@ -903,3 +1120,27 @@ begin
   end loop;
 end;
 $$;
+
+
+-- ===== A fresh authenticator code for the superadmin's own writes (docs/Security.md §5.3, AUTH-11) =====
+-- An AAL2 session may have sat open on a desk for hours. Inviting staff, changing a setting, a revenue-share
+-- rule or its lines, and acknowledging a security alert therefore need a TOTP code verified in the last five
+-- minutes, as the staff RPCs of 0004 do: one restrictive policy per command, so reading stays open to the AAL2
+-- session. A stale session inserts nothing (42501) and updates or deletes no row.
+do $$
+declare
+  step_up_table text;
+  command text;
+begin
+  foreach step_up_table in array array['staff_invites', 'site_settings', 'revenue_share_rules',
+                                       'revenue_share_rule_lines'] loop
+    foreach command in array array['insert', 'update', 'delete'] loop
+      execute format('create policy %I on public.%I as restrictive for %s to authenticated %s ((select public.fresh_totp()))',
+                     step_up_table || '_fresh_totp_' || command, step_up_table, command,
+                     case command when 'insert' then 'with check' else 'using' end);
+    end loop;
+  end loop;
+end;
+$$;
+create policy security_alerts_fresh_totp_update on public.security_alerts as restrictive for update to authenticated
+  using ((select public.fresh_totp()));

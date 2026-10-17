@@ -1,7 +1,7 @@
 -- RLS matrix for the catalogue: tour_packages, tour_package_legs, tour_package_price_tiers, package_price_history,
 -- umkm_vendors, products_umkm (docs/PRD.md §8.5.2, Task P1.4.02, P1.4.03, P1.9.02). Every check runs as an API role.
 begin;
-select plan(41);
+select plan(43);
 \ir helpers/rls_personas.psql
 
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax, status) values
@@ -108,7 +108,14 @@ select is(pg_temp.row_count($$delete from public.tour_packages where id = '00000
   'and deletes no package; an RW admin archives instead');
 select throws_ok($$insert into public.tour_package_legs (package_id, rw_id, leg_order)
   values ('00000000-0000-4000-8000-00000000c900', 5, 3)$$, '42501',
-  'only the superadmin changes the legs of a combo package', 'adds no leg to a combo');
+  'an RW admin changes the legs of their own RW''s packages only', 'adds no leg to a combo');
+select throws_ok($$insert into public.tour_package_legs (package_id, rw_id, leg_order)
+  values ('00000000-0000-4000-8000-00000000c802', 5, 2)$$, '42501',
+  'an RW admin changes the legs of their own RW''s packages only', 'nor to RW 08''s draft, which they cannot see');
+select throws_ok($$insert into public.tour_package_legs (package_id, rw_id, leg_order)
+  values ('00000000-0000-4000-8000-00000000c999', 5, 1)$$, '42501',
+  'an RW admin changes the legs of their own RW''s packages only',
+  'and a package that does not exist gets the same answer, so the guard reveals nothing');
 select throws_ok($$insert into public.tour_package_legs (package_id, rw_id, leg_order)
   values ('00000000-0000-4000-8000-00000000c501', 8, 2)$$, 'P0001', 'an RW package visits its own RW only',
   'nor an RW 08 leg to their own package');

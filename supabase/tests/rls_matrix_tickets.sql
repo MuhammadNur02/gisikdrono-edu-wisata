@@ -2,7 +2,7 @@
 -- Task P1.4.04, P1.9.02). Today's gate list and certificates always fall inside the admin_rw booking window
 -- (decision of 2026-10-16). Every check runs as an API role.
 begin;
-select plan(19);
+select plan(22);
 \ir helpers/rls_personas.psql
 
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax, status) values
@@ -111,6 +111,8 @@ select is(
 );
 select throws_ok($$select raw_payload from public.ticket_scans$$, '42501', null,
   'without what was scanned, even as a digest (review of 0005, L2)');
+select throws_ok($$select ip, device_info from public.ticket_scans$$, '42501', null,
+  'nor the IP address and device of the officer who scanned');
 select is(
   (select string_agg(certificate_number, ',' order by certificate_number) from public.certificates
    where pg_temp.is_fixture_booking(booking_id)),
@@ -119,6 +121,8 @@ select is(
 );
 select throws_ok($$select recipient_name from public.certificates$$, '42501', null,
   'without the name on a participant certificate, often a child''s');
+select throws_ok($$select verify_code from public.certificates$$, '42501', null,
+  'nor the verify code, whose public page shows that name');
 select is(
   (select string_agg(ticket_code || ':' || booking_code, ',' order by ticket_code) from public.v_attendance_today
    where pg_temp.is_fixture_booking(booking_id)),
@@ -152,6 +156,8 @@ select is((select count(*)::int from public.certificates where pg_temp.is_fixtur
   'and every certificate');
 select throws_ok($$select recipient_name from public.certificates$$, '42501', null,
   'but no participant''s name through the API either');
+select throws_ok($$select verify_code from public.certificates$$, '42501', null,
+  'nor a verify code: the server prints the verification URL on the PDF');
 
 select * from finish();
 rollback;

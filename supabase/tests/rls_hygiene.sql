@@ -3,7 +3,7 @@
 -- using (true); a restrictive AAL2 policy sits on every table authenticated may touch (docs/PRD.md §8.5.2, review
 -- of 0005 H1); and the columns no API role may read or write are granted to nobody.
 begin;
-select plan(11);
+select plan(14);
 
 select is(
   array(
@@ -20,7 +20,7 @@ select is(
     select tablename || '.' || policyname from pg_policies
     where schemaname = 'public'
       and (coalesce(qual, '') || ' ' || coalesce(with_check, ''))
-          ~ '(?<!SELECT )((public\.)?(app_role|app_rw_id|is_superadmin|is_admin_rw|is_staff|owns_rw|owns_any_rw|aal2|today_jkt)|auth\.uid)\('
+          ~ '(?<!SELECT )((public\.)?(app_role|app_rw_id|is_superadmin|is_admin_rw|is_staff|owns_rw|owns_any_rw|aal2|fresh_totp|today_jkt)|auth\.uid)\('
     order by 1
   ),
   array[]::text[],
@@ -63,6 +63,20 @@ select is(
   array['document_sequences', 'guest_otps', 'rate_limit_buckets'],
   'only the three tables no API role touches go without it; booking_participants carries it, ready for a grant'
 );
+-- docs/Security.md §5.3: the superadmin's own writes need a TOTP code from the last five minutes, not only AAL2.
+select is(
+  array(
+    select tablename || ':' || cmd from pg_policies
+    where schemaname = 'public' and permissive = 'RESTRICTIVE' and roles = array['authenticated']::name[]
+      and coalesce(qual, with_check) ~ '^\( SELECT fresh_totp\(\) AS fresh_totp\)$'
+    order by tablename::text || ':' || cmd collate "C"
+  ),
+  array['revenue_share_rule_lines:DELETE', 'revenue_share_rule_lines:INSERT', 'revenue_share_rule_lines:UPDATE',
+        'revenue_share_rules:DELETE', 'revenue_share_rules:INSERT', 'revenue_share_rules:UPDATE',
+        'security_alerts:UPDATE', 'site_settings:DELETE', 'site_settings:INSERT', 'site_settings:UPDATE',
+        'staff_invites:DELETE', 'staff_invites:INSERT', 'staff_invites:UPDATE'],
+  'invites, settings, revenue-share rules and their lines, and alert acknowledgements ask for a fresh TOTP code'
+);
 select is(
   array(
     select tablename::text from pg_tables t
@@ -86,8 +100,9 @@ select is(
 
 -- Withheld columns (decisions of 2026-10-16 and the review of 0005): contacts, bank and treasury accounts, pay
 -- links, the stored Midtrans reply and event payloads, the whole-booking amounts of payments, invoices and
--- quotations, scanned payloads, a reviewer's full name, participant names on certificates and outbox recipients
--- are granted to no API role.
+-- quotations, a booking's add-on subtotal and discount, add-on notes, scanned payloads and the officer's IP and
+-- device, a reviewer's full name, participant names and verify codes on certificates and outbox recipients are
+-- granted to no API role.
 select is(
   array(
     select c.table_name || '.' || c.column_name from (values
@@ -98,8 +113,11 @@ select is(
       ('payments', 'snap_token'), ('payments', 'snap_redirect_url'), ('payments', 'va_number'), ('payments', 'last_payload'),
       ('payments', 'gross_amount'), ('payments', 'refunded_amount'), ('payment_events', 'payload'),
       ('invoices', 'amount_due'), ('invoices', 'amount_paid'), ('invoices', 'snapshot'), ('quotations', 'snapshot'),
-      ('ticket_scans', 'raw_payload'), ('reviews', 'reviewer_name'),
-      ('certificates', 'recipient_name'),
+      ('ticket_scans', 'raw_payload'), ('ticket_scans', 'ip'), ('ticket_scans', 'device_info'),
+      ('reviews', 'reviewer_name'),
+      ('bookings', 'subtotal_addons'), ('bookings', 'discount_amount'), ('bookings', 'discount_note'),
+      ('booking_addons', 'notes'),
+      ('certificates', 'recipient_name'), ('certificates', 'verify_code'),
       ('notifications', 'recipient'), ('notifications', 'recipient_name'), ('notifications', 'params'),
       ('notifications', 'last_error')
     ) as c(table_name, column_name)
@@ -119,6 +137,26 @@ select is(
   ),
   array[]::text[],
   'an invite code''s hash is written with the invite and read back by no API role'
+);
+select is(
+  array(
+    select api.role_name from (values ('anon'), ('authenticated')) as api(role_name)
+    where has_column_privilege(api.role_name, 'public.security_alerts', 'acknowledged_at', 'INSERT')
+       or has_column_privilege(api.role_name, 'public.security_alerts', 'acknowledged_at', 'UPDATE')
+  ),
+  array[]::text[],
+  'an alert''s acknowledgement time is the database''s to write, never the client''s'
+);
+select is(
+  array(
+    select v.view_name || ':' || api.role_name
+    from (values ('v_booking_export'), ('v_finance_daily')) as v(view_name)
+    cross join (values ('anon'), ('authenticated')) as api(role_name)
+    where has_table_privilege(api.role_name, 'public.' || v.view_name, 'SELECT')
+    order by 1
+  ),
+  array[]::text[],
+  'the export rows and the payment totals reach no API role; rpc_create_export and the finance RPC read them'
 );
 -- Review M4: statuses and counters move only inside the transition functions.
 select is(
