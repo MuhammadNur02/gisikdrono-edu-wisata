@@ -31,6 +31,44 @@ export const copy = {
     commandPlaceholder: 'Cari menu atau tindakan...',
     commandEmpty: 'Tidak ada yang cocok.',
   },
+  layout: {
+    skipToContent: 'Lewati ke konten',
+    homeLink: 'Edu Wisata Gisikdrono, ke beranda',
+    mainNav: 'Navigasi utama',
+    openMenu: 'Buka menu',
+    menuTitle: 'Menu',
+    menuDescription: 'Semua halaman Edu Wisata Gisikdrono.',
+    breadcrumb: 'Lokasi halaman',
+    footerNav: 'Navigasi bawah',
+    footerAbout:
+      'Kunjungan edukasi ke dua kampung di Kelurahan Gisikdrono: pengelolaan sampah di RW 05 dan seni budaya di RW 08.',
+    footerManagedBy: 'Dikelola oleh',
+    footerContactTitle: 'Kontak',
+    footerAddressPending: 'Alamat lengkap dan jam layanan kantor menyusul.',
+    footerWhatsApp: 'Chat WhatsApp',
+    // docs/StyleGuide.md §9.2: the fixed trust line, reused word for word wherever payment is mentioned.
+    paymentTrust:
+      'Pembayaran hanya melalui sistem (QRIS/VA); kelurahan tidak pernah meminta transfer ke rekening pribadi.',
+    whatsAppFab: 'Chat WhatsApp kelurahan',
+    whatsAppGreeting: (pageTopic: string) => `Halo, saya ingin bertanya tentang ${pageTopic}`,
+  },
+  pages: {
+    notFound: {
+      eyebrow: 'Halaman tidak ditemukan',
+      title: 'Halaman ini tidak ada',
+      description:
+        'Alamatnya mungkin salah ketik, atau halamannya sudah dipindah. Coba mulai lagi dari salah satu halaman ini.',
+      packages: 'Lihat paket wisata',
+    },
+    error: {
+      title: 'Terjadi kesalahan',
+      description:
+        'Halaman ini gagal dimuat. Coba muat ulang. Kalau masih gagal, sebutkan kode di bawah saat menghubungi kami.',
+      code: 'Kode',
+      retry: 'Coba lagi',
+      home: 'Kembali ke beranda',
+    },
+  },
   forms: {
     required: 'wajib',
     phone: { placeholder: '812-3456-7890' },

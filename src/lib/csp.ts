@@ -1,4 +1,5 @@
 import { PRIVATE_ROUTE_PREFIXES } from '@/config/routes';
+import { isPathUnder } from '@/lib/utils/paths';
 
 // docs/Security.md §8.2. Private routes get a nonce policy built per request. Public ISR pages are
 // rendered before any request exists, so they cannot carry a nonce and get the static policy.
@@ -20,12 +21,8 @@ const SCANNER_PATH = '/dashboard/scanner';
 const LOCKED_DOWN_FEATURES =
   'microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), display-capture=()';
 
-function isUnder(pathname: string, prefix: string): boolean {
-  return pathname === prefix || pathname.startsWith(`${prefix}/`);
-}
-
 export function isPrivateRoute(pathname: string): boolean {
-  return PRIVATE_ROUTE_PREFIXES.some((prefix) => isUnder(pathname, prefix));
+  return PRIVATE_ROUTE_PREFIXES.some((prefix) => isPathUnder(pathname, prefix));
 }
 
 function scriptSources({ nonce, isDevelopment }: CspOptions): string {
@@ -65,6 +62,6 @@ export function buildContentSecurityPolicy(options: CspOptions): string {
 
 // Only the gate scanner may open the camera (CLAUDE.md §7.4).
 export function permissionsPolicyFor(pathname: string): string {
-  if (isUnder(pathname, SCANNER_PATH)) return `camera=(self), ${LOCKED_DOWN_FEATURES}`;
+  if (isPathUnder(pathname, SCANNER_PATH)) return `camera=(self), ${LOCKED_DOWN_FEATURES}`;
   return `camera=(), ${LOCKED_DOWN_FEATURES}, interest-cohort=()`;
 }

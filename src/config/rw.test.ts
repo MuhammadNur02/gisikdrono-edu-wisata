@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-import { isRwId, RW_ACCENTS, RW_IDS } from './rw';
+import { isRwId, RW_ACCENTS, RW_IDS, RW_PROGRAMMES } from './rw';
 
 const globalsCss = readFileSync(new URL('../styles/globals.css', import.meta.url), 'utf8');
 
@@ -38,6 +38,25 @@ describe('RW_ACCENTS', () => {
         expect(dark).toContain(`--${rw}${suffix}:`);
       }
     }
+  });
+});
+
+describe('RW_PROGRAMMES', () => {
+  const seed = readFileSync(
+    new URL('../../supabase/migrations/0008_seed.sql', import.meta.url),
+    'utf8',
+  );
+
+  it('uses the rw_units slug of the seed as the page path', () => {
+    for (const rwId of RW_IDS) {
+      const programme = RW_PROGRAMMES[rwId];
+      expect(seed).toContain(`(${String(rwId)}, 'RW0${String(rwId)}', '${programme.slug}',`);
+      expect(programme.path).toBe(`/${programme.slug}`);
+    }
+  });
+
+  it('labels each RW with its two-digit number', () => {
+    expect(RW_IDS.map((rwId) => RW_PROGRAMMES[rwId].label)).toEqual(['RW 05', 'RW 08']);
   });
 });
 
