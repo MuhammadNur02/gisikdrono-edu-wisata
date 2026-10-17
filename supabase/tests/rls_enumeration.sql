@@ -1,0 +1,150 @@
+-- Catalogue-wide enumeration of what the API roles can reach (Task P1.9.01; docs/Security.md AZ-02, AZ-05, AZ-08,
+-- AZ-11, SC-04). Each check walks every table, view, function or policy, so an object added by a later migration is
+-- covered without anyone remembering to list it. This file holds the one allow-list of functions the API roles may
+-- execute; scripts/check-table-tests.mjs makes sure every table has a pgTAP file that names it.
+begin;
+select plan(12);
+
+-- ===== Tables and views =====
+
+select is(
+  array(
+    select c.relname::text from pg_class c
+    where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p')
+      and not (c.relrowsecurity and c.relforcerowsecurity)
+    order by 1
+  ),
+  array[]::text[],
+  'every public table has RLS enabled and forced'
+);
+select is(
+  array(
+    select c.relname::text from pg_class c
+    where c.relnamespace = 'public'::regnamespace and c.relkind in ('v', 'm')
+      and not coalesce(c.reloptions @> array['security_invoker=true'], false)
+    order by 1
+  ),
+  array[]::text[],
+  'every public view runs with the reader''s own rights (security_invoker), and there is no materialized view'
+);
+
+-- ===== Functions: definer hygiene =====
+
+select is(
+  array(
+    select n.nspname || '.' || p.proname from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname in ('public', 'internal')
+      and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like 'search_path=%')
+    order by 1
+  ),
+  array[]::text[],
+  'every function in public and internal pins search_path, security definer or not'
+);
+select is(
+  array(
+    select n.nspname || '.' || p.proname from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname in ('public', 'internal') and p.prosecdef
+      and pg_get_userbyid(p.proowner) <> 'postgres'
+    order by 1
+  ),
+  array[]::text[],
+  'every security definer function is owned by postgres'
+);
+
+-- ===== Functions: who may execute what =====
+
+select is(
+  array(
+    select n.nspname || '.' || p.proname from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname in ('public', 'internal')
+      and has_function_privilege('anon', p.oid, 'execute')
+    order by 1
+  ),
+  array['public.today_jkt'],
+  'anon can execute today_jkt() and nothing else'
+);
+-- The RLS helpers of P1.3.01 and fresh_totp() of 0005, then the staff RPCs granted in 0005 (P1.4.07).
+select is(
+  array(
+    select n.nspname || '.' || p.proname from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname in ('public', 'internal')
+      and has_function_privilege('authenticated', p.oid, 'execute')
+    order by 1
+  ),
+  array['public.aal2', 'public.app_role', 'public.app_rw_id', 'public.cancel_staff_mfa_reset',
+        'public.cancel_superadmin_promotion', 'public.fresh_totp', 'public.generate_visit_sessions',
+        'public.invite_superadmin', 'public.is_admin_rw', 'public.is_staff', 'public.is_superadmin', 'public.owns_any_rw',
+        'public.owns_rw', 'public.reset_staff_mfa',
+        'public.rpc_get_participants', 'public.rpc_log_ui_event', 'public.rpc_reveal_booking_contact',
+        'public.set_staff_role', 'public.set_staff_status', 'public.today_jkt'],
+  'authenticated can execute the ten RLS helpers and the staff RPCs granted in 0005, nothing else'
+);
+select is(
+  array(
+    select p.proname::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname like 'svc\_%'
+      and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'))
+    order by 1
+  ),
+  array[]::text[],
+  'no svc_ function is executable by anon or authenticated'
+);
+select is(
+  array(
+    select p.proname::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname like 'svc\_%'
+      and not (has_function_privilege('service_role', p.oid, 'execute') and p.prosecdef)
+    order by 1
+  ),
+  array[]::text[],
+  'every svc_ function is security definer and executable by the service role'
+);
+select is(
+  array(
+    select p.proname::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and not p.proname like 'svc\_%' and p.prorettype <> 'trigger'::regtype
+      and p.proname not in ('app_role', 'app_rw_id', 'is_superadmin', 'is_admin_rw', 'is_staff', 'owns_rw',
+                            'owns_any_rw', 'aal2', 'fresh_totp', 'today_jkt')
+      and has_function_privilege('service_role', p.oid, 'execute')
+    order by 1
+  ),
+  array[]::text[],
+  'the service role can call no staff RPC and neither Auth hook, only its svc_ entry points'
+);
+select is(
+  array(
+    select r.role_name from (values ('anon'), ('authenticated'), ('service_role')) as r(role_name)
+    where has_schema_privilege(r.role_name, 'internal', 'usage')
+  ),
+  array[]::text[],
+  'no API role, the service role included, may use the internal schema itself'
+);
+
+-- ===== Nothing trusts what a user may write about themselves =====
+
+select is(
+  array(
+    select schemaname || '.' || tablename || '.' || policyname from pg_policies
+    where concat_ws(' ', qual, with_check) ~* '(user_metadata|raw_user_meta_data|raw_app_meta_data)'
+    order by 1
+  ),
+  array[]::text[],
+  'no policy in any schema reads user_metadata, which every user can rewrite'
+);
+select is(
+  array(
+    select n.nspname || '.' || p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname in ('public', 'internal')
+      and p.prosrc ~* '(user_metadata|raw_user_meta_data|raw_app_meta_data)'
+    order by 1
+  ),
+  array[]::text[],
+  'and no function in public or internal reads it either'
+);
+
+select * from finish();
+rollback;
