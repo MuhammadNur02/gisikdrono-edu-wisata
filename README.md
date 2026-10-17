@@ -40,11 +40,11 @@ pnpm dev                # http://localhost:3000
 
 Every variable is checked at boot by `src/lib/env.ts` and `src/lib/public-env.ts`. Locally, use Midtrans sandbox keys (`SB-Mid-server-…`, `SB-Mid-client-…`) and Cloudflare's Turnstile test keys. `pnpm check` runs lint, typecheck, unit tests and the database type drift check before you push.
 
-`pnpm db:reset` rebuilds the local database from the migrations and then runs `supabase/seed.sql`, which marks it local, writes the development staff accounts below and some demo content (packages, products, sessions, articles). The pg_cron jobs of `0007_cron.sql` run locally too; the ones that call the application stay quiet until you give them Vault secrets (`docs/runbooks/cron.md`).
+`pnpm db:reset` rebuilds the local database from the migrations and then runs `pnpm db:seed`, which marks it local, writes the development staff accounts below and some demo content (packages, products, sessions, articles). Run `pnpm db:seed` on its own after `pnpm db:start` on a fresh clone; running it again changes nothing. The pg_cron jobs of `0007_cron.sql` run locally too; the ones that call the application stay quiet until you give them Vault secrets (`docs/runbooks/cron.md`).
 
 ### Local development accounts
 
-`supabase/seed.sql` creates three staff accounts with a verified TOTP factor. They exist only on your local database and in CI: the seed's first statement refuses any database whose Vault secret `environment` is `staging` or `production`, so these known credentials never reach an online project. They are not in `.env.example` on purpose.
+`pnpm db:seed` (`scripts/seed-dev.ts` with `scripts/seed-dev.sql`) creates three staff accounts with a verified TOTP factor. They exist only on your local database and in CI: the script takes its address from `supabase status` and refuses anything but `127.0.0.1`, and its SQL refuses any database whose Vault secret `environment` says anything but `local`, so these known credentials never reach an online project. The Supabase CLI's own seed is switched off, so `supabase db reset` writes no account anywhere. The credentials are not in `.env.example` on purpose.
 
 | Email | Role |
 |---|---|
@@ -53,7 +53,7 @@ Every variable is checked at boot by `src/lib/env.ts` and `src/lib/public-env.ts
 | `admin-rw08@dev.gisikdrono.test` | admin_rw, RW 08 |
 
 - Password (all three): `DEV-ONLY-local-Password-1!`
-- TOTP secret (all three): `DEVONLYLOCALTOTPGISIKDRONOSECRET`. Add it once to an authenticator app, or run `pnpm db:seed`, which prints the accounts with the code of this moment and refuses to run against anything but `127.0.0.1`.
+- TOTP secret (all three): `DEVONLYLOCALTOTPGISIKDRONOSECRET`. Add it once to an authenticator app, or run `pnpm db:seed` again, which prints the accounts with the code of this moment.
 
 ## Status
 

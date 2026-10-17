@@ -2,15 +2,15 @@ import { createClient } from '@supabase/supabase-js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { localStack, runSql } from './helpers/local-stack';
 import {
   DEV_ACCOUNTS,
   DEV_ONLY_PASSWORD,
   DEV_ONLY_TOTP_SECRET,
   totpCode,
 } from '../../scripts/dev-accounts';
+import { localStack, runSql } from '../../scripts/local-stack';
 
-// The development staff accounts of supabase/seed.sql sign in through GoTrue with their DEV-ONLY password, pass
+// The development staff accounts of pnpm db:seed sign in through GoTrue with their DEV-ONLY password, pass
 // the TOTP step and reach AAL2 with the role and RW of their profile, as a developer does (Task P1.8.02). The suite
 // removes the sign-in traces it leaves, so the pgTAP suites meet the database as the seed left it.
 
@@ -54,7 +54,7 @@ async function removeSignInTraces(auditIdBefore: number): Promise<void> {
     delete from auth.sessions where user_id in (select id from auth.users where email like '${DEV_EMAIL_PATTERN}');`);
 }
 
-describe('development staff accounts of supabase/seed.sql', () => {
+describe('development staff accounts of pnpm db:seed', () => {
   let auditIdBefore = 0;
 
   beforeAll(async () => {

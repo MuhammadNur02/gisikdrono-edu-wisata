@@ -3,38 +3,35 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import {
-  DEV_ACCOUNTS,
-  DEV_ONLY_PASSWORD,
-  DEV_ONLY_TOTP_SECRET,
-  isLocalSupabaseUrl,
-  totpCode,
-} from './dev-accounts.ts';
+import { DEV_ACCOUNTS, DEV_ONLY_PASSWORD, DEV_ONLY_TOTP_SECRET, totpCode } from './dev-accounts.ts';
+import { isLocalSupabaseUrl } from './local-stack.ts';
 
-const seedSql = readFileSync(
-  fileURLToPath(new URL('../supabase/seed.sql', import.meta.url)),
-  'utf8',
-);
+const seedSql = readFileSync(fileURLToPath(new URL('./seed-dev.sql', import.meta.url)), 'utf8');
 
-// The SQL statements of seed.sql, comments left out.
+// The SQL statements of seed-dev.sql, comments left out and whitespace folded.
 function statementsOf(sql) {
   return sql
     .split('\n')
     .filter((line) => !line.trim().startsWith('--'))
     .join('\n')
     .split(';')
-    .map((statement) => statement.trim())
+    .map((statement) => statement.replace(/\s+/g, ' ').trim())
     .filter((statement) => statement !== '');
 }
 
-describe('supabase/seed.sql', () => {
-  it('refuses a staging or production database before it writes anything', () => {
-    expect(statementsOf(seedSql)[0]).toBe('select internal.require_development_database()');
+describe('scripts/seed-dev.sql', () => {
+  it('marks a fresh local database, then refuses any database not marked local before it writes anything', () => {
+    expect(statementsOf(seedSql).slice(0, 2)).toEqual([
+      "select vault.create_secret('local', 'environment') where not exists (select 1 from vault.secrets where name = 'environment')",
+      'select internal.require_local_database()',
+    ]);
   });
 
-  it('writes the DEV-ONLY credentials that README.md and pnpm db:seed give developers', () => {
-    expect(seedSql).toContain(`'${DEV_ONLY_PASSWORD}'`);
-    expect(seedSql).toContain(`'${DEV_ONLY_TOTP_SECRET}'`);
+  it('holds no DEV-ONLY credential itself, only the accounts they open', () => {
+    expect(seedSql).not.toContain(DEV_ONLY_PASSWORD);
+    expect(seedSql).not.toContain(DEV_ONLY_TOTP_SECRET);
+    expect(seedSql).toContain("current_setting('dev_seed.password')");
+    expect(seedSql).toContain("current_setting('dev_seed.totp_secret')");
     for (const account of DEV_ACCOUNTS) expect(seedSql).toContain(`'${account.email}'`);
   });
 });

@@ -1,7 +1,7 @@
 -- Reference data of 0008_seed (docs/PRD.md §8.6, assumption A4, Task P1.8.01) and the development seed guard
--- (Task P1.8.02). Vault secrets are written and removed inside the suite's own transaction.
+-- (Task P1.8.02, security review of PR #5). Vault secrets are written and removed inside the suite's own transaction.
 begin;
-select plan(15);
+select plan(20);
 
 -- ===== RWs and settings =====
 select is(
@@ -76,7 +76,7 @@ select is(
   array(
     select p.proname || ':' || r.role_name from pg_proc p
     cross join (values ('anon'), ('authenticated'), ('service_role')) as r(role_name)
-    where p.proname in ('svc_placeholder_site_settings', 'placeholder_site_settings', 'require_development_database')
+    where p.proname in ('svc_placeholder_site_settings', 'placeholder_site_settings', 'require_local_database', 'environment')
       and has_function_privilege(r.role_name, p.oid, 'execute')
     order by 1
   ),
@@ -87,18 +87,30 @@ select is(array(select public.svc_placeholder_site_settings()), array['contact.e
   'and gets the same keys');
 
 -- ===== Development seed guard =====
+-- pnpm db:seed writes the marker on a fresh local database, then calls the guard; the guard itself fails closed.
 delete from vault.secrets where name = 'environment';
-select lives_ok($$select internal.require_development_database()$$, 'a database that names no environment may be seeded');
+select throws_ok($$select internal.require_local_database()$$, '42501',
+  'the development seed runs only on a local database, and this one is unmarked',
+  'a database without the environment marker refuses the development seed');
 select vault.create_secret('local', 'environment');
-select lives_ok($$select internal.require_development_database()$$, 'so may a local one');
+select lives_ok($$select internal.require_local_database()$$, 'a local one takes it');
+select vault.update_secret((select id from vault.secrets where name = 'environment'), ' LOCAL ');
+select is(internal.environment(), 'local', 'the marker is read without regard to case or surrounding spaces');
+select lives_ok($$select internal.require_local_database()$$, 'so a carelessly typed local is still local');
 select vault.update_secret((select id from vault.secrets where name = 'environment'), 'staging');
-select throws_ok($$select internal.require_development_database()$$, '42501',
-  'supabase/seed.sql never runs on the staging database: it creates development accounts with known passwords',
+select throws_ok($$select internal.require_local_database()$$, '42501',
+  'the development seed runs only on a local database, and this one is staging',
   'a staging database refuses the development seed');
-select vault.update_secret((select id from vault.secrets where name = 'environment'), 'production');
-select throws_ok($$select internal.require_development_database()$$, '42501',
-  'supabase/seed.sql never runs on the production database: it creates development accounts with known passwords',
-  'and so does production');
+select vault.update_secret((select id from vault.secrets where name = 'environment'), ' Production');
+select is(internal.environment(), 'production', 'a production marker is recognised however it is typed');
+select throws_ok($$select internal.require_local_database()$$, '42501',
+  'the development seed runs only on a local database, and this one is production',
+  'and refuses it');
+select vault.update_secret((select id from vault.secrets where name = 'environment'), 'prod');
+select is(internal.environment(), 'unrecognised', 'a value outside the allow-list is unrecognised, never local');
+select throws_ok($$select internal.require_local_database()$$, '42501',
+  'the development seed runs only on a local database, and this one is unrecognised',
+  'and refuses it too');
 select ok(
   (select count(*) from public.revenue_share_rules r where r.package_id is null and r.product_id is null
      and r.name like 'Bawaan %') = 5,

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { describe, expect, it } from 'vitest';
 
-import { localStack } from './helpers/local-stack';
+import { localStack } from '../../scripts/local-stack';
 
 // The API and Auth settings of supabase/config.toml as the running stack applies them (Task P1.7.01, P1.7.05);
 // scripts/supabase-config.test.mjs checks the file itself.

@@ -1,6 +1,6 @@
 -- 0008_seed: reference data every environment needs (docs/PRD.md §8.6, assumption A4, Task P1.8.01; decisions of
--- 2026-10-17). Demo content and development accounts live in supabase/seed.sql, which runs on a developer's
--- database only.
+-- 2026-10-17 and of the security review of PR #5). Demo content and development accounts are written by
+-- pnpm db:seed (scripts/seed-dev.sql), which reaches the local stack on 127.0.0.1 only.
 --
 -- The kelurahan has not confirmed every value yet (Task P0.4.05). Where a value is unknown the seed writes a
 -- placeholder that cannot pass for the real thing, and internal.placeholder_site_settings lists them: production's
@@ -109,21 +109,22 @@ join (values
 
 
 -- ===== Development seed guard (Task P1.8.02) =====
--- supabase/seed.sql creates staff accounts whose password and TOTP secret are written in the repository. It calls
--- this first, so it stops before writing anything on a database whose Vault secret environment says it is online.
-create function internal.require_development_database() returns void
+-- pnpm db:seed creates staff accounts whose password and TOTP secret are written in the repository. It marks a fresh
+-- local database local, then calls this before writing anything, so a database whose Vault secret environment says
+-- anything else refuses it, and so does one without the marker. Unlike call_job's check, this one fails closed.
+create function internal.require_local_database() returns void
   language plpgsql security definer
   set search_path = ''
 as $$
 begin
-  if internal.environment() in ('staging', 'production') then
-    raise exception 'supabase/seed.sql never runs on the % database: it creates development accounts with known passwords',
-      internal.environment() using errcode = '42501';
+  if internal.environment() is distinct from 'local' then
+    raise exception 'the development seed runs only on a local database, and this one is %',
+      coalesce(internal.environment(), 'unmarked') using errcode = '42501';
   end if;
 end;
 $$;
 
-revoke execute on function internal.placeholder_site_settings(), internal.require_development_database()
+revoke execute on function internal.placeholder_site_settings(), internal.require_local_database()
   from public, anon, authenticated, service_role;
 revoke execute on function public.svc_placeholder_site_settings() from public, anon, authenticated;
 grant execute on function public.svc_placeholder_site_settings() to service_role;

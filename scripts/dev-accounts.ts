@@ -1,9 +1,9 @@
 import { createHmac } from 'node:crypto';
 
-// The local development staff accounts that supabase/seed.sql writes (README.md "Local development accounts").
-// DEV-ONLY: they exist only on a developer's database and in CI, because seed.sql refuses any database whose
-// Vault secret environment is staging or production. Keep these values in step with supabase/seed.sql;
-// scripts/dev-accounts.test.mjs checks that they match.
+// The local development staff accounts that pnpm db:seed writes (README.md "Local development accounts").
+// DEV-ONLY: they exist only on a developer's database and in CI, because pnpm db:seed reaches the local stack on
+// 127.0.0.1 alone and its SQL refuses any database not marked local. These constants are the only copy of the
+// password and the TOTP secret; scripts/seed-dev.sql reads them from the transaction that seed-dev.ts opens.
 export const DEV_ONLY_PASSWORD = 'DEV-ONLY-local-Password-1!';
 export const DEV_ONLY_TOTP_SECRET = 'DEVONLYLOCALTOTPGISIKDRONOSECRET';
 
@@ -13,7 +13,6 @@ export const DEV_ACCOUNTS = [
   { email: 'admin-rw08@dev.gisikdrono.test', role: 'admin_rw', rwId: 8 },
 ] as const;
 
-const LOCAL_HOSTNAMES = new Set(['127.0.0.1', 'localhost']);
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 const BITS_PER_BASE32_CHAR = 5;
 const BITS_PER_BYTE = 8;
@@ -26,11 +25,6 @@ const DECIMAL_BASE = 10;
 // RFC 4226 dynamic truncation: the low nibble of the last byte picks the offset, and the top bit is dropped.
 const OFFSET_NIBBLE_MASK = 0x0f;
 const DROP_SIGN_BIT_MASK = 0x7fffffff;
-
-// The dev seed runs against the local stack only.
-export function isLocalSupabaseUrl(url: string): boolean {
-  return LOCAL_HOSTNAMES.has(new URL(url).hostname);
-}
 
 function base32ToBytes(secret: string): Buffer {
   let bits = '';

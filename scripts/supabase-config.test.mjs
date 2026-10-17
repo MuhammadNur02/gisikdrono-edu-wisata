@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -55,6 +55,11 @@ describe('supabase/config.toml', () => {
       enroll_enabled: false,
       verify_enabled: false,
     });
+  });
+
+  it('seeds nothing on reset, so a reset of a linked project never writes development data', () => {
+    expect(config('db.seed')).toEqual({ enabled: false, sql_paths: [] });
+    expect(existsSync(fileURLToPath(new URL('../supabase/seed.sql', import.meta.url)))).toBe(false);
   });
 
   it('runs the access-token and password-attempt hooks of 0004', () => {
