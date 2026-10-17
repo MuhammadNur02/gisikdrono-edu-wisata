@@ -49,7 +49,7 @@ function SectionHeading({
   return (
     <div className={headingVariants({ align })}>
       {eyebrow ? (
-        <p className={cn('text-overline', isOnBrand ? 'text-brand-ice' : 'text-primary')}>
+        <p className={cn('text-overline', isOnBrand ? 'text-brand-ice' : 'text-primary-text')}>
           {eyebrow}
         </p>
       ) : null}

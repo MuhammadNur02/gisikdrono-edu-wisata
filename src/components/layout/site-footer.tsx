@@ -89,10 +89,12 @@ function FooterContact() {
   );
 }
 
+// pb-24 leaves 96 px under the last line, more than the WhatsApp button's 56 px plus its 24 px offset,
+// so at the end of the page the button floats over empty space (docs/StyleGuide.md §5.16).
 function FooterBottom() {
   return (
     <div className="border-t border-border">
-      <Container className="flex flex-col gap-4 py-6 md:flex-row md:items-center md:justify-between">
+      <Container className="flex flex-col gap-4 pt-6 pb-24 md:flex-row md:items-center md:justify-between">
         <p className="flex max-w-2xl gap-2 text-caption text-muted-foreground">
           <ShieldCheck aria-hidden className="size-4 shrink-0 text-success" />
           {copy.layout.paymentTrust}

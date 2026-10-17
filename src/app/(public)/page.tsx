@@ -34,7 +34,7 @@ function RwProgrammeBlock({ rwId }: { rwId: RwId }) {
         <p className="text-body text-muted-foreground">{RW_ACTIVITIES[rwId]}</p>
         <Link
           href={programme.path}
-          className="inline-flex min-h-11 items-center gap-2 rounded-md text-body-sm font-medium text-primary underline-offset-4 hover:underline"
+          className="inline-flex min-h-11 items-center gap-2 rounded-md text-body-sm font-medium text-primary-text underline-offset-4 hover:underline"
         >
           Lihat halaman {programme.label}
           <ArrowRight aria-hidden className="size-4" />

@@ -59,7 +59,7 @@ export function PageHeader({ title, eyebrow, description, breadcrumbs, path }: P
       <Container className="space-y-6 pt-10 pb-12 md:pt-14 md:pb-16">
         {trail ? <Breadcrumbs trail={trail} /> : null}
         <div className="max-w-3xl space-y-4">
-          {eyebrow ? <p className="text-overline text-primary">{eyebrow}</p> : null}
+          {eyebrow ? <p className="text-overline text-primary-text">{eyebrow}</p> : null}
           <h1 className="text-h1 text-balance">{title}</h1>
           {description ? (
             <p className="text-body-lg text-pretty text-muted-foreground">{description}</p>

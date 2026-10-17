@@ -9,7 +9,7 @@ export interface SiteWordmarkProps {
 export function SiteWordmark({ className }: SiteWordmarkProps) {
   return (
     <span className={cn('flex flex-col', className)}>
-      <span className="text-overline text-primary">Edu Wisata</span>
+      <span className="text-overline text-primary-text">Edu Wisata</span>
       <span className="text-h4 leading-tight font-extrabold tracking-tight">Gisikdrono</span>
     </span>
   );

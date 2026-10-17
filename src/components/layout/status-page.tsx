@@ -58,7 +58,7 @@ export function StatusPage({
             />
           </span>
           <div className="space-y-3">
-            {eyebrow ? <p className="text-overline text-primary">{eyebrow}</p> : null}
+            {eyebrow ? <p className="text-overline text-primary-text">{eyebrow}</p> : null}
             <h1 className="text-h1 text-balance">{title}</h1>
             <p className="text-body-lg text-pretty text-muted-foreground">{description}</p>
             {detail}
