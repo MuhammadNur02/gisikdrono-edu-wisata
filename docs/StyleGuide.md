@@ -40,7 +40,7 @@ Domain terms used throughout: **RW** (Rukun Warga, the neighbourhood unit that o
 | P4 | One truth per status | Every enum value maps to exactly one badge tone and one Indonesian label in `src/config/status.ts`. Colour never carries meaning alone: label plus icon always accompany it. |
 | P5 | Motion confirms, never decorates | Animation exists to acknowledge an action (sheet opens, result appears, count settles). Tables, forms, sidebar and charts do not animate. |
 | P6 | Tokens over values | No hex, px shadow or ad-hoc easing inside a component. Add a token first, then use it. This is a clean-code rule enforced in review. |
-| P7 | Indonesian for people, English for code | UI copy, labels, errors and notifications are Indonesian (`lang="id"`); identifiers, files, commits and documentation are English. |
+| P7 | Indonesian for people, English for code | UI copy, labels, errors and notifications are Indonesian (`lang="id"`), except the `Summary in English` section of `/privasi`, which carries `lang="en"` (CLAUDE.md §12.1 no. 18, decision of 2026-10-18); identifiers, files, commits and documentation are English. |
 | P8 | Accessible by default | WCAG 2.1 AA is a release gate, not a backlog item: contrast verified per token, focus ring on every interactive element, live regions for countdowns and scan results. |
 
 ### 1.2 Inspiration references
@@ -57,7 +57,7 @@ The site has to look like Gisikdrono, not like a template. These rules hold for 
 
 | # | Rule | In practice |
 |---|---|---|
-| G1 | No stock or AI-generated images of people or places | Only real Gisikdrono photos from `public-media`. Until a photo exists, show a `bg-muted` box with the words `Foto menyusul`, never a stand-in image. |
+| G1 | No stock or AI-generated images of people or places | Only real Gisikdrono photos from `public-media`. Until a photo exists the slot shows a placeholder without words (`PhotoPlaceholder`, decision of 2026-10-18): the RW's soft accent as background (`RW_ACCENTS[rwId].soft` through `softClassesFor` in `src/config/rw.ts`; a combo, a kelurahan item or anything without one RW uses the neutral soft pair) and the lucide icon of what the slot is about, at 40 px with 1.5 stroke (package category, product category, the RW's own icon, `Newspaper` for an article, `Images` for the hero), never a stand-in image. It is `role="img"` with an `aria-label` that says what the photo will show, so screen readers still hear it. |
 | G2 | No gradient text, no purple or indigo gradients, no decorative blobs or orbs, no glow effects | The only decorative backgrounds are the dot-grid SVG and the ice-to-background gradient of §8.5. |
 | G3 | Glass cards only over the hero photo, at most one per screen | `Card variant="glass"` sits on the hero image and nowhere else (§5.2). Blurred sticky bars (§4.3) are not cards and keep their own budget. |
 | G4 | No emoji as UI icons | Icons are `lucide-react` only (§8.1). Emoji may appear inside content people wrote themselves, such as a review. |
@@ -941,7 +941,7 @@ Month grid (react-day-picker custom day cell): each day shows up to three sessio
 
 | State | Pattern |
 |---|---|
-| Empty, public pages | A section, card group or contact line whose data is empty is left out whole, heading included; the public site never prints `belum diisi`, `belum ada … yang dicatat`, `menyusul` or anything that reads as unfinished (decision of 2026-10-18). Three things stay: the page's own header (an RW page keeps its title and photo slot), the `Foto menyusul` box of §1.3 G1 for a photo slot that belongs to something shown, and the answer to a visitor's own filter or search (`Belum ada foto untuk filter ini`, §5.11), which reports on their choice rather than on the CMS. Content the site cannot launch without, such as each RW's profile, is a go-live check (`docs/Security.md` §13.1), not a note on the page. |
+| Empty, public pages | A section, card group or contact line whose data is empty is left out whole, heading included; the public site never prints `belum diisi`, `belum ada … yang dicatat`, `menyusul` or anything that reads as unfinished (decision of 2026-10-18). Three things stay: the page's own header (an RW page keeps its title and photo slot), the wordless photo placeholder of §1.3 G1 for a photo slot that belongs to something shown, and the answer to a visitor's own filter or search (`Belum ada foto untuk filter ini`, §5.11), which reports on their choice rather than on the CMS. Content the site cannot launch without, such as each RW's profile, is a go-live check (`docs/Security.md` §13.1), not a note on the page. |
 | Empty, dashboard (`EmptyState`) | Staff see why a list is empty and what to do: 48 px icon in `bg-muted rounded-full p-3`, `text-h4` title, `text-body-sm text-muted-foreground` description, one primary action. Copy names the next step: `Belum ada reservasi. Bagikan tautan paket untuk mulai menerima pemesanan.` Filter-empty variant offers `Hapus filter`. |
 | Loading | `loading.tsx` per segment; skeletons `animate-pulse bg-muted rounded-md` with the final dimensions (KPI, table 8 rows, form, calendar variants). No spinners on page load; spinners only inside buttons. |
 | Error | `error.tsx` card with `AlertTriangle`, `Terjadi kesalahan`, the Sentry `requestId` in mono (`Kode: 8f3a…`) for support, `Coba lagi` (`reset()`) and `Kembali ke Dashboard`. Never shows stack traces or raw exception text. |
@@ -1072,7 +1072,7 @@ Icons are imported individually (`import { ScanLine } from 'lucide-react'`), nev
 | WhatsApp | `MessageCircle` | Telepon / Email | `Phone` / `Mail` |
 | Search / Command | `Search` / `Command` | Theme | `Sun` / `Moon` |
 
-`activity_point_type` icons: `bank_sampah` `Recycle` · `composter` `Leaf` · `maggot` `Bug` · `urban_farming` `Sprout` · `pkk_craft` `Scissors` · `sanggar` `Music` · `culture_house` `Landmark` · `stage` `Drama` · `dolanan_area` `Gamepad2` · `umkm_stall` `Store` · `meeting_point` `Flag` · `other` `MapPin`. `package_category`: `regular` `Ticket`, `student` `GraduationCap`, `institutional` `Building2`, `combo` `Layers`. Status icons: success `CheckCircle2`, warning `AlertTriangle`, info `Info`, danger `XCircle`, neutral `Circle`.
+`activity_point_type` icons: `bank_sampah` `Recycle` · `composter` `Leaf` · `maggot` `Bug` · `urban_farming` `Sprout` · `pkk_craft` `Scissors` · `sanggar` `Music` · `culture_house` `Landmark` · `stage` `Drama` · `dolanan_area` `Gamepad2` · `umkm_stall` `Store` · `meeting_point` `Flag` · `other` `MapPin`. `package_category`: `regular` `Ticket`, `student` `GraduationCap`, `institutional` `Building2`, `combo` `Layers`. `product_category`: `compost` `Leaf`, `seedling` `Sprout`, `recycled_craft` `Recycle`, `snack` `Cookie`, `souvenir` `Gift`, `other` `ShoppingBag`. RW photo slots: RW 05 `Recycle`, RW 08 `Drama` (`RW_PROGRAMMES[rwId].icon`); article `Newspaper`; home hero without a banner `Images`. Status icons: success `CheckCircle2`, warning `AlertTriangle`, info `Info`, danger `XCircle`, neutral `Circle`.
 
 ### 8.2 Imagery rules
 

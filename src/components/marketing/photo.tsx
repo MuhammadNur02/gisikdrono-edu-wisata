@@ -1,7 +1,10 @@
 import Image from 'next/image';
 import type { CSSProperties } from 'react';
 
-import { PhotoPending } from '@/components/marketing/photo-pending';
+import {
+  PhotoPlaceholder,
+  type PhotoPlaceholderProps,
+} from '@/components/marketing/photo-placeholder';
 import { cn } from '@/lib/utils/cn';
 import type { PublicImage } from '@/types/media';
 
@@ -70,25 +73,38 @@ export function PhotoFrame({
 export interface PhotoProps extends Omit<PhotoFrameProps, 'image' | 'className'> {
   // NULL until the CMS has a real photo for this slot (docs/StyleGuide.md §1.3 G1).
   image: PublicImage | null;
-  // Where or what the photo shows: the caption under it, or the subject of the Foto menyusul box (G8).
+  // Where or what the photo shows: the caption under it (G8), or the description of the placeholder.
+  caption: string;
+  // What the placeholder shows while the photo is missing.
+  placeholder: Pick<PhotoPlaceholderProps, 'icon' | 'rwIds'>;
+  className?: string;
+}
+
+export interface CaptionedPhotoProps extends Omit<PhotoFrameProps, 'className'> {
+  // Where or what the photo shows (docs/StyleGuide.md §1.3 G8).
   caption: string;
   className?: string;
 }
 
-// A public-media photo with its caption, or the Foto menyusul box when there is none yet.
-export function Photo({ image, caption, className, ...frame }: PhotoProps) {
+export function CaptionedPhoto({ caption, className, ...frame }: CaptionedPhotoProps) {
+  return (
+    <figure className={cn('space-y-2', className)}>
+      <PhotoFrame {...frame} />
+      <figcaption className="text-caption text-muted-foreground">{caption}</figcaption>
+    </figure>
+  );
+}
+
+// A public-media photo with its caption, or the wordless placeholder when there is none yet.
+export function Photo({ image, caption, placeholder, className, ...frame }: PhotoProps) {
   if (!image) {
     return (
-      <PhotoPending
-        subject={caption}
+      <PhotoPlaceholder
+        label={caption}
+        {...placeholder}
         className={cn(frame.aspectClassName ?? FALLBACK_ASPECT_CLASS, className)}
       />
     );
   }
-  return (
-    <figure className={cn('space-y-2', className)}>
-      <PhotoFrame image={image} {...frame} />
-      <figcaption className="text-caption text-muted-foreground">{caption}</figcaption>
-    </figure>
-  );
+  return <CaptionedPhoto image={image} caption={caption} className={className} {...frame} />;
 }

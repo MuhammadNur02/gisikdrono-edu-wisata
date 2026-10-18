@@ -2,9 +2,11 @@ import type { LucideIcon } from 'lucide-react';
 import {
   Bug,
   Building2,
+  Cookie,
   Drama,
   Flag,
   Gamepad2,
+  Gift,
   GraduationCap,
   Landmark,
   Layers,
@@ -13,6 +15,7 @@ import {
   Music,
   Recycle,
   Scissors,
+  ShoppingBag,
   Sprout,
   Store,
   Ticket,
@@ -35,13 +38,13 @@ export const PACKAGE_CATEGORY: Record<EnumValue<'package_category'>, EnumMeta> =
   combo: { label: 'Kombinasi', icon: Layers },
 };
 
-export const PRODUCT_CATEGORY_LABELS: Record<EnumValue<'product_category'>, string> = {
-  compost: 'Kompos',
-  seedling: 'Bibit',
-  recycled_craft: 'Kerajinan Daur Ulang',
-  snack: 'Camilan',
-  souvenir: 'Suvenir',
-  other: 'Lainnya',
+export const PRODUCT_CATEGORY: Record<EnumValue<'product_category'>, EnumMeta> = {
+  compost: { label: 'Kompos', icon: Leaf },
+  seedling: { label: 'Bibit', icon: Sprout },
+  recycled_craft: { label: 'Kerajinan Daur Ulang', icon: Recycle },
+  snack: { label: 'Camilan', icon: Cookie },
+  souvenir: { label: 'Suvenir', icon: Gift },
+  other: { label: 'Lainnya', icon: ShoppingBag },
 };
 
 export const ACTIVITY_POINT_TYPE: Record<EnumValue<'activity_point_type'>, EnumMeta> = {

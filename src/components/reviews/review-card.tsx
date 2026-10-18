@@ -5,16 +5,19 @@ import type { PublicReview } from '@/types/review';
 
 export interface ReviewCardProps {
   review: PublicReview;
+  // `quote` on the home band (larger, clamped to six lines), `card` in the /ulasan grid (the whole review).
+  variant?: 'quote' | 'card';
 }
 
-// The home page's `quote` variant of docs/StyleGuide.md §5.10. It shows only what v_public_reviews gives the
-// public: the first name or `Pengunjung`, the institution, never the booking. The `card` variant for
-// /ulasan arrives with Task P2.4.10.
-export function ReviewCard({ review }: ReviewCardProps) {
+// docs/StyleGuide.md §5.10. It shows only what v_public_reviews gives the public: the first name or
+// `Pengunjung`, the institution, never the booking.
+export function ReviewCard({ review, variant = 'quote' }: ReviewCardProps) {
   return (
     <figure className="flex h-full flex-col gap-4 rounded-xl border border-border bg-card p-5 md:p-6 dark:border-white/5">
       <RatingStars rating={review.rating} />
-      <blockquote className="line-clamp-6 text-body-lg">
+      <blockquote
+        className={variant === 'quote' ? 'line-clamp-6 text-body-lg' : 'space-y-1 text-body'}
+      >
         {review.title ? <p className="font-medium">{review.title}</p> : null}
         <p>{review.body}</p>
       </blockquote>

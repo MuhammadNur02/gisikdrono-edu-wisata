@@ -15,7 +15,7 @@ const SUMMARY_COLUMNS =
 const DETAIL_COLUMNS = `${SUMMARY_COLUMNS}, description_md, highlights, inclusions, itinerary, valid_from, valid_to`;
 
 // A package's owner is not known before it is read, so every package read carries every package tag.
-const PACKAGE_TAGS = [...RW_IDS.map((rwId) => TAGS.packages(rwId)), TAGS.packages('combo')];
+export const PACKAGE_TAGS = [...RW_IDS.map((rwId) => TAGS.packages(rwId)), TAGS.packages('combo')];
 
 type PackageRow = Pick<
   Tables<'tour_packages'>,

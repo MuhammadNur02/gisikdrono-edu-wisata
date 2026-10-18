@@ -62,6 +62,9 @@ const nextConfig: NextConfig = {
   },
   outputFileTracingIncludes: {
     '/api/documents/**/*': ['./src/lib/pdf/fonts/**'],
+    // A package or product published after the build draws its share image at request time, reading the TTF
+    // files from disk (src/lib/seo/og-image.tsx).
+    '/**/opengraph-image*': ['./public/fonts/*.ttf'],
   },
   headers: () =>
     Promise.resolve([

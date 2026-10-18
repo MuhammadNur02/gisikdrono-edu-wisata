@@ -1,4 +1,4 @@
-import { Photo } from '@/components/marketing/photo';
+import { CaptionedPhoto } from '@/components/marketing/photo';
 import { IMAGE_SIZES } from '@/config/images';
 import { ACTIVITY_POINT_TYPE } from '@/config/status';
 import type { ActivityPoint } from '@/types/activity-point';
@@ -13,7 +13,7 @@ function ActivityPointItem({ point }: { point: ActivityPoint }) {
   return (
     <li className="flex flex-col gap-4 rounded-xl border border-border bg-card p-5 md:p-6 dark:border-white/5">
       {point.image ? (
-        <Photo
+        <CaptionedPhoto
           image={point.image}
           caption={point.name}
           sizes={IMAGE_SIZES.card}

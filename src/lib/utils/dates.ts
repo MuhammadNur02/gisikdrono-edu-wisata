@@ -51,6 +51,20 @@ export function formatInstantTimeRange(startsAt: string, endsAt: string): string
   return `${clock(startsAt)}–${clock(endsAt)} WIB`;
 }
 
+// An instant written with Semarang's +07:00 offset, as schema.org Event dates want it (src/lib/seo/json-ld.ts).
+export function toJakartaIsoString(instant: string): string {
+  return format(inJakarta(instant), "yyyy-MM-dd'T'HH:mm:ssXXX");
+}
+
+// The Semarang month an instant falls in: '2026-11' as a key, 'November 2026' to read.
+export function jakartaMonthKey(instant: string): string {
+  return format(inJakarta(instant), 'yyyy-MM');
+}
+
+export function formatMonthLong(instant: string): string {
+  return format(inJakarta(instant), 'MMMM yyyy', { locale: indonesian });
+}
+
 // The Semarang calendar day an instant falls on, as a visit date.
 export function toVisitDate(instant: Date): string {
   return format(inJakarta(instant), VISIT_DATE_FORMAT);
@@ -58,6 +72,15 @@ export function toVisitDate(instant: Date): string {
 
 export function todayInJakarta(now: Date = new Date()): string {
   return toVisitDate(now);
+}
+
+// The first and last visit date of the coming `days` days, today in Semarang included: the window the
+// package page previews (docs/PRD.md FR-PUB-12, 14 days).
+export function upcomingVisitDates(
+  days: number,
+  now: Date = new Date(),
+): { from: string; to: string } {
+  return { from: toVisitDate(now), to: toVisitDate(addDays(inJakarta(now), days - 1)) };
 }
 
 // The date picker works with the browser's local midnight; these two keep the clicked day unchanged

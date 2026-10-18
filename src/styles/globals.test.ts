@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
+import { BRAND_HEX } from '@/config/brand';
+
 const globalsCss = readFileSync(new URL('./globals.css', import.meta.url), 'utf8');
 const styleGuide = readFileSync(new URL('../../docs/StyleGuide.md', import.meta.url), 'utf8');
 const [lightBlock = '', darkBlock = ''] = globalsCss.split('.dark {');
@@ -63,5 +65,29 @@ describe('--primary-text', () => {
     for (const block of [lightBlock, darkBlock]) {
       expect(styleGuide).toContain(`--primary-text: ${tokenValue(block, 'primary-text')};`);
     }
+  });
+});
+
+// "222.2 47.4% 11.2%" -> "#0F172A", rounding each channel as browsers do.
+function hexOf(hsl: string): string {
+  const [hue = 0, saturation = 0, lightness = 0] = hsl.split(/\s+/).map((part) => parseFloat(part));
+  const s = saturation / 100;
+  const l = lightness / 100;
+  const chroma = s * Math.min(l, 1 - l);
+  const channel = (n: number) => {
+    const k = (n + hue / 30) % 12;
+    const value = l - chroma * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(value * 255)
+      .toString(16)
+      .padStart(2, '0');
+  };
+  return `#${channel(0)}${channel(8)}${channel(4)}`.toUpperCase();
+}
+
+describe('BRAND_HEX', () => {
+  it('matches the light tokens the OG images and the manifest stand in for', () => {
+    expect(hexOf(tokenValue(lightBlock, 'brand-deep'))).toBe(BRAND_HEX.deep);
+    expect(hexOf(tokenValue(lightBlock, 'brand-ice'))).toBe(BRAND_HEX.ice);
+    expect(hexOf(tokenValue(lightBlock, 'background'))).toBe(BRAND_HEX.background);
   });
 });

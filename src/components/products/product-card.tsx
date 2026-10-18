@@ -1,14 +1,15 @@
 import Link from 'next/link';
 
 import { PhotoFrame } from '@/components/marketing/photo';
-import { PhotoPending } from '@/components/marketing/photo-pending';
+import { PhotoPlaceholder } from '@/components/marketing/photo-placeholder';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { IMAGE_SIZES } from '@/config/images';
-import { PRODUCT_CATEGORY_LABELS } from '@/config/status';
+import { PRODUCT_CATEGORY } from '@/config/status';
 import { copy } from '@/lib/copy/id';
 import { cn } from '@/lib/utils/cn';
 import { formatIDR } from '@/lib/utils/currency';
+import { productPath } from '@/lib/utils/paths';
 import type { ProductSummary } from '@/types/product';
 
 const COVER_ASPECT = 'aspect-square';
@@ -28,9 +29,11 @@ function ProductCover({ product }: ProductCardProps) {
       className={cn('rounded-none', fade)}
     />
   ) : (
-    <PhotoPending
-      subject={product.name}
-      className={cn(COVER_ASPECT, 'rounded-none border-0', fade)}
+    <PhotoPlaceholder
+      label={product.name}
+      icon={PRODUCT_CATEGORY[product.category].icon}
+      rwIds={[product.rwId]}
+      className={cn(COVER_ASPECT, 'rounded-none', fade)}
     />
   );
 }
@@ -38,7 +41,7 @@ function ProductCover({ product }: ProductCardProps) {
 function ProductBadges({ product }: ProductCardProps) {
   return (
     <div className="flex flex-wrap gap-1.5">
-      <Badge variant="outline">{PRODUCT_CATEGORY_LABELS[product.category]}</Badge>
+      <Badge variant="outline">{PRODUCT_CATEGORY[product.category].label}</Badge>
       {product.isAddonEligible ? (
         <Badge variant="info">{copy.catalogue.addonEligible}</Badge>
       ) : null}
@@ -63,7 +66,7 @@ export function ProductCard({ product }: ProductCardProps) {
         ) : null}
         <h3 className="line-clamp-2 text-h4">
           <Link
-            href={`/produk/${product.slug}`}
+            href={productPath(product.slug)}
             aria-label={`${copy.catalogue.viewProduct}: ${product.name}`}
             className="outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:after:ring-2 focus-visible:after:ring-ring"
           >

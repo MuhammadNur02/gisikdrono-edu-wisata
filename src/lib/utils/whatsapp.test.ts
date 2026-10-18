@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildWhatsAppChatUrl, isWhatsAppFabHidden, pageTopicFromTitle } from './whatsapp';
+import {
+  buildWhatsAppChatUrl,
+  hasStickyMobileCta,
+  isWhatsAppFabHidden,
+  pageTopicFromTitle,
+} from './whatsapp';
 
 describe('buildWhatsAppChatUrl', () => {
   it('drops the plus sign and encodes the greeting', () => {
@@ -39,5 +44,13 @@ describe('isWhatsAppFabHidden', () => {
     expect(isWhatsAppFabHidden('/')).toBe(false);
     expect(isWhatsAppFabHidden('/paket-wisata/eduwisata-ecowastreme')).toBe(false);
     expect(isWhatsAppFabHidden('/peta-kontak')).toBe(false);
+  });
+});
+
+describe('hasStickyMobileCta', () => {
+  it('is true on a package page, which has the sticky booking bar, and false elsewhere', () => {
+    expect(hasStickyMobileCta('/paket-wisata/eduwisata-ecowastreme')).toBe(true);
+    expect(hasStickyMobileCta('/paket-wisata')).toBe(false);
+    expect(hasStickyMobileCta('/produk/pupuk-kompos-1kg')).toBe(false);
   });
 });

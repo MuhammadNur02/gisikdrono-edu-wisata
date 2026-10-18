@@ -29,6 +29,8 @@ const publicSettingsSchema = z.object({
   'contact.email': contactValue,
   'kelurahan.address': contactValue,
   'seo.default_description': z.string(),
+  'privacy.dpo_name': contactValue,
+  'privacy.dpo_email': contactValue,
 });
 
 export function parsePublicSettings(rows: { key: string; value: unknown }[]): PublicSiteSettings {
@@ -45,6 +47,8 @@ export function parsePublicSettings(rows: { key: string; value: unknown }[]): Pu
     contactEmail: values['contact.email'],
     kelurahanAddress: values['kelurahan.address'],
     seoDefaultDescription: values['seo.default_description'],
+    dpoName: values['privacy.dpo_name'],
+    dpoEmail: values['privacy.dpo_email'],
   };
 }
 

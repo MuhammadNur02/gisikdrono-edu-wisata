@@ -8,6 +8,7 @@ import {
   eventJsonLd,
   governmentOrganizationJsonLd,
   imageGalleryJsonLd,
+  itemListJsonLd,
   offerJsonLd,
   productJsonLd,
   reviewJsonLd,
@@ -251,5 +252,33 @@ describe('rwAttractionJsonLd', () => {
     expect(rwAttractionJsonLd(withPhoto).image).toEqual([
       `${sandboxEnv.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/public-media/rw-05/gallery/a.webp`,
     ]);
+  });
+});
+
+describe('itemListJsonLd', () => {
+  it('lists a catalogue in order with absolute links', () => {
+    expect(
+      itemListJsonLd([
+        { name: 'Eduwisata Ecowastreme', path: '/paket-wisata/paket-eduwisata-ecowastreme' },
+        { name: 'Eduwisata Seni Budaya', path: '/paket-wisata/paket-eduwisata-seni-budaya' },
+      ]),
+    ).toEqual({
+      '@type': 'ItemList',
+      numberOfItems: 2,
+      itemListElement: [
+        {
+          '@type': 'ListItem',
+          position: 1,
+          name: 'Eduwisata Ecowastreme',
+          url: `${site}/paket-wisata/paket-eduwisata-ecowastreme`,
+        },
+        {
+          '@type': 'ListItem',
+          position: 2,
+          name: 'Eduwisata Seni Budaya',
+          url: `${site}/paket-wisata/paket-eduwisata-seni-budaya`,
+        },
+      ],
+    });
   });
 });

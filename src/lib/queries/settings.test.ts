@@ -16,6 +16,8 @@ const SEEDED_ROWS = [
     value: 'Kelurahan Gisikdrono, Kecamatan Semarang Barat, Kota Semarang, Jawa Tengah',
   },
   { key: 'seo.default_description', value: 'Edu Wisata Kelurahan Gisikdrono, Semarang Barat.' },
+  { key: 'privacy.dpo_name', value: '[Nama Pejabat Pelindungan Data]' },
+  { key: 'privacy.dpo_email', value: 'privasi@example.invalid' },
 ];
 
 describe('isPlaceholderSetting', () => {
@@ -43,6 +45,8 @@ describe('parsePublicSettings', () => {
       kelurahanAddress:
         'Kelurahan Gisikdrono, Kecamatan Semarang Barat, Kota Semarang, Jawa Tengah',
       seoDefaultDescription: 'Edu Wisata Kelurahan Gisikdrono, Semarang Barat.',
+      dpoName: null,
+      dpoEmail: null,
     });
   });
 

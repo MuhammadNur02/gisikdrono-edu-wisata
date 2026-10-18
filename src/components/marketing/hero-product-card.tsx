@@ -1,9 +1,11 @@
 import Link from 'next/link';
 
 import { PhotoFrame } from '@/components/marketing/photo';
-import { PhotoPending } from '@/components/marketing/photo-pending';
+import { PhotoPlaceholder } from '@/components/marketing/photo-placeholder';
 import { Card } from '@/components/ui/card';
+import { PRODUCT_CATEGORY } from '@/config/status';
 import { formatIDR } from '@/lib/utils/currency';
+import { productPath } from '@/lib/utils/paths';
 import type { ProductSummary } from '@/types/product';
 
 // The 160 px square of the compact ProductCard (docs/StyleGuide.md §5.9).
@@ -29,14 +31,20 @@ export function HeroProductCard({ product }: HeroProductCardProps) {
           className="w-20 shrink-0"
         />
       ) : (
-        <PhotoPending subject={product.name} className="aspect-square w-20 shrink-0 p-2" />
+        <PhotoPlaceholder
+          label={product.name}
+          icon={PRODUCT_CATEGORY[product.category].icon}
+          rwIds={[product.rwId]}
+          iconClassName="size-6"
+          className="aspect-square w-20 shrink-0"
+        />
       )}
       <div className="min-w-0 space-y-1">
         {product.vendor ? (
           <p className="truncate text-overline text-muted-foreground">{product.vendor.name}</p>
         ) : null}
         <Link
-          href={`/produk/${product.slug}`}
+          href={productPath(product.slug)}
           className="line-clamp-2 text-body-sm font-medium underline-offset-4 hover:underline"
         >
           {product.name}

@@ -58,10 +58,10 @@ The platform is operated by a small municipal team: one Superadmin Kelurahan and
 | Motion | `motion` package (`import { motion } from 'motion/react'`) | `MotionConfig reducedMotion="user"` + `LazyMotion` |
 | Data | Supabase: Postgres + RLS, Auth (staff only, TOTP), Storage; `@supabase/supabase-js` v2 + `@supabase/ssr` | Region `ap-southeast-1`; separate `staging` and `production` projects |
 | Forms & validation | `zod` (`.strict()` schemas), `react-hook-form` + `@hookform/resolvers` | Schemas shared client/server in `src/lib/validations` |
-| Env validation | `@t3-oss/env-nextjs` + `zod` | `src/lib/env.ts` (`serverEnv`, server-only) extends `src/lib/public-env.ts` (`publicEnv`, `NEXT_PUBLIC_*` only); see §7.7 |
-| Tables, charts, URL state | `@tanstack/react-table`, Recharts via shadcn Chart, `nuqs` | Dashboard only |
+| Env validation | `@t3-oss/env-nextjs` + `zod` | `src/lib/env.ts` (`serverEnv`, server-only) extends `src/lib/public-env.ts` (`publicEnv`, `NEXT_PUBLIC_*` only, written with `zod/mini` because it reaches the browser through the image loader); see §7.7 |
+| Tables, charts, URL state | `@tanstack/react-table`, Recharts via shadcn Chart, `nuqs` | Tables and charts dashboard only; `nuqs` also holds the public catalogue filters (`/paket-wisata`, `/produk`, `/ulasan`; `docs/PRD.md` FR-PUB-11, FR-PUB-13, FR-PUB-17), filtered in memory on the cached list |
 | Long lists | `@tanstack/react-virtual` | `ParticipantsEditor` (up to `booking.max_pax` rows, docs/StyleGuide.md §5.6) |
-| Dates | `date-fns` + `@date-fns/tz`, locale `id`, `APP_TZ = 'Asia/Jakarta'` | DB `timestamptz`; visit dates `date` |
+| Dates | `date-fns` + `@date-fns/tz`, locale `id`, `APP_TZ = 'Asia/Jakarta'`; `rrule` expands `performance_schedules.recurrence_rule` (`src/lib/utils/schedules.ts`, server only) | DB `timestamptz`; visit dates `date` |
 | Images | `next/image` with the custom loader `src/lib/images/supabase-loader.ts` (Supabase `render/image`, Pro plan); `sharp` re-encodes in `src/lib/images/re-encode.ts` (shared by `api/uploads/finalize` and `pnpm db:seed --media`); `blurhash` encodes the placeholder there and `src/lib/images/blur.ts` reads its average colour for the slot background (no `blurDataURL`: the CSP has no `data:` in `img-src`) | `sharp` and `blur.ts` server only |
 | Structured data | `schema-dts` (types only, dev dependency) | JSON-LD builders in `src/lib/seo/json-ld.ts`, rendered by `src/components/seo/json-ld.tsx` |
 | Payments | Midtrans Snap, **redirect mode**, thin typed fetch wrapper in `src/lib/midtrans/client.ts` (no SDK) | QRIS + Virtual Account only |
@@ -241,7 +241,7 @@ These rules are enforced in review and by lint. A PR that violates them is not m
 11. **Import order** (ESLint `import/order`): `server-only` / `'use client'` directive first, then node built-ins, external packages, `@/` aliases, relative imports; blank line between groups; type imports with `import type`.
 12. **File size.** Target <= 300 lines. Split by responsibility, not by line count.
 13. **Pure functions for critical logic.** Pricing (`computeBookingQuote`), QR signing/verification, guest-link minting, Midtrans status mapping and the booking state map are pure, side-effect-free and unit-tested to 100 % lines.
-14. **One language per surface.** UI copy, WhatsApp templates, emails and PDFs in Indonesian; code and docs in English.
+14. **One language per surface.** UI copy, WhatsApp templates, emails and PDFs in Indonesian; code and docs in English. The English summary on `/privasi` is the one recorded exception (§12.1 no. 18).
 
 ### 4.1 Review checklist (apply before opening a PR)
 
@@ -607,8 +607,8 @@ Full detail lives in `docs/StyleGuide.md`; these are the non-negotiables.
 - **Motion tokens.** Use variants from `src/lib/motion/variants.ts` (`fadeIn, fadeInUp, fadeInDown, scaleIn, slideInRight, staggerContainer`) and durations micro 150 / short 200 / base 300 / long 500 / max 700 ms. Never animate tables, forms, the sidebar, charts or the LCP element. Respect `prefers-reduced-motion`.
 - **Dashboard shell.** Sidebar 264/72 px, Topbar, `QuickScannerBar`, `KpiCard` + `Sparkline`, `DataTable` (TanStack + `nuqs`), empty/skeleton/error states per segment. Superadmin sees `RwSwitcher`; admin_rw never does.
 - **Accessibility (WCAG 2.1 AA).** `focus-visible` ring everywhere; semantic landmarks; SVG hotspots are real `<button>`s with `aria-label`; `alt_text` required for every gallery image; form errors via `aria-describedby` + `aria-invalid`; countdowns and scan results use `aria-live`; touch targets >= 44 px; dialogs trap and restore focus.
-- **Anti-generic rules.** Follow `docs/StyleGuide.md` §1.3 (no AI slop): real Gisikdrono photos only (`Foto menyusul` until one exists), no gradient text, blobs or glow, glass only over the hero photo, no emoji icons, no invented facts, concrete copy instead of marketing phrases, layouts that follow the content, a caption on every activity photo, and one primary CTA per screen.
-- **Empty states.** On public pages a section with no data is hidden whole, heading included, with no "belum diisi" or "menyusul" text; only the page header and the `Foto menyusul` photo slot stay. Dashboard empty states explain and offer the next step. Content required for launch is a go-live check, not page copy (`docs/StyleGuide.md` §6.9, decision of 2026-10-18).
+- **Anti-generic rules.** Follow `docs/StyleGuide.md` §1.3 (no AI slop): real Gisikdrono photos only (until one exists, a wordless placeholder: the RW soft accent or neutral plus the category icon, `role="img"` with an `aria-label`), no gradient text, blobs or glow, glass only over the hero photo, no emoji icons, no invented facts, concrete copy instead of marketing phrases, layouts that follow the content, a caption on every activity photo, and one primary CTA per screen.
+- **Empty states.** On public pages a section with no data is hidden whole, heading included, with no "belum diisi" or "menyusul" text; only the page header, the wordless photo placeholder and the answer to a visitor's own filter stay. Dashboard empty states explain and offer the next step. Content required for launch is a go-live check, not page copy (`docs/StyleGuide.md` §6.9, decision of 2026-10-18).
 - **Copy.** Indonesian UI text (for example the booking CTA "Konfirmasi & Bayar"); typography Plus Jakarta Sans (display) + Inter (body); `lucide-react` icons only.
 - **Budgets.** LCP <= 2.5 s, CLS <= 0.05, INP <= 200 ms; first-load JS public <= 170 KB, wizard <= 250 KB, admin <= 350 KB. Verify every screen at 360 px.
 
@@ -745,7 +745,7 @@ PRD requirement cited; migration + RLS + pgTAP merged; types regenerated; valida
 | `VERCEL_AUTOMATION_BYPASS_SECRET` | CI | Lets CI Playwright reach Vercel preview deployments behind Deployment Protection (`x-vercel-protection-bypass` header) |
 | `BACKUP_AGE_PUBLIC_KEY`, `R2_*` | CI | Weekly encrypted off-site dump |
 
-Side: P = public bundle (`NEXT_PUBLIC_*` only), S = server-only (flagged Sensitive in Vercel), CI = GitHub Actions secret only. Runtime toggles are not env vars; they live in `site_settings` (keys per `docs/PRD.md` §8.6: `booking_enabled, whatsapp_enabled, email_enabled, maintenance_mode, rate_limit_profile, checkin.grace_before_minutes, checkin.grace_after_minutes, booking.hold_minutes_individual, booking.hold_hours_institution, booking.quotation_valid_days, booking.min_lead_hours, booking.max_advance_days, booking.max_pax, pricing.min_price_per_pax, pii_retention_months, finance.expected_payout_account_masked, contact.whatsapp_number, contact.email, kelurahan.address, kelurahan.signatory_name, kelurahan.signatory_title, certificate.template_version, seo.default_description`).
+Side: P = public bundle (`NEXT_PUBLIC_*` only), S = server-only (flagged Sensitive in Vercel), CI = GitHub Actions secret only. Runtime toggles are not env vars; they live in `site_settings` (keys per `docs/PRD.md` §8.6: `booking_enabled, whatsapp_enabled, email_enabled, maintenance_mode, rate_limit_profile, checkin.grace_before_minutes, checkin.grace_after_minutes, booking.hold_minutes_individual, booking.hold_hours_institution, booking.quotation_valid_days, booking.min_lead_hours, booking.max_advance_days, booking.max_pax, pricing.min_price_per_pax, pii_retention_months, finance.expected_payout_account_masked, contact.whatsapp_number, contact.email, kelurahan.address, kelurahan.signatory_name, kelurahan.signatory_title, certificate.template_version, seo.default_description, privacy.dpo_name, privacy.dpo_email`).
 
 ---
 
@@ -851,7 +851,7 @@ Show the migration first and wait for review.
 15. Never call `fetch` to an external host outside `src/lib/{midtrans,notifications,email,turnstile}`; never fetch a user-supplied URL.
 16. Never read `process.env` outside `src/lib/env.ts`.
 17. Never add a dependency, env var, cron job, bucket, template or table without updating this file, `.env.example`, and the relevant doc.
-18. Never use English in user-facing copy or Indonesian in identifiers.
+18. Never use English in user-facing copy or Indonesian in identifiers. One recorded exception (decision of 2026-10-18, `docs/Security.md` §7.6): `/privasi` ends with a single section titled `Summary in English`, marked `lang="en"` (`src/components/privacy/english-summary.tsx`), because foreign visitors do come; it restates the Indonesian notice without new content, says the Indonesian version is the one that applies, and changes whenever that text changes. No other English copy follows from it.
 19. Never commit without Conventional Commit format; never run `pnpm db:push` against production outside CI; never force-push `main`.
 20. Never relax a rule in `docs/Security.md` to satisfy a UI or convenience request.
 

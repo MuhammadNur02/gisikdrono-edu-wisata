@@ -3,15 +3,15 @@ import Link from 'next/link';
 
 import { RwTag } from '@/components/layout/rw-tag';
 import { PhotoFrame } from '@/components/marketing/photo';
-import { PhotoPending } from '@/components/marketing/photo-pending';
+import { PhotoPlaceholder } from '@/components/marketing/photo-placeholder';
+import { PackagePrice } from '@/components/packages/package-price';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { IMAGE_SIZES } from '@/config/images';
 import { PACKAGE_CATEGORY } from '@/config/status';
 import { copy } from '@/lib/copy/id';
-import { formatIDR } from '@/lib/utils/currency';
-import { describePackagePrice } from '@/lib/utils/package-price';
+import { bookingPath, packagePath } from '@/lib/utils/paths';
 import type { PackageSummary } from '@/types/package';
 
 const COVER_ASPECT = 'aspect-4/3';
@@ -47,14 +47,19 @@ function PackageCover({ pkg }: PackageCardProps) {
           className="rounded-none"
         />
       ) : (
-        <PhotoPending subject={pkg.name} className={`${COVER_ASPECT} rounded-none border-0`} />
+        <PhotoPlaceholder
+          label={pkg.name}
+          icon={PACKAGE_CATEGORY[pkg.category].icon}
+          rwIds={pkg.rwIds}
+          className={`${COVER_ASPECT} rounded-none`}
+        />
       )}
       <CoverBadges pkg={pkg} />
     </div>
   );
 }
 
-function PackageMeta({ pkg }: PackageCardProps) {
+export function PackageMeta({ pkg }: PackageCardProps) {
   const CategoryIcon = PACKAGE_CATEGORY[pkg.category].icon;
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-1 text-body-sm text-muted-foreground">
@@ -78,23 +83,11 @@ function PackageMeta({ pkg }: PackageCardProps) {
   );
 }
 
-function PackagePrice({ pkg }: PackageCardProps) {
-  const price = describePackagePrice(pkg);
-  if (!price) return null;
-  return (
-    <p className="text-body-sm text-muted-foreground">
-      {price.isFromPrice ? `${copy.catalogue.fromPrice} ` : null}
-      <span className="text-h4 text-foreground tabular-nums">{formatIDR(price.amount)}</span>{' '}
-      {copy.catalogue.perBasis[price.basis]}
-    </p>
-  );
-}
-
 // The title link stretches over the whole card, so the card is one link; the two buttons sit above it. The
 // booking button is `secondary` because a grid shows several cards at once and a screen keeps one primary
 // call to action (§1.3 G9, which wins over the `default` button of §5.8).
 export function PackageCard({ pkg }: PackageCardProps) {
-  const detailHref = `/paket-wisata/${pkg.slug}`;
+  const detailHref = packagePath(pkg.slug);
   return (
     <Card
       variant="interactive"
@@ -115,7 +108,7 @@ export function PackageCard({ pkg }: PackageCardProps) {
       </div>
       <div className="relative mt-auto flex flex-wrap gap-2 px-5 md:px-6">
         <Button variant="secondary" asChild>
-          <Link href={`/pesan/${pkg.slug}`}>{copy.catalogue.bookNow}</Link>
+          <Link href={bookingPath(pkg.slug)}>{copy.catalogue.bookNow}</Link>
         </Button>
         <Button variant="ghost" asChild>
           <Link href={detailHref}>{copy.catalogue.packageDetail}</Link>

@@ -1,5 +1,7 @@
 import { createEnv } from '@t3-oss/env-nextjs';
-import { z } from 'zod';
+// zod/mini, not zod: this module reaches the browser through the image loader, and the mini build lets the
+// bundler keep only the few checks below instead of the whole library (CLAUDE.md §8 first-load budgets).
+import * as z from 'zod/mini';
 
 export const INDONESIAN_MOBILE_E164 = /^\+628\d{7,11}$/;
 
@@ -27,15 +29,15 @@ export const publicEnv = createEnv({
   client: {
     NEXT_PUBLIC_SITE_URL: z.url(),
     NEXT_PUBLIC_SUPABASE_URL: z.url(),
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
-    NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().min(1),
-    NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: z.string().regex(INDONESIAN_MOBILE_E164),
-    NEXT_PUBLIC_SENTRY_DSN: z.url().optional(),
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().check(z.minLength(1)),
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().check(z.minLength(1)),
+    NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: z.string().check(z.regex(INDONESIAN_MOBILE_E164)),
+    NEXT_PUBLIC_SENTRY_DSN: z.optional(z.url()),
   },
   // Set by Node and Vercel, not by us. VERCEL_ENV is only defined on the server side.
   shared: {
-    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-    VERCEL_ENV: z.enum(['production', 'preview', 'development']).optional(),
+    NODE_ENV: z._default(z.enum(['development', 'test', 'production']), 'development'),
+    VERCEL_ENV: z.optional(z.enum(['production', 'preview', 'development'])),
   },
   experimental__runtimeEnv: {
     NODE_ENV: process.env.NODE_ENV,
@@ -50,9 +52,11 @@ export const publicEnv = createEnv({
   emptyStringAsUndefined: true,
   // VERCEL_ENV is undefined in the browser, so the check only bites on the server and at build time.
   createFinalSchema: (shape) =>
-    z.object(shape).superRefine((values, ctx) => {
-      for (const problem of findPublicEnvProblems(values)) {
-        ctx.addIssue({ code: 'custom', message: problem });
-      }
-    }),
+    z.object(shape).check(
+      z.superRefine((values, ctx) => {
+        for (const problem of findPublicEnvProblems(values)) {
+          ctx.addIssue({ code: 'custom', message: problem, input: values });
+        }
+      }),
+    ),
 });

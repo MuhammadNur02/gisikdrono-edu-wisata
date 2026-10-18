@@ -45,7 +45,7 @@ export interface RwSectionContent {
   content: ReactNode;
 }
 
-// The RW's header stays even without a photo: it is the page itself, and the slot says Foto menyusul (G1).
+// The RW's header stays even without a photo: it is the page itself, and the slot shows the placeholder (G1).
 function RwHeader({ unit }: { unit: RwUnitProfile }) {
   const programme = RW_PROGRAMMES[unit.id];
   return (
@@ -61,6 +61,7 @@ function RwHeader({ unit }: { unit: RwUnitProfile }) {
       <Photo
         image={unit.heroImage}
         caption={unit.name}
+        placeholder={{ icon: programme.icon, rwIds: [unit.id] }}
         sizes={IMAGE_SIZES.hero}
         aspectClassName="aspect-4/3 md:aspect-video"
         priority
