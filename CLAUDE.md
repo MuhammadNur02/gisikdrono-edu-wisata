@@ -58,7 +58,7 @@ The platform is operated by a small municipal team: one Superadmin Kelurahan and
 | Motion | `motion` package (`import { motion } from 'motion/react'`) | `MotionConfig reducedMotion="user"` + `LazyMotion` |
 | Data | Supabase: Postgres + RLS, Auth (staff only, TOTP), Storage; `@supabase/supabase-js` v2 + `@supabase/ssr` | Region `ap-southeast-1`; separate `staging` and `production` projects |
 | Forms & validation | `zod` (`.strict()` schemas), `react-hook-form` + `@hookform/resolvers` | Schemas shared client/server in `src/lib/validations` |
-| Env validation | `@t3-oss/env-nextjs` + `zod` | `src/lib/env.ts` (`serverEnv`, server-only) extends `src/lib/public-env.ts` (`publicEnv`, `NEXT_PUBLIC_*` only); see §7.7 |
+| Env validation | `@t3-oss/env-nextjs` + `zod` | `src/lib/env.ts` (`serverEnv`, server-only) extends `src/lib/public-env.ts` (`publicEnv`, `NEXT_PUBLIC_*` only, written with `zod/mini` because it reaches the browser through the image loader); see §7.7 |
 | Tables, charts, URL state | `@tanstack/react-table`, Recharts via shadcn Chart, `nuqs` | Dashboard only |
 | Long lists | `@tanstack/react-virtual` | `ParticipantsEditor` (up to `booking.max_pax` rows, docs/StyleGuide.md §5.6) |
 | Dates | `date-fns` + `@date-fns/tz`, locale `id`, `APP_TZ = 'Asia/Jakarta'` | DB `timestamptz`; visit dates `date` |
