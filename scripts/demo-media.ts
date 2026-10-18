@@ -24,11 +24,21 @@ const WEBP_TYPE = 'image/webp';
 const PHOTO_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 
 // Descriptions say only what the photo shows; the place names are on the signs in the photos themselves.
-// hero_banners has no alt text or caption of its own: the title is both.
-const HERO_PHOTO: Pick<DemoPhoto, 'file' | 'id'> & { title: string } = {
+// hero_banners has no alt text or caption of its own: the subtitle says what the photo shows (G8) and is
+// also its alt text (src/lib/queries/banners.ts).
+const HERO_PHOTO: Pick<DemoPhoto, 'file' | 'id'> & { title: string; subtitle: string } = {
   file: 'IMG_7571',
   id: '0de00000-0000-4000-8000-0000000000e1',
-  title: 'Rombongan tamu mendengarkan pemaparan di halaman beratap tanaman rambat, RW 05',
+  // The home hero speaks for both kampung (decision of 2026-10-18); the subtitle stays with this photo.
+  title: 'Belajar mengolah sampah dan mengenal seni budaya di dua kampung Gisikdrono',
+  subtitle: 'Rombongan tamu mendengarkan pemaparan di halaman beratap tanaman rambat, RW 05.',
+};
+
+// Which uploaded photo stands for the RW 05 page and for each RW 05 activity point of seed-dev.sql.
+const RW05_PROFILE_PHOTO_ID = '0de00000-0000-4000-8000-0000000000f1';
+const POINT_PHOTO_IDS: Record<string, string> = {
+  'taman-toga-sumber-saras': '0de00000-0000-4000-8000-0000000000f2',
+  'bank-sampah-sumber-rejeki': '0de00000-0000-4000-8000-0000000000f6',
 };
 
 const RW05_GALLERY: DemoPhoto[] = [
@@ -113,10 +123,29 @@ async function uploadPhoto(
 
 async function seedHeroBanner(folder: string): Promise<void> {
   const uploaded = await uploadPhoto(folder, HERO_PHOTO, `kelurahan/hero/${HERO_PHOTO.id}.webp`);
-  await runSql(`insert into public.hero_banners (id, title, cta_label, cta_href, image_path, sort_order)
-    values (${sqlText(HERO_PHOTO.id)}, ${sqlText(HERO_PHOTO.title)}, 'Lihat Paket', '/paket-wisata',
-            ${sqlText(uploaded.path)}, 0)
-    on conflict (id) do nothing`);
+  // The texts follow this file, so a database seeded before they changed catches up on the next run.
+  await runSql(`insert into public.hero_banners (id, title, subtitle, cta_label, cta_href, image_path,
+      sort_order)
+    values (${sqlText(HERO_PHOTO.id)}, ${sqlText(HERO_PHOTO.title)}, ${sqlText(HERO_PHOTO.subtitle)},
+            'Pesan Kunjungan', '/paket-wisata', ${sqlText(uploaded.path)}, 0)
+    on conflict (id) do update set title = excluded.title, subtitle = excluded.subtitle,
+      cta_label = excluded.cta_label, cta_href = excluded.cta_href`);
+}
+
+function galleryPath(photoId: string): string {
+  return `rw-05/gallery/${photoId}.webp`;
+}
+
+// The RW 05 page and its activity points reuse gallery photos; a value someone already set is kept.
+async function linkRw05Photos(): Promise<void> {
+  const pointUpdates = Object.entries(POINT_PHOTO_IDS).map(
+    ([slug, photoId]) =>
+      `update public.activity_points set image_path = ${sqlText(galleryPath(photoId))}
+       where slug = ${sqlText(slug)} and image_path is null;`,
+  );
+  await runSql(`update public.rw_units set hero_image_path = ${sqlText(galleryPath(RW05_PROFILE_PHOTO_ID))}
+      where id = 5 and hero_image_path is null;
+    ${pointUpdates.join('\n')}`);
 }
 
 async function seedGalleryPhoto(
@@ -124,7 +153,7 @@ async function seedGalleryPhoto(
   photo: DemoPhoto,
   sortOrder: number,
 ): Promise<void> {
-  const uploaded = await uploadPhoto(folder, photo, `rw-05/gallery/${photo.id}.webp`);
+  const uploaded = await uploadPhoto(folder, photo, galleryPath(photo.id));
   await runSql(`insert into public.galleries (id, rw_id, category, storage_path, width, height, blurhash,
       alt_text, caption, status, sort_order)
     values (${sqlText(photo.id)}, 5, 'visit', ${sqlText(uploaded.path)}, ${String(uploaded.width)},
@@ -140,5 +169,6 @@ export async function seedDemoMedia(folder: string): Promise<number> {
   for (const [index, photo] of RW05_GALLERY.entries()) {
     await seedGalleryPhoto(folder, photo, index + 1);
   }
+  await linkRw05Photos();
   return RW05_GALLERY.length + 1;
 }

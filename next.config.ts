@@ -55,6 +55,10 @@ const nextConfig: NextConfig = {
   experimental: {
     taint: true,
     serverActions: { bodySizeLimit: '512kb', allowedOrigins: [] },
+    // The radix-ui package re-exports every primitive, so `import { Slot } from 'radix-ui'` in a Card or a
+    // Button pulled Dialog, Select, Tabs and the rest into every public page (docs/StyleGuide.md §10.1 budget).
+    // This rewrites such imports to the one primitive they name.
+    optimizePackageImports: ['radix-ui'],
   },
   outputFileTracingIncludes: {
     '/api/documents/**/*': ['./src/lib/pdf/fonts/**'],

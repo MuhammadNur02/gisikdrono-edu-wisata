@@ -4,9 +4,15 @@ export const IMAGE_DEVICE_WIDTHS = [320, 480, 640, 960, 1280, 1600];
 
 export const IMAGE_QUALITY = 75;
 
-// `sizes` for each kind of slot (Task P2.3.03): the hero tops out at 1280 px and a card at 640 px, so a
-// wide screen never downloads more than the slot can show. Gallery thumbnails (480 px) arrive with P2.6.
+// `sizes` for each kind of slot (Task P2.3.03): how wide the slot is at each breakpoint, so a wide screen never
+// downloads more than the slot can show.
 export const IMAGE_SIZES = {
+  // Full container width, which stops at 1280 px.
   hero: '(min-width: 1280px) 1280px, 100vw',
-  card: '(min-width: 1024px) 640px, (min-width: 640px) 50vw, 100vw',
+  // A card in the grid of §4.2 (docs/StyleGuide.md §5.8).
+  card: '(min-width: 1280px) 25vw, (min-width: 640px) 50vw, 100vw',
+  // The photo beside text in a two-column block.
+  split: '(min-width: 1024px) 640px, 100vw',
+  // A tile in the masonry gallery, two to four columns (§5.11).
+  thumb: '(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw',
 } as const;

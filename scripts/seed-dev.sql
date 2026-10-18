@@ -94,6 +94,25 @@ on conflict do nothing;
 update public.tour_packages set status = 'published'
 where id = '0de00000-0000-4000-8000-0000000000c9' and status = 'draft';
 
+-- The home page features what the kelurahan marks is_featured (FR-PUB-04, Task P2.4.01): here the two RW
+-- packages and one product of each RW.
+update public.tour_packages set is_featured = true
+where id in ('0de00000-0000-4000-8000-0000000000c5', '0de00000-0000-4000-8000-0000000000c8') and not is_featured;
+update public.products_umkm set is_featured = true
+where slug in ('pupuk-kompos-1kg', 'gantungan-kunci-batik') and not is_featured;
+
+-- RW 05 as the development photos show it (decision of 2026-10-18): the two places named on the signs in
+-- them, nothing more. RW 08 has no photos or facts yet, so its profile, vision and points stay empty and its
+-- page leaves those sections out.
+update public.rw_units
+set description_md = 'Rombongan yang berkunjung ke RW 05 singgah di Bank Sampah Sumber Rejeki dan Taman TOGA Sumber Saras.'
+where id = 5 and description_md is null;
+insert into public.activity_points (rw_id, slug, name, point_type, short_description, sort_order, status) values
+  (5, 'bank-sampah-sumber-rejeki', 'Bank Sampah Sumber Rejeki', 'bank_sampah', null, 1, 'published'),
+  (5, 'taman-toga-sumber-saras', 'Taman TOGA Sumber Saras', 'urban_farming',
+   'Tanaman dalam pot dari botol plastik bekas, di bawah paranet.', 2, 'published')
+on conflict do nothing;
+
 -- Gallery photos and the hero banner need real files in public-media, so they come only from
 -- pnpm db:seed --media <folder> (scripts/demo-media.ts); without it the pages show Foto menyusul.
 

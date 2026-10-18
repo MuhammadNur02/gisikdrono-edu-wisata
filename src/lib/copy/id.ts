@@ -26,6 +26,7 @@ export const copy = {
     loading: 'Sedang diproses',
     previousSlide: 'Slide sebelumnya',
     nextSlide: 'Slide berikutnya',
+    goToSlide: (slide: number, total: number) => `Slide ${String(slide)} dari ${String(total)}`,
     commandTitle: 'Cari menu',
     commandDescription: 'Ketik nama menu atau tindakan yang Anda cari.',
     commandPlaceholder: 'Cari menu atau tindakan...',
@@ -44,8 +45,6 @@ export const copy = {
       'Kunjungan edukasi ke dua kampung di Kelurahan Gisikdrono: pengelolaan sampah di RW 05 dan seni budaya di RW 08.',
     footerManagedBy: 'Dikelola oleh',
     footerContactTitle: 'Kontak',
-    footerAddressPending: 'Alamat kantor menyusul.',
-    footerHoursPending: 'Jam layanan kantor menyusul.',
     footerEmail: 'Email',
     footerWhatsApp: 'Chat WhatsApp',
     // docs/StyleGuide.md §9.2: the fixed trust line, reused word for word wherever payment is mentioned.
@@ -70,6 +69,29 @@ export const copy = {
       retry: 'Coba lagi',
       home: 'Kembali ke beranda',
     },
+  },
+  // Card labels shared by the home page, the RW pages and the catalogues of Task P2.4.
+  catalogue: {
+    bookNow: 'Pesan Sekarang',
+    packageDetail: 'Detail',
+    viewProduct: 'Lihat Produk',
+    fromPrice: 'mulai',
+    perBasis: { orang: '/orang', rombongan: '/rombongan' },
+    minutes: (minutes: number) => `${String(minutes)} menit`,
+    paxRange: (min: number, max: number) => `${String(min)}–${String(max)} orang`,
+    combo: 'Kombinasi',
+    addonEligible: 'Bisa jadi tambahan',
+    featured: 'Unggulan',
+    unavailable: 'Tidak Tersedia',
+    rating: (rating: string, max: number) => `Rating ${rating} dari ${String(max)}`,
+    ratingSummary: (rating: string, count: number) =>
+      `Rating ${rating} dari ${String(count)} ulasan`,
+  },
+  // RW page labels. An empty section has no text at all: it is left out (docs/StyleGuide.md §6.9).
+  rwPage: {
+    visionTitle: 'Visi',
+    galleryAll: (rw: string) => `Lihat semua foto ${rw}`,
+    schedulesAll: 'Lihat jadwal lengkap',
   },
   forms: {
     required: 'wajib',
