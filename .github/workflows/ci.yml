@@ -147,10 +147,7 @@ jobs:
         id: scope
         env:
           BASE_REF: ${{ github.base_ref }}
-        # TEMPORARY (PR #10): run the full e2e job once to prove the local-stack build; reverted next commit.
         run: |
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-          exit 0
           if git diff --name-only "origin/$BASE_REF...HEAD" \
             | grep -Eq 'booking|payment|qr|scanner|^supabase/migrations/|^src/server/services/|^src/lib/(pricing|qr|links|midtrans)/'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
