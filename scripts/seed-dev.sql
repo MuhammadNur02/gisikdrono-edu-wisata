@@ -94,13 +94,8 @@ on conflict do nothing;
 update public.tour_packages set status = 'published'
 where id = '0de00000-0000-4000-8000-0000000000c9' and status = 'draft';
 
-insert into public.galleries (rw_id, category, storage_path, alt_text, caption, status)
-select demo.rw_id, 'activity', demo.storage_path, demo.alt_text, demo.caption, 'published'
-from (values
-  (5::smallint, 'rw-05/gallery/demo-kompos.webp', 'Siswa memilah sampah organik di rumah kompos', 'Belajar mengompos'),
-  (8::smallint, 'rw-08/gallery/demo-tari.webp', 'Anak-anak sanggar menari di panggung kampung', 'Latihan tari')
-) as demo(rw_id, storage_path, alt_text, caption)
-where not exists (select 1 from public.galleries g where g.storage_path = demo.storage_path);
+-- Gallery photos and the hero banner need real files in public-media, so they come only from
+-- pnpm db:seed --media <folder> (scripts/demo-media.ts); without it the pages show Foto menyusul.
 
 insert into public.articles (rw_id, slug, title, excerpt, body_json, category, status, published_at) values
   (5, 'mengenal-bank-sampah-rw-05', 'Mengenal Bank Sampah RW 05', 'Cara warga RW 05 mengubah sampah menjadi tabungan.',

@@ -44,7 +44,9 @@ export const copy = {
       'Kunjungan edukasi ke dua kampung di Kelurahan Gisikdrono: pengelolaan sampah di RW 05 dan seni budaya di RW 08.',
     footerManagedBy: 'Dikelola oleh',
     footerContactTitle: 'Kontak',
-    footerAddressPending: 'Alamat lengkap dan jam layanan kantor menyusul.',
+    footerAddressPending: 'Alamat kantor menyusul.',
+    footerHoursPending: 'Jam layanan kantor menyusul.',
+    footerEmail: 'Email',
     footerWhatsApp: 'Chat WhatsApp',
     // docs/StyleGuide.md §9.2: the fixed trust line, reused word for word wherever payment is mentioned.
     paymentTrust:

@@ -44,6 +44,37 @@ export function localStack(): LocalStack {
   return cachedStack;
 }
 
+// A SQL string literal for values the scripts build themselves.
+export function sqlText(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+// Writes a file into a bucket of the local stack with the service role, replacing what is at that path, the
+// way api/uploads/finalize writes public-media.
+export async function uploadToLocalBucket(
+  bucket: string,
+  path: string,
+  body: Buffer,
+  contentType: string,
+): Promise<void> {
+  const { apiUrl, serviceRoleKey } = localStack();
+  const response = await fetch(`${apiUrl}/storage/v1/object/${bucket}/${path}`, {
+    method: 'POST',
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      'Content-Type': contentType,
+      'x-upsert': 'true',
+    },
+    body: new Uint8Array(body),
+  });
+  if (!response.ok) {
+    throw new Error(
+      `upload of ${bucket}/${path} failed (${String(response.status)}): ${await response.text()}`,
+    );
+  }
+}
+
 // Runs SQL as postgres through the stack's pg-meta route, the way Supabase Studio does. A row written here counts
 // as a system writer, so the staff guards and the audit log accept it. Values are built by the callers themselves
 // (uuids and fixed strings), never taken from outside.

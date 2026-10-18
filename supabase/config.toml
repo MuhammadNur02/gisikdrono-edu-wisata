@@ -128,9 +128,10 @@ file_size_limit = "50MiB"
 [storage.s3_protocol]
 enabled = true
 
-# Image transformation API is available to Supabase Pro plan.
-# [storage.image_transformation]
-# enabled = true
+# The public site resizes every public-media image through /storage/v1/render/image (Task P2.3.03), so the
+# local stack runs the same transformer the Pro plan gives staging and production (docs/PRD.md A3).
+[storage.image_transformation]
+enabled = true
 
 # Store analytical data in S3 for running ETL jobs over Iceberg Catalog
 # This feature is only available on the hosted platform.
