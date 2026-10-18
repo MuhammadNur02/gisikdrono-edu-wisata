@@ -6,7 +6,7 @@ import { listActivityPoints } from '@/lib/queries/activity-points';
 import { listArticles, getArticleBySlug } from '@/lib/queries/articles';
 import { listHeroBanners } from '@/lib/queries/banners';
 import { getBookletBySlug, listBooklets } from '@/lib/queries/booklets';
-import { listGalleryPage } from '@/lib/queries/galleries';
+import { listGalleryPage, listGalleryPages } from '@/lib/queries/galleries';
 import { getPackageBySlug, listPackages } from '@/lib/queries/packages';
 import { getProductBySlug, listProducts } from '@/lib/queries/products';
 import { listPublicReviews } from '@/lib/queries/reviews';
@@ -29,6 +29,9 @@ vi.mock('@/lib/supabase/anon', () => ({
 
 const PUBLISHED_PHOTO_ID = '00000000-0000-4000-9000-0000000005a1';
 const DRAFT_PHOTO_ID = '00000000-0000-4000-9000-0000000005a2';
+const VIDEO_ID = '00000000-0000-4000-9000-0000000005a3';
+const VIDEO_WITHOUT_ID = '00000000-0000-4000-9000-0000000005a4';
+const YOUTUBE_ID = 'aqz-KE-bpKQ';
 const BLURHASH = 'LEHV6nWB2yk8pyo0adR*.7kCMdnj';
 // The first call asks the Supabase CLI for the stack's keys, which takes a while on Windows.
 const SLOW_HOOK_MS = 60_000;
@@ -48,11 +51,18 @@ describe('public queries as a visitor', () => {
        'Foto uji', 'Uji', 'published', -1),
       ('${DRAFT_PHOTO_ID}', 8, 'event', 'rw-08/gallery/draft.webp', 1600, 1200, null,
        'Foto draf', 'Draf', 'draft', -1)`);
+    await runSql(`insert into public.galleries (id, rw_id, category, media_type, storage_path, video_url,
+        alt_text, status) values
+      ('${VIDEO_ID}', 8, 'activity', 'video', 'rw-08/gallery/video.webp',
+       'https://www.youtube.com/watch?v=${YOUTUBE_ID}', 'Video uji', 'published'),
+      ('${VIDEO_WITHOUT_ID}', 8, 'activity', 'video', 'rw-08/gallery/channel.webp',
+       'https://www.youtube.com/channel/UCabcdefghijk', 'Video tanpa id', 'published')`);
   }, SLOW_HOOK_MS);
 
   afterAll(async () => {
     await runSql(`select set_config('app.purge', 'on', true);
-      delete from public.galleries where id in ('${PUBLISHED_PHOTO_ID}', '${DRAFT_PHOTO_ID}');
+      delete from public.galleries where id in ('${PUBLISHED_PHOTO_ID}', '${DRAFT_PHOTO_ID}', '${VIDEO_ID}',
+        '${VIDEO_WITHOUT_ID}');
       delete from public.audit_logs where id > ${String(auditIdBefore)};`);
   }, SLOW_HOOK_MS);
 
@@ -111,9 +121,30 @@ describe('public queries as a visitor', () => {
     const page = await listGalleryPage({ owner: 8, category: 'event' });
 
     expect(page.items.map((item) => item.id)).toEqual([PUBLISHED_PHOTO_ID]);
-    expect(page.items[0]?.image.placeholderColour).toMatch(/^#[0-9a-f]{6}$/);
+    expect(page.items[0]?.image?.placeholderColour).toMatch(/^#[0-9a-f]{6}$/);
     expect(page.hasMore).toBe(false);
     expect((await listGalleryPage({ owner: 'kelurahan' })).items).toEqual([]);
+  });
+
+  it('passes a video on as its YouTube id alone and leaves out one without a usable id', async () => {
+    const page = await listGalleryPage({ owner: 8, category: 'activity' });
+
+    expect(page.items).toEqual([
+      expect.objectContaining({
+        id: VIDEO_ID,
+        youtubeId: YOUTUBE_ID,
+        image: null,
+        alt: 'Video uji',
+      }),
+    ]);
+    expect(JSON.stringify(page)).not.toContain('youtube.com');
+  });
+
+  it('reads pages up to the one asked for and stops where the gallery ends', async () => {
+    await expect(listGalleryPages({ owner: 8, category: 'event' }, 5)).resolves.toMatchObject({
+      pageCount: 1,
+      hasMore: false,
+    });
   });
 
   it('reads the remaining public tables without a grant error', async () => {

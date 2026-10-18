@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import { GalleryPreview } from '@/components/gallery/gallery-preview';
+import { MasonryGrid } from '@/components/gallery/masonry-grid';
 import { PageHeader } from '@/components/layout/page-header';
 import { RwEyebrow } from '@/components/layout/rw-eyebrow';
 import { Section, type SectionTone } from '@/components/layout/section';
@@ -10,9 +10,11 @@ import { SectionLink } from '@/components/marketing/section-link';
 import { TextBlock } from '@/components/marketing/text-block';
 import { PackageGrid } from '@/components/packages/package-grid';
 import { ProductGrid } from '@/components/products/product-grid';
+import { RW_GALLERY_FILTER } from '@/config/gallery';
 import { IMAGE_SIZES } from '@/config/images';
 import { RW_ACCENTS, RW_PROGRAMMES, type RwId } from '@/config/rw';
 import { copy } from '@/lib/copy/id';
+import { galleryPath } from '@/lib/utils/gallery-search';
 import type { RwPageData } from '@/types/rw-page';
 import type { RwUnitProfile } from '@/types/rw-unit';
 
@@ -26,8 +28,6 @@ export const RW_SECTION_IDS = {
   packages: 'paket',
 } as const;
 
-// The gallery filter of docs/PRD.md FR-PUB-14 for each RW.
-const GALLERY_FILTER: Record<RwId, string> = { 5: 'rw05', 8: 'rw08' };
 // RW 08 sells mostly souvenirs from its sanggar (Task P2.4.03); the heading says so only there.
 const PRODUCTS_TITLE: Record<RwId, string> = {
   5: 'Produk UMKM RW 05',
@@ -92,9 +92,9 @@ function galleryContent(data: RwPageData): ReactNode {
   const rwId = data.unit.id;
   return (
     <>
-      <GalleryPreview items={data.gallery} />
+      <MasonryGrid items={data.gallery} />
       <SectionLink
-        href={`/galeri?filter=${GALLERY_FILTER[rwId]}`}
+        href={galleryPath({ filter: RW_GALLERY_FILTER[rwId], page: 1 })}
         label={copy.rwPage.galleryAll(RW_PROGRAMMES[rwId].label)}
       />
     </>

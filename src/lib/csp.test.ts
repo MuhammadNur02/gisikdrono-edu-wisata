@@ -42,14 +42,29 @@ describe('buildContentSecurityPolicy on public ISR pages', () => {
     expect(scripts).toBe("script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com");
   });
 
+  it('adds only the gallery YouTube player and its stills to frames and images', () => {
+    const policy = buildContentSecurityPolicy(publicProduction);
+    expect(directive(policy, 'frame-src')).toBe(
+      'frame-src https://challenges.cloudflare.com https://www.google.com/maps/embed https://www.youtube-nocookie.com/embed/',
+    );
+    expect(directive(policy, 'img-src')).toBe(
+      "img-src 'self' blob: https://projectref.supabase.co https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://i.ytimg.com/vi/",
+    );
+    expect(policy).not.toContain('https://www.youtube.com');
+  });
+
+  it('keeps YouTube off private routes', () => {
+    expect(buildContentSecurityPolicy(privateProduction)).not.toMatch(/youtube|ytimg/);
+  });
+
   it('keeps every other directive as strict as on private routes', () => {
-    const withoutScripts = (policy: string) =>
+    const withoutPublicExtras = (policy: string) =>
       policy
         .split('; ')
-        .filter((part) => !part.startsWith('script-src'))
+        .filter((part) => !/^(script|frame|img)-src /.test(part))
         .join('; ');
-    expect(withoutScripts(buildContentSecurityPolicy(publicProduction))).toBe(
-      withoutScripts(buildContentSecurityPolicy(privateProduction)),
+    expect(withoutPublicExtras(buildContentSecurityPolicy(publicProduction))).toBe(
+      withoutPublicExtras(buildContentSecurityPolicy(privateProduction)),
     );
   });
 });

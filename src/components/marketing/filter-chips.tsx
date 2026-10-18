@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { copy } from '@/lib/copy/id';
@@ -17,6 +18,15 @@ export interface FilterChipsProps<Value extends string> {
   onChange: (value: Value | null) => void;
 }
 
+function chipClassName(isPressed: boolean): string {
+  return cn(
+    'inline-flex min-h-11 items-center rounded-full border px-4 text-body-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+    isPressed
+      ? 'border-primary bg-primary text-primary-foreground'
+      : 'border-border bg-background hover:bg-accent',
+  );
+}
+
 function Chip({
   isPressed,
   onClick,
@@ -31,15 +41,33 @@ function Chip({
       type="button"
       aria-pressed={isPressed}
       onClick={onClick}
-      className={cn(
-        'inline-flex min-h-11 items-center rounded-full border px-4 text-body-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-        isPressed
-          ? 'border-primary bg-primary text-primary-foreground'
-          : 'border-border bg-background hover:bg-accent',
-      )}
+      className={chipClassName(isPressed)}
     >
       {children}
     </button>
+  );
+}
+
+// The same pill as a link, for /galeri, whose filter is the address itself (docs/StyleGuide.md §5.11). The
+// chosen one is the current page.
+export function FilterChipLink({
+  href,
+  isCurrent,
+  children,
+}: {
+  href: string;
+  isCurrent: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      aria-current={isCurrent ? 'page' : undefined}
+      scroll={false}
+      className={chipClassName(isCurrent)}
+    >
+      {children}
+    </Link>
   );
 }
 

@@ -122,6 +122,26 @@ export const copy = {
     orderRange: (min: number, max: number | null, unit: string) =>
       max === null ? `Minimal ${String(min)} ${unit}` : `${String(min)}–${String(max)} ${unit}`,
   },
+  // /galeri and the RW gallery sections (docs/StyleGuide.md §5.11).
+  gallery: {
+    filterLabel: 'Tampilkan',
+    filterEmpty: 'Belum ada foto untuk filter ini.',
+    loadMore: 'Muat lagi',
+    openPhoto: (alt: string) => `Perbesar foto: ${alt}`,
+    playVideo: (alt: string) => `Putar video: ${alt}`,
+    // Under the play button: pressing it loads YouTube's player, so the visitor knows whose it is.
+    videoSource: 'Video YouTube',
+    lightbox: {
+      previous: 'Foto sebelumnya',
+      next: 'Foto berikutnya',
+      close: 'Tutup',
+      viewer: 'Penampil foto',
+      carousel: 'Foto',
+      slide: 'Foto',
+      photos: 'Galeri foto',
+      position: '{index} dari {total}',
+    },
+  },
   // RW page labels. An empty section has no text at all: it is left out (docs/StyleGuide.md §6.9).
   rwPage: {
     visionTitle: 'Visi',

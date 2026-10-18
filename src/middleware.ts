@@ -5,8 +5,12 @@ import type { NextRequest } from 'next/server';
 import { AUTH_COOKIE_OPTIONS, DASHBOARD_PATH, LOGIN_PATH, NEXT_PARAM } from '@/config/auth';
 import { buildContentSecurityPolicy, isPrivateRoute, permissionsPolicyFor } from '@/lib/csp';
 import { publicEnv } from '@/lib/public-env';
+import { canonicalGalleryPathFor } from '@/lib/utils/gallery-search';
+import { PUBLIC_PATHS } from '@/lib/utils/paths';
 
 const NONCE_BYTES = 16;
+// Temporary on purpose: the page cap (GALLERY_MAX_PAGES) may change, and a browser keeps a permanent one.
+const TEMPORARY_REDIRECT = 307;
 
 type ContinueRequest = () => NextResponse;
 
@@ -78,6 +82,18 @@ function withSecurityHeaders(response: NextResponse, pathname: string, csp: stri
   return response;
 }
 
+// /galeri?halaman=99999, ?halaman=abc, ?filter=xyz and the like get a real redirect to the valid address here,
+// before the page streams (decision of 2026-10-18, docs/StyleGuide.md §5.11).
+function redirectMalformedGallery(request: NextRequest): NextResponse | null {
+  if (request.nextUrl.pathname !== PUBLIC_PATHS.gallery) return null;
+  const target = canonicalGalleryPathFor(request.nextUrl.searchParams);
+  if (target === null) return null;
+  // nextUrl keeps the host the visitor asked for; only the query changes.
+  const destination = request.nextUrl.clone();
+  destination.search = new URL(target, request.nextUrl.origin).search;
+  return NextResponse.redirect(destination, TEMPORARY_REDIRECT);
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const nonce = isPrivateRoute(pathname) ? createNonce() : null;
@@ -86,6 +102,8 @@ export async function middleware(request: NextRequest) {
     supabaseUrl: publicEnv.NEXT_PUBLIC_SUPABASE_URL,
     isDevelopment: publicEnv.NODE_ENV !== 'production',
   });
+  const galleryRedirect = redirectMalformedGallery(request);
+  if (galleryRedirect) return withSecurityHeaders(galleryRedirect, pathname, csp);
   const continueRequest = () => forwardRequest(request, nonce, csp);
   const response = { current: continueRequest() };
   const isSignedIn = await refreshSession(request, response, continueRequest);

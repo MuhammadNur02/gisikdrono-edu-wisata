@@ -13,6 +13,7 @@ const STATIC_PATHS = [
   `${RW_PROGRAMMES[8].path}/jadwal`,
   PUBLIC_PATHS.packages,
   PUBLIC_PATHS.products,
+  PUBLIC_PATHS.gallery,
   PUBLIC_PATHS.reviews,
   PUBLIC_PATHS.privacy,
 ];
