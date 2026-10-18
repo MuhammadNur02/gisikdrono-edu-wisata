@@ -15,8 +15,11 @@ import type {
   WebSite,
 } from 'schema-dts';
 
+import { RW_PROGRAMMES } from '@/config/rw';
 import { siteConfig } from '@/config/site';
+import { publicMediaUrl } from '@/lib/images/public-media';
 import { absoluteUrl } from '@/lib/seo/metadata';
+import type { RwUnitProfile } from '@/types/rw-unit';
 
 // Typed schema.org builders (docs/PRD.md NFR-03). They take plain DTO fields and return nodes without
 // @context; serializeJsonLd adds it once, so a page can put several nodes in one @graph.
@@ -80,6 +83,16 @@ export function touristAttractionJsonLd(input: TouristAttractionInput): Node<Tou
     // Both RWs are neighbourhoods of the kelurahan, which is the place a visitor searches for.
     containedInPlace: { '@type': 'AdministrativeArea', name: siteConfig.ownerName },
   };
+}
+
+// An RW as the home page and its own page describe it, with its photo at full size.
+export function rwAttractionJsonLd(unit: RwUnitProfile): Node<TouristAttraction> {
+  return touristAttractionJsonLd({
+    name: unit.name,
+    description: unit.tagline ?? unit.themeLabel,
+    path: RW_PROGRAMMES[unit.id].path,
+    imageUrls: unit.heroImage ? [publicMediaUrl(unit.heroImage.path)] : undefined,
+  });
 }
 
 export interface EventInput {

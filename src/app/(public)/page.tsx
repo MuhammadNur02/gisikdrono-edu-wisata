@@ -1,93 +1,66 @@
-import { ArrowRight } from 'lucide-react';
 import type { Metadata } from 'next';
-import Link from 'next/link';
 
-import { Container } from '@/components/layout/container';
-import { PageHeader } from '@/components/layout/page-header';
-import { RwEyebrow } from '@/components/layout/rw-eyebrow';
-import { Section } from '@/components/layout/section';
-import { Photo } from '@/components/marketing/photo';
-import { IMAGE_SIZES } from '@/config/images';
-import { RW_IDS, RW_PROGRAMMES, type RwId } from '@/config/rw';
-import { siteConfig } from '@/config/site';
-import { listHeroBanners } from '@/lib/queries/banners';
-import { listGalleryPage } from '@/lib/queries/galleries';
-import type { GalleryItem } from '@/types/gallery';
+import { BookletCta } from '@/components/marketing/booklet-cta';
+import { CtaBand } from '@/components/marketing/cta-band';
+import { FeaturedPackages } from '@/components/marketing/featured-packages';
+import { FeaturedProducts } from '@/components/marketing/featured-products';
+import { Hero } from '@/components/marketing/hero';
+import { LatestArticles } from '@/components/marketing/latest-articles';
+import { MapTeaser } from '@/components/marketing/map-teaser';
+import { RwHighlight } from '@/components/marketing/rw-highlight';
+import { Testimonials } from '@/components/marketing/testimonials';
+import { JsonLd } from '@/components/seo/json-ld';
+import { getHomePageData } from '@/lib/queries/home-page';
+import { rwAttractionJsonLd, webSiteJsonLd } from '@/lib/seo/json-ld';
 
 export const revalidate = 3600;
 
 export const metadata: Metadata = { alternates: { canonical: '/' } };
 
-// A holding page until the home sections of Task P2.4.01. The activities named here are the programmes as
-// docs/PRD.md §1 describes them; the photos are the CMS's own (the first hero banner and each RW's first
-// gallery item), and a slot without one says Foto menyusul.
-const RW_ACTIVITIES: Record<RwId, string> = {
-  5: 'Bank Sampah, pengomposan, budidaya maggot, urban farming, dan kerajinan daur ulang buatan ibu-ibu PKK.',
-  8: 'Tari tradisional, sanggar seni anak, dan dolanan, permainan tradisional anak Jawa.',
-};
+// Anchors within the page; `Lihat Paket` in the hero scrolls to the featured packages.
+const SECTION_IDS = {
+  rw: 'program',
+  packages: 'paket-unggulan',
+  products: 'produk-unggulan',
+  map: 'peta',
+  reviews: 'ulasan',
+  articles: 'artikel',
+  booklets: 'e-booklet',
+  booking: 'pesan',
+} as const;
 
-async function firstRwPhoto(rwId: RwId): Promise<GalleryItem | null> {
-  const page = await listGalleryPage({ owner: rwId });
-  return page.items[0] ?? null;
-}
-
-async function RwProgrammeBlock({ rwId }: { rwId: RwId }) {
-  const programme = RW_PROGRAMMES[rwId];
-  const photo = await firstRwPhoto(rwId);
-  return (
-    <article className="grid gap-5 sm:grid-cols-5 sm:items-center">
-      <Photo
-        image={photo?.image ?? null}
-        caption={photo?.caption ?? `Kegiatan ${programme.label} ${programme.name}`}
-        sizes={IMAGE_SIZES.card}
-        aspectClassName="aspect-4/3"
-        className="sm:col-span-2"
-      />
-      <div className="space-y-3 sm:col-span-3">
-        <RwEyebrow rwId={rwId} withName />
-        <h3 className="text-h3">{programme.name}</h3>
-        <p className="text-body text-muted-foreground">{RW_ACTIVITIES[rwId]}</p>
-        <Link
-          href={programme.path}
-          className="inline-flex min-h-11 items-center gap-2 rounded-md text-body-sm font-medium text-primary-text underline-offset-4 hover:underline"
-        >
-          Lihat halaman {programme.label}
-          <ArrowRight aria-hidden className="size-4" />
-        </Link>
-      </div>
-    </article>
-  );
-}
-
+// docs/PRD.md FR-PUB-01..07. A section with nothing published is left out rather than filled with a
+// stand-in (docs/StyleGuide.md §1.3 G5); the reviews band in particular waits for real reviews.
 export default async function HomePage() {
-  const [banner] = await listHeroBanners();
+  const data = await getHomePageData();
+  const hasPackages = data.featuredPackages.length > 0;
   return (
     <>
-      <PageHeader
-        eyebrow={`${siteConfig.ownerName} · Semarang Barat`}
-        title={siteConfig.name}
-        description="Kunjungan edukasi untuk sekolah, kampus, instansi, perusahaan, dan keluarga ke dua kampung di Kelurahan Gisikdrono. Halaman lengkapnya sedang kami siapkan."
+      <Hero
+        slides={data.slides}
+        ratingSummary={data.ratingSummary}
+        description={data.description}
+        packagesAnchor={hasPackages ? SECTION_IDS.packages : undefined}
       />
-      <Container>
-        <Photo
-          image={banner?.image ?? null}
-          caption={banner?.title ?? 'Kegiatan di Kelurahan Gisikdrono'}
-          sizes={IMAGE_SIZES.hero}
-          aspectClassName="aspect-video"
-          priority
-        />
-      </Container>
-      <Section
-        id="program"
-        eyebrow="Dua kampung, dua program"
-        title="Pilih kampung yang ingin Anda kunjungi"
-      >
-        <div className="grid gap-12 lg:grid-cols-2 lg:gap-10">
-          {RW_IDS.map((rwId) => (
-            <RwProgrammeBlock key={rwId} rwId={rwId} />
-          ))}
-        </div>
-      </Section>
+      <RwHighlight id={SECTION_IDS.rw} units={data.rwUnits} />
+      {hasPackages ? (
+        <FeaturedPackages id={SECTION_IDS.packages} packages={data.featuredPackages} />
+      ) : null}
+      {data.featuredProducts.length > 0 ? (
+        <FeaturedProducts id={SECTION_IDS.products} products={data.featuredProducts} />
+      ) : null}
+      <MapTeaser id={SECTION_IDS.map} address={data.address} points={data.points} />
+      {data.testimonials.length > 0 ? (
+        <Testimonials id={SECTION_IDS.reviews} reviews={data.testimonials} />
+      ) : null}
+      {data.articles.length > 0 ? (
+        <LatestArticles id={SECTION_IDS.articles} articles={data.articles} />
+      ) : null}
+      {data.booklets.length > 0 ? (
+        <BookletCta id={SECTION_IDS.booklets} booklets={data.booklets} />
+      ) : null}
+      <CtaBand id={SECTION_IDS.booking} />
+      <JsonLd data={[webSiteJsonLd(), ...data.rwUnits.map(rwAttractionJsonLd)]} />
     </>
   );
 }

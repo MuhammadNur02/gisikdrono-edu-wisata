@@ -16,8 +16,10 @@ type BannerRow = Pick<
 > & { products_umkm: Pick<Tables<'products_umkm'>, 'slug'> | null };
 
 function toHeroBanner(row: BannerRow): HeroBanner | null {
-  // hero_banners has no alt text of its own; the title says what the slide is about.
-  const image = toPublicImage(row.image_path, row.title);
+  // hero_banners has no alt text of its own. The subtitle, when there is one, says what the photo shows
+  // (docs/StyleGuide.md §1.3 G8); otherwise the title says what the slide is about.
+  const alt = row.subtitle ?? row.title;
+  const image = toPublicImage(row.image_path, alt);
   if (!image) return null;
   return {
     id: row.id,
@@ -26,7 +28,7 @@ function toHeroBanner(row: BannerRow): HeroBanner | null {
     ctaLabel: row.cta_label,
     ctaHref: row.cta_href,
     image,
-    mobileImage: toPublicImage(row.mobile_image_path, row.title),
+    mobileImage: toPublicImage(row.mobile_image_path, alt),
     productSlug: row.products_umkm?.slug ?? null,
   };
 }

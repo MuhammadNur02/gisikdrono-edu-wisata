@@ -13,3 +13,9 @@ export interface PublicReview {
   isFeatured: boolean;
   createdAt: string;
 }
+
+// The aggregate of published reviews behind the hero's trust row and AggregateRating.
+export interface RatingSummary {
+  averageRating: number;
+  reviewCount: number;
+}

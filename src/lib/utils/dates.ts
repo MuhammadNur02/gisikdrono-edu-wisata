@@ -45,6 +45,12 @@ export function formatTimeRange(start: string, end: string): string {
   return `${formatSessionTime(start)}–${formatSessionTime(end)} WIB`;
 }
 
+// A performance or event runs between two timestamps; its hours read in Semarang time: '19.00–21.00 WIB'.
+export function formatInstantTimeRange(startsAt: string, endsAt: string): string {
+  const clock = (value: string) => format(inJakarta(value), 'HH.mm');
+  return `${clock(startsAt)}–${clock(endsAt)} WIB`;
+}
+
 // The Semarang calendar day an instant falls on, as a visit date.
 export function toVisitDate(instant: Date): string {
   return format(inJakarta(instant), VISIT_DATE_FORMAT);

@@ -3,16 +3,13 @@
 import type { ImageLoaderProps } from 'next/image';
 
 import { IMAGE_QUALITY } from '@/config/images';
+import { encodeStoragePath } from '@/lib/images/public-media';
 import { publicEnv } from '@/lib/public-env';
 
 // docs/StyleGuide.md §8.2: Supabase Storage resizes public-media images itself, so next/image asks it for the
 // width each slot needs instead of running Next.js' own optimiser. `src` is the path inside the bucket, as
 // the public queries return it.
 const RENDER_PATH = '/storage/v1/render/image/public/public-media/';
-
-function encodeStoragePath(path: string): string {
-  return path.split('/').map(encodeURIComponent).join('/');
-}
 
 // next.config.ts names this file as images.loaderFile, which Next.js requires to export the loader as default.
 export default function supabaseImageLoader({ src, width, quality }: ImageLoaderProps): string {

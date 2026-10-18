@@ -5,6 +5,7 @@ import {
   calendarDateToVisitDate,
   formatDateLong,
   formatDateShort,
+  formatInstantTimeRange,
   formatTimeRange,
   todayInJakarta,
   toVisitDate,
@@ -78,5 +79,13 @@ describe('bookableRange', () => {
   it('keeps today open when the lead time still fits in it', () => {
     const now = new Date('2026-10-17T00:00:00Z'); // 07:00 WIB
     expect(bookableRange({ now, minLeadHours: 12, maxAdvanceDays: 1 }).first).toBe('2026-10-17');
+  });
+});
+
+describe('formatInstantTimeRange', () => {
+  it('reads a performance start and end in Semarang time', () => {
+    expect(formatInstantTimeRange('2026-10-18T12:00:00Z', '2026-10-18T14:30:00Z')).toBe(
+      '19.00–21.30 WIB',
+    );
   });
 });

@@ -7,6 +7,13 @@ import { JsonLd } from '@/components/seo/json-ld';
 import { HOME_NAV_ITEM } from '@/config/nav';
 import { copy } from '@/lib/copy/id';
 import { breadcrumbListJsonLd, type BreadcrumbItem } from '@/lib/seo/json-ld';
+import { cn } from '@/lib/utils/cn';
+
+export interface TitleAccent {
+  // The end of the title to colour, such as the programme name in `RW 05 Ecowastreme`.
+  text: string;
+  className: string;
+}
 
 export interface PageHeaderProps {
   title: string;
@@ -16,6 +23,22 @@ export interface PageHeaderProps {
   breadcrumbs?: readonly BreadcrumbItem[];
   // Site-relative path of this page, which ends the BreadcrumbList.
   path?: string;
+  // The RW page title accent of docs/StyleGuide.md §2.7.
+  titleAccent?: TitleAccent;
+  // `display` is the RW page hero size of §3.2; other pages keep `page` (text-h1).
+  titleSize?: 'page' | 'display';
+  // Shown under the description, such as the RW's photo.
+  children?: ReactNode;
+}
+
+function TitleText({ title, accent }: { title: string; accent?: TitleAccent }) {
+  if (!accent || !title.endsWith(accent.text)) return title;
+  return (
+    <>
+      {title.slice(0, title.length - accent.text.length)}
+      <span className={accent.className}>{accent.text}</span>
+    </>
+  );
 }
 
 // The visible trail and its BreadcrumbList come from the same list, so they can never disagree. The page
@@ -45,7 +68,16 @@ function Breadcrumbs({ trail }: { trail: readonly BreadcrumbItem[] }) {
   );
 }
 
-export function PageHeader({ title, eyebrow, description, breadcrumbs, path }: PageHeaderProps) {
+export function PageHeader({
+  title,
+  eyebrow,
+  description,
+  breadcrumbs,
+  path,
+  titleAccent,
+  titleSize = 'page',
+  children,
+}: PageHeaderProps) {
   const trail =
     breadcrumbs && path
       ? [
@@ -60,11 +92,16 @@ export function PageHeader({ title, eyebrow, description, breadcrumbs, path }: P
         {trail ? <Breadcrumbs trail={trail} /> : null}
         <div className="max-w-3xl space-y-4">
           {eyebrow ? <p className="text-overline text-primary-text">{eyebrow}</p> : null}
-          <h1 className="text-h1 text-balance">{title}</h1>
+          <h1
+            className={cn(titleSize === 'display' ? 'text-display-lg' : 'text-h1', 'text-balance')}
+          >
+            <TitleText title={title} accent={titleAccent} />
+          </h1>
           {description ? (
             <p className="text-body-lg text-pretty text-muted-foreground">{description}</p>
           ) : null}
         </div>
+        {children}
       </Container>
       {trail ? <JsonLd data={breadcrumbListJsonLd(trail)} /> : null}
     </div>
