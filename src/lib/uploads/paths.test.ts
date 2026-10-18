@@ -1,0 +1,137 @@
+import { describe, expect, it } from 'vitest';
+
+import { createUuidV7 } from '@/lib/utils/uuid-v7';
+
+import {
+  bookletPageFileName,
+  isPdfPurpose,
+  isTargetAllowed,
+  MEDIA_OWNERS,
+  ownerFor,
+  parseQuarantinePath,
+  publicMediaPathFor,
+  quarantinePathFor,
+  thumbnailPathFor,
+  type QuarantineUpload,
+} from './paths';
+
+const SIGNED_AT = Date.UTC(2026, 9, 18, 2, 0, 0);
+const OBJECT_NAME = createUuidV7(SIGNED_AT);
+const ENTITY_ID = '6f1c2d3e-4a5b-4c6d-8e7f-0123456789ab';
+
+function upload(path: string): QuarantineUpload {
+  const parsed = parseQuarantinePath(path);
+  if (!parsed) throw new Error(`fixture path ${path} does not parse`);
+  return parsed;
+}
+
+describe('owner prefixes', () => {
+  it('names RW 05, RW 08 and the kelurahan the way the buckets do', () => {
+    expect(ownerFor(5)).toBe('rw-05');
+    expect(ownerFor(8)).toBe('rw-08');
+    expect(ownerFor(null)).toBe('kelurahan');
+    expect(MEDIA_OWNERS).toEqual(['rw-05', 'rw-08', 'kelurahan']);
+  });
+});
+
+describe('parseQuarantinePath', () => {
+  it('reads the owner, the RW and the time the upload was signed', () => {
+    expect(parseQuarantinePath(quarantinePathFor(8, OBJECT_NAME))).toEqual({
+      owner: 'rw-08',
+      rwId: 8,
+      objectName: OBJECT_NAME,
+      signedAtMs: SIGNED_AT,
+    });
+    expect(parseQuarantinePath(`kelurahan/${OBJECT_NAME}`)?.rwId).toBeNull();
+  });
+
+  it.each([
+    ['an unknown RW', `rw-03/${OBJECT_NAME}`],
+    ['a name sign never issues', 'rw-05/foto-bank-sampah.jpg'],
+    ['a version 4 uuid', 'rw-05/4d1f8a2e-3b5c-4d6e-8f70-123456789abc'],
+    ['a deeper path', `rw-05/${OBJECT_NAME}/x`],
+    ['a climb out of the prefix', `rw-05/../rw-08/${OBJECT_NAME}`],
+    ['a bare name', OBJECT_NAME],
+    ['a leading slash', `/rw-05/${OBJECT_NAME}`],
+  ])('refuses %s', (_case, path) => {
+    expect(parseQuarantinePath(path)).toBeNull();
+  });
+});
+
+describe('isTargetAllowed', () => {
+  const rw05 = upload(`rw-05/${OBJECT_NAME}`);
+  const kelurahan = upload(`kelurahan/${OBJECT_NAME}`);
+
+  it('keeps hero banners at kelurahan level and activity points inside an RW', () => {
+    expect(isTargetAllowed(kelurahan, { purpose: 'hero' })).toBe(true);
+    expect(isTargetAllowed(rw05, { purpose: 'hero' })).toBe(false);
+    expect(isTargetAllowed(rw05, { purpose: 'activity-point', entityId: ENTITY_ID })).toBe(true);
+    expect(isTargetAllowed(kelurahan, { purpose: 'activity-point', entityId: ENTITY_ID })).toBe(
+      false,
+    );
+  });
+
+  it('asks for a row id exactly where the folder has one', () => {
+    expect(isTargetAllowed(rw05, { purpose: 'gallery' })).toBe(true);
+    expect(isTargetAllowed(rw05, { purpose: 'gallery', entityId: ENTITY_ID })).toBe(false);
+    expect(isTargetAllowed(rw05, { purpose: 'product' })).toBe(false);
+    expect(isTargetAllowed(rw05, { purpose: 'product', entityId: ENTITY_ID })).toBe(true);
+  });
+
+  it('asks for a page number for booklet pages only', () => {
+    expect(
+      isTargetAllowed(rw05, { purpose: 'booklet-page', entityId: ENTITY_ID, pageNumber: 1 }),
+    ).toBe(true);
+    expect(isTargetAllowed(rw05, { purpose: 'booklet-page', entityId: ENTITY_ID })).toBe(false);
+    expect(isTargetAllowed(rw05, { purpose: 'booklet', entityId: ENTITY_ID, pageNumber: 1 })).toBe(
+      false,
+    );
+  });
+});
+
+describe('publicMediaPathFor', () => {
+  const rw05 = upload(`rw-05/${OBJECT_NAME}`);
+
+  it('follows the folder layout of docs/PRD.md §8.8', () => {
+    expect(publicMediaPathFor(rw05, { purpose: 'gallery' })).toBe(
+      `rw-05/gallery/${OBJECT_NAME}.webp`,
+    );
+    expect(publicMediaPathFor(upload(`kelurahan/${OBJECT_NAME}`), { purpose: 'hero' })).toBe(
+      `kelurahan/hero/${OBJECT_NAME}.webp`,
+    );
+    expect(publicMediaPathFor(rw05, { purpose: 'activity-point', entityId: ENTITY_ID })).toBe(
+      `rw-05/activity-points/${ENTITY_ID}/${OBJECT_NAME}.webp`,
+    );
+    expect(publicMediaPathFor(rw05, { purpose: 'booklet', entityId: ENTITY_ID })).toBe(
+      `rw-05/booklets/${ENTITY_ID}/booklet.pdf`,
+    );
+    expect(
+      publicMediaPathFor(rw05, { purpose: 'booklet-page', entityId: ENTITY_ID, pageNumber: 12 }),
+    ).toBe(`rw-05/booklets/${ENTITY_ID}/pages/0012.webp`);
+  });
+
+  it('puts the gallery thumbnail next to its photo', () => {
+    expect(thumbnailPathFor(`rw-05/gallery/${OBJECT_NAME}.webp`)).toBe(
+      `rw-05/gallery/${OBJECT_NAME}-thumb.webp`,
+    );
+  });
+});
+
+describe('bookletPageFileName', () => {
+  it('numbers pages with four digits', () => {
+    expect(bookletPageFileName(1)).toBe('0001.webp');
+    expect(bookletPageFileName(9999)).toBe('9999.webp');
+  });
+
+  it.each([0, 10000, 1.5])('refuses page %s', (pageNumber) => {
+    expect(() => bookletPageFileName(pageNumber)).toThrow(RangeError);
+  });
+});
+
+describe('isPdfPurpose', () => {
+  it('takes PDFs for booklets only', () => {
+    expect(isPdfPurpose('booklet')).toBe(true);
+    expect(isPdfPurpose('booklet-page')).toBe(false);
+    expect(isPdfPurpose('gallery')).toBe(false);
+  });
+});

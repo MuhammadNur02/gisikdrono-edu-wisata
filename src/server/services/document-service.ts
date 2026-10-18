@@ -2,19 +2,18 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { QUARANTINE_BUCKET } from '@/config/uploads';
 import { svcForgetPurgedFiles, svcPurgeableFiles } from '@/db/rpc';
 import type { PurgeableFile } from '@/db/rpc';
 import type { Database } from '@/db/types';
 import { AppError } from '@/lib/errors';
+import { MEDIA_OWNERS } from '@/lib/uploads/paths';
 
 type DatabaseClient = SupabaseClient<Database>;
 
 export type PurgeReport = { processed: number; failed: number };
 
 const PURGE_BATCH_SIZE = 200;
-const QUARANTINE_BUCKET = 'uploads-quarantine';
-// Upload paths are bound to these prefixes in api/uploads/sign (CLAUDE.md §6.6).
-const QUARANTINE_PREFIXES = ['rw-05', 'rw-08', 'kelurahan'] as const;
 const MS_PER_HOUR = 3_600_000;
 const QUARANTINE_MAX_AGE_HOURS = 24;
 const DOCUMENTS_BUCKET = 'documents';
@@ -130,7 +129,8 @@ async function removeStaleQuarantineUploads(
   const cutoff = now.getTime() - QUARANTINE_MAX_AGE_HOURS * MS_PER_HOUR;
   const report: PurgeReport = { processed: 0, failed: 0 };
 
-  for (const prefix of QUARANTINE_PREFIXES) {
+  // api/uploads/sign puts every upload under one of these prefixes (CLAUDE.md §6.6).
+  for (const prefix of MEDIA_OWNERS) {
     const { data: objects, error: listError } = await quarantine.list(prefix, {
       limit: PURGE_BATCH_SIZE,
       sortBy: { column: 'created_at', order: 'asc' },

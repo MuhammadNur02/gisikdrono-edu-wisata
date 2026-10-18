@@ -79,6 +79,15 @@ export async function requireRwAccess(rwId: number): Promise<GuardResult> {
   return canAccessRw(guard.ctx, rwId) ? guard : fail('FORBIDDEN');
 }
 
+// api/uploads/{sign,finalize} write with the service role, which skips the AAL2 policy every table carries,
+// so uploads ask for AAL2 here (docs/Security.md §5.3, §8.4). Kelurahan-level files (rw_id NULL) are the
+// superadmin's; an RW's files are its own officer's too. The routes call this after requireUser() so a
+// refusal can be recorded against the staff member who tried.
+export function hasUploadAccess(ctx: StaffContext, rwId: number | null): boolean {
+  if (!ctx.isAal2) return false;
+  return rwId === null ? ctx.role === 'superadmin' : canAccessRw(ctx, rwId);
+}
+
 export async function requireAal2(): Promise<GuardResult> {
   const guard = await requireUser();
   if (!guard.ok) return guard;

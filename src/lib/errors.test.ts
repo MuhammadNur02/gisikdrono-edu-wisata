@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { copy } from '@/lib/copy/id';
-import { AppError, fail, mapError, ok } from '@/lib/errors';
+import { AppError, fail, mapError, ok, resultResponse } from '@/lib/errors';
 
 vi.mock('next/headers', () => ({
   headers: () => Promise.reject(new Error('outside a request')),
@@ -15,6 +15,18 @@ describe('ok and fail', () => {
       ok: false,
       error: { code: 'QUOTA_EXCEEDED', message: copy.errors.QUOTA_EXCEEDED },
     });
+  });
+});
+
+describe('resultResponse', () => {
+  it('answers 200 for data and the code status for a failure, never cacheable', async () => {
+    const success = resultResponse(ok({ path: 'rw-05/x.webp' }));
+    const refused = resultResponse(fail('RATE_LIMITED'));
+
+    expect(success.status).toBe(200);
+    expect(await success.json()).toEqual({ ok: true, data: { path: 'rw-05/x.webp' } });
+    expect(refused.status).toBe(429);
+    expect(refused.headers.get('cache-control')).toBe('private, no-store');
   });
 });
 

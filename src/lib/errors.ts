@@ -23,6 +23,7 @@ const HTTP_STATUS_BY_CODE = {
   INTERNAL: 500,
 } satisfies Record<ActionErrorCode, number>;
 
+const HTTP_OK = 200;
 const UNIQUE_VIOLATION = '23505';
 const RAISED_EXCEPTION = 'P0001';
 
@@ -58,6 +59,13 @@ export function fail(
 ): ActionFailure {
   const error = fieldErrors ? { code, message, fieldErrors } : { code, message };
   return { ok: false, error };
+}
+
+// A route handler answers with the same ActionResult a Server Action returns, under the matching HTTP status,
+// and no cache keeps it (CLAUDE.md §5.4).
+export function resultResponse<T>(result: ActionResult<T>): Response {
+  const status = result.ok ? HTTP_OK : HTTP_STATUS_BY_CODE[result.error.code];
+  return Response.json(result, { status, headers: { 'Cache-Control': 'private, no-store' } });
 }
 
 type PostgresError = { code: string; hint?: string | null };

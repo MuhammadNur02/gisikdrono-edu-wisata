@@ -1,4 +1,10 @@
 import type { ActionErrorCode } from '@/types/action-result';
+import type { UploadProblem } from '@/types/upload';
+
+// The browser says it first and api/uploads/{sign,finalize} say it again, so both read the same words.
+const SVG_REFUSED = 'Format SVG tidak didukung';
+const HEIC_REFUSED =
+  'Foto format HEIC (iPhone) belum didukung. Simpan sebagai JPG dulu, atau ubah iPhone: Pengaturan → Kamera → Format → Paling Kompatibel.';
 
 // What people read when something goes wrong: friendly, plain Indonesian (CLAUDE.md §4.2).
 export const copy = {
@@ -179,7 +185,8 @@ export const copy = {
     image: {
       choose: 'Tarik foto ke sini atau pilih file',
       hint: 'JPG, PNG, atau WebP, maksimal 10 MB.',
-      svg: 'Format SVG tidak didukung',
+      svg: SVG_REFUSED,
+      heic: HEIC_REFUSED,
       type: 'Format file ini tidak didukung. Gunakan JPG, PNG, atau WebP.',
       size: 'Ukuran file melebihi 10 MB.',
       failed: 'Foto gagal diunggah. Coba lagi sebentar lagi, ya.',
@@ -188,5 +195,50 @@ export const copy = {
       altLabel: 'Deskripsi foto',
       altHint: 'Jelaskan isi foto untuk pengguna pembaca layar (3–200 karakter).',
     },
+    richText: {
+      toolbar: 'Format teks',
+      bold: 'Tebal',
+      italic: 'Miring',
+      heading: (level: number) => `Judul tingkat ${String(level)}`,
+      bulletList: 'Daftar berbutir',
+      orderedList: 'Daftar bernomor',
+      blockquote: 'Kutipan',
+      link: 'Tautan',
+      image: 'Sisipkan foto',
+      undo: 'Urungkan',
+      redo: 'Ulangi',
+      editorLabel: 'Isi artikel',
+      linkLabel: 'Alamat tautan',
+      linkHint: 'Diawali https://, http://, atau mailto:',
+      linkInvalid: 'Tautan harus diawali https://, http://, atau mailto:.',
+      linkApply: 'Pasang tautan',
+      linkRemove: 'Hapus tautan',
+      captionLabel: 'Keterangan foto',
+      captionHint: 'Tampil di bawah foto: apa atau di mana foto ini diambil.',
+      insertImage: 'Sisipkan ke artikel',
+      cancel: 'Batal',
+    },
+  },
+  // Why api/uploads/sign or api/uploads/finalize refused a file (docs/Security.md §8.4).
+  uploads: {
+    problems: {
+      svg: SVG_REFUSED,
+      heic: HEIC_REFUSED,
+      type: 'Format file ini tidak didukung. Gunakan foto JPG, PNG, atau WebP, atau PDF untuk booklet.',
+      wrong_kind:
+        'File ini tidak cocok untuk isian ini. Foto harus JPG, PNG, atau WebP; booklet harus PDF.',
+      image_size: 'Ukuran foto melebihi 10 MB.',
+      pdf_size: 'Ukuran PDF melebihi 50 MB.',
+      late: 'Unggahan terlalu lama selesai. Pilih file lagi untuk mengunggah ulang, ya.',
+      missing: 'File unggahan tidak ditemukan. Pilih file lagi, ya.',
+      unreadable:
+        'File tidak bisa dibaca, mungkin rusak atau terpotong. Simpan ulang file-nya, lalu unggah lagi.',
+      pdf_encrypted:
+        'PDF ini dikunci dengan kata sandi. Simpan ulang tanpa kata sandi, lalu unggah lagi.',
+      pdf_active_content:
+        'PDF ini berisi skrip, lampiran, atau aksi otomatis yang tidak diizinkan. Ekspor ulang dari aplikasi desainnya sebagai PDF biasa, lalu unggah lagi.',
+      pdf_link:
+        'PDF ini berisi tautan yang tidak diizinkan. Tautan di booklet hanya boleh diawali https://, mailto:, atau tel:.',
+    } satisfies Record<UploadProblem, string>,
   },
 };
