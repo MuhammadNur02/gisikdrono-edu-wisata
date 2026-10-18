@@ -186,12 +186,13 @@ function severityOf(reason: UploadRefusal['reason']): EnumValue<'alert_severity'
   return SUSPICIOUS_PROBLEMS.has(reason) ? 'medium' : 'info';
 }
 
-// The upload_rejected security event (docs/Security.md §8.4, §10): ids and reasons only, never file names.
+// The upload_rejected security event (docs/Security.md §8.4, §11.1): ids and reasons only, never file names.
 export async function recordUploadRefusal(
   ctx: StaffContext,
   refusal: UploadRefusal,
   adminClient: DatabaseClient = createSupabaseAdminClient(),
 ): Promise<void> {
+  const details = { reason: refusal.reason, aal: ctx.isAal2 ? 'aal2' : 'aal1', ...refusal.details };
   const { error } = await adminClient.from('security_events').insert({
     event_type: 'upload_rejected',
     severity: severityOf(refusal.reason),
@@ -200,7 +201,7 @@ export async function recordUploadRefusal(
     rw_id: refusal.rwId,
     entity_type: 'upload',
     entity_id: refusal.objectName ?? null,
-    details: { reason: refusal.reason, aal: ctx.isAal2 ? 'aal2' : 'aal1', ...refusal.details },
+    details,
   });
   if (error) throw error;
 }
