@@ -11,6 +11,7 @@ import {
 } from 'pdf-lib';
 
 import { BOOKLET_LINK_SCHEMES, MAX_BOOKLET_PAGES } from '@/config/uploads';
+import { removeDocumentMetadata } from '@/lib/uploads/pdf-metadata';
 import { nameSpellings } from '@/lib/uploads/pdf-names';
 import { removePageOnlyOpenAction, type OpenActionKind } from '@/lib/uploads/pdf-open-action';
 
@@ -19,7 +20,8 @@ import { removePageOnlyOpenAction, type OpenActionKind } from '@/lib/uploads/pdf
 // object is walked, not only the catalog, and names are compared in every spelling (./pdf-names.ts). An
 // /OpenAction that only opens a page is removed first (./pdf-open-action.ts); every other one is refused. What
 // gets published is pdf-lib's re-serialisation of the objects that were checked, so no byte outside them (a
-// polyglot's second file, junk after the last object) reaches public-media. A booklet holds at most 100 pages.
+// polyglot's second file, junk after the last object) reaches public-media, and it carries no document metadata
+// (./pdf-metadata.ts). A booklet holds at most 100 pages.
 
 export type PdfScanResult =
   | {
@@ -136,6 +138,7 @@ async function publishable(
     if (pageCount > MAX_BOOKLET_PAGES) {
       return { ok: false, problem: 'pdf_too_many_pages', detail: String(pageCount) };
     }
+    removeDocumentMetadata(document);
     return { ok: true, pageCount, pdf: await document.save(), removedOpenAction };
   } catch {
     return { ok: false, problem: 'unreadable' };

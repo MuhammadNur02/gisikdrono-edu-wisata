@@ -236,6 +236,85 @@ describe('scanBookletPdf: an /OpenAction that only opens a page', () => {
   });
 });
 
+// docs/Security.md §8.4, decision of 2026-10-18.
+describe('scanBookletPdf: the published copy carries no document metadata', () => {
+  const XMP =
+    '<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/">' +
+    '<dc:creator>Pak Budi</dc:creator><exif:GPSLatitude>6,58.0S</exif:GPSLatitude></x:xmpmeta>';
+
+  function xmpStream(objectNumber: number): string {
+    return `${String(objectNumber)} 0 obj\n<< /Type /Metadata /Subtype /XML /Length ${String(XMP.length)} >>\nstream\n${XMP}\nendstream\nendobj\n`;
+  }
+
+  // Info in the trailer, XMP on the catalog, on an image and one left without a reference.
+  function pdfFullOfMetadata(): Buffer {
+    return handWrittenPdf(
+      '/Metadata 4 0 R',
+      [
+        xmpStream(4),
+        '5 0 obj\n<< /Title (Booklet RW 05) /Author (Pak Budi) /Creator (Canva) /Producer (Canva) /CreationDate (D:20261018090000+07) /Keywords (Bank Sampah) >>\nendobj\n',
+        '6 0 obj\n<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /Metadata 7 0 R /Length 1 >>\nstream\n\u0000\nendstream\nendobj\n',
+        xmpStream(7),
+        xmpStream(8),
+      ],
+      '/Info 5 0 R ',
+    );
+  }
+
+  async function republished(pdf: Uint8Array) {
+    return PDFDocument.load(pdf, { updateMetadata: false });
+  }
+
+  it('leaves out the document information dictionary', async () => {
+    const result = await scanBookletPdf(pdfFullOfMetadata());
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const copy = await republished(result.pdf);
+    expect(copy.context.trailerInfo.Info).toBeUndefined();
+    expect([copy.getTitle(), copy.getAuthor(), copy.getCreator(), copy.getProducer()]).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    expect(copy.getKeywords()).toBeUndefined();
+    expect(copy.getCreationDate()).toBeUndefined();
+  });
+
+  it('leaves out every XMP packet, on the catalog, on an image and one left over', async () => {
+    const result = await scanBookletPdf(pdfFullOfMetadata());
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const copy = await republished(result.pdf);
+    expect(copy.catalog.get(PDFName.of('Metadata'))).toBeUndefined();
+    const bytes = Buffer.from(result.pdf).toString('latin1');
+    expect(bytes).not.toContain('xmpmeta');
+    expect(bytes).not.toContain('Pak Budi');
+    expect(bytes).not.toContain('GPSLatitude');
+    expect(bytes).not.toContain('/Metadata');
+  });
+
+  it('strips what a PDF writer stamps by default', async () => {
+    const document = await PDFDocument.create();
+    document.addPage();
+    document.setAuthor('Pak Budi');
+    document.setCreator('Microsoft Word');
+
+    const result = await scanBookletPdf(await document.save());
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const copy = await republished(result.pdf);
+    expect([copy.getAuthor(), copy.getCreator(), copy.getProducer()]).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+});
+
 describe('countPublishedPages', () => {
   it('reads the page count of a published booklet', async () => {
     const result = await scanBookletPdf(await cleanBookletPdf());
