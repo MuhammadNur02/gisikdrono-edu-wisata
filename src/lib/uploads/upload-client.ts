@@ -6,26 +6,37 @@ import { copy } from '@/lib/copy/id';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import type { UploadPurpose } from '@/lib/uploads/paths';
 import { UploadRejectedError } from '@/lib/uploads/upload-error';
-import type { FinalizeUploadInput, SignUploadInput } from '@/lib/validations/upload';
+import type {
+  FinalizeUploadInput,
+  SignBookletPagesInput,
+  SignUploadInput,
+} from '@/lib/validations/upload';
 import type { UploadedImage } from '@/types/forms';
 import type { FinalizedPdf, FinalizedUpload } from '@/types/upload';
 
 // The browser half of docs/Security.md §8.4: ask api/uploads/sign for a five-minute URL, put the file straight
-// into uploads-quarantine with it, then ask api/uploads/finalize to publish what the file becomes. Only the
-// server decides paths and checks bytes; this module carries the file and passes the server's answer on.
+// into uploads-quarantine with it, then ask api/uploads/finalize to publish what the file becomes. Booklet pages
+// are signed all at once by api/uploads/sign-pages. Only the server decides paths and checks bytes; this module
+// carries the files and passes the server's answer on.
 
 export interface UploadTarget {
   // NULL uploads for the kelurahan (superadmin only).
   rwId: RwId | null;
   purpose: UploadPurpose;
   entityId?: string | undefined;
-  pageNumber?: number | undefined;
 }
 
 const failureSchema = z.object({ ok: z.literal(false), error: z.object({ message: z.string() }) });
 const signedSchema = z.object({
   ok: z.literal(true),
   data: z.object({ path: z.string(), token: z.string() }),
+});
+const signedPagesSchema = z.object({
+  ok: z.literal(true),
+  data: z.object({
+    pageCount: z.number(),
+    pages: z.array(z.object({ pageNumber: z.number(), path: z.string(), token: z.string() })),
+  }),
 });
 const finalizedSchema = z.object({
   ok: z.literal(true),
@@ -47,7 +58,9 @@ const finalizedSchema = z.object({
   ]),
 });
 
-function jsonPost(body: SignUploadInput | FinalizeUploadInput): RequestInit {
+function jsonPost(
+  body: SignUploadInput | SignBookletPagesInput | FinalizeUploadInput,
+): RequestInit {
   return {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -81,22 +94,24 @@ async function uploadToQuarantine(file: Blob, rwId: RwId | null): Promise<string
     leadingBytes: base64Of(leadingBytes),
   };
   const signed = await answerOf(await fetch('/api/uploads/sign', jsonPost(request)), signedSchema);
+  await putInQuarantine(file, signed.path, signed.token);
+  return signed.path;
+}
 
+async function putInQuarantine(file: Blob, path: string, token: string): Promise<void> {
   const { error } = await createSupabaseBrowserClient()
     .storage.from(QUARANTINE_BUCKET)
-    .uploadToSignedUrl(signed.path, signed.token, file, { contentType: file.type });
+    .uploadToSignedUrl(path, token, file, { contentType: file.type });
   if (error) throw new UploadRejectedError(copy.forms.image.failed);
-  return signed.path;
+}
+
+async function finalize(body: FinalizeUploadInput): Promise<FinalizedUpload> {
+  return answerOf(await fetch('/api/uploads/finalize', jsonPost(body)), finalizedSchema);
 }
 
 export async function uploadFile(file: Blob, target: UploadTarget): Promise<FinalizedUpload> {
   const path = await uploadToQuarantine(file, target.rwId);
-  const { purpose, entityId, pageNumber } = target;
-  const response = await fetch(
-    '/api/uploads/finalize',
-    jsonPost({ path, purpose, entityId, pageNumber }),
-  );
-  return answerOf(response, finalizedSchema);
+  return finalize({ path, purpose: target.purpose, entityId: target.entityId });
 }
 
 // The `upload` an ImageUploader takes (src/components/forms/image-uploader.tsx).
@@ -109,22 +124,38 @@ export function createImageUpload(target: UploadTarget) {
   };
 }
 
+async function drawPages(file: File): Promise<Blob[]> {
+  const { renderPdfPages } = await import('@/lib/uploads/rasterise-pdf');
+  const pages: Blob[] = [];
+  for await (const page of renderPdfPages(file)) pages.push(page.image);
+  return pages;
+}
+
 // A booklet goes up twice (Task P2.9.02): the PDF itself, which finalize scans and publishes, then each page
-// drawn in this browser by pdf.js and sent through the same signed-URL path as a photo, so the flipbook
-// never loads the PDF. The pages are drawn only after the server accepted the PDF.
+// drawn in this browser by pdf.js, so the flipbook never loads the PDF. The pages are drawn first and signed
+// afterwards in one api/uploads/sign-pages call, as many as the published PDF has, so drawing does not eat into
+// the five-minute window of the URLs (docs/Security.md §8.4, decision of 2026-10-18).
 export async function uploadBooklet(
   file: File,
   target: { rwId: RwId | null; bookletId: string },
   onPage?: (done: number, total: number) => void,
 ): Promise<FinalizedPdf> {
-  const base = { rwId: target.rwId, entityId: target.bookletId };
-  const pdf = await uploadFile(file, { ...base, purpose: 'booklet' });
+  const { rwId, bookletId } = target;
+  const pdf = await uploadFile(file, { rwId, purpose: 'booklet', entityId: bookletId });
   if (pdf.kind !== 'pdf') throw new UploadRejectedError(copy.forms.image.failed);
 
-  const { renderPdfPages } = await import('@/lib/uploads/rasterise-pdf');
-  for await (const page of renderPdfPages(file)) {
-    await uploadFile(page.image, { ...base, purpose: 'booklet-page', pageNumber: page.number });
-    onPage?.(page.number, page.total);
+  const images = await drawPages(file);
+  const response = await fetch('/api/uploads/sign-pages', jsonPost({ rwId, bookletId }));
+  const signed = await answerOf(response, signedPagesSchema);
+  if (signed.pageCount !== images.length)
+    throw new UploadRejectedError(copy.uploads.bookletPagesFailed);
+
+  for (const page of signed.pages) {
+    const image = images[page.pageNumber - 1];
+    if (!image) throw new UploadRejectedError(copy.uploads.bookletPagesFailed);
+    await putInQuarantine(image, page.path, page.token);
+    await finalize({ path: page.path, purpose: 'booklet-page' });
+    onPage?.(page.pageNumber, signed.pageCount);
   }
   return pdf;
 }

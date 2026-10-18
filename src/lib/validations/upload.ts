@@ -1,14 +1,14 @@
 import { z } from 'zod';
 
 import { RW_IDS } from '@/config/rw';
-import { LEADING_BYTES_LENGTH, MAX_BOOKLET_PAGES, UPLOAD_PURPOSES } from '@/config/uploads';
+import { LEADING_BYTES_LENGTH, UPLOAD_PURPOSES } from '@/config/uploads';
 
-// Request bodies of api/uploads/sign and api/uploads/finalize (docs/Security.md §8.4), shared with the
+// Request bodies of api/uploads/sign, sign-pages and finalize (docs/Security.md §8.4), shared with the
 // browser helper that calls them. The browser never names a path: sign makes one, finalize gets it back.
 
 const CONTENT_TYPE_MAX_LENGTH = 100;
-// `kelurahan/` plus a 36-character UUID is the longest path sign hands out.
-const QUARANTINE_PATH_MAX_LENGTH = 64;
+// `kelurahan/` plus a booklet page name (two UUIDs and two four-digit numbers) is the longest path issued.
+const QUARANTINE_PATH_MAX_LENGTH = 96;
 const BASE64_GROUP_BYTES = 3;
 const BASE64_GROUP_CHARS = 4;
 
@@ -34,13 +34,23 @@ export const signUploadSchema = z
 
 export type SignUploadInput = z.infer<typeof signUploadSchema>;
 
+// A booklet page names its booklet and its number in the path sign-pages gave it, so neither is sent here.
 export const finalizeUploadSchema = z
   .object({
     path: z.string().max(QUARANTINE_PATH_MAX_LENGTH),
     purpose: z.enum(UPLOAD_PURPOSES),
     entityId: z.uuid().optional(),
-    pageNumber: z.int().min(1).max(MAX_BOOKLET_PAGES).optional(),
   })
   .strict();
 
 export type FinalizeUploadInput = z.infer<typeof finalizeUploadSchema>;
+
+// api/uploads/sign-pages: the booklet whose published PDF says how many pages to sign.
+export const signBookletPagesSchema = z
+  .object({
+    rwId: z.literal(RW_IDS).nullable(),
+    bookletId: z.uuid(),
+  })
+  .strict();
+
+export type SignBookletPagesInput = z.infer<typeof signBookletPagesSchema>;

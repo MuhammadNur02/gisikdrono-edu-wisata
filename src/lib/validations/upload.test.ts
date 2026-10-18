@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { finalizeUploadSchema, signUploadSchema } from './upload';
+import { finalizeUploadSchema, signBookletPagesSchema, signUploadSchema } from './upload';
 
 const LEADING_BYTES = Buffer.alloc(64, 1).toString('base64');
 
@@ -30,25 +30,33 @@ describe('signUploadSchema', () => {
 describe('finalizeUploadSchema', () => {
   const path = 'rw-05/0199f5a0-0000-7000-8000-000000000000';
 
-  it('accepts a gallery photo and a booklet page', () => {
+  it('accepts a gallery photo and a booklet page named by its path', () => {
+    const pagePath = `${path}.6f1c2d3e-4a5b-4c6d-8e7f-0123456789ab.0003.0040`;
     expect(finalizeUploadSchema.safeParse({ path, purpose: 'gallery' }).success).toBe(true);
     expect(
-      finalizeUploadSchema.safeParse({
-        path,
-        purpose: 'booklet-page',
-        entityId: '6f1c2d3e-4a5b-4c6d-8e7f-0123456789ab',
-        pageNumber: 3,
-      }).success,
+      finalizeUploadSchema.safeParse({ path: pagePath, purpose: 'booklet-page' }).success,
     ).toBe(true);
   });
 
   it.each([
     ['an unknown purpose', { path, purpose: 'staff' }],
     ['an entity id that is not a uuid', { path, purpose: 'product', entityId: '1 or 1=1' }],
-    ['page zero', { path, purpose: 'booklet-page', pageNumber: 0 }],
+    ['a page number chosen by the browser', { path, purpose: 'booklet-page', pageNumber: 3 }],
     ['a target bucket', { path, purpose: 'gallery', bucket: 'documents' }],
-    ['an overlong path', { path: `${path}/${'x'.repeat(64)}`, purpose: 'gallery' }],
+    ['an overlong path', { path: `${path}/${'x'.repeat(96)}`, purpose: 'gallery' }],
   ])('refuses %s', (_case, input) => {
     expect(finalizeUploadSchema.safeParse(input).success).toBe(false);
+  });
+});
+
+describe('signBookletPagesSchema', () => {
+  it('takes an RW or the kelurahan and the booklet id, nothing else', () => {
+    const bookletId = '6f1c2d3e-4a5b-4c6d-8e7f-0123456789ab';
+    expect(signBookletPagesSchema.safeParse({ rwId: 8, bookletId }).success).toBe(true);
+    expect(signBookletPagesSchema.safeParse({ rwId: null, bookletId }).success).toBe(true);
+    expect(signBookletPagesSchema.safeParse({ rwId: 8, bookletId, pageCount: 500 }).success).toBe(
+      false,
+    );
+    expect(signBookletPagesSchema.safeParse({ rwId: 8, bookletId: '../x' }).success).toBe(false);
   });
 });

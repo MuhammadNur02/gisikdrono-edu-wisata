@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
   BOOKLET_PDF_TYPE,
+  MAX_BOOKLET_PAGES,
   PUBLIC_MEDIA_BUCKET,
   PUBLIC_MEDIA_CACHE_SECONDS,
   QUARANTINE_BUCKET,
@@ -13,16 +14,18 @@ import {
 import type { EnumValue } from '@/db/enums';
 import { svcRateLimitHit } from '@/db/rpc';
 import type { Database } from '@/db/types';
-import { copy } from '@/lib/copy/id';
-import { AppError, fail } from '@/lib/errors';
+import { AppError } from '@/lib/errors';
 import { reencodeImage, thumbnailOf } from '@/lib/images/re-encode';
 // The service role is needed because no API role holds a Storage policy (0006, docs/Security.md §6.8): only
 // the server may sign an upload into uploads-quarantine, read it back, and write public-media, so nothing
 // reaches the public site without the checks below. Every call acts on a path this module built or parsed
-// from `<owner>/<uuid v7>`, after the route checked the officer may upload for that owner (hasUploadAccess).
+// from a name the server issued, after checkUploadAccess confirmed the officer may upload for that owner.
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { checkUploadedFile, checkUploadRequest } from '@/lib/uploads/inspect';
+import { refusalSeverity, type UploadRefusalReason } from '@/lib/uploads/outcomes';
 import {
+  bookletPageObjectName,
+  bookletPdfPath,
   isPdfPurpose,
   publicMediaPathFor,
   quarantinePathFor,
@@ -30,35 +33,38 @@ import {
   type MediaTarget,
   type QuarantineUpload,
 } from '@/lib/uploads/paths';
-import { scanBookletPdf } from '@/lib/uploads/pdf-scan';
+import type { OpenActionKind } from '@/lib/uploads/pdf-open-action';
+import { countPublishedPages, scanBookletPdf } from '@/lib/uploads/pdf-scan';
 import { createUuidV7 } from '@/lib/utils/uuid-v7';
-import type { SignUploadInput } from '@/lib/validations/upload';
-import type { StaffContext } from '@/server/auth/guards';
-import type { ActionFailure } from '@/types/action-result';
-import type { FinalizedUpload, SignedUpload, UploadProblem } from '@/types/upload';
+import type { SignBookletPagesInput, SignUploadInput } from '@/lib/validations/upload';
+import { hasUploadAccess, type StaffContext } from '@/server/auth/guards';
+import type {
+  FinalizedUpload,
+  SignedBookletPages,
+  SignedUpload,
+  UploadProblem,
+} from '@/types/upload';
 
 type DatabaseClient = SupabaseClient<Database>;
 
-// A refused file is a business outcome (CLAUDE.md §4 rule 8), returned rather than thrown.
+// A refused file is a business outcome (CLAUDE.md §4 rule 8), returned rather than thrown. `sanitized` says
+// what a published booklet copy left out.
 export type UploadOutcome<T> =
-  { ok: true; data: T } | { ok: false; problem: UploadProblem; detail?: string | null };
+  | { ok: true; data: T; sanitized?: OpenActionKind | null }
+  | { ok: false; problem: UploadProblem; detail?: string | null };
 
-// What the uploader shows: the problem's own Indonesian message.
-export function failureFor(problem: UploadProblem): ActionFailure {
-  const code = problem === 'missing' ? 'NOT_FOUND' : 'VALIDATION';
-  return fail(code, undefined, copy.uploads.problems[problem]);
-}
+type UploadEvent = {
+  type: 'upload_rejected' | 'upload_sanitized';
+  severity: EnumValue<'alert_severity'>;
+  rwId: number | null;
+  objectName?: string;
+  details: Record<string, string | null>;
+};
 
 const SECONDS_PER_HOUR = 3600;
 const MS_PER_SECOND = 1000;
 const NOT_FOUND = '404';
 const ALREADY_EXISTS = '409';
-// A refusal that only a hand-made request or a doctored file produces; the rest are honest mistakes.
-const SUSPICIOUS_PROBLEMS: ReadonlySet<UploadProblem> = new Set([
-  'svg',
-  'pdf_active_content',
-  'pdf_link',
-]);
 
 function storageStatusOf(error: unknown): string | undefined {
   return typeof error === 'object' && error !== null && 'statusCode' in error
@@ -66,20 +72,71 @@ function storageStatusOf(error: unknown): string | undefined {
     : undefined;
 }
 
-// docs/Security.md §8.3: 60 signed upload URLs per staff member per hour.
-export async function signUpload(
+// docs/Security.md §11.1: ids and reasons only, never file names or links.
+async function writeUploadEvent(
+  adminClient: DatabaseClient,
   ctx: StaffContext,
-  input: SignUploadInput,
-  nowMs: number = Date.now(),
-): Promise<UploadOutcome<SignedUpload>> {
-  const adminClient = createSupabaseAdminClient();
+  event: UploadEvent,
+) {
+  const details = { aal: ctx.isAal2 ? 'aal2' : 'aal1', ...event.details };
+  const { error } = await adminClient.from('security_events').insert({
+    event_type: event.type,
+    severity: event.severity,
+    actor_id: ctx.userId,
+    actor_role: ctx.role,
+    rw_id: event.rwId,
+    entity_type: 'upload',
+    entity_id: event.objectName ?? null,
+    details,
+  });
+  if (error) throw error;
+}
+
+function refusalEvent(rwId: number | null, reason: UploadRefusalReason): UploadEvent {
+  return { type: 'upload_rejected', severity: refusalSeverity(reason), rwId, details: { reason } };
+}
+
+// A signed-in officer asking for an RW they may not upload for, or without a TOTP check, is recorded as
+// upload_rejected before the refusal (docs/Security.md UPL-04).
+export async function checkUploadAccess(
+  ctx: StaffContext,
+  rwId: number | null,
+  details: Record<string, string>,
+): Promise<boolean> {
+  if (hasUploadAccess(ctx, rwId)) return true;
+  const event = refusalEvent(rwId, 'forbidden');
+  await writeUploadEvent(createSupabaseAdminClient(), ctx, {
+    ...event,
+    details: { ...event.details, ...details },
+  });
+  return false;
+}
+
+// docs/Security.md §8.3: 60 signatures per staff member per hour; a whole booklet's pages count as one.
+async function countSignature(adminClient: DatabaseClient, ctx: StaffContext): Promise<void> {
   const isAllowed = await svcRateLimitHit(adminClient, {
     key: `upload_sign:${ctx.userId}`,
     limit: UPLOAD_SIGN_LIMIT_PER_HOUR,
     windowSeconds: SECONDS_PER_HOUR,
   });
   if (!isAllowed) throw new AppError('RATE_LIMITED');
+}
 
+async function signedUploadToken(adminClient: DatabaseClient, path: string): Promise<string> {
+  const { data, error } = await adminClient.storage
+    .from(QUARANTINE_BUCKET)
+    .createSignedUploadUrl(path);
+  if (error) throw error;
+  return data.token;
+}
+
+export async function signUpload(
+  ctx: StaffContext,
+  input: SignUploadInput,
+  nowMs: number = Date.now(),
+): Promise<UploadOutcome<SignedUpload>> {
+  const adminClient = createSupabaseAdminClient();
+  await countSignature(adminClient, ctx);
   const check = await checkUploadRequest({
     contentType: input.contentType,
     size: input.size,
@@ -88,11 +145,40 @@ export async function signUpload(
   if ('problem' in check) return { ok: false, problem: check.problem };
 
   const path = quarantinePathFor(input.rwId, createUuidV7(nowMs));
+  return { ok: true, data: { path, token: await signedUploadToken(adminClient, path) } };
+}
+
+// The pages of the PDF finalize published under this booklet in this owner's prefix, or null when there is
+// none: the count comes from the checked file, never from the browser.
+async function publishedPageCount(adminClient: DatabaseClient, input: SignBookletPagesInput) {
   const { data, error } = await adminClient.storage
-    .from(QUARANTINE_BUCKET)
-    .createSignedUploadUrl(path);
+    .from(PUBLIC_MEDIA_BUCKET)
+    .download(bookletPdfPath(input.rwId, input.bookletId));
+  if (storageStatusOf(error) === NOT_FOUND) return null;
   if (error) throw error;
-  return { ok: true, data: { path, token: data.token } };
+  return countPublishedPages(new Uint8Array(await data.arrayBuffer()));
+}
+
+// api/uploads/sign-pages (docs/Security.md §8.4, decision of 2026-10-18): one signature covers every page, each
+// URL bound to its page number and the page count in its object name, so finalize can make it that page only.
+export async function signBookletPages(
+  ctx: StaffContext,
+  input: SignBookletPagesInput,
+  nowMs: number = Date.now(),
+): Promise<UploadOutcome<SignedBookletPages>> {
+  const adminClient = createSupabaseAdminClient();
+  await countSignature(adminClient, ctx);
+  const pageCount = await publishedPageCount(adminClient, input);
+  if (pageCount === null) return { ok: false, problem: 'booklet_missing' };
+  if (pageCount > MAX_BOOKLET_PAGES) return { ok: false, problem: 'pdf_too_many_pages' };
+
+  const pages: SignedBookletPages['pages'] = [];
+  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+    const slot = { bookletId: input.bookletId, pageNumber, pageCount };
+    const path = quarantinePathFor(input.rwId, bookletPageObjectName(createUuidV7(nowMs), slot));
+    pages.push({ pageNumber, path, token: await signedUploadToken(adminClient, path) });
+  }
+  return { ok: true, data: { pageCount, pages } };
 }
 
 // Published files are never replaced: a name already taken is a conflict, not an overwrite.
@@ -140,10 +226,13 @@ async function publishPdf(
   if (!scan.ok) return { ok: false, problem: scan.problem, detail: scan.detail ?? null };
 
   await writePublicMedia(adminClient, path, scan.pdf, BOOKLET_PDF_TYPE);
-  return {
-    ok: true,
-    data: { kind: 'pdf', path, pageCount: scan.pageCount, fileSizeBytes: scan.pdf.byteLength },
+  const data: FinalizedUpload = {
+    kind: 'pdf',
+    path,
+    pageCount: scan.pageCount,
+    fileSizeBytes: scan.pdf.byteLength,
   };
+  return { ok: true, data, sanitized: scan.removedOpenAction };
 }
 
 // Reads the quarantine object, refuses it when it arrived after the five-minute window (Supabase keeps the
@@ -159,8 +248,9 @@ async function processUpload(
   if (storageStatusOf(info.error) === NOT_FOUND) return { ok: false, problem: 'missing' };
   if (info.error) throw info.error;
   const lateByMs = Date.parse(info.data.createdAt) - upload.signedAtMs;
-  if (lateByMs > SIGNED_UPLOAD_WINDOW_SECONDS * MS_PER_SECOND)
+  if (lateByMs > SIGNED_UPLOAD_WINDOW_SECONDS * MS_PER_SECOND) {
     return { ok: false, problem: 'late' };
+  }
 
   const { data: file, error } = await quarantine.download(quarantinePath);
   if (error) throw error;
@@ -173,41 +263,25 @@ async function processUpload(
   return publishImage(adminClient, bytes, path, target.purpose === 'gallery');
 }
 
-export type UploadRefusal = {
-  rwId: number | null;
-  // 'forbidden': a signed-in staff member asked for another RW's prefix, or without a TOTP check.
-  reason: UploadProblem | 'forbidden';
-  objectName?: string;
-  details?: Record<string, string | null>;
-};
-
-function severityOf(reason: UploadRefusal['reason']): EnumValue<'alert_severity'> {
-  if (reason === 'forbidden') return 'high';
-  return SUSPICIOUS_PROBLEMS.has(reason) ? 'medium' : 'info';
-}
-
-// The upload_rejected security event (docs/Security.md §8.4, §11.1): ids and reasons only, never file names.
-export async function recordUploadRefusal(
-  ctx: StaffContext,
-  refusal: UploadRefusal,
-  adminClient: DatabaseClient = createSupabaseAdminClient(),
-): Promise<void> {
-  const details = { reason: refusal.reason, aal: ctx.isAal2 ? 'aal2' : 'aal1', ...refusal.details };
-  const { error } = await adminClient.from('security_events').insert({
-    event_type: 'upload_rejected',
-    severity: severityOf(refusal.reason),
-    actor_id: ctx.userId,
-    actor_role: ctx.role,
-    rw_id: refusal.rwId,
-    entity_type: 'upload',
-    entity_id: refusal.objectName ?? null,
-    details,
-  });
-  if (error) throw error;
+function outcomeEvent(
+  outcome: UploadOutcome<FinalizedUpload>,
+  upload: QuarantineUpload,
+  target: MediaTarget,
+): UploadEvent | null {
+  const base = { rwId: upload.rwId, objectName: upload.objectName };
+  if (!outcome.ok) {
+    const event = refusalEvent(upload.rwId, outcome.problem);
+    const details = { ...event.details, purpose: target.purpose, found: outcome.detail ?? null };
+    return { ...event, ...base, details };
+  }
+  if (!outcome.sanitized) return null;
+  const details = { removed: 'OpenAction', kind: outcome.sanitized, purpose: target.purpose };
+  return { type: 'upload_sanitized', severity: 'info', ...base, details };
 }
 
 // The quarantine object goes once there is an answer either way; after a failure on our side it stays for
-// a retry, and the hourly purge drops it after a day (docs/Security.md §6.8).
+// a retry, and the hourly purge drops it after a day (docs/Security.md §6.8). A refusal is recorded as
+// upload_rejected, a booklet whose copy left something out as upload_sanitized.
 export async function finalizeUpload(
   ctx: StaffContext,
   upload: QuarantineUpload,
@@ -218,14 +292,7 @@ export async function finalizeUpload(
   await adminClient.storage
     .from(QUARANTINE_BUCKET)
     .remove([quarantinePathFor(upload.rwId, upload.objectName)]);
-  if (!outcome.ok) {
-    const refusal: UploadRefusal = {
-      rwId: upload.rwId,
-      reason: outcome.problem,
-      objectName: upload.objectName,
-      details: { purpose: target.purpose, found: outcome.detail ?? null },
-    };
-    await recordUploadRefusal(ctx, refusal, adminClient);
-  }
+  const event = outcomeEvent(outcome, upload, target);
+  if (event) await writeUploadEvent(adminClient, ctx, event);
   return outcome;
 }

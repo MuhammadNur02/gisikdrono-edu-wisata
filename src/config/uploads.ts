@@ -56,9 +56,11 @@ export const UPLOAD_PURPOSES = [
   'booklet-page',
 ] as const;
 
-// Booklet pages are numbered 0001.webp, 0002.webp … (docs/StyleGuide.md §5.12).
+// Booklet pages are numbered 0001.webp, 0002.webp … (docs/StyleGuide.md §5.12). A booklet holds at most 100
+// pages: api/uploads/sign-pages signs that many at once as one signature (docs/Security.md §8.4, decision of
+// 2026-10-18), and finalize refuses a longer PDF.
 export const BOOKLET_PAGE_DIGITS = 4;
-export const MAX_BOOKLET_PAGES = 9999;
+export const MAX_BOOKLET_PAGES = 100;
 
 // docs/Security.md §8.4, decision of 2026-10-18: the only link schemes a booklet PDF may carry.
 export const BOOKLET_LINK_SCHEMES = ['https:', 'mailto:', 'tel:'];

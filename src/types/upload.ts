@@ -18,12 +18,21 @@ export type UploadProblem =
   | 'unreadable'
   | 'pdf_encrypted'
   | 'pdf_active_content'
-  | 'pdf_link';
+  | 'pdf_link'
+  | 'pdf_too_many_pages'
+  | 'booklet_missing';
 
 // Where the browser puts the file: uploadToSignedUrl(path, token, file) on uploads-quarantine.
 export interface SignedUpload {
   path: string;
   token: string;
+}
+
+// What api/uploads/sign-pages answers: one signed URL for each page of a booklet whose PDF finalize has
+// published, in page order. The page number and the page count are part of each path.
+export interface SignedBookletPages {
+  pageCount: number;
+  pages: (SignedUpload & { pageNumber: number })[];
 }
 
 export interface FinalizedImage {

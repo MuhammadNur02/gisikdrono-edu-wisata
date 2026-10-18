@@ -239,6 +239,10 @@ export const copy = {
         'PDF ini berisi skrip, lampiran, atau aksi otomatis yang tidak diizinkan. Ekspor ulang dari aplikasi desainnya sebagai PDF biasa, lalu unggah lagi.',
       pdf_link:
         'PDF ini berisi tautan yang tidak diizinkan. Tautan di booklet hanya boleh diawali https://, mailto:, atau tel:.',
+      pdf_too_many_pages:
+        'Booklet maksimal 100 halaman. Pecah menjadi beberapa booklet, lalu unggah lagi satu per satu.',
+      booklet_missing: 'PDF booklet belum terunggah. Unggah PDF-nya dulu, baru halamannya.',
     } satisfies Record<UploadProblem, string>,
+    bookletPagesFailed: 'Halaman booklet gagal diunggah. Coba unggah ulang booklet-nya, ya.',
   },
 };

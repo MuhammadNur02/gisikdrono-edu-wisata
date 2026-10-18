@@ -4,6 +4,8 @@ import { createUuidV7 } from '@/lib/utils/uuid-v7';
 
 import {
   bookletPageFileName,
+  bookletPageObjectName,
+  bookletPdfPath,
   isPdfPurpose,
   isTargetAllowed,
   MEDIA_OWNERS,
@@ -18,6 +20,11 @@ import {
 const SIGNED_AT = Date.UTC(2026, 9, 18, 2, 0, 0);
 const OBJECT_NAME = createUuidV7(SIGNED_AT);
 const ENTITY_ID = '6f1c2d3e-4a5b-4c6d-8e7f-0123456789ab';
+const PAGE_12_OF_40 = bookletPageObjectName(OBJECT_NAME, {
+  bookletId: ENTITY_ID,
+  pageNumber: 12,
+  pageCount: 40,
+});
 
 function upload(path: string): QuarantineUpload {
   const parsed = parseQuarantinePath(path);
@@ -41,8 +48,32 @@ describe('parseQuarantinePath', () => {
       rwId: 8,
       objectName: OBJECT_NAME,
       signedAtMs: SIGNED_AT,
+      page: null,
     });
     expect(parseQuarantinePath(`kelurahan/${OBJECT_NAME}`)?.rwId).toBeNull();
+  });
+
+  it('reads the booklet page a sign-pages object was signed for', () => {
+    expect(PAGE_12_OF_40).toBe(`${OBJECT_NAME}.${ENTITY_ID}.0012.0040`);
+    expect(parseQuarantinePath(`rw-05/${PAGE_12_OF_40}`)).toEqual({
+      owner: 'rw-05',
+      rwId: 5,
+      objectName: PAGE_12_OF_40,
+      signedAtMs: SIGNED_AT,
+      page: { bookletId: ENTITY_ID, pageNumber: 12, pageCount: 40 },
+    });
+  });
+
+  it.each([
+    ['a page past the page count', `${OBJECT_NAME}.${ENTITY_ID}.0041.0040`],
+    ['page zero', `${OBJECT_NAME}.${ENTITY_ID}.0000.0040`],
+    ['a booklet over 100 pages', `${OBJECT_NAME}.${ENTITY_ID}.0001.0101`],
+    ['a page number of the wrong width', `${OBJECT_NAME}.${ENTITY_ID}.12.0040`],
+    ['a booklet id that is not a uuid', `${OBJECT_NAME}.booklet-rw05.0001.0040`],
+    ['an extra part', `${PAGE_12_OF_40}.webp`],
+    ['a missing page count', `${OBJECT_NAME}.${ENTITY_ID}.0012`],
+  ])('refuses a page name with %s', (_case, objectName) => {
+    expect(parseQuarantinePath(`rw-05/${objectName}`)).toBeNull();
   });
 
   it.each([
@@ -78,14 +109,13 @@ describe('isTargetAllowed', () => {
     expect(isTargetAllowed(rw05, { purpose: 'product', entityId: ENTITY_ID })).toBe(true);
   });
 
-  it('asks for a page number for booklet pages only', () => {
-    expect(
-      isTargetAllowed(rw05, { purpose: 'booklet-page', entityId: ENTITY_ID, pageNumber: 1 }),
-    ).toBe(true);
-    expect(isTargetAllowed(rw05, { purpose: 'booklet-page', entityId: ENTITY_ID })).toBe(false);
-    expect(isTargetAllowed(rw05, { purpose: 'booklet', entityId: ENTITY_ID, pageNumber: 1 })).toBe(
-      false,
-    );
+  it('lets a booklet page come only from sign-pages, and a sign-pages object become only a page', () => {
+    const page = upload(`rw-05/${PAGE_12_OF_40}`);
+    expect(isTargetAllowed(page, { purpose: 'booklet-page' })).toBe(true);
+    expect(isTargetAllowed(rw05, { purpose: 'booklet-page' })).toBe(false);
+    expect(isTargetAllowed(page, { purpose: 'booklet-page', entityId: ENTITY_ID })).toBe(false);
+    expect(isTargetAllowed(page, { purpose: 'gallery' })).toBe(false);
+    expect(isTargetAllowed(page, { purpose: 'booklet', entityId: ENTITY_ID })).toBe(false);
   });
 });
 
@@ -105,9 +135,14 @@ describe('publicMediaPathFor', () => {
     expect(publicMediaPathFor(rw05, { purpose: 'booklet', entityId: ENTITY_ID })).toBe(
       `rw-05/booklets/${ENTITY_ID}/booklet.pdf`,
     );
-    expect(
-      publicMediaPathFor(rw05, { purpose: 'booklet-page', entityId: ENTITY_ID, pageNumber: 12 }),
-    ).toBe(`rw-05/booklets/${ENTITY_ID}/pages/0012.webp`);
+    expect(publicMediaPathFor(upload(`rw-05/${PAGE_12_OF_40}`), { purpose: 'booklet-page' })).toBe(
+      `rw-05/booklets/${ENTITY_ID}/pages/0012.webp`,
+    );
+    expect(bookletPdfPath(5, ENTITY_ID)).toBe(`rw-05/booklets/${ENTITY_ID}/booklet.pdf`);
+  });
+
+  it('never makes a page of an object sign-pages did not sign', () => {
+    expect(() => publicMediaPathFor(rw05, { purpose: 'booklet-page' })).toThrow(RangeError);
   });
 
   it('puts the gallery thumbnail next to its photo', () => {
@@ -120,10 +155,10 @@ describe('publicMediaPathFor', () => {
 describe('bookletPageFileName', () => {
   it('numbers pages with four digits', () => {
     expect(bookletPageFileName(1)).toBe('0001.webp');
-    expect(bookletPageFileName(9999)).toBe('9999.webp');
+    expect(bookletPageFileName(100)).toBe('0100.webp');
   });
 
-  it.each([0, 10000, 1.5])('refuses page %s', (pageNumber) => {
+  it.each([0, 101, 1.5])('refuses page %s', (pageNumber) => {
     expect(() => bookletPageFileName(pageNumber)).toThrow(RangeError);
   });
 });

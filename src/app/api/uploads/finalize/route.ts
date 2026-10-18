@@ -1,24 +1,22 @@
 import { UPLOAD_REQUEST_BODY_LIMIT_BYTES } from '@/config/uploads';
 import { fail, mapError, ok, resultResponse } from '@/lib/errors';
 import { createLogger, requestIdFrom } from '@/lib/logger';
+import { failureFor } from '@/lib/uploads/outcomes';
 import {
   isTargetAllowed,
   parseQuarantinePath,
   type MediaTarget,
   type QuarantineUpload,
 } from '@/lib/uploads/paths';
-import { readJsonBody } from '@/lib/utils/json-body';
-import { isSameOriginRequest } from '@/lib/utils/same-origin';
+import { readStaffRequest } from '@/lib/utils/staff-request';
 import { finalizeUploadSchema } from '@/lib/validations/upload';
-import { hasUploadAccess, requireUser, type StaffContext } from '@/server/auth/guards';
-import { failureFor, finalizeUpload, recordUploadRefusal } from '@/server/services/upload-service';
+import { requireUser, type StaffContext } from '@/server/auth/guards';
+import { checkUploadAccess, finalizeUpload } from '@/server/services/upload-service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 // Downloading, re-encoding or scanning a 50 MB booklet takes longer than a webhook's 15 s.
 export const maxDuration = 60;
-
-const FORBIDDEN = 403;
 
 type Log = ReturnType<typeof createLogger>;
 
@@ -30,32 +28,32 @@ async function finalizeFor(
   target: MediaTarget,
   log: Log,
 ) {
-  if (!hasUploadAccess(ctx, upload.rwId)) {
-    const details = { step: 'finalize', owner: upload.owner };
-    await recordUploadRefusal(ctx, { rwId: upload.rwId, reason: 'forbidden', details });
+  const details = { step: 'finalize', owner: upload.owner };
+  if (!(await checkUploadAccess(ctx, upload.rwId, details))) {
     log.warn('upload_rejected', { ...details, reason: 'forbidden', actorId: ctx.userId });
     return fail('FORBIDDEN');
   }
   const outcome = await finalizeUpload(ctx, upload, target);
-  if (outcome.ok) return ok(outcome.data);
-  log.warn('upload_rejected', {
-    step: 'finalize',
-    reason: outcome.problem,
-    purpose: target.purpose,
-    actorId: ctx.userId,
-  });
-  return failureFor(outcome.problem);
+  const fields = { step: 'finalize', purpose: target.purpose, actorId: ctx.userId };
+  if (!outcome.ok) {
+    log.warn('upload_rejected', { ...fields, reason: outcome.problem });
+    return failureFor(outcome.problem);
+  }
+  if (outcome.sanitized) log.info('upload_sanitized', { ...fields, kind: outcome.sanitized });
+  return ok(outcome.data);
 }
 
 // docs/Security.md §8.4 step 3: checks the quarantined file's bytes, re-encodes an image or scans a booklet
-// PDF into public-media, deletes the quarantine object and records every refusal as upload_rejected.
+// PDF into public-media, deletes the quarantine object and records every refusal as upload_rejected. A booklet
+// page becomes the page its path was signed for and nothing else; a page outside its booklet never parses.
 export async function POST(request: Request): Promise<Response> {
-  if (!isSameOriginRequest(request)) return new Response(null, { status: FORBIDDEN });
-  const body = await readJsonBody(request, UPLOAD_REQUEST_BODY_LIMIT_BYTES);
-  if (!body.ok) return new Response(null, { status: body.status });
-  const parsed = finalizeUploadSchema.safeParse(body.value);
-  if (!parsed.success) return resultResponse(await mapError(parsed.error));
-  const { path, ...target } = parsed.data;
+  const read = await readStaffRequest(
+    request,
+    finalizeUploadSchema,
+    UPLOAD_REQUEST_BODY_LIMIT_BYTES,
+  );
+  if (!read.ok) return read.response;
+  const { path, ...target } = read.input;
   const upload = parseQuarantinePath(path);
   if (!upload || !isTargetAllowed(upload, target)) return resultResponse(fail('VALIDATION'));
 

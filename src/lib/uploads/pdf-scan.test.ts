@@ -1,7 +1,7 @@
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, PDFName } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 
-import { scanBookletPdf } from './pdf-scan';
+import { countPublishedPages, scanBookletPdf } from './pdf-scan';
 import {
   cleanBookletPdf,
   handWrittenPdf,
@@ -25,7 +25,11 @@ describe('scanBookletPdf', () => {
       '/OpenAction << /S /JavaScript /JS (app.alert(1)) >>',
       'OpenAction',
     ],
-    ['the hex-escaped /Open#41ction', '/Open#41ction << /S /GoTo /D [3 0 R /Fit] >>', 'OpenAction'],
+    [
+      'the hex-escaped /Open#41ction with a script',
+      '/Open#41ction << /S /JavaScript /JS (app.alert(1)) >>',
+      'OpenAction',
+    ],
     ['a lower-case escape pdf-lib leaves alone', '/Names << /#4aavaScript 4 0 R >>', 'JavaScript'],
     ['an escape inside a value', '/Foo << /S /J#61vaScript >>', 'JavaScript'],
     ['document-level additional actions', '/AA << /WC << /S /Named /N /Print >> >>', 'AA'],
@@ -139,5 +143,104 @@ describe('scanBookletPdf', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(Buffer.from(result.pdf).toString('latin1')).not.toContain('polyglot');
+  });
+
+  it('refuses a booklet over 100 pages and accepts one of exactly 100', async () => {
+    const pdfWith = async (pages: number) => {
+      const document = await PDFDocument.create();
+      for (let page = 0; page < pages; page += 1) document.addPage([420, 595]);
+      return document.save();
+    };
+
+    await expect(scanBookletPdf(await pdfWith(101))).resolves.toEqual({
+      ok: false,
+      problem: 'pdf_too_many_pages',
+      detail: '101',
+    });
+    await expect(scanBookletPdf(await pdfWith(100))).resolves.toMatchObject({
+      ok: true,
+      pageCount: 100,
+    });
+  });
+});
+
+// docs/Security.md §8.4, decision of 2026-10-18.
+describe('scanBookletPdf: an /OpenAction that only opens a page', () => {
+  async function openActionOf(pdf: Uint8Array) {
+    const republished = await PDFDocument.load(pdf);
+    return republished.catalog.get(PDFName.of('OpenAction'));
+  }
+
+  it.each([
+    ['a destination array', '/OpenAction [3 0 R /Fit]', 'destination'],
+    ['a destination with its zoom', '/OpenAction [3 0 R /XYZ null null 0]', 'destination'],
+    ['a page index destination', '/OpenAction [0 /FitH 595]', 'destination'],
+    ['a /GoTo action', '/OpenAction << /S /GoTo /D [3 0 R /Fit] >>', 'goto'],
+    [
+      'a /GoTo action to a named destination',
+      '/OpenAction << /Type /Action /S /GoTo /D (sampul) >>',
+      'goto',
+    ],
+    ['a hex-escaped key', '/Open#41ction [3 0 R /Fit]', 'destination'],
+    ['a lower-case escaped key', '/Ope#6eAction [3 0 R /Fit]', 'destination'],
+  ])('leaves out %s and says so', async (_case, catalogExtra, kind) => {
+    const result = await scanBookletPdf(handWrittenPdf(catalogExtra));
+
+    expect(result).toMatchObject({ ok: true, pageCount: 1, removedOpenAction: kind });
+    if (!result.ok) return;
+    expect(await openActionOf(result.pdf)).toBeUndefined();
+  });
+
+  it('follows a reference to the /GoTo action before deciding', async () => {
+    const pdf = handWrittenPdf('/OpenAction 4 0 R', [
+      '4 0 obj\n<< /S /GoTo /D [3 0 R /Fit] >>\nendobj\n',
+    ]);
+
+    await expect(scanBookletPdf(pdf)).resolves.toMatchObject({
+      ok: true,
+      removedOpenAction: 'goto',
+    });
+  });
+
+  it.each([
+    [
+      'a /GoTo that chains a script with /Next',
+      '/OpenAction << /S /GoTo /D [3 0 R /Fit] /Next << /S /JavaScript /JS (x) >> >>',
+    ],
+    ['a /GoTo with a key it has no use for', '/OpenAction << /S /GoTo /D [3 0 R /Fit] /F (x) >>'],
+    [
+      'a /GoTo to something that is not a destination',
+      '/OpenAction << /S /GoTo /D << /S /Launch >> >>',
+    ],
+    ['an escaped /GoTo pdf-lib did not decode', '/OpenAction << /S /G#6fTo /D [3 0 R /Fit] >>'],
+    ['a remote /GoToR', '/OpenAction << /S /GoToR /F (lain.pdf) /D [0 /Fit] >>'],
+    ['a destination with a string in its frame', '/OpenAction [3 0 R /Fit (x)]'],
+    ['a destination with an unknown fit', '/OpenAction [3 0 R /Zoom 2]'],
+    ['a named destination on its own', '/OpenAction (sampul)'],
+    [
+      'a page-only one next to a script under a second spelling',
+      '/OpenAction [3 0 R /Fit] /Ope#6eAction << /S /JavaScript /JS (x) >>',
+    ],
+  ])('still refuses %s', async (_case, catalogExtra) => {
+    await expect(scanBookletPdf(handWrittenPdf(catalogExtra))).resolves.toMatchObject({
+      ok: false,
+      problem: 'pdf_active_content',
+    });
+  });
+
+  it('removes nothing from a booklet without one', async () => {
+    await expect(scanBookletPdf(await cleanBookletPdf())).resolves.toMatchObject({
+      ok: true,
+      removedOpenAction: null,
+    });
+  });
+});
+
+describe('countPublishedPages', () => {
+  it('reads the page count of a published booklet', async () => {
+    const result = await scanBookletPdf(await cleanBookletPdf());
+    if (!result.ok) throw new Error('the clean booklet should pass');
+
+    await expect(countPublishedPages(result.pdf)).resolves.toBe(2);
   });
 });

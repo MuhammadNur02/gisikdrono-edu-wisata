@@ -1,7 +1,9 @@
+import { PDFDocument, PDFName } from 'pdf-lib';
 import sharp from 'sharp';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { copy } from '@/lib/copy/id';
+import { bookletPageObjectName, type BookletPageSlot } from '@/lib/uploads/paths';
 import { createUuidV7 } from '@/lib/utils/uuid-v7';
 import { requireUser, type StaffContext } from '@/server/auth/guards';
 
@@ -48,6 +50,14 @@ function quarantined(bytes: Buffer, owner = 'rw-05', secondsAfterSigning = 5): s
   const signedAt = Date.now() - 60_000;
   const path = `${owner}/${createUuidV7(signedAt)}`;
   admin().receiveUpload(path, bytes, new Date(signedAt + secondsAfterSigning * 1000));
+  return path;
+}
+
+// A page the browser put into quarantine through a URL api/uploads/sign-pages signed for that slot.
+function quarantinedPage(bytes: Buffer, slot: BookletPageSlot): string {
+  const signedAt = Date.now() - 60_000;
+  const path = `rw-05/${bookletPageObjectName(createUuidV7(signedAt), slot)}`;
+  admin().receiveUpload(path, bytes, new Date(signedAt + 5000));
   return path;
 }
 
@@ -168,7 +178,7 @@ describe('POST /api/uploads/finalize: booklet PDFs', () => {
 
   it.each([
     ['a JavaScript open action', '/OpenAction << /S /JavaScript /JS (app.alert(1)) >>'],
-    ['the hex-escaped /Open#41ction', '/Open#41ction << /S /GoTo /D [3 0 R /Fit] >>'],
+    ['the hex-escaped /Open#41ction', '/Open#41ction << /S /JavaScript /JS (app.alert(1)) >>'],
   ])('refuses %s and records it as suspicious', async (_case, catalogExtra) => {
     const response = await finalize({
       path: quarantined(handWrittenPdf(catalogExtra)),
@@ -183,13 +193,50 @@ describe('POST /api/uploads/finalize: booklet PDFs', () => {
     });
   });
 
-  it('turns a booklet page into a numbered WebP', async () => {
+  it('leaves out an /OpenAction that only opens a page and records upload_sanitized', async () => {
+    const pdf = handWrittenPdf('/OpenAction << /S /GoTo /D [3 0 R /Fit] >>');
+
     const response = await finalize({
-      path: quarantined(await jpegPhoto(1200, 1600)),
-      purpose: 'booklet-page',
+      path: quarantined(pdf),
+      purpose: 'booklet',
       entityId: BOOKLET_ID,
-      pageNumber: 3,
     });
+
+    expect(response.status).toBe(200);
+    const published = admin().publicMedia.get(`rw-05/booklets/${BOOKLET_ID}/booklet.pdf`);
+    const republished = await PDFDocument.load(new Uint8Array(published?.bytes ?? []));
+    expect(republished.catalog.get(PDFName.of('OpenAction'))).toBeUndefined();
+    expect(admin().securityEvents).toEqual([
+      expect.objectContaining({
+        event_type: 'upload_sanitized',
+        severity: 'info',
+        rw_id: 5,
+        details: expect.objectContaining({ removed: 'OpenAction', kind: 'goto' }) as unknown,
+      }),
+    ]);
+  });
+
+  it('refuses a booklet over 100 pages', async () => {
+    const document = await PDFDocument.create();
+    for (let page = 0; page < 101; page += 1) document.addPage([420, 595]);
+
+    const response = await finalize({
+      path: quarantined(Buffer.from(await document.save())),
+      purpose: 'booklet',
+      entityId: BOOKLET_ID,
+    });
+
+    await expectRefused(response, copy.uploads.problems.pdf_too_many_pages, 'pdf_too_many_pages');
+  });
+
+  it('turns a signed booklet page into the numbered WebP its path names', async () => {
+    const path = quarantinedPage(await jpegPhoto(1200, 1600), {
+      bookletId: BOOKLET_ID,
+      pageNumber: 3,
+      pageCount: 40,
+    });
+
+    const response = await finalize({ path, purpose: 'booklet-page' });
 
     expect(await response.json()).toMatchObject({
       data: { path: `rw-05/booklets/${BOOKLET_ID}/pages/0003.webp`, thumbnailPath: null },
@@ -259,6 +306,38 @@ describe('POST /api/uploads/finalize: the path and the officer', () => {
     ['a path sign never made', { path: 'rw-05/../rw-08/foto.jpg', purpose: 'gallery' }],
     ['a hero banner from an RW prefix', { path: `rw-05/${createUuidV7()}`, purpose: 'hero' }],
     ['a product without its row', { path: `rw-05/${createUuidV7()}`, purpose: 'product' }],
+    [
+      'a booklet page that sign-pages did not sign',
+      { path: `rw-05/${createUuidV7()}`, purpose: 'booklet-page' },
+    ],
+    [
+      'a page past the page count of its booklet',
+      { path: `rw-05/${createUuidV7()}.${BOOKLET_ID}.0041.0040`, purpose: 'booklet-page' },
+    ],
+    [
+      'a booklet of more than 100 pages',
+      { path: `rw-05/${createUuidV7()}.${BOOKLET_ID}.0101.0101`, purpose: 'booklet-page' },
+    ],
+    [
+      'a signed page sent as a gallery photo',
+      { path: `rw-05/${createUuidV7()}.${BOOKLET_ID}.0001.0040`, purpose: 'gallery' },
+    ],
+    [
+      'a page number chosen by the browser',
+      {
+        path: `rw-05/${createUuidV7()}.${BOOKLET_ID}.0001.0040`,
+        purpose: 'booklet-page',
+        pageNumber: 2,
+      },
+    ],
+    [
+      'another booklet named by the browser',
+      {
+        path: `rw-05/${createUuidV7()}.${BOOKLET_ID}.0001.0040`,
+        purpose: 'booklet-page',
+        entityId: '00000000-0000-4000-8000-0000000b0099',
+      },
+    ],
   ])('refuses %s before anything is read', async (_case, body) => {
     const response = await finalize(body);
 

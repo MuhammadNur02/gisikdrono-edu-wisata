@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { LEADING_BYTES_LENGTH } from '@/config/uploads';
 import { parseQuarantinePath, type MediaTarget, type QuarantineUpload } from '@/lib/uploads/paths';
 import type { StaffContext } from '@/server/auth/guards';
-import { finalizeUpload, signUpload } from '@/server/services/upload-service';
+import { finalizeUpload, signBookletPages, signUpload } from '@/server/services/upload-service';
 
 import { localStack, runSql, sqlText } from '../../scripts/local-stack';
 import { cleanBookletPdf, handWrittenPdf } from '../fixtures/pdf';
@@ -24,7 +24,11 @@ vi.mock('@/lib/supabase/admin', () => ({
 }));
 
 const SLOW_HOOK_MS = 60_000;
+// Each case re-encodes or scans a real file and makes several Storage calls, slower than the default on Windows.
+const SLOW_TEST_MS = 30_000;
 const BOOKLET_ID = '00000000-0000-4000-9000-0000000b0011';
+const PAGED_BOOKLET_ID = '00000000-0000-4000-9000-0000000b0013';
+const SANITIZED_BOOKLET_ID = '00000000-0000-4000-9000-0000000b0014';
 const idRowsSchema = z.array(z.object({ id: z.string() }));
 
 let officer: StaffContext;
@@ -94,11 +98,11 @@ afterAll(async () => {
   const admin = serviceRole();
   if (publishedPaths.length > 0) await admin.storage.from('public-media').remove(publishedPaths);
   await runSql(`select set_config('app.purge', 'on', true);
-    delete from public.security_events where event_type = 'upload_rejected' and actor_id = ${sqlText(officer.userId)};
+    delete from public.security_events where event_type in ('upload_rejected', 'upload_sanitized') and actor_id = ${sqlText(officer.userId)};
     delete from public.rate_limit_buckets where key = ${sqlText(`upload_sign:${officer.userId}`)};`);
 }, SLOW_HOOK_MS);
 
-describe('upload pipeline on the local stack', () => {
+describe('upload pipeline on the local stack', { timeout: SLOW_TEST_MS }, () => {
   it('publishes a photo as WebP with its thumbnail and empties the quarantine', async () => {
     const upload = await quarantined(await jpegPhoto(2000, 1500), 'image/jpeg');
 
@@ -156,5 +160,55 @@ describe('upload pipeline on the local stack', () => {
     });
 
     expect(outcome).toMatchObject({ ok: false, problem: 'pdf_active_content' });
+  });
+
+  it('leaves out an /OpenAction that only opens a page and records upload_sanitized', async () => {
+    const pdf = handWrittenPdf('/OpenAction [3 0 R /Fit]');
+    const upload = await quarantined(pdf, 'application/pdf');
+
+    const outcome = await finalize(upload, { purpose: 'booklet', entityId: SANITIZED_BOOKLET_ID });
+
+    expect(outcome).toMatchObject({ ok: true, sanitized: 'destination' });
+    const events = await runSql(`select severity, details->>'removed' as removed,
+        details->>'kind' as kind
+      from public.security_events
+      where event_type = 'upload_sanitized' and entity_id = ${sqlText(upload.objectName)}`);
+    expect(events).toEqual([{ severity: 'info', removed: 'OpenAction', kind: 'destination' }]);
+  });
+
+  it('signs every page of a published booklet at once and publishes each as its own page', async () => {
+    const pdf = Buffer.from(await cleanBookletPdf());
+    await finalize(await quarantined(pdf, 'application/pdf'), {
+      purpose: 'booklet',
+      entityId: PAGED_BOOKLET_ID,
+    });
+
+    const signed = await signBookletPages(officer, { rwId: 5, bookletId: PAGED_BOOKLET_ID });
+    if (!signed.ok) throw new Error(`sign-pages refused: ${signed.problem}`);
+    expect(signed.data.pageCount).toBe(2);
+
+    const page = await jpegPhoto(1131, 1600);
+    const published: string[] = [];
+    for (const slot of signed.data.pages) {
+      const { error } = await browser()
+        .storage.from('uploads-quarantine')
+        .uploadToSignedUrl(slot.path, slot.token, page, { contentType: 'image/jpeg' });
+      if (error) throw error;
+      const upload = parseQuarantinePath(slot.path);
+      if (!upload) throw new Error('sign-pages returned a path finalize cannot read');
+      const outcome = await finalize(upload, { purpose: 'booklet-page' });
+      if (outcome.ok) published.push(outcome.data.path);
+    }
+
+    expect(published).toEqual([
+      `rw-05/booklets/${PAGED_BOOKLET_ID}/pages/0001.webp`,
+      `rw-05/booklets/${PAGED_BOOKLET_ID}/pages/0002.webp`,
+    ]);
+  });
+
+  it('signs no pages for a booklet whose PDF was never published', async () => {
+    await expect(
+      signBookletPages(officer, { rwId: 5, bookletId: '00000000-0000-4000-9000-0000000b0015' }),
+    ).resolves.toEqual({ ok: false, problem: 'booklet_missing' });
   });
 });

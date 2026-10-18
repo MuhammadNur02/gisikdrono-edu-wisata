@@ -10,20 +10,29 @@ import {
   type PDFObject,
 } from 'pdf-lib';
 
-import { BOOKLET_LINK_SCHEMES } from '@/config/uploads';
+import { BOOKLET_LINK_SCHEMES, MAX_BOOKLET_PAGES } from '@/config/uploads';
+import { nameSpellings } from '@/lib/uploads/pdf-names';
+import { removePageOnlyOpenAction, type OpenActionKind } from '@/lib/uploads/pdf-open-action';
 
 // docs/Security.md §8.4 and UPL-05: a booklet PDF is published only when nothing in it can act on its own.
 // pdf-lib parses the whole file, including objects appended after %%EOF, and decodes object streams, so every
-// object is walked, not only the catalog. Names are compared after their #xx escapes are decoded, because
-// pdf-lib decodes only upper-case escapes and a reader would still see /#4aavaScript as /JavaScript. What gets
-// published is pdf-lib's re-serialisation of the objects that were checked, so no byte outside them (a
-// polyglot's second file, junk after the last object) reaches public-media.
+// object is walked, not only the catalog, and names are compared in every spelling (./pdf-names.ts). An
+// /OpenAction that only opens a page is removed first (./pdf-open-action.ts); every other one is refused. What
+// gets published is pdf-lib's re-serialisation of the objects that were checked, so no byte outside them (a
+// polyglot's second file, junk after the last object) reaches public-media. A booklet holds at most 100 pages.
 
 export type PdfScanResult =
-  | { ok: true; pageCount: number; pdf: Uint8Array }
+  | {
+      ok: true;
+      pageCount: number;
+      pdf: Uint8Array;
+      // What the published copy left out, for the upload_sanitized event.
+      removedOpenAction: OpenActionKind | null;
+    }
   | {
       ok: false;
-      problem: 'unreadable' | 'pdf_encrypted' | 'pdf_active_content' | 'pdf_link';
+      problem:
+        'unreadable' | 'pdf_encrypted' | 'pdf_active_content' | 'pdf_link' | 'pdf_too_many_pages';
       // The offending name or link scheme, for the upload_rejected event; never the link itself.
       detail?: string;
     };
@@ -50,25 +59,6 @@ const FORBIDDEN_NAMES = new Set([
 ]);
 const URI_KEY = 'URI';
 const OBJECT_STREAM_TYPE = 'ObjStm';
-const HEX_ESCAPE = /#([0-9a-fA-F]{2})/g;
-const HEX = 16;
-
-function decodeHexEscapes(name: string): string {
-  return name.replace(HEX_ESCAPE, (_match, hex: string) =>
-    String.fromCharCode(Number.parseInt(hex, HEX)),
-  );
-}
-
-// Every spelling a reader could take the name for. Each pass that changes it makes it shorter, so it ends.
-function nameSpellings(name: PDFName): string[] {
-  const spellings = [name.decodeText()];
-  for (;;) {
-    const last = spellings.at(-1) ?? '';
-    const next = decodeHexEscapes(last);
-    if (next === last) return spellings;
-    spellings.push(next);
-  }
-}
 
 function forbiddenName(name: PDFName): string | undefined {
   return nameSpellings(name).find((spelling) => FORBIDDEN_NAMES.has(spelling));
@@ -136,13 +126,28 @@ async function loadPdf(bytes: Uint8Array): Promise<PDFDocument | 'unreadable' | 
 }
 
 // A file without a catalog or page tree loads, but cannot be counted or written.
-async function publishable(document: PDFDocument): Promise<PdfScanResult> {
+async function publishable(
+  document: PDFDocument,
+  removedOpenAction: OpenActionKind | null,
+): Promise<PdfScanResult> {
   try {
     const pageCount = document.getPageCount();
     if (pageCount === 0) return { ok: false, problem: 'unreadable' };
-    return { ok: true, pageCount, pdf: await document.save() };
+    if (pageCount > MAX_BOOKLET_PAGES) {
+      return { ok: false, problem: 'pdf_too_many_pages', detail: String(pageCount) };
+    }
+    return { ok: true, pageCount, pdf: await document.save(), removedOpenAction };
   } catch {
     return { ok: false, problem: 'unreadable' };
+  }
+}
+
+// The catalog itself is missing in a file that only looks like a PDF.
+function removeOpenAction(document: PDFDocument): OpenActionKind | null | 'unreadable' {
+  try {
+    return removePageOnlyOpenAction(document);
+  } catch {
+    return 'unreadable';
   }
 }
 
@@ -160,7 +165,15 @@ export async function scanBookletPdf(bytes: Uint8Array): Promise<PdfScanResult> 
   const objects = document.context.enumerateIndirectObjects().map(([, object]) => object);
   if (objects.some(isObjectStream)) return { ok: false, problem: 'unreadable' };
 
+  const removedOpenAction = removeOpenAction(document);
+  if (removedOpenAction === 'unreadable') return { ok: false, problem: 'unreadable' };
   const finding = firstFinding(objects, (object) => document.context.lookup(object));
   if (finding) return { ok: false, ...finding };
-  return publishable(document);
+  return publishable(document, removedOpenAction);
+}
+
+// The page count of a booklet finalize published: pdf-lib's own output, read back by api/uploads/sign-pages.
+export async function countPublishedPages(bytes: Uint8Array): Promise<number> {
+  const document = await PDFDocument.load(bytes, { updateMetadata: false });
+  return document.getPageCount();
 }

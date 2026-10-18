@@ -2,11 +2,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { copy } from '@/lib/copy/id';
 
-import { createImageUpload, uploadFile } from './upload-client';
+import { createImageUpload, uploadBooklet, uploadFile } from './upload-client';
 import { UploadRejectedError } from './upload-error';
 import { jpegPhoto } from '../../../tests/fixtures/uploads';
 
 const storage = vi.hoisted(() => ({ uploadToSignedUrl: vi.fn() }));
+const drawnPages = vi.hoisted(() => ({ images: [] as Blob[] }));
+
+// pdf.js needs a real browser; the booklet flow only needs the drawn pages.
+vi.mock('@/lib/uploads/rasterise-pdf', () => ({
+  renderPdfPages: async function* renderPdfPages() {
+    for (const [index, image] of drawnPages.images.entries()) {
+      yield await Promise.resolve({ number: index + 1, total: drawnPages.images.length, image });
+    }
+  },
+}));
 
 vi.mock('@/lib/supabase/client', () => ({
   createSupabaseBrowserClient: () => ({
@@ -128,5 +138,87 @@ describe('createImageUpload', () => {
       blurhash: IMAGE.blurhash,
       thumbnailPath: IMAGE.thumbnailPath,
     });
+  });
+});
+
+describe('uploadBooklet', () => {
+  const BOOKLET_ID = '6f1c2d3e-4a5b-4c6d-8e7f-0123456789ab';
+  const PDF = {
+    kind: 'pdf',
+    path: `rw-05/booklets/${BOOKLET_ID}/booklet.pdf`,
+    pageCount: 2,
+    fileSizeBytes: 900,
+  };
+  const pagePath = (page: number) => `${QUARANTINE_PATH}.${BOOKLET_ID}.000${String(page)}.0002`;
+  const signedPages = {
+    pageCount: 2,
+    pages: [1, 2].map((pageNumber) => ({
+      pageNumber,
+      path: pagePath(pageNumber),
+      token: `t${String(pageNumber)}`,
+    })),
+  };
+
+  beforeEach(() => {
+    drawnPages.images = [
+      new Blob(['page 1'], { type: 'image/webp' }),
+      new Blob(['page 2'], { type: 'image/webp' }),
+    ];
+  });
+
+  it('publishes the PDF, draws its pages, signs them in one call and finalizes each page', async () => {
+    fetchMock
+      .mockReturnValueOnce(answer({ ok: true, data: { path: QUARANTINE_PATH, token: 't' } }))
+      .mockReturnValueOnce(answer({ ok: true, data: PDF }))
+      .mockReturnValueOnce(answer({ ok: true, data: signedPages }))
+      .mockReturnValueOnce(
+        answer({ ok: true, data: { ...IMAGE, path: 'p1', thumbnailPath: null } }),
+      )
+      .mockReturnValueOnce(
+        answer({ ok: true, data: { ...IMAGE, path: 'p2', thumbnailPath: null } }),
+      );
+    const progress: number[] = [];
+
+    const result = await uploadBooklet(
+      new File(['%PDF-1.7'], 'booklet.pdf', { type: 'application/pdf' }),
+      { rwId: 5, bookletId: BOOKLET_ID },
+      (done) => progress.push(done),
+    );
+
+    expect(result).toEqual(PDF);
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      '/api/uploads/sign',
+      '/api/uploads/finalize',
+      '/api/uploads/sign-pages',
+      '/api/uploads/finalize',
+      '/api/uploads/finalize',
+    ]);
+    expect(sentBody(2)).toEqual({ rwId: 5, bookletId: BOOKLET_ID });
+    expect(sentBody(3)).toEqual({ path: pagePath(1), purpose: 'booklet-page' });
+    expect(storage.uploadToSignedUrl).toHaveBeenNthCalledWith(
+      2,
+      pagePath(1),
+      't1',
+      drawnPages.images[0],
+      {
+        contentType: 'image/webp',
+      },
+    );
+    expect(progress).toEqual([1, 2]);
+  });
+
+  it('stops when the server counts other pages than the browser drew', async () => {
+    fetchMock
+      .mockReturnValueOnce(answer({ ok: true, data: { path: QUARANTINE_PATH, token: 't' } }))
+      .mockReturnValueOnce(answer({ ok: true, data: PDF }))
+      .mockReturnValueOnce(answer({ ok: true, data: { ...signedPages, pageCount: 3 } }));
+
+    await expect(
+      uploadBooklet(new File(['%PDF-1.7'], 'booklet.pdf', { type: 'application/pdf' }), {
+        rwId: 5,
+        bookletId: BOOKLET_ID,
+      }),
+    ).rejects.toEqual(new UploadRejectedError(copy.uploads.bookletPagesFailed));
+    expect(storage.uploadToSignedUrl).toHaveBeenCalledTimes(1);
   });
 });
