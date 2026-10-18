@@ -13,6 +13,8 @@ const serverOnlyStub = fileURLToPath(
 );
 
 export default defineConfig({
+  // Next.js compiles JSX itself (tsconfig "jsx": "preserve"), so tests that render a component compile it here.
+  oxc: { jsx: { runtime: 'automatic' } },
   resolve: {
     tsconfigPaths: true,
     alias: { 'server-only': serverOnlyStub },
