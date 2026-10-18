@@ -147,7 +147,7 @@ src/
     (booking)/                 pesan/[packageSlug], reservasi/cari, reservasi/[bookingCode]/{bayar,tiket,sertifikat,ulasan}
     (auth)/                    login, forgot-password, reset-password, mfa/enroll, mfa/verify, onboarding
     (admin)/dashboard/         layout.tsx = requireRole() + AAL2 gate + RwSwitcher; force-dynamic, noindex
-    api/                       webhooks/, jobs/, tickets/verify, documents/[kind]/[id], export/[kind], uploads/{sign,finalize}, health
+    api/                       webhooks/, jobs/, tickets/verify, documents/[kind]/[id], export/[kind], uploads/{sign,sign-pages,finalize}, health
     auth/{callback,signout}/   route handlers
     sitemap.ts robots.ts manifest.ts opengraph-image.tsx layout.tsx not-found.tsx error.tsx global-error.tsx
   components/
@@ -375,7 +375,7 @@ export type ActionResult<T> =
 
 ### 5.4 Route handler conventions
 
-Route handlers exist only for: webhooks, jobs, `POST /api/tickets/verify` (stable JSON contract for the PWA across deploys), `api/documents/[kind]/[id]` (PDF streaming), `api/export/[kind]`, `api/uploads/{sign,finalize}`, `api/health`, `auth/callback`, `auth/signout`.
+Route handlers exist only for: webhooks, jobs, `POST /api/tickets/verify` (stable JSON contract for the PWA across deploys), `api/documents/[kind]/[id]` (PDF streaming), `api/export/[kind]`, `api/uploads/{sign,sign-pages,finalize}`, `api/health`, `auth/callback`, `auth/signout`.
 
 ```ts
 export const runtime = 'nodejs';
@@ -389,7 +389,7 @@ export const maxDuration = 15; // webhooks 15, jobs/PDF/export 60
 | Jobs `api/jobs/{process-notifications,payments-poll,reconcile-payments,anomaly-scan,expire-bookings,purge-storage}` | `Authorization: Bearer ${CRON_SECRET}` compared with `timingSafeEqual`, else 401. Idempotent, batch-limited, log `{ job, processed, failed, runId }`. Triggered by pg_cron + pg_net (and `after()` kicks from the Midtrans webhook and check-in). `process-notifications` dead-letters a row by keeping `status = 'failed'` and setting `notifications.dead_at` (after 8 attempts or a permanent provider error); there is no `dead` status value. |
 | Documents `api/documents/[kind]/[id]` | Authorise first (staff RLS check or verified guest cookie, plus last-4 of verified phone for participant-bearing PDFs); render lazily on first request; store in `documents`; `Content-Type: application/pdf`, `Content-Disposition: inline`, `Cache-Control: private, no-store`. `kind = booklet` is the one public kind: no auth, rate-limited per IP, calls `internal.increment_booklet_download` under the service role (`document-service.ts`), then redirects to the published `public-media` object served as an attachment. No RPC is ever granted to `anon`. |
 | Export `api/export/[kind]` (`visits`, `attendance`, `finance`, `audit`) | Via `rpc_create_export`; superadmin AAL2 (admin_rw: own-RW attendance without contact columns); cap 50 000 rows / 12 months; 10 exports/h/user; watermark footer; 300 s signed URL; auto-delete 24 h. |
-| Uploads `api/uploads/sign`, `api/uploads/finalize` | Session at AAL2 + Origin check (`hasUploadAccess`, `isSameOriginRequest`); a refused officer is recorded as `upload_rejected` (`high`). Signed upload URL (5 min) into `uploads-quarantine/rw-XX/<uuid v7>`; Supabase keeps the URL itself alive for 2 h, so `finalize` refuses a file stored more than 300 s after the time in its UUID v7 name. `finalize` re-encodes with sharp (strip EXIF, max 1600 px, webp, magic-byte check, 480 px thumbnail for galleries) or scans PDFs with `pdf-lib` and publishes its re-serialisation, writes `public-media` without ever overwriting (`upsert: false`), deletes the quarantine object. SVG rejected; HEIC/HEIF refused by its bytes with its own message (decision of 2026-10-18). Logic in `src/server/services/upload-service.ts`. |
+| Uploads `api/uploads/sign`, `api/uploads/sign-pages`, `api/uploads/finalize` | Session at AAL2 + Origin check (`checkUploadAccess`, `readStaffRequest`); a refused officer is recorded as `upload_rejected` (`high`). Signed upload URL (5 min) into `uploads-quarantine/rw-XX/<uuid v7>`; Supabase keeps the URL itself alive for 2 h, so `finalize` refuses a file stored more than 300 s after the time in its UUID v7 name. `sign-pages` signs every page of a booklet whose PDF `finalize` published (at most 100) as one signature, each name `<uuid v7>.<booklet id>.<page>.<count>`, and `finalize` makes such an object that page only. `finalize` re-encodes with sharp (strip EXIF, max 1600 px, webp, magic-byte check, 480 px thumbnail for galleries) or scans PDFs with `pdf-lib` and publishes its re-serialisation (a page-only `/OpenAction` is left out and recorded as `upload_sanitized`), writes `public-media` without ever overwriting (`upsert: false`), deletes the quarantine object. SVG rejected; HEIC/HEIF refused by its bytes with its own message (decisions of 2026-10-18). Logic in `src/server/services/upload-service.ts`. |
 
 No CORS headers on any route. All handlers reject bodies above their cap and parse with zod.
 
@@ -954,7 +954,7 @@ Codes: `booking_code` = `GSK-` + 8 chars Crockford base32 (`GSK-7F3K9Q2M`); `pay
 | Booking (force-dynamic, noindex) | `/pesan/[packageSlug]?step=jadwal\|data\|tambahan\|ringkasan`, `/reservasi/cari`, `/reservasi/[bookingCode]`, `/reservasi/[bookingCode]/bayar`, `/reservasi/[bookingCode]/tiket`, `/reservasi/[bookingCode]/sertifikat`, `/reservasi/[bookingCode]/ulasan` |
 | Auth | `/login`, `/forgot-password`, `/reset-password`, `/mfa/enroll`, `/mfa/verify`, `/onboarding`, `auth/callback`, `auth/signout` |
 | Admin `(admin)/dashboard` | `/dashboard`, `bookings`, `bookings/[id]`, `sessions`, `scanner`, `attendance`, `certificates`, `packages`, `packages/new`, `packages/[id]/edit`, `products` (same pattern), `galleries`, `articles` (same pattern), `booklets`, `schedules`, `activity-points`, `pages`, `reviews`, `finance`, `finance/revenue-share`, `finance/reconciliation`, `finance/adjustments`, `exports`, `users`, `settings`, `settings/hero-banners`, `audit-logs`, `security-alerts`, `profile` |
-| API | `api/webhooks/midtrans/[token]`, `api/webhooks/whatsapp`, `api/webhooks/resend` (could), `api/jobs/process-notifications`, `api/jobs/payments-poll`, `api/jobs/reconcile-payments`, `api/jobs/anomaly-scan`, `api/jobs/expire-bookings`, `api/jobs/purge-storage`, `api/tickets/verify`, `api/documents/[kind]/[id]`, `api/export/[kind]`, `api/uploads/sign`, `api/uploads/finalize`, `api/health`, `sitemap.ts`, `robots.ts`, `manifest.ts`, `opengraph-image.tsx` |
+| API | `api/webhooks/midtrans/[token]`, `api/webhooks/whatsapp`, `api/webhooks/resend` (could), `api/jobs/process-notifications`, `api/jobs/payments-poll`, `api/jobs/reconcile-payments`, `api/jobs/anomaly-scan`, `api/jobs/expire-bookings`, `api/jobs/purge-storage`, `api/tickets/verify`, `api/documents/[kind]/[id]`, `api/export/[kind]`, `api/uploads/sign`, `api/uploads/sign-pages`, `api/uploads/finalize`, `api/health`, `sitemap.ts`, `robots.ts`, `manifest.ts`, `opengraph-image.tsx` |
 
 ### A.4 RPCs, views, buckets, jobs
 
