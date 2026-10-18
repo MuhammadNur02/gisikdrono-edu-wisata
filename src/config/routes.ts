@@ -16,3 +16,7 @@ export const PRIVATE_ROUTE_PREFIXES = [
 // The WhatsApp button stays off checkout and the dashboard (docs/StyleGuide.md §5.16): a booking in progress
 // has its own help, and staff have no use for the visitor chat.
 export const WHATSAPP_FAB_HIDDEN_PREFIXES = ['/pesan', '/reservasi', '/dashboard'] as const;
+
+// Pages below these carry a sticky booking bar at the bottom of a phone screen, so the WhatsApp button moves up
+// above it there (docs/StyleGuide.md §5.16, §10.2): the package detail pages.
+export const STICKY_MOBILE_CTA_PARENTS = ['/paket-wisata'] as const;

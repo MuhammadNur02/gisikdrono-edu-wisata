@@ -17,3 +17,10 @@ export interface PerformanceSchedule {
   // The published package a visitor can book for it, if any.
   packageSlug: string | null;
 }
+
+// One date a schedule happens on: the schedule itself for a one-off, or one repeat of a recurring one.
+export interface ScheduleOccurrence {
+  schedule: PerformanceSchedule;
+  startsAt: string;
+  endsAt: string;
+}

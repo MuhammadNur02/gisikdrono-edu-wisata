@@ -6,6 +6,7 @@ import type {
   Event,
   GovernmentOrganization,
   ImageGallery,
+  ItemList,
   Offer,
   PostalAddress,
   Product,
@@ -211,6 +212,25 @@ export function aggregateRatingJsonLd(input: AggregateRatingInput): Node<Aggrega
     ratingValue: input.averageRating,
     reviewCount: input.reviewCount,
     ...RATING_SCALE,
+  };
+}
+
+export interface ItemListEntry {
+  name: string;
+  path: string;
+}
+
+// A catalogue page in order: the packages of /paket-wisata, the products of /produk.
+export function itemListJsonLd(entries: readonly ItemListEntry[]): Node<ItemList> {
+  return {
+    '@type': 'ItemList',
+    numberOfItems: entries.length,
+    itemListElement: entries.map((entry, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      name: entry.name,
+      url: absoluteUrl(entry.path),
+    })),
   };
 }
 

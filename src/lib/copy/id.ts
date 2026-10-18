@@ -86,6 +86,41 @@ export const copy = {
     rating: (rating: string, max: number) => `Rating ${rating} dari ${String(max)}`,
     ratingSummary: (rating: string, count: number) =>
       `Rating ${rating} dari ${String(count)} ulasan`,
+    // Filters: the answer to a visitor's own choice may say nothing matched (docs/StyleGuide.md §6.9).
+    filterAll: 'Semua',
+    filterRw: 'Kampung',
+    filterPackageType: 'Jenis paket',
+    filterProductCategory: 'Kategori',
+    filterRating: 'Rating',
+    clearFilters: 'Hapus filter',
+    packagesFilterEmpty: 'Belum ada paket untuk filter ini.',
+    productsFilterEmpty: 'Belum ada produk untuk filter ini.',
+    reviewsFilterEmpty: 'Belum ada ulasan dengan rating ini.',
+    stars: (rating: number) => `${String(rating)} bintang`,
+    reviewCount: (count: number) => `dari ${String(count)} ulasan`,
+    availabilityTitle: 'Sesi terbuka 14 hari ke depan',
+    seatsLeft: (remaining: number) => `sisa ${String(remaining)} kursi`,
+    availabilityNone:
+      'Tidak ada sesi terbuka dalam 14 hari ke depan. Pilih tanggal lain saat memesan.',
+    availabilityFailed: 'Jadwal sesi tidak bisa dimuat. Muat ulang halaman untuk mencoba lagi.',
+    highlights: 'Yang dilakukan',
+    inclusions: 'Sudah termasuk',
+    itinerary: 'Rencana kegiatan',
+    priceTiers: 'Harga rombongan',
+    tierRange: (min: number, max: number | null) =>
+      max === null ? `${String(min)} orang atau lebih` : `${String(min)}–${String(max)} orang`,
+    validity: (from: string | null, to: string | null) =>
+      from && to
+        ? `Berlaku ${from} sampai ${to}`
+        : from
+          ? `Berlaku mulai ${from}`
+          : `Berlaku sampai ${to ?? ''}`,
+    addOnHint: 'Tambahkan saat pesan paket',
+    askOnWhatsApp: 'Tanya via WhatsApp',
+    vendorTitle: 'Dibuat oleh',
+    leadTime: (days: number) => `Dipesan paling lambat ${String(days)} hari sebelum kunjungan`,
+    orderRange: (min: number, max: number | null, unit: string) =>
+      max === null ? `Minimal ${String(min)} ${unit}` : `${String(min)}–${String(max)} ${unit}`,
   },
   // RW page labels. An empty section has no text at all: it is left out (docs/StyleGuide.md §6.9).
   rwPage: {

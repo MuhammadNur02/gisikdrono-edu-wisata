@@ -18,6 +18,7 @@ function RwHighlightBlock({ unit }: { unit: RwUnitProfile }) {
       <Photo
         image={unit.heroImage}
         caption={unit.name}
+        placeholder={{ icon: programme.icon, rwIds: [unit.id] }}
         sizes={IMAGE_SIZES.split}
         aspectClassName="aspect-4/3"
         className="sm:col-span-2"

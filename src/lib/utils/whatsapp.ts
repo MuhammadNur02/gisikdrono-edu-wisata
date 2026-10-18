@@ -1,4 +1,4 @@
-import { WHATSAPP_FAB_HIDDEN_PREFIXES } from '@/config/routes';
+import { STICKY_MOBILE_CTA_PARENTS, WHATSAPP_FAB_HIDDEN_PREFIXES } from '@/config/routes';
 import { isPathUnder } from '@/lib/utils/paths';
 
 const WHATSAPP_CHAT_BASE_URL = 'https://wa.me/';
@@ -17,4 +17,9 @@ export function pageTopicFromTitle(documentTitle: string, siteName: string): str
 
 export function isWhatsAppFabHidden(pathname: string): boolean {
   return WHATSAPP_FAB_HIDDEN_PREFIXES.some((prefix) => isPathUnder(pathname, prefix));
+}
+
+// The pages strictly below a parent, such as /paket-wisata/<slug>; the catalogue itself has no sticky bar.
+export function hasStickyMobileCta(pathname: string): boolean {
+  return STICKY_MOBILE_CTA_PARENTS.some((parent) => pathname.startsWith(`${parent}/`));
 }

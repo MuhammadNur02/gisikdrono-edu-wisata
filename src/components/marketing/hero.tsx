@@ -1,10 +1,11 @@
+import { Images } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 
 import { Container } from '@/components/layout/container';
 import { HeroProductCard } from '@/components/marketing/hero-product-card';
 import { PhotoFrame } from '@/components/marketing/photo';
-import { PhotoPending } from '@/components/marketing/photo-pending';
+import { PhotoPlaceholder } from '@/components/marketing/photo-placeholder';
 import { RatingStars } from '@/components/reviews/rating-stars';
 import { Button } from '@/components/ui/button';
 import { IMAGE_SIZES } from '@/config/images';
@@ -103,7 +104,7 @@ function HeroSlide({ banner, isFirst, product, packagesAnchor }: HeroSlideProps)
   );
 }
 
-// Before the kelurahan uploads a banner, the hero says what the site is and shows Foto menyusul (§1.3 G1).
+// Before the kelurahan uploads a banner, the hero says what the site is beside the photo placeholder (§1.3 G1).
 function HeroWithoutBanner({
   description,
   packagesAnchor,
@@ -116,7 +117,12 @@ function HeroWithoutBanner({
         <p className="text-body-lg text-pretty text-muted-foreground">{description}</p>
         <HeroActions packagesAnchor={packagesAnchor} />
       </div>
-      <PhotoPending subject={`Kegiatan di ${siteConfig.ownerName}`} className="aspect-video" />
+      <PhotoPlaceholder
+        label={`Kegiatan di ${siteConfig.ownerName}`}
+        icon={Images}
+        rwIds={[]}
+        className="aspect-video"
+      />
     </div>
   );
 }

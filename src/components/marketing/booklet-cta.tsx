@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { RwTag } from '@/components/layout/rw-tag';
 import { Section } from '@/components/layout/section';
 import { BOOKLET_KIND_LABELS } from '@/config/status';
+import { bookletPath } from '@/lib/utils/paths';
 import type { BookletSummary } from '@/types/booklet';
 
 export interface BookletCtaProps {
@@ -15,7 +16,7 @@ function BookletRow({ booklet }: { booklet: BookletSummary }) {
   return (
     <li>
       <Link
-        href={`/e-booklet/${booklet.slug}`}
+        href={bookletPath(booklet.slug)}
         className="flex min-h-11 items-start gap-4 rounded-xl border border-border bg-card p-4 transition-colors hover:bg-accent md:p-5 dark:border-white/5"
       >
         <BookOpen aria-hidden className="mt-0.5 size-5 shrink-0 text-primary-text" />

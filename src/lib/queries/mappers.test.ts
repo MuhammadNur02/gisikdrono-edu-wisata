@@ -4,7 +4,7 @@ import { toOptionalRwId, toPublicImage, toPublicImages, toRwId } from '@/lib/que
 import { parseItinerary } from '@/lib/queries/packages';
 
 describe('toPublicImage', () => {
-  it('gives no image without a path, so the page shows Foto menyusul', () => {
+  it('gives no image without a path, so the page shows the photo placeholder', () => {
     expect(toPublicImage(null, 'Bank Sampah')).toBeNull();
     expect(toPublicImage('', 'Bank Sampah')).toBeNull();
   });

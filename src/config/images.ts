@@ -13,6 +13,8 @@ export const IMAGE_SIZES = {
   card: '(min-width: 1280px) 25vw, (min-width: 640px) 50vw, 100vw',
   // The photo beside text in a two-column block.
   split: '(min-width: 1024px) 640px, 100vw',
+  // The main column of a detail page, two of the three columns from lg (the package and product pages).
+  main: '(min-width: 1280px) 820px, (min-width: 1024px) 66vw, 100vw',
   // A tile in the masonry gallery, two to four columns (§5.11).
   thumb: '(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw',
 } as const;

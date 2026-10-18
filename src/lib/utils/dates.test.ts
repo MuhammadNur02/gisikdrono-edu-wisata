@@ -6,9 +6,13 @@ import {
   formatDateLong,
   formatDateShort,
   formatInstantTimeRange,
+  formatMonthLong,
+  jakartaMonthKey,
+  toJakartaIsoString,
   formatTimeRange,
   todayInJakarta,
   toVisitDate,
+  upcomingVisitDates,
   visitDateToCalendarDate,
 } from './dates';
 
@@ -87,5 +91,25 @@ describe('formatInstantTimeRange', () => {
     expect(formatInstantTimeRange('2026-10-18T12:00:00Z', '2026-10-18T14:30:00Z')).toBe(
       '19.00–21.30 WIB',
     );
+  });
+});
+
+describe('Semarang months and Event dates', () => {
+  it('writes an instant with the +07:00 offset', () => {
+    expect(toJakartaIsoString('2026-10-18T12:00:00Z')).toBe('2026-10-18T19:00:00+07:00');
+  });
+
+  it('puts a late-evening UTC instant in the next Semarang month', () => {
+    expect(jakartaMonthKey('2026-10-31T18:00:00Z')).toBe('2026-11');
+    expect(formatMonthLong('2026-10-31T18:00:00Z')).toBe('November 2026');
+  });
+});
+
+describe('upcomingVisitDates', () => {
+  it('spans the coming days from today in Semarang, today included', () => {
+    expect(upcomingVisitDates(14, new Date('2026-10-18T20:00:00Z'))).toEqual({
+      from: '2026-10-19',
+      to: '2026-11-01',
+    });
   });
 });

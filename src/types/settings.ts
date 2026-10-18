@@ -10,4 +10,7 @@ export interface PublicSiteSettings {
   contactEmail: string | null;
   kelurahanAddress: string | null;
   seoDefaultDescription: string;
+  // The Pejabat Pelindungan Data named on /privasi (docs/Security.md §7.6).
+  dpoName: string | null;
+  dpoEmail: string | null;
 }

@@ -8,8 +8,10 @@ import { useEffect, useState, type MouseEvent } from 'react';
 import { siteConfig } from '@/config/site';
 import { copy } from '@/lib/copy/id';
 import { scaleIn } from '@/lib/motion/variants';
+import { cn } from '@/lib/utils/cn';
 import {
   buildWhatsAppChatUrl,
+  hasStickyMobileCta,
   isWhatsAppFabHidden,
   pageTopicFromTitle,
 } from '@/lib/utils/whatsapp';
@@ -56,7 +58,10 @@ export function WhatsAppFab() {
       variants={scaleIn}
       initial={prefersReducedMotion ? false : 'hidden'}
       animate="visible"
-      className="fixed right-6 bottom-6 z-40 inline-flex size-14 items-center justify-center rounded-full bg-success text-success-foreground shadow-card-hover transition-shadow hover:shadow-modal"
+      className={cn(
+        'fixed right-6 bottom-6 z-40 inline-flex size-14 items-center justify-center rounded-full bg-success text-success-foreground shadow-card-hover transition-shadow hover:shadow-modal',
+        hasStickyMobileCta(pathname) && 'bottom-20 md:bottom-6',
+      )}
     >
       <MessageCircle aria-hidden className="size-6" />
     </m.a>

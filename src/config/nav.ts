@@ -72,5 +72,6 @@ export const SITE_NAV_GROUPS: readonly PublicNavGroup[] = [
 
 export const LEGAL_NAV_ITEMS: readonly PublicNavItem[] = [
   { label: 'Kebijakan privasi', href: '/privasi' },
-  { label: 'Permintaan data pribadi', href: '/privasi/permintaan' },
+  // `Permintaan data pribadi` (/privasi/permintaan) returns with its form in P3.12.03 (decision of 2026-10-18,
+  // go-live check #23); until then /privasi explains the request by email.
 ];

@@ -1,7 +1,7 @@
 -- Reference data of 0008_seed (docs/PRD.md §8.6, assumption A4, Task P1.8.01) and the development seed guard
 -- (Task P1.8.02, security review of PR #5). Vault secrets are written and removed inside the suite's own transaction.
 begin;
-select plan(20);
+select plan(21);
 
 -- ===== RWs and settings =====
 select is(
@@ -18,7 +18,8 @@ select is(
         'checkin.grace_before_minutes:false', 'contact.email:true', 'contact.whatsapp_number:true',
         'email_enabled:false', 'finance.expected_payout_account_masked:false', 'kelurahan.address:true',
         'kelurahan.signatory_name:false', 'kelurahan.signatory_title:false', 'maintenance_mode:true',
-        'pii_retention_months:false', 'pricing.min_price_per_pax:false', 'rate_limit_profile:false',
+        'pii_retention_months:false', 'pricing.min_price_per_pax:false', 'privacy.dpo_email:true',
+        'privacy.dpo_name:true', 'rate_limit_profile:false',
         'seo.default_description:true', 'whatsapp_enabled:false'],
   'every key of docs/PRD.md §8.6 is seeded, public exactly where the PRD says'
 );
@@ -57,14 +58,24 @@ select is(
 -- ===== Placeholders =====
 select is(
   array(select internal.placeholder_site_settings()),
-  array['contact.email', 'contact.whatsapp_number', 'finance.expected_payout_account_masked', 'kelurahan.signatory_name'],
+  array['contact.email', 'contact.whatsapp_number', 'finance.expected_payout_account_masked', 'kelurahan.signatory_name',
+        'privacy.dpo_email', 'privacy.dpo_name'],
   'the values the kelurahan still has to give are flagged as placeholders'
 );
 update public.site_settings set value = '"kelurahan.gisikdrono@semarangkota.go.id"' where key = 'contact.email';
 update public.site_settings set value = '"+6281234567890"' where key = 'contact.whatsapp_number';
 update public.site_settings set value = '"BRI ****4321"' where key = 'finance.expected_payout_account_masked';
 update public.site_settings set value = '"Budi Santoso, S.Sos."' where key = 'kelurahan.signatory_name';
+update public.site_settings set value = '"Siti Rahma"' where key = 'privacy.dpo_name';
+update public.site_settings set value = '"privasi@gisikdrono.go.id"' where key = 'privacy.dpo_email';
 select is(array(select internal.placeholder_site_settings()), array[]::text[], 'real values clear them');
+select is(
+  (select count(*) filter (where before ? 'value' or after ? 'value') || '/' || count(*) from public.audit_logs
+   where entity_type = 'site_settings' and entity_id in ('privacy.dpo_name', 'privacy.dpo_email')
+     and action = 'site_settings.update'),
+  '0/2',
+  'the officer''s name and mailbox are audited without their values'
+);
 update public.site_settings set value = '"info@example.invalid"' where key = 'contact.email';
 update public.site_settings set value = '"[isi alamat]"' where key = 'kelurahan.address';
 select is(
