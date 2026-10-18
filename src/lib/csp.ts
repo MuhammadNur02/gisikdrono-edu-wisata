@@ -1,3 +1,4 @@
+import { YOUTUBE_EMBED_ORIGIN, YOUTUBE_STILL_ORIGIN } from '@/config/gallery';
 import { PRIVATE_ROUTE_PREFIXES } from '@/config/routes';
 import { isPathUnder } from '@/lib/utils/paths';
 
@@ -16,6 +17,12 @@ const OSM_TILE_ORIGINS = ['https://tile.openstreetmap.org', 'https://*.tile.open
 const GOOGLE_MAPS_EMBED = 'https://www.google.com/maps/embed';
 // @vercel/analytics loads from our own origin in production, but from this host in development.
 const VERCEL_ANALYTICS_DEV_ORIGIN = 'https://va.vercel-scripts.com';
+
+// The gallery's YouTube videos, on public pages only (decision of 2026-10-18): the player from the
+// privacy-enhanced domain once the visitor presses play, and the still before that. Each is held to the one
+// path the gallery uses.
+const YOUTUBE_PLAYER_SOURCE = `${YOUTUBE_EMBED_ORIGIN}/embed/`;
+const YOUTUBE_STILL_SOURCE = `${YOUTUBE_STILL_ORIGIN}/vi/`;
 
 const SCANNER_PATH = '/dashboard/scanner';
 const LOCKED_DOWN_FEATURES =
@@ -36,6 +43,18 @@ function scriptSources({ nonce, isDevelopment }: CspOptions): string {
   return sources.join(' ');
 }
 
+function imageSources({ nonce }: CspOptions, supabaseOrigin: string): string {
+  const sources = ["'self'", 'blob:', supabaseOrigin, ...OSM_TILE_ORIGINS];
+  if (nonce === null) sources.push(YOUTUBE_STILL_SOURCE);
+  return sources.join(' ');
+}
+
+function frameSources({ nonce }: CspOptions): string {
+  const sources = [TURNSTILE_ORIGIN, GOOGLE_MAPS_EMBED];
+  if (nonce === null) sources.push(YOUTUBE_PLAYER_SOURCE);
+  return sources.join(' ');
+}
+
 export function buildContentSecurityPolicy(options: CspOptions): string {
   const supabase = new URL(options.supabaseUrl);
   const supabaseRealtime = `${supabase.protocol === 'https:' ? 'wss' : 'ws'}://${supabase.host}`;
@@ -43,10 +62,10 @@ export function buildContentSecurityPolicy(options: CspOptions): string {
     "default-src 'self'",
     `script-src ${scriptSources(options)}`,
     "style-src 'self' 'unsafe-inline'",
-    `img-src 'self' blob: ${supabase.origin} ${OSM_TILE_ORIGINS.join(' ')}`,
+    `img-src ${imageSources(options, supabase.origin)}`,
     "font-src 'self'",
     `connect-src 'self' ${supabase.origin} ${supabaseRealtime} ${TURNSTILE_ORIGIN}`,
-    `frame-src ${TURNSTILE_ORIGIN} ${GOOGLE_MAPS_EMBED}`,
+    `frame-src ${frameSources(options)}`,
     "worker-src 'self' blob:",
     "media-src 'self' blob:",
     "manifest-src 'self'",

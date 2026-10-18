@@ -10,6 +10,7 @@ export const PUBLIC_PATHS = {
   products: '/produk',
   reviews: '/ulasan',
   privacy: '/privasi',
+  gallery: '/galeri',
 } as const;
 
 export function packagePath(slug: string): string {

@@ -12,6 +12,7 @@ import {
   NotCollected,
   Processors,
   Rights,
+  YoutubeThirdParty,
 } from '@/components/privacy/privacy-sections';
 import { siteConfig } from '@/config/site';
 import { getPublicSiteSettings } from '@/lib/queries/settings';
@@ -84,6 +85,7 @@ export default async function PrivacyPage() {
         <NotCollected />
         <ChildrenData />
         <Processors />
+        <YoutubeThirdParty />
         <Rights dpoEmail={settings.dpoEmail} />
         <Breach />
         <EnglishSummary dpoEmail={settings.dpoEmail} />

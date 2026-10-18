@@ -1,4 +1,5 @@
 import { EmailLink, NoticeSection } from '@/components/privacy/privacy-sections';
+import { YOUTUBE_PLAYER_HOST, YOUTUBE_STILL_HOST } from '@/config/gallery';
 import {
   BACKUP_RETENTION_DAYS,
   BREACH_NOTICE_HOURS,
@@ -37,6 +38,13 @@ function SummaryData() {
         Supabase and Vercel (Singapore), Midtrans (Indonesia), Meta WhatsApp and Cloudflare
         Turnstile (outside Indonesia) and Resend (United States) process data for us, under data
         processing agreements and contractual safeguards.
+      </p>
+      <p>
+        Gallery videos come from YouTube, owned by Google, a third party outside our processors.
+        Google receives your IP address at two moments: when the gallery opens and a video&apos;s
+        still loads from {YOUTUBE_STILL_HOST} because staff have not uploaded their own, and when
+        you press play and the video plays through {YOUTUBE_PLAYER_HOST}. Before you press play, the
+        YouTube player is not loaded.
       </p>
     </>
   );
