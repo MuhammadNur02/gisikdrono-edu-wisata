@@ -30,6 +30,9 @@ export const GALLERY_MAX_PAGES = 20;
 // the one frame origin the public CSP allows for it (docs/Security.md §8.2, src/lib/csp.ts).
 export const YOUTUBE_EMBED_ORIGIN = 'https://www.youtube-nocookie.com';
 // The still of a video without an uploaded thumbnail (galleries.thumbnail_path); `hqdefault` exists for
-// every video, 480 × 360 with the 16:9 picture letterboxed inside it.
+// every video, 4:3 with the 16:9 picture letterboxed inside it, which the 16:9 tile crops away.
 export const YOUTUBE_STILL_ORIGIN = 'https://i.ytimg.com';
-export const YOUTUBE_STILL_SIZE = { width: 480, height: 360 } as const;
+// The hosts /privasi names to visitors (docs/Security.md §7.6), taken from the addresses above so the notice
+// cannot drift from what the gallery loads.
+export const YOUTUBE_PLAYER_HOST = new URL(YOUTUBE_EMBED_ORIGIN).host.replace(/^www\./, '');
+export const YOUTUBE_STILL_HOST = new URL(YOUTUBE_STILL_ORIGIN).host;

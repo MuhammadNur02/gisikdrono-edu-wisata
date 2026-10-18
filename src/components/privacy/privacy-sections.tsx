@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { YOUTUBE_PLAYER_HOST, YOUTUBE_STILL_HOST } from '@/config/gallery';
 import {
   BACKUP_RETENTION_DAYS,
   BREACH_NOTICE_HOURS,
@@ -112,6 +113,27 @@ export function Processors() {
         Sebagian pemroses berada di luar Indonesia, sehingga data Anda dikirim ke luar negeri dengan
         perjanjian pemrosesan data dan pengamanan kontraktual.
       </p>
+    </NoticeSection>
+  );
+}
+
+// docs/Security.md §7.6 and §8.2 (decision of 2026-10-18): YouTube is a third party, not one of our
+// processors, and Google sees the visitor's IP address at the two moments the gallery reaches it.
+export function YoutubeThirdParty() {
+  return (
+    <NoticeSection id="pihak-ketiga" title="Pihak ketiga: video YouTube">
+      <p>
+        Video di galeri berasal dari YouTube milik Google, pihak ketiga di luar pemroses data kami.
+        Google menerima alamat IP Anda pada dua saat:
+      </p>
+      <ul className="list-disc space-y-1 pl-5">
+        <li>
+          saat galeri dibuka, bila petugas belum mengunggah gambar sampul sendiri untuk sebuah
+          video: gambar sampulnya dimuat dari {YOUTUBE_STILL_HOST};
+        </li>
+        <li>saat Anda menekan tombol putar: videonya diputar lewat {YOUTUBE_PLAYER_HOST}.</li>
+      </ul>
+      <p>Sebelum Anda menekan tombol putar, pemutar YouTube tidak dimuat.</p>
     </NoticeSection>
   );
 }
