@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 
 import { Container } from '@/components/layout/container';
 import { PageHeader } from '@/components/layout/page-header';
+import { EnglishSummary } from '@/components/privacy/english-summary';
 import {
   Breach,
   ChildrenData,
@@ -85,6 +86,7 @@ export default async function PrivacyPage() {
         <Processors />
         <Rights dpoEmail={settings.dpoEmail} />
         <Breach />
+        <EnglishSummary dpoEmail={settings.dpoEmail} />
       </Container>
     </>
   );

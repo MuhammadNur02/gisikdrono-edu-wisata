@@ -14,14 +14,17 @@ import {
 export function NoticeSection({
   id,
   title,
+  lang,
   children,
 }: {
   id: string;
   title: string;
+  // Only the English summary sets it, so screen readers switch voice (CLAUDE.md §12.1 no. 18).
+  lang?: string;
   children: ReactNode;
 }) {
   return (
-    <section id={id} aria-labelledby={`${id}-judul`} className="space-y-4">
+    <section id={id} lang={lang} aria-labelledby={`${id}-judul`} className="space-y-4">
       <h2 id={`${id}-judul`} className="text-h3">
         {title}
       </h2>

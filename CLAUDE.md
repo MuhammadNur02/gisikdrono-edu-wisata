@@ -241,7 +241,7 @@ These rules are enforced in review and by lint. A PR that violates them is not m
 11. **Import order** (ESLint `import/order`): `server-only` / `'use client'` directive first, then node built-ins, external packages, `@/` aliases, relative imports; blank line between groups; type imports with `import type`.
 12. **File size.** Target <= 300 lines. Split by responsibility, not by line count.
 13. **Pure functions for critical logic.** Pricing (`computeBookingQuote`), QR signing/verification, guest-link minting, Midtrans status mapping and the booking state map are pure, side-effect-free and unit-tested to 100 % lines.
-14. **One language per surface.** UI copy, WhatsApp templates, emails and PDFs in Indonesian; code and docs in English.
+14. **One language per surface.** UI copy, WhatsApp templates, emails and PDFs in Indonesian; code and docs in English. The English summary on `/privasi` is the one recorded exception (§12.1 no. 18).
 
 ### 4.1 Review checklist (apply before opening a PR)
 
@@ -851,7 +851,7 @@ Show the migration first and wait for review.
 15. Never call `fetch` to an external host outside `src/lib/{midtrans,notifications,email,turnstile}`; never fetch a user-supplied URL.
 16. Never read `process.env` outside `src/lib/env.ts`.
 17. Never add a dependency, env var, cron job, bucket, template or table without updating this file, `.env.example`, and the relevant doc.
-18. Never use English in user-facing copy or Indonesian in identifiers.
+18. Never use English in user-facing copy or Indonesian in identifiers. One recorded exception (decision of 2026-10-18, `docs/Security.md` §7.6): `/privasi` ends with a single section titled `Summary in English`, marked `lang="en"` (`src/components/privacy/english-summary.tsx`), because foreign visitors do come; it restates the Indonesian notice without new content, says the Indonesian version is the one that applies, and changes whenever that text changes. No other English copy follows from it.
 19. Never commit without Conventional Commit format; never run `pnpm db:push` against production outside CI; never force-push `main`.
 20. Never relax a rule in `docs/Security.md` to satisfy a UI or convenience request.
 
