@@ -96,20 +96,20 @@ export interface FooterContactDetails {
   address: string | null;
 }
 
-// Office hours have no site_settings key yet, so the footer says they are on their way instead of guessing.
+// A contact detail the kelurahan has not given yet is left out, not announced (docs/StyleGuide.md §6.9).
+// Office hours have no site_settings key, so they are not shown at all.
 function FooterContact({ contact }: { contact: FooterContactDetails }) {
   return (
     <div className="space-y-3 xl:order-last xl:col-span-2">
       <h2 className="text-overline text-foreground">{copy.layout.footerContactTitle}</h2>
       <FooterWhatsApp />
       {contact.email ? <FooterEmail email={contact.email} /> : null}
-      <p className="flex gap-2 text-body-sm text-muted-foreground">
-        <MapPin aria-hidden className="mt-0.5 size-4 shrink-0" />
-        <span>
-          <span className="block">{contact.address ?? copy.layout.footerAddressPending}</span>
-          <span className="block">{copy.layout.footerHoursPending}</span>
-        </span>
-      </p>
+      {contact.address ? (
+        <p className="flex gap-2 text-body-sm text-muted-foreground">
+          <MapPin aria-hidden className="mt-0.5 size-4 shrink-0" />
+          {contact.address}
+        </p>
+      ) : null}
     </div>
   );
 }

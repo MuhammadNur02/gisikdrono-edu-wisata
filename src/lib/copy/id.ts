@@ -45,8 +45,6 @@ export const copy = {
       'Kunjungan edukasi ke dua kampung di Kelurahan Gisikdrono: pengelolaan sampah di RW 05 dan seni budaya di RW 08.',
     footerManagedBy: 'Dikelola oleh',
     footerContactTitle: 'Kontak',
-    footerAddressPending: 'Alamat kantor menyusul.',
-    footerHoursPending: 'Jam layanan kantor menyusul.',
     footerEmail: 'Email',
     footerWhatsApp: 'Chat WhatsApp',
     // docs/StyleGuide.md §9.2: the fixed trust line, reused word for word wherever payment is mentioned.
@@ -89,17 +87,10 @@ export const copy = {
     ratingSummary: (rating: string, count: number) =>
       `Rating ${rating} dari ${String(count)} ulasan`,
   },
-  // What an RW page says while the CMS has nothing for a section yet: a plain statement, never a promise.
+  // RW page labels. An empty section has no text at all: it is left out (docs/StyleGuide.md §6.9).
   rwPage: {
-    profileEmpty: (rw: string) => `Profil ${rw} belum diisi.`,
     visionTitle: 'Visi',
-    visionEmpty: (rw: string) => `Visi ${rw} belum diisi.`,
-    pointsEmpty: (rw: string) => `Belum ada titik aktivitas ${rw} yang dicatat.`,
-    galleryEmpty: (rw: string) => `Belum ada foto ${rw} di galeri.`,
     galleryAll: (rw: string) => `Lihat semua foto ${rw}`,
-    productsEmpty: (rw: string) => `Belum ada produk UMKM ${rw} yang diterbitkan.`,
-    packagesEmpty: (rw: string) => `Belum ada paket ${rw} yang diterbitkan.`,
-    schedulesEmpty: 'Belum ada jadwal pertunjukan yang diterbitkan.',
     schedulesAll: 'Lihat jadwal lengkap',
   },
   forms: {

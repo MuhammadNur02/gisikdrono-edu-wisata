@@ -1,8 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
-import { Section } from '@/components/layout/section';
-import { RW_SECTION_IDS, RwPage } from '@/components/marketing/rw-page';
+import { RW_SECTION_IDS, RwPage, type RwSectionContent } from '@/components/marketing/rw-page';
 import { SchedulePreview } from '@/components/marketing/schedule-preview';
 import { SectionLink } from '@/components/marketing/section-link';
 import { JsonLd } from '@/components/seo/json-ld';
@@ -29,24 +28,22 @@ export async function generateMetadata(): Promise<Metadata> {
   });
 }
 
-// docs/PRD.md FR-PUB-09: the next published performances, checked when the page renders (hourly ISR).
-function ScheduleSection({ schedules }: { schedules: PerformanceSchedule[] }) {
+// docs/PRD.md FR-PUB-09: the next published performances, checked when the page renders (hourly ISR). With
+// none ahead the section is left out, like every empty public section.
+function scheduleSection(schedules: PerformanceSchedule[]): RwSectionContent {
   const upcoming = upcomingSchedules(schedules, new Date());
-  return (
-    <Section
-      id={RW_SECTION_IDS.schedule}
-      eyebrow="Jadwal"
-      title="Pertunjukan dan kegiatan terdekat"
-      tone="muted"
-    >
-      {upcoming.length > 0 ? (
-        <SchedulePreview schedules={upcoming} />
-      ) : (
-        <p className="text-body text-muted-foreground">{copy.rwPage.schedulesEmpty}</p>
-      )}
-      <SectionLink href={`${programme.path}/jadwal`} label={copy.rwPage.schedulesAll} />
-    </Section>
-  );
+  return {
+    id: RW_SECTION_IDS.schedule,
+    eyebrow: 'Jadwal',
+    title: 'Pertunjukan dan kegiatan terdekat',
+    content:
+      upcoming.length > 0 ? (
+        <>
+          <SchedulePreview schedules={upcoming} />
+          <SectionLink href={`${programme.path}/jadwal`} label={copy.rwPage.schedulesAll} />
+        </>
+      ) : null,
+  };
 }
 
 // Task P2.4.03.
@@ -55,7 +52,7 @@ export default async function Rw08Page() {
   if (!data) notFound();
   return (
     <>
-      <RwPage data={data} afterProfile={<ScheduleSection schedules={data.schedules} />} />
+      <RwPage data={data} afterProfile={scheduleSection(data.schedules)} />
       <JsonLd data={rwAttractionJsonLd(data.unit)} />
     </>
   );

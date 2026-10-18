@@ -103,7 +103,7 @@ where slug in ('pupuk-kompos-1kg', 'gantungan-kunci-batik') and not is_featured;
 
 -- RW 05 as the development photos show it (decision of 2026-10-18): the two places named on the signs in
 -- them, nothing more. RW 08 has no photos or facts yet, so its profile, vision and points stay empty and its
--- page says so.
+-- page leaves those sections out.
 update public.rw_units
 set description_md = 'Rombongan yang berkunjung ke RW 05 singgah di Bank Sampah Sumber Rejeki dan Taman TOGA Sumber Saras.'
 where id = 5 and description_md is null;
