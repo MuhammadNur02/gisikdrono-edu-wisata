@@ -195,6 +195,19 @@ export const copy = {
       altLabel: 'Deskripsi foto',
       altHint: 'Jelaskan isi foto untuk pengguna pembaca layar (3–200 karakter).',
     },
+    booklet: {
+      choose: 'Pilih file PDF booklet',
+      hint: 'PDF, maksimal 50 MB dan 100 halaman.',
+      // docs/Security.md §8.4: photos inside a booklet keep their own EXIF, so the officer is asked to check.
+      gpsHint:
+        'Pastikan foto di booklet tidak memuat lokasi (GPS). Ekspor PDF dari Canva/Word biasanya sudah aman.',
+      type: 'Booklet harus berupa file PDF.',
+      uploading: 'Mengunggah PDF dan menyiapkan halamannya...',
+      pages: (done: number, total: number) =>
+        `Halaman ${String(done)} dari ${String(total)} sudah terunggah`,
+      done: (pages: number) => `PDF dan ${String(pages)} halamannya sudah terunggah.`,
+      failed: 'Booklet gagal diunggah. Coba lagi sebentar lagi, ya.',
+    },
     richText: {
       toolbar: 'Format teks',
       bold: 'Tebal',
