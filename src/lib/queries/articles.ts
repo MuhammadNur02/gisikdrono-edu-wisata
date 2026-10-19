@@ -4,6 +4,7 @@ import type { Tables } from '@/db/types';
 import { toOptionalRwId, toPublicImage } from '@/lib/queries/mappers';
 import { cachedPublicRead, rowOrNull, rowsOf } from '@/lib/queries/public-read';
 import { TAGS } from '@/lib/queries/tags';
+import { estimateReadingMinutes } from '@/lib/rich-text/reading-time';
 import { createSupabaseAnonClient } from '@/lib/supabase/anon';
 import type { ArticleDetail, ArticleSummary } from '@/types/article';
 
@@ -46,6 +47,7 @@ function toArticleSummary(row: ArticleRow): ArticleSummary {
 function toArticleDetail(row: ArticleDetailRow): ArticleDetail {
   return {
     ...toArticleSummary(row),
+    readingMinutes: row.reading_minutes ?? estimateReadingMinutes(row.body_json),
     body: row.body_json,
     seoTitle: row.seo_title,
     seoDescription: row.seo_description,

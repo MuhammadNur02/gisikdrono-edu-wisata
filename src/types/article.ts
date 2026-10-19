@@ -18,6 +18,8 @@ export interface ArticleSummary {
 }
 
 export interface ArticleDetail extends ArticleSummary {
+  // The stored value, or the estimate from the body when the editor left it empty.
+  readingMinutes: number;
   // The ProseMirror document of articles.body_json; only the allowlisted renderer turns it into markup.
   body: Json;
   seoTitle: string | null;
