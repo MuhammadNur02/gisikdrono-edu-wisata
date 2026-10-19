@@ -106,6 +106,13 @@ export const PRIVATE_DATA_CASES: PrivateDataCase[] = [
     comments: 0,
   },
   {
+    // Security review of PR #14, F5.
+    name: 'a page’s /LastModified date',
+    pdf: () => handWrittenPdf('', [], '', '/LastModified (D:20261018093000+07) '),
+    needles: ['D:20261018093000'],
+    comments: 0,
+  },
+  {
     name: 'an object nothing refers to',
     pdf: () =>
       handWrittenPdf('', [pdfObject(4, '<< /Draft (sisa draf lama: harga belum final) >>')]),

@@ -21,6 +21,7 @@ export type UploadProblem =
   | 'pdf_link'
   | 'pdf_too_many_pages'
   | 'pdf_too_complex'
+  | 'pdf_unsupported_content'
   | 'booklet_missing'
   | 'already_used'
   | 'booklet_pages_exist'

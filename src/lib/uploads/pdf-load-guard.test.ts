@@ -1,8 +1,9 @@
 import { PDFDocument } from 'pdf-lib';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   MAX_PDF_INFLATED_BYTES,
+  MAX_PDF_NAME_BYTES,
   MAX_PDF_OBJECT_NUMBER,
   MAX_PDF_PARSED_OBJECTS,
 } from '@/config/uploads';
@@ -121,6 +122,16 @@ function packedArrayPdf(numbers: number): Buffer {
 const REAL_LIMIT_TIMEOUT_MS = 60_000;
 
 describe('scanBookletPdf: parsed objects at the real limit', () => {
+  // Coverage slows this parse to near the scan's 20 seconds, and the deadline has tests of its own: the clock stands
+  // still here so this test is about the object count alone.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['performance'] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it(
     'refuses a few kilobytes that unpack into more objects than the limit',
     async () => {
@@ -202,5 +213,39 @@ describe('scanBookletPdf: object numbers', () => {
     expect(pdf.toString('latin1')).toContain('0000000000 65535 f');
 
     await expect(scanBookletPdf(pdf)).resolves.toMatchObject({ ok: true, pageCount: 1 });
+  });
+});
+
+// Security review of PR #14, F1: a name longer than the format allows is refused while pdf-lib parses it, before any
+// decoding of its escapes can cost anything.
+const NAME_REFUSAL = { ok: false, problem: 'pdf_too_complex', detail: 'limit:name_too_long' };
+
+describe('scanBookletPdf: name lengths', () => {
+  it('accepts a name of the largest length the format allows', async () => {
+    const pdf = handWrittenPdf(`/Extra /${'A'.repeat(MAX_PDF_NAME_BYTES)}`);
+
+    await expect(scanBookletPdf(pdf)).resolves.toMatchObject({ ok: true });
+  });
+
+  it('refuses a name one byte longer', async () => {
+    const pdf = handWrittenPdf(`/Extra /${'A'.repeat(MAX_PDF_NAME_BYTES + 1)}`);
+
+    await expect(scanBookletPdf(pdf)).resolves.toEqual(NAME_REFUSAL);
+  });
+
+  it('counts an escape as the one byte it stands for', async () => {
+    const written = `${'A'.repeat(MAX_PDF_NAME_BYTES - 27)}${'#41'.repeat(27)}`;
+
+    await expect(scanBookletPdf(handWrittenPdf(`/Extra /${written}`))).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
+  it('refuses a name of nested escapes at once, whatever its depth', async () => {
+    const nested = `/#23${'23'.repeat(20_000)}41`;
+    const startedAt = performance.now();
+
+    await expect(scanBookletPdf(handWrittenPdf(`/Extra ${nested}`))).resolves.toEqual(NAME_REFUSAL);
+    expect(performance.now() - startedAt).toBeLessThan(1000);
   });
 });

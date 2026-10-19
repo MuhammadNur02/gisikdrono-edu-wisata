@@ -186,3 +186,108 @@ describe('scanBookletPdf: files carried inside or beside the PDF', () => {
     await expect(scanBookletPdf(pdf)).resolves.toMatchObject({ detail: 'Thread' });
   });
 });
+
+// Security review of PR #14, F5 and F9: what a booklet has no use for, kept out of sight or parsed by a viewer's own
+// libraries, is refused as unsupported content.
+describe('scanBookletPdf: content a booklet does not need', () => {
+  const IMAGE =
+    '/Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 /ColorSpace /DeviceGray';
+
+  it.each([
+    [
+      'a form field holding a value',
+      '/AcroForm << /Fields [4 0 R] >>',
+      [pdfObject(4, '<< /FT /Tx /T (nomor_hp) /V (081234567890) >>')],
+      'form:value',
+    ],
+    [
+      'a form field holding a default value',
+      '/AcroForm << /Fields [4 0 R] >>',
+      [pdfObject(4, '<< /FT /Tx /T (nama) /DV (Pak Budi) >>')],
+      'form:value',
+    ],
+    [
+      'a child field holding the value its parent names',
+      '/AcroForm << /Fields [4 0 R] >>',
+      [
+        pdfObject(4, '<< /T (alamat) /Kids [5 0 R] >>'),
+        pdfObject(5, '<< /Parent 4 0 R /V (Jl. Mawar 5) >>'),
+      ],
+      'form:value',
+    ],
+    [
+      "a signature's permissions",
+      '/Perms << /DocMDP 4 0 R >>',
+      [pdfObject(4, '<< /Type /Sig /Name (Pak Budi) /Reason (Disetujui) >>')],
+      'Perms',
+    ],
+    [
+      'a JBIG2 image',
+      '',
+      [pdfObject(4, `<< ${IMAGE} /Filter /JBIG2Decode /Length 1 >>\nstream\n0\nendstream`)],
+      'JBIG2Decode',
+    ],
+    [
+      'a JBIG2 global segment stream',
+      '',
+      [
+        pdfObject(4, '<< /JBIG2Globals 5 0 R >>'),
+        pdfObject(5, '<< /Length 1 >>\nstream\n0\nendstream'),
+      ],
+      'JBIG2Globals',
+    ],
+    [
+      'a JPEG 2000 image',
+      '',
+      [pdfObject(4, `<< ${IMAGE} /Filter [/JPXDecode] /Length 1 >>\nstream\n0\nendstream`)],
+      'JPXDecode',
+    ],
+    [
+      'a PostScript XObject',
+      '',
+      [pdfObject(4, '<< /Type /XObject /Subtype /PS /Length 1 >>\nstream\n0\nendstream')],
+      'xobject:PS',
+    ],
+  ])('refuses %s', async (_case, catalogExtra, objects, detail) => {
+    await expect(scanBookletPdf(handWrittenPdf(catalogExtra, objects))).resolves.toEqual({
+      ok: false,
+      problem: 'pdf_unsupported_content',
+      detail,
+    });
+  });
+
+  it.each([
+    ['a layer switched off', '/OCProperties << /OCGs [4 0 R] /D << /OFF [4 0 R] >> >>'],
+    ['layers that start off', '/OCProperties << /OCGs [4 0 R] /D << /BaseState /OFF /ON [] >> >>'],
+    [
+      'layers set by usage',
+      '/OCProperties << /OCGs [4 0 R] /D << /AS [<< /Event /View /OCGs [4 0 R] /Category [/View] >>] >> >>',
+    ],
+    ['layer properties without a default configuration', '/OCProperties << /OCGs [4 0 R] >>'],
+  ])('refuses %s, whose content stays in the file out of sight', async (_case, catalogExtra) => {
+    const layer = pdfObject(4, '<< /Type /OCG /Name (Catatan internal) >>');
+
+    await expect(scanBookletPdf(handWrittenPdf(catalogExtra, [layer]))).resolves.toEqual({
+      ok: false,
+      problem: 'pdf_unsupported_content',
+      detail: 'layer:hidden',
+    });
+  });
+
+  it.each([
+    [
+      'visible layers',
+      '/OCProperties << /OCGs [4 0 R] /D << /ON [4 0 R] /OFF [] >> >>',
+      [pdfObject(4, '<< /Type /OCG /Name (Teks) >>')],
+    ],
+    [
+      'an empty form field',
+      '/AcroForm << /Fields [4 0 R] >>',
+      [pdfObject(4, '<< /FT /Tx /T (kosong) >>')],
+    ],
+  ])('still publishes a booklet with %s', async (_case, catalogExtra, objects) => {
+    await expect(scanBookletPdf(handWrittenPdf(catalogExtra, objects))).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+});

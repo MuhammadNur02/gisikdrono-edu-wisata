@@ -9,6 +9,7 @@ import {
   type PDFObject,
 } from 'pdf-lib';
 
+import type { ScanDeadline } from '@/lib/uploads/pdf-deadline';
 import { nameSpellings } from '@/lib/uploads/pdf-names';
 import { isAnnotationLike, MARKUP_ANNOTATIONS } from '@/lib/uploads/pdf-rules';
 
@@ -102,12 +103,13 @@ function isReferenceTo(object: PDFObject | undefined, deleted: Set<string>): boo
   return target instanceof PDFRef && deleted.has(target.tag);
 }
 
-type Sweep = { deleted: Set<string>; directComments: number };
+type Sweep = { deleted: Set<string>; directComments: number; deadline: ScanDeadline };
 
 // True when the object must go from where it sits: a reference to a deleted object, a comment written in place, or a
 // structure-tree reference to a deleted comment. What stays is cleaned in place; references are not followed, since
 // every indirect object is swept on its own. `keepPositions` holds inside a number or name tree's array.
 function isGone(object: PDFObject, sweep: Sweep, keepPositions = false): boolean {
+  sweep.deadline.step();
   if (object instanceof PDFRef) return sweep.deleted.has(object.tag);
   if (isComment(object) && isAnnotationLike(object)) {
     sweep.directComments += 1;
@@ -131,12 +133,18 @@ function sweepDict(dict: PDFDict, sweep: Sweep, keepPositions: boolean): void {
   }
 }
 
+// One pass: what stays moves forward over what goes, then the leftover tail is dropped from its end. Removing each
+// gone element where it sat shifted everything after it, which made a long array cost the square of its length
+// (security review of PR #14, F4).
 function sweepArray(array: PDFArray, sweep: Sweep, keepPositions: boolean): void {
-  for (let index = array.size() - 1; index >= 0; index -= 1) {
-    if (!isGone(array.get(index), sweep, keepPositions)) continue;
-    if (keepPositions) array.set(index, PDFNull);
-    else array.remove(index);
+  let kept = 0;
+  for (const element of array.asArray()) {
+    const isRemoved = isGone(element, sweep, keepPositions);
+    if (isRemoved && !keepPositions) continue;
+    array.set(kept, isRemoved ? PDFNull : element);
+    kept += 1;
   }
+  for (let last = array.size() - 1; last >= kept; last -= 1) array.remove(last);
 }
 
 // A comment written in place in a page's /Annots goes whatever it lacks; elsewhere only one that looks like an
@@ -164,7 +172,11 @@ function dropEmptyAnnots(document: PDFDocument, pages: PDFDict[]): void {
 
 // Deletes every comment and every reference to one, and answers how many comments went: the number the scan
 // reports in upload_sanitized, so the report is what the copy leaves out.
-export function removeComments(document: PDFDocument, pages: PDFDict[]): number {
+export function removeComments(
+  document: PDFDocument,
+  pages: PDFDict[],
+  deadline: ScanDeadline,
+): number {
   const { context } = document;
   const comments = commentRefs(document, pages);
   const deleted = new Set(comments);
@@ -174,7 +186,11 @@ export function removeComments(document: PDFDocument, pages: PDFDict[]): number 
   for (const [ref] of context.enumerateIndirectObjects()) {
     if (deleted.has(ref.tag)) context.delete(ref);
   }
-  const sweep: Sweep = { deleted, directComments: dropDirectPageComments(document, pages) };
+  const sweep: Sweep = {
+    deleted,
+    directComments: dropDirectPageComments(document, pages),
+    deadline,
+  };
   for (const [, object] of context.enumerateIndirectObjects()) isGone(object, sweep);
   dropEmptyAnnots(document, pages);
   return comments.size + sweep.directComments;

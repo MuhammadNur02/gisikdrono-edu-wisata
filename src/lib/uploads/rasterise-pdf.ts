@@ -1,9 +1,12 @@
 import { MAX_IMAGE_EDGE_PX } from '@/config/uploads';
 
 // Draws each page of a booklet PDF in the staff member's browser with pdf.js (Task P2.9.02), at 1600 px on the
-// long edge, the size the flipbook shows (docs/StyleGuide.md §5.12). pdf.js runs in its own worker and never
-// executes the file's scripts or forms; the server has already scanned the PDF before this runs, and every page
-// image still goes through finalize's re-encode like any photo.
+// long edge, the size the flipbook shows (docs/StyleGuide.md §5.12). It draws the copy finalize published, not the
+// file the officer picked, so the pages show what the PDF shows: no comments, metadata or anything else the scan left
+// out, and annotations are not drawn at all (security review of PR #14, F3). pdf.js runs in its own worker and never
+// executes the file's scripts or forms; the pdf.js it bundles (6.4) has no eval path for fonts either and no isEvalSupported
+// switch left to turn off; rasterise-pdf.test.ts fails if a bundled pdf.js ever brings one back (F9).
+// Every page image still goes through finalize's re-encode like any photo.
 
 const PAGE_WEBP_QUALITY = 0.9;
 
@@ -40,9 +43,10 @@ async function loadPdfJs() {
   return pdfjs;
 }
 
-export async function* renderPdfPages(file: Blob): AsyncGenerator<RenderedPage> {
+// `publishedUrl` is the public-media address of the copy api/uploads/finalize wrote.
+export async function* renderPdfPages(publishedUrl: string): AsyncGenerator<RenderedPage> {
   const pdfjs = await loadPdfJs();
-  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+  const loadingTask = pdfjs.getDocument({ url: publishedUrl });
   const pdf = await loadingTask.promise;
   try {
     for (let number = 1; number <= pdf.numPages; number += 1) {
@@ -52,7 +56,7 @@ export async function* renderPdfPages(file: Blob): AsyncGenerator<RenderedPage> 
       const canvas = document.createElement('canvas');
       canvas.width = Math.round(viewport.width);
       canvas.height = Math.round(viewport.height);
-      await page.render({ canvas, viewport }).promise;
+      await page.render({ canvas, viewport, annotationMode: pdfjs.AnnotationMode.DISABLE }).promise;
       page.cleanup();
       yield { number, total: pdf.numPages, image: await canvasToWebp(canvas) };
     }

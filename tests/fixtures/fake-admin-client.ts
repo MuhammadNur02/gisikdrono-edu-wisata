@@ -32,7 +32,12 @@ function storeFile(
   files.set(path, { bytes: Buffer.from(body), createdAt, contentType });
 }
 
-function bucketApi(files: Map<string, StoredFile>, downloads: string[]) {
+// Which write to a bucket fails, counted from 1 across the test (0: none), as a transient Storage error would.
+type WriteFaults = { failingWrite: number; writes: number };
+
+const STORAGE_BUSY = { statusCode: '500', message: 'Storage is busy' };
+
+function bucketApi(files: Map<string, StoredFile>, downloads: string[], faults?: WriteFaults) {
   return {
     createSignedUploadUrl: (path: string) =>
       Promise.resolve({
@@ -67,6 +72,12 @@ function bucketApi(files: Map<string, StoredFile>, downloads: string[]) {
       );
     },
     upload: (path: string, body: Buffer, options: { contentType: string; upsert: boolean }) => {
+      if (faults) {
+        faults.writes += 1;
+        if (faults.writes === faults.failingWrite) {
+          return Promise.resolve({ data: null, error: STORAGE_BUSY });
+        }
+      }
       if (files.has(path) && !options.upsert) {
         return Promise.resolve({ data: null, error: ALREADY_EXISTS });
       }
@@ -142,10 +153,13 @@ export function createFakeAdminClient() {
   const bookletClaims = new Map<string, number>();
   const securityEvents: Record<string, unknown>[] = [];
   const downloads: string[] = [];
+  const publicMediaFaults: WriteFaults = { failingWrite: 0, writes: 0 };
   const client = {
     storage: {
       from: (bucket: string) =>
-        bucketApi(bucket === 'public-media' ? publicMedia : quarantine, downloads),
+        bucket === 'public-media'
+          ? bucketApi(publicMedia, downloads, publicMediaFaults)
+          : bucketApi(quarantine, downloads),
     },
     from: (table: string) => ({
       ...profilesApi(profiles),
@@ -184,6 +198,10 @@ export function createFakeAdminClient() {
       quarantine.set(path, { bytes, createdAt: arrivedAt.toISOString() });
       return true;
     },
+    // Makes the `nth` write to public-media from now on fail once, as a transient Storage error would.
+    failPublicMediaWrite(nth: number) {
+      publicMediaFaults.failingWrite = publicMediaFaults.writes + nth;
+    },
     // Quarantine objects that still hold a file, as opposed to the empty tombstones finalize leaves.
     quarantinedFiles(): string[] {
       return [...quarantine].filter(([, file]) => file.bytes.length > 0).map(([path]) => path);
@@ -196,6 +214,8 @@ export function createFakeAdminClient() {
       bookletClaims.clear();
       securityEvents.length = 0;
       downloads.length = 0;
+      publicMediaFaults.failingWrite = 0;
+      publicMediaFaults.writes = 0;
     },
   };
 }

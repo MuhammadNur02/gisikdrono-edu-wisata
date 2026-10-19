@@ -92,6 +92,12 @@ export const MAX_PDF_SCAN_SECONDS = 20;
 // the largest generation number the format allows (security review of PR #14, follow-up of N3; R21).
 export const MAX_PDF_OBJECT_NUMBER = 200_000;
 export const MAX_PDF_GENERATION_NUMBER = 65_535;
+// The longest name the format allows (PDF 1.7, Annex C), so no name can make the scan's decoding expensive
+// (security review of PR #14, F1).
+export const MAX_PDF_NAME_BYTES = 127;
+// Booklet scans one server process runs at once (security review of PR #14, F2); a function instance serves one
+// officer's uploads at a time in practice, so two leave room for a retry without letting scans pile up.
+export const MAX_CONCURRENT_PDF_SCANS = 2;
 
 // docs/Security.md §8.4, decision of 2026-10-18: the only link schemes a booklet PDF may carry.
 export const BOOKLET_LINK_SCHEMES = ['https:', 'mailto:', 'tel:'];

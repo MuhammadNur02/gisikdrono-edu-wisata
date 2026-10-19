@@ -18,7 +18,8 @@ import { nameSpellings } from '@/lib/uploads/pdf-names';
 // (security review of PR #14, L4). EXIF inside embedded JPEGs is not touched; it is an accepted risk, see §8.4.
 
 // Keys whose value is metadata, never content.
-const METADATA_KEYS = ['Metadata', 'PieceInfo', 'Thumb'];
+// /LastModified dates a page or the document's private data (security review of PR #14, F5).
+const METADATA_KEYS = ['Metadata', 'PieceInfo', 'Thumb', 'LastModified'];
 const XMP_TYPE = 'Metadata';
 
 function isMetadataKey(key: PDFName): boolean {
@@ -42,11 +43,15 @@ function dropMetadataEntries(dict: PDFDict): void {
   }
 }
 
+// The trailer's /ID goes with the information dictionary: the authoring tool derives it from the source file, so it
+// ties the booklet to that file and its other versions (security review of PR #14, F5). An unencrypted PDF needs
+// none.
 function removeDocumentInformation(document: PDFDocument): void {
   const { context } = document;
   const { Info: info } = context.trailerInfo;
   if (info instanceof PDFRef) context.delete(info);
   delete context.trailerInfo.Info;
+  delete context.trailerInfo.ID;
 }
 
 // The references an object holds directly: in itself, its arrays and dictionaries, a stream's dictionary.

@@ -264,7 +264,8 @@ describe('L11: one sign-pages per booklet', () => {
     expect(second).toEqual({ ok: false, problem: 'booklet_pages_in_progress' });
   });
 
-  it('refuses a booklet whose pages are published, before it counts a signature', async () => {
+  // Since F2 the signature is counted first, so a booklet with pages can no longer be asked about for free.
+  it('refuses a booklet whose pages are published, and counts the signature', async () => {
     await publishBookletPdf();
     await finalizeUpload(
       OFFICER_05,
@@ -280,7 +281,7 @@ describe('L11: one sign-pages per booklet', () => {
         problem: 'booklet_pages_exist',
       },
     );
-    expect(admin().rateLimitHits.get(`upload_sign:${OFFICER_05.userId}`)).toBeUndefined();
+    expect(admin().rateLimitHits.get(`upload_sign:${OFFICER_05.userId}`)).toBe(1);
   });
 
   it('signs again once the earlier URLs have all expired', async () => {

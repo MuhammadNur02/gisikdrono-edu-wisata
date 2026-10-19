@@ -3,7 +3,6 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
-  BOOKLET_PDF_TYPE,
   PUBLIC_MEDIA_BUCKET,
   QUARANTINE_BUCKET,
   SIGNED_UPLOAD_TOKEN_SECONDS,
@@ -12,7 +11,6 @@ import {
 import { svcClaimBookletPages } from '@/db/rpc';
 import type { Database } from '@/db/types';
 import { AppError } from '@/lib/errors';
-import { reencodeImage, thumbnailOf } from '@/lib/images/re-encode';
 // The service role is needed because no API role holds a Storage policy (0006, docs/Security.md §6.8): only
 // the server may sign an upload into uploads-quarantine, read it back, and write public-media, so nothing
 // reaches the public site without the checks below. Every call acts on a path this module built or parsed
@@ -26,11 +24,11 @@ import {
   isPdfPurpose,
   publicMediaPathFor,
   quarantinePathFor,
-  thumbnailPathFor,
   type MediaTarget,
   type QuarantineUpload,
 } from '@/lib/uploads/paths';
-import { countPublishedPages, scanBookletPdf, type PdfSanitizing } from '@/lib/uploads/pdf-scan';
+import { countPublishedPages, type PdfSanitizing } from '@/lib/uploads/pdf-scan';
+import { withScanSlot } from '@/lib/uploads/scan-slots';
 import { createUuidV7 } from '@/lib/utils/uuid-v7';
 import type { SignBookletPagesInput, SignUploadInput } from '@/lib/validations/upload';
 import { hasUploadAccess, type StaffContext } from '@/server/auth/guards';
@@ -41,13 +39,13 @@ import {
   writeUploadEvent,
   type UploadEvent,
 } from '@/server/services/upload-events';
+import { publishImage, publishPdf } from '@/server/services/upload-publish';
 import {
   hasPublishedPages,
   publicObjectExists,
   quarantineObject,
   retireQuarantineObject,
   downloadObject,
-  writePublicMedia,
   type QuarantineObject,
 } from '@/server/services/upload-storage';
 import type {
@@ -136,26 +134,28 @@ async function publishedPageCount(adminClient: DatabaseClient, input: SignBookle
   return pdf && countPublishedPages(new Uint8Array(pdf));
 }
 
-// api/uploads/sign-pages (docs/Security.md §8.4): one signature covers every page, each URL bound to its page number
-// and the page count in its object name. A booklet gets it once: never again once a page is published, and not
-// while another request's URLs are still alive. That claim is one conditional write in the database, so two
-// requests at the same moment cannot both pass (security review of PR #14, L11 and N4).
-export async function signBookletPages(
+async function signPages(
+  adminClient: DatabaseClient,
+  input: SignBookletPagesInput,
+  pageCount: number,
+  nowMs: number,
+): Promise<SignedBookletPages['pages']> {
+  const pages: SignedBookletPages['pages'] = [];
+  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+    const slot = { bookletId: input.bookletId, pageNumber, pageCount };
+    const path = quarantinePathFor(input.rwId, bookletPageObjectName(createUuidV7(nowMs), slot));
+    pages.push({ pageNumber, path, token: await signedUploadToken(adminClient, path) });
+  }
+  return pages;
+}
+
+// The claim first, then the download and the count of the published PDF, inside one of the process's scan slots.
+async function claimAndSignPages(
+  adminClient: DatabaseClient,
   ctx: StaffContext,
   input: SignBookletPagesInput,
-  nowMs: number = Date.now(),
+  nowMs: number,
 ): Promise<UploadOutcome<SignedBookletPages>> {
-  const adminClient = createSupabaseAdminClient();
-  const counted = await publishedPageCount(adminClient, input);
-  if (counted === null) return { ok: false, problem: 'booklet_missing' };
-  if (!counted.ok) return { ok: false, problem: counted.problem };
-  const { pageCount } = counted;
-  if (await hasPublishedPages(adminClient, input.rwId, input.bookletId)) {
-    return { ok: false, problem: 'booklet_pages_exist' };
-  }
-  if (!(await withinUploadLimit(adminClient, ctx, 'upload_sign', input.rwId))) {
-    throw new AppError('RATE_LIMITED');
-  }
   const claim = {
     bookletId: input.bookletId,
     rwId: input.rwId,
@@ -165,50 +165,38 @@ export async function signBookletPages(
   if (!(await svcClaimBookletPages(adminClient, claim))) {
     return { ok: false, problem: 'booklet_pages_in_progress' };
   }
-
-  const pages: SignedBookletPages['pages'] = [];
-  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
-    const slot = { bookletId: input.bookletId, pageNumber, pageCount };
-    const path = quarantinePathFor(input.rwId, bookletPageObjectName(createUuidV7(nowMs), slot));
-    pages.push({ pageNumber, path, token: await signedUploadToken(adminClient, path) });
-  }
-  return { ok: true, data: { pageCount, pages } };
+  const counted = await publishedPageCount(adminClient, input);
+  if (counted === null) return { ok: false, problem: 'booklet_missing' };
+  if (!counted.ok) return { ok: false, problem: counted.problem };
+  const pages = await signPages(adminClient, input, counted.pageCount, nowMs);
+  return { ok: true, data: { pageCount: counted.pageCount, pages } };
 }
 
-async function publishImage(
-  adminClient: DatabaseClient,
-  bytes: Buffer,
-  path: string,
-  withThumbnail: boolean,
-): Promise<UploadOutcome<FinalizedUpload>> {
-  const image = await reencodeImage(bytes).catch(() => null);
-  if (!image) return { ok: false, problem: 'unreadable' };
-
-  await writePublicMedia(adminClient, path, image.webp, 'image/webp');
-  const thumbnailPath = withThumbnail ? thumbnailPathFor(path) : null;
-  if (thumbnailPath) {
-    await writePublicMedia(adminClient, thumbnailPath, await thumbnailOf(image.webp), 'image/webp');
+// api/uploads/sign-pages (docs/Security.md §8.4): one signature covers every page, each URL bound to its page number
+// and the page count in its object name. A booklet gets it once: never again once a page is published, and not
+// while another request's URLs are still alive. That claim is one conditional write in the database, so two
+// requests at the same moment cannot both pass (security review of PR #14, L11 and N4). The cheap checks come
+// first, the signature counted before anything else, and the download and parse of the published PDF last, inside
+// a scan slot taken before the claim, so a busy server turns the request away without holding the booklet (F2).
+export async function signBookletPages(
+  ctx: StaffContext,
+  input: SignBookletPagesInput,
+  nowMs: number = Date.now(),
+): Promise<UploadOutcome<SignedBookletPages>> {
+  const adminClient = createSupabaseAdminClient();
+  if (!(await withinUploadLimit(adminClient, ctx, 'upload_sign', input.rwId))) {
+    throw new AppError('RATE_LIMITED');
   }
-  const { width, height, blurhash } = image;
-  return { ok: true, data: { kind: 'image', path, width, height, blurhash, thumbnailPath } };
-}
-
-async function publishPdf(
-  adminClient: DatabaseClient,
-  bytes: Buffer,
-  path: string,
-): Promise<UploadOutcome<FinalizedUpload>> {
-  const scan = await scanBookletPdf(bytes);
-  if (!scan.ok) return { ok: false, problem: scan.problem, detail: scan.detail ?? null };
-
-  await writePublicMedia(adminClient, path, scan.pdf, BOOKLET_PDF_TYPE);
-  const data: FinalizedUpload = {
-    kind: 'pdf',
-    path,
-    pageCount: scan.pageCount,
-    fileSizeBytes: scan.pdf.byteLength,
-  };
-  return { ok: true, data, sanitized: scan.removed };
+  if (await hasPublishedPages(adminClient, input.rwId, input.bookletId)) {
+    return { ok: false, problem: 'booklet_pages_exist' };
+  }
+  const pdfPath = bookletPdfPath(input.rwId, input.bookletId);
+  if (!(await publicObjectExists(adminClient, pdfPath))) {
+    return { ok: false, problem: 'booklet_missing' };
+  }
+  const signed = await withScanSlot(() => claimAndSignPages(adminClient, ctx, input, nowMs));
+  if (!signed.ok) throw new AppError('RATE_LIMITED');
+  return signed.value;
 }
 
 // Why a quarantine object cannot be processed, read from Storage before a byte is downloaded: nothing arrived,

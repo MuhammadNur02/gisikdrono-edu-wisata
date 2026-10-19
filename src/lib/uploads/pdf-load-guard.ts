@@ -15,9 +15,11 @@ import {
 import {
   MAX_PDF_GENERATION_NUMBER,
   MAX_PDF_INFLATED_BYTES,
+  MAX_PDF_NAME_BYTES,
   MAX_PDF_OBJECT_NUMBER,
   MAX_PDF_PARSED_OBJECTS,
 } from '@/config/uploads';
+import { decodedNameLength } from '@/lib/uploads/pdf-names';
 
 // What loading a booklet may cost (security review of PR #14, L2, N3 and its follow-up). pdf-lib has no limits of
 // its own:
@@ -33,7 +35,9 @@ import {
 //   cross-reference table too, which no parseObject call sees. PDFRef.of is counted with the rest, and an object
 //   number above MAX_PDF_OBJECT_NUMBER or a generation above the format's maximum is refused before the object it
 //   names is parsed, so the pool can never hold more references than those bounds allow. Names are pooled the same
-//   way; isolating the scan in a worker thread ends both pools with it (docs/Security.md R21, Task P2.9.09).
+//   way; isolating the scan in a worker thread ends both pools with it (docs/Security.md R21, Task P2.9.09);
+// - every name goes through PDFName.of, which is refused for a name longer than MAX_PDF_NAME_BYTES once its escapes
+//   are decoded, the most the format allows, so no name can make the scan's decoding expensive (review F1).
 // Wrapping pdf-lib's own entry points means the guard sees exactly what pdf-lib would decode, however a dictionary
 // is spelled. The budget lives in an AsyncLocalStorage, so scans running side by side keep their own and any other
 // use of pdf-lib is untouched.
@@ -44,6 +48,7 @@ export type LoadRefusal =
   | 'unreadable'
   | 'too_many_objects'
   | 'object_number_too_high'
+  | 'name_too_long'
   | 'too_slow';
 
 type ScanBudget = {
@@ -121,9 +126,17 @@ function countReference(objectNumber: number, generationNumber: number): void {
   if (isOutOfBounds) refuse(budget, 'object_number_too_high');
 }
 
+function checkName(writtenName: string): void {
+  const budget = scanBudget.getStore();
+  if (!budget) return;
+  if (budget.refusal) refuse(budget, budget.refusal);
+  if (decodedNameLength(writtenName) > MAX_PDF_NAME_BYTES) refuse(budget, 'name_too_long');
+}
+
 const decodeObjectStream = PDFObjectStreamParser.forStream;
 const decodeXRefStream = PDFXRefStreamParser.forStream;
 const makeReference = PDFRef.of;
+const makeName = PDFName.of;
 // pdf-lib's own parseObject, called back from the counting wrapper with the parser it belongs to.
 type ParseObject = (this: PDFObjectParser) => PDFObject;
 const parserPrototype: { parseObject: ParseObject } = PDFObjectParser.prototype;
@@ -146,6 +159,10 @@ if (decodeObjectStream.name !== 'guardedObjectStream') {
   PDFRef.of = function countedReference(objectNumber, generationNumber = 0) {
     countReference(objectNumber, generationNumber);
     return makeReference(objectNumber, generationNumber);
+  };
+  PDFName.of = function boundedName(writtenName) {
+    checkName(writtenName);
+    return makeName(writtenName);
   };
 }
 

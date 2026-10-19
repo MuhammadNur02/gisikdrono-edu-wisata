@@ -28,6 +28,11 @@ vi.mock('@/lib/supabase/admin', () => ({
       auth: { persistSession: false },
     }),
 }));
+// Each Vercel instance has its own two scan slots, so requests from several instances meet only at the claim in the
+// database. The races below run every request as if it came from its own instance; the slots have unit tests.
+vi.mock('@/lib/uploads/scan-slots', () => ({
+  withScanSlot: async <T>(scan: () => Promise<T>) => ({ ok: true, value: await scan() }),
+}));
 
 const SLOW_HOOK_MS = 60_000;
 // Each case re-encodes or scans a real file and makes several Storage calls, slower than the default on Windows.

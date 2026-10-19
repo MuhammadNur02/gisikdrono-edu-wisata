@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { MARKUP_ANNOTATIONS } from './pdf-rules';
 import { scanBookletPdf } from './pdf-scan';
-import { readableCopy } from '../../../tests/fixtures/pdf';
+import { handWrittenPdf, readableCopy } from '../../../tests/fixtures/pdf';
 import { PRIVATE_DATA_CASES } from '../../../tests/fixtures/pdf-private-data';
 
 // Security review of PR #14, L4, N1 and N2: the published copy leaves out metadata, private data, thumbnails,
@@ -66,6 +66,20 @@ describe('scanBookletPdf: what the published copy leaves out', () => {
       expect(result.removed).toEqual({ openAction: null, annotations: privateCase.comments });
     },
   );
+});
+
+// Security review of PR #14, F5: the trailer's /ID is the authoring tool's fingerprint of the source file.
+describe('scanBookletPdf: the file identifier', () => {
+  it('leaves out the trailer /ID', async () => {
+    const pdf = handWrittenPdf('', [], '/ID [<4A6F686E446F65> <4A6F686E446F65>] ');
+    const before = await PDFDocument.load(pdf, { updateMetadata: false });
+    expect(before.context.trailerInfo.ID).toBeDefined();
+
+    const result = await publishedCopy(pdf);
+    const copy = await PDFDocument.load(result.pdf, { updateMetadata: false });
+
+    expect(copy.context.trailerInfo.ID).toBeUndefined();
+  });
 });
 
 describe('scanBookletPdf: what the published copy keeps', () => {

@@ -168,6 +168,22 @@ describe('POST /api/uploads/sign-pages', () => {
     });
   });
 
+  // Security review of PR #14, F8.
+  it('answers a published PDF it cannot read with 400 and a clear message, not 500', async () => {
+    admin().publicMedia.set(`rw-05/booklets/${BOOKLET_ID}/booklet.pdf`, {
+      bytes: Buffer.from('%PDF-1.7\nnot a booklet at all'),
+      createdAt: new Date().toISOString(),
+      contentType: 'application/pdf',
+    });
+
+    const response = await signPages({ rwId: 5, bookletId: BOOKLET_ID });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: { code: 'VALIDATION', message: copy.uploads.problems.unreadable },
+    });
+  });
+
   it('never takes a page count from the browser', async () => {
     await publishBooklet(3);
 

@@ -1,7 +1,12 @@
 import { z } from 'zod';
 
 import type { RwId } from '@/config/rw';
-import { LEADING_BYTES_LENGTH, PAGE_UPLOAD_CONCURRENCY, QUARANTINE_BUCKET } from '@/config/uploads';
+import {
+  LEADING_BYTES_LENGTH,
+  PAGE_UPLOAD_CONCURRENCY,
+  PUBLIC_MEDIA_BUCKET,
+  QUARANTINE_BUCKET,
+} from '@/config/uploads';
 import { copy } from '@/lib/copy/id';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import type { UploadPurpose } from '@/lib/uploads/paths';
@@ -157,10 +162,15 @@ export function createImageUpload(target: UploadTarget) {
   };
 }
 
-async function drawPages(file: File): Promise<Blob[]> {
+// Pages are drawn from the copy finalize published (security review of PR #14, F3). Building its public address
+// makes no request; pdf.js fetches it, from the Supabase origin the dashboard's CSP allows.
+async function drawPublishedPages(pdfPath: string): Promise<Blob[]> {
   const { renderPdfPages } = await import('@/lib/uploads/rasterise-pdf');
+  const { publicUrl } = createSupabaseBrowserClient()
+    .storage.from(PUBLIC_MEDIA_BUCKET)
+    .getPublicUrl(pdfPath).data;
   const pages: Blob[] = [];
-  for await (const page of renderPdfPages(file)) pages.push(page.image);
+  for await (const page of renderPdfPages(publicUrl)) pages.push(page.image);
   return pages;
 }
 
@@ -208,7 +218,7 @@ async function finalizePage(path: string): Promise<void> {
 }
 
 // A booklet goes up twice (Task P2.9.02): the PDF itself, which finalize scans and publishes, then each page
-// drawn in this browser by pdf.js, so the flipbook never loads the PDF. The pages are drawn first and signed
+// of that published copy drawn in this browser by pdf.js, so the flipbook never loads the PDF. The pages are drawn first and signed
 // afterwards in one api/uploads/sign-pages call, as many as the published PDF has; all of them go to quarantine,
 // then finalize publishes them one by one (docs/Security.md §8.4).
 export async function uploadBooklet(
@@ -220,7 +230,7 @@ export async function uploadBooklet(
   const pdf = await uploadFile(file, { rwId, purpose: 'booklet', entityId: bookletId });
   if (pdf.kind !== 'pdf') throw new UploadRejectedError(copy.forms.image.failed);
 
-  const images = await drawPages(file);
+  const images = await drawPublishedPages(pdf.path);
   const response = await fetch('/api/uploads/sign-pages', jsonPost({ rwId, bookletId }));
   const signed = await answerOf(response, signedPagesSchema);
   if (signed.pageCount !== images.length)
