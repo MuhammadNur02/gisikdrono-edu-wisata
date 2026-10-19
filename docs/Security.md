@@ -204,6 +204,7 @@ Boundary rules: Z1 is the only place secrets exist; Z2 assumes Z1 has bugs (RLS 
 | R17 | Magic-link and email-OTP sign-in stay open while the email provider is on, so whoever holds a staff mailbox reaches AAL1 without the password, past the password lockout hook and the rule that a not-yet-onboarded account cannot reset its password | Low | Low (AAL2 is required everywhere and the `invite_code` still guards onboarding) | **Accepted** (no Supabase setting turns it off; security review of PR #5): mailbox security is part of staff onboarding | Superadmin |
 | R18 | The `CRON_SECRET` bearer sits in clear in `net.http_request_queue` for the seconds before pg_net sends it, and Supabase grants the `net` schema to the API roles | Low | High (anyone holding it can trigger every job route) | Low: the `net` schema is not exposed through the API (`[api] schemas = ["public"]`, checked by `scripts/supabase-config.test.mjs` and go-live #20), no `net`, Vault or cron table is in the Realtime publication (`schema_cron.sql`), and the jobs are idempotent and batch-limited | Dev team |
 | R19 | GoTrue accepts the same TOTP code twice within its 30-second window: on the local stack two separate sign-ins verified one code (found while writing `tests/integration/rls-http.test.ts`, P1.9.07), so whoever sees a staff member's code and already holds their password can reuse it at once | Low (needs the password and a code from the same half minute) | High (an AAL2 staff session) | **Accepted** (no Supabase setting refuses a reused code; security review of P1.9): the password lockout hook, invite-only accounts and the AAL2 alerts stay the controls. Re-check on `gisikdrono-staging` in Phase 0 (Task P0.1.17); if hosted Auth refuses the reuse, close this row | Dev team |
+| R20 | A booklet whose page upload breaks off cannot be signed again: once a page is published `sign-pages` refuses it for good, and before that its lock holds for two hours (security review of PR #14, L11). The files of the abandoned attempt stay in `public-media` without a booklet row | Medium | Low (availability only; nothing unchecked is published) | **Accepted** (2026-10-19): the officer starts a new booklet; P2.9.06 gives the booklet form a fresh booklet id per attempt | Superadmin |
 
 ---
 
@@ -696,7 +697,7 @@ Notes: `'wasm-unsafe-eval'` is required by the ZXing WASM fallback of `barcode-d
 
 ### 8.3 Body limits, rate limiting, bot protection (RL-01…RL-07)
 
-`experimental.serverActions.bodySizeLimit: '512kb'`; route handlers reject `content-length > 65536` with 413 before reading (webhook 16 KB). Limits (Postgres `rate_limit_buckets`, fail-closed/open per BOOK-16):
+`experimental.serverActions.bodySizeLimit: '512kb'`; route handlers reject `content-length > 65536` with 413 before reading (webhook 16 KB), and read a body sent without a length only up to the cap (security review of PR #14, L5). Limits (Postgres `rate_limit_buckets`, fail-closed/open per BOOK-16):
 
 | Surface | Key | Limit |
 |---|---|---|
@@ -715,7 +716,9 @@ Notes: `'wasm-unsafe-eval'` is required by the ZXing WASM fallback of `barcode-d
 | manual check-in | user | 10/min |
 | review submit | ip / booking | 3/h; unique per booking |
 | quotation, DSR, contact | ip | 3/h |
-| `/api/uploads/sign`, `/api/uploads/sign-pages` | user | 60/h together; all pages of one booklet count as one (§8.4) |
+| `/api/uploads/sign`, `/api/uploads/sign-pages` | user | 60/h together; all pages of one booklet count as one, and a booklet gets one `sign-pages` (§8.4) |
+| `/api/uploads/finalize` | user | 300/h (a 100-page booklet with its retries fits) |
+| refused upload attempts (`forbidden`) | user | 10 recorded per hour, then one `rate_limited` row (`high`) for the rest of the hour |
 | `rpc_create_export` | user | 10/h |
 | PDF routes | booking / ip | 10/h; 30/h |
 
@@ -725,7 +728,7 @@ Vercel: Firewall managed rulesets on; Deployment Protection (Vercel Authenticati
 
 1. `POST /api/uploads/sign` → Origin check (APP-12), staff session at AAL2 with access to the RW (`hasUploadAccess`: the service role skips the AAL2 policy of the tables, so the route asks for it); 60 per staff member per hour (§8.3); allow-list `image/jpeg|png|webp` ≤ 10 MB or `application/pdf` ≤ 50 MB (booklets), checked on the declared type **and** the file's first 64 bytes; server-generated object path `rw-XX/<uuid v7>`; `createSignedUploadUrl` on `uploads-quarantine`, 5 min (see the note below).
 2. Client uploads directly; the quarantine bucket allows 50 MB and `image/jpeg|png|webp`, `application/pdf` (one size limit per bucket, so the 10 MB image limit lives in step 1); `public-media` takes only what step 3 writes, WebP and PDF (0006).
-3. `POST /api/uploads/finalize` → Origin check, re-check prefix ownership and AAL2 (a refused staff member is recorded as `upload_rejected`, severity `high`); refuse a file stored more than 300 s after its signature; download with the service role, which is also the only writer of `public-media` (no Storage policy for any API role, 0006); verify magic bytes with `file-type` (declared MIME is untrusted); images re-encoded with `sharp` (`rotate()`, strip EXIF/GPS, max 1600 px, WebP + thumbnail) into `public-media`; PDFs parsed with `pdf-lib` (catalog walk after object-stream decoding: reject `/OpenAction`, `/AA`, `/JavaScript`, `/JS`, `/Launch`, `/EmbeddedFile`, `/RichMedia`, and any `/URI` not on the allow-list) **[RT]**, pages rasterised to `pages/0001.webp` for the flipbook, PDF served as attachment; quarantine object deleted; failures emit `upload_rejected`.
+3. `POST /api/uploads/finalize` → Origin check, re-check prefix ownership and AAL2 (a refused staff member is recorded as `upload_rejected`, severity `high`); refuse a file stored more than 300 s after its signature; download with the service role, which is also the only writer of `public-media` (no Storage policy for any API role, 0006); verify magic bytes with `file-type` (declared MIME is untrusted); images re-encoded with `sharp` (`rotate()`, strip EXIF/GPS, max 1600 px, WebP + thumbnail) into `public-media`; PDFs parsed with `pdf-lib` and every object walked against an allowlist (security review of PR #14 below) **[RT]**, pages rasterised to `pages/0001.webp` for the flipbook, PDF served as attachment; quarantine object emptied, so its URL works once (below); failures emit `upload_rejected`.
 4. `image/svg+xml` is rejected everywhere; users never upload PDFs other than booklets (admin only). No AV at launch (admin-only sources, re-encoding destroys payloads); *could*: VirusTotal hash lookup.
 
 Decisions of 2026-10-18 (Task P2.9.01–02, `src/server/services/upload-service.ts`, `src/lib/uploads/*`):
@@ -742,6 +745,26 @@ Decisions of 2026-10-18 (Task P2.9.01–02, `src/server/services/upload-service.
   - every XMP packet is removed, meaning each `/Metadata` entry on the catalog, a page, an image or a font, the stream it points at, and any XMP stream left without a reference.
 - **Accepted risk: EXIF inside photos embedded in a booklet.** Images inside the PDF are not re-encoded, so a JPEG placed in the booklet keeps its own EXIF block, a GPS position included. Re-encoding every embedded image would change the designer's file and is not worth it for admin-only uploads. Instead, the booklet form (`BookletUploader`) tells the officer under the file picker: *"Pastikan foto di booklet tidak memuat lokasi (GPS). Ekspor PDF dari Canva/Word biasanya sudah aman."* Accepted by the product owner on 2026-10-18; revisit if booklets start to come from sources other than RW officers.
 - **Event severity**: `svg`, `pdf_active_content`, `pdf_link` are `medium` (only a doctored file or a hand-made request gets there); a refused staff member is `high`; honest mistakes (HEIC, size, type, late, too many pages) and `upload_sanitized` are `info`. Details hold the reason, purpose and detected type or name, never a file name or a link.
+
+Security review of PR #14 (2026-10-19). An independent review of the pipeline found two medium (M1, M2) and eleven low (L1 to L11) issues. Each is closed in the same PR, with a test that runs the attack and shows it now fails:
+
+- **M1, an allowlist instead of a list of forbidden names** (`src/lib/uploads/pdf-rules.ts`, `pdf-annotations.ts`). Every object is walked against an allowlist.
+  - An action, wherever an `/A` or `/PA` points, is only `/GoTo` to a destination or `/URI` on the scheme allow-list. It holds no key besides `/Type`, `/S`, `/D` (GoTo) or `/Type`, `/S`, `/URI`, `/IsMap` (URI), so a `/Next` chain is refused, and `/S` must be spelled exactly.
+  - A page annotation is only `/Link`. Comments (notes, highlights, stamps, ink, popups) are left out of the copy (L4). Anything else refuses the file, with or without `/Type /Annot`: `/FileAttachment`, `/3D`, `/RichMedia`, `/Sound`, `/Movie`, `/Screen`, `/Widget`, a type the list does not know, or no subtype.
+  - These names are refused as a key or a value anywhere, in every spelling: `/OpenAction` (except the page-only one above), `/AA`, `/JavaScript`, `/JS`, `/Launch`, `/EmbeddedFile`, `/EmbeddedFiles`, `/EF`, `/AF`, `/RF`, `/FS`, `/FileAttachment`, `/3D`, `/3DD`, `/RichMedia`, `/Sound`, `/Movie`, `/Screen`, `/Rendition`, `/XFA`, `/Thread`, `/GoToR`, `/GoToE`, `/SubmitForm`, `/ImportData`. So an embedded file without `/Type /EmbeddedFile` is still found by the `/EF` that points at it.
+  - Fixtures, one per case: `src/lib/uploads/pdf-rules.test.ts`.
+- **M2, booklet pages go to quarantine first.** The browser puts every page into quarantine, four at a time and each tried twice, before it finalizes any; then it finalizes them one by one (`upload-client.ts`). The five-minute window therefore covers the uploads alone, not the server's work on each page, and it is measured at the object's Storage `created_at`, when the upload finished, not when finalize runs. A page whose public file exists answers `CONFLICT` before anything is read; the browser counts that as done when it retries after a lost reply. Any other refusal stops the upload without a retry. Tests: `upload-client.test.ts`, `upload-service.test.ts`.
+- **L1, HEIC brand and size.** `isHeifSignature` reads only the first 64 bytes, whatever size the `ftyp` box claims. `finalize` reads the object's size from Storage and refuses an oversized file (`image_size`, `pdf_size`) before downloading it, and `checkUploadedFile` checks the size before it looks at the bytes. An AVIF whose brand sits past byte 64 now gets the HEIC message instead of the general one; both are refused.
+- **L2, a cap on inflated streams** (`src/lib/uploads/pdf-inflate-guard.ts`). pdf-lib inflates object and cross-reference streams while it loads, with no limit. During a scan both of its entry points are wrapped: each such stream is first inflated by zlib under `maxOutputLength`, all of them together at most 64 MB (`MAX_PDF_INFLATED_BYTES`). A stream past that, packed with anything but a single `/FlateDecode`, or unreadable by zlib is refused (`unreadable`, detail `packed:*`) before pdf-lib decodes it. A booklet whose packed streams really exceed 64 MB would be refused; exports from Canva, Word or InDesign come nowhere near.
+- **L3, the page tree** (`src/lib/uploads/pdf-pages.ts`). Pages are counted by a walk that visits each node once. A node met twice (a loop or a shared kid), a kid that is not a reference, a node that is neither `/Pages` nor `/Page`, or more kids waiting than a booklet has pages refuses the file. `countPublishedPages` (sign-pages) uses the same walk, never pdf-lib's `getPageCount`.
+- **L4, the copy holds only what a reader needs.** Besides Info and XMP, the copy leaves out every `/PieceInfo` and `/Thumb` (any spelling), the removed comments, and every object the catalog no longer reaches (`pdf-metadata.ts`). Removed comments are recorded in `upload_sanitized` (`removed` holds `annotations`, `annotations` their count).
+- **L5, a capped body.** `readJsonBody` refuses a declared length over the cap, and reads a body sent without one (chunked) only up to the cap; then it cancels the stream and answers 413.
+- **L6, a signed upload is used once.** Supabase cannot revoke a signed upload URL. So after every answer `finalize` gives a file (published, refused, or `CONFLICT`), it overwrites the quarantine object with an empty one; `upsert: true` keeps its `created_at`. The bytes are gone, and the two-hour token cannot fill the path again, because a signed upload never overwrites. A second finalize of the same name finds the empty object and answers `already_used`, a validation refusal, so the browser never mistakes it for a published page. After a failure on our side the file stays as it was, for a retry. The hourly purge removes the empty objects after 24 h, long after the token has expired. `finalize` is limited to 300 per staff member per hour (§8.3). Tests: `upload-service.test.ts`, and `tests/integration/uploads.test.ts`, where the real Storage refuses the reused token.
+- **L7, an unreadable time is late.** A Storage `created_at` that does not parse counts as past the window.
+- **L8, refused attempts are limited too.** `checkUploadAccess` records at most ten `upload_rejected` (`forbidden`) per staff member per hour. The first refusal past that writes one `rate_limited` row (severity `high`, `limit: upload_forbidden`) and the rest of the hour writes nothing, so a flood leaves eleven rows. Every limit of the pipeline records itself this way (`withinUploadLimit`, `src/server/services/upload-events.ts`).
+- **L9, the profile decides, not the claims.** The service role skips RLS, so `checkUploadAccess` reads `profiles` (`role`, `rw_id`, `is_active`, `claims_version`). It refuses an inactive profile and a token whose `claims_version` differs from the profile's (AZ-09), and decides the scope on the profile's role and RW.
+- **L10, one spelling of an id.** The zod schemas lower-case `entityId` and `bookletId`, the only spelling `paths.ts` accepts, so one booklet never has two paths.
+- **L11, one sign-pages per booklet.** `sign-pages` refuses a booklet that has a page published (`booklet_pages_exist`, before a signature is counted) and one whose earlier URLs may still be alive (`booklet_pages_in_progress`). For the second it places an empty lock object `<owner>/booklet-pages-<id>` in quarantine with `upsert: false`, so two requests cannot both get it; a lock older than the two-hour token lifetime is replaced. Both answer 409. A booklet whose page upload breaks off is started again as a new booklet (R20).
 
 ### 8.5 Secrets registry (SEC-01…SEC-04)
 
@@ -1072,11 +1095,11 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 | RL-05 | must | Body caps 512 KB actions / 64 KB handlers / 16 KB webhook | Memory exhaustion | `next.config.ts`, handlers | 100 KB body → 413 | P1 - Environment Setup |
 | RL-06 | must | Vercel Authentication on previews; `noindex` off-production | Staging exposure | Vercel settings | curl preview → 401 | P5 - Production Deployment |
 | RL-07 | should | Firewall managed rules; Attack Challenge Mode runbook; custom challenge rules | L7 DoS | Vercel Firewall, §11.4 DoS runbook | staging tabletop | P5 - Production Deployment |
-| UPL-01 | must | Signed upload URLs (5 min) to quarantine; server paths; MIME/size allow-list | Path traversal, wrong types | `/api/uploads/sign`, bucket config | `.svg`, oversize, custom path rejected | P2 - CMS & Public Pages |
+| UPL-01 | must | Signed upload URLs (5 min, used once) to quarantine; server paths; MIME/size allow-list | Path traversal, wrong types, token reuse | `/api/uploads/sign`, bucket config | `.svg`, oversize, custom path rejected; reused token refused | P2 - CMS & Public Pages |
 | UPL-02 | must | Magic bytes; sharp re-encode; PDF scan | Polyglots, EXIF, malicious PDFs | `/api/uploads/finalize` | polyglot and JS-PDF fixtures | P2 - CMS & Public Pages |
 | UPL-03 | must | `documents` bucket without policies; signed URLs only | Unauthorised document access | storage policies, `/api/documents/*` | direct URL → 400/403 | P1 - DB & RLS |
 | UPL-04 | must | Staff uploads bound to their own `rw-XX/` prefix; no Storage policy for any API role, so finalize is the only writer of `public-media` | Cross-RW media overwrite; unscanned files on the public site | `/api/uploads/sign`, `/api/uploads/finalize`, 0006 | pgTAP `rls_storage.sql` (no persona writes, renames, deletes or lists); route tests in P2.9.01 | P1 - DB & RLS |
-| UPL-05 | must | `pdf-lib` catalog walk (decoded names/object streams), rasterised pages, attachment delivery | Encoded-name PDF bypass | `/api/uploads/finalize` | hex-escaped `/Open#41ction` fixture | P2 - CMS & Public Pages |
+| UPL-05 | must | `pdf-lib` allowlist walk of every object (decoded names, object streams under an inflate cap, page tree visited once per node), rasterised pages, attachment delivery | Encoded-name PDF bypass, active content outside a list of names, decompression and page-tree bombs | `/api/uploads/finalize` | hex-escaped `/Open#41ction` fixture; one fixture per refused annotation and action (`pdf-rules.test.ts`) | P2 - CMS & Public Pages |
 | SEC-01 | must | Env registry with zod server/client split; `NEXT_PUBLIC_` secret-name check | Secret in bundle | `src/lib/env.ts`, CI | CI script; bundle grep | P1 - Environment Setup |
 | SEC-02 | must | Service-role client quarantined with `server-only` + taint; lint/semgrep | Key leaked via props | `src/lib/supabase/admin.ts` | lint/semgrep CI | P1 - Environment Setup |
 | SEC-03 | must | gitleaks pre-commit + CI; push protection; history scan | Committed secrets | `.husky/pre-commit`, CI | fake-key fixture blocked | P1 - Environment Setup |
@@ -1265,5 +1288,25 @@ Each finding against the security design is listed with the controls that close 
 | Finish page keyed on `order_id` alone | Low | external | PAY-09, APP-15 |
 | Service-role staff actions produce NULL audit actors | Low | rogue admin_rw | AZ-15 |
 | One capability token grants every guest action | Low | external | GUEST-02, GUEST-06 |
+
+### A.5 Upload pipeline, security review of PR #14
+
+Closed in PR #14 itself; §8.4 describes each control and names its test.
+
+| Finding | Severity | Persona | Closing controls |
+|---|---|---|---|
+| M1: the PDF scan was a list of forbidden names, so an embedded file without `/Type`, 3D, sound, movie, screen, thread or another action passed | Medium | rogue admin_rw | UPL-05 (allowlist) |
+| M2: finalizing each page between uploads ate the five-minute window; a retry of a published page failed | Medium | rogue admin_rw | UPL-01 (quarantine first, window at upload, CONFLICT as done) |
+| L1: the HEIC brand scan followed the box size; a file was read whole before its size was checked | Low | rogue admin_rw | UPL-01, UPL-02 |
+| L2: pdf-lib inflated object and cross-reference streams without limit | Low | rogue admin_rw | UPL-05 (64 MB budget) |
+| L3: pdf-lib's page count walks a shared page-tree node again and again | Low | rogue admin_rw | UPL-05 (once-per-node walk) |
+| L4: `/PieceInfo`, `/Thumb`, comments and orphan objects reached the published copy | Low | rogue admin_rw | UPL-02 |
+| L5: a chunked body was read whole before its size was checked | Low | external | RL-01 |
+| L6: a signed upload URL could be used again for two hours; finalize had no limit | Low | rogue admin_rw | UPL-01 |
+| L7: an unreadable upload time did not count as late | Low | rogue admin_rw | UPL-01 |
+| L8: refused attempts were recorded without limit | Low | rogue admin_rw | UPL-04, MON-07 |
+| L9: upload access trusted the JWT claims while the service role skips RLS | Low | rogue admin_rw | AZ-09, UPL-04 |
+| L10: an upper-case id gave one booklet a second spelling | Low | rogue admin_rw | UPL-04 |
+| L11: sign-pages could be called again for a booklet whose pages were published or being uploaded | Low | rogue admin_rw | UPL-01 |
 
 *End of document.*
