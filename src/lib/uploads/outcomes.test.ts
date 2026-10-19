@@ -26,4 +26,15 @@ describe('failureFor', () => {
       error: { code: 'VALIDATION', message: copy.uploads.problems.pdf_too_many_pages },
     });
   });
+
+  // Security review of PR #14, L6 and L11.
+  it('answers a booklet whose pages are taken as a conflict, and a used upload as validation', () => {
+    expect(failureFor('booklet_pages_exist').error.code).toBe('CONFLICT');
+    expect(failureFor('booklet_pages_in_progress')).toEqual({
+      ok: false,
+      error: { code: 'CONFLICT', message: copy.uploads.problems.booklet_pages_in_progress },
+    });
+    // The browser takes a page's CONFLICT as done, so a used upload must never answer it.
+    expect(failureFor('already_used').error.code).toBe('VALIDATION');
+  });
 });

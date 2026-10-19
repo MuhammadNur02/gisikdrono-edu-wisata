@@ -98,7 +98,9 @@ describe('uploadFile', () => {
       purpose: 'gallery',
     });
 
-    await expect(upload).rejects.toEqual(new UploadRejectedError(copy.uploads.problems.heic));
+    await expect(upload).rejects.toEqual(
+      new UploadRejectedError(copy.uploads.problems.heic, 'VALIDATION'),
+    );
     expect(storage.uploadToSignedUrl).not.toHaveBeenCalled();
   });
 
@@ -220,5 +222,131 @@ describe('uploadBooklet', () => {
       }),
     ).rejects.toEqual(new UploadRejectedError(copy.uploads.bookletPagesFailed));
     expect(storage.uploadToSignedUrl).toHaveBeenCalledTimes(1);
+  });
+
+  // Security review of PR #14, M2: the URLs' five minutes cover the uploads, not the server's work on each page.
+  describe('pages go to quarantine first, then finalize one by one', () => {
+    const PAGE_COUNT = 6;
+    const manyPages = {
+      pageCount: PAGE_COUNT,
+      pages: Array.from({ length: PAGE_COUNT }, (_, index) => ({
+        pageNumber: index + 1,
+        path: `${QUARANTINE_PATH}.${BOOKLET_ID}.000${String(index + 1)}.0006`,
+        token: `t${String(index + 1)}`,
+      })),
+    };
+    const steps: string[] = [];
+
+    function failure(code: string, status: number) {
+      return answer({ ok: false, error: { code, message: `pesan ${code}` } }, status);
+    }
+
+    // Answers sign, the PDF's finalize and sign-pages; page finalizes get `pageAnswer`.
+    function serve(pageAnswer: (path: string, attempt: number) => Promise<Response>) {
+      const attempts = new Map<string, number>();
+      fetchMock.mockImplementation((url, init) => {
+        const body =
+          typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : {};
+        if (url === '/api/uploads/sign')
+          return answer({ ok: true, data: { path: QUARANTINE_PATH, token: 't' } });
+        if (url === '/api/uploads/sign-pages') return answer({ ok: true, data: manyPages });
+        if (body.purpose !== 'booklet-page') return answer({ ok: true, data: PDF });
+        const path = String(body.path);
+        const attempt = (attempts.get(path) ?? 0) + 1;
+        attempts.set(path, attempt);
+        steps.push(`finalize ${path.slice(-9, -5)}`);
+        return pageAnswer(path, attempt);
+      });
+    }
+
+    function upload(onPage?: (done: number) => void) {
+      return uploadBooklet(
+        new File(['%PDF-1.7'], 'booklet.pdf', { type: 'application/pdf' }),
+        { rwId: 5, bookletId: BOOKLET_ID },
+        onPage,
+      );
+    }
+
+    const pageImage = { ...IMAGE, thumbnailPath: null };
+
+    beforeEach(() => {
+      steps.length = 0;
+      drawnPages.images = Array.from(
+        { length: PAGE_COUNT },
+        (_, index) => new Blob([`page ${String(index + 1)}`], { type: 'image/webp' }),
+      );
+      storage.uploadToSignedUrl.mockImplementation((path: string) => {
+        if (path.includes(BOOKLET_ID)) steps.push(`put ${path.slice(-9, -5)}`);
+        return Promise.resolve({ data: {}, error: null });
+      });
+    });
+
+    it('puts every page in quarantine before the first page is finalized', async () => {
+      serve(() => answer({ ok: true, data: pageImage }));
+
+      await upload();
+
+      const firstFinalize = steps.findIndex((step) => step.startsWith('finalize'));
+      expect(steps.slice(0, firstFinalize)).toHaveLength(PAGE_COUNT);
+      expect(steps.slice(firstFinalize)).toEqual(
+        ['0001', '0002', '0003', '0004', '0005', '0006'].map((page) => `finalize ${page}`),
+      );
+    });
+
+    it('uploads the pages four at a time', async () => {
+      serve(() => answer({ ok: true, data: pageImage }));
+      let inFlight = 0;
+      let mostInFlight = 0;
+      storage.uploadToSignedUrl.mockImplementation(async () => {
+        inFlight += 1;
+        mostInFlight = Math.max(mostInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight -= 1;
+        return { data: {}, error: null };
+      });
+
+      await upload();
+
+      expect(mostInFlight).toBe(4);
+    });
+
+    it('counts a page as done when its retry finds it published already', async () => {
+      serve((path, attempt) => {
+        // Page 2's first reply is lost after the server published it.
+        if (path.endsWith('0002.0006') && attempt === 1)
+          return Promise.reject(new TypeError('network'));
+        if (path.endsWith('0002.0006')) return failure('CONFLICT', 409);
+        return answer({ ok: true, data: pageImage });
+      });
+      const progress: number[] = [];
+
+      await expect(upload((done) => progress.push(done))).resolves.toEqual(PDF);
+      expect(progress).toEqual([1, 2, 3, 4, 5, 6]);
+      expect(steps.filter((step) => step === 'finalize 0002')).toHaveLength(2);
+    });
+
+    it('tries an upload that failed once more, and takes an object already there as arrived', async () => {
+      serve(() => answer({ ok: true, data: pageImage }));
+      storage.uploadToSignedUrl
+        .mockResolvedValueOnce({ data: {}, error: null })
+        .mockResolvedValueOnce({ data: null, error: { statusCode: '500', message: 'busy' } })
+        .mockResolvedValueOnce({ data: null, error: { statusCode: '409', message: 'exists' } });
+
+      await expect(upload()).resolves.toEqual(PDF);
+    });
+
+    it('stops at a refusal without trying again, and never takes it for a finished page', async () => {
+      serve((path) =>
+        path.endsWith('0003.0006')
+          ? failure('VALIDATION', 400)
+          : answer({ ok: true, data: pageImage }),
+      );
+
+      await expect(upload()).rejects.toEqual(
+        new UploadRejectedError('pesan VALIDATION', 'VALIDATION'),
+      );
+      expect(steps.filter((step) => step === 'finalize 0003')).toHaveLength(1);
+      expect(steps).not.toContain('finalize 0004');
+    });
   });
 });

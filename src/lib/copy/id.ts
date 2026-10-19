@@ -255,6 +255,11 @@ export const copy = {
       pdf_too_many_pages:
         'Booklet maksimal 100 halaman. Pecah menjadi beberapa booklet, lalu unggah lagi satu per satu.',
       booklet_missing: 'PDF booklet belum terunggah. Unggah PDF-nya dulu, baru halamannya.',
+      already_used: 'Unggahan ini sudah diproses. Pilih file lagi untuk mengunggah ulang, ya.',
+      booklet_pages_exist:
+        'Halaman booklet ini sudah terunggah. Untuk menggantinya, buat booklet baru lalu unggah lagi.',
+      booklet_pages_in_progress:
+        'Halaman booklet ini sedang diunggah. Tunggu sampai selesai, atau coba lagi dua jam lagi.',
     } satisfies Record<UploadProblem, string>,
     bookletPagesFailed: 'Halaman booklet gagal diunggah. Coba unggah ulang booklet-nya, ya.',
   },

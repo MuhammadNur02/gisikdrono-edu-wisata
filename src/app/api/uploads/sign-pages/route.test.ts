@@ -32,6 +32,7 @@ const OFFICER_05: StaffContext = {
   rwId: 5,
   isAal2: true,
   totpVerifiedAt: null,
+  claimsVersion: 1,
 };
 
 function admin() {
@@ -62,6 +63,7 @@ function signPages(body: unknown) {
 
 beforeEach(() => {
   fake.admin = createFakeAdminClient();
+  fake.admin.addStaff(OFFICER_05);
   vi.mocked(svcRateLimitHit).mockReset().mockResolvedValue(true);
   vi.mocked(requireUser).mockReset().mockResolvedValue({ ok: true, ctx: OFFICER_05 });
 });
@@ -128,7 +130,16 @@ describe('POST /api/uploads/sign-pages', () => {
         details: expect.objectContaining({ reason: 'forbidden', step: 'sign-pages' }) as unknown,
       }),
     ]);
-    expect(svcRateLimitHit).not.toHaveBeenCalled();
+    // Only the limit on refused attempts is counted, never a signature (review L8).
+    expect(svcRateLimitHit).toHaveBeenCalledWith(fake.admin?.client, {
+      key: `upload_forbidden:${OFFICER_05.userId}`,
+      limit: 10,
+      windowSeconds: 3600,
+    });
+    expect(svcRateLimitHit).not.toHaveBeenCalledWith(
+      fake.admin?.client,
+      expect.objectContaining({ key: `upload_sign:${OFFICER_05.userId}` }),
+    );
   });
 
   it('answers 429 once the hourly signatures are used up', async () => {
@@ -138,6 +149,19 @@ describe('POST /api/uploads/sign-pages', () => {
     const response = await signPages({ rwId: 5, bookletId: BOOKLET_ID });
 
     expect(response.status).toBe(429);
+  });
+
+  // Security review of PR #14, L11.
+  it('answers 409 to a second request for the same booklet', async () => {
+    await publishBooklet(3);
+
+    await signPages({ rwId: 5, bookletId: BOOKLET_ID });
+    const second = await signPages({ rwId: 5, bookletId: BOOKLET_ID });
+
+    expect(second.status).toBe(409);
+    expect(await second.json()).toMatchObject({
+      error: { code: 'CONFLICT', message: copy.uploads.problems.booklet_pages_in_progress },
+    });
   });
 
   it('never takes a page count from the browser', async () => {

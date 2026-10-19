@@ -34,7 +34,7 @@ function isNamed(object: PDFObject | undefined, name: string): boolean {
 }
 
 // [page /Fit …]: a page reference (or a page index) and how to frame it, with numbers or null after it.
-function isExplicitDestination(value: PDFObject | undefined): boolean {
+export function isExplicitDestination(value: PDFObject | undefined): boolean {
   if (!(value instanceof PDFArray)) return false;
   const [page, fit, ...frame] = value.asArray();
   const isPage = page instanceof PDFRef || page instanceof PDFNumber;
@@ -43,7 +43,7 @@ function isExplicitDestination(value: PDFObject | undefined): boolean {
 }
 
 // A destination named in the document's own destination tree.
-function isNamedDestination(value: PDFObject | undefined): boolean {
+export function isNamedDestination(value: PDFObject | undefined): boolean {
   return value instanceof PDFString || value instanceof PDFHexString || value instanceof PDFName;
 }
 

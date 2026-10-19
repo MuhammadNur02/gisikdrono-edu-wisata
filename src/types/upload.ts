@@ -20,7 +20,10 @@ export type UploadProblem =
   | 'pdf_active_content'
   | 'pdf_link'
   | 'pdf_too_many_pages'
-  | 'booklet_missing';
+  | 'booklet_missing'
+  | 'already_used'
+  | 'booklet_pages_exist'
+  | 'booklet_pages_in_progress';
 
 // Where the browser puts the file: uploadToSignedUrl(path, token, file) on uploads-quarantine.
 export interface SignedUpload {

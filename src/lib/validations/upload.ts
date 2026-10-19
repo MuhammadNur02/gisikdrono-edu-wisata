@@ -39,7 +39,8 @@ export const finalizeUploadSchema = z
   .object({
     path: z.string().max(QUARANTINE_PATH_MAX_LENGTH),
     purpose: z.enum(UPLOAD_PURPOSES),
-    entityId: z.uuid().optional(),
+    // Lower case, the only spelling paths.ts accepts, so one booklet never gets two spellings (review L10).
+    entityId: z.uuid().toLowerCase().optional(),
   })
   .strict();
 
@@ -49,7 +50,7 @@ export type FinalizeUploadInput = z.infer<typeof finalizeUploadSchema>;
 export const signBookletPagesSchema = z
   .object({
     rwId: z.literal(RW_IDS).nullable(),
-    bookletId: z.uuid(),
+    bookletId: z.uuid().toLowerCase(),
   })
   .strict();
 

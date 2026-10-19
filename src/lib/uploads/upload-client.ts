@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import type { RwId } from '@/config/rw';
-import { LEADING_BYTES_LENGTH, QUARANTINE_BUCKET } from '@/config/uploads';
+import { LEADING_BYTES_LENGTH, PAGE_UPLOAD_CONCURRENCY, QUARANTINE_BUCKET } from '@/config/uploads';
 import { copy } from '@/lib/copy/id';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import type { UploadPurpose } from '@/lib/uploads/paths';
@@ -11,8 +11,9 @@ import type {
   SignBookletPagesInput,
   SignUploadInput,
 } from '@/lib/validations/upload';
+import type { ActionErrorCode } from '@/types/action-result';
 import type { UploadedImage } from '@/types/forms';
-import type { FinalizedPdf, FinalizedUpload } from '@/types/upload';
+import type { FinalizedPdf, FinalizedUpload, SignedBookletPages } from '@/types/upload';
 
 // The browser half of docs/Security.md §8.4: ask api/uploads/sign for a five-minute URL, put the file straight
 // into uploads-quarantine with it, then ask api/uploads/finalize to publish what the file becomes. Booklet pages
@@ -26,7 +27,32 @@ export interface UploadTarget {
   entityId?: string | undefined;
 }
 
-const failureSchema = z.object({ ok: z.literal(false), error: z.object({ message: z.string() }) });
+// Every code a route may answer with; the Record makes the compiler ask for a new one here too.
+const ACTION_ERROR_CODES = {
+  UNAUTHENTICATED: true,
+  FORBIDDEN: true,
+  VALIDATION: true,
+  NOT_FOUND: true,
+  CONFLICT: true,
+  QUOTA_EXCEEDED: true,
+  STATE_INVALID: true,
+  PRICE_MISMATCH: true,
+  RATE_LIMITED: true,
+  PAYMENT: true,
+  INTERNAL: true,
+} satisfies Record<ActionErrorCode, true>;
+const failureSchema = z.object({
+  ok: z.literal(false),
+  error: z.object({
+    message: z.string(),
+    code: z
+      .custom<ActionErrorCode>(
+        (value) => typeof value === 'string' && Object.hasOwn(ACTION_ERROR_CODES, value),
+      )
+      .optional()
+      .catch(undefined),
+  }),
+});
 const signedSchema = z.object({
   ok: z.literal(true),
   data: z.object({ path: z.string(), token: z.string() }),
@@ -58,6 +84,8 @@ const finalizedSchema = z.object({
   ]),
 });
 
+const ALREADY_EXISTS = '409';
+
 function jsonPost(
   body: SignUploadInput | SignBookletPagesInput | FinalizeUploadInput,
 ): RequestInit {
@@ -76,9 +104,8 @@ async function answerOf<T>(
   const success = schema.safeParse(answer);
   if (success.success) return success.data.data;
   const failure = failureSchema.safeParse(answer);
-  throw new UploadRejectedError(
-    failure.success ? failure.data.error.message : copy.forms.image.failed,
-  );
+  if (!failure.success) throw new UploadRejectedError(copy.forms.image.failed);
+  throw new UploadRejectedError(failure.data.error.message, failure.data.error.code);
 }
 
 function base64Of(bytes: Uint8Array): string {
@@ -98,11 +125,17 @@ async function uploadToQuarantine(file: Blob, rwId: RwId | null): Promise<string
   return signed.path;
 }
 
+// Storage's answer when the path is taken. Every path is fresh from the server, so what is there is this file,
+// put there by an earlier try whose reply was lost.
+function isAlreadyThere(error: object): boolean {
+  return 'statusCode' in error && String(error.statusCode) === ALREADY_EXISTS;
+}
+
 async function putInQuarantine(file: Blob, path: string, token: string): Promise<void> {
   const { error } = await createSupabaseBrowserClient()
     .storage.from(QUARANTINE_BUCKET)
     .uploadToSignedUrl(path, token, file, { contentType: file.type });
-  if (error) throw new UploadRejectedError(copy.forms.image.failed);
+  if (error && !isAlreadyThere(error)) throw new UploadRejectedError(copy.forms.image.failed);
 }
 
 async function finalize(body: FinalizeUploadInput): Promise<FinalizedUpload> {
@@ -131,10 +164,53 @@ async function drawPages(file: File): Promise<Blob[]> {
   return pages;
 }
 
+// A fault on our side or a reply that never arrived whole may pass on a second try; a refusal will not.
+function isWorthRetrying(error: unknown): boolean {
+  if (!(error instanceof UploadRejectedError)) return true;
+  return error.code === undefined || error.code === 'INTERNAL';
+}
+
+async function tryTwice(step: () => Promise<void>): Promise<void> {
+  try {
+    await step();
+  } catch (error) {
+    if (!isWorthRetrying(error)) throw error;
+    await step();
+  }
+}
+
+type SignedPage = SignedBookletPages['pages'][number];
+
+// Every page reaches quarantine before any is finalized, a few at a time, so the five-minute window of the URLs
+// covers the uploads alone and not the server's work on each page (security review of PR #14, M2).
+async function putPagesInQuarantine(pages: SignedPage[], images: Blob[]): Promise<void> {
+  for (let start = 0; start < pages.length; start += PAGE_UPLOAD_CONCURRENCY) {
+    const batch = pages.slice(start, start + PAGE_UPLOAD_CONCURRENCY);
+    await Promise.all(
+      batch.map((page) => {
+        const image = images[page.pageNumber - 1];
+        if (!image) throw new UploadRejectedError(copy.uploads.bookletPagesFailed);
+        return tryTwice(() => putInQuarantine(image, page.path, page.token));
+      }),
+    );
+  }
+}
+
+// A page an earlier try already published answers CONFLICT, and counts as done.
+async function finalizePage(path: string): Promise<void> {
+  await tryTwice(async () => {
+    try {
+      await finalize({ path, purpose: 'booklet-page' });
+    } catch (error) {
+      if (!(error instanceof UploadRejectedError && error.code === 'CONFLICT')) throw error;
+    }
+  });
+}
+
 // A booklet goes up twice (Task P2.9.02): the PDF itself, which finalize scans and publishes, then each page
 // drawn in this browser by pdf.js, so the flipbook never loads the PDF. The pages are drawn first and signed
-// afterwards in one api/uploads/sign-pages call, as many as the published PDF has, so drawing does not eat into
-// the five-minute window of the URLs (docs/Security.md §8.4, decision of 2026-10-18).
+// afterwards in one api/uploads/sign-pages call, as many as the published PDF has; all of them go to quarantine,
+// then finalize publishes them one by one (docs/Security.md §8.4).
 export async function uploadBooklet(
   file: File,
   target: { rwId: RwId | null; bookletId: string },
@@ -150,11 +226,9 @@ export async function uploadBooklet(
   if (signed.pageCount !== images.length)
     throw new UploadRejectedError(copy.uploads.bookletPagesFailed);
 
+  await putPagesInQuarantine(signed.pages, images);
   for (const page of signed.pages) {
-    const image = images[page.pageNumber - 1];
-    if (!image) throw new UploadRejectedError(copy.uploads.bookletPagesFailed);
-    await putInQuarantine(image, page.path, page.token);
-    await finalize({ path: page.path, purpose: 'booklet-page' });
+    await finalizePage(page.path);
     onPage?.(page.pageNumber, signed.pageCount);
   }
   return pdf;

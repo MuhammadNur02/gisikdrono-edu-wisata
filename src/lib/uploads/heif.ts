@@ -2,6 +2,10 @@
 // sharp's prebuilt libvips cannot decode them, so they are recognised by their bytes, never by the name or the
 // type the browser reports, and refused with a message that says how to get a JPG instead. AVIF uses the same
 // box with its own brand and is not a HEIC photo; it falls under the ordinary unsupported-format message.
+// Only the first 64 bytes are read, whatever size the box claims (security review of PR #14, L1): an iPhone's
+// ftyp box fits well within them, and a forged size can no longer make finalize walk a whole file.
+
+import { LEADING_BYTES_LENGTH } from '@/config/uploads';
 
 const FTYP_OFFSET = 4;
 const MAJOR_BRAND_OFFSET = 8;
@@ -32,7 +36,7 @@ function boxSize(bytes: Uint8Array): number {
 }
 
 function compatibleBrands(bytes: Uint8Array): string[] {
-  const end = Math.min(boxSize(bytes), bytes.length);
+  const end = Math.min(boxSize(bytes), bytes.length, LEADING_BYTES_LENGTH);
   const brands: string[] = [];
   for (
     let offset = COMPATIBLE_BRANDS_OFFSET;

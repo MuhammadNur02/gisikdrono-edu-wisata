@@ -40,6 +40,17 @@ describe('isHeifSignature', () => {
     expect(isHeifSignature(PDF_BYTES)).toBe(false);
     expect(isHeifSignature(new Uint8Array(4))).toBe(false);
   });
+
+  // Security review of PR #14, L1.
+  it('reads no brand past the first 64 bytes, whatever size the ftyp box claims', () => {
+    const forged = Buffer.concat([mif1HeifPhoto(), Buffer.alloc(64)]);
+    forged.writeUInt32BE(0xffffffff, 0);
+    forged.write('avif', 80, 'latin1');
+    expect(isHeifSignature(forged)).toBe(true);
+
+    forged.write('avif', 56, 'latin1');
+    expect(isHeifSignature(forged)).toBe(false);
+  });
 });
 
 describe('kindOfType', () => {
@@ -178,6 +189,15 @@ describe('checkUploadedFile (api/uploads/finalize)', () => {
       .gif()
       .toBuffer();
     await expect(checkUploadedFile(gif, 'image')).resolves.toMatchObject({ problem: 'type' });
+  });
+
+  // Security review of PR #14, L1: an oversized file is turned away before its bytes are looked into.
+  it('checks the size before it looks at the bytes', async () => {
+    const oversizedSvg = Buffer.concat([SVG_WITH_SCRIPT, Buffer.alloc(MAX_IMAGE_BYTES)]);
+    await expect(checkUploadedFile(oversizedSvg, 'image')).resolves.toEqual({
+      problem: 'image_size',
+      type: null,
+    });
   });
 
   it('checks the real size, not the one the browser declared', async () => {

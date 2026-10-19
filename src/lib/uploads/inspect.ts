@@ -59,7 +59,7 @@ function problemForFile(file: DetectedFile): UploadProblem | null {
   return kindOfType(file.type) === null ? 'type' : null;
 }
 
-function sizeProblem(kind: UploadKind, size: number): UploadProblem | null {
+export function sizeProblem(kind: UploadKind, size: number): UploadProblem | null {
   if (kind === 'pdf') return size > MAX_BOOKLET_PDF_BYTES ? 'pdf_size' : null;
   return size > MAX_IMAGE_BYTES ? 'image_size' : null;
 }
@@ -88,11 +88,14 @@ export async function checkUploadRequest(request: {
   return tooLarge ? { problem: tooLarge } : { kind };
 }
 
-// api/uploads/finalize: the whole file, against the kind its purpose takes.
+// api/uploads/finalize: the whole file, against the kind its purpose takes. The size comes first, so nothing
+// larger than the kind allows is looked into (security review of PR #14, L1).
 export async function checkUploadedFile(
   bytes: Uint8Array,
   expectedKind: UploadKind,
 ): Promise<FileCheck> {
+  const oversized = sizeProblem(expectedKind, bytes.byteLength);
+  if (oversized) return { problem: oversized, type: null };
   const file = await detectFile(bytes);
   const problem = problemForFile(file);
   if (problem) return { problem, type: file.type };

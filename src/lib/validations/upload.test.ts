@@ -47,6 +47,16 @@ describe('finalizeUploadSchema', () => {
   ])('refuses %s', (_case, input) => {
     expect(finalizeUploadSchema.safeParse(input).success).toBe(false);
   });
+
+  // Security review of PR #14, L10: paths.ts accepts lower case only, so one row never has two spellings.
+  it('lower-cases the entity id', () => {
+    const parsed = finalizeUploadSchema.parse({
+      path,
+      purpose: 'booklet',
+      entityId: '6F1C2D3E-4A5B-4C6D-8E7F-0123456789AB',
+    });
+    expect(parsed.entityId).toBe('6f1c2d3e-4a5b-4c6d-8e7f-0123456789ab');
+  });
 });
 
 describe('signBookletPagesSchema', () => {
@@ -58,5 +68,13 @@ describe('signBookletPagesSchema', () => {
       false,
     );
     expect(signBookletPagesSchema.safeParse({ rwId: 8, bookletId: '../x' }).success).toBe(false);
+  });
+
+  it('lower-cases the booklet id, as finalize does', () => {
+    const parsed = signBookletPagesSchema.parse({
+      rwId: 5,
+      bookletId: '6F1C2D3E-4A5B-4C6D-8E7F-0123456789AB',
+    });
+    expect(parsed.bookletId).toBe('6f1c2d3e-4a5b-4c6d-8e7f-0123456789ab');
   });
 });

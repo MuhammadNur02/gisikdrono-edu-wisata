@@ -38,6 +38,7 @@ const OFFICER_05: StaffContext = {
   rwId: 5,
   isAal2: true,
   totpVerifiedAt: null,
+  claimsVersion: 1,
 };
 
 function admin() {
@@ -75,7 +76,7 @@ async function expectRefused(response: Response, message: string, reason: string
   expect(response.status).toBe(400);
   expect(await response.json()).toEqual({ ok: false, error: { code: 'VALIDATION', message } });
   expect(admin().publicMedia.size).toBe(0);
-  expect(admin().quarantine.size).toBe(0);
+  expect(admin().quarantinedFiles()).toEqual([]);
   expect(admin().securityEvents).toEqual([
     expect.objectContaining({
       event_type: 'upload_rejected',
@@ -88,6 +89,7 @@ async function expectRefused(response: Response, message: string, reason: string
 
 beforeEach(() => {
   fake.admin = createFakeAdminClient();
+  fake.admin.addStaff(OFFICER_05);
   vi.mocked(requireUser).mockReset().mockResolvedValue({ ok: true, ctx: OFFICER_05 });
 });
 
@@ -112,7 +114,7 @@ describe('POST /api/uploads/finalize: images', () => {
     const published = admin().publicMedia.get(`rw-05/gallery/${name}.webp`);
     expect(published?.contentType).toBe('image/webp');
     expect((await sharp(published?.bytes).metadata()).exif).toBeUndefined();
-    expect(admin().quarantine.size).toBe(0);
+    expect(admin().quarantinedFiles()).toEqual([]);
     expect(admin().securityEvents).toEqual([]);
   });
 
@@ -252,8 +254,9 @@ describe('POST /api/uploads/finalize: booklet PDFs', () => {
     const response = await finalize({ ...body, path: secondPath });
 
     expect(response.status).toBe(409);
-    // Kept for the hourly purge; nothing new reached public-media.
-    expect(admin().quarantine.has(secondPath)).toBe(true);
+    // Its bytes go at once and an empty tombstone keeps the token from filling the path again (review L6).
+    expect(admin().quarantine.get(secondPath)?.bytes.length).toBe(0);
+    expect(admin().publicMedia.size).toBe(1);
   });
 });
 

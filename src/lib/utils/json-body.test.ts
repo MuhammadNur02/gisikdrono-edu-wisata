@@ -39,6 +39,33 @@ describe('readJsonBody', () => {
     });
   });
 
+  // Security review of PR #14, L5: a chunked body carries no length to check up front.
+  it('stops reading a body sent without a length as soon as it passes the cap', async () => {
+    let chunksPulled = 0;
+    let isCancelled = false;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        chunksPulled += 1;
+        controller.enqueue(new TextEncoder().encode('{"padding":"xxxx'));
+      },
+      cancel() {
+        isCancelled = true;
+      },
+    });
+    const init: RequestInit & { duplex: 'half' } = {
+      method: 'POST',
+      body: endless,
+      headers: { 'content-type': 'application/json' },
+      duplex: 'half',
+    };
+    const request = new Request(URL_OF_ROUTE, init);
+    expect(request.headers.get('content-length')).toBeNull();
+
+    await expect(readJsonBody(request, 64)).resolves.toEqual({ ok: false, status: 413 });
+    expect(chunksPulled).toBeLessThan(10);
+    expect(isCancelled).toBe(true);
+  });
+
   it('answers 400 to broken JSON', async () => {
     await expect(readJsonBody(post('{"rwId":'), 64)).resolves.toEqual({ ok: false, status: 400 });
   });

@@ -1,156 +1,56 @@
-import {
-  PDFArray,
-  PDFDict,
-  PDFDocument,
-  PDFHexString,
-  PDFName,
-  PDFRawStream,
-  PDFStream,
-  PDFString,
-  type PDFObject,
-} from 'pdf-lib';
+import { PDFDocument, PDFName, PDFRawStream, type PDFObject } from 'pdf-lib';
 
-import { BOOKLET_LINK_SCHEMES, MAX_BOOKLET_PAGES } from '@/config/uploads';
+import { sortPageAnnotations } from '@/lib/uploads/pdf-annotations';
+import { withInflateLimit } from '@/lib/uploads/pdf-inflate-guard';
 import { removeDocumentMetadata } from '@/lib/uploads/pdf-metadata';
 import { nameSpellings } from '@/lib/uploads/pdf-names';
 import { removePageOnlyOpenAction, type OpenActionKind } from '@/lib/uploads/pdf-open-action';
+import { readPageTree } from '@/lib/uploads/pdf-pages';
+import { firstFinding, type Lookup } from '@/lib/uploads/pdf-rules';
 
-// docs/Security.md §8.4 and UPL-05: a booklet PDF is published only when nothing in it can act on its own.
-// pdf-lib parses the whole file, including objects appended after %%EOF, and decodes object streams, so every
-// object is walked, not only the catalog, and names are compared in every spelling (./pdf-names.ts). An
-// /OpenAction that only opens a page is removed first (./pdf-open-action.ts); every other one is refused. What
-// gets published is pdf-lib's re-serialisation of the objects that were checked, so no byte outside them (a
-// polyglot's second file, junk after the last object) reaches public-media, and it carries no document metadata
-// (./pdf-metadata.ts). A booklet holds at most 100 pages.
+// docs/Security.md §8.4 and UPL-05: a booklet PDF is published only when nothing in it can act on its own, and the
+// copy that is published holds only what was checked. In order:
+// 1. pdf-lib loads the whole file, objects after %%EOF included, under the inflate budget (./pdf-inflate-guard.ts);
+//    an encrypted file or an object stream it could not unpack is refused.
+// 2. An /OpenAction that only opens a page is removed (./pdf-open-action.ts); the page tree is read once per node,
+//    at most 100 pages (./pdf-pages.ts); page annotations are sorted (./pdf-annotations.ts).
+// 3. Every object is walked against the allowlist and the forbidden names (./pdf-rules.ts).
+// 4. Metadata and every object the catalog no longer reaches are dropped (./pdf-metadata.ts), and pdf-lib writes
+//    the copy, so no byte outside the checked objects (a polyglot's second file) reaches public-media.
+
+export type PdfSanitizing = {
+  openAction: OpenActionKind | null;
+  // Comments and popups left out of the copy.
+  annotations: number;
+};
+
+type Refusal = {
+  ok: false;
+  problem:
+    'unreadable' | 'pdf_encrypted' | 'pdf_active_content' | 'pdf_link' | 'pdf_too_many_pages';
+  // The offending name, link scheme or structure, for the upload_rejected event; never the link itself.
+  detail?: string;
+};
 
 export type PdfScanResult =
-  | {
-      ok: true;
-      pageCount: number;
-      pdf: Uint8Array;
-      // What the published copy left out, for the upload_sanitized event.
-      removedOpenAction: OpenActionKind | null;
-    }
-  | {
-      ok: false;
-      problem:
-        'unreadable' | 'pdf_encrypted' | 'pdf_active_content' | 'pdf_link' | 'pdf_too_many_pages';
-      // The offending name or link scheme, for the upload_rejected event; never the link itself.
-      detail?: string;
-    };
+  { ok: true; pageCount: number; pdf: Uint8Array; removed: PdfSanitizing } | Refusal;
 
-type Finding = { problem: 'pdf_active_content' | 'pdf_link'; detail: string };
-
-// The documented list plus their siblings: the name-tree key of embedded files, XFA forms, and the actions
-// that submit, import, open other documents or play media.
-const FORBIDDEN_NAMES = new Set([
-  'OpenAction',
-  'AA',
-  'JavaScript',
-  'JS',
-  'Launch',
-  'EmbeddedFile',
-  'EmbeddedFiles',
-  'RichMedia',
-  'XFA',
-  'SubmitForm',
-  'ImportData',
-  'GoToE',
-  'GoToR',
-  'Rendition',
-]);
-const URI_KEY = 'URI';
 const OBJECT_STREAM_TYPE = 'ObjStm';
 
-function forbiddenName(name: PDFName): string | undefined {
-  return nameSpellings(name).find((spelling) => FORBIDDEN_NAMES.has(spelling));
-}
-
-function linkSchemeProblem(value: PDFObject | undefined): Finding | null {
-  const text =
-    value instanceof PDFString || value instanceof PDFHexString ? value.decodeText() : null;
-  if (text === null) return { problem: 'pdf_link', detail: 'not-a-string' };
+async function loadPdf(bytes: Uint8Array): Promise<PDFDocument | Refusal> {
   try {
-    const url = new URL(text);
-    const isAllowed = BOOKLET_LINK_SCHEMES.includes(url.protocol) && !url.username && !url.password;
-    return isAllowed ? null : { problem: 'pdf_link', detail: url.protocol };
-  } catch {
-    return { problem: 'pdf_link', detail: 'unparsable' };
-  }
-}
-
-// Resolves a reference to the object it points at (pdf-lib's context.lookup).
-type Lookup = (object: PDFObject) => PDFObject | undefined;
-
-// References are not followed here: every indirect object is walked on its own.
-function findIn(object: PDFObject, lookup: Lookup): Finding | null {
-  if (object instanceof PDFName) {
-    const name = forbiddenName(object);
-    return name ? { problem: 'pdf_active_content', detail: name } : null;
-  }
-  if (object instanceof PDFStream) return findIn(object.dict, lookup);
-  if (object instanceof PDFArray) return firstFinding(object.asArray(), lookup);
-  if (object instanceof PDFDict) return findInDict(object, lookup);
-  return null;
-}
-
-function firstFinding(objects: PDFObject[], lookup: Lookup): Finding | null {
-  for (const object of objects) {
-    const finding = findIn(object, lookup);
-    if (finding) return finding;
-  }
-  return null;
-}
-
-// A /URI value may sit in an object of its own, so it is looked up and cannot hide behind a reference.
-function findInDict(dict: PDFDict, lookup: Lookup): Finding | null {
-  for (const [key, value] of dict.entries()) {
-    const isUri = nameSpellings(key).includes(URI_KEY);
-    const finding =
-      findIn(key, lookup) ?? (isUri ? linkSchemeProblem(lookup(value)) : findIn(value, lookup));
-    if (finding) return finding;
-  }
-  return null;
-}
-
-async function loadPdf(bytes: Uint8Array): Promise<PDFDocument | 'unreadable' | 'pdf_encrypted'> {
-  try {
-    const document = await PDFDocument.load(bytes, {
-      throwOnInvalidObject: true,
-      updateMetadata: false,
-      ignoreEncryption: true,
-    });
+    const loaded = await withInflateLimit(() =>
+      PDFDocument.load(bytes, {
+        throwOnInvalidObject: true,
+        updateMetadata: false,
+        ignoreEncryption: true,
+      }),
+    );
+    if (!loaded.ok) return { ok: false, problem: 'unreadable', detail: `packed:${loaded.refusal}` };
     // Encrypted strings and streams cannot be read, so nothing in them could be checked.
-    return document.isEncrypted ? 'pdf_encrypted' : document;
-  } catch {
-    return 'unreadable';
-  }
-}
-
-// A file without a catalog or page tree loads, but cannot be counted or written.
-async function publishable(
-  document: PDFDocument,
-  removedOpenAction: OpenActionKind | null,
-): Promise<PdfScanResult> {
-  try {
-    const pageCount = document.getPageCount();
-    if (pageCount === 0) return { ok: false, problem: 'unreadable' };
-    if (pageCount > MAX_BOOKLET_PAGES) {
-      return { ok: false, problem: 'pdf_too_many_pages', detail: String(pageCount) };
-    }
-    removeDocumentMetadata(document);
-    return { ok: true, pageCount, pdf: await document.save(), removedOpenAction };
+    return loaded.value.isEncrypted ? { ok: false, problem: 'pdf_encrypted' } : loaded.value;
   } catch {
     return { ok: false, problem: 'unreadable' };
-  }
-}
-
-// The catalog itself is missing in a file that only looks like a PDF.
-function removeOpenAction(document: PDFDocument): OpenActionKind | null | 'unreadable' {
-  try {
-    return removePageOnlyOpenAction(document);
-  } catch {
-    return 'unreadable';
   }
 }
 
@@ -161,22 +61,55 @@ function isObjectStream(object: PDFObject): boolean {
   return type instanceof PDFName && nameSpellings(type).includes(OBJECT_STREAM_TYPE);
 }
 
-export async function scanBookletPdf(bytes: Uint8Array): Promise<PdfScanResult> {
-  const document = await loadPdf(bytes);
-  if (typeof document === 'string') return { ok: false, problem: document };
-
-  const objects = document.context.enumerateIndirectObjects().map(([, object]) => object);
-  if (objects.some(isObjectStream)) return { ok: false, problem: 'unreadable' };
-
-  const removedOpenAction = removeOpenAction(document);
-  if (removedOpenAction === 'unreadable') return { ok: false, problem: 'unreadable' };
-  const finding = firstFinding(objects, (object) => document.context.lookup(object));
-  if (finding) return { ok: false, ...finding };
-  return publishable(document, removedOpenAction);
+function objectsOf(document: PDFDocument): PDFObject[] {
+  return document.context.enumerateIndirectObjects().map(([, object]) => object);
 }
 
-// The page count of a booklet finalize published: pdf-lib's own output, read back by api/uploads/sign-pages.
-export async function countPublishedPages(bytes: Uint8Array): Promise<number> {
-  const document = await PDFDocument.load(bytes, { updateMetadata: false });
-  return document.getPageCount();
+// Step 2: what changes the document before it is checked, or why it is refused.
+function prepare(document: PDFDocument): { pageCount: number; removed: PdfSanitizing } | Refusal {
+  const openAction = removePageOnlyOpenAction(document);
+  const tree = readPageTree(document);
+  if (!tree.ok) return { ok: false, problem: tree.problem, detail: tree.detail };
+  const annotations = sortPageAnnotations(document, tree.pages);
+  if (!annotations.ok) return annotations;
+  return {
+    pageCount: tree.pages.length,
+    removed: { openAction, annotations: annotations.removed },
+  };
+}
+
+async function checkAndWrite(document: PDFDocument): Promise<PdfScanResult> {
+  const prepared = prepare(document);
+  if ('ok' in prepared) return prepared;
+  const lookup: Lookup = (object) => document.context.lookup(object);
+  const finding = firstFinding(objectsOf(document), lookup);
+  if (finding) return { ok: false, ...finding };
+  removeDocumentMetadata(document);
+  // Neither option walks the page tree or adds a form, so the copy is the checked objects and nothing more.
+  const pdf = await document.save({ addDefaultPage: false, updateFieldAppearances: false });
+  return { ok: true, pageCount: prepared.pageCount, pdf, removed: prepared.removed };
+}
+
+export async function scanBookletPdf(bytes: Uint8Array): Promise<PdfScanResult> {
+  const document = await loadPdf(bytes);
+  if (!(document instanceof PDFDocument)) return document;
+  if (objectsOf(document).some(isObjectStream)) return { ok: false, problem: 'unreadable' };
+  try {
+    return await checkAndWrite(document);
+  } catch {
+    // A file without a catalog loads, but cannot be read further.
+    return { ok: false, problem: 'unreadable' };
+  }
+}
+
+export type PublishedPageCount =
+  { ok: true; pageCount: number } | { ok: false; problem: 'unreadable' | 'pdf_too_many_pages' };
+
+// The page count of a booklet finalize published: pdf-lib's own output, read back by api/uploads/sign-pages with
+// the same once-per-node walk, so even a file that reached public-media some other way cannot hold it.
+export async function countPublishedPages(bytes: Uint8Array): Promise<PublishedPageCount> {
+  const tree = readPageTree(await PDFDocument.load(bytes, { updateMetadata: false }));
+  return tree.ok
+    ? { ok: true, pageCount: tree.pages.length }
+    : { ok: false, problem: tree.problem };
 }

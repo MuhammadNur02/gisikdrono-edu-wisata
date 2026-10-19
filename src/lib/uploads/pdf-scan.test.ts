@@ -47,7 +47,7 @@ describe('scanBookletPdf', () => {
     const pdf = handWrittenPdf('', [
       '4 0 obj\n<< /Type /Annot /Subtype /Link /A << /S /Launch /F (cmd.exe) >> >>\nendobj\n',
     ]);
-    await expect(scanBookletPdf(pdf)).resolves.toMatchObject({ detail: 'Launch' });
+    await expect(scanBookletPdf(pdf)).resolves.toMatchObject({ detail: 'action:Launch' });
   });
 
   it('finds rich media and embedded file streams wherever they sit', async () => {
@@ -57,7 +57,9 @@ describe('scanBookletPdf', () => {
     const embedded = handWrittenPdf('', [
       '4 0 obj\n<< /Type /EmbeddedFile /Length 0 >>\nstream\n\nendstream\nendobj\n',
     ]);
-    await expect(scanBookletPdf(richMedia)).resolves.toMatchObject({ detail: 'RichMedia' });
+    await expect(scanBookletPdf(richMedia)).resolves.toMatchObject({
+      detail: 'annotation:RichMedia',
+    });
     await expect(scanBookletPdf(embedded)).resolves.toMatchObject({ detail: 'EmbeddedFile' });
   });
 
@@ -113,7 +115,11 @@ describe('scanBookletPdf', () => {
     const pdf = handWrittenPdf('', [
       `4 0 obj\n<< /Type /ObjStm /N 1 /First 4 /Length ${String(inner.length)} /Filter /BogusDecode >>\nstream\n${inner}\nendstream\nendobj\n`,
     ]);
-    await expect(scanBookletPdf(pdf)).resolves.toEqual({ ok: false, problem: 'unreadable' });
+    await expect(scanBookletPdf(pdf)).resolves.toEqual({
+      ok: false,
+      problem: 'unreadable',
+      detail: 'packed:unsupported_filter',
+    });
   });
 
   it('refuses garbage, a truncated file and a PDF without pages', async () => {
@@ -129,6 +135,7 @@ describe('scanBookletPdf', () => {
     await expect(scanBookletPdf(Buffer.from(noPages, 'latin1'))).resolves.toEqual({
       ok: false,
       problem: 'unreadable',
+      detail: 'no-pages',
     });
   });
 
@@ -155,7 +162,7 @@ describe('scanBookletPdf', () => {
     await expect(scanBookletPdf(await pdfWith(101))).resolves.toEqual({
       ok: false,
       problem: 'pdf_too_many_pages',
-      detail: '101',
+      detail: 'more than 100',
     });
     await expect(scanBookletPdf(await pdfWith(100))).resolves.toMatchObject({
       ok: true,
@@ -186,7 +193,11 @@ describe('scanBookletPdf: an /OpenAction that only opens a page', () => {
   ])('leaves out %s and says so', async (_case, catalogExtra, kind) => {
     const result = await scanBookletPdf(handWrittenPdf(catalogExtra));
 
-    expect(result).toMatchObject({ ok: true, pageCount: 1, removedOpenAction: kind });
+    expect(result).toMatchObject({
+      ok: true,
+      pageCount: 1,
+      removed: { openAction: kind, annotations: 0 },
+    });
     if (!result.ok) return;
     expect(await openActionOf(result.pdf)).toBeUndefined();
   });
@@ -198,7 +209,7 @@ describe('scanBookletPdf: an /OpenAction that only opens a page', () => {
 
     await expect(scanBookletPdf(pdf)).resolves.toMatchObject({
       ok: true,
-      removedOpenAction: 'goto',
+      removed: { openAction: 'goto', annotations: 0 },
     });
   });
 
@@ -231,7 +242,7 @@ describe('scanBookletPdf: an /OpenAction that only opens a page', () => {
   it('removes nothing from a booklet without one', async () => {
     await expect(scanBookletPdf(await cleanBookletPdf())).resolves.toMatchObject({
       ok: true,
-      removedOpenAction: null,
+      removed: { openAction: null, annotations: 0 },
     });
   });
 });
@@ -320,6 +331,6 @@ describe('countPublishedPages', () => {
     const result = await scanBookletPdf(await cleanBookletPdf());
     if (!result.ok) throw new Error('the clean booklet should pass');
 
-    await expect(countPublishedPages(result.pdf)).resolves.toBe(2);
+    await expect(countPublishedPages(result.pdf)).resolves.toEqual({ ok: true, pageCount: 2 });
   });
 });

@@ -17,6 +17,9 @@ export type StaffContext = {
   isAal2: boolean;
   // Unix seconds of the last TOTP check in this session, or null when there was none.
   totpVerifiedAt: number | null;
+  // profiles.claims_version when the token was minted; server code acting with the service role compares it with
+  // the profile, because RLS, which would, does not apply to it (docs/Security.md AZ-09).
+  claimsVersion: number | null;
 };
 
 export type GuardResult = { ok: true; ctx: StaffContext } | ActionFailure;
@@ -26,6 +29,7 @@ const staffClaimsSchema = z.object({
   sub: z.string(),
   app_role: z.enum(DB_ENUMS.app_role).default('none'),
   app_rw_id: z.number().int().nullable().default(null),
+  claims_version: z.number().int().nullable().default(null),
   aal: z.enum(['aal1', 'aal2']),
   amr: z.array(z.object({ method: z.string(), timestamp: z.number() })).default([]),
 });
@@ -48,6 +52,7 @@ async function readStaffContext(): Promise<StaffContext | null> {
     rwId: claims.data.app_rw_id,
     isAal2: claims.data.aal === 'aal2',
     totpVerifiedAt: totpTimes.length > 0 ? Math.max(...totpTimes.map((e) => e.timestamp)) : null,
+    claimsVersion: claims.data.claims_version,
   };
 }
 

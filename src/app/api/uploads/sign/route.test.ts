@@ -36,6 +36,7 @@ const OFFICER_05: StaffContext = {
   rwId: 5,
   isAal2: true,
   totpVerifiedAt: null,
+  claimsVersion: 1,
 };
 
 function signRequest(body: unknown, headers: Record<string, string> = {}) {
@@ -59,6 +60,7 @@ function bodyFor(file: Buffer, contentType: string, rwId: number | null = 5) {
 
 beforeEach(() => {
   fake.admin = createFakeAdminClient();
+  fake.admin.addStaff(OFFICER_05);
   vi.mocked(svcRateLimitHit).mockReset().mockResolvedValue(true);
   vi.mocked(requireUser).mockReset().mockResolvedValue({ ok: true, ctx: OFFICER_05 });
 });
@@ -137,7 +139,16 @@ describe('POST /api/uploads/sign', () => {
       }),
       expect.objectContaining({ rw_id: null, severity: 'high' }),
     ]);
-    expect(svcRateLimitHit).not.toHaveBeenCalled();
+    // Only the limit on refused attempts is counted, never a signature (review L8).
+    expect(svcRateLimitHit).toHaveBeenCalledWith(fake.admin?.client, {
+      key: `upload_forbidden:${OFFICER_05.userId}`,
+      limit: 10,
+      windowSeconds: 3600,
+    });
+    expect(svcRateLimitHit).not.toHaveBeenCalledWith(
+      fake.admin?.client,
+      expect.objectContaining({ key: `upload_sign:${OFFICER_05.userId}` }),
+    );
   });
 
   it('refuses a session without a TOTP check', async () => {

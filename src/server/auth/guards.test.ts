@@ -57,8 +57,20 @@ describe('requireUser', () => {
     signInAs({ app_role: 'admin_rw', app_rw_id: 5 });
     expect(await requireUser()).toEqual({
       ok: true,
-      ctx: { userId: 'user-1', role: 'admin_rw', rwId: 5, isAal2: true, totpVerifiedAt: null },
+      ctx: {
+        userId: 'user-1',
+        role: 'admin_rw',
+        rwId: 5,
+        isAal2: true,
+        totpVerifiedAt: null,
+        claimsVersion: null,
+      },
     });
+  });
+
+  it('carries the claims_version claim so upload access can compare it with the profile', async () => {
+    signInAs({ app_role: 'admin_rw', app_rw_id: 5, claims_version: 3 });
+    expect(await requireUser()).toMatchObject({ ok: true, ctx: { claimsVersion: 3 } });
   });
 });
 
@@ -97,6 +109,7 @@ describe('hasUploadAccess', () => {
     rwId: 5,
     isAal2: true,
     totpVerifiedAt: null,
+    claimsVersion: 1,
   };
   const superadmin: StaffContext = { ...officer05, role: 'superadmin', rwId: null };
 

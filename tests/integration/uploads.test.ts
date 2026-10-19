@@ -6,7 +6,12 @@ import { z } from 'zod';
 import { LEADING_BYTES_LENGTH } from '@/config/uploads';
 import { parseQuarantinePath, type MediaTarget, type QuarantineUpload } from '@/lib/uploads/paths';
 import type { StaffContext } from '@/server/auth/guards';
-import { finalizeUpload, signBookletPages, signUpload } from '@/server/services/upload-service';
+import {
+  checkUploadAccess,
+  finalizeUpload,
+  signBookletPages,
+  signUpload,
+} from '@/server/services/upload-service';
 
 import { localStack, runSql, sqlText } from '../../scripts/local-stack';
 import { cleanBookletPdf, handWrittenPdf } from '../fixtures/pdf';
@@ -15,7 +20,8 @@ import { iphoneHeicPhoto, jpegPhoto } from '../fixtures/uploads';
 // The upload pipeline against the real Storage and database of the local stack (docs/Security.md §8.4): a URL
 // signed by the service role, the file put in quarantine with it the way the browser does, then finalize reading
 // it back, checking it, writing public-media and recording refusals. The routes' guards are covered by their
-// unit tests; this proves the Storage calls behave as the service expects.
+// unit tests; this proves the Storage calls behave as the service expects, the single use of a signed URL and the
+// lock on a booklet's pages included (security review of PR #14, L6 and L11).
 vi.mock('@/lib/supabase/admin', () => ({
   createSupabaseAdminClient: () =>
     createClient(localStack().apiUrl, localStack().serviceRoleKey, {
@@ -29,10 +35,12 @@ const SLOW_TEST_MS = 30_000;
 const BOOKLET_ID = '00000000-0000-4000-9000-0000000b0011';
 const PAGED_BOOKLET_ID = '00000000-0000-4000-9000-0000000b0013';
 const SANITIZED_BOOKLET_ID = '00000000-0000-4000-9000-0000000b0014';
-const idRowsSchema = z.array(z.object({ id: z.string() }));
+const LOCKED_BOOKLET_ID = '00000000-0000-4000-9000-0000000b0016';
+const officerSchema = z.array(z.object({ id: z.string(), claims_version: z.number() }));
 
 let officer: StaffContext;
 const publishedPaths: string[] = [];
+const quarantinePaths: string[] = [];
 
 function serviceRole() {
   return createClient(localStack().apiUrl, localStack().serviceRoleKey, {
@@ -46,12 +54,19 @@ function browser() {
   });
 }
 
+async function putWithSignedUrl(path: string, token: string, bytes: Buffer, contentType: string) {
+  quarantinePaths.push(path);
+  return browser()
+    .storage.from('uploads-quarantine')
+    .uploadToSignedUrl(path, token, bytes, { contentType });
+}
+
 // Signs as the RW 05 officer and puts `bytes` into quarantine through the signed URL, declared as `contentType`.
 async function quarantined(
   bytes: Buffer,
   contentType: string,
   signedAs = bytes,
-): Promise<QuarantineUpload> {
+): Promise<QuarantineUpload & { token: string }> {
   const signed = await signUpload(officer, {
     rwId: 5,
     contentType,
@@ -59,13 +74,11 @@ async function quarantined(
     leadingBytes: signedAs.subarray(0, LEADING_BYTES_LENGTH).toString('base64'),
   });
   if (!signed.ok) throw new Error(`sign refused the fixture: ${signed.problem}`);
-  const { error } = await browser()
-    .storage.from('uploads-quarantine')
-    .uploadToSignedUrl(signed.data.path, signed.data.token, bytes, { contentType });
+  const { error } = await putWithSignedUrl(signed.data.path, signed.data.token, bytes, contentType);
   if (error) throw error;
   const upload = parseQuarantinePath(signed.data.path);
   if (!upload) throw new Error('sign returned a path finalize cannot read');
-  return upload;
+  return { ...upload, token: signed.data.token };
 }
 
 async function finalize(upload: QuarantineUpload, target: MediaTarget) {
@@ -77,33 +90,43 @@ async function finalize(upload: QuarantineUpload, target: MediaTarget) {
   return outcome;
 }
 
-async function quarantineHas(upload: QuarantineUpload): Promise<boolean> {
-  const admin = serviceRole();
-  const { data } = await admin.storage
-    .from('uploads-quarantine')
-    .exists(`${upload.owner}/${upload.objectName}`);
-  return data;
+// The quarantine object's size: null when nothing is there, 0 for the tombstone finalize leaves.
+async function quarantineSize(upload: QuarantineUpload): Promise<number | null> {
+  const { data } = await serviceRole()
+    .storage.from('uploads-quarantine')
+    .info(`${upload.owner}/${upload.objectName}`);
+  return data ? (data.size ?? null) : null;
 }
 
 beforeAll(async () => {
-  const rows = idRowsSchema.parse(
-    await runSql(`select id::text from auth.users where email = 'admin-rw05@dev.gisikdrono.test'`),
+  const rows = officerSchema.parse(
+    await runSql(`select p.id::text, p.claims_version from public.profiles p
+      join auth.users u on u.id = p.id where u.email = 'admin-rw05@dev.gisikdrono.test'`),
   );
-  const userId = rows[0]?.id;
-  if (!userId) throw new Error('pnpm db:seed has not created the RW 05 officer');
-  officer = { userId, role: 'admin_rw', rwId: 5, isAal2: true, totpVerifiedAt: null };
+  const row = rows[0];
+  if (!row) throw new Error('pnpm db:seed has not created the RW 05 officer');
+  officer = {
+    userId: row.id,
+    role: 'admin_rw',
+    rwId: 5,
+    isAal2: true,
+    totpVerifiedAt: null,
+    claimsVersion: row.claims_version,
+  };
 }, SLOW_HOOK_MS);
 
 afterAll(async () => {
   const admin = serviceRole();
   if (publishedPaths.length > 0) await admin.storage.from('public-media').remove(publishedPaths);
+  const locks = [PAGED_BOOKLET_ID, LOCKED_BOOKLET_ID].map((id) => `rw-05/booklet-pages-${id}`);
+  await admin.storage.from('uploads-quarantine').remove([...quarantinePaths, ...locks]);
   await runSql(`select set_config('app.purge', 'on', true);
-    delete from public.security_events where event_type in ('upload_rejected', 'upload_sanitized') and actor_id = ${sqlText(officer.userId)};
-    delete from public.rate_limit_buckets where key = ${sqlText(`upload_sign:${officer.userId}`)};`);
+    delete from public.security_events where event_type in ('upload_rejected', 'upload_sanitized', 'rate_limited') and actor_id = ${sqlText(officer.userId)};
+    delete from public.rate_limit_buckets where key like 'upload%' and key like ${sqlText(`%:${officer.userId}`)};`);
 }, SLOW_HOOK_MS);
 
 describe('upload pipeline on the local stack', { timeout: SLOW_TEST_MS }, () => {
-  it('publishes a photo as WebP with its thumbnail and empties the quarantine', async () => {
+  it('publishes a photo as WebP with its thumbnail and leaves an empty tombstone', async () => {
     const upload = await quarantined(await jpegPhoto(2000, 1500), 'image/jpeg');
 
     const outcome = await finalize(upload, { purpose: 'gallery' });
@@ -117,17 +140,31 @@ describe('upload pipeline on the local stack', { timeout: SLOW_TEST_MS }, () => 
     expect(
       (await sharp(Buffer.from(await response.arrayBuffer())).metadata()).exif,
     ).toBeUndefined();
-    expect(await quarantineHas(upload)).toBe(false);
+    expect(await quarantineSize(upload)).toBe(0);
   });
 
-  it('refuses a real HEIC photo that came in under a JPEG name, records it and deletes it', async () => {
+  it('uses a signed URL once: the token cannot refill the path and finalize refuses it again', async () => {
+    const upload = await quarantined(await jpegPhoto(), 'image/jpeg');
+    await finalize(upload, { purpose: 'gallery' });
+
+    const path = `${upload.owner}/${upload.objectName}`;
+    const reuse = await putWithSignedUrl(path, upload.token, await jpegPhoto(), 'image/jpeg');
+
+    expect(reuse.error).not.toBeNull();
+    await expect(finalize(upload, { purpose: 'gallery' })).resolves.toEqual({
+      ok: false,
+      problem: 'already_used',
+    });
+  });
+
+  it('refuses a real HEIC photo that came in under a JPEG name, records it and empties it', async () => {
     const jpeg = await jpegPhoto();
     const upload = await quarantined(iphoneHeicPhoto(), 'image/jpeg', jpeg);
 
     const outcome = await finalize(upload, { purpose: 'gallery' });
 
     expect(outcome).toMatchObject({ ok: false, problem: 'heic' });
-    expect(await quarantineHas(upload)).toBe(false);
+    expect(await quarantineSize(upload)).toBe(0);
     const events =
       await runSql(`select severity, details->>'reason' as reason from public.security_events
       where event_type = 'upload_rejected' and entity_id = ${sqlText(upload.objectName)}`);
@@ -145,10 +182,7 @@ describe('upload pipeline on the local stack', { timeout: SLOW_TEST_MS }, () => 
     await expect(finalizeUpload(officer, secondUpload, target)).rejects.toMatchObject({
       code: 'CONFLICT',
     });
-    // A refusal on our side leaves the file for the hourly purge; the test clears it itself.
-    await serviceRole()
-      .storage.from('uploads-quarantine')
-      .remove([`rw-05/${secondUpload.objectName}`]);
+    expect(await quarantineSize(secondUpload)).toBe(0);
   });
 
   it('refuses a booklet with a hex-escaped open action', async () => {
@@ -168,7 +202,10 @@ describe('upload pipeline on the local stack', { timeout: SLOW_TEST_MS }, () => 
 
     const outcome = await finalize(upload, { purpose: 'booklet', entityId: SANITIZED_BOOKLET_ID });
 
-    expect(outcome).toMatchObject({ ok: true, sanitized: 'destination' });
+    expect(outcome).toMatchObject({
+      ok: true,
+      sanitized: { openAction: 'destination', annotations: 0 },
+    });
     const events = await runSql(`select severity, details->>'removed' as removed,
         details->>'kind' as kind
       from public.security_events
@@ -176,7 +213,7 @@ describe('upload pipeline on the local stack', { timeout: SLOW_TEST_MS }, () => 
     expect(events).toEqual([{ severity: 'info', removed: 'OpenAction', kind: 'destination' }]);
   });
 
-  it('signs every page of a published booklet at once and publishes each as its own page', async () => {
+  it('signs every page once, takes them all into quarantine, then publishes them one by one', async () => {
     const pdf = Buffer.from(await cleanBookletPdf());
     await finalize(await quarantined(pdf, 'application/pdf'), {
       purpose: 'booklet',
@@ -186,14 +223,13 @@ describe('upload pipeline on the local stack', { timeout: SLOW_TEST_MS }, () => 
     const signed = await signBookletPages(officer, { rwId: 5, bookletId: PAGED_BOOKLET_ID });
     if (!signed.ok) throw new Error(`sign-pages refused: ${signed.problem}`);
     expect(signed.data.pageCount).toBe(2);
-
     const page = await jpegPhoto(1131, 1600);
+    const uploads = await Promise.all(
+      signed.data.pages.map((slot) => putWithSignedUrl(slot.path, slot.token, page, 'image/jpeg')),
+    );
+    expect(uploads.map((result) => result.error)).toEqual([null, null]);
     const published: string[] = [];
     for (const slot of signed.data.pages) {
-      const { error } = await browser()
-        .storage.from('uploads-quarantine')
-        .uploadToSignedUrl(slot.path, slot.token, page, { contentType: 'image/jpeg' });
-      if (error) throw error;
       const upload = parseQuarantinePath(slot.path);
       if (!upload) throw new Error('sign-pages returned a path finalize cannot read');
       const outcome = await finalize(upload, { purpose: 'booklet-page' });
@@ -204,11 +240,35 @@ describe('upload pipeline on the local stack', { timeout: SLOW_TEST_MS }, () => 
       `rw-05/booklets/${PAGED_BOOKLET_ID}/pages/0001.webp`,
       `rw-05/booklets/${PAGED_BOOKLET_ID}/pages/0002.webp`,
     ]);
+    await expect(
+      signBookletPages(officer, { rwId: 5, bookletId: PAGED_BOOKLET_ID }),
+    ).resolves.toEqual({ ok: false, problem: 'booklet_pages_exist' });
+  });
+
+  it('refuses a second sign-pages while the first one’s URLs are alive', async () => {
+    const pdf = Buffer.from(await cleanBookletPdf());
+    await finalize(await quarantined(pdf, 'application/pdf'), {
+      purpose: 'booklet',
+      entityId: LOCKED_BOOKLET_ID,
+    });
+
+    const first = await signBookletPages(officer, { rwId: 5, bookletId: LOCKED_BOOKLET_ID });
+    const second = await signBookletPages(officer, { rwId: 5, bookletId: LOCKED_BOOKLET_ID });
+
+    expect(first.ok).toBe(true);
+    expect(second).toEqual({ ok: false, problem: 'booklet_pages_in_progress' });
   });
 
   it('signs no pages for a booklet whose PDF was never published', async () => {
     await expect(
       signBookletPages(officer, { rwId: 5, bookletId: '00000000-0000-4000-9000-0000000b0015' }),
     ).resolves.toEqual({ ok: false, problem: 'booklet_missing' });
+  });
+
+  it('reads the profile itself: a token from before the last profile change is refused', async () => {
+    await expect(checkUploadAccess(officer, 5, { step: 'sign' })).resolves.toBe(true);
+    const staleToken = { ...officer, claimsVersion: (officer.claimsVersion ?? 0) - 1 };
+
+    await expect(checkUploadAccess(staleToken, 5, { step: 'sign' })).resolves.toBe(false);
   });
 });

@@ -30,8 +30,25 @@ export const LEADING_BYTES_LENGTH = 64;
 // alive for two hours, so finalize refuses a file that arrived later than this after it was signed.
 export const SIGNED_UPLOAD_WINDOW_SECONDS = 300;
 
-// docs/Security.md §8.3: signed upload URLs per staff member per hour.
-export const UPLOAD_SIGN_LIMIT_PER_HOUR = 60;
+// docs/Security.md §8.3, per staff member per hour. upload_sign counts api/uploads/sign and each booklet's single
+// api/uploads/sign-pages; upload_finalize leaves room for a whole booklet (its PDF and 100 pages) and photos;
+// upload_forbidden caps how many refused attempts are recorded one by one (security review of PR #14, L6, L8).
+export const UPLOAD_LIMITS_PER_HOUR = {
+  upload_sign: 60,
+  upload_finalize: 300,
+  upload_forbidden: 10,
+} as const;
+
+// How long Supabase Storage keeps a signed upload URL alive (measured; supabase-js cannot shorten it). A booklet's
+// pages count as being uploaded for this long after they were signed.
+export const SIGNED_UPLOAD_TOKEN_SECONDS = 7200;
+
+// What finalize leaves at a quarantine path it has answered for: an empty object, so the two-hour token cannot put
+// a new file there (security review of PR #14, L6). Any type the bucket accepts will do.
+export const QUARANTINE_TOMBSTONE_TYPE = 'application/pdf';
+
+// Booklet pages go to quarantine this many at a time before any is finalized (security review of PR #14, M2).
+export const PAGE_UPLOAD_CONCURRENCY = 4;
 
 // Request bodies of api/uploads/{sign,finalize} are a few small fields.
 export const UPLOAD_REQUEST_BODY_LIMIT_BYTES = 2048;
@@ -61,6 +78,10 @@ export const UPLOAD_PURPOSES = [
 // 2026-10-18), and finalize refuses a longer PDF.
 export const BOOKLET_PAGE_DIGITS = 4;
 export const MAX_BOOKLET_PAGES = 100;
+
+// What pdf-lib may inflate from a booklet's object streams and cross-reference streams while it loads, all of
+// them together (security review of PR #14, L2). Ordinary booklets need a few megabytes at most.
+export const MAX_PDF_INFLATED_BYTES = 64 * 1024 * 1024;
 
 // docs/Security.md §8.4, decision of 2026-10-18: the only link schemes a booklet PDF may carry.
 export const BOOKLET_LINK_SCHEMES = ['https:', 'mailto:', 'tel:'];
