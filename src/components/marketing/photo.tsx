@@ -20,6 +20,8 @@ export interface PhotoFrameProps {
   // Where the crop is anchored when the slot's proportions differ from the photo's, such as
   // `object-left-top`; centred by default.
   objectPositionClassName?: string;
+  // `contain` shows the whole image inside the slot, such as a booklet cover; photos fill it.
+  fit?: 'cover' | 'contain';
   // Only the first hero image of a page (docs/StyleGuide.md §8.2).
   priority?: boolean;
   className?: string;
@@ -45,6 +47,7 @@ export function PhotoFrame({
   sizes,
   aspectClassName,
   objectPositionClassName,
+  fit = 'cover',
   priority = false,
   className,
 }: PhotoFrameProps) {
@@ -64,7 +67,10 @@ export function PhotoFrame({
         sizes={sizes}
         priority={priority}
         fetchPriority={priority ? 'high' : undefined}
-        className={cn('object-cover', objectPositionClassName)}
+        className={cn(
+          fit === 'contain' ? 'object-contain' : 'object-cover',
+          objectPositionClassName,
+        )}
       />
     </div>
   );

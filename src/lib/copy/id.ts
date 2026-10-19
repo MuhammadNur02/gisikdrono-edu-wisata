@@ -148,6 +148,30 @@ export const copy = {
       position: '{index} dari {total}',
     },
   },
+  // /artikel and /artikel/[slug] (docs/PRD.md FR-PUB-16).
+  article: {
+    readingTime: (minutes: number) => `${String(minutes)} menit baca`,
+  },
+  // /e-booklet and the flipbook (docs/StyleGuide.md §5.12).
+  booklet: {
+    pages: (count: number) => `${String(count)} halaman`,
+    download: 'Unduh PDF',
+    viewer: (title: string) => `Booklet ${title}`,
+    page: (page: number) => `Halaman ${String(page)}`,
+    position: (from: number, to: number, total: number) =>
+      from === to
+        ? `${String(from)} / ${String(total)}`
+        : `${String(from)}–${String(to)} / ${String(total)}`,
+    positionSpoken: (from: number, to: number, total: number) =>
+      from === to
+        ? `Halaman ${String(from)} dari ${String(total)}`
+        : `Halaman ${String(from)} dan ${String(to)} dari ${String(total)}`,
+    previous: 'Halaman sebelumnya',
+    next: 'Halaman berikutnya',
+    fullscreen: 'Layar penuh',
+    exitFullscreen: 'Keluar dari layar penuh',
+    keyboardHint: 'Tekan ← dan → di papan ketik untuk membalik halaman.',
+  },
   // RW page labels. An empty section has no text at all: it is left out (docs/StyleGuide.md §6.9).
   rwPage: {
     visionTitle: 'Visi',

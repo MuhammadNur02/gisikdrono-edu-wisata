@@ -726,6 +726,7 @@ Notes: `'wasm-unsafe-eval'` is required by the ZXing WASM fallback of `barcode-d
 | booklet scans (`finalize` of a booklet PDF, `sign-pages`) | process | 2 at once; past that `RATE_LIMITED` before anything is read (§8.4, F2) |
 | `rpc_create_export` | user | 10/h |
 | PDF routes | booking / ip | 10/h; 30/h |
+| booklet download `/api/documents/booklet/[id]` | ip (keyed hash) | 30/min, checked before the booklet is looked up |
 
 Vercel: Firewall managed rulesets on; Deployment Protection (Vercel Authentication) on every preview; Attack Challenge Mode is a runbook switch; custom challenge rules for `/reservasi/*` and `/pesan/*` during an attack (*should*).
 

@@ -5,7 +5,8 @@ import { toOptionalRwId, toPublicImage } from '@/lib/queries/mappers';
 import { cachedPublicRead, rowOrNull, rowsOf } from '@/lib/queries/public-read';
 import { TAGS } from '@/lib/queries/tags';
 import { createSupabaseAnonClient } from '@/lib/supabase/anon';
-import type { BookletDetail, BookletSummary } from '@/types/booklet';
+import { bookletPagePaths } from '@/lib/uploads/paths';
+import type { BookletDetail, BookletDownload, BookletSummary } from '@/types/booklet';
 
 const SUMMARY_COLUMNS =
   'id, slug, title, description, kind, rw_id, cover_path, page_count, file_size_bytes, published_at';
@@ -67,9 +68,25 @@ export const getBookletBySlug = cachedPublicRead(
     return {
       ...toBookletSummary(row),
       pdfPath: row.pdf_path,
-      pageImagesPrefix: row.page_images_prefix,
+      pagePaths: bookletPagePaths(row.page_images_prefix, row.page_count),
     };
   },
   ['booklets', 'by-slug'],
+  [TAGS.booklets],
+);
+
+// What GET /api/documents/booklet/[id] needs to hand out the PDF. The anon policy answers for published
+// booklets only, so a draft or archived id reads as unknown.
+export const getBookletDownload = cachedPublicRead(
+  async (id: string): Promise<BookletDownload | null> => {
+    const result = await createSupabaseAnonClient()
+      .from('booklets')
+      .select('id, slug, pdf_path')
+      .eq('id', id)
+      .maybeSingle();
+    const row = rowOrNull(result, 'booklets');
+    return row ? { id: row.id, slug: row.slug, pdfPath: row.pdf_path } : null;
+  },
+  ['booklets', 'download'],
   [TAGS.booklets],
 );

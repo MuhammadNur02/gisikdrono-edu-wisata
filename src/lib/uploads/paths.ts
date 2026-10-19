@@ -136,6 +136,14 @@ export function bookletPageFileName(pageNumber: number): string {
   return `${pageDigits(pageNumber)}.webp`;
 }
 
+// The flipbook's pages in order, from booklets.page_images_prefix and page_count; none until both are set.
+export function bookletPagePaths(prefix: string | null, pageCount: number | null): string[] {
+  if (!prefix || !pageCount || pageCount < 1) return [];
+  const folder = prefix.replace(/\/+$/, '');
+  const count = Math.min(pageCount, MAX_BOOKLET_PAGES);
+  return Array.from({ length: count }, (_, index) => `${folder}/${bookletPageFileName(index + 1)}`);
+}
+
 function bookletFolder(owner: string, bookletId: string): string {
   return `${owner}/${FOLDER_BY_PURPOSE.booklet}/${bookletId}`;
 }

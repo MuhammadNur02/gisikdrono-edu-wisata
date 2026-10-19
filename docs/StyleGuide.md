@@ -733,11 +733,13 @@ CSS columns `columns-2 md:columns-3 lg:columns-4 gap-4`, items `break-inside-avo
 
 ### 5.12 FlipbookViewer (`src/components/booklet/flipbook-viewer.tsx`)
 
-`react-pageflip` over the pre-rendered page images under `booklets.page_images_prefix` (`0001.webp` … `page_count`, max 1600 px long edge); double-page at `md+`, single page below; toolbar: previous/next, page indicator `3 / 24`, fullscreen, `Unduh PDF` (the public `public-media` URL of `pdf_path` with `?download=<slug>.pdf`, which makes Supabase Storage answer `Content-Disposition: attachment` so the PDF is never rendered inline), zoom disabled (use the PDF). Loaded with `next/dynamic` (`ssr:false`) behind a 3:2 skeleton; keyboard arrows flip pages; pages have `alt="Halaman 3"`. The `booklets.kind` (`booklet_kind`) label appears as overline (`E-Booklet | Proposal Kunjungan | Daftar Harga`). States: skeleton, ready, fullscreen, `page_count` null or 0 (pages not yet rasterised: `cover_path` image + download button only). Do: preload the two neighbouring pages. Don't: load the PDF in the browser for reading, animate the first paint, show unpublished booklets.
+`page-flip` (StPageFlip) over the pre-rendered page images under `booklets.page_images_prefix` (`0001.webp` … `page_count`, max 1600 px long edge), mounted by `useFlipBook` (`src/hooks/use-flip-book.ts`) on page elements it builds itself and destroyed on unmount; the `react-pageflip` wrapper is not used because it never destroys the book and pins `page-flip@latest` (decision of 2026-10-20). The cover stands alone on the right, then spreads; double-page at `md+`, single page below; the book is never taller than the screen. Toolbar: previous/next, page indicator `3 / 24` (`2–3 / 24` for a spread, spoken through `aria-live`), fullscreen where the browser offers it. `Unduh PDF` sits in the page header, outside the island, so it works before the flipbook loads: it opens `GET /api/documents/booklet/[id]`, which counts the download and redirects to the `public-media` URL of `pdf_path` with `?download=<slug>.pdf` (Supabase Storage then answers `Content-Disposition: attachment`, so the PDF is never rendered inline), next to the page count and file size. Zoom disabled (use the PDF). Loaded with `next/dynamic` (`ssr:false`) behind a 3:2 skeleton; keyboard arrows flip pages; pages have `alt="Halaman 3"`. The `booklets.kind` (`booklet_kind`) label appears as overline (`E-Booklet | Proposal Kunjungan | Daftar Harga`). States: skeleton, ready, fullscreen, `page_count` null or 0 (pages not yet rasterised: `cover_path` image + download button only). Do: preload the two neighbouring pages. Don't: load the PDF in the browser for reading, animate the first paint, show unpublished booklets.
 
 ```tsx
-const FlipbookViewer = dynamic(() => import('@/components/booklet/flipbook-viewer'), { ssr: false, loading: () => <Skeleton className="aspect-[3/2] rounded-xl" /> });
-<FlipbookViewer pages={pageUrls} pdfHref={bookletDownloadUrl(booklet)} title={booklet.title} />
+// src/components/booklet/flipbook.tsx ('use client')
+export const Flipbook = dynamic(() => import('@/components/booklet/flipbook-viewer').then((module) => module.FlipbookViewer), { ssr: false, loading: () => <Skeleton className="aspect-3/2 w-full rounded-xl" /> });
+// src/app/(public)/e-booklet/[slug]/page.tsx
+<Flipbook title={booklet.title} pagePaths={booklet.pagePaths} />  // Unduh PDF: <a href={bookletDownloadPath(booklet.id)}> in the header
 ```
 
 ### 5.13 SiteMapSvg hotspots (`src/components/map`)
@@ -1168,7 +1170,7 @@ No character illustrations or 3D renders. Empty states use a single lucide icon 
 | Images above the fold | ≤ 12, hero `priority` | — |
 | Blurred layers | ≤ 3 per viewport | — |
 
-Code-split with `next/dynamic` (`ssr: false` where DOM-only): Leaflet map, `react-pageflip`, scanner, Tiptap editor, Recharts, lightbox, `react-zoom-pan-pinch`. Snap checkout is a hosted redirect, so no payment script ships in any bundle. Public reads are ISR (`revalidate = 3600`) with tag revalidation; booking and admin routes are `force-dynamic` with `Cache-Control: private, no-store`. Recharts in admin renders without animation; tables never mount more than `per` rows.
+Code-split with `next/dynamic` (`ssr: false` where DOM-only): Leaflet map, `page-flip`, scanner, Tiptap editor, Recharts, lightbox, `react-zoom-pan-pinch`. Snap checkout is a hosted redirect, so no payment script ships in any bundle. Public reads are ISR (`revalidate = 3600`) with tag revalidation; booking and admin routes are `force-dynamic` with `Cache-Control: private, no-store`. Recharts in admin renders without animation; tables never mount more than `per` rows.
 
 ### 10.2 Responsive rules
 

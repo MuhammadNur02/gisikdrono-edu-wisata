@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, parse } from 'node:path';
 import { parseArgs } from 'node:util';
 
+import { seedDemoBooklet } from './demo-booklet';
 import { runSql, sqlText, uploadToLocalBucket } from './local-stack';
 import { reencodeImage } from '../src/lib/images/re-encode';
 
@@ -9,7 +10,8 @@ import { reencodeImage } from '../src/lib/images/re-encode';
 // The photos themselves never enter the repository: faces are in them and the consent is still being
 // arranged. Only their file names and the descriptions below live here. Each photo goes through
 // reencodeImage, the step api/uploads/finalize uses, so the local site shows exactly what an upload becomes.
-// Without --media the seed writes no hero banner and no gallery rows, and the pages show `Foto menyusul`.
+// Without --media the seed writes no hero banner, no gallery rows and no e-booklet, and the pages show
+// `Foto menyusul`.
 
 interface DemoPhoto {
   // The file name in the folder, without its extension.
@@ -148,6 +150,25 @@ async function linkRw05Photos(): Promise<void> {
     ${pointUpdates.join('\n')}`);
 }
 
+// The RW 05 article of seed-dev.sql gets the group photo as its cover and, after its Bank Sampah section, the
+// photo of that talk with the gallery's own alt text and caption. A body that already holds a photo is left
+// as it is, so a second run adds nothing.
+const ARTICLE_SLUG = 'bank-sampah-dan-taman-toga-rw-05';
+const ARTICLE_COVER_PHOTO_ID = '0de00000-0000-4000-8000-0000000000f1';
+const ARTICLE_BODY_PHOTO_ID = '0de00000-0000-4000-8000-0000000000f6';
+
+async function linkArticlePhotos(): Promise<void> {
+  await runSql(`update public.articles set cover_path = ${sqlText(galleryPath(ARTICLE_COVER_PHOTO_ID))}
+      where slug = ${sqlText(ARTICLE_SLUG)} and cover_path is null;
+    update public.articles a
+    set body_json = jsonb_set(a.body_json, '{content}', (a.body_json -> 'content') || jsonb_build_array(
+      jsonb_build_object('type', 'image', 'attrs', jsonb_build_object('src', g.storage_path, 'alt', g.alt_text,
+        'title', g.caption, 'width', g.width, 'height', g.height))))
+    from public.galleries g
+    where a.slug = ${sqlText(ARTICLE_SLUG)} and g.id = ${sqlText(ARTICLE_BODY_PHOTO_ID)}
+      and not a.body_json @> '{"content": [{"type": "image"}]}';`);
+}
+
 async function seedGalleryPhoto(
   folder: string,
   photo: DemoPhoto,
@@ -170,5 +191,7 @@ export async function seedDemoMedia(folder: string): Promise<number> {
     await seedGalleryPhoto(folder, photo, index + 1);
   }
   await linkRw05Photos();
+  await linkArticlePhotos();
+  await seedDemoBooklet(RW05_GALLERY.map((photo) => findPhotoFile(folder, photo.file)));
   return RW05_GALLERY.length + 1;
 }
