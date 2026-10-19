@@ -11,6 +11,8 @@ export const PUBLIC_PATHS = {
   reviews: '/ulasan',
   privacy: '/privasi',
   gallery: '/galeri',
+  articles: '/artikel',
+  booklets: '/e-booklet',
 } as const;
 
 export function packagePath(slug: string): string {
@@ -22,11 +24,17 @@ export function productPath(slug: string): string {
 }
 
 export function articlePath(slug: string): string {
-  return `/artikel/${slug}`;
+  return `${PUBLIC_PATHS.articles}/${slug}`;
 }
 
 export function bookletPath(slug: string): string {
-  return `/e-booklet/${slug}`;
+  return `${PUBLIC_PATHS.booklets}/${slug}`;
+}
+
+// "Unduh PDF" goes through the server, which counts the download before it hands out the file (docs/PRD.md
+// FR-PUB-07, Task P2.4.08).
+export function bookletDownloadPath(bookletId: string): string {
+  return `/api/documents/booklet/${bookletId}`;
 }
 
 // The booking wizard opens on its first step (docs/PRD.md FR-PUB-12).

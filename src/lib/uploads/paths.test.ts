@@ -5,6 +5,7 @@ import { createUuidV7 } from '@/lib/utils/uuid-v7';
 import {
   bookletPageFileName,
   bookletPageObjectName,
+  bookletPagePaths,
   bookletPdfPath,
   isPdfPurpose,
   isTargetAllowed,
@@ -160,6 +161,24 @@ describe('bookletPageFileName', () => {
 
   it.each([0, 101, 1.5])('refuses page %s', (pageNumber) => {
     expect(() => bookletPageFileName(pageNumber)).toThrow(RangeError);
+  });
+});
+
+describe('bookletPagePaths', () => {
+  it('lists every page under the prefix, with or without its trailing slash', () => {
+    const pages = ['rw-05/booklets/b/pages/0001.webp', 'rw-05/booklets/b/pages/0002.webp'];
+    expect(bookletPagePaths('rw-05/booklets/b/pages', 2)).toEqual(pages);
+    expect(bookletPagePaths('rw-05/booklets/b/pages/', 2)).toEqual(pages);
+  });
+
+  it('has no pages until the prefix and a count are both set', () => {
+    expect(bookletPagePaths(null, 12)).toEqual([]);
+    expect(bookletPagePaths('rw-05/booklets/b/pages', null)).toEqual([]);
+    expect(bookletPagePaths('rw-05/booklets/b/pages', 0)).toEqual([]);
+  });
+
+  it('never lists more pages than a booklet may have', () => {
+    expect(bookletPagePaths('kelurahan/booklets/b/pages', 500)).toHaveLength(100);
   });
 });
 

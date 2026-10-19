@@ -16,7 +16,14 @@ export interface BookletSummary {
 }
 
 export interface BookletDetail extends BookletSummary {
-  // public-media paths: the PDF and the folder of pre-rendered pages (0001.webp …) the flipbook shows.
+  // public-media paths: the PDF, and the pre-rendered pages (…/pages/0001.webp …) the flipbook shows, empty
+  // until the pages are uploaded.
   pdfPath: string;
-  pageImagesPrefix: string | null;
+  pagePaths: string[];
+}
+
+export interface BookletDownload {
+  id: string;
+  slug: string;
+  pdfPath: string;
 }

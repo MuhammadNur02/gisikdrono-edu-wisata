@@ -1,12 +1,22 @@
 import 'server-only';
 
+import { createHmac } from 'node:crypto';
+
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { QUARANTINE_BUCKET } from '@/config/uploads';
-import { svcForgetPurgedFiles, svcPurgeableFiles } from '@/db/rpc';
+import {
+  svcForgetPurgedFiles,
+  svcIncrementBookletDownload,
+  svcPurgeableFiles,
+  svcRateLimitHit,
+} from '@/db/rpc';
 import type { PurgeableFile } from '@/db/rpc';
 import type { Database } from '@/db/types';
+import { serverEnv } from '@/lib/env';
 import { AppError } from '@/lib/errors';
+// See recordBookletDownload for why this module creates a service-role client.
+import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { MEDIA_OWNERS } from '@/lib/uploads/paths';
 
 type DatabaseClient = SupabaseClient<Database>;
@@ -76,6 +86,46 @@ export async function createDocumentSignedUrl(
     .createSignedUrl(path, SIGNED_URL_TTL_SECONDS[kind]);
   if (error) throw error;
   return data.signedUrl;
+}
+
+// Task P2.4.08: the public "Unduh PDF" of a published booklet, 30 per minute per visitor IP.
+export const BOOKLET_DOWNLOAD_LIMIT = { limit: 30, windowSeconds: 60 } as const;
+const BOOKLET_DOWNLOAD_KEY = 'booklet:download';
+const IP_KEY_LENGTH = 24;
+
+// rate_limit_buckets keeps the key for an hour or so; a keyed hash keeps visitor IPs out of the database while
+// one visitor still lands in one bucket. OTP_PEPPER is the server's pepper for exactly this kind of hash.
+export function bookletDownloadKey(clientIp: string): string {
+  const ipHash = createHmac('sha256', serverEnv.OTP_PEPPER)
+    .update(clientIp)
+    .digest('hex')
+    .slice(0, IP_KEY_LENGTH);
+  return `${BOOKLET_DOWNLOAD_KEY}:${ipHash}`;
+}
+
+// The service role is needed below because the limiter and the counter are internal functions no API role may
+// run (P1.3.24): a public counter would be a public write. The limiter is keyed by the hashed IP alone, and
+// the counter acts only on the id of a booklet the anon policy has just returned as published.
+
+// True while the visitor is within the limit; checked before the booklet is even looked up, so guessing ids
+// costs the same as downloading.
+export function withinBookletDownloadLimit(
+  clientIp: string,
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<boolean> {
+  return svcRateLimitHit(adminClient, {
+    key: bookletDownloadKey(clientIp),
+    ...BOOKLET_DOWNLOAD_LIMIT,
+  });
+}
+
+// increment_booklet_download checks the status again, so an id that is not published never moves a counter
+// (docs/PRD.md FR-PUB-07, APP-04).
+export function countBookletDownload(
+  bookletId: string,
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<void> {
+  return svcIncrementBookletDownload(adminClient, bookletId);
 }
 
 // The api/jobs/purge-storage run (docs/Security.md §7.3). SQL cannot delete storage objects, so the
