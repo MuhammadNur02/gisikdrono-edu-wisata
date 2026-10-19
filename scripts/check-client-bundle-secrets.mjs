@@ -4,6 +4,8 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const CLIENT_BUNDLE_DIR = '.next/static';
+// 'Mid-server-' matches every Midtrans server key: live keys and both sandbox formats (SB-Mid-server- and the
+// newer Mid-server-), so it stays here even though SB-Mid-server- is listed too.
 const SECRET_FINGERPRINTS = [
   'Mid-server-',
   'SB-Mid-server-',

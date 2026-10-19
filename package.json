@@ -33,6 +33,7 @@
     "db:test": "supabase test db",
     "midtrans:simulate": "tsx scripts/midtrans-simulate.ts",
     "midtrans:status": "tsx scripts/midtrans-status.ts",
+    "midtrans:check": "tsx scripts/midtrans-check.ts",
     "tunnel": "cloudflared tunnel --url http://localhost:3000",
     "wa:send-test": "tsx scripts/wa-send-test.ts",
     "email:preview": "email dev --dir src/lib/email",
