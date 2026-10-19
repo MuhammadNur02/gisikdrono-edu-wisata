@@ -2410,8 +2410,8 @@ Additional items tracked in `CLAUDE.md` §12.3: Vercel plan (Hobby vs Pro; pg_cr
 | `SUPABASE_DB_URL`, `SUPABASE_ACCESS_TOKEN` | CI | Migrations and pgTAP |
 | `MIDTRANS_SERVER_KEY`, `MIDTRANS_SERVER_KEY_PREVIOUS` | S | Snap/Status API auth, webhook signature; rotation overlap <= 15 min |
 | `MIDTRANS_CLIENT_KEY` | S | Kept server-side; redirect mode needs no browser key |
-| `MIDTRANS_IS_PRODUCTION` | S | Sandbox/production switch; validated against `VERCEL_ENV` and key prefixes (`SB-` vs `Mid-server-`) |
-| `MIDTRANS_MERCHANT_ID` | S | Webhook `merchant_id` check |
+| `MIDTRANS_IS_PRODUCTION` | S | Sandbox/production switch; validated against `VERCEL_ENV`; production refuses `SB-` keys, while sandbox keys come as `SB-Mid-server-` or the newer `Mid-server-`, so `pnpm midtrans:check` confirms the environment against the Status API before keys are saved (`docs/Security.md` §3.9) |
+| `MIDTRANS_MERCHANT_ID` | S | Webhook `merchant_id` check; `G` or `M` followed by digits |
 | `MIDTRANS_WEBHOOK_PATH_TOKEN` | S | Secret segment of `api/webhooks/midtrans/[token]` |
 | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_BUSINESS_ACCOUNT_ID` | S | Meta Cloud API sending |
 | `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` | S | Webhook signature and handshake |

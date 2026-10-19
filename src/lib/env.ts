@@ -3,6 +3,7 @@ import 'server-only';
 import { createEnv } from '@t3-oss/env-nextjs';
 import { z } from 'zod';
 
+import { findMidtransKeyProblems, MIDTRANS_MERCHANT_ID_PATTERN } from '@/lib/midtrans/environment';
 import { INDONESIAN_MOBILE_E164, publicEnv } from '@/lib/public-env';
 
 const MIN_SECRET_LENGTH = 32;
@@ -52,19 +53,19 @@ type EnvValues = {
   WHATSAPP_APP_SECRET?: string | undefined;
 };
 
-// CLAUDE.md §7.7: production runs live Midtrans keys, everything else runs sandbox keys, never a mix.
+// CLAUDE.md §7.7: production never runs a sandbox "SB-" key, and MIDTRANS_IS_PRODUCTION follows the deployment.
+// A newer sandbox key looks exactly like a live one, so pnpm midtrans:check asks the Status API before keys are
+// saved for staging or production (docs/Security.md §3.9).
 function findMidtransMismatches(values: EnvValues): string[] {
   const isProductionDeployment = values.VERCEL_ENV === 'production';
-  const keyPrefix = isProductionDeployment ? 'Mid-' : 'SB-Mid-';
-  const expectedPrefixes = [
-    ['MIDTRANS_SERVER_KEY', values.MIDTRANS_SERVER_KEY, `${keyPrefix}server-`],
-    ['MIDTRANS_SERVER_KEY_PREVIOUS', values.MIDTRANS_SERVER_KEY_PREVIOUS, `${keyPrefix}server-`],
-    ['MIDTRANS_CLIENT_KEY', values.MIDTRANS_CLIENT_KEY, `${keyPrefix}client-`],
-  ] as const;
-
-  const mismatches = expectedPrefixes
-    .filter(([, value, prefix]) => value !== undefined && !value.startsWith(prefix))
-    .map(([name, , prefix]) => `${name} must start with ${prefix} on this deployment`);
+  const mismatches = findMidtransKeyProblems(
+    {
+      serverKey: values.MIDTRANS_SERVER_KEY,
+      previousServerKey: values.MIDTRANS_SERVER_KEY_PREVIOUS,
+      clientKey: values.MIDTRANS_CLIENT_KEY,
+    },
+    isProductionDeployment,
+  );
 
   if (values.MIDTRANS_IS_PRODUCTION !== isProductionDeployment) {
     mismatches.push(
@@ -131,7 +132,7 @@ export const serverEnv = createEnv({
     MIDTRANS_SERVER_KEY_PREVIOUS: z.string().min(1).optional(),
     MIDTRANS_CLIENT_KEY: z.string().min(1),
     MIDTRANS_IS_PRODUCTION: z.stringbool(),
-    MIDTRANS_MERCHANT_ID: z.string().min(1),
+    MIDTRANS_MERCHANT_ID: z.string().regex(MIDTRANS_MERCHANT_ID_PATTERN),
     MIDTRANS_WEBHOOK_PATH_TOKEN: secret,
     WHATSAPP_ACCESS_TOKEN: z.string().min(1).optional(),
     WHATSAPP_PHONE_NUMBER_ID: z.string().min(1).optional(),
