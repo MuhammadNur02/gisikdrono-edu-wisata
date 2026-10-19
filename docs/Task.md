@@ -390,6 +390,7 @@ Requirements: FR-ADMIN-10 … FR-ADMIN-16.
 | P2.9.05 | `[ ]` | Server Actions `src/server/actions/{articles,galleries,booklets,hero-banners,activity-points,schedules,pages}.ts` in the mandatory order (safeParse → `requireRwAccess`/`requireRole` → service → `revalidateTag` → `ok`), explicit column objects (no spreads), `ActionResult` returns; `src/lib/copy/id.ts` entries (APP-05, APP-09) | M | P2.9.04 | Dev |
 | P2.9.06 | `[ ]` | Admin pages (provisional lists; ported to `DataTable` in P4.3.03): `/dashboard/articles`, `/dashboard/articles/new`, `/dashboard/articles/[id]/edit` (admin_rw drafts go `pending_review`; superadmin publishes; edit of a published article resets to `pending_review`), `/dashboard/galleries` (uploader + `alt_text`), `/dashboard/booklets` (`BookletUploader` from `src/components/forms/booklet-uploader.tsx` with `uploadBooklet` from `src/lib/uploads/upload-client.ts`, which publishes the PDF, then its pages; the form stores `pdf_path`, `page_count`, `file_size_bytes` and `page_images_prefix` from its answer), `/dashboard/schedules` (RW 08 + superadmin), `/dashboard/activity-points` (coordinates picker on the denah), `/dashboard/pages` (`rw_units` content columns), `/dashboard/settings/hero-banners` (superadmin) | L | P2.9.05, P2.8.03 | Dev |
 | P2.9.07 | `[ ]` | Real content entered on staging by RW officers through the CMS: RW 05 and RW 08 profiles, at least 6 activity points per RW with coordinates, initial galleries with alt text, one e-booklet per RW, three articles, hero banners featuring UMKM products | L | P2.9.06 | Kelurahan |
+| P2.9.09 | `[ ]` | (Go-live blocker, second re-review of PR #14; docs/Security.md R21 and §13.1 #24.) Run the booklet scan (`scanBookletPdf` for `api/uploads/finalize`, `countPublishedPages` for `api/uploads/sign-pages`) in a `worker_threads` worker created per scan with `resourceLimits` (`maxOldGenerationSizeMb` sized below the function's memory) and terminated when `MAX_PDF_SCAN_SECONDS` passes, so pdf-lib's `PDFRef` and `PDFName` pools, which never empty in a long-lived process, end with each scan and memory and time are capped by the runtime rather than by counting; the worker gets the bytes and returns the copy and its report, nothing else; a worker that dies or is terminated answers `pdf_too_complex`; integration test: the main process's heap is unchanged after a scan of a million distinct names, and a scan past the deadline is terminated (UPL-05) | M | P2.9.02 | Dev |
 | P2.9.08 | `[ ]` | (Decision of 2026-10-18, review of PR #13.) The video form of `/dashboard/galleries` recommends uploading a still of its own (`thumbnail_path`, through the upload pipeline of P2.9.01): a note by the field says that without one the public gallery loads YouTube's still from `i.ytimg.com` as soon as the page opens, which gives Google the visitor's IP address before anyone presses play (docs/Security.md §7.6, §8.2); the form previews the still the gallery will show. Recommended, not required: a video without its own still keeps working | S | P2.9.06 | Dev |
 
 ### 3.10 Phase 2 exit criteria
@@ -867,7 +868,7 @@ Every template maps 1:1 to a `notification_template` value (`admin_booking_needs
 
 ## Appendix C — Go-live security checklist (cross-referenced to `docs/Security.md` §13.1)
 
-All 23 items must pass with evidence attached to the release PR and the product owner's sign-off (P5.7.06).
+All 24 items must pass with evidence attached to the release PR and the product owner's sign-off (P5.7.06).
 
 | § 13.1 # | Check (summary) | Evidence produced by | Task(s) |
 |---|---|---|---|
@@ -894,6 +895,7 @@ All 23 items must pass with evidence attached to the release PR and the product 
 | 21 | Official kelurahan WhatsApp number in Vercel Production (`NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER`), equal to `site_settings.contact.whatsapp_number`; the production build already refuses the local and CI sample numbers | written confirmation + `wa.me` screenshot | P0.4.05, P2.2.02, P5.7.06 |
 | 22 | Every active RW has `description_md`, `vision_md` and `hero_image_path` on production (the public pages hide an empty section, so the site itself would not show the gap) | query result | P2.4.02, P2.9.07, P5.7.06 |
 | 23 | DSR form `/privasi/permintaan` active: OTP `dsr_identity` to the verified channel before a `dsr_requests` row, linked from the footer and `/privasi`, which until then sends requests by email to `privacy.dpo_email` | Playwright report + `/privasi` screenshot | P2.4.12, P3.12.03, P5.7.06 |
+| 24 | Booklet scan isolated in a `worker_threads` worker with `resourceLimits`, terminated at its deadline, so pdf-lib's pools end with each scan (R21) | integration test report | P2.9.09 |
 
 ## Appendix D — Control-ID coverage index
 
@@ -985,7 +987,7 @@ Every control of `docs/Security.md` §12 and the tasks that implement or verify 
 | RL-05 | P1.1.11 | RL-06 | P0.1.03, P5.4.02, P5.7.01 |
 | RL-07 | P0.1.03, P5.5.05, P5.8.02 | UPL-01 | P1.5.01, P2.9.01 |
 | UPL-02 | P2.9.01, P2.9.02 | UPL-03 | P1.5.02, P3.6.04 |
-| UPL-04 | P1.5.02, P1.9.06, P2.9.01 | UPL-05 | P2.9.02 |
+| UPL-04 | P1.5.02, P1.9.06, P2.9.01 | UPL-05 | P2.9.02, P2.9.09 |
 | SEC-01 | P0.3.02, P1.1.08, P1.1.17, P5.7.01 | SEC-02 | P1.1.04, P1.1.10 |
 | SEC-03 | P0.1.04, P1.1.05, P1.1.16 | SEC-04 | P0.3.02, P5.5.03 |
 | SEC-05 | P0.1.01, P0.1.03, P0.1.07, P0.3.01, P5.8.01 | DB-01 | P0.1.02, P1.4.01, P5.7.02 |
