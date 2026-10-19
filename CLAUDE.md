@@ -161,7 +161,7 @@ src/
     pricing/                   computeBookingQuote() - pure, 100 % coverage
     qr/                        sign.ts, verify.ts - the only place QR tokens are signed/verified
     links/                     scoped guest links (HMAC) - the only place they are minted/verified
-    midtrans/                  client.ts (fetch wrapper), snap.ts, verify-signature.ts, map-status.ts, schemas.ts
+    midtrans/                  client.ts (fetch wrapper), snap.ts, verify-signature.ts, map-status.ts, schemas.ts, environment.ts (key formats, merchant id, API hosts)
     notifications/             NotificationProvider interface, whatsapp-meta.ts, templates.ts, enqueue
     email/                     React Email templates (links only, never attachments)
     pdf/                       quotation.tsx, invoice.tsx, receipt.tsx, ticket.tsx, certificate.tsx, fonts/
@@ -182,7 +182,7 @@ src/
 supabase/
   migrations/                  0001_extensions ... 0008_seed, then <YYYYMMDDHHMMSS>_<slug>.sql
   config.toml tests/            pgTAP (rls_*.sql, triggers, append-only, concurrency, enumeration); no seed.sql (pnpm db:seed)
-scripts/                       seed-dev.ts + seed-dev.sql, dev-accounts.ts, local-stack.ts, midtrans-simulate.ts, midtrans-status.ts, wa-send-test.ts, check-client-bundle-secrets.mjs, check-table-tests.mjs, gen-db-types.mjs
+scripts/                       seed-dev.ts + seed-dev.sql, dev-accounts.ts, local-stack.ts, midtrans-simulate.ts, midtrans-status.ts, midtrans-check.ts, wa-send-test.ts, check-client-bundle-secrets.mjs, check-table-tests.mjs, gen-db-types.mjs
 tests/                         integration/ (Vitest against supabase start), e2e/ (Playwright), fixtures/
 public/                        icons/, map/denah.svg, fonts/, og/
 ```
@@ -497,6 +497,7 @@ pnpm db:seed           # local only: DEV-ONLY staff accounts + demo content, pri
 pnpm db:seed --media <folder>  # also re-encodes the demo photos of scripts/demo-media.ts (never committed)
 pnpm dev               # http://localhost:3000
 pnpm tunnel            # cloudflared: receive Midtrans sandbox webhooks locally
+pnpm midtrans:check    # the server key in .env.local really is a sandbox key (asks the Status API)
 pnpm midtrans:simulate -- --order GSK-7F3K9Q2M-01 --status settlement
 pnpm db:test           # pgTAP
 pnpm check             # lint + typecheck + unit + types drift
@@ -585,8 +586,8 @@ Attempts (`internal.create_payment_attempt` + `attach_snap_token`): at most one 
 ### 7.7 Secrets & env — owner `src/lib/env.ts`
 
 - All env access goes through `src/lib/env.ts` (`serverEnv`, behind `import 'server-only'`) and `src/lib/public-env.ts` (`publicEnv`, `NEXT_PUBLIC_*` only, safe for client components because Next.js inlines those names). `process.env` elsewhere is an ESLint error; the one exception is `next.config.ts`, which runs at build time and reads only the `npm_lifecycle_event` build switch. `NODE_ENV` and `VERCEL_ENV` come from `publicEnv` as shared values.
-- Fail-fast matrix: `VERCEL_ENV=production` <=> `MIDTRANS_IS_PRODUCTION=true` <=> keys prefixed `Mid-server-` / `Mid-client-`; otherwise `SB-` prefixes. A production build also refuses a sample `NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER` (six zeros in a row, `findPublicEnvProblems` in `src/lib/public-env.ts`). Any `NEXT_PUBLIC_` name containing `SECRET|KEY|TOKEN` outside the known public keys fails CI.
-- `pnpm check:secrets` scans `.next/static` for `Mid-server-`, `service_role`, `MIDTRANS_SERVER_KEY` after build. gitleaks runs pre-commit and in CI.
+- Fail-fast matrix (`src/lib/env.ts`, rules in `src/lib/midtrans/environment.ts`): `VERCEL_ENV=production` <=> `MIDTRANS_IS_PRODUCTION=true`; production keys start with `Mid-server-` / `Mid-client-` and never with `SB-`; every other deployment takes sandbox keys in either format, the older `SB-Mid-server-` / `SB-Mid-client-` or the newer `Mid-server-` / `Mid-client-`; `MIDTRANS_MERCHANT_ID` is `G` or `M` followed by digits. Newer sandbox keys look exactly like live ones, so the prefix cannot prove which environment a key belongs to: `pnpm midtrans:check` asks the Status API of the environment `MIDTRANS_IS_PRODUCTION` names (404 `Transaction doesn't exist` = the key belongs there; 401 = that host does not know the key, because it comes from the other environment or is mistyped or revoked, exit 1) and must pass with an environment's keys before they are saved in Vercel for staging or production (`docs/Security.md` §3.9, go-live check #7). It never prints a key. A production build also refuses a sample `NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER` (six zeros in a row, `findPublicEnvProblems` in `src/lib/public-env.ts`). Any `NEXT_PUBLIC_` name containing `SECRET|KEY|TOKEN` outside the known public keys fails CI.
+- `pnpm check:secrets` scans `.next/static` for `Mid-server-` (which matches live keys and both sandbox formats), `service_role`, `MIDTRANS_SERVER_KEY` after build. gitleaks runs pre-commit and in CI.
 - `experimental.taint` + `experimental_taintUniqueValue` on the service key and `CRON_SECRET`. Secrets are never pasted into issues, chats, docs or seed files.
 
 ### 7.8 RLS & privileged RPCs — owner `supabase/migrations` + `src/server/auth/guards.ts`
@@ -701,6 +702,7 @@ PRD requirement cited; migration + RLS + pgTAP merged; types regenerated; valida
 | `pnpm db:test` | `supabase test db` (all pgTAP suites) |
 | `pnpm midtrans:simulate -- --order <code> --status settlement\|expire\|deny` | Post a correctly signed sandbox notification to the local webhook |
 | `pnpm midtrans:status -- --order <code>` | Query the Midtrans Status API for an order |
+| `pnpm midtrans:check [-- --file <path>]` | Prove the server key in the file (default `.env.local`) belongs to the environment `MIDTRANS_IS_PRODUCTION` names: checks the key formats and merchant id, then asks that environment's Status API about a random order; 404 `Transaction doesn't exist` passes, 401 (key unknown there: the other environment, or mistyped or revoked) or anything else exits 1; never prints a key. Required before saving keys for staging or production (`docs/Security.md` §3.9) |
 | `pnpm tunnel` | cloudflared tunnel to receive sandbox webhooks locally |
 | `pnpm wa:send-test -- --to +62... --template <name>` | Send a WhatsApp template to a test number |
 | `pnpm email:preview` | React Email dev server |
@@ -722,7 +724,7 @@ PRD requirement cited; migration + RLS + pgTAP merged; types regenerated; valida
 | `MIDTRANS_SERVER_KEY_PREVIOUS` | S | Rotation overlap (max 15 min) |
 | `MIDTRANS_CLIENT_KEY` | S | Kept server-side; redirect mode needs no browser key |
 | `MIDTRANS_IS_PRODUCTION` | S | Sandbox/production switch; validated against `VERCEL_ENV` |
-| `MIDTRANS_MERCHANT_ID` | S | Webhook `merchant_id` check |
+| `MIDTRANS_MERCHANT_ID` | S | Webhook `merchant_id` check; `G` or `M` followed by digits |
 | `MIDTRANS_WEBHOOK_PATH_TOKEN` | S | Secret segment of `api/webhooks/midtrans/[token]` |
 | `WHATSAPP_ACCESS_TOKEN` | S | Meta System User token (`whatsapp_business_messaging` only) |
 | `WHATSAPP_PHONE_NUMBER_ID` | S | Sending number id |
