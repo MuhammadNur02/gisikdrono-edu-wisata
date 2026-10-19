@@ -382,7 +382,7 @@ Triggers fire for the service role too (it bypasses RLS, not triggers); only the
 | Key normalisation | email lower-cased, gmail dots and `+tags` stripped; phone E.164 `+62` mobile only; applied before limits, dedupe and notifications | `src/lib/validations/normalize.ts` |
 | Evaluation order | per-IP → Turnstile (fail-closed) → global window counting **only Turnstile-verified** requests | `src/server/actions/booking.ts` |
 | Global breaker | **soft**: switch `site_settings.rate_limit_profile` to `strict`, enable Vercel Attack Challenge Mode, alert; never a hard reject | `anomaly-scan` + runbook DoS |
-| Limiter backend | Postgres `rate_limit_buckets` via `internal.rate_limit_hit` (no external quota to exhaust; an external store such as Upstash is only an optional later upgrade and must keep this fail-closed matrix); **fails closed** for login, password reset, scanner, exports and link minting; fails open only for booking creation while Turnstile stays mandatory | `src/lib/rate-limit.ts` |
+| Limiter backend | Postgres `rate_limit_buckets` via `internal.rate_limit_hit` (no external quota to exhaust; an external store such as Upstash is only an optional later upgrade and must keep this fail-closed matrix); **fails closed** for login, password reset, scanner, exports and link minting; fails open only for booking creation while Turnstile stays mandatory | `src/lib/rate-limit.ts`, every limit and its outage mode in `src/config/rate-limits.ts` |
 | Turnstile | every public form (booking, OTP, lookup, quotation, review, DSR); server `siteverify` with `remoteip`, `hostname`, `challenge_ts < 5 min`, 5 s timeout | `src/lib/turnstile.ts` |
 
 ### 4.4 Duplicate handling and quotation misuse (BOOK-06, BOOK-08, BOOK-15, BOOK-17)

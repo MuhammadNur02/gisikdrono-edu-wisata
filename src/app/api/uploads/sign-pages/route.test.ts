@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { svcRateLimitHit } from '@/db/rpc';
 import { copy } from '@/lib/copy/id';
+import { rateLimitKey } from '@/lib/rate-limit';
 import { parseQuarantinePath } from '@/lib/uploads/paths';
 import { requireUser, type StaffContext } from '@/server/auth/guards';
 import type { SignedBookletPages } from '@/types/upload';
@@ -90,7 +91,7 @@ describe('POST /api/uploads/sign-pages', () => {
     expect(data.pages[0]?.token).toBe(`token-for-${data.pages[0]?.path ?? ''}`);
     expect(svcRateLimitHit).toHaveBeenCalledTimes(1);
     expect(svcRateLimitHit).toHaveBeenCalledWith(fake.admin?.client, {
-      key: `upload_sign:${OFFICER_05.userId}`,
+      key: rateLimitKey('upload_sign', OFFICER_05.userId),
       limit: 60,
       windowSeconds: 3600,
     });
@@ -136,13 +137,13 @@ describe('POST /api/uploads/sign-pages', () => {
     ]);
     // Only the limit on refused attempts is counted, never a signature (review L8).
     expect(svcRateLimitHit).toHaveBeenCalledWith(fake.admin?.client, {
-      key: `upload_forbidden:${OFFICER_05.userId}`,
+      key: rateLimitKey('upload_forbidden', OFFICER_05.userId),
       limit: 10,
       windowSeconds: 3600,
     });
     expect(svcRateLimitHit).not.toHaveBeenCalledWith(
       fake.admin?.client,
-      expect.objectContaining({ key: `upload_sign:${OFFICER_05.userId}` }),
+      expect.objectContaining({ key: rateLimitKey('upload_sign', OFFICER_05.userId) }),
     );
   });
 
