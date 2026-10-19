@@ -6,8 +6,10 @@ import {
   BOOKLET_PDF_TYPE,
   PUBLIC_MEDIA_BUCKET,
   QUARANTINE_BUCKET,
+  SIGNED_UPLOAD_TOKEN_SECONDS,
   SIGNED_UPLOAD_WINDOW_SECONDS,
 } from '@/config/uploads';
+import { svcClaimBookletPages } from '@/db/rpc';
 import type { Database } from '@/db/types';
 import { AppError } from '@/lib/errors';
 import { reencodeImage, thumbnailOf } from '@/lib/images/re-encode';
@@ -40,7 +42,6 @@ import {
   type UploadEvent,
 } from '@/server/services/upload-events';
 import {
-  claimBookletPagesLock,
   hasPublishedPages,
   publicObjectExists,
   quarantineObject,
@@ -137,7 +138,8 @@ async function publishedPageCount(adminClient: DatabaseClient, input: SignBookle
 
 // api/uploads/sign-pages (docs/Security.md §8.4): one signature covers every page, each URL bound to its page number
 // and the page count in its object name. A booklet gets it once: never again once a page is published, and not
-// while another request's URLs are still alive (security review of PR #14, L11).
+// while another request's URLs are still alive. That claim is one conditional write in the database, so two
+// requests at the same moment cannot both pass (security review of PR #14, L11 and N4).
 export async function signBookletPages(
   ctx: StaffContext,
   input: SignBookletPagesInput,
@@ -154,7 +156,13 @@ export async function signBookletPages(
   if (!(await withinUploadLimit(adminClient, ctx, 'upload_sign', input.rwId))) {
     throw new AppError('RATE_LIMITED');
   }
-  if (!(await claimBookletPagesLock(adminClient, input.rwId, input.bookletId, nowMs))) {
+  const claim = {
+    bookletId: input.bookletId,
+    rwId: input.rwId,
+    actorId: ctx.userId,
+    holdSeconds: SIGNED_UPLOAD_TOKEN_SECONDS,
+  };
+  if (!(await svcClaimBookletPages(adminClient, claim))) {
     return { ok: false, problem: 'booklet_pages_in_progress' };
   }
 

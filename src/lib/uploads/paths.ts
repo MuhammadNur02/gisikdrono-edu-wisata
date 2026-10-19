@@ -149,12 +149,6 @@ export function bookletPagesFolder(rwId: RwId | null, bookletId: string): string
   return `${bookletFolder(ownerFor(rwId), bookletId)}/pages`;
 }
 
-// The quarantine object that marks a booklet's pages as being uploaded (security review of PR #14, L11). It is
-// not a name finalize can read, so it is never published, and the hourly purge removes it with the rest.
-export function bookletPagesLockPath(rwId: RwId | null, bookletId: string): string {
-  return `${ownerFor(rwId)}/booklet-pages-${bookletId}`;
-}
-
 // The public-media path a finalised upload is written to. Every image gets the quarantine object's own
 // name, so a new upload never lands on a published file; a booklet keeps one PDF and one page set per row.
 export function publicMediaPathFor(upload: QuarantineUpload, target: MediaTarget): string {

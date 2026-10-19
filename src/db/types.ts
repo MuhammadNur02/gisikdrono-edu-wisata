@@ -717,6 +717,51 @@ export type Database = {
           },
         ]
       }
+      booklet_page_claims: {
+        Row: {
+          booklet_id: string
+          claimed_at: string
+          claimed_by: string
+          created_at: string
+          id: string
+          rw_id: number | null
+          updated_at: string
+        }
+        Insert: {
+          booklet_id: string
+          claimed_at?: string
+          claimed_by: string
+          created_at?: string
+          id?: string
+          rw_id?: number | null
+          updated_at?: string
+        }
+        Update: {
+          booklet_id?: string
+          claimed_at?: string
+          claimed_by?: string
+          created_at?: string
+          id?: string
+          rw_id?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booklet_page_claims_claimed_by_fkey"
+            columns: ["claimed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booklet_page_claims_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       booklets: {
         Row: {
           cover_path: string | null
@@ -4214,6 +4259,15 @@ export type Database = {
       set_staff_status: {
         Args: { p_is_active: boolean; p_reason: string; p_user_id: string }
         Returns: undefined
+      }
+      svc_claim_booklet_pages: {
+        Args: {
+          p_actor_id: string
+          p_booklet_id: string
+          p_hold_seconds: number
+          p_rw_id?: number
+        }
+        Returns: boolean
       }
       svc_enqueue_notification: {
         Args: {

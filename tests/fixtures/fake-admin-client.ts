@@ -90,15 +90,46 @@ function profilesApi(profiles: Map<string, FakeProfile>) {
   };
 }
 
+type RpcArgs = {
+  p_key?: string;
+  p_limit?: number;
+  p_booklet_id?: string;
+  p_hold_seconds?: number;
+  p_rw_id?: number;
+};
+
+const MS_PER_SECOND = 1000;
+
 // svc_rate_limit_hit within one window: true while the key has been hit no more than its limit.
-function rateLimiter(hits: Map<string, number>) {
-  return (name: string, args: { p_key: string; p_limit: number }) => {
-    if (name !== 'svc_rate_limit_hit') {
-      return Promise.resolve({ data: null, error: { message: `unexpected rpc ${name}` } });
+function rateLimitHit(hits: Map<string, number>, args: RpcArgs): boolean {
+  const key = args.p_key ?? '';
+  const count = (hits.get(key) ?? 0) + 1;
+  hits.set(key, count);
+  return count <= (args.p_limit ?? 0);
+}
+
+// svc_claim_booklet_pages: one claim per booklet and owner, taken over only once older than the hold.
+function claimBookletPages(claims: Map<string, number>, args: RpcArgs): boolean {
+  const key = bookletClaimKey(args.p_booklet_id ?? '', args.p_rw_id ?? null);
+  const claimedAtMs = claims.get(key);
+  const holdMs = (args.p_hold_seconds ?? 0) * MS_PER_SECOND;
+  if (claimedAtMs !== undefined && Date.now() - claimedAtMs <= holdMs) return false;
+  claims.set(key, Date.now());
+  return true;
+}
+
+export function bookletClaimKey(bookletId: string, rwId: number | null): string {
+  return `${bookletId}:${String(rwId ?? 0)}`;
+}
+
+function rpcFor(hits: Map<string, number>, claims: Map<string, number>) {
+  return (name: string, args: RpcArgs) => {
+    if (name === 'svc_rate_limit_hit')
+      return Promise.resolve({ data: rateLimitHit(hits, args), error: null });
+    if (name === 'svc_claim_booklet_pages') {
+      return Promise.resolve({ data: claimBookletPages(claims, args), error: null });
     }
-    const count = (hits.get(args.p_key) ?? 0) + 1;
-    hits.set(args.p_key, count);
-    return Promise.resolve({ data: count <= args.p_limit, error: null });
+    return Promise.resolve({ data: null, error: { message: `unexpected rpc ${name}` } });
   };
 }
 
@@ -107,6 +138,8 @@ export function createFakeAdminClient() {
   const publicMedia = new Map<string, StoredFile>();
   const profiles = new Map<string, FakeProfile>();
   const rateLimitHits = new Map<string, number>();
+  // When each booklet's page claim was taken, by bookletClaimKey.
+  const bookletClaims = new Map<string, number>();
   const securityEvents: Record<string, unknown>[] = [];
   const downloads: string[] = [];
   const client = {
@@ -121,7 +154,7 @@ export function createFakeAdminClient() {
         return Promise.resolve({ error: null });
       },
     }),
-    rpc: rateLimiter(rateLimitHits),
+    rpc: rpcFor(rateLimitHits, bookletClaims),
   };
 
   return {
@@ -130,6 +163,7 @@ export function createFakeAdminClient() {
     publicMedia,
     profiles,
     rateLimitHits,
+    bookletClaims,
     securityEvents,
     // Every path read back in full, in order.
     downloads,
@@ -159,6 +193,7 @@ export function createFakeAdminClient() {
       publicMedia.clear();
       profiles.clear();
       rateLimitHits.clear();
+      bookletClaims.clear();
       securityEvents.length = 0;
       downloads.length = 0;
     },

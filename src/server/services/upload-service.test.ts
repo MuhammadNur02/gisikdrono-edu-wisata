@@ -11,6 +11,7 @@ import type { StaffContext } from '@/server/auth/guards';
 
 import { checkUploadAccess, finalizeUpload, signBookletPages } from './upload-service';
 import {
+  bookletClaimKey,
   createFakeAdminClient,
   type FakeAdminClient,
 } from '../../../tests/fixtures/fake-admin-client';
@@ -286,8 +287,7 @@ describe('L11: one sign-pages per booklet', () => {
     await publishBookletPdf();
     const threeHoursAgo = Date.now() - 180 * MINUTE_MS;
     await signBookletPages(OFFICER_05, { rwId: 5, bookletId: BOOKLET_ID }, threeHoursAgo);
-    const lock = admin().quarantine.get(`rw-05/booklet-pages-${BOOKLET_ID}`);
-    if (lock) lock.createdAt = new Date(threeHoursAgo).toISOString();
+    admin().bookletClaims.set(bookletClaimKey(BOOKLET_ID, 5), threeHoursAgo);
 
     await expect(
       signBookletPages(OFFICER_05, { rwId: 5, bookletId: BOOKLET_ID }),

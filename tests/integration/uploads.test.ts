@@ -36,6 +36,10 @@ const BOOKLET_ID = '00000000-0000-4000-9000-0000000b0011';
 const PAGED_BOOKLET_ID = '00000000-0000-4000-9000-0000000b0013';
 const SANITIZED_BOOKLET_ID = '00000000-0000-4000-9000-0000000b0014';
 const LOCKED_BOOKLET_ID = '00000000-0000-4000-9000-0000000b0016';
+const RACED_BOOKLET_ID = '00000000-0000-4000-9000-0000000b0017';
+const CLAIMED_BOOKLET_IDS = [PAGED_BOOKLET_ID, LOCKED_BOOKLET_ID, RACED_BOOKLET_ID];
+// More requests at once than a browser would ever send, so a race that lets two through would show.
+const RACING_REQUESTS = 8;
 const officerSchema = z.array(z.object({ id: z.string(), claims_version: z.number() }));
 
 let officer: StaffContext;
@@ -54,11 +58,18 @@ function browser() {
   });
 }
 
-async function putWithSignedUrl(path: string, token: string, bytes: Buffer, contentType: string) {
+// `upsert` is what a browser holding the token may ask for; Storage decides from the token, not from the request.
+async function putWithSignedUrl(
+  path: string,
+  token: string,
+  bytes: Buffer,
+  contentType: string,
+  upsert = false,
+) {
   quarantinePaths.push(path);
   return browser()
     .storage.from('uploads-quarantine')
-    .uploadToSignedUrl(path, token, bytes, { contentType });
+    .uploadToSignedUrl(path, token, bytes, { contentType, upsert });
 }
 
 // Signs as the RW 05 officer and puts `bytes` into quarantine through the signed URL, declared as `contentType`.
@@ -118,9 +129,10 @@ beforeAll(async () => {
 afterAll(async () => {
   const admin = serviceRole();
   if (publishedPaths.length > 0) await admin.storage.from('public-media').remove(publishedPaths);
-  const locks = [PAGED_BOOKLET_ID, LOCKED_BOOKLET_ID].map((id) => `rw-05/booklet-pages-${id}`);
-  await admin.storage.from('uploads-quarantine').remove([...quarantinePaths, ...locks]);
+  await admin.storage.from('uploads-quarantine').remove(quarantinePaths);
+  const claimed = CLAIMED_BOOKLET_IDS.map((id) => sqlText(id)).join(', ');
   await runSql(`select set_config('app.purge', 'on', true);
+    delete from public.booklet_page_claims where booklet_id in (${claimed});
     delete from public.security_events where event_type in ('upload_rejected', 'upload_sanitized', 'rate_limited') and actor_id = ${sqlText(officer.userId)};
     delete from public.rate_limit_buckets where key like 'upload%' and key like ${sqlText(`%:${officer.userId}`)};`);
 }, SLOW_HOOK_MS);
@@ -155,6 +167,39 @@ describe('upload pipeline on the local stack', { timeout: SLOW_TEST_MS }, () => 
       ok: false,
       problem: 'already_used',
     });
+  });
+
+  // Security review of PR #14, N5: a browser holding the token cannot ask Storage to overwrite.
+  it('refuses a reused token that asks for upsert: true, and keeps the empty tombstone', async () => {
+    const upload = await quarantined(await jpegPhoto(), 'image/jpeg');
+    await finalize(upload, { purpose: 'gallery' });
+
+    const path = `${upload.owner}/${upload.objectName}`;
+    const reuse = await putWithSignedUrl(path, upload.token, await jpegPhoto(), 'image/jpeg', true);
+
+    expect(reuse.error).not.toBeNull();
+    expect(await quarantineSize(upload)).toBe(0);
+    await expect(finalize(upload, { purpose: 'gallery' })).resolves.toEqual({
+      ok: false,
+      problem: 'already_used',
+    });
+  });
+
+  it('refuses upsert: true before finalize too, so the file that arrived in time is the one published', async () => {
+    const upload = await quarantined(await jpegPhoto(800, 600), 'image/jpeg');
+
+    const path = `${upload.owner}/${upload.objectName}`;
+    const swap = await putWithSignedUrl(
+      path,
+      upload.token,
+      await jpegPhoto(40, 30),
+      'image/jpeg',
+      true,
+    );
+    const outcome = await finalize(upload, { purpose: 'gallery' });
+
+    expect(swap.error).not.toBeNull();
+    expect(outcome).toMatchObject({ ok: true, data: { width: 800, height: 600 } });
   });
 
   it('refuses a real HEIC photo that came in under a JPEG name, records it and empties it', async () => {
@@ -257,6 +302,44 @@ describe('upload pipeline on the local stack', { timeout: SLOW_TEST_MS }, () => 
 
     expect(first.ok).toBe(true);
     expect(second).toEqual({ ok: false, problem: 'booklet_pages_in_progress' });
+  });
+
+  // Security review of PR #14, N4: the claim is one conditional write, so requests at the same moment cannot share it.
+  it('lets exactly one of several simultaneous sign-pages requests through', async () => {
+    const pdf = Buffer.from(await cleanBookletPdf());
+    await finalize(await quarantined(pdf, 'application/pdf'), {
+      purpose: 'booklet',
+      entityId: RACED_BOOKLET_ID,
+    });
+
+    const answers = await Promise.all(
+      Array.from({ length: RACING_REQUESTS }, () =>
+        signBookletPages(officer, { rwId: 5, bookletId: RACED_BOOKLET_ID }),
+      ),
+    );
+
+    expect(answers.filter((answer) => answer.ok)).toHaveLength(1);
+    expect(answers.filter((answer) => !answer.ok)).toEqual(
+      Array.from({ length: RACING_REQUESTS - 1 }, () => ({
+        ok: false,
+        problem: 'booklet_pages_in_progress',
+      })),
+    );
+  });
+
+  it('lets exactly one through when they race to take over a claim whose URLs have expired', async () => {
+    // The Storage lock this replaced removed a stale lock and placed a new one in two steps, so two requests could
+    // both pass here; the conditional update cannot.
+    await runSql(`update public.booklet_page_claims set claimed_at = now() - interval '3 hours'
+      where booklet_id = ${sqlText(RACED_BOOKLET_ID)}`);
+
+    const answers = await Promise.all(
+      Array.from({ length: RACING_REQUESTS }, () =>
+        signBookletPages(officer, { rwId: 5, bookletId: RACED_BOOKLET_ID }),
+      ),
+    );
+
+    expect(answers.filter((answer) => answer.ok)).toHaveLength(1);
   });
 
   it('signs no pages for a booklet whose PDF was never published', async () => {

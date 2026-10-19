@@ -13,7 +13,11 @@ import { createFakeAdminClient } from '../../../../../tests/fixtures/fake-admin-
 const fake = vi.hoisted(() => ({ admin: null as ReturnType<typeof createFakeAdminClient> | null }));
 
 vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => fake.admin?.client }));
-vi.mock('@/db/rpc', () => ({ svcRateLimitHit: vi.fn() }));
+// Only the rate limiter is stubbed; the page claim runs through the fake client like the database would.
+vi.mock('@/db/rpc', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  svcRateLimitHit: vi.fn(),
+}));
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
   requestIdFrom: () => 'request-1',
