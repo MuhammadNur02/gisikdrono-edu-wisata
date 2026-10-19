@@ -116,20 +116,23 @@ on conflict do nothing;
 -- Gallery photos and the hero banner need real files in public-media, so they come only from
 -- pnpm db:seed --media <folder> (scripts/demo-media.ts); without it the pages show Foto menyusul.
 
+-- Two demo articles that exercise the RichText allowlist (Task P2.4.09) and invent nothing (StyleGuide §1.3 G5):
+-- the RW 05 one says only what the development photos and their signs show, the kelurahan one restates the
+-- booking flow of docs/PRD.md and the payment line of docs/StyleGuide.md §9.2. pnpm db:seed --media gives the
+-- RW 05 article its cover and a captioned photo (scripts/demo-media.ts).
 insert into public.articles (rw_id, slug, title, excerpt, body_json, category, status, published_at) values
-  (5, 'mengenal-bank-sampah-rw-05', 'Mengenal Bank Sampah RW 05', 'Cara warga RW 05 mengubah sampah menjadi tabungan.',
-   '{"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Contoh artikel untuk pengembangan lokal."}]}]}',
-   'education', 'published', now()),
-  (8, 'dolanan-anak-rw-08', 'Dolanan Anak di RW 08', 'Permainan tradisional yang masih dimainkan anak-anak RW 08.',
-   '{"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Contoh artikel untuk pengembangan lokal."}]}]}',
-   'news', 'published', now())
+  (5, 'bank-sampah-dan-taman-toga-rw-05', 'Singgah di Bank Sampah Sumber Rejeki dan Taman TOGA Sumber Saras',
+   'Dua tempat yang disinggahi rombongan di RW 05, seperti yang terlihat di foto kunjungan.',
+   '{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Rombongan yang berkunjung ke RW 05 singgah di dua tempat: "},{"type":"text","text":"Bank Sampah Sumber Rejeki","marks":[{"type":"bold"}]},{"type":"text","text":" dan "},{"type":"text","text":"Taman TOGA Sumber Saras","marks":[{"type":"bold"}]},{"type":"text","text":". Nama keduanya tertulis di papan dan spanduk yang terlihat di foto kunjungan."}]},{"type":"heading","attrs":{"level":2},"content":[{"type":"text","text":"Taman TOGA Sumber Saras"}]},{"type":"paragraph","content":[{"type":"text","text":"Tanaman di Taman TOGA tumbuh dalam pot dari botol plastik bekas, di bawah paranet. Rombongan berjalan menyusuri tanaman itu, lalu berfoto bersama warga di depan papan namanya."}]},{"type":"heading","attrs":{"level":2},"content":[{"type":"text","text":"Bank Sampah Sumber Rejeki"}]},{"type":"paragraph","content":[{"type":"text","text":"Di depan spanduk Bank Sampah Sumber Rejeki, peserta duduk mendengarkan pemaparan dari seorang pembicara bermikrofon."}]}]}',
+   'news', 'published', now()),
+  (null, 'cara-memesan-kunjungan', 'Cara memesan kunjungan edukasi',
+   'Langkah memesan kunjungan rombongan ke RW 05 atau RW 08 lewat situs ini.',
+   '{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Kunjungan ke RW 05 Ecowastreme dan RW 08 Kampung Seni Budaya dipesan lewat situs ini, tanpa membuat akun."}]},{"type":"heading","attrs":{"level":2},"content":[{"type":"text","text":"Langkah memesan"}]},{"type":"orderedList","attrs":{"start":1},"content":[{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"Pilih paket di halaman "},{"type":"text","text":"Paket Wisata","marks":[{"type":"italic"}]},{"type":"text","text":"."}]}]},{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"Pilih tanggal dan sesi kunjungan."}]}]},{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"Isi data penanggung jawab rombongan, lalu verifikasi nomor WhatsApp dengan kode OTP."}]}]},{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"Bayar lewat QRIS atau Virtual Account."}]}]},{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"Tiket QR dikirim ke WhatsApp dan email penanggung jawab."}]}]}]},{"type":"heading","attrs":{"level":2},"content":[{"type":"text","text":"Saat hari kunjungan"}]},{"type":"paragraph","content":[{"type":"text","text":"Tunjukkan tiket QR kepada petugas di lokasi."}]},{"type":"blockquote","content":[{"type":"paragraph","content":[{"type":"text","text":"Pembayaran hanya melalui sistem (QRIS/VA); kelurahan tidak pernah meminta transfer ke rekening pribadi."}]}]}]}',
+   'announcement', 'published', now() - interval '1 day')
 on conflict do nothing;
 
-insert into public.booklets (rw_id, kind, slug, title, pdf_path, page_count, status, published_at) values
-  (5, 'ebooklet', 'booklet-ecowastreme', 'E-Booklet Ecowastreme', 'rw-05/booklets/demo/booklet.pdf', 12, 'published', now()),
-  (8, 'ebooklet', 'booklet-seni-budaya', 'E-Booklet Kampung Seni Budaya', 'rw-08/booklets/demo/booklet.pdf', 12,
-   'published', now())
-on conflict do nothing;
+-- E-booklets need a real PDF and its pages in public-media, so the one demo booklet comes only from
+-- pnpm db:seed --media <folder> (scripts/demo-booklet.ts); without it /e-booklet keeps its header alone.
 
 -- Plan the demo sessions now rather than at the next midnight job.
 select internal.run_scheduled_job('generate_visit_sessions');
