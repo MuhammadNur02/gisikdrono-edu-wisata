@@ -6,14 +6,21 @@ import {
   PDFName,
   PDFObjectParser,
   PDFObjectStreamParser,
+  PDFRef,
   PDFXRefStreamParser,
   type PDFObject,
   type PDFRawStream,
 } from 'pdf-lib';
 
-import { MAX_PDF_INFLATED_BYTES, MAX_PDF_PARSED_OBJECTS } from '@/config/uploads';
+import {
+  MAX_PDF_GENERATION_NUMBER,
+  MAX_PDF_INFLATED_BYTES,
+  MAX_PDF_OBJECT_NUMBER,
+  MAX_PDF_PARSED_OBJECTS,
+} from '@/config/uploads';
 
-// What loading a booklet may cost (security review of PR #14, L2 and N3). pdf-lib has no limits of its own:
+// What loading a booklet may cost (security review of PR #14, L2, N3 and its follow-up). pdf-lib has no limits of
+// its own:
 // - it inflates every object stream and cross-reference stream while it loads, so a 300 KB file can unpack into
 //   gigabytes. Both go through PDFObjectStreamParser.forStream and PDFXRefStreamParser.forStream, so during a scan
 //   each such stream is first inflated by zlib under maxOutputLength, all of them together within one budget for
@@ -21,17 +28,28 @@ import { MAX_PDF_INFLATED_BYTES, MAX_PDF_PARSED_OBJECTS } from '@/config/uploads
 //   refused before pdf-lib decodes it;
 // - every object it parses, down to each number in an array, becomes a JavaScript object, so a few kilobytes that
 //   inflate to one huge array cost gigabytes of heap. PDFObjectParser.prototype.parseObject, which every parser
-//   inherits, is counted, and the load stops past MAX_PDF_PARSED_OBJECTS or past the scan's deadline.
+//   inherits, is counted, and the load stops past MAX_PDF_PARSED_OBJECTS or past the scan's deadline;
+// - every reference it meets becomes a PDFRef kept in a pool for as long as the process lives, those of a classic
+//   cross-reference table too, which no parseObject call sees. PDFRef.of is counted with the rest, and an object
+//   number above MAX_PDF_OBJECT_NUMBER or a generation above the format's maximum is refused before the object it
+//   names is parsed, so the pool can never hold more references than those bounds allow. Names are pooled the same
+//   way; isolating the scan in a worker thread ends both pools with it (docs/Security.md R21, Task P2.9.09).
 // Wrapping pdf-lib's own entry points means the guard sees exactly what pdf-lib would decode, however a dictionary
 // is spelled. The budget lives in an AsyncLocalStorage, so scans running side by side keep their own and any other
 // use of pdf-lib is untouched.
 
 export type LoadRefusal =
-  'too_large' | 'unsupported_filter' | 'unreadable' | 'too_many_objects' | 'too_slow';
+  | 'too_large'
+  | 'unsupported_filter'
+  | 'unreadable'
+  | 'too_many_objects'
+  | 'object_number_too_high'
+  | 'too_slow';
 
 type ScanBudget = {
   inflateRemaining: number;
-  parsedObjects: number;
+  // Parsed objects and references, a classic cross-reference table's entries included.
+  objects: number;
   deadlineMs: number;
   refusal: LoadRefusal | null;
 };
@@ -81,18 +99,31 @@ function checkStream(stream: PDFRawStream): void {
   }
 }
 
+function countObject(budget: ScanBudget): void {
+  if (budget.refusal) refuse(budget, budget.refusal);
+  budget.objects += 1;
+  if (budget.objects > MAX_PDF_PARSED_OBJECTS) refuse(budget, 'too_many_objects');
+  const isClockDue = budget.objects % OBJECTS_PER_CLOCK_CHECK === 0;
+  if (isClockDue && performance.now() > budget.deadlineMs) refuse(budget, 'too_slow');
+}
+
 function countParsedObject(): void {
   const budget = scanBudget.getStore();
+  if (budget) countObject(budget);
+}
+
+function countReference(objectNumber: number, generationNumber: number): void {
+  const budget = scanBudget.getStore();
   if (!budget) return;
-  if (budget.refusal) refuse(budget, budget.refusal);
-  budget.parsedObjects += 1;
-  if (budget.parsedObjects > MAX_PDF_PARSED_OBJECTS) refuse(budget, 'too_many_objects');
-  const isClockDue = budget.parsedObjects % OBJECTS_PER_CLOCK_CHECK === 0;
-  if (isClockDue && performance.now() > budget.deadlineMs) refuse(budget, 'too_slow');
+  countObject(budget);
+  const isOutOfBounds =
+    objectNumber > MAX_PDF_OBJECT_NUMBER || generationNumber > MAX_PDF_GENERATION_NUMBER;
+  if (isOutOfBounds) refuse(budget, 'object_number_too_high');
 }
 
 const decodeObjectStream = PDFObjectStreamParser.forStream;
 const decodeXRefStream = PDFXRefStreamParser.forStream;
+const makeReference = PDFRef.of;
 // pdf-lib's own parseObject, called back from the counting wrapper with the parser it belongs to.
 type ParseObject = (this: PDFObjectParser) => PDFObject;
 const parserPrototype: { parseObject: ParseObject } = PDFObjectParser.prototype;
@@ -112,24 +143,30 @@ if (decodeObjectStream.name !== 'guardedObjectStream') {
     countParsedObject();
     return parseObject.call(this);
   };
+  PDFRef.of = function countedReference(objectNumber, generationNumber = 0) {
+    countReference(objectNumber, generationNumber);
+    return makeReference(objectNumber, generationNumber);
+  };
 }
 
 export type LimitedLoad<T> = { ok: true; value: T } | { ok: false; refusal: LoadRefusal };
 
 // Runs a booklet's load under the scan's limits, until `deadlineMs` on performance.now()'s clock. pdf-lib turns the
-// guard's error into one of its own, so the refusal is read from the budget, not from what reaches here.
+// guard's error into one of its own, or, loading without throwOnInvalidObject, swallows it and carries on, so the
+// refusal is read from the budget whether the load threw or not (security review of PR #14, Info B).
 export async function withLoadLimits<T>(
   load: () => Promise<T>,
   deadlineMs: number,
 ): Promise<LimitedLoad<T>> {
   const budget: ScanBudget = {
     inflateRemaining: MAX_PDF_INFLATED_BYTES,
-    parsedObjects: 0,
+    objects: 0,
     deadlineMs,
     refusal: null,
   };
   try {
-    return { ok: true, value: await scanBudget.run(budget, load) };
+    const value = await scanBudget.run(budget, load);
+    return budget.refusal ? { ok: false, refusal: budget.refusal } : { ok: true, value };
   } catch (error) {
     if (budget.refusal) return { ok: false, refusal: budget.refusal };
     throw error;

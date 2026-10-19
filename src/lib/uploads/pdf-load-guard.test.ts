@@ -1,12 +1,17 @@
 import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 
-import { MAX_PDF_INFLATED_BYTES, MAX_PDF_PARSED_OBJECTS } from '@/config/uploads';
+import {
+  MAX_PDF_INFLATED_BYTES,
+  MAX_PDF_OBJECT_NUMBER,
+  MAX_PDF_PARSED_OBJECTS,
+} from '@/config/uploads';
 
 import { scanBookletPdf } from './pdf-scan';
 import {
   handWrittenPdf,
   packedStreamObject,
+  pdfFromObjects,
   pdfObject,
   pdfWithPackedStream,
 } from '../../../tests/fixtures/pdf';
@@ -130,4 +135,72 @@ describe('scanBookletPdf: parsed objects at the real limit', () => {
     },
     REAL_LIMIT_TIMEOUT_MS,
   );
+});
+
+// Follow-up of N3 (docs/Security.md R21): pdf-lib keeps every reference it creates for as long as the process lives,
+// so an object number above the bound, or a generation above the format's maximum, is refused before the object it
+// names is parsed, wherever pdf-lib meets it.
+const TOO_HIGH = MAX_PDF_OBJECT_NUMBER + 1;
+const OBJECT_NUMBER_REFUSAL = {
+  ok: false,
+  problem: 'pdf_too_complex',
+  detail: 'limit:object_number_too_high',
+};
+
+// The one-page booklet of handWrittenPdf with a classic cross-reference table whose last subsection is `subsection`.
+function pdfWithXrefSubsection(subsection: string): Buffer {
+  const text = handWrittenPdf().toString('latin1');
+  return Buffer.from(text.replace('trailer\n', `${subsection}trailer\n`), 'latin1');
+}
+
+describe('scanBookletPdf: object numbers', () => {
+  it('refuses an indirect object numbered above the bound', async () => {
+    const pdf = handWrittenPdf('', [pdfObject(TOO_HIGH, '<< /Catatan (di luar batas) >>')]);
+
+    await expect(scanBookletPdf(pdf)).resolves.toEqual(OBJECT_NUMBER_REFUSAL);
+  });
+
+  it('refuses a classic cross-reference table that lists an object above the bound', async () => {
+    const pdf = pdfWithXrefSubsection(`${String(TOO_HIGH)} 1\n0000000000 00000 n \n`);
+
+    await expect(scanBookletPdf(pdf)).resolves.toEqual(OBJECT_NUMBER_REFUSAL);
+  });
+
+  it('refuses a cross-reference stream that lists an object above the bound', async () => {
+    const entry = String.fromCharCode(1, 0, 0);
+    const xrefStream = pdfObject(
+      4,
+      `<< /Type /XRef /W [1 1 1] /Index [${String(TOO_HIGH)} 1] /Size ${String(TOO_HIGH + 1)} /Length 3 >>\nstream\n${entry}\nendstream`,
+    );
+
+    await expect(scanBookletPdf(handWrittenPdf('', [xrefStream]))).resolves.toEqual(
+      OBJECT_NUMBER_REFUSAL,
+    );
+  });
+
+  it('refuses a reference to an object above the bound', async () => {
+    const pdf = handWrittenPdf(`/Extra [${String(TOO_HIGH)} 0 R]`);
+
+    await expect(scanBookletPdf(pdf)).resolves.toEqual(OBJECT_NUMBER_REFUSAL);
+  });
+
+  it('refuses a generation number above the largest the format allows', async () => {
+    await expect(scanBookletPdf(handWrittenPdf('/Extra [1 65536 R]'))).resolves.toEqual(
+      OBJECT_NUMBER_REFUSAL,
+    );
+  });
+
+  it('accepts an object at the bound and the usual 65535 generation of the free-list head', async () => {
+    const pdf = pdfFromObjects([
+      pdfObject(
+        1,
+        `<< /Type /Catalog /Pages 2 0 R /Extra [${String(MAX_PDF_OBJECT_NUMBER)} 0 R] >>`,
+      ),
+      pdfObject(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>'),
+      pdfObject(3, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 420 595] >>'),
+    ]);
+    expect(pdf.toString('latin1')).toContain('0000000000 65535 f');
+
+    await expect(scanBookletPdf(pdf)).resolves.toMatchObject({ ok: true, pageCount: 1 });
+  });
 });

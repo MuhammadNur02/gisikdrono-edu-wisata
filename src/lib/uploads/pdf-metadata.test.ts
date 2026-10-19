@@ -1,4 +1,4 @@
-import { PDFArray, PDFDict, PDFDocument, PDFName } from 'pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFName, type PDFObject } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 
 import { MARKUP_ANNOTATIONS } from './pdf-rules';
@@ -104,5 +104,40 @@ describe('scanBookletPdf: what the published copy keeps', () => {
     expect(copy).toContain('/StructTreeRoot');
     expect(copy).toContain('/StructElem');
     expect(copy).not.toContain('/OBJR');
+  });
+
+  // Security review of PR #14, Info A: a number tree and a name tree pair each key with the value after it, and a
+  // page's parent-tree entry is indexed by marked-content id, so a removed reference leaves null in its place.
+  it('keeps every key of a number tree and a name tree on its own value', async () => {
+    const result = await publishedCopy(caseNamed('a note a number tree and a name tree point at'));
+    const copy = await PDFDocument.load(result.pdf, { updateMetadata: false });
+    const lookup = (object: PDFObject | undefined) => copy.context.lookup(object);
+    const describeEntry = (entry: PDFObject | undefined): string => {
+      const value = lookup(entry);
+      if (value instanceof PDFArray) return `[${value.asArray().map(describeEntry).join(' ')}]`;
+      if (value instanceof PDFDict) return String(lookup(value.get(PDFName.of('Type'))) ?? 'dict');
+      return value === undefined ? 'missing' : value.toString();
+    };
+    const arrayAt = (dict: PDFObject | undefined, ...keys: string[]): string[] => {
+      let current = lookup(dict);
+      for (const key of keys)
+        current = current instanceof PDFDict ? lookup(current.get(PDFName.of(key))) : undefined;
+      return current instanceof PDFArray ? current.asArray().map(describeEntry) : [];
+    };
+
+    expect(arrayAt(copy.catalog, 'StructTreeRoot', 'ParentTree', 'Nums')).toEqual([
+      '0',
+      '[/StructElem null /StructElem]',
+      '1',
+      'null',
+      '2',
+      '/StructElem',
+    ]);
+    expect(arrayAt(copy.catalog, 'Names', 'Dests', 'Names')).toEqual([
+      '(bab-1)',
+      'null',
+      '(sampul)',
+      '[/Page /Fit]',
+    ]);
   });
 });

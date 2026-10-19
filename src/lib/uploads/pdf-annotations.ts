@@ -2,12 +2,14 @@ import {
   PDFArray,
   PDFDict,
   PDFName,
+  PDFNull,
   PDFRef,
   PDFStream,
   type PDFDocument,
   type PDFObject,
 } from 'pdf-lib';
 
+import { nameSpellings } from '@/lib/uploads/pdf-names';
 import { isAnnotationLike, MARKUP_ANNOTATIONS } from '@/lib/uploads/pdf-rules';
 
 // The annotations a booklet may carry (security review of PR #14, M1, L4 and N1). Only /Link stays; its action is
@@ -21,6 +23,10 @@ export type PageAnnotationCheck =
   { ok: true } | { ok: false; problem: 'pdf_active_content'; detail: string };
 
 const OBJECT_REFERENCE_TYPE = 'OBJR';
+// Number and name trees pair each key with the value after it, and a page's entry in a structure tree's parent tree is
+// an array indexed by marked-content id. Removing an element there would shift what follows onto the wrong key, so
+// under these keys a removed reference becomes null instead (security review of PR #14, Info A).
+const POSITIONAL_ARRAY_KEYS = new Set(['Nums', 'Names']);
 
 function nameOf(object: PDFObject | undefined): string | null {
   return object instanceof PDFName ? object.decodeText() : null;
@@ -100,29 +106,36 @@ type Sweep = { deleted: Set<string>; directComments: number };
 
 // True when the object must go from where it sits: a reference to a deleted object, a comment written in place, or a
 // structure-tree reference to a deleted comment. What stays is cleaned in place; references are not followed, since
-// every indirect object is swept on its own.
-function isGone(object: PDFObject, sweep: Sweep): boolean {
+// every indirect object is swept on its own. `keepPositions` holds inside a number or name tree's array.
+function isGone(object: PDFObject, sweep: Sweep, keepPositions = false): boolean {
   if (object instanceof PDFRef) return sweep.deleted.has(object.tag);
   if (isComment(object) && isAnnotationLike(object)) {
     sweep.directComments += 1;
     return true;
   }
   if (isReferenceTo(object, sweep.deleted)) return true;
-  if (object instanceof PDFStream) sweepDict(object.dict, sweep);
-  else if (object instanceof PDFDict) sweepDict(object, sweep);
-  else if (object instanceof PDFArray) sweepArray(object, sweep);
+  if (object instanceof PDFStream) sweepDict(object.dict, sweep, keepPositions);
+  else if (object instanceof PDFDict) sweepDict(object, sweep, keepPositions);
+  else if (object instanceof PDFArray) sweepArray(object, sweep, keepPositions);
   return false;
 }
 
-function sweepDict(dict: PDFDict, sweep: Sweep): void {
+function isPositionalKey(key: PDFName): boolean {
+  return nameSpellings(key).some((spelling) => POSITIONAL_ARRAY_KEYS.has(spelling));
+}
+
+// Removing a key shifts nothing, so a dictionary always drops it; the arrays below it keep their places when asked.
+function sweepDict(dict: PDFDict, sweep: Sweep, keepPositions: boolean): void {
   for (const [key, value] of dict.entries()) {
-    if (isGone(value, sweep)) dict.delete(key);
+    if (isGone(value, sweep, keepPositions || isPositionalKey(key))) dict.delete(key);
   }
 }
 
-function sweepArray(array: PDFArray, sweep: Sweep): void {
+function sweepArray(array: PDFArray, sweep: Sweep, keepPositions: boolean): void {
   for (let index = array.size() - 1; index >= 0; index -= 1) {
-    if (isGone(array.get(index), sweep)) array.remove(index);
+    if (!isGone(array.get(index), sweep, keepPositions)) continue;
+    if (keepPositions) array.set(index, PDFNull);
+    else array.remove(index);
   }
 }
 

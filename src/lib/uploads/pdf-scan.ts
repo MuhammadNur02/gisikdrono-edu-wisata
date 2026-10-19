@@ -48,6 +48,7 @@ const MS_PER_SECOND = 1000;
 const RESOURCE_LIMITS: ReadonlySet<LoadRefusal> = new Set([
   'too_large',
   'too_many_objects',
+  'object_number_too_high',
   'too_slow',
 ]);
 
@@ -146,7 +147,7 @@ export type PublishedPageCount =
 // cannot hold it.
 export async function countPublishedPages(bytes: Uint8Array): Promise<PublishedPageCount> {
   const loaded = await withLoadLimits(
-    () => PDFDocument.load(bytes, { updateMetadata: false }),
+    () => PDFDocument.load(bytes, { updateMetadata: false, throwOnInvalidObject: true }),
     deadlineFromNow(),
   );
   if (!loaded.ok) return { ok: false, problem: 'pdf_too_complex' };

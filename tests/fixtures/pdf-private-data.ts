@@ -202,4 +202,29 @@ export const PRIVATE_DATA_CASES: PrivateDataCase[] = [
     needles: ['teks bebas', 'TEKS-TAMPILAN'],
     comments: 1,
   },
+  {
+    // A tagged PDF whose parent tree (a number tree, with a page's entry indexed by marked-content id) and a name tree
+    // of destinations both point at the note: removing the references must not shift the pairs (Info A).
+    name: 'a note a number tree and a name tree point at',
+    pdf: () =>
+      pdfFromObjects([
+        pdfObject(
+          1,
+          '<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 5 0 R /MarkInfo << /Marked true >> /Names << /Dests << /Names [(bab-1) 4 0 R (sampul) [3 0 R /Fit]] >> >> >>',
+        ),
+        pdfObject(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>'),
+        pdfObject(
+          3,
+          '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 420 595] /Annots [4 0 R] /StructParents 0 >>',
+        ),
+        pdfObject(4, NOTE),
+        pdfObject(
+          5,
+          '<< /Type /StructTreeRoot /K [6 0 R] /ParentTree << /Nums [0 [6 0 R 4 0 R 6 0 R] 1 4 0 R 2 6 0 R] >> /ParentTreeNextKey 3 >>',
+        ),
+        pdfObject(6, '<< /Type /StructElem /S /P /P 5 0 R /Pg 3 0 R /K [0 1 2] >>'),
+      ]),
+    needles: ['Pak Budi', 'catatan rahasia'],
+    comments: 1,
+  },
 ];

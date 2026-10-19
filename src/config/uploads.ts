@@ -87,6 +87,11 @@ export const MAX_BOOKLET_PAGES = 100;
 export const MAX_PDF_INFLATED_BYTES = 64 * 1024 * 1024;
 export const MAX_PDF_PARSED_OBJECTS = 2_000_000;
 export const MAX_PDF_SCAN_SECONDS = 20;
+// pdf-lib keeps every reference it creates for as long as the process lives, so object numbers are bounded too: a
+// 100-page booklet uses a few thousand, and 200,000 keeps the pool under about 30 MB per generation number. 65,535 is
+// the largest generation number the format allows (security review of PR #14, follow-up of N3; R21).
+export const MAX_PDF_OBJECT_NUMBER = 200_000;
+export const MAX_PDF_GENERATION_NUMBER = 65_535;
 
 // docs/Security.md §8.4, decision of 2026-10-18: the only link schemes a booklet PDF may carry.
 export const BOOKLET_LINK_SCHEMES = ['https:', 'mailto:', 'tel:'];

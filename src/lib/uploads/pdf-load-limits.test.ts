@@ -1,5 +1,7 @@
+import { PDFDocument, PDFName } from 'pdf-lib';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { withLoadLimits } from './pdf-load-guard';
 import { countPublishedPages, scanBookletPdf } from './pdf-scan';
 import { handWrittenPdf, packedStreamObject } from '../../../tests/fixtures/pdf';
 
@@ -20,6 +22,23 @@ function packedArrayPdf(numbers: number): Buffer {
   return handWrittenPdf('', [
     packedStreamObject(4, '/Type /ObjStm /N 1 /First 4', content.length, content),
   ]);
+}
+
+// A booklet as finalize publishes it: written by pdf-lib with object streams and a cross-reference stream, so it has
+// no classic trailer, with one array of `numbers` zeros on the catalog.
+async function pdfLibWrittenBooklet(numbers: number): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  document.addPage([420, 595]);
+  const zeros = document.context.obj(Array.from({ length: numbers }, () => 0));
+  document.catalog.set(PDFName.of('Extra'), document.context.register(zeros));
+  return document.save({ useObjectStreams: true });
+}
+
+// handWrittenPdf's booklet whose classic cross-reference table lists `entries` more objects, numbered from 4.
+function pdfWithXrefEntries(entries: number): Buffer {
+  const rows = '0000000000 00000 n \n'.repeat(entries);
+  const text = handWrittenPdf().toString('latin1');
+  return Buffer.from(text.replace('trailer\n', `4 ${String(entries)}\n${rows}trailer\n`), 'latin1');
 }
 
 // The scan reads the clock once to set its deadline; every later reading is long past it.
@@ -56,10 +75,51 @@ describe('scanBookletPdf: parsed objects', () => {
     });
   });
 
-  it('holds api/uploads/sign-pages to the same limits when it reads a published booklet back', async () => {
-    await expect(countPublishedPages(packedArrayPdf(TEST_OBJECT_LIMIT + 1))).resolves.toEqual({
+  // Follow-up of N3: a classic cross-reference table's entries become references without a single parseObject call.
+  it('counts the entries of a classic cross-reference table', async () => {
+    await expect(scanBookletPdf(pdfWithXrefEntries(TEST_OBJECT_LIMIT + 1))).resolves.toEqual({
       ok: false,
       problem: 'pdf_too_complex',
+      detail: 'limit:too_many_objects',
+    });
+  });
+});
+
+// Security review of PR #14, Info B: loading without throwOnInvalidObject, pdf-lib swallows the guard's error and
+// carries on, and a file pdf-lib wrote has no classic trailer whose parsing would throw again.
+describe('api/uploads/sign-pages reading a published booklet back', () => {
+  it('works on a file with a cross-reference stream and no classic trailer', async () => {
+    const pdf = await pdfLibWrittenBooklet(TEST_OBJECT_LIMIT + 1);
+
+    expect(Buffer.from(pdf).toString('latin1')).not.toContain('trailer');
+  });
+
+  it('holds such a file to the same limits', async () => {
+    const pdf = await pdfLibWrittenBooklet(TEST_OBJECT_LIMIT + 1);
+
+    await expect(countPublishedPages(pdf)).resolves.toEqual({
+      ok: false,
+      problem: 'pdf_too_complex',
+    });
+  });
+
+  it('still counts the pages of one within the limits', async () => {
+    const pdf = await pdfLibWrittenBooklet(100);
+
+    await expect(countPublishedPages(pdf)).resolves.toEqual({ ok: true, pageCount: 1 });
+  });
+
+  it('reports a refusal even when the load swallowed the error and finished', async () => {
+    const pdf = await pdfLibWrittenBooklet(TEST_OBJECT_LIMIT + 1);
+    // Whatever pdf-lib does with the guard's error, a load that hides it and resolves must not count as passed.
+    const swallowingLoad = async () => {
+      await PDFDocument.load(pdf, { updateMetadata: false }).catch(() => undefined);
+      return 'finished';
+    };
+
+    await expect(withLoadLimits(swallowingLoad, Number.POSITIVE_INFINITY)).resolves.toEqual({
+      ok: false,
+      refusal: 'too_many_objects',
     });
   });
 });
