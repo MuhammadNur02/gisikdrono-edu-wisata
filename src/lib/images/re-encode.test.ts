@@ -2,7 +2,9 @@ import { isBlurhashValid } from 'blurhash';
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 
-import { reencodeImage, UnsupportedImageError } from '@/lib/images/re-encode';
+import { reencodeImage, thumbnailOf, UnsupportedImageError } from '@/lib/images/re-encode';
+
+import { iphoneHeicPhoto } from '../../../tests/fixtures/uploads';
 
 // A synthetic camera photo: landscape pixels with EXIF orientation 6 (shot with the phone held upright),
 // a camera make and a GPS position, the metadata a visitor's photo must never carry onto the public site.
@@ -58,5 +60,38 @@ describe('reencodeImage', () => {
     const original = await cameraJpeg(800, 600);
 
     await expect(reencodeImage(original.subarray(0, original.length / 2))).rejects.toThrow();
+  });
+
+  // finalize names HEIC before it reaches sharp; this is the net behind that check.
+  it('refuses a real HEIC photo, which sharp cannot decode', async () => {
+    await expect(reencodeImage(iphoneHeicPhoto())).rejects.toBeInstanceOf(UnsupportedImageError);
+  });
+
+  it('refuses a file that would unpack into more pixels than any phone takes', async () => {
+    const huge = await sharp({
+      create: { width: 12_000, height: 9_000, channels: 3, background: { r: 0, g: 0, b: 0 } },
+    })
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+
+    await expect(reencodeImage(huge)).rejects.toThrow(/pixel limit/i);
+  });
+});
+
+describe('thumbnailOf', () => {
+  it('makes a 480 px WebP copy and never enlarges', async () => {
+    const { webp } = await reencodeImage(await cameraJpeg(2400, 1200));
+
+    const thumbnail = await sharp(await thumbnailOf(webp)).metadata();
+    const small = await sharp(
+      await thumbnailOf((await reencodeImage(await cameraJpeg(300, 200))).webp),
+    ).metadata();
+
+    expect({ format: thumbnail.format, width: thumbnail.width, height: thumbnail.height }).toEqual({
+      format: 'webp',
+      width: 240,
+      height: 480,
+    });
+    expect({ width: small.width, height: small.height }).toEqual({ width: 200, height: 300 });
   });
 });

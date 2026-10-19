@@ -1,7 +1,7 @@
 import { encode } from 'blurhash';
 import sharp from 'sharp';
 
-import { MAX_IMAGE_EDGE_PX } from '@/config/uploads';
+import { MAX_IMAGE_EDGE_PX, MAX_IMAGE_INPUT_PIXELS, THUMBNAIL_EDGE_PX } from '@/config/uploads';
 
 // The one way a photo becomes a public-media file (docs/PRD.md §8.8, docs/Security.md UPL-02): turned upright
 // from its EXIF orientation, every metadata block dropped (sharp keeps none unless asked, so the camera, the
@@ -46,16 +46,28 @@ async function blurhashOf(webp: Buffer): Promise<string> {
   );
 }
 
+// failOn 'error' refuses a truncated or corrupt file instead of encoding whatever part of it decoded, and the
+// pixel limit refuses a small file that would unpack into more pixels than any phone takes.
+const DECODE_OPTIONS = { failOn: 'error', limitInputPixels: MAX_IMAGE_INPUT_PIXELS } as const;
+
 export async function reencodeImage(input: Buffer): Promise<ReencodedImage> {
-  // failOn 'error' refuses a truncated or corrupt file instead of encoding whatever part of it decoded.
-  const { format } = await sharp(input, { failOn: 'error' }).metadata();
+  const { format } = await sharp(input, DECODE_OPTIONS).metadata();
   if (!ACCEPTED_INPUT_FORMATS.has(format)) throw new UnsupportedImageError(format);
 
-  const { data, info } = await sharp(input, { failOn: 'error' })
+  const { data, info } = await sharp(input, DECODE_OPTIONS)
     .rotate()
     .resize(MAX_IMAGE_EDGE_PX, MAX_IMAGE_EDGE_PX, { fit: 'inside', withoutEnlargement: true })
     .webp({ quality: WEBP_QUALITY })
     .toBuffer({ resolveWithObject: true });
 
   return { webp: data, width: info.width, height: info.height, blurhash: await blurhashOf(data) };
+}
+
+// The 480 px copy a gallery lists (galleries.thumbnail_path), made from the re-encoded WebP, which already
+// carries no metadata.
+export function thumbnailOf(webp: Buffer): Promise<Buffer> {
+  return sharp(webp)
+    .resize(THUMBNAIL_EDGE_PX, THUMBNAIL_EDGE_PX, { fit: 'inside', withoutEnlargement: true })
+    .webp({ quality: WEBP_QUALITY })
+    .toBuffer();
 }

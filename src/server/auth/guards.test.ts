@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  hasUploadAccess,
   requireAal2,
   requireFreshTotp,
   requireRole,
   requireRwAccess,
   requireUser,
+  type StaffContext,
 } from '@/server/auth/guards';
 
 const session = vi.hoisted(() => ({
@@ -55,8 +57,20 @@ describe('requireUser', () => {
     signInAs({ app_role: 'admin_rw', app_rw_id: 5 });
     expect(await requireUser()).toEqual({
       ok: true,
-      ctx: { userId: 'user-1', role: 'admin_rw', rwId: 5, isAal2: true, totpVerifiedAt: null },
+      ctx: {
+        userId: 'user-1',
+        role: 'admin_rw',
+        rwId: 5,
+        isAal2: true,
+        totpVerifiedAt: null,
+        claimsVersion: null,
+      },
     });
+  });
+
+  it('carries the claims_version claim so upload access can compare it with the profile', async () => {
+    signInAs({ app_role: 'admin_rw', app_rw_id: 5, claims_version: 3 });
+    expect(await requireUser()).toMatchObject({ ok: true, ctx: { claimsVersion: 3 } });
   });
 });
 
@@ -85,6 +99,34 @@ describe('requireRwAccess', () => {
   it('stops an RW admin whose RW claim is missing', async () => {
     signInAs({ app_role: 'admin_rw' });
     expect(await requireRwAccess(5)).toMatchObject({ error: { code: 'FORBIDDEN' } });
+  });
+});
+
+describe('hasUploadAccess', () => {
+  const officer05: StaffContext = {
+    userId: 'user-1',
+    role: 'admin_rw',
+    rwId: 5,
+    isAal2: true,
+    totpVerifiedAt: null,
+    claimsVersion: 1,
+  };
+  const superadmin: StaffContext = { ...officer05, role: 'superadmin', rwId: null };
+
+  it('lets an RW officer upload for their own RW only, and never for the kelurahan', () => {
+    expect(hasUploadAccess(officer05, 5)).toBe(true);
+    expect(hasUploadAccess(officer05, 8)).toBe(false);
+    expect(hasUploadAccess(officer05, null)).toBe(false);
+  });
+
+  it('lets the superadmin upload for every RW and the kelurahan', () => {
+    expect(hasUploadAccess(superadmin, 8)).toBe(true);
+    expect(hasUploadAccess(superadmin, null)).toBe(true);
+  });
+
+  it('stops a session that has not passed TOTP, because the service role skips the AAL2 policy', () => {
+    expect(hasUploadAccess({ ...officer05, isAal2: false }, 5)).toBe(false);
+    expect(hasUploadAccess({ ...superadmin, isAal2: false }, null)).toBe(false);
   });
 });
 

@@ -24,8 +24,8 @@ export const REDACTED_PATHS = [
   '*.snap_token',
 ];
 
-// The only event names a log line may carry: the 26 security_events types of docs/PRD.md §8.4.9 plus
-// the two operational ones.
+// The only event names a log line may carry: the security_events types of docs/PRD.md §8.4.9 the app logs
+// itself, plus the two operational ones.
 export const LOG_EVENTS = [
   'webhook_signature_invalid',
   'webhook_amount_mismatch',
@@ -39,6 +39,7 @@ export const LOG_EVENTS = [
   'rate_limited',
   'turnstile_failed',
   'upload_rejected',
+  'upload_sanitized',
   'role_changed',
   'staff_disabled',
   'key_rotated',

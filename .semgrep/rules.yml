@@ -27,15 +27,19 @@ rules:
         - /src/server/services/document-service.ts
         - /src/server/services/export-service.ts
         - /src/server/services/staff-service.ts
+        - /src/server/services/upload-service.ts
         - scripts/
 
   - id: fetch-outside-adapters
     message: >-
       Outbound HTTP lives only in src/lib/{midtrans,notifications,email} and src/lib/turnstile.ts,
-      with base URLs from src/lib/env.ts (CLAUDE.md §3.2).
+      with base URLs from src/lib/env.ts (CLAUDE.md §3.2). Browser code may call this site's own
+      route handlers, by a literal '/api/...' path only.
     severity: ERROR
     languages: [typescript, javascript]
-    pattern: fetch(...)
+    patterns:
+      - pattern: fetch(...)
+      - pattern-not: fetch("=~/^\/api\/[a-z0-9\/-]+$/", ...)
     paths:
       exclude:
         - /src/lib/midtrans/

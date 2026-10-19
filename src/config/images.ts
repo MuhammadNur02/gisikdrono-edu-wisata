@@ -17,4 +17,6 @@ export const IMAGE_SIZES = {
   main: '(min-width: 1280px) 820px, (min-width: 1024px) 66vw, 100vw',
   // A tile in the masonry gallery, two to four columns (§5.11).
   thumb: '(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw',
+  // A photo inside an article body, as wide as its 65ch text column (§3.3).
+  prose: '(min-width: 768px) 680px, 100vw',
 } as const;

@@ -23,5 +23,7 @@ export interface UploadedImage {
   width: number;
   height: number;
   blurhash: string;
+  // The 480 px copy a gallery photo gets (galleries.thumbnail_path); null for every other purpose.
+  thumbnailPath: string | null;
   altText: string;
 }

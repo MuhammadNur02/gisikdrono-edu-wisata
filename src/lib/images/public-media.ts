@@ -15,3 +15,15 @@ export function publicMediaUrl(path: string): string {
     publicEnv.NEXT_PUBLIC_SUPABASE_URL,
   ).toString();
 }
+
+// The bucket path behind one of these URLs, or null for any other address: the article editor shows an image
+// by its URL and reads a pasted one back to the path it stores (src/components/forms/rich-text-editor.tsx).
+export function publicMediaPathOf(url: string): string | null {
+  const prefix = new URL(OBJECT_PATH, publicEnv.NEXT_PUBLIC_SUPABASE_URL).toString();
+  if (!url.startsWith(prefix)) return null;
+  try {
+    return url.slice(prefix.length).split('/').map(decodeURIComponent).join('/');
+  } catch {
+    return null;
+  }
+}

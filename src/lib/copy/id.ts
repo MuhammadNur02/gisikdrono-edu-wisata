@@ -1,4 +1,10 @@
 import type { ActionErrorCode } from '@/types/action-result';
+import type { UploadProblem } from '@/types/upload';
+
+// The browser says it first and api/uploads/{sign,finalize} say it again, so both read the same words.
+const SVG_REFUSED = 'Format SVG tidak didukung';
+const HEIC_REFUSED =
+  'Foto format HEIC (iPhone) belum didukung. Simpan sebagai JPG dulu, atau ubah iPhone: Pengaturan → Kamera → Format → Paling Kompatibel.';
 
 // What people read when something goes wrong: friendly, plain Indonesian (CLAUDE.md §4.2).
 export const copy = {
@@ -179,7 +185,8 @@ export const copy = {
     image: {
       choose: 'Tarik foto ke sini atau pilih file',
       hint: 'JPG, PNG, atau WebP, maksimal 10 MB.',
-      svg: 'Format SVG tidak didukung',
+      svg: SVG_REFUSED,
+      heic: HEIC_REFUSED,
       type: 'Format file ini tidak didukung. Gunakan JPG, PNG, atau WebP.',
       size: 'Ukuran file melebihi 10 MB.',
       failed: 'Foto gagal diunggah. Coba lagi sebentar lagi, ya.',
@@ -188,5 +195,76 @@ export const copy = {
       altLabel: 'Deskripsi foto',
       altHint: 'Jelaskan isi foto untuk pengguna pembaca layar (3–200 karakter).',
     },
+    booklet: {
+      choose: 'Pilih file PDF booklet',
+      hint: 'PDF, maksimal 50 MB dan 100 halaman.',
+      // docs/Security.md §8.4: photos inside a booklet keep their own EXIF, so the officer is asked to check.
+      gpsHint:
+        'Pastikan foto di booklet tidak memuat lokasi (GPS). Ekspor PDF dari Canva/Word biasanya sudah aman.',
+      type: 'Booklet harus berupa file PDF.',
+      uploading: 'Mengunggah PDF dan menyiapkan halamannya...',
+      pages: (done: number, total: number) =>
+        `Halaman ${String(done)} dari ${String(total)} sudah terunggah`,
+      done: (pages: number) => `PDF dan ${String(pages)} halamannya sudah terunggah.`,
+      failed: 'Booklet gagal diunggah. Coba lagi sebentar lagi, ya.',
+    },
+    richText: {
+      toolbar: 'Format teks',
+      bold: 'Tebal',
+      italic: 'Miring',
+      heading: (level: number) => `Judul tingkat ${String(level)}`,
+      bulletList: 'Daftar berbutir',
+      orderedList: 'Daftar bernomor',
+      blockquote: 'Kutipan',
+      link: 'Tautan',
+      image: 'Sisipkan foto',
+      undo: 'Urungkan',
+      redo: 'Ulangi',
+      editorLabel: 'Isi artikel',
+      linkLabel: 'Alamat tautan',
+      linkHint: 'Diawali https://, http://, atau mailto:',
+      linkInvalid: 'Tautan harus diawali https://, http://, atau mailto:.',
+      linkApply: 'Pasang tautan',
+      linkRemove: 'Hapus tautan',
+      captionLabel: 'Keterangan foto',
+      captionHint: 'Tampil di bawah foto: apa atau di mana foto ini diambil.',
+      insertImage: 'Sisipkan ke artikel',
+      cancel: 'Batal',
+    },
+  },
+  // Why api/uploads/sign or api/uploads/finalize refused a file (docs/Security.md §8.4).
+  uploads: {
+    problems: {
+      svg: SVG_REFUSED,
+      heic: HEIC_REFUSED,
+      type: 'Format file ini tidak didukung. Gunakan foto JPG, PNG, atau WebP, atau PDF untuk booklet.',
+      wrong_kind:
+        'File ini tidak cocok untuk isian ini. Foto harus JPG, PNG, atau WebP; booklet harus PDF.',
+      image_size: 'Ukuran foto melebihi 10 MB.',
+      pdf_size: 'Ukuran PDF melebihi 50 MB.',
+      late: 'Unggahan terlalu lama selesai. Pilih file lagi untuk mengunggah ulang, ya.',
+      missing: 'File unggahan tidak ditemukan. Pilih file lagi, ya.',
+      unreadable:
+        'File tidak bisa dibaca, mungkin rusak atau terpotong. Simpan ulang file-nya, lalu unggah lagi.',
+      pdf_encrypted:
+        'PDF ini dikunci dengan kata sandi. Simpan ulang tanpa kata sandi, lalu unggah lagi.',
+      pdf_active_content:
+        'PDF ini berisi skrip, lampiran, atau aksi otomatis yang tidak diizinkan. Ekspor ulang dari aplikasi desainnya sebagai PDF biasa, lalu unggah lagi.',
+      pdf_link:
+        'PDF ini berisi tautan yang tidak diizinkan. Tautan di booklet hanya boleh diawali https://, mailto:, atau tel:.',
+      pdf_too_many_pages:
+        'Booklet maksimal 100 halaman. Pecah menjadi beberapa booklet, lalu unggah lagi satu per satu.',
+      pdf_unsupported_content:
+        'PDF ini memuat isian formulir, tanda tangan digital, layer tersembunyi, atau format gambar yang tidak didukung. Ekspor ulang sebagai PDF biasa dari Canva atau Word, lalu unggah lagi.',
+      pdf_too_complex:
+        'PDF ini terlalu berat untuk diperiksa. Ekspor ulang dari Canva atau Word, lalu unggah lagi.',
+      booklet_missing: 'PDF booklet belum terunggah. Unggah PDF-nya dulu, baru halamannya.',
+      already_used: 'Unggahan ini sudah diproses. Pilih file lagi untuk mengunggah ulang, ya.',
+      booklet_pages_exist:
+        'Halaman booklet ini sudah terunggah. Untuk menggantinya, buat booklet baru lalu unggah lagi.',
+      booklet_pages_in_progress:
+        'Halaman booklet ini sedang diunggah. Tunggu sampai selesai, atau coba lagi dua jam lagi.',
+    } satisfies Record<UploadProblem, string>,
+    bookletPagesFailed: 'Halaman booklet gagal diunggah. Coba unggah ulang booklet-nya, ya.',
   },
 };

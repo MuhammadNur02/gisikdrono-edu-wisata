@@ -11,11 +11,12 @@ import { noLoggingWholeRecords } from './scripts/eslint-rules/no-logging-whole-r
 const projectRoot = dirname(fileURLToPath(import.meta.url));
 const compat = new FlatCompat({ baseDirectory: projectRoot });
 
-// CLAUDE.md §6.1: the only modules allowed to import the service-role client.
+// CLAUDE.md §6.1: the only modules allowed to import the service-role client. upload-service signs and
+// finalizes uploads, which no API role may do through Storage (decision of 2026-10-18).
 const serviceRoleAllowList = [
   'src/app/api/webhooks/**',
   'src/app/api/jobs/**',
-  'src/server/services/{booking,payment,ticket,notification,document,export,staff}-service.ts',
+  'src/server/services/{booking,payment,ticket,notification,document,export,staff,upload}-service.ts',
   'scripts/**',
 ];
 

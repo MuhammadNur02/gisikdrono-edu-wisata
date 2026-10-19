@@ -171,6 +171,22 @@ export function svcRateLimitHit(
   );
 }
 
+// True when the caller now holds the booklet's page claim: none existed, or the one there is older than
+// holdSeconds (docs/Security.md §8.4; security review of PR #14, N4). rwId NULL is a kelurahan booklet.
+export function svcClaimBookletPages(
+  adminClient: DatabaseClient,
+  claim: { bookletId: string; rwId: number | null; actorId: string; holdSeconds: number },
+): Promise<boolean> {
+  return resultOf(
+    adminClient.rpc('svc_claim_booklet_pages', {
+      p_booklet_id: claim.bookletId,
+      p_actor_id: claim.actorId,
+      p_hold_seconds: claim.holdSeconds,
+      p_rw_id: claim.rwId ?? undefined,
+    }),
+  );
+}
+
 // Returns null when the message was skipped: WhatsApp to an unverified number, or a contact that has
 // been anonymised (docs/Security.md GUEST-08).
 export async function svcEnqueueNotification(

@@ -409,7 +409,7 @@ Priority uses MoSCoW: **M** must, **S** should, **C** could, **W** won't (this r
 | FR-ADMIN-09 | Products and vendors CRUD: `umkm_vendors` (bank columns superadmin-only), `products_umkm` with add-on eligibility, featured flag, images, status | M | Vendor and product RW must match (trigger); archive instead of delete |
 | FR-ADMIN-10 | Galleries CRUD with multi-upload, category, `alt_text` required, caption, sort, visit link | M | Delete removes the storage object in the same action |
 | FR-ADMIN-11 | Articles: Tiptap editor storing ProseMirror JSON in `body_json`; admin_rw creates drafts and submits `pending_review`; superadmin publishes/unpublishes; editing a published article as admin_rw returns it to `pending_review` | M | HTML is never stored; XSS canary article renders as text |
-| FR-ADMIN-12 | Booklets: PDF upload through the quarantine pipeline, page rasterisation for the flipbook, kind, status | M | PDFs with `/JavaScript`, `/OpenAction`, `/AA`, `/Launch`, `/EmbeddedFile`, `/RichMedia` or non-allow-listed `/URI` are rejected |
+| FR-ADMIN-12 | Booklets: PDF upload through the quarantine pipeline, page rasterisation for the flipbook, kind, status | M | PDFs with `/JavaScript`, `/OpenAction`, `/AA`, `/Launch`, `/EmbeddedFile`, `/RichMedia` or non-allow-listed `/URI` are rejected (allow-list `https:`, `mailto:`, `tel:`), except that an `/OpenAction` which only opens a page is left out of the published copy and recorded as `upload_sanitized`; the published copy carries no document information dictionary and no XMP metadata; at most 100 pages, all signed by one `api/uploads/sign-pages` call and each finalized only as the page its path names (decisions of 2026-10-18, `docs/Security.md` §8.4); only `/Link` annotations with a `/GoTo` or allow-listed `/URI` action are kept, comments are deleted whole, any other annotation or action refuses the file, a booklet with form values, a signature, hidden layers, JBIG2, JPEG 2000 or PostScript content is refused, and a scan stays within 64 MB inflated, 2,000,000 parsed objects, object numbers up to 200,000, names up to 127 bytes and 20 s (security review of PR #14 and its follow-ups, 2026-10-19; isolated in a worker thread before go-live, `docs/Task.md` P2.9.09) |
 | FR-ADMIN-13 | Performance schedules (RW 08 and superadmin): title, type, start/end, venue, recurrence rule, image, bookable package link | M | Nav item hidden for admin_rw 05 |
 | FR-ADMIN-14 | Activity points: name, type, description, image, SVG hotspot id, lat/lng, order, status | M | Hotspot id validated against `public/map/denah.svg` ids list |
 | FR-ADMIN-15 | Pages: RW profile fields (`rw_units` content columns: tagline, description, vision, hero image, contact) | M | Treasury and account columns are not editable here (trigger) |
@@ -1574,7 +1574,7 @@ create table public.security_events (
     'mfa_failed','mfa_enrolled','scanner_invalid_signature','scanner_lockout','rate_limited','turnstile_failed',
     'upload_rejected','role_changed','staff_disabled','key_rotated','export_downloaded','pii_revealed',
     'manual_checkin','manual_backfill','undo_check_in','cron_failed','notification_dead','price_changed',
-    'session_changed_with_bookings','quota_pressure','mfa_reset','notification_blocked')), -- the last two added by 0004
+    'session_changed_with_bookings','quota_pressure','mfa_reset','notification_blocked','upload_sanitized')), -- mfa_reset and notification_blocked added by 0004, upload_sanitized by 20261018133045
   severity    public.alert_severity not null default 'info',
   actor_id    uuid,
   actor_role  text,
@@ -1704,6 +1704,22 @@ create table public.job_heartbeats (
   last_requested_at timestamptz,
   updated_at        timestamptz not null default now()
 );
+
+-- booklet_page_claims (20261019080000): one api/uploads/sign-pages per booklet and owner at a time
+-- (docs/Security.md §8.4, security review of PR #14, N4). Written only by internal.claim_booklet_pages through
+-- svc_claim_booklet_pages, one INSERT ... ON CONFLICT DO UPDATE that takes over a claim only when it is older than
+-- the signed URLs' lifetime. No API role holds any right on it.
+create table public.booklet_page_claims (
+  id          uuid primary key default gen_random_uuid(),
+  booklet_id  uuid not null,                 -- the id the upload pipeline was given; the booklet row comes later
+  rw_id       smallint references public.rw_units(id),
+  claimed_by  uuid not null references public.profiles(id),
+  claimed_at  timestamptz not null default now(),
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create unique index booklet_page_claims_booklet_owner
+  on public.booklet_page_claims (booklet_id, (coalesce(rw_id, 0)));
 ```
 
 #### 8.4.10 Views (all `with (security_invoker = true)`)
@@ -1804,6 +1820,7 @@ Legend: S/I/U/D = select/insert/update/delete; "—" = denied; "fn" = only throu
 | audit_logs | — | — | S | yes | insert by triggers / fn |
 | login_attempts | — | — | S | yes | insert by auth hook |
 | rate_limit_buckets | — | — | — | — | `rate_limit_hit` |
+| booklet_page_claims | — | — | — | — | `claim_booklet_pages` (through `svc_claim_booklet_pages`) |
 | job_heartbeats | — | — | S | yes | `record_job_run` (database jobs; application job routes through `svc_record_job_run`), `call_job` / `settle_job_response` for the pg_net request; no DML for `service_role` |
 
 Public reads are policies `to anon` only: staff read through their own scope, so an RW admin sees no other RW's rows even where they are published. Every grant lists its columns (`0005_policies_grants.sql`), so a column added later stays private until a migration grants it, and a row created through the API carries its creator's own id in `created_by` (`uploaded_by`, `author_id`). A foreign key checks its row past RLS, so a reference an RW admin writes (`visit_sessions.template_id`, `galleries.booking_id`, `performance_schedules.package_id`) is held to their RW by a trigger, which answers a missing row and another RW's row alike.
@@ -1969,6 +1986,7 @@ No function is executable by `anon`. Public writes (OTP, bookings, reviews, DSR 
 | `claim_notifications` | `(p_limit int) returns setof public.notifications` | `FOR UPDATE SKIP LOCKED`; requeues `sending` older than 10 min |
 | `complete_notification` / `fail_notification` | `(p_id uuid, p_provider_message_id text)` / `(p_id uuid, p_error_code text, p_error text, p_permanent boolean)` | Backoff 1/5/15/60/240 min; `dead_at` after 8 attempts or permanent error + `notification_dead` event |
 | `rate_limit_hit` | `(p_key text, p_limit int, p_window_seconds int) returns boolean` | Fixed-window counter in `rate_limit_buckets` |
+| `claim_booklet_pages` | `(p_booklet_id uuid, p_actor_id uuid, p_hold_seconds int, p_rw_id smallint default null) returns boolean` | 20261019080000: true when the caller now holds the booklet's page claim in `booklet_page_claims` (none existed, or the one there is older than `p_hold_seconds`); one conditional upsert, so simultaneous `api/uploads/sign-pages` requests cannot share it |
 | `enqueue_notification` | `(p_booking_id uuid, p_template notification_template, p_channel notification_channel, p_params jsonb) returns uuid` | Inserts one outbox row (`dedupe_key = 'booking:<id>:<template>:<channel>'`, `on conflict do nothing`); recipient from `pic_phone` / `pic_email`; a `whatsapp` row for any template except `phone_otp` needs `phone_verified_at`, else skipped (GUEST-08); `params.link_scope` is forced to `view` for `email` rows while `email_verified_at` is NULL (the worker mints the link, never SQL) |
 | `prune_operational_tables` | `() returns void` | `notifications` > 180 d (their `params` emptied after 30 d), `webhook_rejections` > 30 d, `payment_events` > 24 mo (deleted whole; they never hold customer details, see `midtrans_payload_minimise`), `audit_logs` > 24 mo only while `verify_audit_chain()` passes (the id and hash of the last pruned row are kept in the `purge_run` row as the new anchor; a broken chain raises `cron_failed` instead), `security_events` > 12 mo, `login_attempts` > 24 h, `rate_limit_buckets` > 1 d, `ticket_scans` > 24 mo (attendance itself stays in `tickets_qr`); runs under `app.purge = 'on'` so the append-only triggers allow it |
 | `run_scheduled_job` | `(p_job text) returns void` | 0007: runs one database job of §8.9 from a fixed list (no dynamic SQL) and records its heartbeat; a failing job is rolled back, recorded as a failure with its SQLSTATE and left for its next run |

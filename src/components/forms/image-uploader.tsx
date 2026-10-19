@@ -10,15 +10,18 @@ import { Label } from '@/components/ui/label';
 import { ACCEPTED_IMAGE_TYPES, ALT_TEXT_MAX_LENGTH } from '@/config/uploads';
 import { copy } from '@/lib/copy/id';
 import {
+  checkImageBytes,
   checkImageFile,
   resizeImageForUpload,
   type ImageFileProblem,
 } from '@/lib/images/client-resize';
+import { UploadRejectedError } from '@/lib/uploads/upload-error';
 import { cn } from '@/lib/utils/cn';
 import type { UploadedImage } from '@/types/forms';
 
-// The signed-URL upload and finalize step (api/uploads/sign, api/uploads/finalize, P2.9) are passed in,
-// so this component only handles choosing, checking, shrinking and describing the photo.
+// The signed-URL upload and finalize step (api/uploads/sign, api/uploads/finalize) are passed in, usually as
+// createImageUpload(target) from src/lib/uploads/upload-client.ts, so this component only handles choosing,
+// checking, shrinking and describing the photo.
 export type UploadImage = (file: Blob) => Promise<Omit<UploadedImage, 'altText'>>;
 
 export interface ImageUploaderProps extends Omit<
@@ -32,9 +35,16 @@ export interface ImageUploaderProps extends Omit<
 
 const PROBLEM_COPY: Record<ImageFileProblem, string> = {
   svg: copy.forms.image.svg,
+  heic: copy.forms.image.heic,
   type: copy.forms.image.type,
   size: copy.forms.image.size,
 };
+
+// The server's own message when it refused the file (a HEIC photo, a file too large); a generic one when the
+// upload itself failed.
+function messageFor(error: unknown): string {
+  return error instanceof UploadRejectedError ? error.message : copy.forms.image.failed;
+}
 
 function useImageUpload({
   value,
@@ -46,15 +56,15 @@ function useImageUpload({
 
   async function choose(file: File | undefined) {
     if (!file) return;
-    const problem = checkImageFile(file);
+    const problem = checkImageFile(file) ?? (await checkImageBytes(file));
     setError(problem ? PROBLEM_COPY[problem] : null);
     if (problem) return;
     setIsUploading(true);
     try {
       const uploaded = await upload(await resizeImageForUpload(file));
       onChange({ ...uploaded, altText: value?.altText ?? '' });
-    } catch {
-      setError(copy.forms.image.failed);
+    } catch (uploadError) {
+      setError(messageFor(uploadError));
     } finally {
       setIsUploading(false);
     }
