@@ -10,6 +10,13 @@ const sandbox = {
   QR_SIGNING_ACTIVE_KID: 'k1',
 };
 
+// Newer Midtrans sandbox accounts issue keys without the SB- prefix.
+const currentSandbox = {
+  ...sandbox,
+  MIDTRANS_SERVER_KEY: 'Mid-server-abc',
+  MIDTRANS_CLIENT_KEY: 'Mid-client-abc',
+};
+
 const production = {
   ...sandbox,
   VERCEL_ENV: 'production' as const,
@@ -22,35 +29,69 @@ const production = {
 };
 
 describe('findEnvProblems', () => {
-  it('accepts sandbox keys on a local or preview deployment', () => {
+  it('accepts SB- sandbox keys on a local or preview deployment', () => {
     expect(findEnvProblems(sandbox)).toEqual([]);
     expect(findEnvProblems({ ...sandbox, VERCEL_ENV: 'preview' })).toEqual([]);
+    expect(findEnvProblems({ ...sandbox, VERCEL_ENV: 'development' })).toEqual([]);
+  });
+
+  it('accepts the newer sandbox keys without SB- on a local or preview deployment', () => {
+    expect(findEnvProblems(currentSandbox)).toEqual([]);
+    expect(findEnvProblems({ ...currentSandbox, VERCEL_ENV: 'preview' })).toEqual([]);
+  });
+
+  it('accepts a sandbox rotation from one key format to the other', () => {
+    expect(
+      findEnvProblems({ ...currentSandbox, MIDTRANS_SERVER_KEY_PREVIOUS: 'SB-Mid-server-old' }),
+    ).toEqual([]);
+    expect(findEnvProblems({ ...sandbox, MIDTRANS_SERVER_KEY_PREVIOUS: 'Mid-server-old' })).toEqual(
+      [],
+    );
   });
 
   it('accepts live keys in production', () => {
     expect(findEnvProblems(production)).toEqual([]);
+    expect(
+      findEnvProblems({ ...production, MIDTRANS_SERVER_KEY_PREVIOUS: 'Mid-server-old' }),
+    ).toEqual([]);
   });
 
-  it('rejects sandbox keys in production', () => {
-    const problems = findEnvProblems({ ...production, MIDTRANS_SERVER_KEY: 'SB-Mid-server-abc' });
-    expect(problems).toEqual([
-      'MIDTRANS_SERVER_KEY must start with Mid-server- on this deployment',
+  it('rejects every SB- key in production', () => {
+    expect(findEnvProblems({ ...production, MIDTRANS_SERVER_KEY: 'SB-Mid-server-abc' })).toEqual([
+      'MIDTRANS_SERVER_KEY must start with Mid-server- for Midtrans production',
+    ]);
+    expect(findEnvProblems({ ...production, MIDTRANS_CLIENT_KEY: 'SB-Mid-client-abc' })).toEqual([
+      'MIDTRANS_CLIENT_KEY must start with Mid-client- for Midtrans production',
+    ]);
+    expect(
+      findEnvProblems({ ...production, MIDTRANS_SERVER_KEY_PREVIOUS: 'SB-Mid-server-old' }),
+    ).toEqual(['MIDTRANS_SERVER_KEY_PREVIOUS must start with Mid-server- for Midtrans production']);
+  });
+
+  it('rejects the sandbox flag in production even with live keys', () => {
+    expect(findEnvProblems({ ...production, MIDTRANS_IS_PRODUCTION: false })).toEqual([
+      'MIDTRANS_IS_PRODUCTION must be true when VERCEL_ENV is production',
     ]);
   });
 
-  it('rejects live keys and the production flag on a preview', () => {
-    const problems = findEnvProblems({ ...production, VERCEL_ENV: 'preview' });
-    expect(problems).toHaveLength(3);
-    expect(problems).toContain('MIDTRANS_IS_PRODUCTION must be false when VERCEL_ENV is preview');
+  it('rejects the production flag outside production, whatever the key format', () => {
+    expect(findEnvProblems({ ...production, VERCEL_ENV: 'preview' })).toEqual([
+      'MIDTRANS_IS_PRODUCTION must be false when VERCEL_ENV is preview',
+    ]);
+    expect(findEnvProblems({ ...sandbox, MIDTRANS_IS_PRODUCTION: true })).toEqual([
+      'MIDTRANS_IS_PRODUCTION must be false when VERCEL_ENV is unset',
+    ]);
   });
 
-  it('checks the previous server key during a rotation', () => {
+  it('rejects a sandbox key with neither prefix, the previous key included', () => {
     const problems = findEnvProblems({
       ...sandbox,
-      MIDTRANS_SERVER_KEY_PREVIOUS: 'Mid-server-old',
+      MIDTRANS_SERVER_KEY: 'Mid-client-abc',
+      MIDTRANS_SERVER_KEY_PREVIOUS: 'server-old',
     });
     expect(problems).toEqual([
-      'MIDTRANS_SERVER_KEY_PREVIOUS must start with SB-Mid-server- on this deployment',
+      'MIDTRANS_SERVER_KEY must start with SB-Mid-server- or Mid-server- for the Midtrans sandbox',
+      'MIDTRANS_SERVER_KEY_PREVIOUS must start with SB-Mid-server- or Mid-server- for the Midtrans sandbox',
     ]);
   });
 
