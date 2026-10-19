@@ -1,6 +1,13 @@
 import { deflateSync } from 'node:zlib';
 
-import { PDFDocument, PDFName, PDFString } from 'pdf-lib';
+import {
+  decodePDFRawStream,
+  PDFDocument,
+  PDFName,
+  PDFRawStream,
+  PDFString,
+  type PDFObject,
+} from 'pdf-lib';
 
 // Booklet PDFs for the scanner tests (docs/Security.md UPL-05). Hand-written ones keep the exact bytes a
 // writer chose, such as a hex-escaped name, which pdf-lib would normalise if it wrote the file itself.
@@ -113,4 +120,26 @@ export async function pdfWithScriptInObjectStream(): Promise<Uint8Array> {
     document.context.obj({ S: 'JavaScript', JS: PDFString.of('app.alert(1)') }),
   );
   return document.save({ useObjectStreams: true });
+}
+
+function readableText(object: PDFObject): string {
+  if (!(object instanceof PDFRawStream)) return object.toString();
+  try {
+    const content = Buffer.from(decodePDFRawStream(object).decode()).toString('latin1');
+    return `${object.dict.toString()}\n${content}`;
+  } catch {
+    // A filter pdf-lib cannot decode (an image's DCT data): the raw bytes are what is there.
+    return `${object.dict.toString()}\n${Buffer.from(object.contents).toString('latin1')}`;
+  }
+}
+
+// A published copy as searchable text: every object pdf-lib reads back from it, each stream inflated. The copy packs
+// ordinary objects into compressed object streams, so a search of its raw bytes cannot see what they hold (security
+// review of PR #14, N2).
+export async function readableCopy(pdf: Uint8Array): Promise<string> {
+  const copy = await PDFDocument.load(pdf, { updateMetadata: false });
+  return copy.context
+    .enumerateIndirectObjects()
+    .map(([, object]) => readableText(object))
+    .join('\n');
 }

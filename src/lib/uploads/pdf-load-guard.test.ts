@@ -1,7 +1,7 @@
 import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 
-import { MAX_PDF_INFLATED_BYTES } from '@/config/uploads';
+import { MAX_PDF_INFLATED_BYTES, MAX_PDF_PARSED_OBJECTS } from '@/config/uploads';
 
 import { scanBookletPdf } from './pdf-scan';
 import {
@@ -11,8 +11,9 @@ import {
   pdfWithPackedStream,
 } from '../../../tests/fixtures/pdf';
 
-// Security review of PR #14, L2: pdf-lib inflates object and cross-reference streams while it loads, so the scan
-// caps what they may unpack to before pdf-lib sees them.
+// Security review of PR #14, L2 and N3: pdf-lib inflates object and cross-reference streams while it loads and turns
+// every object it parses into a JavaScript object, so the scan caps what the streams of a document may unpack to
+// (one budget for all of them), how many objects may be parsed, and how long the scan may take.
 
 const MEGABYTE = 1024 * 1024;
 const OVER_THE_LIMIT = MAX_PDF_INFLATED_BYTES + MEGABYTE;
@@ -24,8 +25,8 @@ describe('scanBookletPdf: packed streams', () => {
 
     await expect(scanBookletPdf(bomb)).resolves.toEqual({
       ok: false,
-      problem: 'unreadable',
-      detail: 'packed:too_large',
+      problem: 'pdf_too_complex',
+      detail: 'limit:too_large',
     });
   });
 
@@ -34,8 +35,8 @@ describe('scanBookletPdf: packed streams', () => {
 
     await expect(scanBookletPdf(bomb)).resolves.toEqual({
       ok: false,
-      problem: 'unreadable',
-      detail: 'packed:too_large',
+      problem: 'pdf_too_complex',
+      detail: 'limit:too_large',
     });
   });
 
@@ -49,8 +50,8 @@ describe('scanBookletPdf: packed streams', () => {
 
     await expect(scanBookletPdf(pdf)).resolves.toEqual({
       ok: false,
-      problem: 'unreadable',
-      detail: 'packed:too_large',
+      problem: 'pdf_too_complex',
+      detail: 'limit:too_large',
     });
   });
 
@@ -100,4 +101,33 @@ describe('scanBookletPdf: packed streams', () => {
 
     await expect(PDFDocument.load(packed)).resolves.toBeInstanceOf(PDFDocument);
   });
+});
+
+// One object stream holding a single array of `numbers` zeros: a file of kilobytes, an array of millions of objects.
+function packedArrayPdf(numbers: number): Buffer {
+  const content = `6 0 [${'0 '.repeat(numbers)}]`;
+  return handWrittenPdf('', [
+    packedStreamObject(4, '/Type /ObjStm /N 1 /First 4', content.length, content),
+  ]);
+}
+
+// Parsing two million objects takes seconds, more under coverage; pdf-load-limits.test.ts covers the same rules
+// quickly with a smaller limit.
+const REAL_LIMIT_TIMEOUT_MS = 60_000;
+
+describe('scanBookletPdf: parsed objects at the real limit', () => {
+  it(
+    'refuses a few kilobytes that unpack into more objects than the limit',
+    async () => {
+      const pdf = packedArrayPdf(MAX_PDF_PARSED_OBJECTS + 1);
+      expect(pdf.length).toBeLessThan(64 * 1024);
+
+      await expect(scanBookletPdf(pdf)).resolves.toEqual({
+        ok: false,
+        problem: 'pdf_too_complex',
+        detail: 'limit:too_many_objects',
+      });
+    },
+    REAL_LIMIT_TIMEOUT_MS,
+  );
 });

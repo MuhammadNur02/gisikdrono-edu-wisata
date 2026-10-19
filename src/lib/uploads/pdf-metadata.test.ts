@@ -1,25 +1,44 @@
 import { PDFArray, PDFDict, PDFDocument, PDFName } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 
+import { MARKUP_ANNOTATIONS } from './pdf-rules';
 import { scanBookletPdf } from './pdf-scan';
-import { handWrittenPdf, pdfObject, pdfWithPageAnnotation } from '../../../tests/fixtures/pdf';
+import { readableCopy } from '../../../tests/fixtures/pdf';
+import { PRIVATE_DATA_CASES } from '../../../tests/fixtures/pdf-private-data';
 
-// Security review of PR #14, L4: the published copy leaves out comments, an application's private data, page
-// thumbnails and every object nothing reaches.
-
-const LINK =
-  '<< /Type /Annot /Subtype /Link /Rect [0 0 10 10] /A << /S /URI /URI (https://x.test/) >> >>';
+// Security review of PR #14, L4, N1 and N2: the published copy leaves out metadata, private data, thumbnails,
+// orphans and comments whole, and the scan reports exactly the comments it removed. Every check reads the copy back
+// through pdf-lib with its streams inflated; pdf-cleanup-control.test.ts shows each would fail without the cleanup.
 
 async function publishedCopy(pdf: Uint8Array) {
   const result = await scanBookletPdf(pdf);
-  if (!result.ok) throw new Error(`the scan refused the fixture: ${result.problem}`);
-  return { result, bytes: Buffer.from(result.pdf).toString('latin1') };
+  if (!result.ok)
+    throw new Error(`the scan refused the fixture: ${result.problem} ${result.detail ?? ''}`);
+  return result;
 }
 
-async function pageAnnotationTypes(pdf: Uint8Array): Promise<string[]> {
-  const copy = await PDFDocument.load(pdf);
+// Subtypes of every comment-like dictionary pdf-lib reads back from the copy, nested ones included.
+async function commentsIn(pdf: Uint8Array): Promise<string[]> {
+  const copy = await PDFDocument.load(pdf, { updateMetadata: false });
+  const found: string[] = [];
+  const pending = copy.context.enumerateIndirectObjects().map(([, object]) => object);
+  while (pending.length > 0) {
+    const next = pending.pop();
+    if (next instanceof PDFArray) pending.push(...next.asArray());
+    if (!(next instanceof PDFDict)) continue;
+    const subtype = next.get(PDFName.of('Subtype'));
+    if (subtype instanceof PDFName && MARKUP_ANNOTATIONS.has(subtype.decodeText())) {
+      found.push(subtype.decodeText());
+    }
+    pending.push(...next.entries().map(([, value]) => value));
+  }
+  return found;
+}
+
+async function pageAnnotationTypes(pdf: Uint8Array): Promise<string[] | null> {
+  const copy = await PDFDocument.load(pdf, { updateMetadata: false });
   const annots = copy.getPage(0).node.lookup(PDFName.of('Annots'));
-  if (!(annots instanceof PDFArray)) return [];
+  if (!(annots instanceof PDFArray)) return null;
   return annots.asArray().map((entry) => {
     const annotation = copy.context.lookup(entry);
     const subtype = annotation instanceof PDFDict ? annotation.get(PDFName.of('Subtype')) : null;
@@ -27,87 +46,63 @@ async function pageAnnotationTypes(pdf: Uint8Array): Promise<string[]> {
   });
 }
 
-describe('scanBookletPdf: comments', () => {
-  it('leaves out a sticky note and its popup, keeps the link and says how many went', async () => {
-    const pdf = handWrittenPdf(
-      '',
-      [
-        pdfObject(4, LINK),
-        pdfObject(
-          5,
-          '<< /Type /Annot /Subtype /Text /Rect [0 0 10 10] /T (Pak Budi) /Contents (catatan rahasia) /Popup 6 0 R >>',
-        ),
-        pdfObject(6, '<< /Type /Annot /Subtype /Popup /Rect [0 0 10 10] /Parent 5 0 R >>'),
-      ],
-      '',
-      '/Annots [4 0 R 5 0 R 6 0 R] ',
-    );
+describe('scanBookletPdf: what the published copy leaves out', () => {
+  it.each(PRIVATE_DATA_CASES.map((privateCase) => [privateCase.name, privateCase] as const))(
+    'leaves out %s',
+    async (_name, privateCase) => {
+      const result = await publishedCopy(privateCase.pdf());
+      const copy = await readableCopy(result.pdf);
 
-    const { result, bytes } = await publishedCopy(pdf);
+      for (const needle of privateCase.needles) expect(copy).not.toContain(needle);
+      expect(await commentsIn(result.pdf)).toEqual([]);
+    },
+  );
 
-    expect(result.removed).toEqual({ openAction: null, annotations: 2 });
+  it.each(PRIVATE_DATA_CASES.map((privateCase) => [privateCase.name, privateCase] as const))(
+    'reports exactly the comments it removed from %s',
+    async (_name, privateCase) => {
+      const result = await publishedCopy(privateCase.pdf());
+
+      expect(result.removed).toEqual({ openAction: null, annotations: privateCase.comments });
+    },
+  );
+});
+
+describe('scanBookletPdf: what the published copy keeps', () => {
+  function caseNamed(name: string) {
+    const found = PRIVATE_DATA_CASES.find((privateCase) => privateCase.name === name);
+    if (!found) throw new Error(`no fixture named ${name}`);
+    return found.pdf();
+  }
+
+  it('keeps the link on its page when the comments beside it go', async () => {
+    const result = await publishedCopy(caseNamed('a sticky note and its popup next to a link'));
+
     expect(await pageAnnotationTypes(result.pdf)).toEqual(['Link']);
-    expect(bytes).not.toContain('catatan rahasia');
-    expect(bytes).not.toContain('Pak Budi');
+  });
+
+  it('keeps a link whose /Popup pointed at a note, without the reference', async () => {
+    const result = await publishedCopy(caseNamed('a note only a link’s /Popup points at'));
+    const copy = await readableCopy(result.pdf);
+
+    expect(await pageAnnotationTypes(result.pdf)).toEqual(['Link']);
+    expect(copy).not.toContain('/Popup');
   });
 
   it('drops the /Annots array when only comments were on the page', async () => {
-    const pdf = pdfWithPageAnnotation(
-      '<< /Type /Annot /Subtype /Highlight /Rect [0 0 10 10] /T (Bu Sri) >>',
+    const result = await publishedCopy(caseNamed('a highlight alone on its page'));
+
+    expect(await pageAnnotationTypes(result.pdf)).toBeNull();
+  });
+
+  it('keeps the structure tree of a tagged PDF, without the references to the note', async () => {
+    const result = await publishedCopy(
+      caseNamed('a note the structure tree of a tagged PDF points at'),
     );
+    const copy = await readableCopy(result.pdf);
 
-    const { result, bytes } = await publishedCopy(pdf);
-
-    expect(result.removed.annotations).toBe(1);
-    expect(bytes).not.toContain('/Annots');
-    expect(bytes).not.toContain('Bu Sri');
-  });
-});
-
-describe('scanBookletPdf: private data, thumbnails and orphans', () => {
-  it.each([
-    [
-      '/PieceInfo on the catalog',
-      '/PieceInfo << /Illustrator << /Private (C:/Users/desainer/booklet.ai) >> >>',
-      '',
-    ],
-    [
-      '/PieceInfo on a page',
-      '',
-      '/PieceInfo << /Illustrator << /Private (C:/Users/desainer/booklet.ai) >> >> ',
-    ],
-    [
-      '/PieceInfo under an escape pdf-lib keeps',
-      '/PieceI#6efo << /Illustrator << /Private (C:/Users/desainer/booklet.ai) >> >>',
-      '',
-    ],
-  ])('leaves out %s', async (_case, catalogExtra, pageExtra) => {
-    const { bytes } = await publishedCopy(handWrittenPdf(catalogExtra, [], '', pageExtra));
-
-    expect(bytes).not.toContain('desainer');
-    expect(bytes).not.toContain('Illustrator');
-  });
-
-  it.each([
-    ['a page thumbnail', '/Thumb 4 0 R '],
-    ['a page thumbnail under an escape pdf-lib keeps', '/Thu#6db 4 0 R '],
-  ])('leaves out %s and its image', async (_case, pageExtra) => {
-    const thumbnail = pdfObject(
-      4,
-      '<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 9 >>\nstream\nTHUMBDATA\nendstream',
-    );
-
-    const { bytes } = await publishedCopy(handWrittenPdf('', [thumbnail], '', pageExtra));
-
-    expect(bytes).not.toContain('THUMBDATA');
-    expect(bytes).not.toContain('Thu');
-  });
-
-  it('leaves out an object nothing refers to', async () => {
-    const orphan = pdfObject(4, '<< /Draft (sisa draf lama: harga belum final) >>');
-
-    const { bytes } = await publishedCopy(handWrittenPdf('', [orphan]));
-
-    expect(bytes).not.toContain('sisa draf');
+    expect(copy).toContain('/StructTreeRoot');
+    expect(copy).toContain('/StructElem');
+    expect(copy).not.toContain('/OBJR');
   });
 });

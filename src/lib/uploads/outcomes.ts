@@ -16,6 +16,8 @@ const SUSPICIOUS_PROBLEMS: ReadonlySet<UploadRefusalReason> = new Set([
   'svg',
   'pdf_active_content',
   'pdf_link',
+  // Real booklets stay far below the scan's limits; only a file built to exhaust them gets there.
+  'pdf_too_complex',
 ]);
 
 const NOT_FOUND_PROBLEMS: ReadonlySet<UploadProblem> = new Set(['missing', 'booklet_missing']);

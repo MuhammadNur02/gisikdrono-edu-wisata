@@ -1,7 +1,8 @@
-import { PDFDocument, PDFName, PDFRawStream, type PDFObject } from 'pdf-lib';
+import { PDFDocument, PDFName, PDFRawStream, type PDFDict, type PDFObject } from 'pdf-lib';
 
-import { sortPageAnnotations } from '@/lib/uploads/pdf-annotations';
-import { withInflateLimit } from '@/lib/uploads/pdf-inflate-guard';
+import { MAX_PDF_SCAN_SECONDS } from '@/config/uploads';
+import { checkPageAnnotations, removeComments } from '@/lib/uploads/pdf-annotations';
+import { withLoadLimits, type LoadRefusal } from '@/lib/uploads/pdf-load-guard';
 import { removeDocumentMetadata } from '@/lib/uploads/pdf-metadata';
 import { nameSpellings } from '@/lib/uploads/pdf-names';
 import { removePageOnlyOpenAction, type OpenActionKind } from '@/lib/uploads/pdf-open-action';
@@ -10,13 +11,15 @@ import { firstFinding, type Lookup } from '@/lib/uploads/pdf-rules';
 
 // docs/Security.md §8.4 and UPL-05: a booklet PDF is published only when nothing in it can act on its own, and the
 // copy that is published holds only what was checked. In order:
-// 1. pdf-lib loads the whole file, objects after %%EOF included, under the inflate budget (./pdf-inflate-guard.ts);
+// 1. pdf-lib loads the whole file, objects after %%EOF included, under the scan's limits (./pdf-load-guard.ts): one
+//    inflate budget for the document, a count of parsed objects and a deadline that also holds for the steps after;
 //    an encrypted file or an object stream it could not unpack is refused.
 // 2. An /OpenAction that only opens a page is removed (./pdf-open-action.ts); the page tree is read once per node,
-//    at most 100 pages (./pdf-pages.ts); page annotations are sorted (./pdf-annotations.ts).
+//    at most 100 pages (./pdf-pages.ts); page annotations are only links and comments (./pdf-annotations.ts).
 // 3. Every object is walked against the allowlist and the forbidden names (./pdf-rules.ts).
-// 4. Metadata and every object the catalog no longer reaches are dropped (./pdf-metadata.ts), and pdf-lib writes
-//    the copy, so no byte outside the checked objects (a polyglot's second file) reaches public-media.
+// 4. Comments go whole (./pdf-annotations.ts), then metadata and every object the catalog no longer reaches
+//    (./pdf-metadata.ts), and pdf-lib writes the copy, so no byte outside the checked objects (a polyglot's second
+//    file) reaches public-media.
 
 export type PdfSanitizing = {
   openAction: OpenActionKind | null;
@@ -27,7 +30,12 @@ export type PdfSanitizing = {
 type Refusal = {
   ok: false;
   problem:
-    'unreadable' | 'pdf_encrypted' | 'pdf_active_content' | 'pdf_link' | 'pdf_too_many_pages';
+    | 'unreadable'
+    | 'pdf_encrypted'
+    | 'pdf_active_content'
+    | 'pdf_link'
+    | 'pdf_too_many_pages'
+    | 'pdf_too_complex';
   // The offending name, link scheme or structure, for the upload_rejected event; never the link itself.
   detail?: string;
 };
@@ -36,17 +44,36 @@ export type PdfScanResult =
   { ok: true; pageCount: number; pdf: Uint8Array; removed: PdfSanitizing } | Refusal;
 
 const OBJECT_STREAM_TYPE = 'ObjStm';
+const MS_PER_SECOND = 1000;
+const RESOURCE_LIMITS: ReadonlySet<LoadRefusal> = new Set([
+  'too_large',
+  'too_many_objects',
+  'too_slow',
+]);
 
-async function loadPdf(bytes: Uint8Array): Promise<PDFDocument | Refusal> {
+function deadlineFromNow(): number {
+  return performance.now() + MAX_PDF_SCAN_SECONDS * MS_PER_SECOND;
+}
+
+// A file over one of the scan's limits is too heavy to check; a stream that cannot be unpacked is unreadable.
+function limitRefusal(refusal: LoadRefusal): Refusal {
+  return RESOURCE_LIMITS.has(refusal)
+    ? { ok: false, problem: 'pdf_too_complex', detail: `limit:${refusal}` }
+    : { ok: false, problem: 'unreadable', detail: `packed:${refusal}` };
+}
+
+async function loadPdf(bytes: Uint8Array, deadlineMs: number): Promise<PDFDocument | Refusal> {
   try {
-    const loaded = await withInflateLimit(() =>
-      PDFDocument.load(bytes, {
-        throwOnInvalidObject: true,
-        updateMetadata: false,
-        ignoreEncryption: true,
-      }),
+    const loaded = await withLoadLimits(
+      () =>
+        PDFDocument.load(bytes, {
+          throwOnInvalidObject: true,
+          updateMetadata: false,
+          ignoreEncryption: true,
+        }),
+      deadlineMs,
     );
-    if (!loaded.ok) return { ok: false, problem: 'unreadable', detail: `packed:${loaded.refusal}` };
+    if (!loaded.ok) return limitRefusal(loaded.refusal);
     // Encrypted strings and streams cannot be read, so nothing in them could be checked.
     return loaded.value.isEncrypted ? { ok: false, problem: 'pdf_encrypted' } : loaded.value;
   } catch {
@@ -66,36 +93,44 @@ function objectsOf(document: PDFDocument): PDFObject[] {
 }
 
 // Step 2: what changes the document before it is checked, or why it is refused.
-function prepare(document: PDFDocument): { pageCount: number; removed: PdfSanitizing } | Refusal {
+function prepare(
+  document: PDFDocument,
+): { pages: PDFDict[]; openAction: OpenActionKind | null } | Refusal {
   const openAction = removePageOnlyOpenAction(document);
   const tree = readPageTree(document);
   if (!tree.ok) return { ok: false, problem: tree.problem, detail: tree.detail };
-  const annotations = sortPageAnnotations(document, tree.pages);
+  const annotations = checkPageAnnotations(document, tree.pages);
   if (!annotations.ok) return annotations;
-  return {
-    pageCount: tree.pages.length,
-    removed: { openAction, annotations: annotations.removed },
-  };
+  return { pages: tree.pages, openAction };
 }
 
-async function checkAndWrite(document: PDFDocument): Promise<PdfScanResult> {
+function isPast(deadlineMs: number): boolean {
+  return performance.now() > deadlineMs;
+}
+
+async function checkAndWrite(document: PDFDocument, deadlineMs: number): Promise<PdfScanResult> {
   const prepared = prepare(document);
   if ('ok' in prepared) return prepared;
+  if (isPast(deadlineMs)) return limitRefusal('too_slow');
   const lookup: Lookup = (object) => document.context.lookup(object);
   const finding = firstFinding(objectsOf(document), lookup);
   if (finding) return { ok: false, ...finding };
+  const annotations = removeComments(document, prepared.pages);
   removeDocumentMetadata(document);
+  if (isPast(deadlineMs)) return limitRefusal('too_slow');
   // Neither option walks the page tree or adds a form, so the copy is the checked objects and nothing more.
   const pdf = await document.save({ addDefaultPage: false, updateFieldAppearances: false });
-  return { ok: true, pageCount: prepared.pageCount, pdf, removed: prepared.removed };
+  const removed = { openAction: prepared.openAction, annotations };
+  return { ok: true, pageCount: prepared.pages.length, pdf, removed };
 }
 
 export async function scanBookletPdf(bytes: Uint8Array): Promise<PdfScanResult> {
-  const document = await loadPdf(bytes);
+  const deadlineMs = deadlineFromNow();
+  const document = await loadPdf(bytes, deadlineMs);
   if (!(document instanceof PDFDocument)) return document;
   if (objectsOf(document).some(isObjectStream)) return { ok: false, problem: 'unreadable' };
   try {
-    return await checkAndWrite(document);
+    return await checkAndWrite(document, deadlineMs);
   } catch {
     // A file without a catalog loads, but cannot be read further.
     return { ok: false, problem: 'unreadable' };
@@ -103,12 +138,19 @@ export async function scanBookletPdf(bytes: Uint8Array): Promise<PdfScanResult> 
 }
 
 export type PublishedPageCount =
-  { ok: true; pageCount: number } | { ok: false; problem: 'unreadable' | 'pdf_too_many_pages' };
+  | { ok: true; pageCount: number }
+  | { ok: false; problem: 'unreadable' | 'pdf_too_many_pages' | 'pdf_too_complex' };
 
-// The page count of a booklet finalize published: pdf-lib's own output, read back by api/uploads/sign-pages with
-// the same once-per-node walk, so even a file that reached public-media some other way cannot hold it.
+// The page count of a booklet finalize published: pdf-lib's own output, read back by api/uploads/sign-pages under
+// the same limits and with the same once-per-node walk, so even a file that reached public-media some other way
+// cannot hold it.
 export async function countPublishedPages(bytes: Uint8Array): Promise<PublishedPageCount> {
-  const tree = readPageTree(await PDFDocument.load(bytes, { updateMetadata: false }));
+  const loaded = await withLoadLimits(
+    () => PDFDocument.load(bytes, { updateMetadata: false }),
+    deadlineFromNow(),
+  );
+  if (!loaded.ok) return { ok: false, problem: 'pdf_too_complex' };
+  const tree = readPageTree(loaded.value);
   return tree.ok
     ? { ok: true, pageCount: tree.pages.length }
     : { ok: false, problem: tree.problem };

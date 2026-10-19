@@ -116,8 +116,15 @@ function actionProblem(value: PDFObject | undefined, lookup: Lookup): Finding | 
   return isDestination ? null : { problem: 'pdf_active_content', detail: 'action:GoTo' };
 }
 
+// /Type is optional on an annotation, so one is known by /Type /Annot or by a /Subtype next to its /Rect
+// (security review of PR #14, N1).
+export function isAnnotationLike(dict: PDFDict): boolean {
+  if (exactName(dict.get(PDFName.of('Type'))) === 'Annot') return true;
+  return dict.has(PDFName.of('Rect')) && dict.get(PDFName.of('Subtype')) instanceof PDFName;
+}
+
 function annotationProblem(dict: PDFDict): Finding | null {
-  if (exactName(dict.get(PDFName.of('Type'))) !== 'Annot') return null;
+  if (!isAnnotationLike(dict)) return null;
   const subtype = exactName(dict.get(PDFName.of('Subtype')));
   const isAllowed = subtype === 'Link' || (subtype !== null && MARKUP_ANNOTATIONS.has(subtype));
   return isAllowed

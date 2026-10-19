@@ -7,6 +7,7 @@ import {
   handWrittenPdf,
   pdfWithLink,
   pdfWithScriptInObjectStream,
+  readableCopy,
 } from '../../../tests/fixtures/pdf';
 
 describe('scanBookletPdf', () => {
@@ -300,11 +301,12 @@ describe('scanBookletPdf: the published copy carries no document metadata', () =
     if (!result.ok) return;
     const copy = await republished(result.pdf);
     expect(copy.catalog.get(PDFName.of('Metadata'))).toBeUndefined();
-    const bytes = Buffer.from(result.pdf).toString('latin1');
-    expect(bytes).not.toContain('xmpmeta');
-    expect(bytes).not.toContain('Pak Budi');
-    expect(bytes).not.toContain('GPSLatitude');
-    expect(bytes).not.toContain('/Metadata');
+    // Read back with every stream inflated: the copy's compressed object streams hide text from a byte search (N2).
+    const readable = await readableCopy(result.pdf);
+    expect(readable).not.toContain('xmpmeta');
+    expect(readable).not.toContain('Pak Budi');
+    expect(readable).not.toContain('GPSLatitude');
+    expect(readable).not.toContain('/Metadata');
   });
 
   it('strips what a PDF writer stamps by default', async () => {

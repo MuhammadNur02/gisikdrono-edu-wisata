@@ -254,6 +254,8 @@ export const copy = {
         'PDF ini berisi tautan yang tidak diizinkan. Tautan di booklet hanya boleh diawali https://, mailto:, atau tel:.',
       pdf_too_many_pages:
         'Booklet maksimal 100 halaman. Pecah menjadi beberapa booklet, lalu unggah lagi satu per satu.',
+      pdf_too_complex:
+        'PDF ini terlalu berat untuk diperiksa. Ekspor ulang dari Canva atau Word, lalu unggah lagi.',
       booklet_missing: 'PDF booklet belum terunggah. Unggah PDF-nya dulu, baru halamannya.',
       already_used: 'Unggahan ini sudah diproses. Pilih file lagi untuk mengunggah ulang, ya.',
       booklet_pages_exist:

@@ -79,9 +79,14 @@ export const UPLOAD_PURPOSES = [
 export const BOOKLET_PAGE_DIGITS = 4;
 export const MAX_BOOKLET_PAGES = 100;
 
-// What pdf-lib may inflate from a booklet's object streams and cross-reference streams while it loads, all of
-// them together (security review of PR #14, L2). Ordinary booklets need a few megabytes at most.
+// What one booklet scan may cost (security review of PR #14, L2 and N3). The inflate budget is shared by every
+// object stream and cross-reference stream of the document; ordinary booklets need a few megabytes at most. Each
+// PDF object pdf-lib parses (a number, a name, an array, a dictionary) costs about 65 bytes of heap, so two million
+// keep a scan near 150 MB, far above any real booklet's count. The time limit leaves finalize room for the
+// download before it and the upload after it within the route's 60 seconds.
 export const MAX_PDF_INFLATED_BYTES = 64 * 1024 * 1024;
+export const MAX_PDF_PARSED_OBJECTS = 2_000_000;
+export const MAX_PDF_SCAN_SECONDS = 20;
 
 // docs/Security.md §8.4, decision of 2026-10-18: the only link schemes a booklet PDF may carry.
 export const BOOKLET_LINK_SCHEMES = ['https:', 'mailto:', 'tel:'];
