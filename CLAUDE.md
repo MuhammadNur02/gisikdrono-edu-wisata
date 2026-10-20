@@ -66,10 +66,10 @@ The platform is operated by a small municipal team: one Superadmin Kelurahan and
 | Structured data | `schema-dts` (types only, dev dependency) | JSON-LD builders in `src/lib/seo/json-ld.ts`, rendered by `src/components/seo/json-ld.tsx` |
 | Payments | Midtrans Snap, **redirect mode**, thin typed fetch wrapper in `src/lib/midtrans/client.ts` (no SDK) | QRIS + Virtual Account only |
 | Messaging | Meta WhatsApp Business Cloud API (Graph v21+), Resend + React Email | Outbox table `notifications` |
-| Documents | `@react-pdf/renderer`, `pdf-lib`, `qrcode`, `exceljs` | Node route handlers only |
+| Documents | `@react-pdf/renderer`, `pdf-lib`, `qrcode`, `exceljs` | Node route handlers only; `qrcode` also draws the TOTP enrolment QR as an SVG path on the server (`src/lib/utils/qr-path.ts`), since the CSP allows no `data:` image |
 | Uploads & rich text | `file-type` (magic bytes in `api/uploads/{sign,finalize}`), `pdf-lib` (booklet scan, `src/lib/uploads/pdf-scan.ts`), `pdfjs-dist` (booklet pages drawn in the staff member's browser, `src/lib/uploads/rasterise-pdf.ts`, loaded only when a booklet is uploaded), Tiptap `@tiptap/react` + `@tiptap/pm` + `@tiptap/starter-kit` + `@tiptap/extension-image` (article editor, admin only) | Allowlist renderer `src/lib/rich-text/document.ts` is shared by the editor and `RichText` (decision of 2026-10-18) |
 | Scanner / PWA | `@serwist/next`, `@yudiel/react-qr-scanner` over `barcode-detector` (native `BarcodeDetector`, ZXing-WASM fallback) | Online-only validation |
-| Bot protection & limits | Cloudflare Turnstile; Postgres `rate_limit_buckets` via `internal.rate_limit_hit` | No external rate-limit vendor |
+| Bot protection & limits | Cloudflare Turnstile (`@marsidev/react-turnstile` widget in `src/components/forms/turnstile-field.tsx`, `siteverify` only in `src/lib/turnstile.ts`); Postgres `rate_limit_buckets` via `internal.rate_limit_hit`, wrapped only by `src/lib/rate-limit.ts` with every limit and its outage mode in `src/config/rate-limits.ts` | No external rate-limit vendor; the sign-in and reset-email tokens go to Supabase Auth, which checks them itself (a token is good once) |
 | Observability | `pino` JSON logs with redaction (`src/lib/logger.ts`; custom rule `scripts/eslint-rules/no-logging-whole-records.mjs`), `@sentry/nextjs` (tunnel `/monitoring`, `sendDefaultPii: false`), `@vercel/analytics` | `/api/health` for uptime monitor |
 | Testing | Vitest (`@vitest/coverage-v8`), Playwright, pgTAP (`supabase test db`) | See §9; projects `unit` (`src/**/*.test.ts`) and `integration` (`tests/integration`) in `vitest.config.ts` |
 | Lint, format, hooks | ESLint 9 flat config (`eslint-config-next` loaded through `@eslint/eslintrc` `FlatCompat`, `typescript-eslint`, `eslint-plugin-check-file` for kebab-case filenames), Prettier + `prettier-plugin-tailwindcss`, Husky + `lint-staged`, `@commitlint/cli` + `@commitlint/config-conventional`, gitleaks | Husky is enabled once per clone with `pnpm exec husky` because `ignore-scripts=true` skips `prepare`; see §9.2 |
@@ -153,7 +153,7 @@ src/
   components/
     ui/                        shadcn primitives (generated; theme-level edits only) + thin compositions (ResponsiveDialog)
     layout/ marketing/ map/ gallery/ booklet/ packages/ products/ articles/ reviews/
-    booking/ ticket/ certificates/ seo/ forms/ providers/
+    booking/ ticket/ certificates/ seo/ forms/ providers/ auth/ (sign-in, MFA and reset forms)
     admin/{shell,kpi,data-table,scanner,charts,status,calendar}/
   lib/
     supabase/                  server.ts (cookies, RLS) | anon.ts (server, public reads, no session) | client.ts (browser, public only, no session) | admin.ts (service role, allow-listed)
