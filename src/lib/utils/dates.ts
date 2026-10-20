@@ -56,6 +56,11 @@ export function toJakartaIsoString(instant: string): string {
   return format(inJakarta(instant), "yyyy-MM-dd'T'HH:mm:ssXXX");
 }
 
+// What a datetime-local field shows for a stored instant: its Semarang wall time, '2026-10-25T19:00'.
+export function toJakartaDateTimeField(instant: string): string {
+  return format(inJakarta(instant), "yyyy-MM-dd'T'HH:mm");
+}
+
 // The Semarang month an instant falls in: '2026-11' as a key, 'November 2026' to read.
 export function jakartaMonthKey(instant: string): string {
   return format(inJakarta(instant), 'yyyy-MM');

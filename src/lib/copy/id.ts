@@ -1,4 +1,5 @@
 import { authCopy } from '@/lib/copy/auth';
+import { cmsCopy } from '@/lib/copy/cms';
 import { dashboardCopy } from '@/lib/copy/dashboard';
 import type { ActionErrorCode } from '@/types/action-result';
 import type { UploadProblem } from '@/types/upload';
@@ -30,6 +31,7 @@ export const copy = {
   },
   auth: authCopy,
   dashboard: dashboardCopy,
+  cms: cmsCopy,
   // Labels the base components read out to screen readers and show on their own controls.
   ui: {
     close: 'Tutup',
