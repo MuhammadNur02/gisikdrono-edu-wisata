@@ -16,6 +16,10 @@ export const RATE_LIMITS = {
   'password_reset:ip': { limit: 10, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
   'password_reset:ip+email': { limit: 3, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
   'password_reset:email': { limit: 10, windowSeconds: 86400, whenUnavailable: 'fail-closed' },
+  // auth/callback per visitor IP, counted before Supabase Auth verifies the link. Auth sees every verification come
+  // from this server's IP, so without it one visitor could use up Auth's per-IP verification limit for every staff
+  // member (RV-M1 of the independent review of PR #17).
+  'auth_callback:ip': { limit: 10, windowSeconds: 900, whenUnavailable: 'fail-closed' },
   // Per staff member per hour. upload_sign counts api/uploads/sign and each booklet's single api/uploads/sign-pages;
   // upload_finalize leaves room for a whole booklet (its PDF and 100 pages) and photos; upload_forbidden caps how
   // many refused attempts are recorded one by one (security review of PR #14, L6, L8).

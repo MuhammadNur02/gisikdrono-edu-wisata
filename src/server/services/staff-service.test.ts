@@ -8,6 +8,7 @@ import {
   canResetPassword,
   recordSessionRevokeFailure,
   sendPasswordResetEmail,
+  withinAuthCallbackLimit,
   withinPasswordResetLimits,
   withinSignInLimits,
 } from './staff-service';
@@ -99,6 +100,15 @@ describe('sign-in and reset limits', () => {
         limit: 5,
         windowSeconds: 900,
       },
+    ]);
+  });
+
+  // RV-M1 of the independent review of PR #17: the visitor's own count, before auth/callback asks Supabase Auth.
+  it('counts recovery links per IP, an IPv6 /64 as one', async () => {
+    await withinAuthCallbackLimit('2001:db8:1:2::7');
+
+    expect(vi.mocked(svcRateLimitHit).mock.calls.map(([, hit]) => hit)).toEqual([
+      { key: rateLimitKey('auth_callback:ip', '2001:db8:1:2::/64'), limit: 10, windowSeconds: 900 },
     ]);
   });
 

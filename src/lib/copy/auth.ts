@@ -38,6 +38,8 @@ export const authCopy = {
         'Tautan itu sudah tidak berlaku atau sudah dipakai. Minta tautan baru bila masih perlu.',
       'password-changed-sessions-remain':
         'Kata sandi sudah diganti, tetapi akun ini belum berhasil dikeluarkan dari perangkat lain. Masuk dengan kata sandi baru, lalu tekan Keluar untuk mencoba lagi. Bila tetap gagal, hubungi superadmin.',
+      'link-try-later':
+        'Tautan belum bisa dibuka sekarang. Tunggu beberapa menit, lalu buka lagi tautan dari email Anda selama masih berlaku.',
       'signed-out-here-only':
         'Anda sudah keluar dari perangkat ini, tetapi keluar dari perangkat lain belum berhasil. Masuk lagi, lalu tekan Keluar sekali lagi. Bila tetap gagal, hubungi superadmin.',
     },

@@ -26,6 +26,8 @@ export const LOGIN_NOTICES = [
   // S1 of the PR #17 review: Supabase Auth could not end the account's other sessions.
   'password-changed-sessions-remain',
   'signed-out-here-only',
+  // auth/callback's own limit or its outage: the link has not been used and still works while it lasts.
+  'link-try-later',
 ] as const;
 export type LoginNotice = (typeof LOGIN_NOTICES)[number];
 
