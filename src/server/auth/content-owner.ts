@@ -3,7 +3,7 @@ import 'server-only';
 import { cookies } from 'next/headers';
 
 import { RW_SCOPE_ALL, RW_SCOPE_COOKIE, type RwScope } from '@/config/dashboard';
-import { isRwId } from '@/config/rw';
+import { isRwId, type RwId } from '@/config/rw';
 import { copy } from '@/lib/copy/id';
 import { fail } from '@/lib/errors';
 import { parseRwScope } from '@/lib/utils/rw-scope';
@@ -43,6 +43,17 @@ export async function requireNewContentOwner(
   if (owner === undefined) return fail('FORBIDDEN');
   if (owner === null && options.rwOnly) return fail('STATE_INVALID', undefined, copy.cms.chooseRw);
   return { ok: true, owner };
+}
+
+// The RW of what a staff member writes to content that always belongs to one (activity points, RW pages).
+export async function requireRwContentOwner(
+  ctx: StaffContext,
+): Promise<{ ok: true; rwId: RwId } | ActionFailure> {
+  const target = await requireNewContentOwner(ctx, { rwOnly: true });
+  if (!target.ok) return target;
+  return target.owner === null
+    ? fail('STATE_INVALID', undefined, copy.cms.chooseRw)
+    : { ok: true, rwId: target.owner };
 }
 
 export function toContentOwner(rwId: number | null): ContentOwner | undefined {

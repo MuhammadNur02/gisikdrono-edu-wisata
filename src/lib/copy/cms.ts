@@ -43,6 +43,7 @@ export const cmsCopy = {
     slug: 'Alamat halaman (slug)',
     slugHint: 'Ikut judul sampai Anda mengubahnya sendiri.',
     photo: 'Foto',
+    removePhoto: 'Hapus foto',
     owner: 'Milik',
     statusLabels: { draft: 'Draf, belum tampil', published: 'Tayang di situs' },
     markdownHint: 'Tulis paragraf biasa. Pisahkan paragraf dengan satu baris kosong.',
