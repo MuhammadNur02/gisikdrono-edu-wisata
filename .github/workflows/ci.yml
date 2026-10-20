@@ -166,11 +166,13 @@ jobs:
       - if: steps.scope.outputs.changed == 'true'
         name: Sandbox server env for the build
         # The same obviously fake values the security job builds with (tests/fixtures/env.ts); the public
-        # values stay as the job sets them above.
+        # values stay as the job sets them above. The service-role key is the local stack's own instead (next
+        # step): the sign-in limiter runs under it and fails closed, so a fake key would refuse every sign-in.
         run: >-
           pnpm exec tsx -e "import { sandboxEnv } from './tests/fixtures/env';
           for (const [name, value] of Object.entries(sandboxEnv))
-          if (!name.startsWith('NEXT_PUBLIC_')) console.log(name + '=' + value);"
+          if (!name.startsWith('NEXT_PUBLIC_') && name !== 'SUPABASE_SERVICE_ROLE_KEY')
+          console.log(name + '=' + value);"
           >> "$GITHUB_ENV"
       - if: steps.scope.outputs.changed == 'true'
         uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
@@ -185,6 +187,9 @@ jobs:
           supabase start
           pnpm db:seed
           echo "anon_key=$(supabase status -o json | jq -r .ANON_KEY)" >> "$GITHUB_OUTPUT"
+          service_role_key="$(supabase status -o json | jq -r .SERVICE_ROLE_KEY)"
+          echo "::add-mask::$service_role_key"
+          echo "SUPABASE_SERVICE_ROLE_KEY=$service_role_key" >> "$GITHUB_ENV"
       - if: steps.scope.outputs.changed == 'true'
         env:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.stack.outputs.anon_key }}

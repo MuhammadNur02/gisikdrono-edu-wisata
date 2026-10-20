@@ -3,7 +3,8 @@ import { createEnv } from '@t3-oss/env-nextjs';
 // bundler keep only the few checks below instead of the whole library (CLAUDE.md §8 first-load budgets).
 import * as z from 'zod/mini';
 
-export const INDONESIAN_MOBILE_E164 = /^\+628\d{7,11}$/;
+// Relative, not @/: next.config.ts loads this file before the path alias exists.
+import { MOBILE_PHONE_PATTERN } from './utils/phone';
 
 // The sample numbers in .env.local and CI (+62812000…) carry six zeros in a row, which no number the
 // kelurahan publishes does. Production refuses them, so the WhatsApp button can never go live pointing
@@ -31,7 +32,7 @@ export const publicEnv = createEnv({
     NEXT_PUBLIC_SUPABASE_URL: z.url(),
     NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().check(z.minLength(1)),
     NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().check(z.minLength(1)),
-    NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: z.string().check(z.regex(INDONESIAN_MOBILE_E164)),
+    NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: z.string().check(z.regex(MOBILE_PHONE_PATTERN)),
     NEXT_PUBLIC_SENTRY_DSN: z.optional(z.url()),
   },
   // Set by Node and Vercel, not by us. VERCEL_ENV is only defined on the server side.

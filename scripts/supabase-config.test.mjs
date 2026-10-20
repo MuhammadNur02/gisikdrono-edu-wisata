@@ -57,6 +57,12 @@ describe('supabase/config.toml', () => {
     });
   });
 
+  // I5 of the independent review of PR #17: exactly one factor per account, also for factors enrolled straight
+  // through GoTrue, where the app's own check (AUTH-12) never runs.
+  it('lets an account hold one MFA factor at a time', () => {
+    expect(config('auth.mfa').max_enrolled_factors).toBe(1);
+  });
+
   it('seeds nothing on reset, so a reset of a linked project never writes development data', () => {
     expect(config('db.seed')).toEqual({ enabled: false, sql_paths: [] });
     expect(existsSync(fileURLToPath(new URL('../supabase/seed.sql', import.meta.url)))).toBe(false);
@@ -64,6 +70,32 @@ describe('supabase/config.toml', () => {
 
   it('resizes images like the Pro plan, which the public image loader relies on', () => {
     expect(config('storage.image_transformation')).toEqual({ enabled: true });
+  });
+
+  // F1 of the PR #17 review: a PKCE link left a verifier cookie in the answer of /forgot-password for staff addresses
+  // only. The token_hash link needs no cookie and is verified by auth/callback.
+  it('sends the recovery email with a token_hash link to auth/callback and nothing else', () => {
+    const template = config('auth.email.template.recovery');
+    expect(template.subject).toBe('Atur ulang kata sandi Edu Wisata Gisikdrono');
+    expect(template.content_path).toBe('./supabase/templates/recovery.html');
+
+    const html = readFileSync(
+      new URL('../supabase/templates/recovery.html', import.meta.url),
+      'utf8',
+    );
+    const links = [...html.matchAll(/href="([^"]*)"/g)].map(([, href]) => href);
+    expect(links).toEqual([
+      '{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&amp;type=recovery',
+    ]);
+    expect(html).not.toContain('{{ .ConfirmationURL }}');
+  });
+
+  // M1 of the PR #17 review: a TOTP code sent straight to GoTrue skips the app, so the lockout lives in Auth.
+  it('runs the MFA-attempt hook of 20261020080100', () => {
+    expect(config('auth.hook.mfa_verification_attempt')).toEqual({
+      enabled: true,
+      uri: 'pg-functions://postgres/public/hook_mfa_verification_attempt',
+    });
   });
 
   it('runs the access-token and password-attempt hooks of 0004', () => {

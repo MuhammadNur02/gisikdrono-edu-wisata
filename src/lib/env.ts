@@ -4,7 +4,8 @@ import { createEnv } from '@t3-oss/env-nextjs';
 import { z } from 'zod';
 
 import { findMidtransKeyProblems, MIDTRANS_MERCHANT_ID_PATTERN } from '@/lib/midtrans/environment';
-import { INDONESIAN_MOBILE_E164, publicEnv } from '@/lib/public-env';
+import { publicEnv } from '@/lib/public-env';
+import { MOBILE_PHONE_PATTERN } from '@/lib/utils/phone';
 
 const MIN_SECRET_LENGTH = 32;
 const SIGNING_KEY_BYTES = 32;
@@ -151,7 +152,7 @@ export const serverEnv = createEnv({
     CRON_SECRET: secret,
     TURNSTILE_SECRET_KEY: z.string().min(1),
     SECURITY_ALERT_EMAIL: z.email(),
-    SECURITY_ALERT_WA_PHONE: z.string().regex(INDONESIAN_MOBILE_E164),
+    SECURITY_ALERT_WA_PHONE: z.string().regex(MOBILE_PHONE_PATTERN),
   },
   extends: [publicEnv],
   experimental__runtimeEnv: {},

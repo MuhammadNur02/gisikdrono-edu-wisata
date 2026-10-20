@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MAX_CONCURRENT_PDF_SCANS, UPLOAD_LIMITS_PER_HOUR } from '@/config/uploads';
+import { RATE_LIMITS } from '@/config/rate-limits';
+import { MAX_CONCURRENT_PDF_SCANS } from '@/config/uploads';
+import { rateLimitKey } from '@/lib/rate-limit';
 import { bookletPageObjectName, bookletPdfPath } from '@/lib/uploads/paths';
 import { withScanSlot } from '@/lib/uploads/scan-slots';
 
@@ -22,7 +24,7 @@ const fake = vi.hoisted(() => ({ admin: null as FakeAdminClient | null }));
 vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => fake.admin?.client }));
 
 const REQUEST = { rwId: 5 as const, bookletId: BOOKLET_ID };
-const SIGN_KEY = `upload_sign:${OFFICER_05.userId}`;
+const SIGN_KEY = rateLimitKey('upload_sign', OFFICER_05.userId);
 const PDF_PATH = bookletPdfPath(5, BOOKLET_ID);
 
 function admin(): FakeAdminClient {
@@ -73,7 +75,7 @@ describe('api/uploads/sign-pages: the order of its checks', () => {
     }
     expect(bookletPdfDownloads()).toEqual([]);
 
-    admin().rateLimitHits.set(SIGN_KEY, UPLOAD_LIMITS_PER_HOUR.upload_sign);
+    admin().rateLimitHits.set(SIGN_KEY, RATE_LIMITS.upload_sign.limit);
     await expect(signBookletPages(OFFICER_05, REQUEST)).rejects.toMatchObject({
       code: 'RATE_LIMITED',
     });

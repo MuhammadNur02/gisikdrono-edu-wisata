@@ -1668,7 +1668,7 @@ create table public.audit_logs (
 create index audit_logs_entity_idx on public.audit_logs (entity_type, entity_id, occurred_at desc);
 create index audit_logs_actor_idx  on public.audit_logs (actor_id, occurred_at desc);
 
--- login_attempts (AO): written by public.hook_password_verification_attempt; drives the in-Auth lockout.
+-- login_attempts (AO): written by public.hook_password_verification_attempt; drives the in-Auth lockout (local stack only on the Pro plan, A3).
 create table public.login_attempts (
   id           bigint generated always as identity primary key,
   user_id      uuid,
@@ -2001,7 +2001,7 @@ No function is executable by `anon`. Public writes (OTP, bookings, reviews, DSR 
 | `verify_ledger_chain` / `verify_audit_chain` | `() returns jsonb` | Recomputes hashes; returns `{ok, checked, first_broken_id}`; failure -> critical alert |
 | `log_audit` | trigger function + `(p_action text, p_entity_type text, p_entity_id text, p_metadata jsonb)` helper | Writes `audit_logs` with chain hash |
 
-Auth hooks (`supabase_auth_admin`): `public.custom_access_token_hook(event jsonb)` and `public.hook_password_verification_attempt(event jsonb)` are thin wrappers that only check `current_user = 'supabase_auth_admin'` and delegate to `internal.staff_token_claims(p_user_id uuid) returns jsonb` and `internal.record_login_attempt(p_user_id uuid, p_succeeded boolean) returns jsonb` (records `login_attempts` with `email_hash = internal.hash_email(email)`, counts failures before believing the password, rejects from the 5th failure per user in 15 min, delays 1 s / 2 s at the 3rd and 4th, writes `login_failed` / one `login_locked` per lockout). The split lets pgTAP, which runs as `postgres`, exercise the bodies; the wrappers refuse every other caller.
+Auth hooks (`supabase_auth_admin`): `public.custom_access_token_hook(event jsonb)` and `public.hook_password_verification_attempt(event jsonb)` are thin wrappers that only check `current_user = 'supabase_auth_admin'` and delegate to `internal.staff_token_claims(p_user_id uuid) returns jsonb` and `internal.record_login_attempt(p_user_id uuid, p_succeeded boolean) returns jsonb` (records `login_attempts` with `email_hash = internal.hash_email(email)`, counts failures before believing the password, rejects from the 5th failure per user in 15 min, delays 1 s / 2 s at the 3rd and 4th, writes `login_failed` / one `login_locked` per lockout). `public.hook_mfa_verification_attempt(event jsonb)` (20261020080100, security review of PR #17) delegates the same way to `internal.record_mfa_attempt(p_user_id uuid, p_factor_id uuid, p_succeeded boolean) returns jsonb`: it counts `security_events.mfa_failed` of the user in the last 15 min before believing the code, rejects from the 5th wrong code, and writes `mfa_failed` per wrong code and one `mfa_locked` with an open `security_alerts` row (rule `mfa_locked`) per lockout. Both attempt hooks are Team/Enterprise features: on the Pro plan of A3 only `custom_access_token_hook` runs on the hosted projects, and the attempt hooks run on the local stack and in CI (decision of 2026-10-20; the controls that replace them hosted are in docs/Security.md §5.5). The split lets pgTAP, which runs as `postgres`, exercise the bodies; the wrappers refuse every other caller.
 
 ### 8.8 Storage buckets
 
@@ -2365,7 +2365,7 @@ Signature-failure burst for known `order_id`s; amount mismatch; Status API disag
 | R3 | Oversold session under concurrent bookings | Medium | High | Conditional `UPDATE … WHERE reserved_pax + pax <= capacity` under row lock, `CHECK`, `ORDER BY id`, integration test with 20 parallel bookings | Dev |
 | R4 | Quota locked by unpaid holds (bots, indecisive bookers) | High | Medium | OTP before hold; caps per phone/email/IP; unpaid share <= 50 %; short holds for large pax; `quota_pressure` + "void hold" | Admin RW |
 | R5 | Cross-RW data leakage or privilege escalation | Low | High | RLS forced everywhere; hook claims with `claims_version`; column grants; privileged RPCs; pgTAP and JWT isolation suites in CI | Dev |
-| R6 | Compromised staff account | Medium | High | Invite-only, TOTP mandatory, AAL2 restrictive policies, in-Auth lockout, step-up for critical actions, session deletion on status change, `security-alerts` | Superadmin |
+| R6 | Compromised staff account | Medium | High | Invite-only, TOTP mandatory, AAL2 restrictive policies, step-up for critical actions, session deletion on status change, `security-alerts`; on the Pro plan Auth's captcha, GoTrue's per-IP limits, leaked-password protection and Auth-log monitoring in place of the in-Auth lockout, which runs only locally (docs/Security.md R6, §5.5) | Superadmin |
 | R7 | Leak of children's or booker PII | Medium | High | Minimisation (no NIK/DOB/address/photos), masked views + audited reveals, redacted logs, retention jobs, `documents` bucket private, breach runbook 3x24 h | Superadmin / DPO |
 | R8 | WhatsApp template rejection or account restriction by Meta | Medium | Medium | Templates submitted early (Appendix B); email always in parallel; `whatsapp_enabled` switch; hosted payment link in email | Project team |
 | R9 | Midtrans outage or Status API latency | Low | Medium | Webhook returns 503 for transient errors (retry); hold preserved; "coba lagi" UX; poll fallback | Dev |
@@ -2387,7 +2387,7 @@ Signature-failure burst for known `order_id`s; amount mismatch; Status API disag
 |---|---|---|---|---|
 | A1 | WhatsApp OTP before quota reservation | Yes, mandatory; email is a link-only secondary channel | Email OTP or no verification | Removes the main defence against quota lock-out and misdelivered tickets; `FR-BOOK-06`, `create_booking` |
 | A2 | Staff MFA (TOTP) | Mandatory for `superadmin` and `admin_rw` from day one | Mandatory for superadmin only | The AAL2 restrictive policy on every staff table would need role-specific variants |
-| A3 | Supabase plan and region | Pro plan, `ap-southeast-1` (Singapore), disclosed in the privacy notice | Free plan (no backups, project pauses) | Backups, PITR, image transforms, leaked-password protection |
+| A3 | Supabase plan and region | Pro plan, `ap-southeast-1` (Singapore), disclosed in the privacy notice; it stays on Pro although the Password and MFA Verification Attempt hooks need Team or Enterprise, which leaves both lockouts to the local stack (decision of 2026-10-20, docs/Security.md §5.5) | Free plan (no backups, project pauses) | Backups, PITR, image transforms, leaked-password protection |
 | A4 | Revenue share defaults | Package 20 % kelurahan / 80 % RW treasury; add-on 90 % UMKM vendor / 10 % RW treasury; combo 20 / 40 / 40 | Any split summing to 100 % | Seed values in `0008_seed.sql` only |
 | A5 | Hold TTL | Individual 120 min; institutions 24 h; staff extension <= 14 d; quotation holds no quota | Quotation holds quota for 7 d | Larger lock-out risk; `booking_legs.status` semantics |
 | A6 | Ticket granularity | One group ticket per booking leg; officer records attendee count | Per-participant tickets | Gate throughput; PDF size; scanner UX |

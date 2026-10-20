@@ -1,12 +1,12 @@
 import { z } from 'zod';
 
+import { RATE_LIMITS } from '@/config/rate-limits';
 import { copy } from '@/lib/copy/id';
 import { publicMediaUrl } from '@/lib/images/public-media';
 import { createLogger, requestIdFrom } from '@/lib/logger';
 import { getBookletDownload } from '@/lib/queries/booklets';
 import { clientIpFrom } from '@/lib/utils/client-ip';
 import {
-  BOOKLET_DOWNLOAD_LIMIT,
   countBookletDownload,
   withinBookletDownloadLimit,
 } from '@/server/services/document-service';
@@ -61,7 +61,7 @@ export async function GET(request: Request, context: DocumentRouteContext): Prom
   try {
     if (!(await withinBookletDownloadLimit(clientIpFrom(request.headers)))) {
       log.info('rate_limited', { limit: 'booklet:download' });
-      const retryAfter = String(BOOKLET_DOWNLOAD_LIMIT.windowSeconds);
+      const retryAfter = String(RATE_LIMITS['booklet:download'].windowSeconds);
       return plainResponse(HTTP_STATUS.tooManyRequests, copy.errors.RATE_LIMITED, {
         'Retry-After': retryAfter,
       });

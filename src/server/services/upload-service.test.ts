@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MAX_IMAGE_BYTES } from '@/config/uploads';
+import { rateLimitKey } from '@/lib/rate-limit';
 import {
   bookletPageObjectName,
   parseQuarantinePath,
@@ -119,7 +120,7 @@ describe('L6: a signed upload is used once', () => {
   });
 
   it('stops a staff member after 300 finalizes in an hour, recorded once, and leaves the file alone', async () => {
-    admin().rateLimitHits.set(`upload_finalize:${OFFICER_05.userId}`, 300);
+    admin().rateLimitHits.set(rateLimitKey('upload_finalize', OFFICER_05.userId), 300);
     const upload = quarantined(await jpegPhoto());
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -281,7 +282,7 @@ describe('L11: one sign-pages per booklet', () => {
         problem: 'booklet_pages_exist',
       },
     );
-    expect(admin().rateLimitHits.get(`upload_sign:${OFFICER_05.userId}`)).toBe(1);
+    expect(admin().rateLimitHits.get(rateLimitKey('upload_sign', OFFICER_05.userId))).toBe(1);
   });
 
   it('signs again once the earlier URLs have all expired', async () => {

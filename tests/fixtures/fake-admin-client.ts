@@ -1,5 +1,6 @@
 // An in-memory stand-in for the service-role client, holding just what api/uploads/{sign,sign-pages,finalize}
-// touch: the two buckets, the staff profiles, the rate limiter and the security_events rows. Storage behaves as
+// touch: the two buckets, the staff profiles, the rate limiter (and the site_settings it reads) and the
+// security_events rows. Storage behaves as
 // Supabase does where the pipeline depends on it: a signed URL fills a path only while it is empty, an upsert
 // keeps the object's creation time, and exists() answers false with an error for a missing object.
 
@@ -101,6 +102,21 @@ function profilesApi(profiles: Map<string, FakeProfile>) {
   };
 }
 
+// site_settings by key, as src/lib/rate-limit.ts reads rate_limit_profile.
+function settingsApi(settings: Map<string, unknown>) {
+  return {
+    select: () => ({
+      eq: (_column: 'key', key: string) => ({
+        maybeSingle: () =>
+          Promise.resolve({
+            data: settings.has(key) ? { value: settings.get(key) } : null,
+            error: null,
+          }),
+      }),
+    }),
+  };
+}
+
 type RpcArgs = {
   p_key?: string;
   p_limit?: number;
@@ -149,6 +165,7 @@ export function createFakeAdminClient() {
   const publicMedia = new Map<string, StoredFile>();
   const profiles = new Map<string, FakeProfile>();
   const rateLimitHits = new Map<string, number>();
+  const settings = new Map<string, unknown>();
   // When each booklet's page claim was taken, by bookletClaimKey.
   const bookletClaims = new Map<string, number>();
   const securityEvents: Record<string, unknown>[] = [];
@@ -162,7 +179,7 @@ export function createFakeAdminClient() {
           : bucketApi(quarantine, downloads),
     },
     from: (table: string) => ({
-      ...profilesApi(profiles),
+      ...(table === 'site_settings' ? settingsApi(settings) : profilesApi(profiles)),
       insert: (row: Record<string, unknown>) => {
         if (table === 'security_events') securityEvents.push(row);
         return Promise.resolve({ error: null });
@@ -177,6 +194,7 @@ export function createFakeAdminClient() {
     publicMedia,
     profiles,
     rateLimitHits,
+    settings,
     bookletClaims,
     securityEvents,
     // Every path read back in full, in order.
@@ -211,6 +229,7 @@ export function createFakeAdminClient() {
       publicMedia.clear();
       profiles.clear();
       rateLimitHits.clear();
+      settings.clear();
       bookletClaims.clear();
       securityEvents.length = 0;
       downloads.length = 0;

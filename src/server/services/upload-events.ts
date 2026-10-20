@@ -2,10 +2,10 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { UPLOAD_LIMITS_PER_HOUR } from '@/config/uploads';
+import type { RateLimitName } from '@/config/rate-limits';
 import type { EnumValue } from '@/db/enums';
-import { svcRateLimitHit } from '@/db/rpc';
 import type { Database } from '@/db/types';
+import { isFirstRefusal, withinRateLimits } from '@/lib/rate-limit';
 import { refusalSeverity, type UploadRefusalReason } from '@/lib/uploads/outcomes';
 import type { PdfSanitizing } from '@/lib/uploads/pdf-scan';
 import type { StaffContext } from '@/server/auth/guards';
@@ -15,7 +15,10 @@ import type { StaffContext } from '@/server/auth/guards';
 
 type DatabaseClient = SupabaseClient<Database>;
 
-export type UploadLimit = keyof typeof UPLOAD_LIMITS_PER_HOUR;
+export type UploadLimit = Extract<
+  RateLimitName,
+  'upload_sign' | 'upload_finalize' | 'upload_forbidden'
+>;
 
 export type UploadEvent = {
   type: 'upload_rejected' | 'upload_sanitized' | 'rate_limited';
@@ -24,8 +27,6 @@ export type UploadEvent = {
   objectName?: string;
   details: Record<string, string | null>;
 };
-
-const SECONDS_PER_HOUR = 3600;
 
 // Ids and reasons only, never file names or links.
 export async function writeUploadEvent(
@@ -80,10 +81,9 @@ export async function withinUploadLimit(
   limit: UploadLimit,
   rwId: number | null,
 ): Promise<boolean> {
-  const window = { limit: UPLOAD_LIMITS_PER_HOUR[limit], windowSeconds: SECONDS_PER_HOUR };
-  if (await svcRateLimitHit(adminClient, { key: `${limit}:${ctx.userId}`, ...window })) return true;
-  const trip = { key: `${limit}_tripped:${ctx.userId}`, limit: 1, windowSeconds: SECONDS_PER_HOUR };
-  if (await svcRateLimitHit(adminClient, trip)) {
+  const check = { name: limit, subject: ctx.userId };
+  if (await withinRateLimits(adminClient, [check])) return true;
+  if (await isFirstRefusal(adminClient, check)) {
     const severity = limit === 'upload_forbidden' ? 'high' : 'medium';
     await writeUploadEvent(adminClient, ctx, {
       type: 'rate_limited',

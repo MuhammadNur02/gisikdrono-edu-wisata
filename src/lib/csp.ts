@@ -12,6 +12,9 @@ type CspOptions = {
   isDevelopment: boolean;
 };
 
+// The request header src/middleware.ts passes the nonce on in; Next.js reads it from the CSP header itself.
+export const NONCE_HEADER = 'x-nonce';
+
 const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com';
 const OSM_TILE_ORIGINS = ['https://tile.openstreetmap.org', 'https://*.tile.openstreetmap.org'];
 const GOOGLE_MAPS_EMBED = 'https://www.google.com/maps/embed';

@@ -2,9 +2,9 @@ import { createClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { Database } from '@/db/types';
+import { rateLimitKey } from '@/lib/rate-limit';
 
 import {
-  bookletDownloadKey,
   countBookletDownload,
   createDocumentSignedUrl,
   isDocumentPathFor,
@@ -205,16 +205,19 @@ describe('booklet downloads', () => {
 
   it('limits 30 per minute under a key that never holds the IP itself', async () => {
     const { client, requests } = clientWith({
+      'GET /rest/v1/site_settings': { status: 200, body: [{ value: 'normal' }] },
       'POST /rest/v1/rpc/svc_rate_limit_hit': { status: 200, body: true },
     });
 
     await expect(withinBookletDownloadLimit('203.0.113.7', client)).resolves.toBe(true);
 
     const [body] = bodiesOf(requests, 'POST', '/rest/v1/rpc/svc_rate_limit_hit');
-    expect(body).toMatchObject({ p_limit: 30, p_window_seconds: 60 });
+    expect(body).toEqual({
+      p_key: rateLimitKey('booklet:download', '203.0.113.7'),
+      p_limit: 30,
+      p_window_seconds: 60,
+    });
     expect(JSON.stringify(body)).not.toContain('203.0.113.7');
-    expect(bookletDownloadKey('203.0.113.7')).toMatch(/^booklet:download:[0-9a-f]{24}$/);
-    expect(bookletDownloadKey('203.0.113.7')).not.toBe(bookletDownloadKey('203.0.113.8'));
   });
 
   it('counts a download through the service-role wrapper', async () => {

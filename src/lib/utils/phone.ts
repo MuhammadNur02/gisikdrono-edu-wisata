@@ -1,5 +1,7 @@
 // Mirrors the bookings.pic_phone CHECK: Indonesian numbers in E.164, +62 then 8 to 13 digits.
 export const PHONE_PATTERN = /^\+62[0-9]{8,13}$/;
+// Indonesian mobile numbers, the only ones WhatsApp reaches: +62 8 and 7 to 11 more digits.
+export const MOBILE_PHONE_PATTERN = /^\+628\d{7,11}$/;
 
 const COUNTRY_CODE = '62';
 const E164_PREFIX = `+${COUNTRY_CODE}`;

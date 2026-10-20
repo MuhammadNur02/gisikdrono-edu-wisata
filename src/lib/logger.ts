@@ -54,6 +54,8 @@ export const LOG_EVENTS = [
   'session_changed_with_bookings',
   'quota_pressure',
   'mfa_reset',
+  'mfa_locked',
+  'session_revoke_failed',
   'internal_error',
   'job_run',
 ] as const;

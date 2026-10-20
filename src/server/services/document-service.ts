@@ -1,23 +1,17 @@
 import 'server-only';
 
-import { createHmac } from 'node:crypto';
-
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { QUARANTINE_BUCKET } from '@/config/uploads';
-import {
-  svcForgetPurgedFiles,
-  svcIncrementBookletDownload,
-  svcPurgeableFiles,
-  svcRateLimitHit,
-} from '@/db/rpc';
+import { svcForgetPurgedFiles, svcIncrementBookletDownload, svcPurgeableFiles } from '@/db/rpc';
 import type { PurgeableFile } from '@/db/rpc';
 import type { Database } from '@/db/types';
-import { serverEnv } from '@/lib/env';
 import { AppError } from '@/lib/errors';
-// See recordBookletDownload for why this module creates a service-role client.
+import { withinRateLimits } from '@/lib/rate-limit';
+// See withinBookletDownloadLimit for why this module creates a service-role client.
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { MEDIA_OWNERS } from '@/lib/uploads/paths';
+import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 
 type DatabaseClient = SupabaseClient<Database>;
 
@@ -88,35 +82,20 @@ export async function createDocumentSignedUrl(
   return data.signedUrl;
 }
 
-// Task P2.4.08: the public "Unduh PDF" of a published booklet, 30 per minute per visitor IP.
-export const BOOKLET_DOWNLOAD_LIMIT = { limit: 30, windowSeconds: 60 } as const;
-const BOOKLET_DOWNLOAD_KEY = 'booklet:download';
-const IP_KEY_LENGTH = 24;
-
-// rate_limit_buckets keeps the key for an hour or so; a keyed hash keeps visitor IPs out of the database while
-// one visitor still lands in one bucket. OTP_PEPPER is the server's pepper for exactly this kind of hash.
-export function bookletDownloadKey(clientIp: string): string {
-  const ipHash = createHmac('sha256', serverEnv.OTP_PEPPER)
-    .update(clientIp)
-    .digest('hex')
-    .slice(0, IP_KEY_LENGTH);
-  return `${BOOKLET_DOWNLOAD_KEY}:${ipHash}`;
-}
-
 // The service role is needed below because the limiter and the counter are internal functions no API role may
-// run (P1.3.24): a public counter would be a public write. The limiter is keyed by the hashed IP alone, and
-// the counter acts only on the id of a booklet the anon policy has just returned as published.
+// run (P1.3.24): a public counter would be a public write. The limiter is keyed by the visitor IP alone (hashed
+// by src/lib/rate-limit.ts), and the counter acts only on the id of a booklet the anon policy has just returned
+// as published.
 
-// True while the visitor is within the limit; checked before the booklet is even looked up, so guessing ids
-// costs the same as downloading.
+// Task P2.4.08: true while the visitor is within the booklet:download limit. It is checked before the booklet is
+// even looked up, so guessing ids costs the same as downloading.
 export function withinBookletDownloadLimit(
   clientIp: string,
   adminClient: DatabaseClient = createSupabaseAdminClient(),
 ): Promise<boolean> {
-  return svcRateLimitHit(adminClient, {
-    key: bookletDownloadKey(clientIp),
-    ...BOOKLET_DOWNLOAD_LIMIT,
-  });
+  return withinRateLimits(adminClient, [
+    { name: 'booklet:download', subject: rateLimitIpBucket(clientIp) },
+  ]);
 }
 
 // increment_booklet_download checks the status again, so an id that is not published never moves a counter

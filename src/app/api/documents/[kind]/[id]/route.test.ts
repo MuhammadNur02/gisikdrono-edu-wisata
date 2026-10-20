@@ -10,7 +10,6 @@ import { GET } from './route';
 
 vi.mock('@/lib/queries/booklets', () => ({ getBookletDownload: vi.fn() }));
 vi.mock('@/server/services/document-service', () => ({
-  BOOKLET_DOWNLOAD_LIMIT: { limit: 30, windowSeconds: 60 },
   countBookletDownload: vi.fn(),
   withinBookletDownloadLimit: vi.fn(),
 }));

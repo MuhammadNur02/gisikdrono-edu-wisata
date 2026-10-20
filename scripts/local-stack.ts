@@ -10,6 +10,9 @@ const statusSchema = z.object({
   ANON_KEY: z.string().min(1),
   SERVICE_ROLE_KEY: z.string().min(1),
   JWT_SECRET: z.string().min(1),
+  // Mailpit, which catches every email of the stack; older CLIs name it only INBUCKET_URL.
+  MAILPIT_URL: z.url().optional(),
+  INBUCKET_URL: z.url().optional(),
 });
 
 const LOCAL_HOSTNAMES = new Set(['127.0.0.1', 'localhost']);
@@ -19,6 +22,7 @@ export type LocalStack = {
   anonKey: string;
   serviceRoleKey: string;
   jwtSecret: string;
+  mailUrl: string | undefined;
 };
 
 let cachedStack: LocalStack | undefined;
@@ -40,6 +44,7 @@ export function localStack(): LocalStack {
     anonKey: status.ANON_KEY,
     serviceRoleKey: status.SERVICE_ROLE_KEY,
     jwtSecret: status.JWT_SECRET,
+    mailUrl: status.MAILPIT_URL ?? status.INBUCKET_URL,
   };
   return cachedStack;
 }
