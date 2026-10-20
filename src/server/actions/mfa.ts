@@ -76,6 +76,7 @@ export async function confirmMfaEnrolmentAction(input: unknown): Promise<ActionR
   try {
     const outcome = await confirmTotpEnrolment(parsed.data.factorId, parsed.data.code);
     if (outcome === 'expired') return fail('STATE_INVALID', undefined, text.mfa.enrollExpired);
+    if (outcome === 'duplicate') return fail('CONFLICT', undefined, text.mfa.enrollDuplicate);
     if (outcome === 'wrong_code')
       return fail('VALIDATION', { code: [text.mfa.failed] }, text.mfa.failed);
     createLogger(requestIdFrom(await headers())).info('mfa_enrolled', { userId: guard.ctx.userId });

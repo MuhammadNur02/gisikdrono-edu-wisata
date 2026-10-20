@@ -81,6 +81,8 @@ export const authCopy = {
     secretLabel: 'Tidak bisa memindai? Masukkan kunci ini secara manual:',
     enrollSubmit: 'Aktifkan',
     enrollExpired: 'Kode QR ini sudah tidak berlaku. Tampilkan kode QR baru, lalu coba lagi.',
+    enrollDuplicate:
+      'Akun ini sudah memasang aplikasi autentikator dari kode QR lain. Pakai kode dari aplikasi itu.',
     signOut: 'Keluar',
   },
   noAccess: {

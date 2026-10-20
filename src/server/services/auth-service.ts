@@ -18,7 +18,7 @@ export type PasswordSignIn =
 export type PasswordChange =
   'changed' | 'no_factor' | 'needs_totp' | 'wrong_totp' | 'weak' | 'same';
 
-export type EnrolmentConfirmation = 'confirmed' | 'wrong_code' | 'expired';
+export type EnrolmentConfirmation = 'confirmed' | 'duplicate' | 'wrong_code' | 'expired';
 
 const HTTP_TOO_MANY_REQUESTS = 429;
 const HTTP_SERVER_ERROR = 500;
@@ -105,9 +105,30 @@ export async function startTotpEnrolment(): Promise<{
   if (error) throw error;
   return { factorId: data.id, secret: data.totp.secret, uri: data.totp.uri };
 }
+// M3 of the PR #17 review: two enrolments started before either was confirmed both pass pendingTotpFactorIds, so a
+// confirmed factor is checked once more. Supabase Auth removes the other pending factors when one is confirmed, and
+// with two confirmations at the same moment it kept one of them itself (measured on the local stack), which may be
+// the other one. Should two verified factors ever remain, the one enrolled first stays, which both racing requests
+// agree on, so exactly one is left (AUTH-12).
+async function settleEnrolmentRace(
+  supabase: SessionClient,
+  factorId: string,
+): Promise<'confirmed' | 'duplicate'> {
+  const { data, error } = await supabase.auth.mfa.listFactors();
+  if (error) throw error;
+  if (!data.totp.some((factor) => factor.id === factorId)) return 'duplicate';
+  const [firstEnrolled] = [...data.totp].sort(
+    (a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
+  );
+  if (firstEnrolled?.id === factorId) return 'confirmed';
+
+  const removed = await supabase.auth.mfa.unenroll({ factorId });
+  if (removed.error) throw removed.error;
+  return 'duplicate';
+}
 
 // The first code confirms the factor and lifts the session to AAL2. A factor that is no longer pending (replaced by
-// a newer QR code, or removed) is `expired`.
+// a newer QR code, or removed) is `expired`; one that lost the race to another enrolment is removed, `duplicate`.
 export async function confirmTotpEnrolment(
   factorId: string,
   code: string,
@@ -116,7 +137,8 @@ export async function confirmTotpEnrolment(
   if (!(await pendingTotpFactorIds(supabase)).includes(factorId)) return 'expired';
   const verified = await supabase.auth.mfa.challengeAndVerify({ factorId, code });
   if (verified.error && !isRefusal(verified.error)) throw verified.error;
-  return verified.error === null ? 'confirmed' : 'wrong_code';
+  if (verified.error) return 'wrong_code';
+  return settleEnrolmentRace(supabase, factorId);
 }
 
 // The end of a recovery link (Task P2.8.01): Supabase Auth changes the password of an account with a factor only at

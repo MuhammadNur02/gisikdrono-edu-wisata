@@ -119,4 +119,17 @@ describe('confirmMfaEnrolmentAction', () => {
       error: { code: 'VALIDATION', fieldErrors: { code: [copy.auth.mfa.failed] } },
     });
   });
+
+  it('says so when another QR code of the account was confirmed first', async () => {
+    vi.mocked(confirmTotpEnrolment).mockResolvedValueOnce('duplicate');
+
+    expect(await confirmMfaEnrolmentAction({ factorId: FACTOR_ID, code: '123456' })).toEqual({
+      ok: false,
+      error: {
+        code: 'CONFLICT',
+        message:
+          'Akun ini sudah memasang aplikasi autentikator dari kode QR lain. Pakai kode dari aplikasi itu.',
+      },
+    });
+  });
 });

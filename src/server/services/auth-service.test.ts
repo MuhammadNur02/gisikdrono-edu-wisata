@@ -12,7 +12,12 @@ import {
   verifyTotp,
 } from './auth-service';
 
-type Factor = { id: string; factor_type: string; status: 'verified' | 'unverified' };
+type Factor = {
+  id: string;
+  factor_type: string;
+  status: 'verified' | 'unverified';
+  created_at?: string;
+};
 
 // The parts of the session client's auth API this service calls, each a mock a test can steer.
 const auth = vi.hoisted(() => ({
@@ -200,8 +205,58 @@ describe('TOTP enrolment', () => {
     expect(auth.mfa.enroll).not.toHaveBeenCalled();
   });
 
+  // M3 of the PR #17 review: two enrolments started before either was confirmed can both pass the check, which would
+  // leave two verified factors (and staff_token_claims would then drop the role).
+  it('removes this factor again when another one of the account was confirmed first', async () => {
+    const pendingSince = { ...PENDING, created_at: '2026-10-20T07:00:05Z' };
+    const confirmedFirst: Factor = {
+      id: 'factor-0',
+      factor_type: 'totp',
+      status: 'verified',
+      created_at: '2026-10-20T07:00:01Z',
+    };
+    auth.mfa.listFactors
+      .mockResolvedValueOnce(factors(pendingSince))
+      .mockResolvedValueOnce(factors(confirmedFirst, { ...pendingSince, status: 'verified' }));
+    auth.mfa.unenroll.mockResolvedValue({ data: {}, error: null });
+
+    expect(await confirmTotpEnrolment(PENDING.id, '123456')).toBe('duplicate');
+    expect(auth.mfa.unenroll).toHaveBeenCalledWith({ factorId: PENDING.id });
+  });
+
+  // Measured on the local stack: with two confirmations at the same moment both succeed and Supabase Auth itself
+  // keeps one verified factor, which may be the other one.
+  it('reports a factor Supabase Auth already removed in the race, removing nothing more', async () => {
+    const confirmedFirst: Factor = { id: 'factor-0', factor_type: 'totp', status: 'verified' };
+    auth.mfa.listFactors
+      .mockResolvedValueOnce(factors(PENDING))
+      .mockResolvedValueOnce(factors(confirmedFirst));
+
+    expect(await confirmTotpEnrolment(PENDING.id, '123456')).toBe('duplicate');
+    expect(auth.mfa.unenroll).not.toHaveBeenCalled();
+  });
+
+  it('keeps this factor when it was the first of the two to be enrolled', async () => {
+    const pendingSince = { ...PENDING, created_at: '2026-10-20T07:00:01Z' };
+    const enrolledLater: Factor = {
+      id: 'factor-9',
+      factor_type: 'totp',
+      status: 'verified',
+      created_at: '2026-10-20T07:00:05Z',
+    };
+    auth.mfa.listFactors
+      .mockResolvedValueOnce(factors(pendingSince))
+      .mockResolvedValueOnce(factors({ ...pendingSince, status: 'verified' }, enrolledLater));
+
+    expect(await confirmTotpEnrolment(PENDING.id, '123456')).toBe('confirmed');
+    expect(auth.mfa.unenroll).not.toHaveBeenCalled();
+  });
+
   it('confirms only the pending factor of this account', async () => {
-    auth.mfa.listFactors.mockResolvedValue(factors(PENDING));
+    auth.mfa.listFactors
+      .mockResolvedValueOnce(factors(PENDING))
+      .mockResolvedValueOnce(factors({ ...PENDING, status: 'verified' }))
+      .mockResolvedValue(factors(PENDING));
 
     expect(await confirmTotpEnrolment(PENDING.id, '123456')).toBe('confirmed');
     expect(await confirmTotpEnrolment('7a1c2d3e-4a5b-4c6d-8e7f-0123456789ab', '123456')).toBe(
