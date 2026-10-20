@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import {
   ADMIN_RW05,
@@ -33,6 +33,27 @@ test.afterAll(async () => {
 
 const isDesktop = (projectName: string) => projectName === 'desktop';
 
+const ENCODING_HEADERS = new Set(['content-encoding', 'content-length']);
+
+// The bodies of the sign-in answers in order, read on their way to the page: the form keeps its last alert when a new
+// submit never reaches the action, so only the answers show what the server said each time (RV-L4 of the independent
+// review of PR #17). The browser keeps no copy of a streamed Server Action answer to read afterwards.
+async function recordSignInAnswers(page: Page): Promise<string[]> {
+  const answers: string[] = [];
+  await page.route('**/login*', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    const response = await route.fetch();
+    const body = await response.text();
+    answers.push(body);
+    // route.fetch hands the body back decoded, so its encoding headers must not go with it.
+    const headers = Object.fromEntries(
+      Object.entries(response.headers()).filter(([name]) => !ENCODING_HEADERS.has(name)),
+    );
+    return route.fulfill({ status: response.status(), headers, body });
+  });
+  return answers;
+}
+
 test('a visitor opening the dashboard is sent to sign in, and the page is kept for later', async ({
   page,
 }) => {
@@ -47,14 +68,20 @@ test('a wrong password and an unknown address get the same answer', async ({ pag
   test.skip(!isDesktop(testInfo.project.name), 'one run of the flow is enough');
   const account = await createAccount('admin_rw');
   createdAccounts.push(account.id);
-  const sameAnswer = page.getByText('Email atau kata sandi tidak cocok.', { exact: false });
+  const message = 'Email atau kata sandi tidak cocok.';
+
+  const answers = await recordSignInAnswers(page);
 
   await page.goto('/login');
   await submitPassword(page, account.email, 'Wrong-Password-123!');
-  await expect(sameAnswer).toBeVisible(AUTH_STEP);
-
+  await expect.poll(() => answers.length, AUTH_STEP).toBe(1);
   await submitPassword(page, 'nobody@example.test', 'Wrong-Password-123!');
-  await expect(sameAnswer).toBeVisible(AUTH_STEP);
+  await expect.poll(() => answers.length, AUTH_STEP).toBe(2);
+
+  const [wrongPassword, unknownAddress] = answers;
+  expect(wrongPassword).toContain(message);
+  expect(unknownAddress).toBe(wrongPassword);
+  await expect(page.getByText(message, { exact: false })).toBeVisible(AUTH_STEP);
   await expect(page).toHaveURL(/\/login/, AUTH_STEP);
 });
 

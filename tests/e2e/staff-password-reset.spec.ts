@@ -47,12 +47,15 @@ async function askForReset(page: Page, email: string): Promise<Response> {
   return response;
 }
 
-// The names of the answer's headers, leaving out Date, which differs between any two answers.
-async function headerNames(response: Response): Promise<string[]> {
+// The answer's headers with their values, leaving out Date and the CSP nonce, which differ between any two answers.
+async function headerShape(response: Response): Promise<string[]> {
   const headers = await response.headersArray();
   return headers
-    .map((header) => header.name.toLowerCase())
-    .filter((name) => name !== 'date')
+    .filter((header) => header.name.toLowerCase() !== 'date')
+    .map(
+      (header) =>
+        `${header.name.toLowerCase()}: ${header.value.replace(/'nonce-[^']+'/g, "'nonce-…'")}`,
+    )
     .sort();
 }
 
@@ -69,7 +72,7 @@ test('a staff address and an unknown one get the same answer, and the link works
 
   expect(await staff.headerValue('set-cookie')).toBeNull();
   expect(await unknown.headerValue('set-cookie')).toBeNull();
-  expect(await headerNames(staff)).toEqual(await headerNames(unknown));
+  expect(await headerShape(staff)).toEqual(await headerShape(unknown));
 
   const link = await waitForRecoveryLink(ADMIN_RW05, askedAt);
   const elsewhere = await browser.newContext();
