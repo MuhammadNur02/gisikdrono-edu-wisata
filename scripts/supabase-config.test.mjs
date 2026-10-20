@@ -84,6 +84,14 @@ describe('supabase/config.toml', () => {
     expect(html).not.toContain('{{ .ConfirmationURL }}');
   });
 
+  // M1 of the PR #17 review: a TOTP code sent straight to GoTrue skips the app, so the lockout lives in Auth.
+  it('runs the MFA-attempt hook of 20261020080100', () => {
+    expect(config('auth.hook.mfa_verification_attempt')).toEqual({
+      enabled: true,
+      uri: 'pg-functions://postgres/public/hook_mfa_verification_attempt',
+    });
+  });
+
   it('runs the access-token and password-attempt hooks of 0004', () => {
     expect(config('auth.hook.custom_access_token')).toEqual({
       enabled: true,

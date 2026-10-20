@@ -4207,6 +4207,7 @@ export type Database = {
         Args: { p_from: string; p_rw_id: number; p_to: string }
         Returns: number
       }
+      hook_mfa_verification_attempt: { Args: { event: Json }; Returns: Json }
       hook_password_verification_attempt: {
         Args: { event: Json }
         Returns: Json

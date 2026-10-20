@@ -116,8 +116,18 @@ describe('signInWithPassword', () => {
 });
 
 describe('verifyTotp', () => {
+  // M1 of the PR #17 review: the MFA hook refuses every code while the account is locked.
+  it('tells a locked account apart from a wrong code', async () => {
+    auth.mfa.challengeAndVerify.mockResolvedValueOnce({
+      data: null,
+      error: refused(403, 'mfa_verification_rejected'),
+    });
+
+    expect(await verifyTotp('123456')).toBe('locked');
+  });
+
   it('verifies against the verified factor', async () => {
-    expect(await verifyTotp('123456')).toBe(true);
+    expect(await verifyTotp('123456')).toBe('verified');
     expect(auth.mfa.challengeAndVerify).toHaveBeenCalledWith({
       factorId: 'factor-1',
       code: '123456',
@@ -129,10 +139,10 @@ describe('verifyTotp', () => {
       data: null,
       error: refused(422, 'mfa_verification_failed'),
     });
-    expect(await verifyTotp('000000')).toBe(false);
+    expect(await verifyTotp('000000')).toBe('wrong_code');
 
     auth.mfa.listFactors.mockResolvedValueOnce(factors(PENDING));
-    expect(await verifyTotp('123456')).toBe(false);
+    expect(await verifyTotp('123456')).toBe('wrong_code');
   });
 });
 
@@ -164,6 +174,18 @@ describe('changePasswordAfterRecovery', () => {
     );
     expect(auth.updateUser).toHaveBeenCalledWith({ password: 'x' });
     expect(auth.signOut).toHaveBeenCalledWith({ scope: 'global' });
+  });
+
+  it('says so when the account is locked after too many wrong codes', async () => {
+    auth.mfa.challengeAndVerify.mockResolvedValueOnce({
+      data: null,
+      error: refused(403, 'mfa_verification_rejected'),
+    });
+
+    expect(await changePasswordAfterRecovery(RECOVERY, { password: 'x', totpCode: '123456' })).toBe(
+      'totp_locked',
+    );
+    expect(auth.updateUser).not.toHaveBeenCalled();
   });
 
   // S1 of the PR #17 review: the other devices may still be signed in, and the staff member has to know.
@@ -260,6 +282,16 @@ describe('TOTP enrolment', () => {
 
     expect(await confirmTotpEnrolment(PENDING.id, '123456')).toBe('confirmed');
     expect(auth.mfa.unenroll).not.toHaveBeenCalled();
+  });
+
+  it('tells a locked account apart from a wrong first code', async () => {
+    auth.mfa.listFactors.mockResolvedValue(factors(PENDING));
+    auth.mfa.challengeAndVerify.mockResolvedValueOnce({
+      data: null,
+      error: refused(403, 'mfa_verification_rejected'),
+    });
+
+    expect(await confirmTotpEnrolment(PENDING.id, '123456')).toBe('locked');
   });
 
   it('confirms only the pending factor of this account', async () => {

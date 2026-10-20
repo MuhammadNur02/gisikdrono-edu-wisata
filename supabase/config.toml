@@ -308,6 +308,12 @@ uri = "pg-functions://postgres/public/custom_access_token_hook"
 enabled = true
 uri = "pg-functions://postgres/public/hook_password_verification_attempt"
 
+# Locks an account after repeated wrong TOTP codes, inside Auth itself, so codes sent straight to GoTrue count too
+# (docs/Security.md §5.5; proved by tests/integration/mfa-hook.test.ts).
+[auth.hook.mfa_verification_attempt]
+enabled = true
+uri = "pg-functions://postgres/public/hook_mfa_verification_attempt"
+
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
 [auth.sms.twilio]
 enabled = false

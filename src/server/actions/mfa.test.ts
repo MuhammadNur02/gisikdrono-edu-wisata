@@ -37,7 +37,7 @@ const FACTOR_ID = '6f1c2d3e-4a5b-4c6d-8e7f-0123456789ab';
 beforeEach(() => {
   vi.mocked(verifyTurnstile).mockReset().mockResolvedValue(true);
   vi.mocked(requireUser).mockReset().mockResolvedValue({ ok: true, ctx: OFFICER_AAL1 });
-  vi.mocked(verifyTotp).mockReset().mockResolvedValue(true);
+  vi.mocked(verifyTotp).mockReset().mockResolvedValue('verified');
   vi.mocked(startTotpEnrolment).mockReset();
   vi.mocked(confirmTotpEnrolment).mockReset().mockResolvedValue('confirmed');
 });
@@ -51,10 +51,23 @@ describe('verifyMfaAction', () => {
   });
 
   it('puts a wrong code under the field', async () => {
-    vi.mocked(verifyTotp).mockResolvedValue(false);
+    vi.mocked(verifyTotp).mockResolvedValue('wrong_code');
 
     expect(await verifyMfaAction({ code: '000000', captchaToken: 't' })).toMatchObject({
       error: { code: 'VALIDATION', fieldErrors: { code: [copy.auth.mfa.failed] } },
+    });
+  });
+
+  // M1 of the PR #17 review.
+  it('says the account is locked for a while rather than that the code is wrong', async () => {
+    vi.mocked(verifyTotp).mockResolvedValue('locked');
+
+    expect(await verifyMfaAction({ code: '123456', captchaToken: 't' })).toEqual({
+      ok: false,
+      error: {
+        code: 'RATE_LIMITED',
+        message: 'Terlalu banyak kode yang salah. Coba lagi dalam 15 menit.',
+      },
     });
   });
 
@@ -117,6 +130,18 @@ describe('confirmMfaEnrolmentAction', () => {
     vi.mocked(confirmTotpEnrolment).mockResolvedValueOnce('wrong_code');
     expect(await confirmMfaEnrolmentAction({ factorId: FACTOR_ID, code: '123456' })).toMatchObject({
       error: { code: 'VALIDATION', fieldErrors: { code: [copy.auth.mfa.failed] } },
+    });
+  });
+
+  it('says the account is locked when the first codes were wrong too often', async () => {
+    vi.mocked(confirmTotpEnrolment).mockResolvedValueOnce('locked');
+
+    expect(await confirmMfaEnrolmentAction({ factorId: FACTOR_ID, code: '123456' })).toEqual({
+      ok: false,
+      error: {
+        code: 'RATE_LIMITED',
+        message: 'Terlalu banyak kode yang salah. Coba lagi dalam 15 menit.',
+      },
     });
   });
 

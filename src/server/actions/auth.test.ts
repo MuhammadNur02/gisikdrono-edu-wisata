@@ -246,6 +246,17 @@ describe('resetPasswordAction', () => {
     });
   });
 
+  it('puts the lock under the code field when the account had too many wrong codes', async () => {
+    vi.mocked(changePasswordAfterRecovery).mockResolvedValue('totp_locked');
+
+    expect(await resetPasswordAction(NEW_PASSWORD)).toMatchObject({
+      error: {
+        code: 'VALIDATION',
+        fieldErrors: { totpCode: ['Terlalu banyak kode yang salah. Coba lagi dalam 15 menit.'] },
+      },
+    });
+  });
+
   it('puts a wrong code under the code field', async () => {
     vi.mocked(changePasswordAfterRecovery).mockResolvedValue('wrong_totp');
 

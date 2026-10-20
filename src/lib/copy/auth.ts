@@ -73,6 +73,8 @@ export const authCopy = {
       'Buka aplikasi autentikator di ponsel Anda dan lihat kode untuk Edu Wisata Gisikdrono.',
     failed:
       'Kode tidak cocok atau sudah berganti. Tulis kode yang sedang tampil di aplikasi autentikator.',
+    // The MFA hook's lockout (docs/Security.md §5.5); Supabase Auth gives the same words in its own answer.
+    locked: 'Terlalu banyak kode yang salah. Coba lagi dalam 15 menit.',
     verifyTitle: 'Verifikasi dua langkah',
     verifyDescription: 'Satu langkah lagi: tulis 6 angka dari aplikasi autentikator Anda.',
     verifySubmit: 'Verifikasi',

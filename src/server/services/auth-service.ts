@@ -15,21 +15,25 @@ export type PasswordSignIn =
   | { ok: true; hasVerifiedTotp: boolean }
   | { ok: false; reason: 'captcha' | 'rate_limited' | 'refused' };
 
+export type TotpCheck = 'verified' | 'wrong_code' | 'locked';
+
 export type PasswordChange =
   | 'changed'
   | 'changed_sessions_remain'
   | 'no_factor'
   | 'needs_totp'
   | 'wrong_totp'
+  | 'totp_locked'
   | 'weak'
   | 'same';
 
-export type EnrolmentConfirmation = 'confirmed' | 'duplicate' | 'wrong_code' | 'expired';
+export type EnrolmentConfirmation = 'confirmed' | 'duplicate' | 'wrong_code' | 'locked' | 'expired';
 
 const HTTP_TOO_MANY_REQUESTS = 429;
 const HTTP_SERVER_ERROR = 500;
 const CAPTCHA_FAILED = 'captcha_failed';
 const SAME_PASSWORD = 'same_password';
+const MFA_LOCKED = 'mfa_verification_rejected';
 
 // Supabase Auth's answer to the request itself (wrong password, wrong code, a refused captcha). Anything else, a
 // network failure or a 5xx, is an outage and is thrown on, so it never reads as a wrong password.
@@ -64,16 +68,23 @@ export async function signInWithPassword(credentials: {
   };
 }
 
-// Lifts the session to AAL2 with the code of the account's verified TOTP factor. False for a wrong or stale code.
-export async function verifyTotp(code: string): Promise<boolean> {
+// Supabase Auth's answer to a TOTP code. The MFA hook of 20261020080100 refuses every code while the account is
+// locked after too many wrong ones (M1 of the PR #17 review), which reads apart from a wrong code.
+function totpCheck(error: AuthError | null): TotpCheck {
+  if (!error) return 'verified';
+  if (!isRefusal(error)) throw error;
+  return error.code === MFA_LOCKED ? 'locked' : 'wrong_code';
+}
+
+// Lifts the session to AAL2 with the code of the account's verified TOTP factor.
+export async function verifyTotp(code: string): Promise<TotpCheck> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.mfa.listFactors();
   if (error) throw error;
   const [factor] = data.totp;
-  if (!factor) return false;
+  if (!factor) return 'wrong_code';
   const verified = await supabase.auth.mfa.challengeAndVerify({ factorId: factor.id, code });
-  if (verified.error && !isRefusal(verified.error)) throw verified.error;
-  return verified.error === null;
+  return totpCheck(verified.error);
 }
 
 type SessionClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
@@ -142,8 +153,8 @@ export async function confirmTotpEnrolment(
   const supabase = await createSupabaseServerClient();
   if (!(await pendingTotpFactorIds(supabase)).includes(factorId)) return 'expired';
   const verified = await supabase.auth.mfa.challengeAndVerify({ factorId, code });
-  if (verified.error && !isRefusal(verified.error)) throw verified.error;
-  if (verified.error) return 'wrong_code';
+  const check = totpCheck(verified.error);
+  if (check !== 'verified') return check;
   return settleEnrolmentRace(supabase, factorId);
 }
 
@@ -158,7 +169,8 @@ export async function changePasswordAfterRecovery(
   if (!session.hasVerifiedTotp) return 'no_factor';
   if (!session.ctx.isAal2) {
     if (change.totpCode === undefined) return 'needs_totp';
-    if (!(await verifyTotp(change.totpCode))) return 'wrong_totp';
+    const check = await verifyTotp(change.totpCode);
+    if (check !== 'verified') return check === 'locked' ? 'totp_locked' : 'wrong_totp';
   }
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.auth.updateUser({ password: change.password });

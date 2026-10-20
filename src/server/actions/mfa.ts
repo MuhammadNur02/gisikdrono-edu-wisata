@@ -40,10 +40,14 @@ export async function verifyMfaAction(input: unknown): Promise<ActionResult<Next
   if (!guard.ok) return guard;
 
   try {
-    if (!guard.ctx.isAal2 && !(await verifyTotp(parsed.data.code))) {
-      createLogger(requestIdFrom(requestHeaders)).warn('mfa_failed', { userId: guard.ctx.userId });
-      return fail('VALIDATION', { code: [text.mfa.failed] }, text.mfa.failed);
+    const check = guard.ctx.isAal2 ? 'verified' : await verifyTotp(parsed.data.code);
+    if (check !== 'verified') {
+      const event = check === 'locked' ? 'mfa_locked' : 'mfa_failed';
+      createLogger(requestIdFrom(requestHeaders)).warn(event, { userId: guard.ctx.userId });
     }
+    if (check === 'locked') return fail('RATE_LIMITED', undefined, text.mfa.locked);
+    if (check === 'wrong_code')
+      return fail('VALIDATION', { code: [text.mfa.failed] }, text.mfa.failed);
     return ok({ redirectTo: staffNextPath(parsed.data.next) });
   } catch (error) {
     return mapError(error);
@@ -77,6 +81,7 @@ export async function confirmMfaEnrolmentAction(input: unknown): Promise<ActionR
     const outcome = await confirmTotpEnrolment(parsed.data.factorId, parsed.data.code);
     if (outcome === 'expired') return fail('STATE_INVALID', undefined, text.mfa.enrollExpired);
     if (outcome === 'duplicate') return fail('CONFLICT', undefined, text.mfa.enrollDuplicate);
+    if (outcome === 'locked') return fail('RATE_LIMITED', undefined, text.mfa.locked);
     if (outcome === 'wrong_code')
       return fail('VALIDATION', { code: [text.mfa.failed] }, text.mfa.failed);
     createLogger(requestIdFrom(await headers())).info('mfa_enrolled', { userId: guard.ctx.userId });

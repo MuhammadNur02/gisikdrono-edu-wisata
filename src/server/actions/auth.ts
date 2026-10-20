@@ -94,6 +94,7 @@ export async function requestPasswordResetAction(input: unknown): Promise<Action
 const PASSWORD_CHANGE_FAILURES = {
   needs_totp: { field: 'totpCode', message: text.validation.totpCode },
   wrong_totp: { field: 'totpCode', message: text.mfa.failed },
+  totp_locked: { field: 'totpCode', message: text.mfa.locked },
   weak: { field: 'password', message: text.reset.weak },
   same: { field: 'password', message: text.reset.same },
 } as const satisfies Record<
