@@ -3,7 +3,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { Database } from '@/db/types';
 
-import { readPublishedBooklet, removeUnusedGalleryFiles } from './media-library';
+import {
+  readPublishedBooklet,
+  removeBookletFolder,
+  removeUnusedGalleryFiles,
+} from './media-library';
 
 const PHOTO = 'rw-05/gallery/0192f3a4-5b6c-7d8e-9f01-23456789abcd.webp';
 const THUMB = 'rw-05/gallery/0192f3a4-5b6c-7d8e-9f01-23456789abcd-thumb.webp';
@@ -104,5 +108,30 @@ describe('readPublishedBooklet', () => {
   it('is null for a booklet whose PDF was never published', async () => {
     const { client } = clientWith({});
     expect(await readPublishedBooklet(client, 5, BOOKLET_ID)).toBeNull();
+  });
+});
+
+describe('removeBookletFolder', () => {
+  it("removes the booklet's PDF and its page images, named from the owner and the id", async () => {
+    const pages = `rw-05/booklets/${BOOKLET_ID}/pages`;
+    const { client, removed } = clientWith({
+      listings: {
+        [pages]: [
+          { name: '0001.webp', metadata: { size: 1 } },
+          { name: '0002.webp', metadata: { size: 1 } },
+          { name: '../../rw-08/gallery/x.webp', metadata: { size: 1 } },
+        ],
+      },
+    });
+    expect(await removeBookletFolder(client, 5, BOOKLET_ID)).toBe(3);
+    expect(removed).toEqual([
+      {
+        prefixes: [
+          `rw-05/booklets/${BOOKLET_ID}/booklet.pdf`,
+          `${pages}/0001.webp`,
+          `${pages}/0002.webp`,
+        ],
+      },
+    ]);
   });
 });

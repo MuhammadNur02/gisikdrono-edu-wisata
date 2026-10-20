@@ -69,3 +69,17 @@ export interface GalleryItemAdmin {
   sortOrder: number;
   status: EnumValue<'content_status'>;
 }
+
+export interface BookletAdmin {
+  id: string;
+  owner: ContentOwner;
+  kind: EnumValue<'booklet_kind'>;
+  slug: string;
+  title: string;
+  description: string | null;
+  pdfPath: string;
+  coverPath: string | null;
+  pageCount: number | null;
+  downloadCount: number;
+  status: EnumValue<'content_status'>;
+}

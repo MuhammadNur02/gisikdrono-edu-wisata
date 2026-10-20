@@ -99,3 +99,23 @@ export async function readPublishedBooklet(
 export function isThumbnailOf(thumbnailPath: string | null, imagePath: string): boolean {
   return thumbnailPath === null || thumbnailPath === thumbnailPathFor(imagePath);
 }
+
+// A removed booklet's PDF and page images (Task P2.9.06). Their paths follow from the owner and the id alone, never
+// from the row, so nothing outside that booklet's own folder can be named.
+export async function removeBookletFolder(
+  adminClient: DatabaseClient,
+  rwId: RwId | null,
+  bookletId: string,
+): Promise<number> {
+  const bucket = adminClient.storage.from(PUBLIC_MEDIA_BUCKET);
+  const folder = bookletPagesFolder(rwId, bookletId);
+  const pages = await bucket.list(folder, { limit: MAX_BOOKLET_PAGES + 1 });
+  if (pages.error) throw pages.error;
+  const pagePaths = pages.data
+    .filter((page) => PAGE_FILE.test(page.name))
+    .map((page) => `${folder}/${page.name}`);
+  const paths = [bookletPdfPath(rwId, bookletId), ...pagePaths];
+  const { error } = await bucket.remove(paths);
+  if (error) throw error;
+  return paths.length;
+}

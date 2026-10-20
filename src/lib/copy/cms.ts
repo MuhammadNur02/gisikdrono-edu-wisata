@@ -29,6 +29,8 @@ export const cmsCopy = {
     email: 'Tulis alamat email yang benar.',
     coordinates: 'Isi angka yang benar, atau kosongkan.',
     booklet: 'Unggah PDF booklet dulu, lalu simpan.',
+    bookletFixed:
+      'PDF booklet tidak bisa diganti. Unggah sebagai booklet baru, lalu hapus yang lama.',
     bodyTooLarge: 'Isi artikel terlalu panjang. Pecah menjadi dua artikel, ya.',
   },
   common: {
@@ -150,6 +152,11 @@ export const cmsCopy = {
     pdf: 'File PDF',
     pages: (count: number) => `${String(count)} halaman`,
     removeOnlySuper: 'Hanya superadmin yang bisa menghapus booklet.',
+    replaceHint:
+      'PDF yang sudah terunggah tidak bisa diganti. Untuk versi baru, unggah booklet baru lalu minta superadmin menghapus yang lama.',
+    downloads: (count: number) => `${String(count)} unduhan`,
+    downloadsHeading: 'Unduhan',
+    view: 'Lihat di situs',
     empty: 'Belum ada booklet.',
     emptyHint: 'Unggah booklet PDF pertama. Halamannya digambar otomatis untuk flipbook.',
     noun: 'Booklet',

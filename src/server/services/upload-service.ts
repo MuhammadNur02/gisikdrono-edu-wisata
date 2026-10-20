@@ -35,6 +35,7 @@ import type { SignBookletPagesInput, SignUploadInput } from '@/lib/validations/u
 import { hasUploadAccess, type StaffContext } from '@/server/auth/guards';
 import {
   readPublishedBooklet,
+  removeBookletFolder,
   removeUnusedGalleryFiles,
   type PublishedBooklet,
 } from '@/server/services/media-library';
@@ -313,4 +314,14 @@ export async function readPublishedBookletFiles(
   bookletId: string,
 ): Promise<PublishedBooklet | null> {
   return readPublishedBooklet(await mediaClientFor(ctx, rwId), rwId, bookletId);
+}
+
+// A booklet the superadmin removed takes its PDF and pages out of public-media, where their addresses would otherwise
+// keep working.
+export async function removeBookletFiles(
+  ctx: StaffContext,
+  rwId: RwId | null,
+  bookletId: string,
+): Promise<number> {
+  return removeBookletFolder(await mediaClientFor(ctx, rwId), rwId, bookletId);
 }
