@@ -24,6 +24,16 @@ export type StaffContext = {
 
 export type GuardResult = { ok: true; ctx: StaffContext } | ActionFailure;
 
+export type StaffRole = Exclude<AppRole, 'none'>;
+
+// What the sign-in pages and the dashboard gate need beyond the staff context: whether a TOTP factor is verified
+// (verify next, or enrol first), and how the session was opened (a recovery link leads to /reset-password).
+export type StaffSession = {
+  ctx: StaffContext;
+  hasVerifiedTotp: boolean;
+  authMethods: string[];
+};
+
 // app_role, app_rw_id and claims_version come from public.custom_access_token_hook (CLAUDE.md §6.2).
 const staffClaimsSchema = z.object({
   sub: z.string(),
@@ -34,9 +44,24 @@ const staffClaimsSchema = z.object({
   amr: z.array(z.object({ method: z.string(), timestamp: z.number() })).default([]),
 });
 
-// getUser() asks Supabase Auth whether the session is still alive; getClaims() then reads the
-// verified JWT for the role claims, which the user object does not carry.
-async function readStaffContext(): Promise<StaffContext | null> {
+type StaffClaims = z.infer<typeof staffClaimsSchema>;
+
+function contextFrom(userId: string, claims: StaffClaims): StaffContext {
+  const totpTimes = claims.amr.filter((entry) => entry.method === 'totp');
+  return {
+    userId,
+    role: claims.app_role,
+    rwId: claims.app_rw_id,
+    isAal2: claims.aal === 'aal2',
+    totpVerifiedAt: totpTimes.length > 0 ? Math.max(...totpTimes.map((e) => e.timestamp)) : null,
+    claimsVersion: claims.claims_version,
+  };
+}
+
+// getUser() asks Supabase Auth whether the session is still alive and lists its factors; getClaims() then reads
+// the verified JWT for the role claims, which the user object does not carry. getSession() is never used for this:
+// it trusts whatever the cookie says (CLAUDE.md §6.2).
+export async function readStaffSession(): Promise<StaffSession | null> {
   const supabase = await createSupabaseServerClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return null;
@@ -45,14 +70,13 @@ async function readStaffContext(): Promise<StaffContext | null> {
   const claims = staffClaimsSchema.safeParse(claimsData?.claims);
   if (!claims.success || claims.data.sub !== userData.user.id) return null;
 
-  const totpTimes = claims.data.amr.filter((entry) => entry.method === 'totp');
+  const factors = userData.user.factors ?? [];
   return {
-    userId: userData.user.id,
-    role: claims.data.app_role,
-    rwId: claims.data.app_rw_id,
-    isAal2: claims.data.aal === 'aal2',
-    totpVerifiedAt: totpTimes.length > 0 ? Math.max(...totpTimes.map((e) => e.timestamp)) : null,
-    claimsVersion: claims.data.claims_version,
+    ctx: contextFrom(userData.user.id, claims.data),
+    hasVerifiedTotp: factors.some(
+      (factor) => factor.factor_type === 'totp' && factor.status === 'verified',
+    ),
+    authMethods: claims.data.amr.map((entry) => entry.method),
   };
 }
 
@@ -66,16 +90,17 @@ function hasFreshTotp(ctx: StaffContext, maxAgeSeconds: number, nowSeconds: numb
 
 // A deactivated account keeps a valid JWT until it expires, but its role claim is already 'none'.
 export async function requireUser(): Promise<GuardResult> {
-  const ctx = await readStaffContext();
-  if (!ctx) return fail('UNAUTHENTICATED');
-  if (ctx.role === 'none') return fail('FORBIDDEN');
-  return { ok: true, ctx };
+  const session = await readStaffSession();
+  if (!session) return fail('UNAUTHENTICATED');
+  if (session.ctx.role === 'none') return fail('FORBIDDEN');
+  return { ok: true, ctx: session.ctx };
 }
 
-export async function requireRole(role: Exclude<AppRole, 'none'>): Promise<GuardResult> {
+// requireRole('superadmin') for the kelurahan's own work; the dashboard shell lets either staff role in.
+export async function requireRole(...roles: [StaffRole, ...StaffRole[]]): Promise<GuardResult> {
   const guard = await requireUser();
   if (!guard.ok) return guard;
-  return guard.ctx.role === role ? guard : fail('FORBIDDEN');
+  return roles.some((role) => role === guard.ctx.role) ? guard : fail('FORBIDDEN');
 }
 
 export async function requireRwAccess(rwId: number): Promise<GuardResult> {

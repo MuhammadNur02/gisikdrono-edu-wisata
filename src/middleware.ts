@@ -2,17 +2,34 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-import { AUTH_COOKIE_OPTIONS, DASHBOARD_PATH, LOGIN_PATH, NEXT_PARAM } from '@/config/auth';
-import { buildContentSecurityPolicy, isPrivateRoute, permissionsPolicyFor } from '@/lib/csp';
+import {
+  AUTH_COOKIE_OPTIONS,
+  DASHBOARD_PATH,
+  LOGIN_PATH,
+  MFA_ENROLL_PATH,
+  MFA_VERIFY_PATH,
+} from '@/config/auth';
+import {
+  buildContentSecurityPolicy,
+  isPrivateRoute,
+  NONCE_HEADER,
+  permissionsPolicyFor,
+} from '@/lib/csp';
 import { publicEnv } from '@/lib/public-env';
 import { canonicalGalleryPathFor } from '@/lib/utils/gallery-search';
-import { PUBLIC_PATHS } from '@/lib/utils/paths';
+import { isPathUnder, PUBLIC_PATHS } from '@/lib/utils/paths';
+import { pathWithNext } from '@/lib/utils/staff-paths';
 
 const NONCE_BYTES = 16;
 // Temporary on purpose: the page cap (GALLERY_MAX_PAGES) may change, and a browser keeps a permanent one.
 const TEMPORARY_REDIRECT = 307;
 
 type ContinueRequest = () => NextResponse;
+
+// Where a /dashboard request is sent before it may go on: signing in, or the TOTP step of the session.
+type SignInStep = typeof LOGIN_PATH | typeof MFA_VERIFY_PATH | typeof MFA_ENROLL_PATH | null;
+
+type AssuranceLevels = { currentLevel: string | null; nextLevel: string | null } | null;
 
 function createNonce(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(NONCE_BYTES));
@@ -24,18 +41,26 @@ function createNonce(): string {
 function forwardRequest(request: NextRequest, nonce: string | null, csp: string): NextResponse {
   if (nonce === null) return NextResponse.next({ request });
   const headers = new Headers(request.headers);
-  headers.set('x-nonce', nonce);
+  headers.set(NONCE_HEADER, nonce);
   headers.set('Content-Security-Policy', csp);
   return NextResponse.next({ request: { headers } });
 }
 
-// Refreshes the Supabase session cookie and returns whether someone is signed in. getUser() asks
-// Supabase Auth, so an expired or forged cookie never counts as a user (CLAUDE.md §6.2).
-async function refreshSession(
+// docs/Security.md §5.2 (AUTH-03, AUTH-13): a verified factor not used yet in this session asks for the code; no
+// verified factor at all enrols one, since profiles.mfa_required is true for every staff account.
+function mfaStepFor(levels: AssuranceLevels): SignInStep {
+  if (!levels || levels.currentLevel === 'aal2') return null;
+  return levels.nextLevel === 'aal2' ? MFA_VERIFY_PATH : MFA_ENROLL_PATH;
+}
+
+// Refreshes the Supabase session cookie and says where a dashboard request has to go first. getUser() asks Supabase
+// Auth, so an expired or forged cookie never counts as a user (CLAUDE.md §6.2). The assurance level only steers
+// this redirect; the dashboard layout's requireRole() and the AAL2 RLS policies decide what opens.
+async function signInStepFor(
   request: NextRequest,
   response: { current: NextResponse },
   continueRequest: ContinueRequest,
-) {
+): Promise<SignInStep> {
   const supabase = createServerClient(
     publicEnv.NEXT_PUBLIC_SUPABASE_URL,
     publicEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
@@ -54,19 +79,17 @@ async function refreshSession(
     },
   );
   const { data } = await supabase.auth.getUser();
-  return data.user !== null;
-}
-
-function isDashboardPath(pathname: string): boolean {
-  return pathname === DASHBOARD_PATH || pathname.startsWith(`${DASHBOARD_PATH}/`);
+  if (!data.user) return LOGIN_PATH;
+  if (!isPathUnder(request.nextUrl.pathname, DASHBOARD_PATH)) return null;
+  const { data: levels } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  return mfaStepFor(levels);
 }
 
 // A convenience redirect only; who may see what is decided by the guards and RLS (CLAUDE.md §2.3).
 // The refreshed (or cleared) auth cookies travel along so the browser does not keep a stale session.
-function redirectToLogin(request: NextRequest, refreshed: NextResponse): NextResponse {
-  const loginUrl = new URL(LOGIN_PATH, request.url);
-  loginUrl.searchParams.set(NEXT_PARAM, `${request.nextUrl.pathname}${request.nextUrl.search}`);
-  const redirect = NextResponse.redirect(loginUrl);
+function redirectToStep(request: NextRequest, step: string, refreshed: NextResponse): NextResponse {
+  const target = pathWithNext(step, `${request.nextUrl.pathname}${request.nextUrl.search}`);
+  const redirect = NextResponse.redirect(new URL(target, request.url));
   for (const cookie of refreshed.cookies.getAll()) redirect.cookies.set(cookie);
   return redirect;
 }
@@ -106,11 +129,11 @@ export async function middleware(request: NextRequest) {
   if (galleryRedirect) return withSecurityHeaders(galleryRedirect, pathname, csp);
   const continueRequest = () => forwardRequest(request, nonce, csp);
   const response = { current: continueRequest() };
-  const isSignedIn = await refreshSession(request, response, continueRequest);
+  const step = await signInStepFor(request, response, continueRequest);
 
   const result =
-    !isSignedIn && isDashboardPath(pathname)
-      ? redirectToLogin(request, response.current)
+    step !== null && isPathUnder(pathname, DASHBOARD_PATH)
+      ? redirectToStep(request, step, response.current)
       : response.current;
   return withSecurityHeaders(result, pathname, csp);
 }

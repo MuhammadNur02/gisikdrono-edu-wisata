@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   hasUploadAccess,
+  readStaffSession,
   requireAal2,
   requireFreshTotp,
   requireRole,
@@ -11,7 +12,7 @@ import {
 } from '@/server/auth/guards';
 
 const session = vi.hoisted(() => ({
-  user: null as { id: string } | null,
+  user: null as { id: string; factors?: { factor_type: string; status: string }[] } | null,
   claims: null as Record<string, unknown> | null,
 }));
 
@@ -81,6 +82,59 @@ describe('requireRole', () => {
 
     signInAs({ app_role: 'admin_rw', app_rw_id: 5 });
     expect(await requireRole('superadmin')).toMatchObject({ error: { code: 'FORBIDDEN' } });
+  });
+});
+
+describe('requireRole with several roles', () => {
+  it('lets either staff role into the dashboard shell and nobody else', async () => {
+    signInAs({ app_role: 'admin_rw', app_rw_id: 8 });
+    expect((await requireRole('superadmin', 'admin_rw')).ok).toBe(true);
+
+    signInAs({ app_role: 'none' });
+    expect(await requireRole('superadmin', 'admin_rw')).toMatchObject({
+      error: { code: 'FORBIDDEN' },
+    });
+  });
+});
+
+describe('readStaffSession', () => {
+  it('is null without a session', async () => {
+    expect(await readStaffSession()).toBeNull();
+  });
+
+  it('says whether a TOTP factor is verified and how the session was opened', async () => {
+    signInAs({
+      app_role: 'admin_rw',
+      app_rw_id: 5,
+      aal: 'aal1',
+      amr: [{ method: 'recovery', timestamp: nowSeconds }],
+    });
+    session.user = {
+      id: 'user-1',
+      factors: [
+        { factor_type: 'totp', status: 'unverified' },
+        { factor_type: 'totp', status: 'verified' },
+      ],
+    };
+
+    expect(await readStaffSession()).toMatchObject({
+      ctx: { role: 'admin_rw', isAal2: false },
+      hasVerifiedTotp: true,
+      authMethods: ['recovery'],
+    });
+  });
+
+  it('does not count a factor whose enrolment was never finished', async () => {
+    signInAs({ app_role: 'admin_rw', app_rw_id: 5, aal: 'aal1' });
+    session.user = { id: 'user-1', factors: [{ factor_type: 'totp', status: 'unverified' }] };
+
+    expect(await readStaffSession()).toMatchObject({ hasVerifiedTotp: false, authMethods: [] });
+  });
+
+  it('keeps a role-less account, so the pages can tell it apart from a signed-out visitor', async () => {
+    signInAs({ app_role: 'none' });
+
+    expect(await readStaffSession()).toMatchObject({ ctx: { role: 'none' } });
   });
 });
 

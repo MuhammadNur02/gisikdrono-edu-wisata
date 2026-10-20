@@ -1,3 +1,4 @@
+import { authCopy } from '@/lib/copy/auth';
 import type { ActionErrorCode } from '@/types/action-result';
 import type { UploadProblem } from '@/types/upload';
 
@@ -26,6 +27,7 @@ export const copy = {
   validation: {
     freeText: 'Tulis tanpa tautan, alamat situs, email, atau nomor telepon, ya.',
   },
+  auth: authCopy,
   // Labels the base components read out to screen readers and show on their own controls.
   ui: {
     close: 'Tutup',

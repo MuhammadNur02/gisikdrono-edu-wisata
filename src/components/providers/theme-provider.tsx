@@ -15,9 +15,22 @@ const THEME_SETTINGS = {
 
 export type ThemeScope = keyof typeof THEME_SETTINGS;
 
-export function ThemeProvider({ scope, children }: { scope: ThemeScope; children: ReactNode }) {
+export interface ThemeProviderProps {
+  scope: ThemeScope;
+  // The request's CSP nonce on private routes, where next-themes' inline script runs only with it (docs/Security.md
+  // §8.2). Public ISR pages have none and allow inline scripts instead.
+  nonce?: string | undefined;
+  children: ReactNode;
+}
+
+export function ThemeProvider({ scope, nonce, children }: ThemeProviderProps) {
   return (
-    <NextThemesProvider attribute="class" disableTransitionOnChange {...THEME_SETTINGS[scope]}>
+    <NextThemesProvider
+      attribute="class"
+      disableTransitionOnChange
+      nonce={nonce}
+      {...THEME_SETTINGS[scope]}
+    >
       {children}
     </NextThemesProvider>
   );

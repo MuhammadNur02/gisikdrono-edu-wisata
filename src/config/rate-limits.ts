@@ -5,6 +5,13 @@ import type { RateLimitRule } from '@/types/rate-limit';
 // open up because Postgres is busy. Only booking creation (Task P3.4.02) may fail open, and only because Turnstile
 // still stands in front of it (§4.3, BOOK-16).
 export const RATE_LIMITS = {
+  // Staff sign-in: the per-IP limit Supabase Auth keeps as well, and per IP and address the window of the Auth
+  // hook's lockout (§5.5), counted here before Auth is even asked.
+  'login:ip': { limit: 10, windowSeconds: 300, whenUnavailable: 'fail-closed' },
+  'login:ip+email': { limit: 5, windowSeconds: 900, whenUnavailable: 'fail-closed' },
+  // /forgot-password answers the same when either is used up (silent success).
+  'password_reset:ip': { limit: 3, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  'password_reset:email': { limit: 3, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
   // Per staff member per hour. upload_sign counts api/uploads/sign and each booklet's single api/uploads/sign-pages;
   // upload_finalize leaves room for a whole booklet (its PDF and 100 pages) and photos; upload_forbidden caps how
   // many refused attempts are recorded one by one (security review of PR #14, L6, L8).
