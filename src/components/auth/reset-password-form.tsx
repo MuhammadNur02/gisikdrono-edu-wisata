@@ -7,6 +7,7 @@ import { CaptchaSubmit } from '@/components/auth/captcha-submit';
 import { TotpCodeField } from '@/components/auth/totp-code-field';
 import { FormAlert } from '@/components/forms/form-alert';
 import { FormField } from '@/components/forms/form-field';
+import { PostForm } from '@/components/forms/post-form';
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { useActionForm } from '@/hooks/use-action-form';
@@ -79,7 +80,7 @@ export function ResetPasswordForm({ action, needsTotp }: ResetPasswordFormProps)
 
   return (
     <Form {...form}>
-      <form onSubmit={(event) => void submit(event)} noValidate className="space-y-5">
+      <PostForm onSubmit={submit}>
         {failure ? <FormAlert tone="danger">{failure}</FormAlert> : null}
         <PasswordFields control={form.control} />
         {needsTotp ? (
@@ -92,7 +93,7 @@ export function ResetPasswordForm({ action, needsTotp }: ResetPasswordFormProps)
           label={text.submit}
           isBusy={form.formState.isSubmitting || isNavigating}
         />
-      </form>
+      </PostForm>
     </Form>
   );
 }

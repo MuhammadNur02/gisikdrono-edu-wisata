@@ -7,6 +7,7 @@ import { AuthLink } from '@/components/auth/auth-link';
 import { CaptchaSubmit } from '@/components/auth/captcha-submit';
 import { FormAlert } from '@/components/forms/form-alert';
 import { FormField } from '@/components/forms/form-field';
+import { PostForm } from '@/components/forms/post-form';
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { FORGOT_PASSWORD_PATH } from '@/config/auth';
@@ -70,7 +71,7 @@ export function SignInForm({ action, next }: SignInFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={(event) => void submit(event)} noValidate className="space-y-5">
+      <PostForm onSubmit={submit}>
         {failure ? <FormAlert tone="danger">{failure}</FormAlert> : null}
         <CredentialFields control={form.control} />
         <CaptchaSubmit
@@ -81,7 +82,7 @@ export function SignInForm({ action, next }: SignInFormProps) {
           isBusy={form.formState.isSubmitting || isNavigating}
         />
         <AuthLink href={FORGOT_PASSWORD_PATH}>{text.forgot}</AuthLink>
-      </form>
+      </PostForm>
     </Form>
   );
 }

@@ -8,6 +8,7 @@ import { AuthLink } from '@/components/auth/auth-link';
 import { CaptchaSubmit } from '@/components/auth/captcha-submit';
 import { FormAlert } from '@/components/forms/form-alert';
 import { FormField } from '@/components/forms/form-field';
+import { PostForm } from '@/components/forms/post-form';
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { LOGIN_PATH } from '@/config/auth';
@@ -71,7 +72,7 @@ export function ForgotPasswordForm({ action }: ForgotPasswordFormProps) {
   if (isSent) return <SentNotice />;
   return (
     <Form {...form}>
-      <form onSubmit={(event) => void submit(event)} noValidate className="space-y-5">
+      <PostForm onSubmit={submit}>
         {failure ? <FormAlert tone="danger">{failure}</FormAlert> : null}
         <EmailField control={form.control} />
         <CaptchaSubmit
@@ -82,7 +83,7 @@ export function ForgotPasswordForm({ action }: ForgotPasswordFormProps) {
           isBusy={form.formState.isSubmitting}
         />
         <AuthLink href={LOGIN_PATH}>{text.back}</AuthLink>
-      </form>
+      </PostForm>
     </Form>
   );
 }

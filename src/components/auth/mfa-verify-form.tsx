@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form';
 import { CaptchaSubmit } from '@/components/auth/captcha-submit';
 import { TotpCodeField } from '@/components/auth/totp-code-field';
 import { FormAlert } from '@/components/forms/form-alert';
+import { PostForm } from '@/components/forms/post-form';
 import { Form } from '@/components/ui/form';
 import { useActionForm } from '@/hooks/use-action-form';
 import { useReplaceNavigation } from '@/hooks/use-replace-navigation';
@@ -44,7 +45,7 @@ export function MfaVerifyForm({ action, next }: MfaVerifyFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={(event) => void submit(event)} noValidate className="space-y-5">
+      <PostForm onSubmit={submit}>
         {failure ? <FormAlert tone="danger">{failure}</FormAlert> : null}
         <TotpCodeField control={form.control} name="code" description={text.codeHint} autoFocus />
         <CaptchaSubmit
@@ -54,7 +55,7 @@ export function MfaVerifyForm({ action, next }: MfaVerifyFormProps) {
           label={text.verifySubmit}
           isBusy={form.formState.isSubmitting || isNavigating}
         />
-      </form>
+      </PostForm>
     </Form>
   );
 }

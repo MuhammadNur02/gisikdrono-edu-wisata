@@ -49,7 +49,7 @@ export const authCopy = {
   reset: {
     title: 'Buat kata sandi baru',
     description:
-      'Kata sandi baru berlaku untuk semua perangkat. Setelah tersimpan, semua sesi lain ikut keluar.',
+      'Setelah tersimpan, Anda keluar dari semua perangkat, lalu masuk lagi dengan kata sandi baru.',
     password: 'Kata sandi baru',
     passwordHint: 'Minimal 12 karakter dengan huruf besar, huruf kecil, angka, dan simbol.',
     confirmPassword: 'Ulangi kata sandi baru',

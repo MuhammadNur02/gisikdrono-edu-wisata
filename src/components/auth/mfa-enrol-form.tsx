@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 import { TotpCodeField } from '@/components/auth/totp-code-field';
 import { TotpQrCode } from '@/components/auth/totp-qr-code';
 import { FormAlert } from '@/components/forms/form-alert';
+import { PostForm } from '@/components/forms/post-form';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { useActionForm } from '@/hooks/use-action-form';
@@ -103,7 +104,7 @@ function EnrolmentConfirm({ enrolment, action, next, onExpired }: EnrolmentConfi
 
   return (
     <Form {...form}>
-      <form onSubmit={(event) => void submit(event)} noValidate className="space-y-5">
+      <PostForm onSubmit={submit}>
         <EnrolmentInstructions enrolment={enrolment} />
         {failure ? <FormAlert tone="danger">{failure}</FormAlert> : null}
         <TotpCodeField control={form.control} name="code" />
@@ -115,7 +116,7 @@ function EnrolmentConfirm({ enrolment, action, next, onExpired }: EnrolmentConfi
         >
           {text.enrollSubmit}
         </Button>
-      </form>
+      </PostForm>
     </Form>
   );
 }
