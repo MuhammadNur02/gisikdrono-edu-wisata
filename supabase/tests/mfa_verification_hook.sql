@@ -3,7 +3,7 @@
 -- code is an mfa_failed event, the lock an mfa_locked event and one open security alert. Runs as postgres, which owns
 -- the functions; the hook as Auth calls it is proved through GoTrue in tests/integration/mfa-hook.test.ts.
 begin;
-select plan(19);
+select plan(20);
 
 -- Whether this session holds the transaction advisory lock pg_advisory_xact_lock(hashtext(key)), as in
 -- schema_functions.sql.
@@ -113,6 +113,22 @@ select is(
      and has_function_privilege(r.oid, 'internal.record_mfa_attempt(uuid, uuid, boolean)', 'execute')),
   null,
   'no API role can run the lockout itself'
+);
+
+-- I3 of the independent review of PR #17 (CLAUDE.md §6.2): the body checks its caller itself, so a grant added by
+-- mistake still lets no API role count attempts. The probe role gets the grant here, inside the test's transaction,
+-- so the refusal comes from the body and not from a missing privilege; the message tells the two apart.
+create role mfa_attempt_probe nologin;
+-- postgres is no superuser here, so it takes the role it created before it can set it.
+grant mfa_attempt_probe to postgres;
+grant usage on schema internal to mfa_attempt_probe;
+grant execute on function internal.record_mfa_attempt(uuid, uuid, boolean) to mfa_attempt_probe;
+select throws_ok(
+  $$set local role mfa_attempt_probe;
+    select internal.record_mfa_attempt('00000000-0000-4000-8000-0000000000a2', '00000000-0000-4000-8000-0000000000f2', false);
+    reset role$$,
+  '42501', 'record_mfa_attempt is reserved for Auth',
+  'a role that holds a grant by mistake is still refused by the body'
 );
 
 select * from finish();
