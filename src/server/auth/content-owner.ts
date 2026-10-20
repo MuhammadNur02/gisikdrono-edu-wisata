@@ -2,6 +2,7 @@ import 'server-only';
 
 import { cookies } from 'next/headers';
 
+import { SCHEDULE_RW_ID } from '@/config/cms';
 import { RW_SCOPE_ALL, RW_SCOPE_COOKIE, type RwScope } from '@/config/dashboard';
 import { isRwId, RW_IDS, type RwId } from '@/config/rw';
 import { copy } from '@/lib/copy/id';
@@ -65,6 +66,11 @@ export function listedOwners(ctx: StaffContext, scope: RwScope): ContentOwner[] 
   }
   if (ctx.role !== 'superadmin') return [];
   return scope === RW_SCOPE_ALL ? [...RW_IDS, null] : [scope];
+}
+
+// docs/PRD.md FR-ADMIN-13: RW 08's admin and the superadmin manage the performance schedules.
+export function canManageSchedules(ctx: StaffContext): boolean {
+  return ctx.role === 'superadmin' || (ctx.role === 'admin_rw' && ctx.rwId === SCHEDULE_RW_ID);
 }
 
 export function toContentOwner(rwId: number | null): ContentOwner | undefined {

@@ -33,3 +33,23 @@ export interface ActivityPointAdmin {
   sortOrder: number;
   status: EnumValue<'content_status'>;
 }
+
+// Times are ISO strings with Semarang's +07:00 offset.
+export interface ScheduleAdmin {
+  id: string;
+  title: string;
+  scheduleType: EnumValue<'schedule_type'>;
+  descriptionMd: string | null;
+  startsAt: string;
+  endsAt: string;
+  venue: string | null;
+  recurrenceRule: string | null;
+  imagePath: string | null;
+  packageId: string | null;
+  status: EnumValue<'content_status'>;
+}
+
+export interface SchedulePackageOption {
+  id: string;
+  name: string;
+}

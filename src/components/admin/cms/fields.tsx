@@ -58,6 +58,31 @@ export function TextField<TValues extends FieldValues>({
   );
 }
 
+export interface DateTimeFieldProps<TValues extends FieldValues> extends FieldBase<TValues> {
+  name: FieldPathByValue<TValues, string | null>;
+}
+
+// A moment in Semarang time, as the browser's own picker writes it ('2026-10-25T19:00'); jakartaDateTimeSchema adds the
+// offset.
+export function DateTimeField<TValues extends FieldValues>({
+  name,
+  ...base
+}: DateTimeFieldProps<TValues>) {
+  return (
+    <FormField
+      {...base}
+      name={name}
+      render={(field) => (
+        <Input
+          {...field}
+          type="datetime-local"
+          value={typeof field.value === 'string' ? field.value : ''}
+        />
+      )}
+    />
+  );
+}
+
 export interface NumberInputFieldProps<TValues extends FieldValues> extends FieldBase<TValues> {
   // A nullable column, or one that is never NULL with emptyAs.
   name: FieldPathByValue<TValues, number | null> | FieldPathByValue<TValues, number>;

@@ -1,0 +1,174 @@
+import 'server-only';
+
+import { rrulestr } from 'rrule';
+
+import { SCHEDULE_RW_ID } from '@/config/cms';
+import type { RwId } from '@/config/rw';
+import type { Tables } from '@/db/types';
+import { copy } from '@/lib/copy/id';
+import { AppError } from '@/lib/errors';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { isPublishedImagePathFor } from '@/lib/uploads/paths';
+import { toJakartaIsoString } from '@/lib/utils/dates';
+import type { ScheduleValues, UpdateScheduleValues } from '@/lib/validations/schedule';
+import { toContentOwner } from '@/server/auth/content-owner';
+import { rowOrNotFound } from '@/server/services/content-errors';
+import type { ScheduleAdmin, SchedulePackageOption } from '@/types/cms';
+
+// RW 08's performance schedules through the session client, so the performance_schedules policies, the
+// package-RW trigger and the AAL2 policy decide (0005). Every write names the RW as well as the id.
+
+const COLUMNS =
+  'id, rw_id, title, schedule_type, description_md, starts_at, ends_at, venue, recurrence_rule, image_path, package_id, status';
+
+type ScheduleRow = Pick<
+  Tables<'performance_schedules'>,
+  | 'id'
+  | 'rw_id'
+  | 'title'
+  | 'schedule_type'
+  | 'description_md'
+  | 'starts_at'
+  | 'ends_at'
+  | 'venue'
+  | 'recurrence_rule'
+  | 'image_path'
+  | 'package_id'
+  | 'status'
+>;
+
+function toScheduleAdmin(row: ScheduleRow): ScheduleAdmin {
+  return {
+    id: row.id,
+    title: row.title,
+    scheduleType: row.schedule_type,
+    descriptionMd: row.description_md,
+    startsAt: toJakartaIsoString(row.starts_at),
+    endsAt: toJakartaIsoString(row.ends_at),
+    venue: row.venue,
+    recurrenceRule: row.recurrence_rule,
+    imagePath: row.image_path,
+    packageId: row.package_id,
+    status: row.status,
+  };
+}
+
+function columnsOf(values: ScheduleValues) {
+  return {
+    title: values.title,
+    schedule_type: values.scheduleType,
+    description_md: values.descriptionMd,
+    starts_at: values.startsAt,
+    ends_at: values.endsAt,
+    venue: values.venue,
+    recurrence_rule: values.recurrenceRule,
+    image_path: values.imagePath,
+    package_id: values.packageId,
+    status: values.status,
+  };
+}
+
+// The same parser the public schedule page expands the rule with (src/lib/utils/schedules.ts).
+function checkRecurrence(rule: string | null): void {
+  if (rule === null) return;
+  try {
+    rrulestr(rule);
+  } catch {
+    throw new AppError('VALIDATION', copy.cms.validation.recurrence);
+  }
+}
+
+function checkImage(path: string | null, current: string | null): void {
+  if (path === null || path === current) return;
+  if (!isPublishedImagePathFor(path, { rwId: SCHEDULE_RW_ID, purpose: 'gallery' })) {
+    throw new AppError('VALIDATION', copy.cms.validation.image);
+  }
+}
+
+export async function listSchedulesForStaff(): Promise<ScheduleAdmin[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('performance_schedules')
+    .select(COLUMNS)
+    .eq('rw_id', SCHEDULE_RW_ID)
+    .order('starts_at', { ascending: false });
+  if (error) throw error;
+  return data.map(toScheduleAdmin);
+}
+
+// The packages a schedule may link: RW 08's own (performance_schedules_package_rw_guard, 0005).
+export async function listSchedulePackages(): Promise<SchedulePackageOption[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('tour_packages')
+    .select('id, name')
+    .eq('rw_id', SCHEDULE_RW_ID)
+    .order('name');
+  if (error) throw error;
+  return data.map((row) => ({ id: row.id, name: row.name }));
+}
+
+async function readSchedule(id: string): Promise<(ScheduleAdmin & { rwId: RwId }) | null> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('performance_schedules')
+    .select(COLUMNS)
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const rwId = toContentOwner(data.rw_id);
+  if (rwId === null || rwId === undefined) throw new Error('schedule without a known RW');
+  return { ...toScheduleAdmin(data), rwId };
+}
+
+export async function readScheduleOwner(id: string): Promise<RwId | undefined> {
+  return (await readSchedule(id))?.rwId;
+}
+
+export async function createSchedule(
+  createdBy: string,
+  values: ScheduleValues,
+): Promise<ScheduleAdmin> {
+  checkRecurrence(values.recurrenceRule);
+  checkImage(values.imagePath, null);
+  // Every column is named by columnsOf; the RW is RW 08's, the creator the signed-in staff member.
+  const row = { rw_id: SCHEDULE_RW_ID, created_by: createdBy, ...columnsOf(values) };
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('performance_schedules')
+    .insert(row)
+    .select(COLUMNS)
+    .single();
+  if (error) throw error;
+  return toScheduleAdmin(data);
+}
+
+export async function updateSchedule(values: UpdateScheduleValues): Promise<ScheduleAdmin> {
+  const current = rowOrNotFound(await readSchedule(values.id));
+  checkRecurrence(values.recurrenceRule);
+  checkImage(values.imagePath, current.imagePath);
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('performance_schedules')
+    .update(columnsOf(values))
+    .eq('id', values.id)
+    .eq('rw_id', SCHEDULE_RW_ID)
+    .select(COLUMNS)
+    .maybeSingle();
+  if (error) throw error;
+  return toScheduleAdmin(rowOrNotFound(data));
+}
+
+export async function removeSchedule(id: string): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('performance_schedules')
+    .delete()
+    .eq('id', id)
+    .eq('rw_id', SCHEDULE_RW_ID)
+    .select('id')
+    .maybeSingle();
+  if (error) throw error;
+  rowOrNotFound(data);
+}
