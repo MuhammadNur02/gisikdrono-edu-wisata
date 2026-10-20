@@ -3,12 +3,13 @@
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
 import { useState, type Ref } from 'react';
 
+import type { TurnstileAction } from '@/config/auth';
 import { copy } from '@/lib/copy/id';
 import { publicEnv } from '@/lib/public-env';
 
 export interface TurnstileFieldProps {
-  // Which form the token is for; Cloudflare reports it with the token (letters, digits, - and _ only).
-  action: string;
+  // Which form the token is for; siteverify reports it back and verifyTurnstile checks it.
+  action: TurnstileAction;
   // An empty string whenever the token is gone (expired or failed), so the form cannot send a stale one.
   onToken: (token: string) => void;
   // The form's own message for the field, such as "wait until the check is done".

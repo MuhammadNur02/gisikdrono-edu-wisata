@@ -4,7 +4,11 @@ import { isIP } from 'node:net';
 
 import { z } from 'zod';
 
-import { TURNSTILE_MAX_TOKEN_AGE_SECONDS, TURNSTILE_TIMEOUT_MS } from '@/config/auth';
+import {
+  TURNSTILE_MAX_TOKEN_AGE_SECONDS,
+  TURNSTILE_TIMEOUT_MS,
+  type TurnstileAction,
+} from '@/config/auth';
 import { serverEnv } from '@/lib/env';
 import { publicEnv } from '@/lib/public-env';
 
@@ -18,17 +22,23 @@ const siteverifySchema = z.object({
   success: z.boolean(),
   hostname: z.string().optional(),
   challenge_ts: z.string().optional(),
+  action: z.string().optional(),
   metadata: z.object({ result_with_testing_key: z.boolean().optional() }).optional(),
 });
 
 type SiteverifyResult = z.infer<typeof siteverifySchema>;
 
-// Cloudflare's testing keys pass every token and report example.com, which is fine anywhere but production.
-function isOurHostname(result: SiteverifyResult): boolean {
+// Cloudflare's testing keys pass every token, report example.com and name no action, which is fine anywhere but
+// production. Any other answer must name this site and the form the widget was rendered for, so a token solved on
+// one form cannot be spent on another (I1 of the PR #17 review).
+function isForThisForm(result: SiteverifyResult, expectedAction: TurnstileAction): boolean {
   if (result.metadata?.result_with_testing_key === true) {
     return publicEnv.VERCEL_ENV !== 'production';
   }
-  return result.hostname === new URL(publicEnv.NEXT_PUBLIC_SITE_URL).hostname;
+  return (
+    result.hostname === new URL(publicEnv.NEXT_PUBLIC_SITE_URL).hostname &&
+    result.action === expectedAction
+  );
 }
 
 function isFresh(challengeTs: string | undefined, nowMs: number): boolean {
@@ -52,15 +62,20 @@ async function askCloudflare(token: string, remoteIp: string): Promise<unknown> 
   return response.json();
 }
 
-// True only when Cloudflare says the token is valid, was issued for this site and is under five minutes old.
-// Cloudflare out of reach, a timeout or an answer of another shape refuses the form (fail-closed, RL-04).
-export async function verifyTurnstile(token: string, remoteIp: string): Promise<boolean> {
+// True only when Cloudflare says the token is valid, was issued on this site for this form and is under five
+// minutes old. Cloudflare out of reach, a timeout or an answer of another shape refuses the form (fail-closed,
+// RL-04).
+export async function verifyTurnstile(
+  token: string,
+  remoteIp: string,
+  expectedAction: TurnstileAction,
+): Promise<boolean> {
   try {
     const result = siteverifySchema.safeParse(await askCloudflare(token, remoteIp));
     return (
       result.success &&
       result.data.success &&
-      isOurHostname(result.data) &&
+      isForThisForm(result.data, expectedAction) &&
       isFresh(result.data.challenge_ts, Date.now())
     );
   } catch {

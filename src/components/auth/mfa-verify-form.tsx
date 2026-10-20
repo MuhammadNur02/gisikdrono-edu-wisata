@@ -8,6 +8,7 @@ import { TotpCodeField } from '@/components/auth/totp-code-field';
 import { FormAlert } from '@/components/forms/form-alert';
 import { PostForm } from '@/components/forms/post-form';
 import { Form } from '@/components/ui/form';
+import { TURNSTILE_ACTIONS } from '@/config/auth';
 import { useActionForm } from '@/hooks/use-action-form';
 import { useReplaceNavigation } from '@/hooks/use-replace-navigation';
 import { useTurnstileToken } from '@/hooks/use-turnstile-token';
@@ -50,7 +51,7 @@ export function MfaVerifyForm({ action, next }: MfaVerifyFormProps) {
         <TotpCodeField control={form.control} name="code" description={text.codeHint} autoFocus />
         <CaptchaSubmit
           captcha={captcha}
-          action="mfa_verify"
+          action={TURNSTILE_ACTIONS.mfaVerify}
           error={form.formState.errors.captchaToken?.message}
           label={text.verifySubmit}
           isBusy={form.formState.isSubmitting || isNavigating}

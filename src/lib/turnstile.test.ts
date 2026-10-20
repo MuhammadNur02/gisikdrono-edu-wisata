@@ -44,9 +44,14 @@ afterEach(() => {
 
 describe('verifyTurnstile', () => {
   it('accepts a fresh token issued for this site, sending the secret and the visitor IP', async () => {
-    cloudflareAnswers({ success: true, hostname: '127.0.0.1', challenge_ts: ONE_MINUTE_AGO });
+    cloudflareAnswers({
+      success: true,
+      hostname: '127.0.0.1',
+      challenge_ts: ONE_MINUTE_AGO,
+      action: 'mfa_verify',
+    });
 
-    await expect(verifyTurnstile('token-1', '203.0.113.7')).resolves.toBe(true);
+    await expect(verifyTurnstile('token-1', '203.0.113.7', 'mfa_verify')).resolves.toBe(true);
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       'https://challenges.cloudflare.com/turnstile/v0/siteverify',
     );
@@ -58,9 +63,14 @@ describe('verifyTurnstile', () => {
   });
 
   it('leaves out an address that is not an IP', async () => {
-    cloudflareAnswers({ success: true, hostname: '127.0.0.1', challenge_ts: ONE_MINUTE_AGO });
+    cloudflareAnswers({
+      success: true,
+      hostname: '127.0.0.1',
+      challenge_ts: ONE_MINUTE_AGO,
+      action: 'mfa_verify',
+    });
 
-    await verifyTurnstile('token-1', 'unknown');
+    await verifyTurnstile('token-1', 'unknown', 'mfa_verify');
 
     expect(sentForm().has('remoteip')).toBe(false);
   });
@@ -75,20 +85,32 @@ describe('verifyTurnstile', () => {
       'the token is over five minutes old',
       { success: true, hostname: '127.0.0.1', challenge_ts: SIX_MINUTES_AGO },
     ],
-    ['the answer has no issue time', { success: true, hostname: '127.0.0.1' }],
+    [
+      'the answer has no issue time',
+      { success: true, hostname: '127.0.0.1', action: 'mfa_verify' },
+    ],
+    [
+      'the token was made for another form',
+      { success: true, hostname: '127.0.0.1', challenge_ts: ONE_MINUTE_AGO, action: 'login' },
+    ],
+    [
+      'the answer names no form',
+      { success: true, hostname: '127.0.0.1', challenge_ts: ONE_MINUTE_AGO },
+    ],
     ['the answer has another shape', { ok: 'yes' }],
   ])('refuses when %s', async (_case, answer) => {
     cloudflareAnswers(answer);
 
-    await expect(verifyTurnstile('token-1', '203.0.113.7')).resolves.toBe(false);
+    await expect(verifyTurnstile('token-1', '203.0.113.7', 'mfa_verify')).resolves.toBe(false);
   });
 
   it('refuses when Cloudflare cannot be reached in time', async () => {
     fetchMock.mockRejectedValue(new DOMException('The operation timed out.', 'TimeoutError'));
 
-    await expect(verifyTurnstile('token-1', '203.0.113.7')).resolves.toBe(false);
+    await expect(verifyTurnstile('token-1', '203.0.113.7', 'mfa_verify')).resolves.toBe(false);
   });
 
+  // Cloudflare's testing keys answer without an action, so outside production the form cannot be checked.
   it('takes a testing-key answer outside production only', async () => {
     const testingAnswer = {
       success: true,
@@ -97,10 +119,10 @@ describe('verifyTurnstile', () => {
       metadata: { result_with_testing_key: true },
     };
     cloudflareAnswers(testingAnswer);
-    await expect(verifyTurnstile('token-1', '203.0.113.7')).resolves.toBe(true);
+    await expect(verifyTurnstile('token-1', '203.0.113.7', 'mfa_verify')).resolves.toBe(true);
 
     deployment.vercelEnv = 'production';
     cloudflareAnswers(testingAnswer);
-    await expect(verifyTurnstile('token-1', '203.0.113.7')).resolves.toBe(false);
+    await expect(verifyTurnstile('token-1', '203.0.113.7', 'mfa_verify')).resolves.toBe(false);
   });
 });

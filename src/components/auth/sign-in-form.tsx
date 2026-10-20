@@ -10,7 +10,7 @@ import { FormField } from '@/components/forms/form-field';
 import { PostForm } from '@/components/forms/post-form';
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { FORGOT_PASSWORD_PATH } from '@/config/auth';
+import { FORGOT_PASSWORD_PATH, TURNSTILE_ACTIONS } from '@/config/auth';
 import { useActionForm } from '@/hooks/use-action-form';
 import { useReplaceNavigation } from '@/hooks/use-replace-navigation';
 import { useTurnstileToken } from '@/hooks/use-turnstile-token';
@@ -76,7 +76,7 @@ export function SignInForm({ action, next }: SignInFormProps) {
         <CredentialFields control={form.control} />
         <CaptchaSubmit
           captcha={captcha}
-          action="login"
+          action={TURNSTILE_ACTIONS.signIn}
           error={form.formState.errors.captchaToken?.message}
           label={text.submit}
           isBusy={form.formState.isSubmitting || isNavigating}

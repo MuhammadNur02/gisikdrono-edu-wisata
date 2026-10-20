@@ -11,7 +11,7 @@ import { FormField } from '@/components/forms/form-field';
 import { PostForm } from '@/components/forms/post-form';
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { LOGIN_PATH } from '@/config/auth';
+import { LOGIN_PATH, TURNSTILE_ACTIONS } from '@/config/auth';
 import { useActionForm } from '@/hooks/use-action-form';
 import { useTurnstileToken } from '@/hooks/use-turnstile-token';
 import { copy } from '@/lib/copy/id';
@@ -77,7 +77,7 @@ export function ForgotPasswordForm({ action }: ForgotPasswordFormProps) {
         <EmailField control={form.control} />
         <CaptchaSubmit
           captcha={captcha}
-          action="password_reset"
+          action={TURNSTILE_ACTIONS.passwordReset}
           error={form.formState.errors.captchaToken?.message}
           label={text.submit}
           isBusy={form.formState.isSubmitting}

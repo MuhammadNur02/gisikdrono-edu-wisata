@@ -10,6 +10,7 @@ import { FormField } from '@/components/forms/form-field';
 import { PostForm } from '@/components/forms/post-form';
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { TURNSTILE_ACTIONS } from '@/config/auth';
 import { useActionForm } from '@/hooks/use-action-form';
 import { useReplaceNavigation } from '@/hooks/use-replace-navigation';
 import { useTurnstileToken } from '@/hooks/use-turnstile-token';
@@ -88,7 +89,7 @@ export function ResetPasswordForm({ action, needsTotp }: ResetPasswordFormProps)
         ) : null}
         <CaptchaSubmit
           captcha={captcha}
-          action="password_change"
+          action={TURNSTILE_ACTIONS.passwordChange}
           error={form.formState.errors.captchaToken?.message}
           label={text.submit}
           isBusy={form.formState.isSubmitting || isNavigating}

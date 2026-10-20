@@ -2,6 +2,7 @@
 
 import { headers } from 'next/headers';
 
+import { TURNSTILE_ACTIONS } from '@/config/auth';
 import { copy } from '@/lib/copy/id';
 import { fail, mapError, ok } from '@/lib/errors';
 import { createLogger, requestIdFrom } from '@/lib/logger';
@@ -29,7 +30,11 @@ export async function verifyMfaAction(input: unknown): Promise<ActionResult<Next
   const parsed = verifyMfaSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
   const requestHeaders = await headers();
-  const isHuman = await verifyTurnstile(parsed.data.captchaToken, clientIpFrom(requestHeaders));
+  const isHuman = await verifyTurnstile(
+    parsed.data.captchaToken,
+    clientIpFrom(requestHeaders),
+    TURNSTILE_ACTIONS.mfaVerify,
+  );
   if (!isHuman) return fail('VALIDATION', undefined, text.signIn.captchaFailed);
   const guard = await requireUser();
   if (!guard.ok) return guard;

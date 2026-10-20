@@ -33,3 +33,14 @@ export const PASSWORD_RESET_ANSWER_MS = 2000;
 // docs/Security.md §8.3 and §4.3: what Turnstile's siteverify must say about a token.
 export const TURNSTILE_MAX_TOKEN_AGE_SECONDS = 300;
 export const TURNSTILE_TIMEOUT_MS = 5000;
+
+// Turnstile's `action` for each form (letters, digits, - and _ only). The widget sends it with the token, and
+// verifyTurnstile refuses a token whose answer names another form (I1 of the PR #17 review). Sign-in's token is
+// checked by Supabase Auth itself, so its action is only reported in Cloudflare's analytics.
+export const TURNSTILE_ACTIONS = {
+  signIn: 'login',
+  passwordReset: 'password_reset',
+  passwordChange: 'password_change',
+  mfaVerify: 'mfa_verify',
+} as const;
+export type TurnstileAction = (typeof TURNSTILE_ACTIONS)[keyof typeof TURNSTILE_ACTIONS];

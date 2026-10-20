@@ -2,7 +2,12 @@
 
 import { headers } from 'next/headers';
 
-import { LOGIN_NOTICE_PARAM, LOGIN_PATH, PASSWORD_RESET_ANSWER_MS } from '@/config/auth';
+import {
+  LOGIN_NOTICE_PARAM,
+  LOGIN_PATH,
+  PASSWORD_RESET_ANSWER_MS,
+  TURNSTILE_ACTIONS,
+} from '@/config/auth';
 import { copy } from '@/lib/copy/id';
 import { fail, mapError, ok } from '@/lib/errors';
 import { verifyTurnstile } from '@/lib/turnstile';
@@ -86,7 +91,11 @@ const PASSWORD_CHANGE_FAILURES = {
 export async function resetPasswordAction(input: unknown): Promise<ActionResult<NextStep>> {
   const parsed = resetPasswordSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
-  const isHuman = await verifyTurnstile(parsed.data.captchaToken, clientIpFrom(await headers()));
+  const isHuman = await verifyTurnstile(
+    parsed.data.captchaToken,
+    clientIpFrom(await headers()),
+    TURNSTILE_ACTIONS.passwordChange,
+  );
   if (!isHuman) return fail('VALIDATION', undefined, text.signIn.captchaFailed);
 
   const session = await readStaffSession();

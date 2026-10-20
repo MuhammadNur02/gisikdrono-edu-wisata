@@ -5,12 +5,12 @@ import type { RefObject } from 'react';
 
 import { TurnstileField } from '@/components/forms/turnstile-field';
 import { Button } from '@/components/ui/button';
+import type { TurnstileAction } from '@/config/auth';
 
 export interface CaptchaSubmitProps {
   // From useTurnstileToken.
   captcha: { ref: RefObject<TurnstileInstance | undefined>; onToken: (token: string) => void };
-  // Turnstile's action name for the form, such as `login`.
-  action: string;
+  action: TurnstileAction;
   error?: string | undefined;
   label: string;
   isBusy: boolean;
