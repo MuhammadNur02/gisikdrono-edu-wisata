@@ -9,6 +9,6 @@ export function contentOwnerLabel(owner: ContentOwner): string {
 }
 
 // galleries.rw_id NULL is the kelurahan's gallery, which has a revalidation tag of its own.
-export function galleryOwnerOf(owner: ContentOwner): GalleryOwner {
+export function contentOwnerTagOf(owner: ContentOwner): GalleryOwner {
   return owner ?? 'kelurahan';
 }

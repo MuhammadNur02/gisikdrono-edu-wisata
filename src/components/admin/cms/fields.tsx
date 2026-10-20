@@ -32,7 +32,7 @@ export interface TextFieldProps<TValues extends FieldValues> extends FieldBase<T
   maxLength: number;
   // A Textarea that grows, for Markdown and longer text.
   multiline?: boolean;
-  type?: 'text' | 'email' | 'url';
+  type?: 'text' | 'email' | 'url' | 'date';
 }
 
 export function TextField<TValues extends FieldValues>({

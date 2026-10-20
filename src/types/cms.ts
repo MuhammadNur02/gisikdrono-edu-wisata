@@ -1,5 +1,6 @@
 import type { RwId } from '@/config/rw';
 import type { EnumValue } from '@/db/enums';
+import type { ContentOwner } from '@/types/content';
 
 // What the dashboard's content screens read and the CMS actions answer with (Task P2.9.05). Plain values only: they
 // cross into client components.
@@ -52,4 +53,19 @@ export interface ScheduleAdmin {
 export interface SchedulePackageOption {
   id: string;
   name: string;
+}
+
+export interface GalleryItemAdmin {
+  id: string;
+  owner: ContentOwner;
+  category: EnumValue<'gallery_category'>;
+  mediaType: EnumValue<'media_type'>;
+  // The photo, or a video's own still; null for a video without one.
+  previewPath: string | null;
+  videoUrl: string | null;
+  caption: string | null;
+  altText: string;
+  takenAt: string | null;
+  sortOrder: number;
+  status: EnumValue<'content_status'>;
 }

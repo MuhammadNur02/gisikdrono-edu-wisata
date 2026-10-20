@@ -2,6 +2,7 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import type { RwId } from '@/config/rw';
 import {
   PUBLIC_MEDIA_BUCKET,
   QUARANTINE_BUCKET,
@@ -32,6 +33,11 @@ import { withScanSlot } from '@/lib/uploads/scan-slots';
 import { createUuidV7 } from '@/lib/utils/uuid-v7';
 import type { SignBookletPagesInput, SignUploadInput } from '@/lib/validations/upload';
 import { hasUploadAccess, type StaffContext } from '@/server/auth/guards';
+import {
+  readPublishedBooklet,
+  removeUnusedGalleryFiles,
+  type PublishedBooklet,
+} from '@/server/services/media-library';
 import {
   refusalEvent,
   sanitizedEvent,
@@ -280,4 +286,31 @@ export async function finalizeUpload(
   const event = outcomeEvent(outcome, upload, target);
   if (event) await writeUploadEvent(adminClient, ctx, event);
   return outcome;
+}
+
+// The CMS's own uses of public-media (Task P2.9.06), for an officer the profile still lets act for this owner.
+async function mediaClientFor(ctx: StaffContext, rwId: RwId | null): Promise<DatabaseClient> {
+  const adminClient = createSupabaseAdminClient();
+  const current = await currentStaff(adminClient, ctx);
+  if (!current || !hasUploadAccess(current, rwId)) throw new AppError('FORBIDDEN');
+  return adminClient;
+}
+
+// A removed gallery item takes its photo and thumbnail along, unless another row still shows them
+// (docs/PRD.md FR-ADMIN-10).
+export async function removeGalleryFiles(
+  ctx: StaffContext,
+  rwId: RwId | null,
+  paths: (string | null)[],
+): Promise<string[]> {
+  return removeUnusedGalleryFiles(await mediaClientFor(ctx, rwId), rwId, paths);
+}
+
+// The page count and size a booklet row keeps, as Storage holds them rather than as the form reported them.
+export async function readPublishedBookletFiles(
+  ctx: StaffContext,
+  rwId: RwId | null,
+  bookletId: string,
+): Promise<PublishedBooklet | null> {
+  return readPublishedBooklet(await mediaClientFor(ctx, rwId), rwId, bookletId);
 }
