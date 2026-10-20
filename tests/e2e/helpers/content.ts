@@ -58,3 +58,8 @@ export async function readBookletPdfPath(title: string): Promise<string> {
   if (!row) throw new Error(`no booklet titled ${title}`);
   return row.pdf_path;
 }
+
+// Articles a test saved; their folders hold no photos, since the tests upload none.
+export async function removeArticlesTitled(titlePrefix: string): Promise<void> {
+  await runSql(`delete from public.articles where title like ${sqlText(`${titlePrefix}%`)}`);
+}

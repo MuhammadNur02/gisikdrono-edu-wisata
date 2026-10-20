@@ -56,6 +56,10 @@ export async function signInDevAccount(email: string): Promise<ApiClient> {
   return client;
 }
 
+export async function userIdOf(client: ApiClient): Promise<string> {
+  return (await client.auth.getUser()).data.user?.id ?? '';
+}
+
 export async function accessTokenOf(client: ApiClient): Promise<string> {
   const { data } = await client.auth.getSession();
   return data.session?.access_token ?? '';

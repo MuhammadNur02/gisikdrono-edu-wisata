@@ -1,6 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { publicMediaUrl, readBookletPdfPath, removeBookletsTitled } from './helpers/content';
+import {
+  publicMediaUrl,
+  readBookletPdfPath,
+  removeArticlesTitled,
+  removeBookletsTitled,
+} from './helpers/content';
 import {
   ADMIN_RW05,
   AUTH_STEP,
@@ -18,6 +23,8 @@ test.describe.configure({ mode: 'serial', timeout: 180_000 });
 
 const TITLE_PREFIX = 'Booklet uji e2e';
 const BOOKLET_TITLE = `${TITLE_PREFIX} ${Date.now().toString(36)}`;
+const ARTICLE_PREFIX = 'Artikel uji e2e';
+const ARTICLE_TITLE = `${ARTICLE_PREFIX} ${Date.now().toString(36)}`;
 // Drawing and finalizing each page takes a moment on a laptop's Docker.
 const UPLOAD_STEP = { timeout: 90_000 };
 
@@ -27,6 +34,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await removeBookletsTitled(TITLE_PREFIX);
+  await removeArticlesTitled(ARTICLE_PREFIX);
 });
 
 test.skip(({ isMobile }) => isMobile, 'one run of each flow is enough');
@@ -93,4 +101,32 @@ test('an RW page tagline is on the public RW page at the next visit', async ({ p
   await page.goto('/dashboard/pages');
   await page.getByLabel('Tagline').fill(original);
   await saveAndWait(page, 'Halaman RW tersimpan.');
+});
+
+// docs/PRD.md FR-ADMIN-11: an RW officer writes and sends for review; the article reaches /artikel only when the
+// superadmin publishes it.
+test('an article an RW 05 officer sends for review stays off /artikel', async ({ page }) => {
+  await signInToDashboard(page, ADMIN_RW05);
+  await page.goto('/dashboard/articles/new');
+  // A required field's name ends in its hidden "(wajib)", and the search-engine title starts with "Judul" too.
+  await page.getByRole('textbox', { name: 'Judul (wajib)', exact: true }).fill(ARTICLE_TITLE);
+  await page.getByRole('textbox', { name: 'Isi artikel' }).fill('Bank sampah buka Minggu pagi.');
+  await expect(page.getByRole('button', { name: 'Tayangkan' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Ajukan untuk ditinjau' }).click();
+  await expect(page.getByText(`Artikel "${ARTICLE_TITLE}" tersimpan.`)).toBeVisible(AUTH_STEP);
+
+  await page.goto('/artikel');
+  await expect(page.getByText(ARTICLE_TITLE)).toHaveCount(0);
+});
+
+test('the superadmin publishes it, and it is on /artikel at the next visit', async ({ page }) => {
+  const saved = `Artikel "${ARTICLE_TITLE}" tersimpan.`;
+  await signInToDashboard(page, SUPERADMIN);
+  await page.goto('/dashboard/articles');
+  const row = page.getByRole('row', { name: new RegExp(ARTICLE_TITLE) });
+  await row.getByRole('link', { name: 'Ubah' }).click();
+  await page.getByRole('button', { name: 'Tayangkan' }).click();
+  await expect(page.getByText(saved)).toBeVisible(AUTH_STEP);
+  await page.goto('/artikel');
+  await expect(page.getByText(ARTICLE_TITLE)).toBeVisible();
 });
