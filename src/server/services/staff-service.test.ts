@@ -54,6 +54,17 @@ describe('canResetPassword', () => {
 });
 
 describe('sign-in and reset limits', () => {
+  it('counts one IPv6 /64 as one IP, so rotating addresses inside it does not help', async () => {
+    await withinSignInLimits('2001:db8:1:2::1', 'a@b.test');
+    await withinSignInLimits('2001:db8:1:2:ffff::9', 'a@b.test');
+
+    const [first, second] = vi
+      .mocked(svcRateLimitHit)
+      .mock.calls.filter((_call, index) => index % 2 === 0);
+    expect(first?.[1].key).toBe(rateLimitKey('login:ip', '2001:db8:1:2::/64'));
+    expect(second?.[1].key).toBe(first?.[1].key);
+  });
+
   it('counts per IP and per IP with the normalised address', async () => {
     await withinSignInLimits('203.0.113.7', 'A.Budi+x@Gmail.com');
 

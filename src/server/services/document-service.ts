@@ -11,6 +11,7 @@ import { withinRateLimits } from '@/lib/rate-limit';
 // See withinBookletDownloadLimit for why this module creates a service-role client.
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { MEDIA_OWNERS } from '@/lib/uploads/paths';
+import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 
 type DatabaseClient = SupabaseClient<Database>;
 
@@ -92,7 +93,9 @@ export function withinBookletDownloadLimit(
   clientIp: string,
   adminClient: DatabaseClient = createSupabaseAdminClient(),
 ): Promise<boolean> {
-  return withinRateLimits(adminClient, [{ name: 'booklet:download', subject: clientIp }]);
+  return withinRateLimits(adminClient, [
+    { name: 'booklet:download', subject: rateLimitIpBucket(clientIp) },
+  ]);
 }
 
 // increment_booklet_download checks the status again, so an id that is not published never moves a counter

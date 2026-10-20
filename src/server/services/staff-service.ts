@@ -7,20 +7,22 @@ import { withinRateLimits } from '@/lib/rate-limit';
 // and nothing read here goes back to the browser: the pages answer the same whatever it says (docs/Security.md
 // §5.1, AUTH-06).
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 import { normalizeEmail } from '@/lib/validations/normalize';
 
 // docs/Security.md §8.3: per IP, and per IP and address together. The Auth hook keeps its own count of failures per
 // account inside Supabase Auth on top of these (§5.5).
 export function withinSignInLimits(clientIp: string, email: string): Promise<boolean> {
+  const ip = rateLimitIpBucket(clientIp);
   return withinRateLimits(createSupabaseAdminClient(), [
-    { name: 'login:ip', subject: clientIp },
-    { name: 'login:ip+email', subject: `${clientIp}|${normalizeEmail(email)}` },
+    { name: 'login:ip', subject: ip },
+    { name: 'login:ip+email', subject: `${ip}|${normalizeEmail(email)}` },
   ]);
 }
 
 export function withinPasswordResetLimits(clientIp: string, email: string): Promise<boolean> {
   return withinRateLimits(createSupabaseAdminClient(), [
-    { name: 'password_reset:ip', subject: clientIp },
+    { name: 'password_reset:ip', subject: rateLimitIpBucket(clientIp) },
     { name: 'password_reset:email', subject: normalizeEmail(email) },
   ]);
 }
