@@ -14,8 +14,8 @@ import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 import { normalizeEmail } from '@/lib/validations/normalize';
 import type { StaffContext } from '@/server/auth/guards';
 
-// docs/Security.md §8.3: per IP, and per IP and address together. The Auth hook keeps its own count of failures per
-// account inside Supabase Auth on top of these (§5.5).
+// docs/Security.md §8.3: per IP, and per IP and address together. Where the password hook runs (the local stack;
+// the hosted Pro projects have none) it also counts failures per account inside Supabase Auth (§5.5).
 export function withinSignInLimits(clientIp: string, email: string): Promise<boolean> {
   const ip = rateLimitIpBucket(clientIp);
   return withinRateLimits(createSupabaseAdminClient(), [

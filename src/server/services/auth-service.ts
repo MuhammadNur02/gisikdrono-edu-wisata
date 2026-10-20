@@ -68,8 +68,9 @@ export async function signInWithPassword(credentials: {
   };
 }
 
-// Supabase Auth's answer to a TOTP code. The MFA hook of 20261020080100 refuses every code while the account is
-// locked after too many wrong ones (M1 of the PR #17 review), which reads apart from a wrong code.
+// Supabase Auth's answer to a TOTP code. Where the MFA hook of 20261020080100 runs (the local stack; the hosted Pro
+// projects have none), it refuses every code while the account is locked after too many wrong ones (M1 of the PR #17
+// review), which reads apart from a wrong code.
 function totpCheck(error: AuthError | null): TotpCheck {
   if (!error) return 'verified';
   if (!isRefusal(error)) throw error;
