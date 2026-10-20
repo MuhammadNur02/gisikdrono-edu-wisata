@@ -2,15 +2,16 @@ import 'server-only';
 
 import { createLogger } from '@/lib/logger';
 import { withinRateLimits } from '@/lib/rate-limit';
-// The service role is needed for three things nobody can do before signing in: the limiter is an internal function
-// no API role may call (P1.3.24); whether an account finished onboarding is written only in its profile, which RLS
-// shows to its own staff member at AAL2; and a recovery email sent with it keeps no session and no PKCE verifier, so
-// nothing reaches the visitor's cookies. Every query is keyed by the visitor's own IP or by the address they typed,
-// and nothing read here goes back to the browser: the pages answer the same whatever it says (docs/Security.md
-// §5.1, AUTH-06).
+// The service role is needed for four things the session cannot do: the limiter is an internal function no API role
+// may call (P1.3.24); whether an account finished onboarding is written only in its profile, which RLS shows to its
+// own staff member at AAL2; a recovery email sent with it keeps no session and no PKCE verifier, so nothing reaches
+// the visitor's cookies; and no API role may write security_events. Every query is keyed by the visitor's own IP, by
+// the address they typed or by the id of the verified session, and nothing read here goes back to the browser: the
+// pages answer the same whatever it says (docs/Security.md §5.1, AUTH-06).
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 import { normalizeEmail } from '@/lib/validations/normalize';
+import type { StaffContext } from '@/server/auth/guards';
 
 // docs/Security.md §8.3: per IP, and per IP and address together. The Auth hook keeps its own count of failures per
 // account inside Supabase Auth on top of these (§5.5).
@@ -66,4 +67,28 @@ export async function sendPasswordResetEmail(email: string, requestId: string): 
       errorName: error instanceof Error ? error.name : typeof error,
     });
   }
+}
+
+export type SessionRevokeFlow = 'password_change' | 'sign_out';
+
+// S1 of the PR #17 review: Supabase Auth could not end the account's other sessions, so another device may still be
+// signed in. The staff member is told either way, so a failed write ends in the log rather than in an error page.
+export async function recordSessionRevokeFailure(
+  ctx: StaffContext,
+  flow: SessionRevokeFlow,
+  requestId: string,
+): Promise<void> {
+  const log = createLogger(requestId);
+  log.warn('session_revoke_failed', { userId: ctx.userId, flow });
+  const { error } = await createSupabaseAdminClient().from('security_events').insert({
+    event_type: 'session_revoke_failed',
+    severity: 'high',
+    actor_id: ctx.userId,
+    actor_role: ctx.role,
+    rw_id: ctx.rwId,
+    entity_type: 'auth_session',
+    details: { flow },
+  });
+  if (error)
+    log.error('internal_error', { source: 'session_revoke_failed', errorName: error.name });
 }

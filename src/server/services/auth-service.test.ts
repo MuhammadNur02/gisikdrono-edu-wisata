@@ -8,6 +8,7 @@ import {
   confirmTotpEnrolment,
   openRecoverySession,
   signInWithPassword,
+  signOutEverywhere,
   startTotpEnrolment,
   verifyTotp,
 } from './auth-service';
@@ -165,6 +166,15 @@ describe('changePasswordAfterRecovery', () => {
     expect(auth.signOut).toHaveBeenCalledWith({ scope: 'global' });
   });
 
+  // S1 of the PR #17 review: the other devices may still be signed in, and the staff member has to know.
+  it('says so when the other sessions could not be ended', async () => {
+    auth.signOut.mockResolvedValue({ error: refused(500, 'unexpected_failure') });
+
+    expect(await changePasswordAfterRecovery(RECOVERY, { password: 'x', totpCode: '123456' })).toBe(
+      'changed_sessions_remain',
+    );
+  });
+
   it('tells a reused password apart from a weak or leaked one', async () => {
     const aal2 = { ...RECOVERY, ctx: { ...RECOVERY.ctx, isAal2: true } };
     auth.updateUser.mockResolvedValueOnce({ data: null, error: refused(422, 'same_password') });
@@ -285,5 +295,18 @@ describe('openRecoverySession', () => {
     auth.verifyOtp.mockResolvedValue({ data: {}, error: refused(500, 'unexpected_failure') });
 
     await expect(openRecoverySession('token-hash')).rejects.toBeInstanceOf(AuthApiError);
+  });
+});
+
+describe('signOutEverywhere', () => {
+  it('ends every session of the account', async () => {
+    expect(await signOutEverywhere()).toBe(true);
+    expect(auth.signOut).toHaveBeenCalledWith({ scope: 'global' });
+  });
+
+  it('is false when Supabase Auth could not end the other sessions', async () => {
+    auth.signOut.mockResolvedValue({ error: refused(500, 'unexpected_failure') });
+
+    expect(await signOutEverywhere()).toBe(false);
   });
 });

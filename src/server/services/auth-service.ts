@@ -16,7 +16,13 @@ export type PasswordSignIn =
   | { ok: false; reason: 'captcha' | 'rate_limited' | 'refused' };
 
 export type PasswordChange =
-  'changed' | 'no_factor' | 'needs_totp' | 'wrong_totp' | 'weak' | 'same';
+  | 'changed'
+  | 'changed_sessions_remain'
+  | 'no_factor'
+  | 'needs_totp'
+  | 'wrong_totp'
+  | 'weak'
+  | 'same';
 
 export type EnrolmentConfirmation = 'confirmed' | 'duplicate' | 'wrong_code' | 'expired';
 
@@ -144,7 +150,7 @@ export async function confirmTotpEnrolment(
 // The end of a recovery link (Task P2.8.01): Supabase Auth changes the password of an account with a factor only at
 // AAL2, so the code comes first. An account without a verified factor would set a password with its mailbox alone,
 // so it is refused and goes to the superadmin (M2 of the PR #17 review, risk R24). Every session of the account is
-// ended afterwards, this one included.
+// ended afterwards, this one included; `changed_sessions_remain` when Supabase Auth could not end the others (S1).
 export async function changePasswordAfterRecovery(
   session: StaffSession,
   change: { password: string; totpCode?: string | undefined },
@@ -161,8 +167,8 @@ export async function changePasswordAfterRecovery(
     // Too weak, or found among leaked passwords.
     return error.code === SAME_PASSWORD ? 'same' : 'weak';
   }
-  await supabase.auth.signOut({ scope: 'global' });
-  return 'changed';
+  const signedOut = await supabase.auth.signOut({ scope: 'global' });
+  return signedOut.error ? 'changed_sessions_remain' : 'changed';
 }
 
 // The token_hash of a recovery email (docs/Security.md §5.1). It opens a session whose verified token names
@@ -175,8 +181,11 @@ export async function openRecoverySession(tokenHash: string): Promise<boolean> {
   return error === null;
 }
 
-// docs/Security.md §5.4: sign-out ends every session of the account, not only this browser's.
-export async function signOutEverywhere(): Promise<void> {
+// docs/Security.md §5.4: sign-out ends every session of the account, not only this browser's. False when Supabase
+// Auth could not end them (S1 of the PR #17 review): auth-js clears this browser's cookies on any error, so only the
+// other devices may still be signed in.
+export async function signOutEverywhere(): Promise<boolean> {
   const supabase = await createSupabaseServerClient();
-  await supabase.auth.signOut({ scope: 'global' });
+  const { error } = await supabase.auth.signOut({ scope: 'global' });
+  return error === null;
 }

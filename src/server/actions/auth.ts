@@ -8,6 +8,7 @@ import {
   LOGIN_PATH,
   RECOVERY_AUTH_METHOD,
   TURNSTILE_ACTIONS,
+  type LoginNotice,
 } from '@/config/auth';
 import { copy } from '@/lib/copy/id';
 import { fail, mapError, ok } from '@/lib/errors';
@@ -16,7 +17,7 @@ import { verifyTurnstile } from '@/lib/turnstile';
 import { clientIpFrom } from '@/lib/utils/client-ip';
 import { mfaStepPath } from '@/lib/utils/staff-paths';
 import { forgotPasswordSchema, resetPasswordSchema, signInSchema } from '@/lib/validations/auth';
-import { readStaffSession } from '@/server/auth/guards';
+import { readStaffSession, type StaffContext } from '@/server/auth/guards';
 import {
   changePasswordAfterRecovery,
   signInWithPassword,
@@ -24,6 +25,7 @@ import {
   type PasswordSignIn,
 } from '@/server/services/auth-service';
 import {
+  recordSessionRevokeFailure,
   sendPasswordResetEmail,
   withinPasswordResetLimits,
   withinSignInLimits,
@@ -94,7 +96,30 @@ const PASSWORD_CHANGE_FAILURES = {
   wrong_totp: { field: 'totpCode', message: text.mfa.failed },
   weak: { field: 'password', message: text.reset.weak },
   same: { field: 'password', message: text.reset.same },
-} as const satisfies Record<Exclude<PasswordChange, 'changed' | 'no_factor'>, object>;
+} as const satisfies Record<
+  Exclude<PasswordChange, 'changed' | 'changed_sessions_remain' | 'no_factor'>,
+  object
+>;
+
+function signInAgain(notice: LoginNotice): ActionResult<NextStep> {
+  return ok({ redirectTo: `${LOGIN_PATH}?${LOGIN_NOTICE_PARAM}=${notice}` });
+}
+
+// A changed password always ends at sign-in. When other devices may still be signed in (S1 of the PR #17 review),
+// the staff member is told so and the failure is recorded.
+async function passwordChangeAnswer(
+  outcome: PasswordChange,
+  ctx: StaffContext,
+): Promise<ActionResult<NextStep>> {
+  if (outcome === 'changed') return signInAgain('password-changed');
+  if (outcome === 'changed_sessions_remain') {
+    await recordSessionRevokeFailure(ctx, 'password_change', requestIdFrom(await headers()));
+    return signInAgain('password-changed-sessions-remain');
+  }
+  if (outcome === 'no_factor') return fail('FORBIDDEN', undefined, text.reset.noFactor);
+  const { field, message } = PASSWORD_CHANGE_FAILURES[outcome];
+  return fail('VALIDATION', { [field]: [message] }, message);
+}
 
 // The end of a recovery link: only a session that a recovery link opened may set a password here.
 export async function resetPasswordAction(input: unknown): Promise<ActionResult<NextStep>> {
@@ -112,13 +137,10 @@ export async function resetPasswordAction(input: unknown): Promise<ActionResult<
   if (session.ctx.role === 'none') return fail('FORBIDDEN');
 
   try {
-    const outcome = await changePasswordAfterRecovery(session, parsed.data);
-    if (outcome === 'no_factor') return fail('FORBIDDEN', undefined, text.reset.noFactor);
-    if (outcome !== 'changed') {
-      const { field, message } = PASSWORD_CHANGE_FAILURES[outcome];
-      return fail('VALIDATION', { [field]: [message] }, message);
-    }
-    return ok({ redirectTo: `${LOGIN_PATH}?${LOGIN_NOTICE_PARAM}=password-changed` });
+    return await passwordChangeAnswer(
+      await changePasswordAfterRecovery(session, parsed.data),
+      session.ctx,
+    );
   } catch (error) {
     return mapError(error);
   }

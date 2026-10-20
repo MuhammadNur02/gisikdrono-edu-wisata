@@ -20,7 +20,13 @@ export const SIGN_OUT_PATH = '/auth/signout';
 
 // What /login says above the form after a flow that ended there.
 export const LOGIN_NOTICE_PARAM = 'info';
-export const LOGIN_NOTICES = ['password-changed', 'link-expired'] as const;
+export const LOGIN_NOTICES = [
+  'password-changed',
+  'link-expired',
+  // S1 of the PR #17 review: Supabase Auth could not end the account's other sessions.
+  'password-changed-sessions-remain',
+  'signed-out-here-only',
+] as const;
 export type LoginNotice = (typeof LOGIN_NOTICES)[number];
 
 // How a session opened by the recovery email's token_hash names itself in amr: Supabase Auth gives `otp` to every

@@ -6,6 +6,7 @@ import { rateLimitKey } from '@/lib/rate-limit';
 
 import {
   canResetPassword,
+  recordSessionRevokeFailure,
   sendPasswordResetEmail,
   withinPasswordResetLimits,
   withinSignInLimits,
@@ -16,6 +17,7 @@ const profile = vi.hoisted(() => ({
   queriedEmail: '',
 }));
 const resetPasswordForEmail = vi.hoisted(() => vi.fn());
+const insertedEvents = vi.hoisted(() => ({ rows: [] as unknown[], error: null as Error | null }));
 const logged = vi.hoisted(() => vi.fn());
 
 // The service-role client as this module uses it: one profile by email, the rate_limit_profile setting, the limiter,
@@ -24,6 +26,10 @@ vi.mock('@/lib/supabase/admin', () => ({
   createSupabaseAdminClient: () => ({
     auth: { resetPasswordForEmail },
     from: (table: string) => ({
+      insert: (row: unknown) => {
+        insertedEvents.rows.push({ table, row });
+        return Promise.resolve({ error: insertedEvents.error });
+      },
       select: () => ({
         eq: (_column: string, value: string) => ({
           maybeSingle: () => {
@@ -47,6 +53,8 @@ beforeEach(() => {
   vi.mocked(svcRateLimitHit).mockReset().mockResolvedValue(true);
   resetPasswordForEmail.mockReset().mockResolvedValue({ data: {}, error: null });
   logged.mockReset();
+  insertedEvents.rows = [];
+  insertedEvents.error = null;
 });
 
 describe('canResetPassword', () => {
@@ -152,5 +160,46 @@ describe('sendPasswordResetEmail', () => {
     vi.mocked(svcRateLimitHit).mockRejectedValue(new Error('database unavailable'));
     await expect(sendPasswordResetEmail(STAFF, 'request-1')).resolves.toBeUndefined();
     expect(logged).toHaveBeenCalledTimes(2);
+  });
+});
+
+// S1 of the PR #17 review: a global sign-out Supabase Auth could not finish leaves other devices signed in.
+describe('recordSessionRevokeFailure', () => {
+  const ctx = {
+    userId: 'user-1',
+    role: 'admin_rw' as const,
+    rwId: 5,
+    isAal2: false,
+    totpVerifiedAt: null,
+    claimsVersion: 1,
+  };
+
+  it('records a high security event with the flow, by id only', async () => {
+    await recordSessionRevokeFailure(ctx, 'password_change', 'request-1');
+
+    expect(insertedEvents.rows).toEqual([
+      {
+        table: 'security_events',
+        row: {
+          event_type: 'session_revoke_failed',
+          severity: 'high',
+          actor_id: 'user-1',
+          actor_role: 'admin_rw',
+          rw_id: 5,
+          entity_type: 'auth_session',
+          details: { flow: 'password_change' },
+        },
+      },
+    ]);
+  });
+
+  it('keeps a failed write to the log, since the staff member is told either way', async () => {
+    insertedEvents.error = new Error('database unavailable');
+
+    await expect(recordSessionRevokeFailure(ctx, 'sign_out', 'request-1')).resolves.toBeUndefined();
+    expect(logged).toHaveBeenLastCalledWith('internal_error', {
+      source: 'session_revoke_failed',
+      errorName: 'Error',
+    });
   });
 });

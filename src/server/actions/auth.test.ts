@@ -6,6 +6,7 @@ import { verifyTurnstile } from '@/lib/turnstile';
 import { readStaffSession, type StaffSession } from '@/server/auth/guards';
 import { changePasswordAfterRecovery, signInWithPassword } from '@/server/services/auth-service';
 import {
+  recordSessionRevokeFailure,
   sendPasswordResetEmail,
   withinPasswordResetLimits,
   withinSignInLimits,
@@ -28,6 +29,7 @@ vi.mock('@/server/services/auth-service', () => ({
   signInWithPassword: vi.fn(),
 }));
 vi.mock('@/server/services/staff-service', () => ({
+  recordSessionRevokeFailure: vi.fn(),
   sendPasswordResetEmail: vi.fn(),
   withinPasswordResetLimits: vi.fn(),
   withinSignInLimits: vi.fn(),
@@ -218,6 +220,21 @@ describe('resetPasswordAction', () => {
       error: { code: 'VALIDATION' },
     });
     expect(readStaffSession).not.toHaveBeenCalled();
+  });
+
+  // S1 of the PR #17 review.
+  it('records it and tells the staff member when other devices may still be signed in', async () => {
+    vi.mocked(changePasswordAfterRecovery).mockResolvedValue('changed_sessions_remain');
+
+    expect(await resetPasswordAction(NEW_PASSWORD)).toEqual({
+      ok: true,
+      data: { redirectTo: '/login?info=password-changed-sessions-remain' },
+    });
+    expect(recordSessionRevokeFailure).toHaveBeenCalledWith(
+      RECOVERY_SESSION.ctx,
+      'password_change',
+      'request-1',
+    );
   });
 
   it('sends an account without an authenticator to the superadmin', async () => {
