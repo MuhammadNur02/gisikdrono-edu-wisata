@@ -57,6 +57,12 @@ describe('supabase/config.toml', () => {
     });
   });
 
+  // I5 of the independent review of PR #17: exactly one factor per account, also for factors enrolled straight
+  // through GoTrue, where the app's own check (AUTH-12) never runs.
+  it('lets an account hold one MFA factor at a time', () => {
+    expect(config('auth.mfa').max_enrolled_factors).toBe(1);
+  });
+
   it('seeds nothing on reset, so a reset of a linked project never writes development data', () => {
     expect(config('db.seed')).toEqual({ enabled: false, sql_paths: [] });
     expect(existsSync(fileURLToPath(new URL('../supabase/seed.sql', import.meta.url)))).toBe(false);

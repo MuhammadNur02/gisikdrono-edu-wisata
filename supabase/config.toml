@@ -325,7 +325,10 @@ auth_token = "env(SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN)"
 # Multi-factor-authentication is available to Supabase Pro plan.
 [auth.mfa]
 # Control how many MFA factors can be enrolled at once per user.
-max_enrolled_factors = 10
+# One, pending or verified (docs/Security.md §5.2, AUTH-12; I5 of the independent review of PR #17): GoTrue then
+# refuses a second factor itself, also when it is enrolled straight through the API. /mfa/enroll removes an abandoned
+# pending factor before it starts a new one. Staging and production set the same in their dashboards (go-live #4).
+max_enrolled_factors = 1
 
 # Control MFA via App Authenticator (TOTP)
 # Every staff role signs in with TOTP (CLAUDE.md §7.8, Task P1.7.02); the phone factor stays off.
