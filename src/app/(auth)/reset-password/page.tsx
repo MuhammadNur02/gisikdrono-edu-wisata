@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 
 import { AuthCard } from '@/components/auth/auth-card';
 import { NoAccessNotice } from '@/components/auth/no-access-notice';
+import { NoFactorNotice } from '@/components/auth/no-factor-notice';
 import { ResetPasswordForm } from '@/components/auth/reset-password-form';
 import {
   DASHBOARD_PATH,
@@ -25,13 +26,11 @@ export default async function ResetPasswordPage() {
   if (!session) redirect(`${LOGIN_PATH}?${LOGIN_NOTICE_PARAM}=link-expired`);
   if (!session.authMethods.includes(RECOVERY_AUTH_METHOD)) redirect(DASHBOARD_PATH);
   if (session.ctx.role === 'none') return <NoAccessNotice />;
+  if (!session.hasVerifiedTotp) return <NoFactorNotice />;
 
   return (
     <AuthCard title={text.title} description={text.description}>
-      <ResetPasswordForm
-        action={resetPasswordAction}
-        needsTotp={session.hasVerifiedTotp && !session.ctx.isAal2}
-      />
+      <ResetPasswordForm action={resetPasswordAction} needsTotp={!session.ctx.isAal2} />
     </AuthCard>
   );
 }

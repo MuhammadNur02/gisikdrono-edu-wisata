@@ -15,7 +15,8 @@ export type PasswordSignIn =
   | { ok: true; hasVerifiedTotp: boolean }
   | { ok: false; reason: 'captcha' | 'rate_limited' | 'refused' };
 
-export type PasswordChange = 'changed' | 'needs_totp' | 'wrong_totp' | 'weak' | 'same';
+export type PasswordChange =
+  'changed' | 'no_factor' | 'needs_totp' | 'wrong_totp' | 'weak' | 'same';
 
 export type EnrolmentConfirmation = 'confirmed' | 'wrong_code' | 'expired';
 
@@ -119,12 +120,15 @@ export async function confirmTotpEnrolment(
 }
 
 // The end of a recovery link (Task P2.8.01): Supabase Auth changes the password of an account with a factor only at
-// AAL2, so the code comes first. Every session of the account is ended afterwards, this one included.
+// AAL2, so the code comes first. An account without a verified factor would set a password with its mailbox alone,
+// so it is refused and goes to the superadmin (M2 of the PR #17 review, risk R24). Every session of the account is
+// ended afterwards, this one included.
 export async function changePasswordAfterRecovery(
   session: StaffSession,
   change: { password: string; totpCode?: string | undefined },
 ): Promise<PasswordChange> {
-  if (session.hasVerifiedTotp && !session.ctx.isAal2) {
+  if (!session.hasVerifiedTotp) return 'no_factor';
+  if (!session.ctx.isAal2) {
     if (change.totpCode === undefined) return 'needs_totp';
     if (!(await verifyTotp(change.totpCode))) return 'wrong_totp';
   }

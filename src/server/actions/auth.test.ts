@@ -220,6 +220,15 @@ describe('resetPasswordAction', () => {
     expect(readStaffSession).not.toHaveBeenCalled();
   });
 
+  it('sends an account without an authenticator to the superadmin', async () => {
+    vi.mocked(changePasswordAfterRecovery).mockResolvedValue('no_factor');
+
+    expect(await resetPasswordAction(NEW_PASSWORD)).toEqual({
+      ok: false,
+      error: { code: 'FORBIDDEN', message: 'Hubungi superadmin untuk memulihkan akun.' },
+    });
+  });
+
   it('puts a wrong code under the code field', async () => {
     vi.mocked(changePasswordAfterRecovery).mockResolvedValue('wrong_totp');
 

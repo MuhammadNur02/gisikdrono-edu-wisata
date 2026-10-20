@@ -131,6 +131,14 @@ describe('verifyTotp', () => {
 });
 
 describe('changePasswordAfterRecovery', () => {
+  // M2 of the PR #17 review: without a factor, the mailbox alone would set a permanent password.
+  it('refuses an account without a verified factor before anything else', async () => {
+    const withoutFactor = { ...RECOVERY, hasVerifiedTotp: false };
+
+    expect(await changePasswordAfterRecovery(withoutFactor, { password: 'x' })).toBe('no_factor');
+    expect(auth.updateUser).not.toHaveBeenCalled();
+  });
+
   it('asks for the code first when the account has a factor and the session is AAL1', async () => {
     expect(await changePasswordAfterRecovery(RECOVERY, { password: 'x' })).toBe('needs_totp');
 

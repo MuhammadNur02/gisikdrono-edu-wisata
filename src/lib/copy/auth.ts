@@ -57,6 +57,11 @@ export const authCopy = {
     submit: 'Simpan kata sandi',
     weak: 'Kata sandi ini terlalu mudah ditebak atau pernah bocor. Pilih kata sandi lain, ya.',
     same: 'Kata sandi baru harus berbeda dari yang lama.',
+    // An account without an authenticator: the mailbox alone never sets a password (docs/Security.md R24).
+    noFactorTitle: 'Kata sandi belum bisa diganti di sini',
+    noFactorReason:
+      'Akun ini belum memasang aplikasi autentikator, jadi tautan dari email saja tidak cukup untuk membuat kata sandi baru.',
+    noFactor: 'Hubungi superadmin untuk memulihkan akun.',
   },
   mfa: {
     code: 'Kode autentikator',

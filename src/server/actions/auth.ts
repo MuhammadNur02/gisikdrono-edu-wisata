@@ -94,7 +94,7 @@ const PASSWORD_CHANGE_FAILURES = {
   wrong_totp: { field: 'totpCode', message: text.mfa.failed },
   weak: { field: 'password', message: text.reset.weak },
   same: { field: 'password', message: text.reset.same },
-} as const satisfies Record<Exclude<PasswordChange, 'changed'>, object>;
+} as const satisfies Record<Exclude<PasswordChange, 'changed' | 'no_factor'>, object>;
 
 // The end of a recovery link: only a session that a recovery link opened may set a password here.
 export async function resetPasswordAction(input: unknown): Promise<ActionResult<NextStep>> {
@@ -113,6 +113,7 @@ export async function resetPasswordAction(input: unknown): Promise<ActionResult<
 
   try {
     const outcome = await changePasswordAfterRecovery(session, parsed.data);
+    if (outcome === 'no_factor') return fail('FORBIDDEN', undefined, text.reset.noFactor);
     if (outcome !== 'changed') {
       const { field, message } = PASSWORD_CHANGE_FAILURES[outcome];
       return fail('VALIDATION', { [field]: [message] }, message);
