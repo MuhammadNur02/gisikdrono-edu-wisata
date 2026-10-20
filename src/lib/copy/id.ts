@@ -1,4 +1,5 @@
 import { authCopy } from '@/lib/copy/auth';
+import { dashboardCopy } from '@/lib/copy/dashboard';
 import type { ActionErrorCode } from '@/types/action-result';
 import type { UploadProblem } from '@/types/upload';
 
@@ -28,6 +29,7 @@ export const copy = {
     freeText: 'Tulis tanpa tautan, alamat situs, email, atau nomor telepon, ya.',
   },
   auth: authCopy,
+  dashboard: dashboardCopy,
   // Labels the base components read out to screen readers and show on their own controls.
   ui: {
     close: 'Tutup',
