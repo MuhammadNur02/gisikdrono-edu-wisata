@@ -81,6 +81,7 @@ export const cmsCopy = {
     position: 'Letak di denah',
     positionHint:
       'Klik denah untuk menaruh titik, atau isi persen dari kiri dan dari atas. Denah RW belum tersedia, jadi bidang ini masih kosong polos.',
+    positionPicker: 'Denah: klik untuk menaruh titik',
     mapX: 'Dari kiri (%)',
     mapY: 'Dari atas (%)',
     lat: 'Garis lintang (lat)',

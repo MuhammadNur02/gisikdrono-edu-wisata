@@ -63,3 +63,5 @@ export type ArticleIntent = (typeof ARTICLE_INTENTS)[number];
 // activity_points.map_x / map_y are percentages of the site plan (docs/StyleGuide.md §8.3), 0–100 with two decimals.
 export const MAP_PERCENT_MAX = 100;
 export const MAP_PERCENT_DECIMALS = 2;
+// 10 to the power of MAP_PERCENT_DECIMALS, for rounding a click to those decimals.
+export const MAP_PERCENT_ROUNDING = 100;

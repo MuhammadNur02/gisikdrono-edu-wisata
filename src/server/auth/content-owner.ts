@@ -3,7 +3,7 @@ import 'server-only';
 import { cookies } from 'next/headers';
 
 import { RW_SCOPE_ALL, RW_SCOPE_COOKIE, type RwScope } from '@/config/dashboard';
-import { isRwId, type RwId } from '@/config/rw';
+import { isRwId, RW_IDS, type RwId } from '@/config/rw';
 import { copy } from '@/lib/copy/id';
 import { fail } from '@/lib/errors';
 import { parseRwScope } from '@/lib/utils/rw-scope';
@@ -54,6 +54,17 @@ export async function requireRwContentOwner(
   return target.owner === null
     ? fail('STATE_INVALID', undefined, copy.cms.chooseRw)
     : { ok: true, rwId: target.owner };
+}
+
+// The owners whose rows a list shows: an RW admin's own RW; for the superadmin the RW the RwSwitcher points at, or
+// every RW and the kelurahan under Semua. RLS narrows the same reads again.
+export function listedOwners(ctx: StaffContext, scope: RwScope): ContentOwner[] {
+  if (ctx.role === 'admin_rw') {
+    const own = ownerOfNewContent(ctx, scope);
+    return own === undefined ? [] : [own];
+  }
+  if (ctx.role !== 'superadmin') return [];
+  return scope === RW_SCOPE_ALL ? [...RW_IDS, null] : [scope];
 }
 
 export function toContentOwner(rwId: number | null): ContentOwner | undefined {

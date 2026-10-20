@@ -53,6 +53,9 @@ export const sortOrderSchema = z.int().min(0).max(CMS_LIMITS.sortOrder);
 
 export const rowIdSchema = z.uuid().toLowerCase();
 
+// An action on one row (remove, publish), which the action looks up and checks itself.
+export const rowRefSchema = z.object({ id: rowIdSchema }).strict();
+
 const mediaPathSchema = z
   .string()
   .max(MEDIA_PATH_MAX_LENGTH)
