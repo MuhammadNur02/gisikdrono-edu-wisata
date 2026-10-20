@@ -7,7 +7,8 @@ import { withinRateLimits } from '@/lib/rate-limit';
 // own staff member at AAL2; a recovery email sent with it keeps no session and no PKCE verifier, so nothing reaches
 // the visitor's cookies; and no API role may write security_events. Every query is keyed by the visitor's own IP, by
 // the address they typed or by the id of the verified session, and nothing read here goes back to the browser: the
-// pages answer the same whatever it says (docs/Security.md §5.1, AUTH-06).
+// pages answer the same whatever it says (docs/Security.md §5.1, AUTH-06). Keying by a typed address rather than a
+// verified id is the exception CLAUDE.md §6.1 records for this module (I2 of the independent review of PR #17).
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 import { normalizeEmail } from '@/lib/validations/normalize';
