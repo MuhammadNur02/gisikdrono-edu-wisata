@@ -6,7 +6,7 @@ import {
   createAccount,
   hasHorizontalScroll,
   removeAccounts,
-  resetSignInLimits,
+  resetAuthLimits,
   signInToDashboard,
   submitPassword,
   submitTotp,
@@ -24,7 +24,7 @@ test.describe.configure({ timeout: 120_000 });
 const createdAccounts: string[] = [];
 
 test.beforeAll(async () => {
-  await resetSignInLimits();
+  await resetAuthLimits();
 });
 
 test.afterAll(async () => {

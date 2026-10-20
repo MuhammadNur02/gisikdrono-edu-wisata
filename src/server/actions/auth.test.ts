@@ -1,20 +1,22 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { after } from 'next/server';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { copy } from '@/lib/copy/id';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { readStaffSession, type StaffSession } from '@/server/auth/guards';
+import { changePasswordAfterRecovery, signInWithPassword } from '@/server/services/auth-service';
 import {
-  changePasswordAfterRecovery,
-  sendPasswordReset,
-  signInWithPassword,
-} from '@/server/services/auth-service';
-import { withinPasswordResetLimits, withinSignInLimits } from '@/server/services/staff-service';
+  sendPasswordResetEmail,
+  withinPasswordResetLimits,
+  withinSignInLimits,
+} from '@/server/services/staff-service';
 
 import { requestPasswordResetAction, resetPasswordAction, signInAction } from './auth';
 
 vi.mock('next/headers', () => ({
   headers: () => Promise.resolve(new Headers({ 'x-real-ip': '203.0.113.7' })),
 }));
+vi.mock('next/server', () => ({ after: vi.fn() }));
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
   requestIdFrom: () => 'request-1',
@@ -23,10 +25,10 @@ vi.mock('@/lib/turnstile', () => ({ verifyTurnstile: vi.fn() }));
 vi.mock('@/server/auth/guards', () => ({ readStaffSession: vi.fn() }));
 vi.mock('@/server/services/auth-service', () => ({
   changePasswordAfterRecovery: vi.fn(),
-  sendPasswordReset: vi.fn(),
   signInWithPassword: vi.fn(),
 }));
 vi.mock('@/server/services/staff-service', () => ({
+  sendPasswordResetEmail: vi.fn(),
   withinPasswordResetLimits: vi.fn(),
   withinSignInLimits: vi.fn(),
 }));
@@ -47,7 +49,7 @@ const RECOVERY_SESSION: StaffSession = {
     claimsVersion: 1,
   },
   hasVerifiedTotp: true,
-  authMethods: ['recovery'],
+  authMethods: ['otp'],
 };
 
 const NEW_PASSWORD = {
@@ -61,7 +63,8 @@ beforeEach(() => {
   vi.mocked(withinSignInLimits).mockReset().mockResolvedValue(true);
   vi.mocked(withinPasswordResetLimits).mockReset().mockResolvedValue(true);
   vi.mocked(signInWithPassword).mockReset().mockResolvedValue({ ok: true, hasVerifiedTotp: true });
-  vi.mocked(sendPasswordReset).mockReset().mockResolvedValue(undefined);
+  vi.mocked(sendPasswordResetEmail).mockReset().mockResolvedValue(undefined);
+  vi.mocked(after).mockReset();
   vi.mocked(verifyTurnstile).mockReset().mockResolvedValue(true);
   vi.mocked(readStaffSession).mockReset().mockResolvedValue(RECOVERY_SESSION);
   vi.mocked(changePasswordAfterRecovery).mockReset().mockResolvedValue('changed');
@@ -138,46 +141,49 @@ describe('signInAction', () => {
 });
 
 describe('requestPasswordResetAction', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
+  const REQUEST = { email: ' A@B.test ', captchaToken: 't' };
 
-  async function settled<T>(promise: Promise<T>): Promise<T> {
-    await vi.runAllTimersAsync();
-    return promise;
+  async function runScheduledWork(): Promise<void> {
+    for (const [task] of vi.mocked(after).mock.calls) {
+      if (typeof task === 'function') await task();
+    }
   }
 
-  it('asks for the email and answers only after the fixed wait', async () => {
-    let answered = false;
-    const pending = requestPasswordResetAction({ email: 'a@b.test', captchaToken: 't' }).then(
-      (r) => {
-        answered = true;
-        return r;
-      },
-    );
-    await vi.advanceTimersByTimeAsync(1999);
-    expect(answered).toBe(false);
+  // F1 of the PR #17 review: whether the address gets an email is decided after the answer has gone out, so the
+  // answer's timing, headers and cookies are the same for every address.
+  it('answers at once and only then looks at the address and sends the email', async () => {
+    expect(await requestPasswordResetAction(REQUEST)).toEqual({ ok: true, data: null });
+    expect(sendPasswordResetEmail).not.toHaveBeenCalled();
 
-    expect(await settled(pending)).toEqual({ ok: true, data: null });
-    expect(sendPasswordReset).toHaveBeenCalledWith(
-      { email: 'a@b.test', captchaToken: 't' },
-      expect.any(Headers),
-    );
+    await runScheduledWork();
+    expect(sendPasswordResetEmail).toHaveBeenCalledWith('a@b.test', 'request-1');
   });
 
-  it('answers the same, sending nothing, once a limit is used up', async () => {
+  it("checks the reset form's own Turnstile token, since the email goes out under the service role", async () => {
+    vi.mocked(verifyTurnstile).mockResolvedValue(false);
+
+    expect(await requestPasswordResetAction(REQUEST)).toMatchObject({
+      error: { code: 'VALIDATION', message: copy.auth.signIn.captchaFailed },
+    });
+    expect(verifyTurnstile).toHaveBeenCalledWith('t', '203.0.113.7', 'password_reset');
+    expect(after).not.toHaveBeenCalled();
+  });
+
+  it('answers the same, scheduling nothing, once a limit is used up', async () => {
     vi.mocked(withinPasswordResetLimits).mockResolvedValue(false);
 
-    expect(
-      await settled(requestPasswordResetAction({ email: 'a@b.test', captchaToken: 't' })),
-    ).toEqual({
-      ok: true,
-      data: null,
+    expect(await requestPasswordResetAction(REQUEST)).toEqual({ ok: true, data: null });
+    expect(verifyTurnstile).not.toHaveBeenCalled();
+    expect(after).not.toHaveBeenCalled();
+  });
+
+  it('refuses when the limiter cannot be reached (fail-closed)', async () => {
+    vi.mocked(withinPasswordResetLimits).mockRejectedValue(new Error('database unavailable'));
+
+    expect(await requestPasswordResetAction(REQUEST)).toMatchObject({
+      error: { code: 'INTERNAL' },
     });
-    expect(sendPasswordReset).not.toHaveBeenCalled();
+    expect(after).not.toHaveBeenCalled();
   });
 });
 

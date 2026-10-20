@@ -66,6 +66,24 @@ describe('supabase/config.toml', () => {
     expect(config('storage.image_transformation')).toEqual({ enabled: true });
   });
 
+  // F1 of the PR #17 review: a PKCE link left a verifier cookie in the answer of /forgot-password for staff addresses
+  // only. The token_hash link needs no cookie and is verified by auth/callback.
+  it('sends the recovery email with a token_hash link to auth/callback and nothing else', () => {
+    const template = config('auth.email.template.recovery');
+    expect(template.subject).toBe('Atur ulang kata sandi Edu Wisata Gisikdrono');
+    expect(template.content_path).toBe('./supabase/templates/recovery.html');
+
+    const html = readFileSync(
+      new URL('../supabase/templates/recovery.html', import.meta.url),
+      'utf8',
+    );
+    const links = [...html.matchAll(/href="([^"]*)"/g)].map(([, href]) => href);
+    expect(links).toEqual([
+      '{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&amp;type=recovery',
+    ]);
+    expect(html).not.toContain('{{ .ConfirmationURL }}');
+  });
+
   it('runs the access-token and password-attempt hooks of 0004', () => {
     expect(config('auth.hook.custom_access_token')).toEqual({
       enabled: true,

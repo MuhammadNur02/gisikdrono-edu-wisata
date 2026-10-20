@@ -4,7 +4,12 @@ import { redirect } from 'next/navigation';
 import { AuthCard } from '@/components/auth/auth-card';
 import { NoAccessNotice } from '@/components/auth/no-access-notice';
 import { ResetPasswordForm } from '@/components/auth/reset-password-form';
-import { DASHBOARD_PATH, LOGIN_NOTICE_PARAM, LOGIN_PATH } from '@/config/auth';
+import {
+  DASHBOARD_PATH,
+  LOGIN_NOTICE_PARAM,
+  LOGIN_PATH,
+  RECOVERY_AUTH_METHOD,
+} from '@/config/auth';
 import { copy } from '@/lib/copy/id';
 import { resetPasswordAction } from '@/server/actions/auth';
 import { readStaffSession } from '@/server/auth/guards';
@@ -18,7 +23,7 @@ export const metadata: Metadata = { title: text.title };
 export default async function ResetPasswordPage() {
   const session = await readStaffSession();
   if (!session) redirect(`${LOGIN_PATH}?${LOGIN_NOTICE_PARAM}=link-expired`);
-  if (!session.authMethods.includes('recovery')) redirect(DASHBOARD_PATH);
+  if (!session.authMethods.includes(RECOVERY_AUTH_METHOD)) redirect(DASHBOARD_PATH);
   if (session.ctx.role === 'none') return <NoAccessNotice />;
 
   return (

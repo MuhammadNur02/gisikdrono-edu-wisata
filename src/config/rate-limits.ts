@@ -9,9 +9,13 @@ export const RATE_LIMITS = {
   // hook's lockout (§5.5), counted here before Auth is even asked.
   'login:ip': { limit: 10, windowSeconds: 300, whenUnavailable: 'fail-closed' },
   'login:ip+email': { limit: 5, windowSeconds: 900, whenUnavailable: 'fail-closed' },
-  // /forgot-password answers the same when either is used up (silent success).
-  'password_reset:ip': { limit: 3, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
-  'password_reset:email': { limit: 3, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  // /forgot-password answers the same when any of these is used up (silent success). It counts per IP and per IP and
+  // address, as sign-in does, so nobody else can use up a staff member's own resets (F2 of the PR #17 review). The
+  // address's daily ceiling is counted after the answer, for the requests that got that far, and stops a flood of
+  // reset emails sent from many IPs; a window of a day is as long as rate_limit_buckets keeps a row.
+  'password_reset:ip': { limit: 10, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  'password_reset:ip+email': { limit: 3, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  'password_reset:email': { limit: 10, windowSeconds: 86400, whenUnavailable: 'fail-closed' },
   // Per staff member per hour. upload_sign counts api/uploads/sign and each booklet's single api/uploads/sign-pages;
   // upload_finalize leaves room for a whole booklet (its PDF and 100 pages) and photos; upload_forbidden caps how
   // many refused attempts are recorded one by one (security review of PR #14, L6, L8).

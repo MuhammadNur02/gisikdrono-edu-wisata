@@ -23,12 +23,14 @@ export const LOGIN_NOTICE_PARAM = 'info';
 export const LOGIN_NOTICES = ['password-changed', 'link-expired'] as const;
 export type LoginNotice = (typeof LOGIN_NOTICES)[number];
 
+// How a session opened by the recovery email's token_hash names itself in amr: Supabase Auth gives `otp` to every
+// email-link session, recovery included (measured on the local stack: verifyOtp({ type: 'recovery' }) gives
+// amr [{ method: 'otp' }]); only a PKCE code said `recovery`, and this site no longer sends PKCE links. Another
+// `otp` session would prove the same mailbox, and /reset-password still asks for the TOTP code.
+export const RECOVERY_AUTH_METHOD = 'otp';
+
 // The name staff see for this site in their authenticator app.
 export const TOTP_ISSUER = 'Edu Wisata Gisikdrono';
-
-// /forgot-password answers no sooner than this, so an address that gets a reset email takes as long as one that
-// does not (docs/Security.md §5.1: the same response for every address).
-export const PASSWORD_RESET_ANSWER_MS = 2000;
 
 // docs/Security.md §8.3 and §4.3: what Turnstile's siteverify must say about a token.
 export const TURNSTILE_MAX_TOKEN_AGE_SECONDS = 300;

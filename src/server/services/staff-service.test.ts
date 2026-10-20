@@ -1,18 +1,28 @@
+import { AuthApiError } from '@supabase/supabase-js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { svcRateLimitHit } from '@/db/rpc';
 import { rateLimitKey } from '@/lib/rate-limit';
 
-import { canResetPassword, withinPasswordResetLimits, withinSignInLimits } from './staff-service';
+import {
+  canResetPassword,
+  sendPasswordResetEmail,
+  withinPasswordResetLimits,
+  withinSignInLimits,
+} from './staff-service';
 
 const profile = vi.hoisted(() => ({
   row: null as { role: string; is_active: boolean } | null,
   queriedEmail: '',
 }));
+const resetPasswordForEmail = vi.hoisted(() => vi.fn());
+const logged = vi.hoisted(() => vi.fn());
 
-// The service-role client as this module uses it: one profile by email, the rate_limit_profile setting, the limiter.
+// The service-role client as this module uses it: one profile by email, the rate_limit_profile setting, the limiter,
+// and Supabase Auth's recovery email.
 vi.mock('@/lib/supabase/admin', () => ({
   createSupabaseAdminClient: () => ({
+    auth: { resetPasswordForEmail },
     from: (table: string) => ({
       select: () => ({
         eq: (_column: string, value: string) => ({
@@ -27,10 +37,16 @@ vi.mock('@/lib/supabase/admin', () => ({
   }),
 }));
 vi.mock('@/db/rpc', () => ({ svcRateLimitHit: vi.fn() }));
+vi.mock('@/lib/logger', () => ({
+  createLogger: () => ({ info: vi.fn(), warn: logged, error: logged }),
+}));
 
 beforeEach(() => {
   profile.row = null;
+  profile.queriedEmail = '';
   vi.mocked(svcRateLimitHit).mockReset().mockResolvedValue(true);
+  resetPasswordForEmail.mockReset().mockResolvedValue({ data: {}, error: null });
+  logged.mockReset();
 });
 
 describe('canResetPassword', () => {
@@ -78,12 +94,63 @@ describe('sign-in and reset limits', () => {
     ]);
   });
 
-  it('counts resets per IP and per address, three an hour each', async () => {
-    await withinPasswordResetLimits('203.0.113.7', 'a@b.test');
+  // F2 of the PR #17 review: a count by address alone let anyone use up a staff member's resets from anywhere.
+  it('counts resets per IP and per IP with the address, never by the address alone', async () => {
+    await withinPasswordResetLimits('203.0.113.7', 'A.Budi+x@Gmail.com');
 
     expect(vi.mocked(svcRateLimitHit).mock.calls.map(([, hit]) => hit)).toEqual([
-      { key: rateLimitKey('password_reset:ip', '203.0.113.7'), limit: 3, windowSeconds: 3600 },
-      { key: rateLimitKey('password_reset:email', 'a@b.test'), limit: 3, windowSeconds: 3600 },
+      { key: rateLimitKey('password_reset:ip', '203.0.113.7'), limit: 10, windowSeconds: 3600 },
+      {
+        key: rateLimitKey('password_reset:ip+email', '203.0.113.7|abudi@gmail.com'),
+        limit: 3,
+        windowSeconds: 3600,
+      },
     ]);
+  });
+});
+
+describe('sendPasswordResetEmail', () => {
+  const STAFF = 'admin-rw05@dev.gisikdrono.test';
+
+  it('mails an account that may reset, counting the address against its daily ceiling', async () => {
+    profile.row = { role: 'admin_rw', is_active: true };
+
+    await sendPasswordResetEmail(STAFF, 'request-1');
+
+    expect(vi.mocked(svcRateLimitHit).mock.calls.map(([, hit]) => hit)).toEqual([
+      { key: rateLimitKey('password_reset:email', STAFF), limit: 10, windowSeconds: 86400 },
+    ]);
+    expect(profile.queriedEmail).toBe(STAFF);
+    // The service-role client keeps no session and no PKCE verifier, so the link is the email's token_hash alone.
+    expect(resetPasswordForEmail).toHaveBeenCalledWith(STAFF);
+  });
+
+  it('mails nobody once an address had its resets for the day, however many IPs asked', async () => {
+    profile.row = { role: 'admin_rw', is_active: true };
+    vi.mocked(svcRateLimitHit).mockResolvedValue(false);
+
+    await sendPasswordResetEmail(STAFF, 'request-1');
+
+    expect(profile.queriedEmail).toBe('');
+    expect(resetPasswordForEmail).not.toHaveBeenCalled();
+  });
+
+  it('mails nobody at an address that may not reset', async () => {
+    await sendPasswordResetEmail('nobody@example.test', 'request-1');
+
+    expect(resetPasswordForEmail).not.toHaveBeenCalled();
+  });
+
+  it('keeps every failure to the log, since the answer has already gone out', async () => {
+    profile.row = { role: 'admin_rw', is_active: true };
+    resetPasswordForEmail.mockResolvedValue({
+      data: null,
+      error: new AuthApiError('refused', 429, 'over_email_send_rate_limit'),
+    });
+    await expect(sendPasswordResetEmail(STAFF, 'request-1')).resolves.toBeUndefined();
+
+    vi.mocked(svcRateLimitHit).mockRejectedValue(new Error('database unavailable'));
+    await expect(sendPasswordResetEmail(STAFF, 'request-1')).resolves.toBeUndefined();
+    expect(logged).toHaveBeenCalledTimes(2);
   });
 });

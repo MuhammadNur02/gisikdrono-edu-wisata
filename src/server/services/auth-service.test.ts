@@ -2,13 +2,11 @@ import { AuthApiError } from '@supabase/supabase-js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { StaffSession } from '@/server/auth/guards';
-import { canResetPassword } from '@/server/services/staff-service';
 
 import {
   changePasswordAfterRecovery,
   confirmTotpEnrolment,
-  exchangeAuthCode,
-  sendPasswordReset,
+  openRecoverySession,
   signInWithPassword,
   startTotpEnrolment,
   verifyTotp,
@@ -19,11 +17,9 @@ type Factor = { id: string; factor_type: string; status: 'verified' | 'unverifie
 // The parts of the session client's auth API this service calls, each a mock a test can steer.
 const auth = vi.hoisted(() => ({
   signInWithPassword: vi.fn(),
-  resetPasswordForEmail: vi.fn(),
   updateUser: vi.fn(),
   signOut: vi.fn(),
-  exchangeCodeForSession: vi.fn(),
-  getClaims: vi.fn(),
+  verifyOtp: vi.fn(),
   mfa: {
     listFactors: vi.fn(),
     challengeAndVerify: vi.fn(),
@@ -35,7 +31,6 @@ const auth = vi.hoisted(() => ({
 vi.mock('@/lib/supabase/server', () => ({
   createSupabaseServerClient: () => Promise.resolve({ auth }),
 }));
-vi.mock('@/server/services/staff-service', () => ({ canResetPassword: vi.fn() }));
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
   requestIdFrom: () => 'request-1',
@@ -64,7 +59,7 @@ const RECOVERY: StaffSession = {
     claimsVersion: 1,
   },
   hasVerifiedTotp: true,
-  authMethods: ['recovery'],
+  authMethods: ['otp'],
 };
 
 beforeEach(() => {
@@ -75,7 +70,6 @@ beforeEach(() => {
   auth.mfa.challengeAndVerify.mockResolvedValue({ data: {}, error: null });
   auth.updateUser.mockResolvedValue({ data: {}, error: null });
   auth.signOut.mockResolvedValue({ error: null });
-  vi.mocked(canResetPassword).mockReset().mockResolvedValue(true);
 });
 
 describe('signInWithPassword', () => {
@@ -112,38 +106,6 @@ describe('signInWithPassword', () => {
     });
 
     await expect(signInWithPassword(credentials)).rejects.toBeInstanceOf(AuthApiError);
-  });
-});
-
-describe('sendPasswordReset', () => {
-  const request = { email: 'a@b.test', captchaToken: 'token' };
-
-  it('sends the link back to auth/callback only', async () => {
-    auth.resetPasswordForEmail.mockResolvedValue({ data: {}, error: null });
-
-    await sendPasswordReset(request, new Headers());
-
-    expect(auth.resetPasswordForEmail).toHaveBeenCalledWith('a@b.test', {
-      redirectTo: 'http://127.0.0.1:3000/auth/callback',
-      captchaToken: 'token',
-    });
-  });
-
-  it('sends nothing to an account that never finished onboarding', async () => {
-    vi.mocked(canResetPassword).mockResolvedValue(false);
-
-    await sendPasswordReset(request, new Headers());
-
-    expect(auth.resetPasswordForEmail).not.toHaveBeenCalled();
-  });
-
-  it('keeps a Supabase Auth refusal to itself', async () => {
-    auth.resetPasswordForEmail.mockResolvedValue({
-      data: null,
-      error: refused(429, 'over_email_send_rate_limit'),
-    });
-
-    await expect(sendPasswordReset(request, new Headers())).resolves.toBeUndefined();
   });
 });
 
@@ -240,22 +202,25 @@ describe('TOTP enrolment', () => {
   });
 });
 
-describe('exchangeAuthCode', () => {
-  it('reads from the verified token whether a recovery link opened the session', async () => {
-    auth.exchangeCodeForSession.mockResolvedValue({ data: {}, error: null });
-    auth.getClaims.mockResolvedValue({
-      data: { claims: { amr: [{ method: 'recovery', timestamp: 1 }] } },
-    });
+// F1 of the PR #17 review: the recovery email carries a token_hash, which auth/callback verifies here. Unlike a PKCE
+// code it is not tied to the browser that asked, so /forgot-password writes no cookie at all.
+describe('openRecoverySession', () => {
+  it('opens the session of a recovery link', async () => {
+    auth.verifyOtp.mockResolvedValue({ data: {}, error: null });
 
-    expect(await exchangeAuthCode('code')).toEqual({ isRecovery: true });
+    expect(await openRecoverySession('token-hash')).toBe(true);
+    expect(auth.verifyOtp).toHaveBeenCalledWith({ type: 'recovery', token_hash: 'token-hash' });
   });
 
-  it('is null for a used, expired or foreign link', async () => {
-    auth.exchangeCodeForSession.mockResolvedValue({
-      data: {},
-      error: refused(400, 'flow_state_not_found'),
-    });
+  it('is false for a used or expired link', async () => {
+    auth.verifyOtp.mockResolvedValue({ data: {}, error: refused(403, 'otp_expired') });
 
-    expect(await exchangeAuthCode('code')).toBeNull();
+    expect(await openRecoverySession('token-hash')).toBe(false);
+  });
+
+  it('throws an outage on, so it never reads as an expired link', async () => {
+    auth.verifyOtp.mockResolvedValue({ data: {}, error: refused(500, 'unexpected_failure') });
+
+    await expect(openRecoverySession('token-hash')).rejects.toBeInstanceOf(AuthApiError);
   });
 });

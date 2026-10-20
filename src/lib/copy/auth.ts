@@ -43,7 +43,7 @@ export const authCopy = {
     description: 'Tulis email akun petugas Anda. Kami kirim tautan untuk membuat kata sandi baru.',
     submit: 'Kirim tautan',
     sentTitle: 'Cek email Anda',
-    sent: 'Kalau email itu milik akun petugas yang aktif, tautannya sudah kami kirim. Buka tautan itu di peramban ini juga, karena tautan hanya berlaku di sini dan hanya sebentar.',
+    sent: 'Kalau email itu milik akun petugas yang aktif, tautannya sudah kami kirim. Tautan itu berlaku 10 menit dan hanya bisa dipakai sekali.',
     back: 'Kembali ke halaman masuk',
   },
   reset: {

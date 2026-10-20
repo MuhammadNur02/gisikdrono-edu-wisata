@@ -1,19 +1,15 @@
 import 'server-only';
 
 import { isAuthApiError, type AuthError } from '@supabase/supabase-js';
-import { z } from 'zod';
 
-import { AUTH_CALLBACK_PATH, TOTP_ISSUER } from '@/config/auth';
+import { TOTP_ISSUER } from '@/config/auth';
 import { AppError } from '@/lib/errors';
-import { createLogger, requestIdFrom } from '@/lib/logger';
-import { publicEnv } from '@/lib/public-env';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import type { StaffSession } from '@/server/auth/guards';
-import { canResetPassword } from '@/server/services/staff-service';
 
 // Staff sign-in through Supabase Auth with the session client (src/lib/supabase/server.ts): every call acts as
 // whoever's cookies came with the request, and the session it opens or lifts is written back into those cookies.
-// The limits and the account lookup that need the service role live in staff-service.ts.
+// The limits, the account lookup and the reset email, which need the service role, live in staff-service.ts.
 
 export type PasswordSignIn =
   | { ok: true; hasVerifiedTotp: boolean }
@@ -27,8 +23,6 @@ const HTTP_TOO_MANY_REQUESTS = 429;
 const HTTP_SERVER_ERROR = 500;
 const CAPTCHA_FAILED = 'captcha_failed';
 const SAME_PASSWORD = 'same_password';
-
-const authMethodsSchema = z.array(z.object({ method: z.string() }));
 
 // Supabase Auth's answer to the request itself (wrong password, wrong code, a refused captcha). Anything else, a
 // network failure or a 5xx, is an outage and is thrown on, so it never reads as a wrong password.
@@ -61,26 +55,6 @@ export async function signInWithPassword(credentials: {
     ok: true,
     hasVerifiedTotp: factors.some((f) => f.factor_type === 'totp' && f.status === 'verified'),
   };
-}
-
-// Sends the reset email only to an account that may reset (staff-service.ts). Every failure is logged and kept here,
-// because an answer that differed by address would tell which addresses are staff (docs/Security.md §5.1).
-export async function sendPasswordReset(
-  request: { email: string; captchaToken: string },
-  requestHeaders: Headers,
-): Promise<void> {
-  if (!(await canResetPassword(request.email))) return;
-  const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.auth.resetPasswordForEmail(request.email, {
-    redirectTo: new URL(AUTH_CALLBACK_PATH, publicEnv.NEXT_PUBLIC_SITE_URL).toString(),
-    captchaToken: request.captchaToken,
-  });
-  if (error) {
-    createLogger(requestIdFrom(requestHeaders)).warn('internal_error', {
-      source: 'password_reset',
-      authErrorCode: error.code ?? null,
-    });
-  }
 }
 
 // Lifts the session to AAL2 with the code of the account's verified TOTP factor. False for a wrong or stale code.
@@ -165,18 +139,14 @@ export async function changePasswordAfterRecovery(
   return 'changed';
 }
 
-// The code of a recovery or confirmation link (PKCE). Null when it is expired or used, or when the link was opened in
-// another browser, which does not hold the verifier the request started with.
-export async function exchangeAuthCode(code: string): Promise<{ isRecovery: boolean } | null> {
+// The token_hash of a recovery email (docs/Security.md §5.1). It opens a session whose verified token names
+// `recovery` in amr, as /reset-password checks. False when the link is used or expired; an outage is thrown on, so it
+// never reads as an expired link.
+export async function openRecoverySession(tokenHash: string): Promise<boolean> {
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
-  if (error) return null;
-  // A recovery link opens a session whose verified token says so in amr, as /reset-password checks.
-  const { data } = await supabase.auth.getClaims();
-  const methods = authMethodsSchema.safeParse(data?.claims.amr);
-  return {
-    isRecovery: methods.success && methods.data.some((entry) => entry.method === 'recovery'),
-  };
+  const { error } = await supabase.auth.verifyOtp({ type: 'recovery', token_hash: tokenHash });
+  if (error && !isRefusal(error)) throw error;
+  return error === null;
 }
 
 // docs/Security.md §5.4: sign-out ends every session of the account, not only this browser's.

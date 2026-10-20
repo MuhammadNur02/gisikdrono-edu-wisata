@@ -107,7 +107,7 @@ describe('readStaffSession', () => {
       app_role: 'admin_rw',
       app_rw_id: 5,
       aal: 'aal1',
-      amr: [{ method: 'recovery', timestamp: nowSeconds }],
+      amr: [{ method: 'otp', timestamp: nowSeconds }],
     });
     session.user = {
       id: 'user-1',
@@ -120,7 +120,7 @@ describe('readStaffSession', () => {
     expect(await readStaffSession()).toMatchObject({
       ctx: { role: 'admin_rw', isAal2: false },
       hasVerifiedTotp: true,
-      authMethods: ['recovery'],
+      authMethods: ['otp'],
     });
   });
 

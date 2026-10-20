@@ -23,9 +23,12 @@ function adminClient() {
   });
 }
 
-// The local limiter remembers earlier runs (login:ip allows 10 in 5 minutes), so each file starts without them.
-export async function resetSignInLimits(): Promise<void> {
-  await runSql("delete from public.rate_limit_buckets where key like 'login:%'");
+// The local limiter remembers earlier runs (login:ip allows 10 in 5 minutes, password_reset:ip+email 3 an hour), so
+// each file starts without them.
+export async function resetAuthLimits(): Promise<void> {
+  await runSql(
+    "delete from public.rate_limit_buckets where key like 'login:%' or key like 'password_reset:%'",
+  );
 }
 
 export async function waitForTurnstile(page: Page): Promise<void> {
