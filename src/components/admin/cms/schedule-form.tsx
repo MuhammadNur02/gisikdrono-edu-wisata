@@ -6,20 +6,19 @@ import { useMemo } from 'react';
 import { useForm, type Control } from 'react-hook-form';
 import { toast } from 'sonner';
 
-import { DateTimeField, SelectField, StatusField, TextField } from '@/components/admin/cms/fields';
+import {
+  DateTimeField,
+  OptionalSelectField,
+  SelectField,
+  StatusField,
+  TextField,
+} from '@/components/admin/cms/fields';
 import { ImagePathField } from '@/components/admin/cms/image-path-field';
 import { FormAlert } from '@/components/forms/form-alert';
 import { FormField } from '@/components/forms/form-field';
 import { PostForm } from '@/components/forms/post-form';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { CMS_LIMITS, SCHEDULE_RW_ID } from '@/config/cms';
 import { SCHEDULE_TYPE_LABELS } from '@/config/status';
 import { DB_ENUMS } from '@/db/enums';
@@ -32,7 +31,6 @@ import type { ScheduleAdmin, SchedulePackageOption } from '@/types/cms';
 
 const text = copy.cms.schedules;
 const common = copy.cms.common;
-const NO_PACKAGE = 'none';
 const FIELDS = [
   'title',
   'scheduleType',
@@ -83,30 +81,12 @@ function PackageField({
   packages: SchedulePackageOption[];
 }) {
   return (
-    <FormField
+    <OptionalSelectField
       control={control}
       name="packageId"
       label={text.packageId}
-      render={(field) => (
-        <Select
-          value={field.value ?? NO_PACKAGE}
-          onValueChange={(value) => {
-            field.onChange(value === NO_PACKAGE ? null : value);
-          }}
-        >
-          <SelectTrigger ref={field.ref} onBlur={field.onBlur} className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NO_PACKAGE}>{text.noPackage}</SelectItem>
-            {packages.map((option) => (
-              <SelectItem key={option.id} value={option.id}>
-                {option.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
+      noneLabel={text.noPackage}
+      options={packages.map((option) => ({ value: option.id, label: option.name }))}
     />
   );
 }

@@ -1,5 +1,6 @@
 import type { RwId } from '@/config/rw';
 import type { EnumValue } from '@/db/enums';
+import type { Json } from '@/db/types';
 import type { ContentOwner } from '@/types/content';
 
 // What the dashboard's content screens read and the CMS actions answer with (Task P2.9.05). Plain values only: they
@@ -82,4 +83,51 @@ export interface BookletAdmin {
   pageCount: number | null;
   downloadCount: number;
   status: EnumValue<'content_status'>;
+}
+
+export interface HeroBannerAdmin {
+  id: string;
+  title: string;
+  subtitle: string | null;
+  ctaLabel: string | null;
+  ctaHref: string | null;
+  imagePath: string;
+  mobileImagePath: string | null;
+  productId: string | null;
+  sortOrder: number;
+  isActive: boolean;
+  // ISO in Asia/Jakarta, or null for no bound.
+  startsAt: string | null;
+  endsAt: string | null;
+}
+
+export interface BannerProductOption {
+  id: string;
+  name: string;
+}
+
+export interface ArticleListItem {
+  id: string;
+  owner: ContentOwner;
+  slug: string;
+  title: string;
+  category: EnumValue<'article_category'>;
+  status: EnumValue<'content_status'>;
+  updatedAt: string;
+}
+
+export interface ArticleAdmin {
+  id: string;
+  owner: ContentOwner;
+  slug: string;
+  title: string;
+  excerpt: string | null;
+  // articles.body_json as stored; the allowlist renderer decides what of it is shown.
+  bodyJson: Json;
+  coverPath: string | null;
+  category: EnumValue<'article_category'>;
+  tags: string[];
+  status: EnumValue<'content_status'>;
+  seoTitle: string | null;
+  seoDescription: string | null;
 }

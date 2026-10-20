@@ -37,7 +37,7 @@ function BookletRow({
 }: BookletActions & { booklet: BookletAdmin; showOwner: boolean }) {
   return (
     <TableRow>
-      <TableCell>
+      <TableCell className="min-w-48 whitespace-normal">
         <span className="font-medium">{booklet.title}</span>
         <span className="block text-caption text-muted-foreground">
           {BOOKLET_KIND_LABELS[booklet.kind]}

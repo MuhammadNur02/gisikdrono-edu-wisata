@@ -1,7 +1,7 @@
 import type { RwId } from '@/config/rw';
 import type { EnumValue } from '@/db/enums';
 
-// The content screens of the dashboard (Task P2.9.04–P2.9.06, docs/PRD.md FR-ADMIN-10 … FR-ADMIN-16).
+// The content screens of the dashboard (Task P2.9.04–P2.9.06, docs/PRD.md FR-ADMIN-10 … FR-ADMIN-15, FR-ADMIN-23).
 
 export const CMS_PATHS = {
   articles: '/dashboard/articles',
@@ -65,3 +65,7 @@ export const MAP_PERCENT_MAX = 100;
 export const MAP_PERCENT_DECIMALS = 2;
 // 10 to the power of MAP_PERCENT_DECIMALS, for rounding a click to those decimals.
 export const MAP_PERCENT_ROUNDING = 100;
+
+// How deep the JSON of an article body may nest: ARTICLE_MAX_DEPTH blocks take a few levels each (content, attrs,
+// marks), so this leaves room for any document the editor writes and refuses one built to exhaust the server.
+export const ARTICLE_JSON_MAX_DEPTH = 64;

@@ -8,7 +8,10 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isPublishedImagePathFor } from '@/lib/uploads/paths';
 import type { SaveActivityPointValues } from '@/lib/validations/activity-point';
 import { toContentOwner } from '@/server/auth/content-owner';
+import type { StaffContext } from '@/server/auth/guards';
 import { rowOrNotFound, slugConflictOr } from '@/server/services/content-errors';
+import { removeFilesOrLog } from '@/server/services/content-files';
+import { removeRowPhotos } from '@/server/services/upload-service';
 import type { ActivityPointAdmin } from '@/types/cms';
 
 // Activity points through the session client, so activity_points_staff and the AAL2 policy decide (0005). Every
@@ -147,7 +150,12 @@ export async function updateActivityPoint(
   return toActivityPointAdmin(rowOrNotFound(data));
 }
 
-export async function removeActivityPoint(rwId: RwId, id: string): Promise<void> {
+// The point takes the photos of its own folder along (content-files.ts says in which order).
+export async function removeActivityPoint(
+  ctx: StaffContext,
+  rwId: RwId,
+  id: string,
+): Promise<void> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('activity_points')
@@ -158,4 +166,7 @@ export async function removeActivityPoint(rwId: RwId, id: string): Promise<void>
     .maybeSingle();
   if (error) throw error;
   rowOrNotFound(data);
+  await removeFilesOrLog('activity_point_files', id, () =>
+    removeRowPhotos(ctx, { rwId, purpose: 'activity-point', entityId: id }),
+  );
 }

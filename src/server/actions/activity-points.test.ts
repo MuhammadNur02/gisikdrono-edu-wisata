@@ -123,7 +123,11 @@ describe('updateActivityPointAction and removeActivityPointAction', () => {
     vi.mocked(requireAal2).mockResolvedValue({ ok: true, ctx: SUPERADMIN });
     vi.mocked(readActivityPointOwner).mockResolvedValue(8);
     await removeActivityPointAction({ id: POINT_ID });
-    expect(removeActivityPoint).toHaveBeenCalledWith(8, POINT_ID);
+    expect(removeActivityPoint).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'superadmin' }),
+      8,
+      POINT_ID,
+    );
     expect(revalidateTag).toHaveBeenCalledWith('activity-points:8');
   });
 });

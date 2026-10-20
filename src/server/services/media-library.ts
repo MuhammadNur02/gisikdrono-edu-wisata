@@ -9,6 +9,7 @@ import {
   bookletPagesFolder,
   bookletPdfPath,
   isPublishedImagePathFor,
+  rowPhotoFolder,
   thumbnailPathFor,
 } from '@/lib/uploads/paths';
 
@@ -20,6 +21,8 @@ type DatabaseClient = SupabaseClient<Database>;
 
 const PAGE_FILE = /^\d{4}\.webp$/;
 const PDF_FILE_NAME = 'booklet.pdf';
+// More photos than one article or point ever holds; a folder past it keeps the rest for a later clean-up.
+const ROW_FOLDER_LIST_LIMIT = 1000;
 
 interface CountResult {
   count: number | null;
@@ -115,6 +118,31 @@ export async function removeBookletFolder(
     .filter((page) => PAGE_FILE.test(page.name))
     .map((page) => `${folder}/${page.name}`);
   const paths = [bookletPdfPath(rwId, bookletId), ...pagePaths];
+  const { error } = await bucket.remove(paths);
+  if (error) throw error;
+  return paths.length;
+}
+
+export interface RowPhotos {
+  rwId: RwId | null;
+  purpose: 'article' | 'activity-point';
+  entityId: string;
+}
+
+// A removed row's own photo folder (Task P2.9.06): the folder follows from the owner, the purpose and the id alone,
+// and only the photos finalize named in it go.
+export async function removeRowPhotoFolder(
+  adminClient: DatabaseClient,
+  target: RowPhotos,
+): Promise<number> {
+  const bucket = adminClient.storage.from(PUBLIC_MEDIA_BUCKET);
+  const folder = rowPhotoFolder(target);
+  const files = await bucket.list(folder, { limit: ROW_FOLDER_LIST_LIMIT });
+  if (files.error) throw files.error;
+  const paths = files.data
+    .map((file) => `${folder}/${file.name}`)
+    .filter((path) => isPublishedImagePathFor(path, target));
+  if (paths.length === 0) return 0;
   const { error } = await bucket.remove(paths);
   if (error) throw error;
   return paths.length;

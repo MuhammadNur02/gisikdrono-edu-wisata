@@ -144,6 +144,13 @@ export function bookletPagePaths(prefix: string | null, pageCount: number | null
   return Array.from({ length: count }, (_, index) => `${folder}/${bookletPageFileName(index + 1)}`);
 }
 
+// The folder finalize gives one row's photos: `<owner>/<folder>/<row id>` (an article, an activity point).
+export function rowPhotoFolder(
+  target: MediaTarget & { rwId: RwId | null; entityId: string },
+): string {
+  return `${ownerFor(target.rwId)}/${FOLDER_BY_PURPOSE[target.purpose]}/${target.entityId}`;
+}
+
 function bookletFolder(owner: string, bookletId: string): string {
   return `${owner}/${FOLDER_BY_PURPOSE.booklet}/${bookletId}`;
 }

@@ -5,6 +5,7 @@ import type { Control, FieldPathByValue, FieldValues } from 'react-hook-form';
 import { NumberField } from '@/components/admin/cms/number-field';
 import { StatusSelect } from '@/components/admin/cms/status-select';
 import { FormField } from '@/components/forms/form-field';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -141,6 +142,77 @@ export function SelectField<TValues extends FieldValues>({
             ))}
           </SelectContent>
         </Select>
+      )}
+    />
+  );
+}
+
+// The choice that stands for NULL in a select of a nullable column.
+const NO_OPTION = 'none';
+
+export interface OptionalSelectFieldProps<TValues extends FieldValues> extends FieldBase<TValues> {
+  name: FieldPathByValue<TValues, string | null>;
+  options: readonly { value: string; label: string }[];
+  // What choosing none is called, such as `Tanpa paket`.
+  noneLabel: string;
+}
+
+export function OptionalSelectField<TValues extends FieldValues>({
+  name,
+  options,
+  noneLabel,
+  ...base
+}: OptionalSelectFieldProps<TValues>) {
+  return (
+    <FormField
+      {...base}
+      name={name}
+      render={(field) => (
+        <Select
+          value={typeof field.value === 'string' ? field.value : NO_OPTION}
+          onValueChange={(value) => {
+            field.onChange(value === NO_OPTION ? null : value);
+          }}
+        >
+          <SelectTrigger ref={field.ref} onBlur={field.onBlur} className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_OPTION}>{noneLabel}</SelectItem>
+            {options.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+    />
+  );
+}
+
+export interface CheckboxFieldProps<TValues extends FieldValues> extends FieldBase<TValues> {
+  name: FieldPathByValue<TValues, boolean>;
+}
+
+export function CheckboxField<TValues extends FieldValues>({
+  name,
+  ...base
+}: CheckboxFieldProps<TValues>) {
+  return (
+    <FormField
+      {...base}
+      name={name}
+      render={(field) => (
+        <Checkbox
+          ref={field.ref}
+          checked={field.value === true}
+          onBlur={field.onBlur}
+          onCheckedChange={(checked) => {
+            field.onChange(checked === true);
+          }}
+          className="size-6"
+        />
       )}
     />
   );

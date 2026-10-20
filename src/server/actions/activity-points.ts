@@ -70,7 +70,7 @@ export async function removeActivityPointAction(input: unknown): Promise<ActionR
     const rwId = await readActivityPointOwner(parsed.data.id);
     if (rwId === undefined) return fail('NOT_FOUND');
     if (!canWriteFor(guard.ctx, rwId)) return fail('FORBIDDEN');
-    await removeActivityPoint(rwId, parsed.data.id);
+    await removeActivityPoint(guard.ctx, rwId, parsed.data.id);
     revalidateTag(TAGS.activityPoints(rwId));
     return ok(null);
   } catch (error) {

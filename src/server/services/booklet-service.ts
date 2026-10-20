@@ -3,13 +3,13 @@ import 'server-only';
 import type { Tables } from '@/db/types';
 import { copy } from '@/lib/copy/id';
 import { AppError } from '@/lib/errors';
-import { createLogger } from '@/lib/logger';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { bookletCoverPath, bookletPagesFolder, bookletPdfPath } from '@/lib/uploads/paths';
 import type { SaveBookletValues } from '@/lib/validations/booklet';
 import { toContentOwner } from '@/server/auth/content-owner';
 import type { StaffContext } from '@/server/auth/guards';
 import { rowOrNotFound, slugConflictOr } from '@/server/services/content-errors';
+import { removeFilesOrLog } from '@/server/services/content-files';
 import { readPublishedBookletFiles, removeBookletFiles } from '@/server/services/upload-service';
 import type { BookletAdmin } from '@/types/cms';
 import type { ContentOwner } from '@/types/content';
@@ -162,8 +162,7 @@ export async function updateBooklet(
   return toBookletAdmin(rowOrNotFound(data));
 }
 
-// The row goes first, so /e-booklet never lists a booklet without its files; files that could not be removed are
-// logged and left for a later clean-up rather than putting the row back.
+// The booklet takes its PDF and pages along (content-files.ts says in which order).
 export async function removeBooklet(
   ctx: StaffContext,
   owner: ContentOwner,
@@ -175,13 +174,5 @@ export async function removeBooklet(
   const { data, error } = await query.select('id').maybeSingle();
   if (error) throw error;
   rowOrNotFound(data);
-  try {
-    await removeBookletFiles(ctx, owner, id);
-  } catch (filesError) {
-    createLogger(crypto.randomUUID()).error('internal_error', {
-      source: 'booklet_files',
-      bookletId: id,
-      errorName: filesError instanceof Error ? filesError.name : typeof filesError,
-    });
-  }
+  await removeFilesOrLog('booklet_files', id, () => removeBookletFiles(ctx, owner, id));
 }

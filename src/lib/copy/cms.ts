@@ -184,6 +184,9 @@ export const cmsCopy = {
     empty: 'Belum ada hero banner.',
     emptyHint: 'Tambahkan banner pertama. Tanpa banner, beranda menampilkan foto bawaan.',
     noun: 'Banner',
+    onlySuper: 'Hanya superadmin yang mengelola hero banner beranda.',
+    window: 'Waktu tampil',
+    always: 'Selalu',
   },
   articles: {
     title: 'Artikel',
@@ -208,6 +211,8 @@ export const cmsCopy = {
     reviewNote:
       'Setelah diajukan, superadmin meninjau lalu menayangkan artikel ini. Mengubah artikel yang sudah tayang mengembalikannya ke tinjauan.',
     removeOnlySuper: 'Hanya superadmin yang bisa menghapus artikel.',
+    publishOnlySuper: 'Hanya superadmin yang bisa menayangkan artikel. Ajukan untuk ditinjau, ya.',
+    updatedAt: 'Diubah',
     back: 'Kembali ke daftar artikel',
     empty: 'Belum ada artikel.',
     emptyHint: 'Tulis artikel pertama tentang kegiatan atau pengumuman terbaru.',

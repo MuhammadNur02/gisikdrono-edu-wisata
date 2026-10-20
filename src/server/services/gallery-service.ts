@@ -3,7 +3,6 @@ import 'server-only';
 import type { Tables } from '@/db/types';
 import { copy } from '@/lib/copy/id';
 import { AppError } from '@/lib/errors';
-import { createLogger } from '@/lib/logger';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isPublishedImagePathFor } from '@/lib/uploads/paths';
 import type { PublishedImage } from '@/lib/validations/content';
@@ -11,6 +10,7 @@ import type { CreateGalleryItemValues, UpdateGalleryItemValues } from '@/lib/val
 import { toContentOwner } from '@/server/auth/content-owner';
 import type { StaffContext } from '@/server/auth/guards';
 import { rowOrNotFound } from '@/server/services/content-errors';
+import { removeFilesOrLog } from '@/server/services/content-files';
 import { isThumbnailOf } from '@/server/services/media-library';
 import { removeGalleryFiles } from '@/server/services/upload-service';
 import type { GalleryItemAdmin } from '@/types/cms';
@@ -186,8 +186,7 @@ export async function updateGalleryItem(
   return toGalleryItemAdmin(rowOrNotFound(data));
 }
 
-// The row goes first, so the public gallery never shows a missing photo; a file that could not be removed is logged
-// and left for a later clean-up rather than putting the row back.
+// docs/PRD.md FR-ADMIN-10: the item takes its photo and thumbnail along (content-files.ts says in which order).
 export async function removeGalleryItem(
   ctx: StaffContext,
   owner: ContentOwner,
@@ -199,13 +198,7 @@ export async function removeGalleryItem(
   const { data, error } = await query.select('storage_path, thumbnail_path').maybeSingle();
   if (error) throw error;
   const removed = rowOrNotFound(data);
-  try {
-    await removeGalleryFiles(ctx, owner, [removed.storage_path, removed.thumbnail_path]);
-  } catch (filesError) {
-    createLogger(crypto.randomUUID()).error('internal_error', {
-      source: 'gallery_files',
-      galleryId: id,
-      errorName: filesError instanceof Error ? filesError.name : typeof filesError,
-    });
-  }
+  await removeFilesOrLog('gallery_files', id, () =>
+    removeGalleryFiles(ctx, owner, [removed.storage_path, removed.thumbnail_path]),
+  );
 }

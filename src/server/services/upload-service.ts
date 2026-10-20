@@ -36,7 +36,9 @@ import { hasUploadAccess, type StaffContext } from '@/server/auth/guards';
 import {
   readPublishedBooklet,
   removeBookletFolder,
+  removeRowPhotoFolder,
   removeUnusedGalleryFiles,
+  type RowPhotos,
   type PublishedBooklet,
 } from '@/server/services/media-library';
 import {
@@ -324,4 +326,9 @@ export async function removeBookletFiles(
   bookletId: string,
 ): Promise<number> {
   return removeBookletFolder(await mediaClientFor(ctx, rwId), rwId, bookletId);
+}
+
+// A removed article's or activity point's photos, which no other row can show (their folder is the row's own).
+export async function removeRowPhotos(ctx: StaffContext, target: RowPhotos): Promise<number> {
+  return removeRowPhotoFolder(await mediaClientFor(ctx, target.rwId), target);
 }

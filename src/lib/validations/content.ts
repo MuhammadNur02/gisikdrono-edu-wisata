@@ -91,6 +91,14 @@ export const jakartaDateTimeSchema = z
   )
   .transform((value) => (LOCAL_DATE_TIME.test(value) ? `${value}${JAKARTA_OFFSET}` : value));
 
+// The same for a moment that may stay empty, such as the end of a banner's window.
+export const optionalJakartaDateTimeSchema = z
+  .string()
+  .trim()
+  .nullable()
+  .transform((value) => (value === null || value === '' ? null : value))
+  .pipe(jakartaDateTimeSchema.nullable());
+
 export const contentTagsSchema = z
   .array(contentText(CMS_LIMITS.tag))
   .max(CMS_LIMITS.tags, messages.tags(CMS_LIMITS.tags));
