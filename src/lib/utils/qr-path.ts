@@ -3,8 +3,8 @@ import 'server-only';
 import QRCode from 'qrcode';
 
 // The TOTP enrolment QR code as one SVG path, one square per dark module with each row's runs merged. Supabase's own
-// qr_code is a data: URL, which the CSP's img-src does not allow, and markup would need dangerouslySetInnerHTML;
-// a path renders as an ordinary <svg> element instead (CLAUDE.md §7.8).
+// qr_code is a data: URL, which the CSP's img-src does not allow, and SVG markup could only be inserted as raw HTML,
+// which the project bans; a path renders as an ordinary <svg> element instead (CLAUDE.md §7.8).
 export function qrSvgPath(text: string): { size: number; path: string } {
   const { modules } = QRCode.create(text, { errorCorrectionLevel: 'M' });
   const commands: string[] = [];
