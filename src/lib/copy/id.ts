@@ -1,4 +1,5 @@
 import { authCopy } from '@/lib/copy/auth';
+import { bookingCopy } from '@/lib/copy/booking';
 import { cmsCopy } from '@/lib/copy/cms';
 import { dashboardCopy } from '@/lib/copy/dashboard';
 import type { ActionErrorCode } from '@/types/action-result';
@@ -26,10 +27,9 @@ export const copy = {
     PAYMENT: 'Pembayaran belum bisa diproses. Coba beberapa saat lagi atau pilih metode lain.',
     INTERNAL: 'Maaf, ada kendala di sistem kami. Coba lagi sebentar lagi, ya.',
   } satisfies Record<ActionErrorCode, string>,
-  validation: {
-    freeText: 'Tulis tanpa tautan, alamat situs, email, atau nomor telepon, ya.',
-  },
+  validation: { freeText: 'Tulis tanpa tautan, alamat situs, email, atau nomor telepon, ya.' },
   auth: authCopy,
+  booking: bookingCopy,
   dashboard: dashboardCopy,
   cms: cmsCopy,
   // Labels the base components read out to screen readers and show on their own controls.

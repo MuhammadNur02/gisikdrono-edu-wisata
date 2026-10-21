@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { copy } from '@/lib/copy/id';
-import { freeTextSchema, isSafeFreeText } from '@/lib/validations/free-text';
+import {
+  freeTextSchema,
+  isSafeFreeText,
+  optionalFreeTextSchema,
+} from '@/lib/validations/free-text';
 
 describe('isSafeFreeText', () => {
   it.each([
@@ -62,5 +66,29 @@ describe('freeTextSchema', () => {
   it('explains a refusal in friendly Indonesian', () => {
     const parsed = freeTextSchema(60).safeParse('bayar di gisik-bayar.top');
     expect(parsed.error?.issues[0]?.message).toBe(copy.validation.freeText);
+  });
+
+  it('says what the form asks for when the text is missing or too long', () => {
+    const schema = freeTextSchema(4, { required: 'Isi nama.', tooLong: 'Terlalu panjang.' });
+    expect(schema.safeParse(' ').error?.issues[0]?.message).toBe('Isi nama.');
+    expect(schema.safeParse('Budiman').error?.issues[0]?.message).toBe('Terlalu panjang.');
+  });
+});
+
+describe('optionalFreeTextSchema', () => {
+  const schema = optionalFreeTextSchema(20, { tooLong: 'Terlalu panjang.' });
+
+  it('turns a field left out, blank or null into null, and parses null again', () => {
+    expect(schema.parse(undefined)).toBeNull();
+    expect(schema.parse('   ')).toBeNull();
+    expect(schema.parse(null)).toBeNull();
+    expect(schema.parse('  Tanpa kacang ')).toBe('Tanpa kacang');
+  });
+
+  it('refuses a link or a number as freeTextSchema does, and text past its length', () => {
+    expect(schema.safeParse('wa.me/628123').error?.issues[0]?.message).toBe(
+      copy.validation.freeText,
+    );
+    expect(schema.safeParse('a'.repeat(21)).error?.issues[0]?.message).toBe('Terlalu panjang.');
   });
 });

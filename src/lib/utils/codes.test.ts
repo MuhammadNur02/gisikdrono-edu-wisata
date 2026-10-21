@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isBookingCode, normalizeBookingCode } from './codes';
+import { isBookingCode, isOrderId, normalizeBookingCode } from './codes';
 
 describe('normalizeBookingCode', () => {
   it.each([
@@ -30,5 +30,26 @@ describe('isBookingCode', () => {
     expect(isBookingCode('GSK-7F3K9Q2M')).toBe(true);
     expect(isBookingCode('gsk-7f3k9q2m')).toBe(false);
     expect(isBookingCode('GSK-7F3K9Q2M-05')).toBe(false);
+  });
+});
+
+describe('isOrderId', () => {
+  it.each(['GSK-7F3K9Q2M-01', 'GSK-00000000-99', 'GSK-ZZZZZZZZ-12'])(
+    'accepts %s, a booking code and a two-digit attempt',
+    (orderId) => {
+      expect(isOrderId(orderId)).toBe(true);
+    },
+  );
+
+  it.each([
+    'GSK-7F3K9Q2M',
+    'GSK-7F3K9Q2M-1',
+    'GSK-7F3K9Q2M-001',
+    'gsk-7f3k9q2m-01',
+    'GSK-7F3K9Q2U-01',
+    'ORDER-12345',
+    ' GSK-7F3K9Q2M-01',
+  ])('refuses %s', (orderId) => {
+    expect(isOrderId(orderId)).toBe(false);
   });
 });

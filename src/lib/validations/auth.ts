@@ -16,7 +16,7 @@ const TOTP_CODE = /^\d{6}$/;
 
 const messages = copy.auth.validation;
 
-const emailField = z
+export const emailField = z
   .string()
   .trim()
   .toLowerCase()

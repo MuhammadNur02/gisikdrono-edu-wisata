@@ -1,5 +1,11 @@
+// The database makes every booking code, order id and ticket code (internal.create_booking, create_payment_attempt,
+// apply_payment_event); the application only reads them, so this file holds their formats and nothing that draws one.
+
 // Mirrors the bookings.booking_code CHECK: 'GSK-' + 8 Crockford base32 characters (no I, L, O or U).
 export const BOOKING_CODE_PATTERN = /^GSK-[0-9A-HJKMNP-TV-Z]{8}$/;
+
+// Mirrors the payments.order_id CHECK: the booking code and the payment attempt in two digits, 'GSK-7F3K9Q2M-01'.
+const ORDER_ID_PATTERN = /^GSK-[0-9A-HJKMNP-TV-Z]{8}-[0-9]{2}$/;
 
 const BOOKING_CODE_PREFIX = 'GSK';
 
@@ -18,4 +24,10 @@ export function normalizeBookingCode(input: string): string | null {
 
 export function isBookingCode(value: string): boolean {
   return BOOKING_CODE_PATTERN.test(value);
+}
+
+// docs/Security.md §3.3 step 8: the Midtrans webhook alerts on an order it does not know only when the id has our
+// shape, so junk posts cannot page the team.
+export function isOrderId(value: string): boolean {
+  return ORDER_ID_PATTERN.test(value);
 }
