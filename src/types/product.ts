@@ -1,6 +1,6 @@
-import type { RwId } from '@/config/rw';
 import type { EnumValue } from '@/db/enums';
 import type { PublicImage } from '@/types/media';
+import type { RwBadge } from '@/types/rw-unit';
 import type { VendorReference } from '@/types/vendor';
 
 export interface ProductSummary {
@@ -8,7 +8,7 @@ export interface ProductSummary {
   slug: string;
   name: string;
   category: EnumValue<'product_category'>;
-  rwId: RwId;
+  rw: RwBadge;
   // Integer rupiah per unitLabel.
   price: number;
   unitLabel: string;

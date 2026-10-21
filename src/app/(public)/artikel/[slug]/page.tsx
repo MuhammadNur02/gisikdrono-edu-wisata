@@ -45,7 +45,7 @@ function ArticleEyebrow({ article }: { article: ArticleDetail }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
       <Badge variant="secondary">{ARTICLE_CATEGORY_LABELS[article.category]}</Badge>
-      {article.rwId ? <RwTag rwId={article.rwId} /> : null}
+      {article.rw ? <RwTag rw={article.rw} /> : null}
     </span>
   );
 }

@@ -58,7 +58,7 @@ describe('setRwScopeAction', () => {
   });
 
   it('refuses a scope that is not an RW', async () => {
-    expect(await setRwScopeAction({ scope: 7 })).toMatchObject({ error: { code: 'VALIDATION' } });
+    expect(await setRwScopeAction({ scope: 0 })).toMatchObject({ error: { code: 'VALIDATION' } });
     expect(requireRole).not.toHaveBeenCalled();
   });
 });

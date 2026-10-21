@@ -2,26 +2,35 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-import { isRwId, RW_ACCENTS, RW_IDS, RW_PROGRAMMES } from './rw';
+import { DB_ENUMS } from '@/db/enums';
+
+import {
+  NEUTRAL_ACCENT_CLASSES,
+  RW_ACCENT_CLASSES,
+  rwAccentClasses,
+  rwLabel,
+  rwNumber,
+  softClassesFor,
+} from './rw';
+import { RW_ICONS } from './rw-icons';
 
 const globalsCss = readFileSync(new URL('../styles/globals.css', import.meta.url), 'utf8');
+const SLOTS = ['text', 'fill', 'soft', 'border'] as const;
 
-// Every colour a class names (bg-rw05-soft -> rw05-soft) must exist as --color-* in @theme inline,
+// Every colour a class names (bg-rw-leaf-soft -> rw-leaf-soft) must exist as --color-* in @theme inline,
 // or Tailwind silently generates nothing and the accent disappears.
 function colourOf(className: string): string {
   return className.replace(/^(text|bg|border)-/, '');
 }
 
-describe('RW_ACCENTS', () => {
-  it('covers both RWs, RW 05 first', () => {
-    expect(RW_IDS).toEqual([5, 8]);
-    expect(Object.keys(RW_ACCENTS).map(Number)).toEqual([5, 8]);
+describe('RW_ACCENT_CLASSES', () => {
+  it('has a palette for every rw_units.accent_key and nothing else', () => {
+    expect(Object.keys(RW_ACCENT_CLASSES)).toEqual([...DB_ENUMS.rw_accent]);
   });
 
   it('names only colours that globals.css exposes to Tailwind', () => {
-    const slots = ['text', 'fill', 'soft', 'border'] as const;
-    const classNames = RW_IDS.flatMap((rwId) =>
-      slots.flatMap((slot) => RW_ACCENTS[rwId][slot].split(' ')),
+    const classNames = DB_ENUMS.rw_accent.flatMap((key) =>
+      SLOTS.flatMap((slot) => RW_ACCENT_CLASSES[key][slot].split(' ')),
     );
     for (const className of classNames) {
       expect(globalsCss).toContain(
@@ -30,41 +39,48 @@ describe('RW_ACCENTS', () => {
     }
   });
 
-  it('defines every RW variable for light and dark mode', () => {
+  it('defines every palette variable for light and dark mode', () => {
     const [light = '', dark = ''] = globalsCss.split('.dark {');
-    for (const rw of ['rw05', 'rw08']) {
+    for (const key of DB_ENUMS.rw_accent) {
       for (const suffix of ['', '-foreground', '-soft', '-soft-foreground']) {
-        expect(light).toContain(`--${rw}${suffix}:`);
-        expect(dark).toContain(`--${rw}${suffix}:`);
+        expect(light).toContain(`--rw-${key}${suffix}:`);
+        expect(dark).toContain(`--rw-${key}${suffix}:`);
       }
     }
   });
-});
 
-describe('RW_PROGRAMMES', () => {
-  const seed = readFileSync(
-    new URL('../../supabase/migrations/0008_seed.sql', import.meta.url),
-    'utf8',
-  );
-
-  it('uses the rw_units slug of the seed as the page path', () => {
-    for (const rwId of RW_IDS) {
-      const programme = RW_PROGRAMMES[rwId];
-      expect(seed).toContain(`(${String(rwId)}, 'RW0${String(rwId)}', '${programme.slug}',`);
-      expect(programme.path).toBe(`/${programme.slug}`);
-    }
-  });
-
-  it('labels each RW with its two-digit number', () => {
-    expect(RW_IDS.map((rwId) => RW_PROGRAMMES[rwId].label)).toEqual(['RW 05', 'RW 08']);
+  it('keeps clear of the shadcn --accent token', () => {
+    expect(globalsCss).not.toMatch(/--accent-(leaf|terracotta|mulberry|teal|violet)/);
   });
 });
 
-describe('isRwId', () => {
-  it('accepts the two RWs and nothing else', () => {
-    expect(isRwId(5)).toBe(true);
-    expect(isRwId(8)).toBe(true);
-    expect(isRwId(1)).toBe(false);
-    expect(isRwId(0)).toBe(false);
+describe('rwAccentClasses and softClassesFor', () => {
+  it('hands out a palette by key, and the neutral pair for an RW that is offline', () => {
+    expect(rwAccentClasses('leaf')).toBe(RW_ACCENT_CLASSES.leaf);
+    expect(rwAccentClasses(null)).toBe(NEUTRAL_ACCENT_CLASSES);
+  });
+
+  it('tints a photo slot for one RW only', () => {
+    expect(softClassesFor([{ accentKey: 'mulberry' }])).toBe(RW_ACCENT_CLASSES.mulberry.soft);
+    expect(softClassesFor([])).toBe(NEUTRAL_ACCENT_CLASSES.soft);
+    expect(softClassesFor([{ accentKey: 'leaf' }, { accentKey: 'terracotta' }])).toBe(
+      NEUTRAL_ACCENT_CLASSES.soft,
+    );
+    expect(softClassesFor([{ accentKey: null }])).toBe(NEUTRAL_ACCENT_CLASSES.soft);
+  });
+});
+
+describe('RW_ICONS', () => {
+  it('has an icon for every rw_units.icon_key', () => {
+    expect(Object.keys(RW_ICONS)).toEqual([...DB_ENUMS.rw_icon]);
+  });
+});
+
+describe('rwNumber and rwLabel', () => {
+  it('write an RW number with two digits, as the code, the folder and the tag do', () => {
+    expect(rwNumber(5)).toBe('05');
+    expect(rwNumber(13)).toBe('13');
+    expect(rwLabel(8)).toBe('RW 08');
+    expect(rwLabel(13)).toBe('RW 13');
   });
 });

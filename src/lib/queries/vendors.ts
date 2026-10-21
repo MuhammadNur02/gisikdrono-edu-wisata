@@ -1,9 +1,9 @@
 import 'server-only';
 
 import type { Tables } from '@/db/types';
-import { toPublicImage, toRwId } from '@/lib/queries/mappers';
-import { PRODUCT_TAGS } from '@/lib/queries/products';
+import { toPublicImage } from '@/lib/queries/mappers';
 import { cachedPublicRead, rowOrNull, rowsOf } from '@/lib/queries/public-read';
+import { TAGS } from '@/lib/queries/tags';
 import { createSupabaseAnonClient } from '@/lib/supabase/anon';
 import type { VendorProfile } from '@/types/vendor';
 
@@ -21,7 +21,7 @@ function toVendorProfile(row: VendorRow): VendorProfile {
     id: row.id,
     slug: row.slug,
     name: row.name,
-    rwId: toRwId(row.rw_id),
+    rwId: row.rw_id,
     descriptionMd: row.description_md,
     logo: toPublicImage(row.logo_path, `Logo ${row.name}`),
   };
@@ -37,7 +37,7 @@ export const listVendors = cachedPublicRead(
     return rowsOf(result, 'umkm_vendors').map(toVendorProfile);
   },
   ['vendors', 'list'],
-  PRODUCT_TAGS,
+  [TAGS.allProducts],
 );
 
 export const getVendorBySlug = cachedPublicRead(
@@ -51,5 +51,5 @@ export const getVendorBySlug = cachedPublicRead(
     return row ? toVendorProfile(row) : null;
   },
   ['vendors', 'by-slug'],
-  PRODUCT_TAGS,
+  [TAGS.allProducts],
 );

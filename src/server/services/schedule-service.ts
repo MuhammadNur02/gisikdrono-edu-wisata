@@ -2,7 +2,6 @@ import 'server-only';
 
 import { rrulestr } from 'rrule';
 
-import { SCHEDULE_RW_ID } from '@/config/cms';
 import type { RwId } from '@/config/rw';
 import type { Tables } from '@/db/types';
 import { copy } from '@/lib/copy/id';
@@ -11,15 +10,15 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isPublishedImagePathFor } from '@/lib/uploads/paths';
 import { toJakartaIsoString } from '@/lib/utils/dates';
 import type { ScheduleValues, UpdateScheduleValues } from '@/lib/validations/schedule';
-import { toContentOwner } from '@/server/auth/content-owner';
 import type { StaffContext } from '@/server/auth/guards';
 import { rowOrNotFound } from '@/server/services/content-errors';
 import { removeFilesOrLog } from '@/server/services/content-files';
 import { removeGalleryFiles } from '@/server/services/upload-service';
 import type { CleanedUp, ScheduleAdmin, SchedulePackageOption } from '@/types/cms';
 
-// RW 08's performance schedules through the session client, so the performance_schedules policies, the
-// package-RW trigger and the AAL2 policy decide (0005). Every write names the RW as well as the id.
+// The performance schedules of an RW that runs one (rw_units.schedule_enabled), through the session client, so the
+// performance_schedules policies, the package-RW trigger and the AAL2 policy decide (0005). Every write names the RW
+// as well as the id.
 
 const COLUMNS =
   'id, rw_id, title, schedule_type, description_md, starts_at, ends_at, venue, recurrence_rule, image_path, package_id, status';
@@ -81,31 +80,31 @@ function checkRecurrence(rule: string | null): void {
   }
 }
 
-function checkImage(path: string | null, current: string | null): void {
+function checkImage(rwId: RwId, path: string | null, current: string | null): void {
   if (path === null || path === current) return;
-  if (!isPublishedImagePathFor(path, { rwId: SCHEDULE_RW_ID, purpose: 'gallery' })) {
+  if (!isPublishedImagePathFor(path, { rwId, purpose: 'gallery' })) {
     throw new AppError('VALIDATION', copy.cms.validation.image);
   }
 }
 
-export async function listSchedulesForStaff(): Promise<ScheduleAdmin[]> {
+export async function listSchedulesForStaff(rwId: RwId): Promise<ScheduleAdmin[]> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('performance_schedules')
     .select(COLUMNS)
-    .eq('rw_id', SCHEDULE_RW_ID)
+    .eq('rw_id', rwId)
     .order('starts_at', { ascending: false });
   if (error) throw error;
   return data.map(toScheduleAdmin);
 }
 
-// The packages a schedule may link: RW 08's own (performance_schedules_package_rw_guard, 0005).
-export async function listSchedulePackages(): Promise<SchedulePackageOption[]> {
+// The packages a schedule may link: the RW's own (performance_schedules_package_rw_guard, 0005).
+export async function listSchedulePackages(rwId: RwId): Promise<SchedulePackageOption[]> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('tour_packages')
     .select('id, name')
-    .eq('rw_id', SCHEDULE_RW_ID)
+    .eq('rw_id', rwId)
     .order('name');
   if (error) throw error;
   return data.map((row) => ({ id: row.id, name: row.name }));
@@ -120,9 +119,7 @@ async function readSchedule(id: string): Promise<(ScheduleAdmin & { rwId: RwId }
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  const rwId = toContentOwner(data.rw_id);
-  if (rwId === null || rwId === undefined) throw new Error('schedule without a known RW');
-  return { ...toScheduleAdmin(data), rwId };
+  return { ...toScheduleAdmin(data), rwId: data.rw_id };
 }
 
 export async function readScheduleOwner(id: string): Promise<RwId | undefined> {
@@ -130,13 +127,14 @@ export async function readScheduleOwner(id: string): Promise<RwId | undefined> {
 }
 
 export async function createSchedule(
+  rwId: RwId,
   createdBy: string,
   values: ScheduleValues,
 ): Promise<ScheduleAdmin> {
   checkRecurrence(values.recurrenceRule);
-  checkImage(values.imagePath, null);
-  // Every column is named by columnsOf; the RW is RW 08's, the creator the signed-in staff member.
-  const row = { rw_id: SCHEDULE_RW_ID, created_by: createdBy, ...columnsOf(values) };
+  checkImage(rwId, values.imagePath, null);
+  // Every column is named by columnsOf; the RW is the one the action resolved, the creator the signed-in staff member.
+  const row = { rw_id: rwId, created_by: createdBy, ...columnsOf(values) };
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('performance_schedules')
@@ -153,13 +151,13 @@ export async function updateSchedule(
 ): Promise<CleanedUp<ScheduleAdmin>> {
   const current = rowOrNotFound(await readSchedule(values.id));
   checkRecurrence(values.recurrenceRule);
-  checkImage(values.imagePath, current.imagePath);
+  checkImage(current.rwId, values.imagePath, current.imagePath);
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('performance_schedules')
     .update(columnsOf(values))
     .eq('id', values.id)
-    .eq('rw_id', SCHEDULE_RW_ID)
+    .eq('rw_id', current.rwId)
     .select(COLUMNS)
     .maybeSingle();
   if (error) throw error;
@@ -168,28 +166,31 @@ export async function updateSchedule(
   const filesRemoved =
     replaced === null ||
     replaced === saved.imagePath ||
-    (await removeSchedulePhoto(ctx, values.id, replaced));
+    (await removeSchedulePhoto(ctx, current.rwId, values.id, replaced));
   return { value: saved, filesRemoved };
 }
 
 // A photo the schedule stopped showing, or took along when it was removed, leaves public-media unless a gallery item
 // still shows it (docs/Security.md R34; removeGalleryFiles counts every row that does).
-async function removeSchedulePhoto(ctx: StaffContext, id: string, path: string): Promise<boolean> {
-  return removeFilesOrLog('schedule_files', id, () =>
-    removeGalleryFiles(ctx, SCHEDULE_RW_ID, [path]),
-  );
+async function removeSchedulePhoto(
+  ctx: StaffContext,
+  rwId: RwId,
+  id: string,
+  path: string,
+): Promise<boolean> {
+  return removeFilesOrLog('schedule_files', id, () => removeGalleryFiles(ctx, rwId, [path]));
 }
 
-export async function removeSchedule(ctx: StaffContext, id: string): Promise<boolean> {
+export async function removeSchedule(ctx: StaffContext, rwId: RwId, id: string): Promise<boolean> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('performance_schedules')
     .delete()
     .eq('id', id)
-    .eq('rw_id', SCHEDULE_RW_ID)
+    .eq('rw_id', rwId)
     .select('image_path')
     .maybeSingle();
   if (error) throw error;
   const removed = rowOrNotFound(data);
-  return removed.image_path === null || removeSchedulePhoto(ctx, id, removed.image_path);
+  return removed.image_path === null || removeSchedulePhoto(ctx, rwId, id, removed.image_path);
 }

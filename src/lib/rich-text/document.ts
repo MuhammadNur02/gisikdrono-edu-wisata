@@ -5,7 +5,7 @@ import {
   type ArticleHeadingLevel,
 } from '@/config/rich-text';
 import { ALT_TEXT_MAX_LENGTH, ALT_TEXT_MIN_LENGTH, MAX_IMAGE_EDGE_PX } from '@/config/uploads';
-import { MEDIA_OWNERS } from '@/lib/uploads/paths';
+import { MEDIA_OWNER_SOURCE } from '@/lib/uploads/paths';
 
 // The allowlist between articles.body_json and the page (CLAUDE.md §7.8, docs/Security.md APP-03, APP-11). The
 // stored document is Tiptap's ProseMirror JSON, written by staff but read here as untrusted input: only the
@@ -40,7 +40,7 @@ type JsonNode = Record<string, unknown>;
 
 const SAFE_SEGMENT = '/[a-z0-9][a-z0-9-]*';
 // `<owner>/…/<name>.webp`, the paths finalize writes; no scheme, no leading slash, no `..`.
-const PUBLIC_MEDIA_IMAGE = new RegExp(`^(?:${MEDIA_OWNERS.join('|')})(?:${SAFE_SEGMENT})+\\.webp$`);
+const PUBLIC_MEDIA_IMAGE = new RegExp(`^${MEDIA_OWNER_SOURCE}(?:${SAFE_SEGMENT})+\\.webp$`);
 
 function isNode(value: unknown): value is JsonNode {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

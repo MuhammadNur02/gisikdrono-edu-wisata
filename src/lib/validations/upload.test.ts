@@ -13,7 +13,8 @@ describe('signUploadSchema', () => {
   });
 
   it.each([
-    ['an RW that does not exist', { ...valid, rwId: 3 }],
+    ['an RW number below 1', { ...valid, rwId: 0 }],
+    ['an RW number of three digits', { ...valid, rwId: 100 }],
     ['a path chosen by the browser', { ...valid, path: 'rw-08/foto.jpg' }],
     ['a missing size', { rwId: 5, contentType: 'image/jpeg', leadingBytes: LEADING_BYTES }],
     ['an empty file', { ...valid, size: 0 }],

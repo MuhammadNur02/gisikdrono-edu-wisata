@@ -12,8 +12,8 @@ import {
   rowIdSchema,
 } from '@/lib/validations/content';
 
-// /dashboard/schedules (docs/PRD.md FR-ADMIN-13): RW 08's performances. The RW is never part of the form: schedules
-// are RW 08's (SCHEDULE_RW_ID). A recurrence rule is checked here for its outline only, so rrule stays out of the
+// /dashboard/schedules (docs/PRD.md FR-ADMIN-13): the performances of an RW that runs a schedule. The RW is never part
+// of the form: the action takes the admin's own, or the one the superadmin's RwSwitcher points at. A recurrence rule is checked here for its outline only, so rrule stays out of the
 // browser; the service parses it with rrule, as the public schedule page does.
 
 const messages = copy.cms.validation;
@@ -72,7 +72,7 @@ function endsAfterStart(schedule: { startsAt: string; endsAt: string }): boolean
 
 const timeOrder = { path: ['endsAt'], message: messages.endAfterStart };
 
-// A new schedule gets its id from the database; its photo is a gallery photo of RW 08, which needs no row folder.
+// A new schedule gets its id from the database; its photo is a gallery photo of its RW, which needs no row folder.
 export const createScheduleSchema = z
   .object(scheduleFields)
   .strict()

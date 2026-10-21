@@ -50,7 +50,12 @@ export default async function HomePage() {
         <FeaturedProducts id={SECTION_IDS.products} products={data.featuredProducts} />
       ) : null}
       {data.points.length > 0 || data.address ? (
-        <MapTeaser id={SECTION_IDS.map} address={data.address} points={data.points} />
+        <MapTeaser
+          id={SECTION_IDS.map}
+          address={data.address}
+          points={data.points}
+          units={data.rwUnits}
+        />
       ) : null}
       {data.testimonials.length > 0 ? (
         <Testimonials id={SECTION_IDS.reviews} reviews={data.testimonials} />

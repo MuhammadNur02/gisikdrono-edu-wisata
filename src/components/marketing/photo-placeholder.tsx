@@ -1,15 +1,16 @@
 import type { LucideIcon } from 'lucide-react';
 
-import { softClassesFor, type RwId } from '@/config/rw';
+import { softClassesFor } from '@/config/rw';
 import { cn } from '@/lib/utils/cn';
+import type { RwBadge } from '@/types/rw-unit';
 
 export interface PhotoPlaceholderProps {
   // What the photo will show, read out by screen readers in place of the missing image.
   label: string;
   // The category or RW icon of docs/StyleGuide.md §8.1.
   icon: LucideIcon;
-  // One RW tints the slot with its soft accent; none (kelurahan) or two (a combo) keep it neutral.
-  rwIds: readonly RwId[];
+  // One RW tints the slot with its soft accent; none (kelurahan) or several (a combo) keep it neutral.
+  rws: readonly RwBadge[];
   // A small slot, such as the 80 px product square on the hero, takes a smaller icon.
   iconClassName?: string;
   className?: string;
@@ -21,7 +22,7 @@ export interface PhotoPlaceholderProps {
 export function PhotoPlaceholder({
   label,
   icon,
-  rwIds,
+  rws,
   iconClassName,
   className,
 }: PhotoPlaceholderProps) {
@@ -30,11 +31,7 @@ export function PhotoPlaceholder({
     <div
       role="img"
       aria-label={label}
-      className={cn(
-        'flex items-center justify-center rounded-xl',
-        softClassesFor(rwIds),
-        className,
-      )}
+      className={cn('flex items-center justify-center rounded-xl', softClassesFor(rws), className)}
     >
       <Icon aria-hidden className={cn('size-10 opacity-70', iconClassName)} strokeWidth={1.5} />
     </div>

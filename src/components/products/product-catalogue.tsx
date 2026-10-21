@@ -11,18 +11,21 @@ import {
   type CatalogueFilterGroup,
 } from '@/components/marketing/filtered-catalogue';
 import { ProductCard } from '@/components/products/product-card';
-import { RW_IDS, RW_PROGRAMMES } from '@/config/rw';
 import { PRODUCT_CATEGORY } from '@/config/status';
 import { DB_ENUMS } from '@/db/enums';
 import { copy } from '@/lib/copy/id';
 import { productFacets, rwFilterFor } from '@/lib/utils/catalogue-filters';
 import type { ProductSummary } from '@/types/product';
+import type { RwBadge } from '@/types/rw-unit';
 
-const RW_GROUP: CatalogueFilterGroup = {
-  param: 'rw',
-  label: copy.catalogue.filterRw,
-  options: RW_IDS.map((rwId) => ({ value: rwFilterFor(rwId), label: RW_PROGRAMMES[rwId].label })),
-};
+// One `?rw=` value for every RW online, in their order.
+function rwGroup(rws: readonly RwBadge[]): CatalogueFilterGroup {
+  return {
+    param: 'rw',
+    label: copy.catalogue.filterRw,
+    options: rws.map((rw) => ({ value: rwFilterFor(rw.id), label: rw.label })),
+  };
+}
 
 // Only the categories that have a product are offered, so no chip leads to an empty list by itself.
 function categoryGroup(products: readonly ProductSummary[]): CatalogueFilterGroup {
@@ -37,11 +40,12 @@ function categoryGroup(products: readonly ProductSummary[]): CatalogueFilterGrou
 
 export interface ProductCatalogueProps {
   products: readonly ProductSummary[];
+  rws: readonly RwBadge[];
 }
 
 // docs/PRD.md FR-PUB-13: `?rw=` and `?category=`. Every card is rendered here on the server; until the filter
 // island loads, and without script, the full list shows.
-export function ProductCatalogue({ products }: ProductCatalogueProps) {
+export function ProductCatalogue({ products, rws }: ProductCatalogueProps) {
   const entries: CatalogueEntry[] = products.map((product) => ({
     key: product.id,
     facets: productFacets(product),
@@ -51,7 +55,7 @@ export function ProductCatalogue({ products }: ProductCatalogueProps) {
     <NuqsAdapter>
       <Suspense fallback={<CatalogueList entries={entries} {...CARD_GRID_CLASSES} />}>
         <FilteredCatalogue
-          groups={[RW_GROUP, categoryGroup(products)]}
+          groups={[rwGroup(rws), categoryGroup(products)]}
           entries={entries}
           emptyMessage={copy.catalogue.productsFilterEmpty}
           {...CARD_GRID_CLASSES}

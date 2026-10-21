@@ -56,8 +56,8 @@ function packageJsonLd(pkg: PackageDetail) {
 function PackageEyebrow({ pkg }: { pkg: PackageDetail }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
-      {pkg.rwIds.map((rwId) => (
-        <RwTag key={rwId} rwId={rwId} />
+      {pkg.rws.map((rw) => (
+        <RwTag key={rw.id} rw={rw} />
       ))}
       {PACKAGE_CATEGORY[pkg.category].label}
     </span>
@@ -85,7 +85,7 @@ export default async function PackagePage({ params }: PackagePageProps) {
           <Photo
             image={pkg.cover}
             caption={pkg.name}
-            placeholder={{ icon: PACKAGE_CATEGORY[pkg.category].icon, rwIds: pkg.rwIds }}
+            placeholder={{ icon: PACKAGE_CATEGORY[pkg.category].icon, rws: pkg.rws }}
             sizes={IMAGE_SIZES.main}
             aspectClassName="aspect-4/3 md:aspect-video"
             priority

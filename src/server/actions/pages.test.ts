@@ -43,6 +43,7 @@ beforeEach(() => {
       Promise.resolve({
         value: {
           rwId,
+          path: '/rw-05-ecowastreme',
           name: 'RW',
           tagline: 'Kampung bebas sampah',
           descriptionMd: null,

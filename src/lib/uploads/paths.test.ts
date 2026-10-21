@@ -10,8 +10,9 @@ import {
   bookletPdfPath,
   isPdfPurpose,
   isPublishedImagePathFor,
+  isMediaOwner,
   isTargetAllowed,
-  MEDIA_OWNERS,
+  MEDIA_OWNER_SOURCE,
   ownerFor,
   parseQuarantinePath,
   publicMediaPathFor,
@@ -36,15 +37,27 @@ function upload(path: string): QuarantineUpload {
 }
 
 describe('owner prefixes', () => {
-  it('names RW 05, RW 08 and the kelurahan the way the buckets do', () => {
+  it('names an RW and the kelurahan the way the buckets do', () => {
     expect(ownerFor(5)).toBe('rw-05');
-    expect(ownerFor(8)).toBe('rw-08');
+    expect(ownerFor(13)).toBe('rw-13');
     expect(ownerFor(null)).toBe('kelurahan');
-    expect(MEDIA_OWNERS).toEqual(['rw-05', 'rw-08', 'kelurahan']);
+  });
+
+  it('knows an owner by its shape, since the RWs are rows of rw_units', () => {
+    for (const owner of ['rw-05', 'rw-13', 'rw-99', 'kelurahan'])
+      expect(isMediaOwner(owner)).toBe(true);
+    for (const owner of ['rw-00', 'rw-5', 'rw-100', 'RW-05', 'kelurahan-x', '']) {
+      expect(isMediaOwner(owner)).toBe(false);
+    }
+    expect(new RegExp(`^${MEDIA_OWNER_SOURCE}$`).test('rw-13')).toBe(true);
   });
 });
 
 describe('parseQuarantinePath', () => {
+  it('reads an RW the site did not know before', () => {
+    expect(parseQuarantinePath(quarantinePathFor(13, OBJECT_NAME))?.rwId).toBe(13);
+  });
+
   it('reads the owner, the RW and the time the upload was signed', () => {
     expect(parseQuarantinePath(quarantinePathFor(8, OBJECT_NAME))).toEqual({
       owner: 'rw-08',
@@ -80,7 +93,8 @@ describe('parseQuarantinePath', () => {
   });
 
   it.each([
-    ['an unknown RW', `rw-03/${OBJECT_NAME}`],
+    ['an RW number out of range', `rw-00/${OBJECT_NAME}`],
+    ['an owner of the wrong shape', `rw-5/${OBJECT_NAME}`],
     ['a name sign never issues', 'rw-05/foto-bank-sampah.jpg'],
     ['a version 4 uuid', 'rw-05/4d1f8a2e-3b5c-4d6e-8f70-123456789abc'],
     ['a deeper path', `rw-05/${OBJECT_NAME}/x`],

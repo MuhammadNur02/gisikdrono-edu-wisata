@@ -103,8 +103,8 @@ describe('createBookingSchema', () => {
     expect(createBookingSchema(20).safeParse(SCHOOL_BOOKING).success).toBe(false);
   });
 
-  it('wants one session per RW, never three and never the same one twice', () => {
-    const tooMany = [SESSION_RW05, SESSION_RW08, KOMPOS];
+  it('wants one session per RW visited, at most four and never the same one twice', () => {
+    const tooMany = [SESSION_RW05, SESSION_RW08, KERIPIK, KOMPOS, PACKAGE_ID];
     expect(fieldErrorsOf({ ...SCHOOL_BOOKING, visitSessionIds: [] }).visitSessionIds).toEqual([
       messages.sessions,
     ]);

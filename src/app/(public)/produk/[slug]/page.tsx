@@ -77,7 +77,7 @@ function ProductMain({ product }: { product: ProductDetail }) {
       <Photo
         image={product.cover}
         caption={product.name}
-        placeholder={{ icon: PRODUCT_CATEGORY[product.category].icon, rwIds: [product.rwId] }}
+        placeholder={{ icon: PRODUCT_CATEGORY[product.category].icon, rws: [product.rw] }}
         sizes={IMAGE_SIZES.main}
         aspectClassName="aspect-square md:aspect-4/3"
         priority
@@ -112,7 +112,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
       <PageHeader
         eyebrow={
           <span className="inline-flex flex-wrap items-center gap-2">
-            <RwTag rwId={product.rwId} />
+            <RwTag rw={product.rw} />
             {product.vendor?.name}
           </span>
         }

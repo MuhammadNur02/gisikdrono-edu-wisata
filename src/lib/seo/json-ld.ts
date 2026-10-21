@@ -16,7 +16,6 @@ import type {
   WebSite,
 } from 'schema-dts';
 
-import { RW_PROGRAMMES } from '@/config/rw';
 import { siteConfig } from '@/config/site';
 import { publicMediaUrl } from '@/lib/images/public-media';
 import { absoluteUrl } from '@/lib/seo/metadata';
@@ -81,7 +80,7 @@ export function touristAttractionJsonLd(input: TouristAttractionInput): Node<Tou
     url: absoluteUrl(input.path),
     image: input.imageUrls ? [...input.imageUrls] : undefined,
     address: officeAddress,
-    // Both RWs are neighbourhoods of the kelurahan, which is the place a visitor searches for.
+    // Every RW is a neighbourhood of the kelurahan, which is the place a visitor searches for.
     containedInPlace: { '@type': 'AdministrativeArea', name: siteConfig.ownerName },
   };
 }
@@ -91,7 +90,7 @@ export function rwAttractionJsonLd(unit: RwUnitProfile): Node<TouristAttraction>
   return touristAttractionJsonLd({
     name: unit.name,
     description: unit.tagline ?? unit.themeLabel,
-    path: RW_PROGRAMMES[unit.id].path,
+    path: unit.path,
     imageUrls: unit.heroImage ? [publicMediaUrl(unit.heroImage.path)] : undefined,
   });
 }

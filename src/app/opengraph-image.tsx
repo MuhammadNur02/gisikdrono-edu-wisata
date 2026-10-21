@@ -1,6 +1,6 @@
 import { OG_CONTENT_TYPE, OG_SIZE } from '@/config/og';
-import { RW_IDS, RW_PROGRAMMES } from '@/config/rw';
 import { siteConfig } from '@/config/site';
+import { listRwUnits } from '@/lib/queries/rw-units';
 import { renderOgImage } from '@/lib/seo/og-image';
 
 export const size = OG_SIZE;
@@ -12,8 +12,6 @@ export default async function OpenGraphImage() {
   return renderOgImage({
     eyebrow: `${siteConfig.ownerName} · ${siteConfig.locality.city}`,
     title: siteConfig.name,
-    detail: RW_IDS.map((rwId) => `${RW_PROGRAMMES[rwId].label} ${RW_PROGRAMMES[rwId].name}`).join(
-      ' · ',
-    ),
+    detail: (await listRwUnits()).map((unit) => unit.name).join(' · '),
   });
 }

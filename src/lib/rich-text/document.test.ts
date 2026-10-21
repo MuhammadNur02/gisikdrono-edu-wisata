@@ -185,7 +185,9 @@ describe('isPublicMediaImagePath', () => {
     );
     expect(isPublicMediaImagePath('/rw-05/gallery/a.webp')).toBe(false);
     expect(isPublicMediaImagePath('rw-05/../documents/a.webp')).toBe(false);
-    expect(isPublicMediaImagePath('rw-03/gallery/a.webp')).toBe(false);
+    expect(isPublicMediaImagePath('rw-13/gallery/a.webp')).toBe(true);
+    expect(isPublicMediaImagePath('rw-00/gallery/a.webp')).toBe(false);
+    expect(isPublicMediaImagePath('rw-100/gallery/a.webp')).toBe(false);
     expect(isPublicMediaImagePath('rw-05/gallery/a.png')).toBe(false);
     expect(isPublicMediaImagePath('https://evil.example/rw-05/a.webp')).toBe(false);
   });

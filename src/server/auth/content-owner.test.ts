@@ -2,7 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { StaffContext } from '@/server/auth/guards';
 
-import { canWriteFor, ownerOfNewContent, requireNewContentOwner } from './content-owner';
+import {
+  canManageSchedules,
+  canWriteFor,
+  listedOwners,
+  ownerOfNewContent,
+  requireNewContentOwner,
+  scheduleRwFor,
+} from './content-owner';
 
 const cookie = vi.hoisted(() => ({ value: undefined as string | undefined }));
 
@@ -39,7 +46,42 @@ describe('ownerOfNewContent', () => {
   it('gives an account without a staff role, or an RW admin without an RW, nothing', () => {
     expect(ownerOfNewContent({ ...BASE, role: 'none', rwId: null }, 5)).toBeUndefined();
     expect(ownerOfNewContent({ ...ADMIN_05, rwId: null }, 5)).toBeUndefined();
-    expect(ownerOfNewContent({ ...ADMIN_05, rwId: 7 }, 5)).toBeUndefined();
+  });
+
+  it('gives the admin of an RW added later their RW as well, since the RWs are data', () => {
+    expect(ownerOfNewContent({ ...ADMIN_05, rwId: 13 }, 'all')).toBe(13);
+  });
+});
+
+describe('listedOwners', () => {
+  it('lists every RW of rw_units and the kelurahan for the superadmin under Semua', () => {
+    expect(listedOwners(SUPERADMIN, 'all', [5, 8, 13])).toEqual([5, 8, 13, null]);
+    expect(listedOwners(SUPERADMIN, 8, [5, 8, 13])).toEqual([8]);
+  });
+
+  it("lists an RW admin's own RW only", () => {
+    expect(listedOwners(ADMIN_05, 'all', [5, 8, 13])).toEqual([5]);
+  });
+});
+
+describe('performance schedules', () => {
+  const ADMIN_08: StaffContext = { ...ADMIN_05, rwId: 8 };
+
+  it('are managed by the superadmin and the admins of RWs with schedule_enabled', () => {
+    expect(canManageSchedules(SUPERADMIN, [])).toBe(true);
+    expect(canManageSchedules(ADMIN_08, [8])).toBe(true);
+    expect(canManageSchedules(ADMIN_05, [8])).toBe(false);
+    expect(canManageSchedules({ ...BASE, role: 'none', rwId: null }, [8])).toBe(false);
+  });
+
+  it("belong to an admin's own RW, and to the superadmin's chosen or only schedule RW", () => {
+    expect(scheduleRwFor(ADMIN_08, 'all', [8])).toBe(8);
+    expect(scheduleRwFor(ADMIN_05, 'all', [8])).toBeUndefined();
+    expect(scheduleRwFor(SUPERADMIN, 'all', [8])).toBe(8);
+    expect(scheduleRwFor(SUPERADMIN, 5, [8])).toBe(8);
+    expect(scheduleRwFor(SUPERADMIN, 'all', [8, 13])).toBeUndefined();
+    expect(scheduleRwFor(SUPERADMIN, 13, [8, 13])).toBe(13);
+    expect(scheduleRwFor(SUPERADMIN, 'all', [])).toBeUndefined();
   });
 });
 

@@ -78,7 +78,7 @@ describe('public queries as a visitor', () => {
       delete from public.audit_logs where id > ${String(auditIdBefore)};`);
   }, SLOW_HOOK_MS);
 
-  it('reads the two RW profiles, never their treasury', async () => {
+  it('reads the RW profiles in their order with their look, never their treasury', async () => {
     const units = await listRwUnits();
 
     expect(units.map((unit) => unit.slug)).toEqual([
@@ -86,6 +86,15 @@ describe('public queries as a visitor', () => {
       'rw-08-kampung-seni-budaya',
     ]);
     expect(Object.keys(units[0] ?? {})).not.toContain('treasuryAccountNumber');
+    expect(units[0]).toMatchObject({
+      label: 'RW 05',
+      shortName: 'Ecowastreme',
+      path: '/rw-05-ecowastreme',
+      accentKey: 'leaf',
+      iconKey: 'recycle',
+      scheduleEnabled: false,
+      productsHeading: null,
+    });
     expect((await getRwUnitBySlug('rw-08-kampung-seni-budaya'))?.id).toBe(8);
     expect(await getRwUnitBySlug('rw-99')).toBeNull();
   });
@@ -95,9 +104,17 @@ describe('public queries as a visitor', () => {
     const combo = packages.find((item) => item.category === 'combo');
 
     expect(packages.length).toBeGreaterThanOrEqual(3);
-    expect(combo?.rwIds).toEqual([5, 8]);
+    expect(combo?.rws).toEqual([
+      { id: 5, label: 'RW 05', accentKey: 'leaf' },
+      { id: 8, label: 'RW 08', accentKey: 'terracotta' },
+    ]);
     const detail = await getPackageBySlug('paket-eduwisata-ecowastreme');
-    expect(detail).toMatchObject({ rwIds: [5], pricePerPax: 35000, itinerary: [], priceTiers: [] });
+    expect(detail).toMatchObject({
+      rws: [{ id: 5, label: 'RW 05', accentKey: 'leaf' }],
+      pricePerPax: 35000,
+      itinerary: [],
+      priceTiers: [],
+    });
     expect(await getPackageBySlug('paket-tidak-ada')).toBeNull();
   });
 
@@ -108,7 +125,7 @@ describe('public queries as a visitor', () => {
 
     expect(products.every((product) => product.vendor !== null)).toBe(true);
     expect(compost).toMatchObject({
-      rwId: 5,
+      rw: { id: 5, label: 'RW 05', accentKey: 'leaf' },
       price: 15000,
       vendor: { name: 'Bank Sampah Lestari' },
     });

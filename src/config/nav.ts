@@ -27,8 +27,9 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-import { RW_PROGRAMMES, type RwId } from '@/config/rw';
 import type { AppRole } from '@/db/enums';
+import { rwSchedulePath } from '@/lib/utils/paths';
+import type { RwEyebrowData, RwUnitSummary } from '@/types/rw-unit';
 
 // Public navigation (docs/PRD.md §5.1) and the dashboard groups of docs/StyleGuide.md §6.2.
 
@@ -36,12 +37,17 @@ export interface PublicNavItem {
   label: string;
   href: string;
   // Set on the RW pages, which carry the RW eyebrow in that RW's accent (docs/StyleGuide.md §2.7).
-  rwId?: RwId;
+  rw?: RwEyebrowData;
 }
 
 export interface PublicNavGroup {
   title: string;
   items: readonly PublicNavItem[];
+}
+
+export interface PublicNav {
+  headerItems: readonly PublicNavItem[];
+  groups: readonly PublicNavGroup[];
 }
 
 export const HOME_NAV_ITEM = { label: 'Beranda', href: '/' } as const satisfies PublicNavItem;
@@ -54,51 +60,55 @@ export const BOOKING_CTA = {
   href: '/paket-wisata',
 } as const satisfies PublicNavItem & { shortLabel: string };
 
-const rwItem = (rwId: RwId): PublicNavItem => ({
-  label: RW_PROGRAMMES[rwId].name,
-  href: RW_PROGRAMMES[rwId].path,
-  rwId,
+const rwItem = (unit: RwUnitSummary): PublicNavItem => ({
+  label: unit.shortName,
+  href: unit.path,
+  rw: { label: unit.label, shortName: unit.shortName, accentKey: unit.accentKey },
 });
 
-// The header keeps to what a first visit looks for; everything else is in the menu and the footer.
-export const HEADER_NAV_ITEMS: readonly PublicNavItem[] = [
-  rwItem(5),
-  rwItem(8),
-  { label: 'Paket wisata', href: '/paket-wisata' },
-  { label: 'Produk UMKM', href: '/produk' },
-  { label: 'Galeri', href: '/galeri' },
-  { label: 'Peta & kontak', href: '/peta-kontak' },
-];
+const scheduleItem = (unit: RwUnitSummary): PublicNavItem => ({
+  label: `Jadwal pertunjukan ${unit.label}`,
+  href: rwSchedulePath(unit.slug),
+});
 
-// The mobile menu and the footer list every public page in these groups.
-export const SITE_NAV_GROUPS: readonly PublicNavGroup[] = [
-  {
-    title: 'Edu wisata',
-    items: [
-      rwItem(5),
-      rwItem(8),
-      { label: 'Jadwal pertunjukan RW 08', href: '/rw-08-kampung-seni-budaya/jadwal' },
+const PACKAGES_ITEM: PublicNavItem = { label: 'Paket wisata', href: '/paket-wisata' };
+const PRODUCTS_ITEM: PublicNavItem = { label: 'Produk UMKM', href: '/produk' };
+const GALLERY_ITEM: PublicNavItem = { label: 'Galeri', href: '/galeri' };
+const MAP_ITEM: PublicNavItem = { label: 'Peta & kontak', href: '/peta-kontak' };
+
+const VISIT_GROUP: PublicNavGroup = {
+  title: 'Kunjungan',
+  items: [PACKAGES_ITEM, PRODUCTS_ITEM, { label: 'Cari reservasi', href: '/reservasi/cari' }],
+};
+
+const INFORMATION_GROUP: PublicNavGroup = {
+  title: 'Informasi',
+  items: [
+    GALLERY_ITEM,
+    { label: 'E-booklet', href: '/e-booklet' },
+    { label: 'Artikel', href: '/artikel' },
+    { label: 'Ulasan', href: '/ulasan' },
+    MAP_ITEM,
+  ],
+};
+
+// The RWs come from rw_units in their own order (decision of 2026-10-21). The header keeps to what a first visit
+// looks for; the mobile menu and the footer list every public page in groups, the schedule of each RW that runs one
+// among them.
+export function publicNavFor(units: readonly RwUnitSummary[]): PublicNav {
+  const rwItems = units.map(rwItem);
+  return {
+    headerItems: [...rwItems, PACKAGES_ITEM, PRODUCTS_ITEM, GALLERY_ITEM, MAP_ITEM],
+    groups: [
+      {
+        title: 'Edu wisata',
+        items: [...rwItems, ...units.filter((unit) => unit.scheduleEnabled).map(scheduleItem)],
+      },
+      VISIT_GROUP,
+      INFORMATION_GROUP,
     ],
-  },
-  {
-    title: 'Kunjungan',
-    items: [
-      { label: 'Paket wisata', href: '/paket-wisata' },
-      { label: 'Produk UMKM', href: '/produk' },
-      { label: 'Cari reservasi', href: '/reservasi/cari' },
-    ],
-  },
-  {
-    title: 'Informasi',
-    items: [
-      { label: 'Galeri', href: '/galeri' },
-      { label: 'E-booklet', href: '/e-booklet' },
-      { label: 'Artikel', href: '/artikel' },
-      { label: 'Ulasan', href: '/ulasan' },
-      { label: 'Peta & kontak', href: '/peta-kontak' },
-    ],
-  },
-];
+  };
+}
 
 export const LEGAL_NAV_ITEMS: readonly PublicNavItem[] = [
   { label: 'Kebijakan privasi', href: '/privasi' },
@@ -115,8 +125,9 @@ export interface DashboardNavItem {
   href: string;
   icon: LucideIcon;
   roles: readonly StaffRole[];
-  // Set where an RW officer sees the item for some RWs only; the superadmin always sees it.
-  rwIds?: readonly RwId[];
+  // Set where an RW officer sees the item only if their RW runs a performance schedule (rw_units.schedule_enabled);
+  // the superadmin always sees it.
+  forScheduleRws?: boolean;
 }
 
 export interface DashboardNavGroup {
@@ -162,7 +173,7 @@ export const DASHBOARD_NAV_GROUPS: readonly DashboardNavGroup[] = [
         href: '/dashboard/schedules',
         icon: CalendarDays,
         roles: BOTH_ROLES,
-        rwIds: [8],
+        forScheduleRws: true,
       },
       {
         label: 'Titik Aktivitas',

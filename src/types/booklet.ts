@@ -1,6 +1,6 @@
-import type { RwId } from '@/config/rw';
 import type { EnumValue } from '@/db/enums';
 import type { PublicImage } from '@/types/media';
+import type { RwBadge } from '@/types/rw-unit';
 
 export interface BookletSummary {
   id: string;
@@ -8,7 +8,7 @@ export interface BookletSummary {
   title: string;
   description: string | null;
   kind: EnumValue<'booklet_kind'>;
-  rwId: RwId | null;
+  rw: RwBadge | null;
   cover: PublicImage | null;
   pageCount: number | null;
   fileSizeBytes: number | null;

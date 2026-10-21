@@ -3,10 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { rwScopeSchema, updateProfileSchema } from '@/lib/validations/dashboard';
 
 describe('rwScopeSchema', () => {
-  it('takes every RW or one of the two', () => {
+  it('takes every RW or one RW number', () => {
     expect(rwScopeSchema.safeParse({ scope: 'all' }).success).toBe(true);
     expect(rwScopeSchema.safeParse({ scope: 8 }).success).toBe(true);
-    expect(rwScopeSchema.safeParse({ scope: 7 }).success).toBe(false);
+    expect(rwScopeSchema.safeParse({ scope: 13 }).success).toBe(true);
+    expect(rwScopeSchema.safeParse({ scope: 0 }).success).toBe(false);
+    expect(rwScopeSchema.safeParse({ scope: 100 }).success).toBe(false);
+    expect(rwScopeSchema.safeParse({ scope: 5.5 }).success).toBe(false);
     expect(rwScopeSchema.safeParse({ scope: '5' }).success).toBe(false);
     expect(rwScopeSchema.safeParse({ scope: 5, rwId: 8 }).success).toBe(false);
   });

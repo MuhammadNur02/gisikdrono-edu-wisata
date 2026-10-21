@@ -212,9 +212,15 @@ describe('serializeJsonLd', () => {
 describe('rwAttractionJsonLd', () => {
   const unit = {
     id: 5,
-    code: 'RW05',
+    label: 'RW 05',
     slug: 'rw-05-ecowastreme',
+    path: '/rw-05-ecowastreme',
     name: 'RW 05 Ecowastreme',
+    shortName: 'Ecowastreme',
+    accentKey: 'leaf',
+    iconKey: 'recycle',
+    scheduleEnabled: false,
+    productsHeading: null,
     themeLabel: 'Ekowisata & Lingkungan',
     tagline: 'Belajar memilah, mengompos dan menanam di kampung tanpa sampah',
     descriptionMd: null,

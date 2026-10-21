@@ -14,10 +14,12 @@ import { copy } from '@/lib/copy/id';
 import { requestNonce } from '@/lib/request-nonce';
 import { dashboardNavFor } from '@/lib/utils/dashboard-nav';
 import { parseRwScope } from '@/lib/utils/rw-scope';
-import { staffRoleLabel, staffRwId } from '@/lib/utils/staff-labels';
+import { rwBadgeFor } from '@/lib/utils/rw-units';
+import { staffRoleLabel } from '@/lib/utils/staff-labels';
 import { setRwScopeAction } from '@/server/actions/dashboard';
 import { requireDashboardStaff } from '@/server/auth/session';
 import { readOwnProfile } from '@/server/services/profile-service';
+import { listRwUnitsForStaff } from '@/server/services/rw-unit-service';
 
 // Task P2.8.03: the session and the role are read on every request (CLAUDE.md §5.1); next.config.ts adds
 // `private, no-store` and noindex headers for /dashboard as well.
@@ -41,17 +43,19 @@ export default async function DashboardLayout({ children }: Readonly<{ children:
     );
   }
 
-  const rwId = staffRwId(ctx.rwId);
-  const profile = await readOwnProfile(ctx.userId);
+  const [profile, rwUnits] = await Promise.all([readOwnProfile(ctx.userId), listRwUnitsForStaff()]);
+  const ownRw = rwUnits.find((unit) => unit.id === ctx.rwId) ?? null;
   const scope = parseRwScope((await cookies()).get(RW_SCOPE_COOKIE)?.value);
   return (
     <ThemeProvider scope="admin" nonce={nonce}>
       <DashboardShell
-        nav={<DashboardNav groups={dashboardNavFor(ctx.role, ctx.rwId)} />}
-        footer={<UserCard fullName={profile.fullName} roleLabel={staffRoleLabel(rwId)} />}
-        context={<ContextChip rwId={rwId} />}
+        nav={<DashboardNav groups={dashboardNavFor(ctx.role, ownRw)} />}
+        footer={<UserCard fullName={profile.fullName} roleLabel={staffRoleLabel(ctx.rwId)} />}
+        context={<ContextChip rw={ctx.rwId === null ? null : rwBadgeFor(ctx.rwId, rwUnits)} />}
         rwSwitcher={
-          ctx.role === 'superadmin' ? <RwSwitcher scope={scope} action={setRwScopeAction} /> : null
+          ctx.role === 'superadmin' ? (
+            <RwSwitcher scope={scope} rws={rwUnits} action={setRwScopeAction} />
+          ) : null
         }
       >
         {children}

@@ -1,12 +1,15 @@
 import 'server-only';
 
 import type { Tables } from '@/db/types';
-import { toOptionalRwId, toPublicImage } from '@/lib/queries/mappers';
+import { toPublicImage } from '@/lib/queries/mappers';
 import { cachedPublicRead, rowOrNull, rowsOf } from '@/lib/queries/public-read';
+import { listRwUnits } from '@/lib/queries/rw-units';
 import { TAGS } from '@/lib/queries/tags';
 import { createSupabaseAnonClient } from '@/lib/supabase/anon';
 import { bookletPagePaths } from '@/lib/uploads/paths';
+import { rwBadgeFor } from '@/lib/utils/rw-units';
 import type { BookletDetail, BookletDownload, BookletSummary } from '@/types/booklet';
+import type { RwBadge } from '@/types/rw-unit';
 
 const SUMMARY_COLUMNS =
   'id, slug, title, description, kind, rw_id, cover_path, page_count, file_size_bytes, published_at';
@@ -28,14 +31,14 @@ type BookletRow = Pick<
 
 type BookletDetailRow = BookletRow & Pick<Tables<'booklets'>, 'pdf_path' | 'page_images_prefix'>;
 
-function toBookletSummary(row: BookletRow): BookletSummary {
+function toBookletSummary(row: BookletRow, units: readonly RwBadge[]): BookletSummary {
   return {
     id: row.id,
     slug: row.slug,
     title: row.title,
     description: row.description,
     kind: row.kind,
-    rwId: toOptionalRwId(row.rw_id),
+    rw: row.rw_id === null ? null : rwBadgeFor(row.rw_id, units),
     cover: toPublicImage(row.cover_path, `Sampul ${row.title}`),
     pageCount: row.page_count,
     fileSizeBytes: row.file_size_bytes,
@@ -46,33 +49,39 @@ function toBookletSummary(row: BookletRow): BookletSummary {
 // Published booklets, newest first.
 export const listBooklets = cachedPublicRead(
   async (): Promise<BookletSummary[]> => {
-    const result = await createSupabaseAnonClient()
-      .from('booklets')
-      .select(SUMMARY_COLUMNS)
-      .order('published_at', { ascending: false, nullsFirst: false });
-    return rowsOf(result, 'booklets').map(toBookletSummary);
+    const [result, units] = await Promise.all([
+      createSupabaseAnonClient()
+        .from('booklets')
+        .select(SUMMARY_COLUMNS)
+        .order('published_at', { ascending: false, nullsFirst: false }),
+      listRwUnits(),
+    ]);
+    return rowsOf(result, 'booklets').map((row) => toBookletSummary(row, units));
   },
   ['booklets', 'list'],
-  [TAGS.booklets],
+  [TAGS.booklets, TAGS.rwUnits],
 );
 
 export const getBookletBySlug = cachedPublicRead(
   async (slug: string): Promise<BookletDetail | null> => {
-    const result = await createSupabaseAnonClient()
-      .from('booklets')
-      .select(DETAIL_COLUMNS)
-      .eq('slug', slug)
-      .maybeSingle();
+    const [result, units] = await Promise.all([
+      createSupabaseAnonClient()
+        .from('booklets')
+        .select(DETAIL_COLUMNS)
+        .eq('slug', slug)
+        .maybeSingle(),
+      listRwUnits(),
+    ]);
     const row: BookletDetailRow | null = rowOrNull(result, 'booklets');
     if (!row) return null;
     return {
-      ...toBookletSummary(row),
+      ...toBookletSummary(row, units),
       pdfPath: row.pdf_path,
       pagePaths: bookletPagePaths(row.page_images_prefix, row.page_count),
     };
   },
   ['booklets', 'by-slug'],
-  [TAGS.booklets],
+  [TAGS.booklets, TAGS.rwUnits],
 );
 
 // What GET /api/documents/booklet/[id] needs to hand out the PDF. The anon policy answers for published

@@ -47,7 +47,7 @@ export function ProductAside({ product }: { product: ProductDetail }) {
       <div className="flex flex-col gap-3">
         {product.isAddonEligible ? (
           <Button size="lg" asChild>
-            <Link href={`${PUBLIC_PATHS.packages}?rw=${rwFilterFor(product.rwId)}`}>
+            <Link href={`${PUBLIC_PATHS.packages}?rw=${rwFilterFor(product.rw.id)}`}>
               {copy.catalogue.addOnHint}
             </Link>
           </Button>

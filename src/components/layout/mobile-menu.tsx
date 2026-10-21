@@ -15,7 +15,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import { SITE_NAV_GROUPS, type PublicNavGroup } from '@/config/nav';
+import type { PublicNavGroup } from '@/config/nav';
 import { copy } from '@/lib/copy/id';
 import { cn } from '@/lib/utils/cn';
 import { isPathUnder } from '@/lib/utils/paths';
@@ -51,7 +51,12 @@ function MenuGroup({ group, pathname }: { group: PublicNavGroup; pathname: strin
 }
 
 // Below xl the header has no room for every link, so they move into a sheet (docs/StyleGuide.md §10.2).
-export function MobileMenu({ className }: { className?: string }) {
+export interface MobileMenuProps {
+  groups: readonly PublicNavGroup[];
+  className?: string;
+}
+
+export function MobileMenu({ groups, className }: MobileMenuProps) {
   const pathname = usePathname();
   return (
     <Sheet>
@@ -66,7 +71,7 @@ export function MobileMenu({ className }: { className?: string }) {
           <SheetDescription className="sr-only">{copy.layout.menuDescription}</SheetDescription>
         </SheetHeader>
         <nav aria-label={copy.layout.mainNav} className="space-y-6 p-4">
-          {SITE_NAV_GROUPS.map((group) => (
+          {groups.map((group) => (
             <MenuGroup key={group.title} group={group} pathname={pathname} />
           ))}
         </nav>

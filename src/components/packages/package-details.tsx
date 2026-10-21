@@ -37,7 +37,7 @@ function Itinerary({ pkg }: { pkg: PackageDetail }) {
         <li key={`${String(step.order)}-${step.title}`} className="space-y-1">
           <p className="flex flex-wrap items-center gap-2 text-body-sm text-muted-foreground">
             {step.time ? <span className="tabular-nums">{step.time}</span> : null}
-            {step.rwId ? <RwTag rwId={step.rwId} /> : null}
+            {step.rw ? <RwTag rw={step.rw} /> : null}
           </p>
           <h3 className="text-h4">{step.title}</h3>
           {step.description ? (

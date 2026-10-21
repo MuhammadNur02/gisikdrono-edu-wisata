@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { ownerFor } from '@/lib/uploads/paths';
+
 import {
   lastAuditId,
   removeSignInTraces,
@@ -157,7 +159,7 @@ describe(
     it('creates no content for RW 08 or for the kelurahan', async () => {
       for (const rwId of [8, null]) {
         const tag = rwId === null ? 'kel' : String(rwId);
-        const owner = rwId === null ? 'kelurahan' : `rw-0${String(rwId)}`;
+        const owner = ownerFor(rwId);
         const bookletId =
           rwId === null ? OTHER_BOOKLET.replace('59', '5a') : OTHER_BOOKLET.replace('59', '5b');
         const inserts = await Promise.all([

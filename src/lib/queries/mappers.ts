@@ -1,6 +1,5 @@
 import 'server-only';
 
-import { isRwId, type RwId } from '@/config/rw';
 import { blurhashToColour } from '@/lib/images/blur';
 import type { PublicImage } from '@/types/media';
 
@@ -33,15 +32,4 @@ export function toPublicImage(
 // tour_packages.image_paths, products_umkm.image_paths: the first one is the cover.
 export function toPublicImages(paths: string[], alt: string): PublicImage[] {
   return paths.flatMap((path) => toPublicImage(path, alt) ?? []);
-}
-
-// An RW the site has no page, colours or labels for (src/config/rw.ts) cannot be shown correctly, so a row
-// pointing at one is a data problem to surface, not to hide.
-export function toRwId(value: number): RwId {
-  if (!isRwId(value)) throw new Error(`rw_id ${String(value)} is not an RW the site knows`);
-  return value;
-}
-
-export function toOptionalRwId(value: number | null): RwId | null {
-  return value === null ? null : toRwId(value);
 }

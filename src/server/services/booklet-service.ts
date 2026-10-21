@@ -6,7 +6,6 @@ import { AppError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { bookletCoverPath, bookletPagesFolder, bookletPdfPath } from '@/lib/uploads/paths';
 import type { SaveBookletValues } from '@/lib/validations/booklet';
-import { toContentOwner } from '@/server/auth/content-owner';
 import type { StaffContext } from '@/server/auth/guards';
 import { rowOrNotFound, slugConflictOr } from '@/server/services/content-errors';
 import { removeFilesOrLog } from '@/server/services/content-files';
@@ -37,16 +36,10 @@ type BookletRow = Pick<
   | 'published_at'
 >;
 
-function ownerOfRow(rwId: number | null): ContentOwner {
-  const owner = toContentOwner(rwId);
-  if (owner === undefined) throw new Error('booklet of an unknown RW');
-  return owner;
-}
-
 function toBookletAdmin(row: BookletRow): BookletAdmin {
   return {
     id: row.id,
-    owner: ownerOfRow(row.rw_id),
+    owner: row.rw_id,
     kind: row.kind,
     slug: row.slug,
     title: row.title,
@@ -102,7 +95,7 @@ async function readBookletRow(id: string): Promise<BookletRow | null> {
 // The owner the database holds for a booklet this staff member can see, for the guard; undefined when RLS hides it.
 export async function readBookletOwner(id: string): Promise<ContentOwner | undefined> {
   const row = await readBookletRow(id);
-  return row ? ownerOfRow(row.rw_id) : undefined;
+  return row ? row.rw_id : undefined;
 }
 
 // The PDF must be the one uploadBooklet published for this owner and id; its pages and size are what Storage holds.

@@ -1,7 +1,5 @@
 import 'server-only';
 
-import { PACKAGE_TAGS } from '@/lib/queries/packages';
-import { PRODUCT_TAGS } from '@/lib/queries/products';
 import { cachedPublicRead, rowsOf } from '@/lib/queries/public-read';
 import { TAGS } from '@/lib/queries/tags';
 import { createSupabaseAnonClient } from '@/lib/supabase/anon';
@@ -24,7 +22,7 @@ export const listPackageSitemapEntries = cachedPublicRead(
     }));
   },
   ['packages', 'sitemap'],
-  PACKAGE_TAGS,
+  [TAGS.allPackages],
 );
 
 export const listProductSitemapEntries = cachedPublicRead(
@@ -38,7 +36,7 @@ export const listProductSitemapEntries = cachedPublicRead(
     }));
   },
   ['products', 'sitemap'],
-  PRODUCT_TAGS,
+  [TAGS.allProducts],
 );
 
 export const listArticleSitemapEntries = cachedPublicRead(

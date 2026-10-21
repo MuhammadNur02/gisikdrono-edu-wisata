@@ -12,15 +12,22 @@ import {
 import type { PackageSummary } from '@/types/package';
 import type { ProductSummary } from '@/types/product';
 import type { PublicReview } from '@/types/review';
+import type { RwBadge } from '@/types/rw-unit';
 
-function pkg(slug: string, category: PackageSummary['category'], rwIds: PackageSummary['rwIds']) {
+const rw = (id: number): RwBadge => ({
+  id,
+  label: `RW ${String(id).padStart(2, '0')}`,
+  accentKey: null,
+});
+
+function pkg(slug: string, category: PackageSummary['category'], rwIds: number[]) {
   return {
     id: slug,
     slug,
     name: slug,
     tagline: null,
     category,
-    rwIds,
+    rws: rwIds.map(rw),
     durationMinutes: 120,
     pricingBasis: 'per_pax',
     pricePerPax: 35000,
@@ -33,13 +40,13 @@ function pkg(slug: string, category: PackageSummary['category'], rwIds: PackageS
   } satisfies PackageSummary;
 }
 
-function product(slug: string, category: ProductSummary['category'], rwId: ProductSummary['rwId']) {
+function product(slug: string, category: ProductSummary['category'], rwId: number) {
   return {
     id: slug,
     slug,
     name: slug,
     category,
-    rwId,
+    rw: rw(rwId),
     price: 15000,
     unitLabel: 'pcs',
     isAvailable: true,
@@ -58,7 +65,7 @@ function review(rating: number) {
     body: 'Anak-anak senang memilah sampah.',
     reviewerName: 'Rina',
     institutionName: null,
-    rwIds: [5],
+    rws: [rw(5)],
     isFeatured: false,
     createdAt: '2026-10-01T00:00:00.000Z',
   } satisfies PublicReview;
@@ -68,6 +75,7 @@ const PACKAGES = [
   pkg('rw05-pelajar', 'student', [5]),
   pkg('rw08-reguler', 'regular', [8]),
   pkg('kombinasi', 'combo', [5, 8]),
+  pkg('rw13-reguler', 'regular', [13]),
 ];
 
 const PRODUCTS = [
@@ -90,12 +98,14 @@ describe('package filters', () => {
       'rw05-pelajar',
       'rw08-reguler',
       'kombinasi',
+      'rw13-reguler',
     ]);
   });
 
   it('keeps an RW to its own packages and the combo to its filter', () => {
     expect(shownSlugs(PACKAGES, packageFacets, { rw: '05', type: null })).toEqual(['rw05-pelajar']);
     expect(shownSlugs(PACKAGES, packageFacets, { rw: 'combo', type: null })).toEqual(['kombinasi']);
+    expect(shownSlugs(PACKAGES, packageFacets, { rw: '13', type: null })).toEqual(['rw13-reguler']);
   });
 
   it('combines the RW and the type', () => {

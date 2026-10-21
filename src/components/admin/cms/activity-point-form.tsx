@@ -22,7 +22,7 @@ import { SlugInput } from '@/components/forms/slug-input';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { CMS_LIMITS } from '@/config/cms';
-import { RW_PROGRAMMES, type RwId } from '@/config/rw';
+import type { RwId } from '@/config/rw';
 import { ACTIVITY_POINT_TYPE } from '@/config/status';
 import { DB_ENUMS } from '@/db/enums';
 import { useActionForm } from '@/hooks/use-action-form';
@@ -62,11 +62,13 @@ export interface ActivityPointFormProps {
   // The point as it is, or a blank one with a fresh id for a new point.
   point: SaveActivityPointInput;
   rwId: RwId;
+  // The RW's own page, shown before the slug, which is an anchor on it.
+  pagePath: string;
   action: (values: unknown) => Promise<ActionResult<ActivityPointAdmin>>;
   onSaved: () => void;
 }
 
-function NameFields({ control, rwId }: { control: PointControl; rwId: RwId }) {
+function NameFields({ control, pagePath }: { control: PointControl; pagePath: string }) {
   const name = useWatch({ control, name: 'name' });
   return (
     <>
@@ -83,9 +85,7 @@ function NameFields({ control, rwId }: { control: PointControl; rwId: RwId }) {
         label={common.slug}
         description={common.slugHint}
         required
-        render={(field) => (
-          <SlugInput {...field} source={name} prefix={`${RW_PROGRAMMES[rwId].path}#`} />
-        )}
+        render={(field) => <SlugInput {...field} source={name} prefix={`${pagePath}#`} />}
       />
       <SelectField
         control={control}
@@ -177,7 +177,13 @@ function PositionFields({
 }
 
 // Task P2.9.06, docs/PRD.md FR-ADMIN-14: one activity point, new or as it is, inside its FormDialog.
-export function ActivityPointForm({ point, rwId, action, onSaved }: ActivityPointFormProps) {
+export function ActivityPointForm({
+  point,
+  rwId,
+  pagePath,
+  action,
+  onSaved,
+}: ActivityPointFormProps) {
   const router = useRouter();
   // The point as the form first got it: its id names the photo's folder for as long as the form is open.
   const [initial] = useState(point);
@@ -197,7 +203,7 @@ export function ActivityPointForm({ point, rwId, action, onSaved }: ActivityPoin
     <Form {...form}>
       <PostForm onSubmit={submit}>
         {failure ? <FormAlert tone="danger">{failure}</FormAlert> : null}
-        <NameFields control={form.control} rwId={rwId} />
+        <NameFields control={form.control} pagePath={pagePath} />
         <DescriptionFields control={form.control} />
         <PhotoField control={form.control} rwId={rwId} pointId={initial.id} />
         <PositionFields control={form.control} setValue={form.setValue} />

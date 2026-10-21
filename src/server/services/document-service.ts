@@ -10,7 +10,7 @@ import { AppError } from '@/lib/errors';
 import { withinRateLimits } from '@/lib/rate-limit';
 // See withinBookletDownloadLimit for why this module creates a service-role client.
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import { MEDIA_OWNERS } from '@/lib/uploads/paths';
+import { isMediaOwner } from '@/lib/uploads/paths';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 
 type DatabaseClient = SupabaseClient<Database>;
@@ -149,6 +149,18 @@ function groupPathsByBucket(files: PurgeableFile[]): Map<string, string[]> {
   return pathsByBucket;
 }
 
+// The owner folders at the root of the quarantine bucket, one per RW that has uploaded and the kelurahan's. A folder
+// entry has no id; anything else at the root is not where api/uploads/sign writes, so it is left alone.
+async function quarantineOwnerFolders(
+  quarantine: ReturnType<DatabaseClient['storage']['from']>,
+): Promise<string[]> {
+  const { data, error } = await quarantine.list('', { limit: PURGE_BATCH_SIZE });
+  if (error) throw error;
+  return data
+    .filter((entry) => entry.id === null && isMediaOwner(entry.name))
+    .map((entry) => entry.name);
+}
+
 // Raw uploads that were never finalised are dropped after a day.
 async function removeStaleQuarantineUploads(
   adminClient: DatabaseClient,
@@ -158,8 +170,8 @@ async function removeStaleQuarantineUploads(
   const cutoff = now.getTime() - QUARANTINE_MAX_AGE_HOURS * MS_PER_HOUR;
   const report: PurgeReport = { processed: 0, failed: 0 };
 
-  // api/uploads/sign puts every upload under one of these prefixes (CLAUDE.md §6.6).
-  for (const prefix of MEDIA_OWNERS) {
+  // api/uploads/sign puts every upload under an owner prefix (CLAUDE.md §6.6): the folders at the bucket's root.
+  for (const prefix of await quarantineOwnerFolders(quarantine)) {
     const { data: objects, error: listError } = await quarantine.list(prefix, {
       limit: PURGE_BATCH_SIZE,
       sortBy: { column: 'created_at', order: 'asc' },

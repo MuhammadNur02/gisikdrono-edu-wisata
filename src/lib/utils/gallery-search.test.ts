@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { GALLERY_MAX_PAGES } from '@/config/gallery';
+import { GALLERY_MAX_PAGES, galleryFilterForRw, galleryQueryFor } from '@/config/gallery';
 import {
   canonicalGalleryPathFor,
   galleryPath,
@@ -46,11 +46,27 @@ describe('readGallerySearch', () => {
   });
 
   it('drops a filter it does not know, and keeps the page', () => {
-    expect(readGallerySearch({ filter: 'rw99', halaman: '2' })).toEqual({
+    expect(readGallerySearch({ filter: 'rw00', halaman: '2' })).toEqual({
       search: { filter: null, page: 2 },
       isCanonical: false,
     });
     expect(readGallerySearch({ filter: ['rw05', 'rw08'] }).search.filter).toBeNull();
+  });
+});
+
+describe('RW filters', () => {
+  it("accept any RW number here, since which RWs are online is the page's to check", () => {
+    expect(readGallerySearch({ filter: 'rw13' }).isCanonical).toBe(true);
+    expect(readGallerySearch({ filter: 'rw5' }).isCanonical).toBe(false);
+    expect(readGallerySearch({ filter: 'rw100' }).isCanonical).toBe(false);
+  });
+
+  it('ask the gallery for the RW they name, or for a category', () => {
+    expect(galleryFilterForRw(5)).toBe('rw05');
+    expect(galleryQueryFor('rw13')).toEqual({ owner: 13 });
+    expect(galleryQueryFor('kunjungan')).toEqual({ category: 'visit' });
+    expect(galleryQueryFor('rw00')).toBeNull();
+    expect(galleryQueryFor('xyz')).toBeNull();
   });
 });
 

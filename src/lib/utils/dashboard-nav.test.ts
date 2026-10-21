@@ -21,16 +21,21 @@ describe('dashboardNavFor', () => {
   });
 
   it('gives an RW officer the four RW groups, and leaves out the empty ones', () => {
-    const rw05 = dashboardNavFor('admin_rw', 5);
+    const rw05 = dashboardNavFor('admin_rw', { scheduleEnabled: false });
 
     expect(titles(rw05)).toEqual(['Ringkasan', 'Operasional', 'Konten', 'Katalog']);
     expect(labels(rw05)).not.toContain('Pengguna');
     expect(labels(rw05)).not.toContain('Ulasan');
   });
 
-  it('shows the performance schedule to RW 08 only', () => {
-    expect(labels(dashboardNavFor('admin_rw', 5))).not.toContain('Jadwal Pertunjukan');
-    expect(labels(dashboardNavFor('admin_rw', 8))).toContain('Jadwal Pertunjukan');
+  it('shows the performance schedule only to an officer whose RW runs one', () => {
+    expect(labels(dashboardNavFor('admin_rw', { scheduleEnabled: false }))).not.toContain(
+      'Jadwal Pertunjukan',
+    );
+    expect(labels(dashboardNavFor('admin_rw', { scheduleEnabled: true }))).toContain(
+      'Jadwal Pertunjukan',
+    );
+    expect(labels(dashboardNavFor('admin_rw', null))).not.toContain('Jadwal Pertunjukan');
   });
 });
 

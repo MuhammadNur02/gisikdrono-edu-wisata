@@ -30,7 +30,7 @@ function ArticleCover({ article }: ArticleCardProps) {
     <PhotoPlaceholder
       label={article.title}
       icon={Newspaper}
-      rwIds={article.rwId ? [article.rwId] : []}
+      rws={article.rw ? [article.rw] : []}
       className={`${COVER_ASPECT} rounded-none`}
     />
   );
@@ -47,7 +47,7 @@ export function ArticleCard({ article }: ArticleCardProps) {
       <div className="space-y-3 px-5 md:px-6">
         <div className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
           <Badge variant="secondary">{ARTICLE_CATEGORY_LABELS[article.category]}</Badge>
-          {article.rwId ? <RwTag rwId={article.rwId} /> : null}
+          {article.rw ? <RwTag rw={article.rw} /> : null}
           {article.publishedAt ? (
             <time dateTime={article.publishedAt}>{formatDateShort(article.publishedAt)}</time>
           ) : null}

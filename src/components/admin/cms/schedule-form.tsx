@@ -19,7 +19,8 @@ import { FormField } from '@/components/forms/form-field';
 import { PostForm } from '@/components/forms/post-form';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
-import { CMS_LIMITS, SCHEDULE_RW_ID } from '@/config/cms';
+import { CMS_LIMITS } from '@/config/cms';
+import type { RwId } from '@/config/rw';
 import { SCHEDULE_TYPE_LABELS } from '@/config/status';
 import { DB_ENUMS } from '@/db/enums';
 import { useActionForm } from '@/hooks/use-action-form';
@@ -51,6 +52,8 @@ const TYPE_OPTIONS = DB_ENUMS.schedule_type.map((type) => ({
 type ScheduleControl = Control<ScheduleInput>;
 
 export interface ScheduleFormProps {
+  // The RW whose schedule this is, which the photo is uploaded for.
+  rwId: RwId;
   schedule: ScheduleInput;
   packages: SchedulePackageOption[];
   // createScheduleAction, or updateScheduleAction with the schedule's id added (ScheduleDialog).
@@ -91,8 +94,8 @@ function PackageField({
   );
 }
 
-function PhotoField({ control }: { control: ScheduleControl }) {
-  const upload = useMemo(() => createImageUpload({ rwId: SCHEDULE_RW_ID, purpose: 'gallery' }), []);
+function PhotoField({ control, rwId }: { control: ScheduleControl; rwId: RwId }) {
+  const upload = useMemo(() => createImageUpload({ rwId, purpose: 'gallery' }), [rwId]);
   return (
     <FormField
       control={control}
@@ -155,7 +158,7 @@ function WhatFields({ control }: { control: ScheduleControl }) {
 }
 
 // Task P2.9.06, docs/PRD.md FR-ADMIN-13: one performance of RW 08, new or as it is, inside its FormDialog.
-export function ScheduleForm({ schedule, packages, action, onSaved }: ScheduleFormProps) {
+export function ScheduleForm({ rwId, schedule, packages, action, onSaved }: ScheduleFormProps) {
   const router = useRouter();
   const form = useForm({ resolver: zodResolver(createScheduleSchema), defaultValues: schedule });
   const { submit, failure } = useActionForm({
@@ -177,7 +180,7 @@ export function ScheduleForm({ schedule, packages, action, onSaved }: ScheduleFo
         <WhenFields control={form.control} />
         <DetailFields control={form.control} />
         <PackageField control={form.control} packages={packages} />
-        <PhotoField control={form.control} />
+        <PhotoField control={form.control} rwId={rwId} />
         <StatusField control={form.control} name="status" />
         <Button type="submit" loading={form.formState.isSubmitting}>
           {common.save}

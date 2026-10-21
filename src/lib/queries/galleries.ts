@@ -1,9 +1,8 @@
 import 'server-only';
 
-import { RW_IDS } from '@/config/rw';
 import type { EnumValue } from '@/db/enums';
 import type { Tables } from '@/db/types';
-import { toOptionalRwId, toPublicImage } from '@/lib/queries/mappers';
+import { toPublicImage } from '@/lib/queries/mappers';
 import { cachedPublicRead, rowsOf } from '@/lib/queries/public-read';
 import { TAGS, type GalleryOwner } from '@/lib/queries/tags';
 import { createSupabaseAnonClient } from '@/lib/supabase/anon';
@@ -15,11 +14,6 @@ export const GALLERY_PAGE_SIZE = 24;
 
 const GALLERY_COLUMNS =
   'id, rw_id, category, media_type, storage_path, thumbnail_path, video_url, width, height, blurhash, caption, alt_text, taken_at';
-
-const ALL_GALLERY_TAGS = [
-  ...RW_IDS.map((rwId) => TAGS.galleries(rwId)),
-  TAGS.galleries('kelurahan'),
-];
 
 export interface GalleryFilter {
   owner?: GalleryOwner;
@@ -58,7 +52,7 @@ export function toGalleryItem(row: GalleryRow): GalleryItem | null {
   if (!media) return null;
   return {
     id: row.id,
-    rwId: toOptionalRwId(row.rw_id),
+    rwId: row.rw_id,
     category: row.category,
     mediaType: row.media_type,
     alt: row.alt_text,
@@ -92,7 +86,7 @@ async function readGalleryPage(filter: GalleryFilter, page: number): Promise<Gal
 // Published items only (galleries_public_read). `page` starts at 1.
 export function listGalleryPage(filter: GalleryFilter = {}, page = 1): Promise<GalleryPage> {
   if (!Number.isInteger(page) || page < 1) throw new RangeError(`gallery page ${String(page)}`);
-  const tags = filter.owner === undefined ? ALL_GALLERY_TAGS : [TAGS.galleries(filter.owner)];
+  const tags = filter.owner === undefined ? [TAGS.allGalleries] : [TAGS.galleries(filter.owner)];
   return cachedPublicRead(readGalleryPage, ['galleries', 'page'], tags)(filter, page);
 }
 

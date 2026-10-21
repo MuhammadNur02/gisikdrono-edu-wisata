@@ -1,6 +1,6 @@
-import type { RwId } from '@/config/rw';
 import type { EnumValue } from '@/db/enums';
 import type { PublicImage } from '@/types/media';
+import type { RwBadge } from '@/types/rw-unit';
 
 // Prices are integer rupiah as stored (CLAUDE.md §7.1); a page formats them and never computes a total.
 export interface PackageSummary {
@@ -9,8 +9,8 @@ export interface PackageSummary {
   name: string;
   tagline: string | null;
   category: EnumValue<'package_category'>;
-  // The RWs the package visits, in leg order: one for an RW package, both for a combo.
-  rwIds: RwId[];
+  // The RWs the package visits, in leg order: one for an RW package, every RW it visits for a combo.
+  rws: RwBadge[];
   durationMinutes: number | null;
   pricingBasis: EnumValue<'pricing_basis'>;
   pricePerPax: number | null;
@@ -25,7 +25,7 @@ export interface PackageSummary {
 
 export interface ItineraryStep {
   order: number;
-  rwId: RwId | null;
+  rw: RwBadge | null;
   time: string | null;
   title: string;
   description: string | null;

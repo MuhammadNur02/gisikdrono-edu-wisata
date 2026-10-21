@@ -82,7 +82,7 @@ export interface PhotoProps extends Omit<PhotoFrameProps, 'image' | 'className'>
   // Where or what the photo shows: the caption under it (G8), or the description of the placeholder.
   caption: string;
   // What the placeholder shows while the photo is missing.
-  placeholder: Pick<PhotoPlaceholderProps, 'icon' | 'rwIds'>;
+  placeholder: Pick<PhotoPlaceholderProps, 'icon' | 'rws'>;
   className?: string;
 }
 

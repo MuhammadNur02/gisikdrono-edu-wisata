@@ -1,17 +1,18 @@
 import { Badge } from '@/components/ui/badge';
-import { RW_ACCENTS, RW_PROGRAMMES, type RwId } from '@/config/rw';
+import { rwAccentClasses } from '@/config/rw';
 import { cn } from '@/lib/utils/cn';
+import type { RwBadge } from '@/types/rw-unit';
 
 export interface RwTagProps {
-  rwId: RwId;
+  rw: RwBadge;
   className?: string;
 }
 
 // The RW tag on a card: the soft pair of that RW's accent (docs/StyleGuide.md §2.7).
-export function RwTag({ rwId, className }: RwTagProps) {
+export function RwTag({ rw, className }: RwTagProps) {
   return (
-    <Badge className={cn('border-transparent', RW_ACCENTS[rwId].soft, className)}>
-      {RW_PROGRAMMES[rwId].label}
+    <Badge className={cn('border-transparent', rwAccentClasses(rw.accentKey).soft, className)}>
+      {rw.label}
     </Badge>
   );
 }

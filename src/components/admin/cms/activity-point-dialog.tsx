@@ -15,12 +15,14 @@ const text = copy.cms.points;
 
 export interface ActivityPointDialogProps {
   rwId: RwId;
+  // The RW's own page, which the point's slug is an anchor of.
+  pagePath: string;
   // null for a new point.
   point: ActivityPointAdmin | null;
   action: (values: unknown) => Promise<ActionResult<ActivityPointAdmin>>;
 }
 
-export function ActivityPointDialog({ rwId, point, action }: ActivityPointDialogProps) {
+export function ActivityPointDialog({ rwId, pagePath, point, action }: ActivityPointDialogProps) {
   const trigger = point
     ? { label: copy.cms.common.edit, variant: 'ghost' as const, size: 'sm' as const }
     : { label: text.add };
@@ -30,6 +32,7 @@ export function ActivityPointDialog({ rwId, point, action }: ActivityPointDialog
         <ActivityPointForm
           point={point ? activityPointValues(point) : blankActivityPoint()}
           rwId={rwId}
+          pagePath={pagePath}
           action={action}
           onSaved={close}
         />

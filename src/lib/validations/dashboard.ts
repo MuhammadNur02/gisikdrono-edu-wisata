@@ -1,13 +1,13 @@
 import { z } from 'zod';
 
 import { FULL_NAME_MAX_LENGTH, RW_SCOPE_ALL } from '@/config/dashboard';
-import { RW_IDS } from '@/config/rw';
 import { freeTextSchema } from '@/lib/validations/free-text';
+import { rwIdSchema } from '@/lib/validations/rw-unit';
 
 // The dashboard shell's own forms (Task P2.8.03): the superadmin's RW scope and the staff member's profile.
 
 export const rwScopeSchema = z
-  .object({ scope: z.union([z.literal(RW_SCOPE_ALL), z.literal(RW_IDS)]) })
+  .object({ scope: z.union([z.literal(RW_SCOPE_ALL), rwIdSchema]) })
   .strict();
 
 export type RwScopeInput = z.input<typeof rwScopeSchema>;

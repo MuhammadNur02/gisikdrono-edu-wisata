@@ -6,15 +6,19 @@ import { RwEyebrow } from '@/components/layout/rw-eyebrow';
 import { Section, type SectionTone } from '@/components/layout/section';
 import { ActivityPointList } from '@/components/map/activity-point-list';
 import { Photo } from '@/components/marketing/photo';
+import { ScheduleList } from '@/components/marketing/schedule-list';
 import { SectionLink } from '@/components/marketing/section-link';
 import { TextBlock } from '@/components/marketing/text-block';
 import { PackageGrid } from '@/components/packages/package-grid';
 import { ProductGrid } from '@/components/products/product-grid';
-import { RW_GALLERY_FILTER } from '@/config/gallery';
+import { galleryFilterForRw } from '@/config/gallery';
 import { IMAGE_SIZES } from '@/config/images';
-import { RW_ACCENTS, RW_PROGRAMMES, type RwId } from '@/config/rw';
+import { rwAccentClasses } from '@/config/rw';
+import { RW_ICONS } from '@/config/rw-icons';
 import { copy } from '@/lib/copy/id';
 import { galleryPath } from '@/lib/utils/gallery-search';
+import { rwSchedulePath } from '@/lib/utils/paths';
+import { upcomingOccurrences } from '@/lib/utils/schedules';
 import type { RwPageData } from '@/types/rw-page';
 import type { RwUnitProfile } from '@/types/rw-unit';
 
@@ -28,11 +32,8 @@ export const RW_SECTION_IDS = {
   packages: 'paket',
 } as const;
 
-// RW 08 sells mostly souvenirs from its sanggar (Task P2.4.03); the heading says so only there.
-const PRODUCTS_TITLE: Record<RwId, string> = {
-  5: 'Produk UMKM RW 05',
-  8: 'Suvenir dan produk UMKM RW 08',
-};
+// An RW whose shop is mostly something else names it in rw_units.products_heading (the arts programme's souvenirs).
+const DEFAULT_PRODUCTS_HEADING = 'Produk UMKM';
 // Sections alternate default and muted (docs/StyleGuide.md §5.7), counted over the ones shown.
 const SECTION_TONES: readonly SectionTone[] = ['default', 'muted'];
 
@@ -47,21 +48,20 @@ export interface RwSectionContent {
 
 // The RW's header stays even without a photo: it is the page itself, and the slot shows the placeholder (G1).
 function RwHeader({ unit }: { unit: RwUnitProfile }) {
-  const programme = RW_PROGRAMMES[unit.id];
   return (
     <PageHeader
-      eyebrow={<RwEyebrow rwId={unit.id} withName />}
+      eyebrow={<RwEyebrow rw={unit} withName />}
       title={unit.name}
-      titleAccent={{ text: programme.name, className: RW_ACCENTS[unit.id].text }}
+      titleAccent={{ text: unit.shortName, className: rwAccentClasses(unit.accentKey).text }}
       titleSize="display"
       description={unit.tagline ?? unit.themeLabel}
       breadcrumbs={[]}
-      path={programme.path}
+      path={unit.path}
     >
       <Photo
         image={unit.heroImage}
         caption={unit.name}
-        placeholder={{ icon: programme.icon, rwIds: [unit.id] }}
+        placeholder={{ icon: RW_ICONS[unit.iconKey], rws: [unit] }}
         sizes={IMAGE_SIZES.hero}
         aspectClassName="aspect-4/3 md:aspect-video"
         priority
@@ -87,15 +87,33 @@ function profileContent(unit: RwUnitProfile): ReactNode {
   );
 }
 
+// docs/PRD.md FR-PUB-09: for an RW that runs a performance schedule, the next five performances, recurring ones
+// spelled out, checked when the page renders (hourly ISR). With none ahead the section is left out, like every empty
+// public section.
+function scheduleSection(data: RwPageData): RwSectionContent {
+  const upcoming = upcomingOccurrences(data.schedules, new Date());
+  return {
+    id: RW_SECTION_IDS.schedule,
+    eyebrow: 'Jadwal',
+    title: 'Pertunjukan dan kegiatan terdekat',
+    content:
+      upcoming.length > 0 ? (
+        <>
+          <ScheduleList occurrences={upcoming} />
+          <SectionLink href={rwSchedulePath(data.unit.slug)} label={copy.rwPage.schedulesAll} />
+        </>
+      ) : null,
+  };
+}
+
 function galleryContent(data: RwPageData): ReactNode {
   if (data.gallery.length === 0) return null;
-  const rwId = data.unit.id;
   return (
     <>
       <MasonryGrid items={data.gallery} />
       <SectionLink
-        href={galleryPath({ filter: RW_GALLERY_FILTER[rwId], page: 1 })}
-        label={copy.rwPage.galleryAll(RW_PROGRAMMES[rwId].label)}
+        href={galleryPath({ filter: galleryFilterForRw(data.unit.id), page: 1 })}
+        label={copy.rwPage.galleryAll(data.unit.label)}
       />
     </>
   );
@@ -103,7 +121,7 @@ function galleryContent(data: RwPageData): ReactNode {
 
 // The collections in the order of docs/PRD.md FR-PUB-08.
 function collectionSections(data: RwPageData): RwSectionContent[] {
-  const label = RW_PROGRAMMES[data.unit.id].label;
+  const { label, productsHeading } = data.unit;
   return [
     {
       id: RW_SECTION_IDS.points,
@@ -113,7 +131,7 @@ function collectionSections(data: RwPageData): RwSectionContent[] {
     { id: RW_SECTION_IDS.gallery, title: `Galeri ${label}`, content: galleryContent(data) },
     {
       id: RW_SECTION_IDS.products,
-      title: PRODUCTS_TITLE[data.unit.id],
+      title: `${productsHeading ?? DEFAULT_PRODUCTS_HEADING} ${label}`,
       content: data.products.length > 0 ? <ProductGrid products={data.products} /> : null,
     },
     {
@@ -124,25 +142,18 @@ function collectionSections(data: RwPageData): RwSectionContent[] {
   ];
 }
 
-export interface RwPageProps {
-  data: RwPageData;
-  // A section of the RW's own, placed after the profile: RW 08's performance schedule.
-  afterProfile?: RwSectionContent;
-}
-
-// docs/PRD.md FR-PUB-08/09: the header, then profile and the RW's points, gallery, products and packages.
-// A section the CMS has nothing for is left out entirely; whether every RW has its profile before launch is a
-// go-live check (docs/Security.md §13.1 #22), not a note on the page.
-export function RwPage({ data, afterProfile }: RwPageProps) {
-  const label = RW_PROGRAMMES[data.unit.id].label;
+// docs/PRD.md FR-PUB-08/09: the header, then profile, the schedule where the RW runs one, and the RW's points,
+// gallery, products and packages. A section the CMS has nothing for is left out entirely; whether every RW has its
+// profile before launch is a go-live check (docs/Security.md §13.1 #22), not a note on the page.
+export function RwPage({ data }: { data: RwPageData }) {
   const sections: RwSectionContent[] = [
     {
       id: RW_SECTION_IDS.profile,
       eyebrow: data.unit.themeLabel,
-      title: `Profil ${label}`,
+      title: `Profil ${data.unit.label}`,
       content: profileContent(data.unit),
     },
-    ...(afterProfile ? [afterProfile] : []),
+    ...(data.unit.scheduleEnabled ? [scheduleSection(data)] : []),
     ...collectionSections(data),
   ];
   const shown = sections.filter((section) => section.content !== null);

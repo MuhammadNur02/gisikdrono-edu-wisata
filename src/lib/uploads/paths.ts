@@ -1,4 +1,4 @@
-import { RW_IDS, type RwId } from '@/config/rw';
+import { rwNumber, type RwId } from '@/config/rw';
 import { BOOKLET_PAGE_DIGITS, MAX_BOOKLET_PAGES, type UPLOAD_PURPOSES } from '@/config/uploads';
 import { uuidV7Time } from '@/lib/utils/uuid-v7';
 
@@ -36,7 +36,7 @@ export interface MediaTarget {
 }
 
 const KELURAHAN_OWNER = 'kelurahan';
-const RW_ID_DIGITS = 2;
+const RW_OWNER_PREFIX = 'rw-';
 const THUMBNAIL_SUFFIX = '-thumb';
 const PAGE_NAME_SEPARATOR = '.';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -62,15 +62,23 @@ const ENTITY_PURPOSES: ReadonlySet<UploadPurpose> = new Set([
 ]);
 
 export function ownerFor(rwId: RwId | null): string {
-  return rwId === null ? KELURAHAN_OWNER : `rw-${String(rwId).padStart(RW_ID_DIGITS, '0')}`;
+  return rwId === null ? KELURAHAN_OWNER : `${RW_OWNER_PREFIX}${rwNumber(rwId)}`;
 }
 
-// Every prefix a quarantine object can sit under: rw-05, rw-08 and kelurahan.
-export const MEDIA_OWNERS: readonly string[] = [...RW_IDS.map(ownerFor), KELURAHAN_OWNER];
+// Every prefix a quarantine object can sit under: an RW's own, `rw-05`, `rw-13` and so on, or `kelurahan`. The RWs are
+// rows of rw_units (decision of 2026-10-21), so the owner is recognised by its shape; whether this officer may upload
+// for it is checkUploadAccess's question, and internal.media_owner keeps the same shape in the database.
+const MEDIA_OWNER_PATTERN = /^(?:rw-(?:0[1-9]|[1-9]\d)|kelurahan)$/;
+// The same, without its anchors, for the image allowlist of src/lib/rich-text/document.ts.
+export const MEDIA_OWNER_SOURCE = MEDIA_OWNER_PATTERN.source.slice(1, -1);
+
+export function isMediaOwner(value: string): boolean {
+  return MEDIA_OWNER_PATTERN.test(value);
+}
 
 function rwIdOfOwner(owner: string): RwId | null | undefined {
   if (owner === KELURAHAN_OWNER) return null;
-  return RW_IDS.find((rwId) => ownerFor(rwId) === owner);
+  return isMediaOwner(owner) ? Number(owner.slice(RW_OWNER_PREFIX.length)) : undefined;
 }
 
 function pageDigits(value: number): string {

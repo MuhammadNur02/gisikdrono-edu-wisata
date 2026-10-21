@@ -57,7 +57,7 @@ export function PackageBookingCard({ pkg }: { pkg: PackageDetail }) {
           {copy.catalogue.bookNow}
         </Link>
       </Button>
-      <AvailabilityPreview rwIds={pkg.rwIds} />
+      <AvailabilityPreview rws={pkg.rws} />
     </aside>
   );
 }

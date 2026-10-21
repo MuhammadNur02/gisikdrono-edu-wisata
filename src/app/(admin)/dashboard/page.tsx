@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PROFILE_PATH } from '@/config/dashboard';
 import { copy } from '@/lib/copy/id';
-import { staffRoleLabel, staffRwId } from '@/lib/utils/staff-labels';
+import { staffRoleLabel } from '@/lib/utils/staff-labels';
 import { requireDashboardStaff } from '@/server/auth/session';
 
 const text = copy.dashboard.home;
@@ -20,7 +20,7 @@ export default async function DashboardPage() {
     <>
       <DashboardPageHeader
         title={text.title}
-        description={text.signedInAs(staffRoleLabel(staffRwId(ctx.rwId)))}
+        description={text.signedInAs(staffRoleLabel(ctx.rwId))}
       />
       <Card variant="feature" className="max-w-xl">
         <CardHeader>

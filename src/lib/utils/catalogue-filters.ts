@@ -1,4 +1,4 @@
-import type { RwId } from '@/config/rw';
+import { rwNumber, type RwId } from '@/config/rw';
 import type { PackageSummary } from '@/types/package';
 import type { ProductSummary } from '@/types/product';
 import type { PublicReview } from '@/types/review';
@@ -14,11 +14,10 @@ export type CatalogueFacets = Readonly<Record<string, readonly string[]>>;
 export type CatalogueFilters = Readonly<Record<string, string | null>>;
 
 export const COMBO_FILTER = 'combo';
-// The RW as the kelurahan writes it, `05`, `08`.
-const RW_FILTER_DIGITS = 2;
 
+// The RW as the kelurahan writes it, `05`, `08`.
 export function rwFilterFor(rwId: RwId): string {
-  return String(rwId).padStart(RW_FILTER_DIGITS, '0');
+  return rwNumber(rwId);
 }
 
 export function matchesFilters(facets: CatalogueFacets, filters: CatalogueFilters): boolean {
@@ -27,16 +26,16 @@ export function matchesFilters(facets: CatalogueFacets, filters: CatalogueFilter
   );
 }
 
-// A combo is a filter of its own on the package list: it belongs to both RWs, so neither RW shows it.
+// A combo is a filter of its own on the package list: it belongs to every RW it visits, so none of them shows it.
 export function packageFacets(pkg: PackageSummary): CatalogueFacets {
   return {
-    rw: pkg.category === 'combo' ? [COMBO_FILTER] : pkg.rwIds.map(rwFilterFor),
+    rw: pkg.category === 'combo' ? [COMBO_FILTER] : pkg.rws.map((rw) => rwFilterFor(rw.id)),
     type: [pkg.category],
   };
 }
 
 export function productFacets(product: ProductSummary): CatalogueFacets {
-  return { rw: [rwFilterFor(product.rwId)], category: [product.category] };
+  return { rw: [rwFilterFor(product.rw.id)], category: [product.category] };
 }
 
 export function reviewFacets(review: PublicReview): CatalogueFacets {

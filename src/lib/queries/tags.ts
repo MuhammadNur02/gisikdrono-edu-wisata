@@ -23,7 +23,14 @@ export const TAGS = {
   sessions: sessionsTag,
   products: (rwId: RwId) => `products:${String(rwId)}`,
   galleries: (owner: GalleryOwner) => `galleries:${String(owner)}`,
-  // rw_units content (the RW pages) and activity_points have tags of their own (decision of 2026-10-18).
+  // A read that spans every RW caches under an umbrella tag, since the RWs are data and a fixed list of owner tags
+  // would miss the next one; a write revalidates its owner's tag and the umbrella (decision of 2026-10-21).
+  allPackages: 'packages:all',
+  allProducts: 'products:all',
+  allGalleries: 'galleries:all',
+  allActivityPoints: 'activity-points:all',
+  // rw_units content (the RW pages) and activity_points have tags of their own (decision of 2026-10-18). Every read
+  // that names an RW caches under rw-units as well, so a renamed or recoloured RW shows everywhere at once.
   rwUnits: 'rw-units',
   activityPoints: (rwId: RwId) => `activity-points:${String(rwId)}`,
   articles: 'articles',

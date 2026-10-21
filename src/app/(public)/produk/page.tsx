@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { ProductCatalogue } from '@/components/products/product-catalogue';
 import { JsonLd } from '@/components/seo/json-ld';
 import { listProducts } from '@/lib/queries/products';
+import { listRwUnits } from '@/lib/queries/rw-units';
 import { itemListJsonLd } from '@/lib/seo/json-ld';
 import { buildPageMetadata } from '@/lib/seo/metadata';
 import { productPath, PUBLIC_PATHS } from '@/lib/utils/paths';
@@ -24,7 +25,7 @@ export const metadata: Metadata = buildPageMetadata({
 // docs/PRD.md FR-PUB-13, Task P2.4.06: prerendered with every published product, filtered in the browser, the
 // full list without script. With nothing published the page is its header alone (StyleGuide §6.9).
 export default async function ProductsPage() {
-  const products = await listProducts();
+  const [products, rws] = await Promise.all([listProducts(), listRwUnits()]);
   return (
     <>
       <PageHeader
@@ -35,7 +36,7 @@ export default async function ProductsPage() {
       />
       {products.length > 0 ? (
         <Container className="pb-16 md:pb-24">
-          <ProductCatalogue products={products} />
+          <ProductCatalogue products={products} rws={rws} />
           <JsonLd
             data={itemListJsonLd(
               products.map((product) => ({ name: product.name, path: productPath(product.slug) })),

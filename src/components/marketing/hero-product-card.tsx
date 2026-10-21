@@ -34,7 +34,7 @@ export function HeroProductCard({ product }: HeroProductCardProps) {
         <PhotoPlaceholder
           label={product.name}
           icon={PRODUCT_CATEGORY[product.category].icon}
-          rwIds={[product.rwId]}
+          rws={[product.rw]}
           iconClassName="size-6"
           className="aspect-square w-20 shrink-0"
         />
