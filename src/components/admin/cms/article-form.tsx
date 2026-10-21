@@ -48,10 +48,13 @@ interface SaveButtonsProps extends Pick<ArticleFormProps, 'canPublish' | 'isPubl
   onIntent: (intent: ArticleIntent) => void;
 }
 
-// docs/StyleGuide.md: one primary action, the step that moves the article on; saving as a draft sits beside it.
+// docs/StyleGuide.md: one primary action, the step that moves the article on; saving as a draft sits beside it. An
+// RW admin's published article has no draft step: only the superadmin takes it off the site (finding 1 of the review
+// of PR #18), and the change goes for review.
 function SaveButtons({ canPublish, isPublished, isSubmitting, onIntent }: SaveButtonsProps) {
   const primary: ArticleIntent = canPublish ? 'publish' : 'review';
   const draftLabel = canPublish && isPublished ? text.unpublish : text.saveDraft;
+  const offersDraft = canPublish || !isPublished;
   return (
     <div className="flex flex-wrap gap-2">
       <Button
@@ -63,16 +66,18 @@ function SaveButtons({ canPublish, isPublished, isSubmitting, onIntent }: SaveBu
       >
         {canPublish ? text.publish : text.submitReview}
       </Button>
-      <Button
-        type="submit"
-        variant="outline"
-        disabled={isSubmitting}
-        onClick={() => {
-          onIntent('draft');
-        }}
-      >
-        {draftLabel}
-      </Button>
+      {offersDraft ? (
+        <Button
+          type="submit"
+          variant="outline"
+          disabled={isSubmitting}
+          onClick={() => {
+            onIntent('draft');
+          }}
+        >
+          {draftLabel}
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -99,7 +104,7 @@ export function ArticleForm({ article, owner, canPublish, isPublished, action }:
         <PostForm onSubmit={submit}>
           {failure ? <FormAlert tone="danger">{failure}</FormAlert> : null}
           {canPublish ? null : <FormAlert tone="info">{text.reviewNote}</FormAlert>}
-          <HeadingFields control={form.control} />
+          <HeadingFields control={form.control} isSlugLocked={!canPublish && isPublished} />
           <MediaFields control={form.control} owner={owner} articleId={initial.id} />
           <SeoFields control={form.control} />
           <SaveButtons

@@ -191,14 +191,14 @@ export async function removeGalleryItem(
   ctx: StaffContext,
   owner: ContentOwner,
   id: string,
-): Promise<void> {
+): Promise<boolean> {
   const supabase = await createSupabaseServerClient();
   let query = supabase.from('galleries').delete().eq('id', id);
   query = owner === null ? query.is('rw_id', null) : query.eq('rw_id', owner);
   const { data, error } = await query.select('storage_path, thumbnail_path').maybeSingle();
   if (error) throw error;
   const removed = rowOrNotFound(data);
-  await removeFilesOrLog('gallery_files', id, () =>
+  return removeFilesOrLog('gallery_files', id, () =>
     removeGalleryFiles(ctx, owner, [removed.storage_path, removed.thumbnail_path]),
   );
 }

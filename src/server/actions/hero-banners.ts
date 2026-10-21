@@ -2,7 +2,7 @@
 
 import { revalidateTag } from 'next/cache';
 
-import { fail, mapError, ok } from '@/lib/errors';
+import { fail, mapError, ok, okUnlessFilesLeft } from '@/lib/errors';
 import { TAGS } from '@/lib/queries/tags';
 import { rowRefSchema } from '@/lib/validations/content';
 import { createHeroBannerSchema, updateHeroBannerSchema } from '@/lib/validations/hero-banner';
@@ -50,9 +50,9 @@ export async function updateHeroBannerAction(
   if (!guard.ok) return guard;
 
   try {
-    const banner = await updateHeroBanner(parsed.data);
+    const saved = await updateHeroBanner(guard.ctx, parsed.data);
     revalidateTag(TAGS.banners);
-    return ok(banner);
+    return okUnlessFilesLeft(saved);
   } catch (error) {
     return mapError(error);
   }
@@ -65,9 +65,9 @@ export async function removeHeroBannerAction(input: unknown): Promise<ActionResu
   if (!guard.ok) return guard;
 
   try {
-    await removeHeroBanner(parsed.data.id);
+    const filesRemoved = await removeHeroBanner(guard.ctx, parsed.data.id);
     revalidateTag(TAGS.banners);
-    return ok(null);
+    return okUnlessFilesLeft({ value: null, filesRemoved });
   } catch (error) {
     return mapError(error);
   }

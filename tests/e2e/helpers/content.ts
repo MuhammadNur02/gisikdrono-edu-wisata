@@ -63,3 +63,9 @@ export async function readBookletPdfPath(title: string): Promise<string> {
 export async function removeArticlesTitled(titlePrefix: string): Promise<void> {
   await runSql(`delete from public.articles where title like ${sqlText(`${titlePrefix}%`)}`);
 }
+
+// An article of RW 08, written as postgres, for the page an RW 05 officer must not open.
+export async function insertRw08Article(id: string, title: string): Promise<void> {
+  await runSql(`insert into public.articles (id, rw_id, slug, title, status)
+    values (${sqlText(id)}, 8, ${sqlText(`uji-e2e-rw08-${id.slice(-6)}`)}, ${sqlText(title)}, 'draft')`);
+}

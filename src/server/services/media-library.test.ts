@@ -4,9 +4,11 @@ import { describe, expect, it } from 'vitest';
 import type { Database } from '@/db/types';
 
 import {
+  keepOnlyRowPhotos,
   readPublishedBooklet,
   removeBookletFolder,
   removeUnusedGalleryFiles,
+  removeUnusedHeroFiles,
 } from './media-library';
 
 const PHOTO = 'rw-05/gallery/0192f3a4-5b6c-7d8e-9f01-23456789abcd.webp';
@@ -133,5 +135,52 @@ describe('removeBookletFolder', () => {
         ],
       },
     ]);
+  });
+});
+
+// docs/Security.md R34 (decision of 2026-10-21): what a banner or a row stops showing leaves public-media.
+describe('removeUnusedHeroFiles', () => {
+  const HERO = 'kelurahan/hero/0192f3a4-5b6c-7d8e-9f01-23456789abcd.webp';
+
+  it('removes a hero photo no banner shows any more', async () => {
+    const { client, removed } = clientWith({});
+    expect(await removeUnusedHeroFiles(client, [HERO, null])).toEqual([HERO]);
+    expect(removed).toEqual([{ prefixes: [HERO] }]);
+  });
+
+  it('keeps one another banner still shows, and touches nothing outside the hero folder', async () => {
+    const { client, removed } = clientWith({ references: { [HERO]: 1 } });
+    expect(await removeUnusedHeroFiles(client, [HERO, PHOTO])).toEqual([]);
+    expect(removed).toEqual([]);
+  });
+});
+
+describe('keepOnlyRowPhotos', () => {
+  const ARTICLE_ID = '0192f3a4-5b6c-7d8e-9f01-000000000a01';
+  const FOLDER = `rw-05/articles/${ARTICLE_ID}`;
+  const COVER = `${FOLDER}/0192f3a4-5b6c-7d8e-9f01-23456789abcd.webp`;
+  const OLD = `${FOLDER}/0192f3a4-5b6c-7d8e-9f01-23456789abce.webp`;
+  const target = { rwId: 5 as const, purpose: 'article' as const, entityId: ARTICLE_ID };
+
+  it("removes every photo of the row's folder it does not keep", async () => {
+    const { client, removed } = clientWith({
+      listings: {
+        [FOLDER]: [
+          { name: COVER.split('/').at(-1) ?? '', metadata: { size: 1 } },
+          { name: OLD.split('/').at(-1) ?? '', metadata: { size: 1 } },
+          { name: 'stray.txt', metadata: { size: 1 } },
+        ],
+      },
+    });
+    expect(await keepOnlyRowPhotos(client, target, [COVER])).toBe(1);
+    expect(removed).toEqual([{ prefixes: [OLD] }]);
+  });
+
+  it('removes nothing when the folder holds only what it keeps', async () => {
+    const { client, removed } = clientWith({
+      listings: { [FOLDER]: [{ name: COVER.split('/').at(-1) ?? '', metadata: { size: 1 } }] },
+    });
+    expect(await keepOnlyRowPhotos(client, target, [COVER])).toBe(0);
+    expect(removed).toEqual([]);
   });
 });

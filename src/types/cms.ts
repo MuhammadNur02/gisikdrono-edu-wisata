@@ -131,3 +131,10 @@ export interface ArticleAdmin {
   seoTitle: string | null;
   seoDescription: string | null;
 }
+
+// A write that also took the files it replaced or removed out of public-media: what was saved, and whether every
+// one of those files went (docs/Security.md R34).
+export interface CleanedUp<T> {
+  value: T;
+  filesRemoved: boolean;
+}

@@ -57,8 +57,35 @@ function TagsField({ control }: { control: ArticleControl }) {
   );
 }
 
-export function HeadingFields({ control }: { control: ArticleControl }) {
+// A published article keeps its address for an RW admin (finding 1 of the review of PR #18): only the superadmin
+// moves it, so the field is shown, not offered.
+function SlugField({ control, isLocked }: { control: ArticleControl; isLocked: boolean }) {
   const title = useWatch({ control, name: 'title' });
+  return (
+    <FormField
+      control={control}
+      name="slug"
+      label={common.slug}
+      description={isLocked ? text.slugLocked : common.slugHint}
+      required
+      render={(field) =>
+        isLocked ? (
+          <Input {...field} readOnly />
+        ) : (
+          <SlugInput {...field} source={title} prefix={PUBLIC_PREFIX} />
+        )
+      }
+    />
+  );
+}
+
+export function HeadingFields({
+  control,
+  isSlugLocked,
+}: {
+  control: ArticleControl;
+  isSlugLocked: boolean;
+}) {
   return (
     <>
       <TextField
@@ -68,14 +95,7 @@ export function HeadingFields({ control }: { control: ArticleControl }) {
         required
         maxLength={CMS_LIMITS.articleTitle}
       />
-      <FormField
-        control={control}
-        name="slug"
-        label={common.slug}
-        description={common.slugHint}
-        required
-        render={(field) => <SlugInput {...field} source={title} prefix={PUBLIC_PREFIX} />}
-      />
+      <SlugField control={control} isLocked={isSlugLocked} />
       <TextField
         control={control}
         name="excerpt"

@@ -1,18 +1,27 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Database } from '@/db/types';
 import { saveArticleSchema } from '@/lib/validations/article';
 import type { StaffContext } from '@/server/auth/guards';
+import { keepRowPhotos } from '@/server/services/upload-service';
+import type { ArticleAdmin } from '@/types/cms';
 
 import { createArticle, updateArticle } from './article-service';
+import { fakeSessionClient, type RecordedWrite } from '../../../tests/fixtures/fake-session-client';
 
 const session = vi.hoisted(() => ({ client: null as SupabaseClient<Database> | null }));
 
 vi.mock('@/lib/supabase/server', () => ({
   createSupabaseServerClient: () => Promise.resolve(session.client),
 }));
-vi.mock('@/server/services/upload-service', () => ({ removeRowPhotos: vi.fn() }));
+vi.mock('@/server/services/upload-service', () => ({
+  keepRowPhotos: vi.fn(),
+  removeRowPhotos: vi.fn(),
+}));
+vi.mock('@/lib/logger', () => ({
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+}));
 
 const ADMIN_05: StaffContext = {
   userId: '0192f3a4-0000-7000-8000-000000000005',
@@ -22,8 +31,12 @@ const ADMIN_05: StaffContext = {
   totpVerifiedAt: null,
   claimsVersion: 1,
 };
+const SUPERADMIN: StaffContext = { ...ADMIN_05, role: 'superadmin', rwId: null };
 const ARTICLE_ID = '0192f3a4-5b6c-7d8e-9f01-23456789abcd';
-const OWN_PHOTO = `rw-05/articles/${ARTICLE_ID}/0192f3a4-0000-7000-8000-00000000aaaa.webp`;
+const FOLDER = `rw-05/articles/${ARTICLE_ID}`;
+const OWN_PHOTO = `${FOLDER}/0192f3a4-0000-7000-8000-00000000aaaa.webp`;
+const BODY_PHOTO = `${FOLDER}/0192f3a4-0000-7000-8000-00000000bbbb.webp`;
+const TARGET = { rwId: 5, purpose: 'article', entityId: ARTICLE_ID };
 
 function articleWith(change: Record<string, unknown>) {
   return saveArticleSchema.parse({
@@ -42,6 +55,23 @@ function articleWith(change: Record<string, unknown>) {
   });
 }
 
+function stored(status: ArticleAdmin['status']): ArticleAdmin {
+  return {
+    id: ARTICLE_ID,
+    owner: 5,
+    slug: 'bank-sampah-buka-setiap-minggu',
+    title: 'Bank sampah buka setiap Minggu',
+    excerpt: null,
+    bodyJson: { type: 'doc', content: [] },
+    coverPath: null,
+    category: 'news',
+    tags: [],
+    status,
+    seoTitle: null,
+    seoDescription: null,
+  };
+}
+
 function bodyWithImage(src: string) {
   const image = {
     type: 'image',
@@ -50,43 +80,22 @@ function bodyWithImage(src: string) {
   return { type: 'doc', content: [{ type: 'blockquote', content: [image] }] };
 }
 
-function recordOf(value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-    ? Object.fromEntries(Object.entries(value))
-    : {};
-}
-
-// A real typed client whose fetch records every write and answers with the row it wrote (as
-// src/server/services/document-service.test.ts does).
-function sessionClient() {
-  const writes: Record<string, unknown>[] = [];
-  const fakeFetch: typeof fetch = (_input, init) => {
-    const body = recordOf(typeof init?.body === 'string' ? JSON.parse(init.body) : null);
-    writes.push(body);
-    const row = { id: ARTICLE_ID, rw_id: 5, tags: [], ...body };
-    return Promise.resolve(
-      new Response(JSON.stringify(row), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    );
-  };
-  session.client = createClient<Database>('http://supabase.test', 'test-key', {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: { fetch: fakeFetch },
-  });
-  return writes;
+function sessionClient(): RecordedWrite[] {
+  const fake = fakeSessionClient({ id: ARTICLE_ID, rw_id: 5, tags: [] });
+  session.client = fake.client;
+  return fake.writes;
 }
 
 beforeEach(() => {
   session.client = null;
+  vi.mocked(keepRowPhotos).mockReset().mockResolvedValue(0);
 });
 
 describe('createArticle', () => {
   it('writes the status the intent names, the author, and a reading time', async () => {
     const writes = sessionClient();
     await createArticle(ADMIN_05, 5, articleWith({ coverPath: OWN_PHOTO }));
-    expect(writes[0]).toMatchObject({
+    expect(writes[0]?.body).toMatchObject({
       id: ARTICLE_ID,
       rw_id: 5,
       author_id: ADMIN_05.userId,
@@ -116,19 +125,42 @@ describe('createArticle', () => {
     expect(writes).toEqual([]);
   });
 
-  it('takes photos of its own folder in the body', async () => {
-    const writes = sessionClient();
-    await createArticle(ADMIN_05, 5, articleWith({ bodyJson: bodyWithImage(OWN_PHOTO) }));
-    expect(writes).toHaveLength(1);
+  // docs/Security.md R34: what the form uploaded but the article does not show leaves its folder.
+  it("keeps only the cover and body photos in the article's folder", async () => {
+    sessionClient();
+    const values = articleWith({ coverPath: OWN_PHOTO, bodyJson: bodyWithImage(BODY_PHOTO) });
+    const result = await createArticle(ADMIN_05, 5, values);
+    expect(keepRowPhotos).toHaveBeenCalledWith(ADMIN_05, TARGET, [OWN_PHOTO, BODY_PHOTO]);
+    expect(result.filesRemoved).toBe(true);
   });
 });
 
 describe('updateArticle', () => {
   it('writes no owner, author or id, only the content and its status', async () => {
     const writes = sessionClient();
-    await updateArticle(5, articleWith({ intent: 'draft' }));
-    expect(writes[0]).toMatchObject({ status: 'draft' });
+    await updateArticle(ADMIN_05, 5, articleWith({ intent: 'draft' }), stored('pending_review'));
+    expect(writes[0]?.body).toMatchObject({ status: 'draft' });
     for (const column of ['id', 'rw_id', 'author_id', 'reviewed_by', 'published_at'])
-      expect(writes[0]).not.toHaveProperty(column);
+      expect(writes[0]?.body).not.toHaveProperty(column);
+  });
+
+  // Finding 1 of the review of PR #18: the database sends the RW admin's change back to review, so the service
+  // names no status for a published article, which the guard would refuse.
+  it("leaves the status of an RW admin's published article to the review rule", async () => {
+    const writes = sessionClient();
+    await updateArticle(ADMIN_05, 5, articleWith({ intent: 'review' }), stored('published'));
+    expect(writes[0]?.body).not.toHaveProperty('status');
+  });
+
+  it("writes the superadmin's choice for a published article", async () => {
+    const writes = sessionClient();
+    await updateArticle(SUPERADMIN, 5, articleWith({ intent: 'draft' }), stored('published'));
+    expect(writes[0]?.body).toMatchObject({ status: 'draft' });
+  });
+
+  it('takes a photo out of the body out of its folder too', async () => {
+    sessionClient();
+    await updateArticle(ADMIN_05, 5, articleWith({ coverPath: OWN_PHOTO }), stored('draft'));
+    expect(keepRowPhotos).toHaveBeenCalledWith(ADMIN_05, TARGET, [OWN_PHOTO]);
   });
 });

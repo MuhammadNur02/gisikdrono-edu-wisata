@@ -167,12 +167,12 @@ export async function removeBooklet(
   ctx: StaffContext,
   owner: ContentOwner,
   id: string,
-): Promise<void> {
+): Promise<boolean> {
   const supabase = await createSupabaseServerClient();
   let query = supabase.from('booklets').delete().eq('id', id);
   query = owner === null ? query.is('rw_id', null) : query.eq('rw_id', owner);
   const { data, error } = await query.select('id').maybeSingle();
   if (error) throw error;
   rowOrNotFound(data);
-  await removeFilesOrLog('booklet_files', id, () => removeBookletFiles(ctx, owner, id));
+  return removeFilesOrLog('booklet_files', id, () => removeBookletFiles(ctx, owner, id));
 }

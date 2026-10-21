@@ -3,7 +3,7 @@
 import { revalidateTag } from 'next/cache';
 
 import { copy } from '@/lib/copy/id';
-import { fail, mapError, ok } from '@/lib/errors';
+import { fail, mapError, ok, okUnlessFilesLeft } from '@/lib/errors';
 import { TAGS } from '@/lib/queries/tags';
 import { saveBookletSchema } from '@/lib/validations/booklet';
 import { rowRefSchema } from '@/lib/validations/content';
@@ -69,9 +69,9 @@ export async function removeBookletAction(input: unknown): Promise<ActionResult<
   try {
     const owner = await readBookletOwner(parsed.data.id);
     if (owner === undefined) return fail('NOT_FOUND');
-    await removeBooklet(guard.ctx, owner, parsed.data.id);
+    const filesRemoved = await removeBooklet(guard.ctx, owner, parsed.data.id);
     revalidateTag(TAGS.booklets);
-    return ok(null);
+    return okUnlessFilesLeft({ value: null, filesRemoved });
   } catch (error) {
     return mapError(error);
   }

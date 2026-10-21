@@ -2,7 +2,7 @@
 
 import { revalidateTag } from 'next/cache';
 
-import { fail, mapError, ok } from '@/lib/errors';
+import { fail, mapError, okUnlessFilesLeft } from '@/lib/errors';
 import { TAGS } from '@/lib/queries/tags';
 import { saveActivityPointSchema } from '@/lib/validations/activity-point';
 import { rowRefSchema } from '@/lib/validations/content';
@@ -32,9 +32,9 @@ export async function createActivityPointAction(
   if (!target.ok) return target;
 
   try {
-    const point = await createActivityPoint(target.rwId, parsed.data);
+    const saved = await createActivityPoint(guard.ctx, target.rwId, parsed.data);
     revalidateTag(TAGS.activityPoints(target.rwId));
-    return ok(point);
+    return okUnlessFilesLeft(saved);
   } catch (error) {
     return mapError(error);
   }
@@ -52,9 +52,9 @@ export async function updateActivityPointAction(
     const rwId = await readActivityPointOwner(parsed.data.id);
     if (rwId === undefined) return fail('NOT_FOUND');
     if (!canWriteFor(guard.ctx, rwId)) return fail('FORBIDDEN');
-    const point = await updateActivityPoint(rwId, parsed.data);
+    const saved = await updateActivityPoint(guard.ctx, rwId, parsed.data);
     revalidateTag(TAGS.activityPoints(rwId));
-    return ok(point);
+    return okUnlessFilesLeft(saved);
   } catch (error) {
     return mapError(error);
   }
@@ -70,9 +70,9 @@ export async function removeActivityPointAction(input: unknown): Promise<ActionR
     const rwId = await readActivityPointOwner(parsed.data.id);
     if (rwId === undefined) return fail('NOT_FOUND');
     if (!canWriteFor(guard.ctx, rwId)) return fail('FORBIDDEN');
-    await removeActivityPoint(guard.ctx, rwId, parsed.data.id);
+    const filesRemoved = await removeActivityPoint(guard.ctx, rwId, parsed.data.id);
     revalidateTag(TAGS.activityPoints(rwId));
-    return ok(null);
+    return okUnlessFilesLeft({ value: null, filesRemoved });
   } catch (error) {
     return mapError(error);
   }

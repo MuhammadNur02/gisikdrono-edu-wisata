@@ -66,6 +66,8 @@ beforeEach(() => {
   for (const mock of [createGalleryItem, updateGalleryItem, removeGalleryItem])
     vi.mocked(mock).mockReset();
   vi.mocked(readGalleryOwner).mockReset().mockResolvedValue(5);
+  // A removal whose files all went, unless a test says otherwise.
+  vi.mocked(removeGalleryItem).mockResolvedValue(true);
   vi.mocked(revalidateTag).mockReset();
 });
 

@@ -11,8 +11,8 @@ import { toContentOwner } from '@/server/auth/content-owner';
 import type { StaffContext } from '@/server/auth/guards';
 import { rowOrNotFound, slugConflictOr } from '@/server/services/content-errors';
 import { removeFilesOrLog } from '@/server/services/content-files';
-import { removeRowPhotos } from '@/server/services/upload-service';
-import type { ActivityPointAdmin } from '@/types/cms';
+import { keepRowPhotos, removeRowPhotos } from '@/server/services/upload-service';
+import type { ActivityPointAdmin, CleanedUp } from '@/types/cms';
 
 // Activity points through the session client, so activity_points_staff and the AAL2 policy decide (0005). Every
 // write names the RW as well as the id, so a row of another RW is not touched even if a policy were wider.
@@ -115,10 +115,26 @@ export async function readActivityPointOwner(id: string): Promise<RwId | undefin
   return (await readPoint(id))?.rwId;
 }
 
+// The point's folder keeps only the photo it shows (docs/Security.md R34): an upload it replaced, or one the form
+// left unsaved, goes in the same action.
+async function keepOnlyPointPhoto(
+  ctx: StaffContext,
+  rwId: RwId,
+  point: ActivityPointAdmin,
+): Promise<CleanedUp<ActivityPointAdmin>> {
+  const target = { rwId, purpose: 'activity-point' as const, entityId: point.id };
+  const keep = point.imagePath === null ? [] : [point.imagePath];
+  const filesRemoved = await removeFilesOrLog('activity_point_files', point.id, () =>
+    keepRowPhotos(ctx, target, keep),
+  );
+  return { value: point, filesRemoved };
+}
+
 export async function createActivityPoint(
+  ctx: StaffContext,
   rwId: RwId,
   values: SaveActivityPointValues,
-): Promise<ActivityPointAdmin> {
+): Promise<CleanedUp<ActivityPointAdmin>> {
   checkImage(rwId, values, null);
   // Every column is named by columnsOf; the id is the form's, the RW the action's.
   const row = { id: values.id, rw_id: rwId, ...columnsOf(values) };
@@ -129,13 +145,14 @@ export async function createActivityPoint(
     .select(COLUMNS)
     .single();
   if (error) throw slugConflictOr(error);
-  return toActivityPointAdmin(data);
+  return keepOnlyPointPhoto(ctx, rwId, toActivityPointAdmin(data));
 }
 
 export async function updateActivityPoint(
+  ctx: StaffContext,
   rwId: RwId,
   values: SaveActivityPointValues,
-): Promise<ActivityPointAdmin> {
+): Promise<CleanedUp<ActivityPointAdmin>> {
   const current = rowOrNotFound(await readPoint(values.id));
   checkImage(rwId, values, current.imagePath);
   const supabase = await createSupabaseServerClient();
@@ -147,7 +164,7 @@ export async function updateActivityPoint(
     .select(COLUMNS)
     .maybeSingle();
   if (error) throw slugConflictOr(error);
-  return toActivityPointAdmin(rowOrNotFound(data));
+  return keepOnlyPointPhoto(ctx, rwId, toActivityPointAdmin(rowOrNotFound(data)));
 }
 
 // The point takes the photos of its own folder along (content-files.ts says in which order).
@@ -155,7 +172,7 @@ export async function removeActivityPoint(
   ctx: StaffContext,
   rwId: RwId,
   id: string,
-): Promise<void> {
+): Promise<boolean> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('activity_points')
@@ -166,7 +183,7 @@ export async function removeActivityPoint(
     .maybeSingle();
   if (error) throw error;
   rowOrNotFound(data);
-  await removeFilesOrLog('activity_point_files', id, () =>
+  return removeFilesOrLog('activity_point_files', id, () =>
     removeRowPhotos(ctx, { rwId, purpose: 'activity-point', entityId: id }),
   );
 }

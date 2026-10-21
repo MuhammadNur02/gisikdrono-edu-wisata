@@ -34,10 +34,11 @@ import { createUuidV7 } from '@/lib/utils/uuid-v7';
 import type { SignBookletPagesInput, SignUploadInput } from '@/lib/validations/upload';
 import { hasUploadAccess, type StaffContext } from '@/server/auth/guards';
 import {
+  keepOnlyRowPhotos,
   readPublishedBooklet,
   removeBookletFolder,
-  removeRowPhotoFolder,
   removeUnusedGalleryFiles,
+  removeUnusedHeroFiles,
   type RowPhotos,
   type PublishedBooklet,
 } from '@/server/services/media-library';
@@ -299,8 +300,8 @@ async function mediaClientFor(ctx: StaffContext, rwId: RwId | null): Promise<Dat
   return adminClient;
 }
 
-// A removed gallery item takes its photo and thumbnail along, unless another row still shows them
-// (docs/PRD.md FR-ADMIN-10).
+// A removed gallery item takes its photo and thumbnail along, and an RW page or a schedule the photo it stopped
+// showing, unless another row still shows them (docs/PRD.md FR-ADMIN-10, docs/Security.md R34).
 export async function removeGalleryFiles(
   ctx: StaffContext,
   rwId: RwId | null,
@@ -328,7 +329,24 @@ export async function removeBookletFiles(
   return removeBookletFolder(await mediaClientFor(ctx, rwId), rwId, bookletId);
 }
 
-// A removed article's or activity point's photos, which no other row can show (their folder is the row's own).
+// An article's or activity point's folder keeps only what the row shows now, and nothing once it is removed. No
+// other row can show those photos: the folder is the row's own.
+export async function keepRowPhotos(
+  ctx: StaffContext,
+  target: RowPhotos,
+  keep: string[],
+): Promise<number> {
+  return keepOnlyRowPhotos(await mediaClientFor(ctx, target.rwId), target, keep);
+}
+
 export async function removeRowPhotos(ctx: StaffContext, target: RowPhotos): Promise<number> {
-  return removeRowPhotoFolder(await mediaClientFor(ctx, target.rwId), target);
+  return keepRowPhotos(ctx, target, []);
+}
+
+// The kelurahan hero photos a banner stopped showing, once no banner shows them (docs/Security.md R34).
+export async function removeUnusedHeroPhotos(
+  ctx: StaffContext,
+  paths: (string | null)[],
+): Promise<string[]> {
+  return removeUnusedHeroFiles(await mediaClientFor(ctx, null), paths);
 }

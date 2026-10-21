@@ -1,6 +1,12 @@
 // The content screens of the dashboard (Task P2.9.04–P2.9.06), read through copy.cms in src/lib/copy/id.ts.
 export const cmsCopy = {
   chooseRw: 'Pilih RW 05 atau RW 08 di pengalih RW dulu, lalu ulangi.',
+  // A page of another RW reads exactly like one that does not exist (decision of 2026-10-21).
+  notFound: {
+    title: 'Tidak ditemukan',
+    description: 'Halaman ini tidak ada, atau isinya bukan milik RW Anda.',
+    back: 'Kembali ke dasbor',
+  },
   owner: {
     kelurahan: 'Kelurahan',
     savedFor: (owner: string) => `Konten baru disimpan untuk ${owner}.`,
@@ -53,6 +59,8 @@ export const cmsCopy = {
     removed: (noun: string) => `${noun} dihapus.`,
     removeTitle: (noun: string) => `Hapus ${noun}?`,
     removeConsequence: 'Konten ini langsung hilang dari situs dan tidak bisa dikembalikan.',
+    filesLeft:
+      'Tersimpan, tetapi file lama belum terhapus dari penyimpanan. Hubungi superadmin agar file itu segera dibersihkan.',
   },
   pages: {
     title: 'Halaman RW',
@@ -217,6 +225,8 @@ export const cmsCopy = {
     empty: 'Belum ada artikel.',
     emptyHint: 'Tulis artikel pertama tentang kegiatan atau pengumuman terbaru.',
     noun: 'Artikel',
-    notFound: 'Artikel ini tidak ditemukan atau bukan milik RW Anda.',
+    unpublishOnlySuper:
+      'Artikel yang sudah tayang hanya bisa ditarik superadmin. Ajukan perubahannya untuk ditinjau, ya.',
+    slugLocked: 'Alamat artikel yang sudah tayang hanya bisa diubah superadmin.',
   },
 } as const;

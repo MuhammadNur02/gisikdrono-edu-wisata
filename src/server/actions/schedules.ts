@@ -2,7 +2,7 @@
 
 import { revalidateTag } from 'next/cache';
 
-import { fail, mapError, ok } from '@/lib/errors';
+import { fail, mapError, ok, okUnlessFilesLeft } from '@/lib/errors';
 import { TAGS } from '@/lib/queries/tags';
 import { rowRefSchema } from '@/lib/validations/content';
 import { createScheduleSchema, updateScheduleSchema } from '@/lib/validations/schedule';
@@ -47,9 +47,9 @@ export async function updateScheduleAction(input: unknown): Promise<ActionResult
     const rwId = await readScheduleOwner(parsed.data.id);
     if (rwId === undefined) return fail('NOT_FOUND');
     if (!canWriteFor(guard.ctx, rwId)) return fail('FORBIDDEN');
-    const schedule = await updateSchedule(parsed.data);
+    const saved = await updateSchedule(guard.ctx, parsed.data);
     revalidateTag(TAGS.schedules);
-    return ok(schedule);
+    return okUnlessFilesLeft(saved);
   } catch (error) {
     return mapError(error);
   }
@@ -66,9 +66,9 @@ export async function removeScheduleAction(input: unknown): Promise<ActionResult
     const rwId = await readScheduleOwner(parsed.data.id);
     if (rwId === undefined) return fail('NOT_FOUND');
     if (!canWriteFor(guard.ctx, rwId)) return fail('FORBIDDEN');
-    await removeSchedule(parsed.data.id);
+    const filesRemoved = await removeSchedule(guard.ctx, parsed.data.id);
     revalidateTag(TAGS.schedules);
-    return ok(null);
+    return okUnlessFilesLeft({ value: null, filesRemoved });
   } catch (error) {
     return mapError(error);
   }

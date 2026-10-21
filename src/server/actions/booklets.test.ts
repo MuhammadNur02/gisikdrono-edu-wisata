@@ -49,6 +49,8 @@ beforeEach(() => {
   vi.mocked(requireAal2).mockReset().mockResolvedValue({ ok: true, ctx: ADMIN_05 });
   for (const mock of [createBooklet, updateBooklet, removeBooklet]) vi.mocked(mock).mockReset();
   vi.mocked(readBookletOwner).mockReset().mockResolvedValue(5);
+  // A removal whose files all went, unless a test says otherwise.
+  vi.mocked(removeBooklet).mockResolvedValue(true);
   vi.mocked(revalidateTag).mockReset();
 });
 

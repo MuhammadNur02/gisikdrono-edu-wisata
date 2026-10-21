@@ -7,8 +7,11 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isPublishedImagePathFor } from '@/lib/uploads/paths';
 import { toJakartaIsoString } from '@/lib/utils/dates';
 import type { HeroBannerValues, UpdateHeroBannerValues } from '@/lib/validations/hero-banner';
+import type { StaffContext } from '@/server/auth/guards';
 import { rowOrNotFound } from '@/server/services/content-errors';
-import type { BannerProductOption, HeroBannerAdmin } from '@/types/cms';
+import { removeFilesOrLog } from '@/server/services/content-files';
+import { removeUnusedHeroPhotos } from '@/server/services/upload-service';
+import type { BannerProductOption, CleanedUp, HeroBannerAdmin } from '@/types/cms';
 
 // Hero banners through the session client, so the hero_banners policies (the superadmin's alone, created_by =
 // auth.uid() on insert) and the AAL2 policy decide (0005).
@@ -124,7 +127,18 @@ export async function createHeroBanner(
   return toHeroBannerAdmin(data);
 }
 
-export async function updateHeroBanner(values: UpdateHeroBannerValues): Promise<HeroBannerAdmin> {
+// The photos the banner showed before and shows no more (docs/Security.md R34).
+function replacedPhotos(before: BannerRow, after: BannerRow): string[] {
+  const kept = [after.image_path, after.mobile_image_path];
+  return [before.image_path, before.mobile_image_path].filter(
+    (path): path is string => path !== null && !kept.includes(path),
+  );
+}
+
+export async function updateHeroBanner(
+  ctx: StaffContext,
+  values: UpdateHeroBannerValues,
+): Promise<CleanedUp<HeroBannerAdmin>> {
   const current = rowOrNotFound(await readBanner(values.id));
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
@@ -134,17 +148,28 @@ export async function updateHeroBanner(values: UpdateHeroBannerValues): Promise<
     .select(COLUMNS)
     .maybeSingle();
   if (error) throw error;
-  return toHeroBannerAdmin(rowOrNotFound(data));
+  const saved = rowOrNotFound(data);
+  const replaced = replacedPhotos(current, saved);
+  const filesRemoved =
+    replaced.length === 0 ||
+    (await removeFilesOrLog('hero_banner_files', values.id, () =>
+      removeUnusedHeroPhotos(ctx, replaced),
+    ));
+  return { value: toHeroBannerAdmin(saved), filesRemoved };
 }
 
-export async function removeHeroBanner(id: string): Promise<void> {
+// The banner takes both its photos along, once no other banner shows them.
+export async function removeHeroBanner(ctx: StaffContext, id: string): Promise<boolean> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('hero_banners')
     .delete()
     .eq('id', id)
-    .select('id')
+    .select('image_path, mobile_image_path')
     .maybeSingle();
   if (error) throw error;
-  rowOrNotFound(data);
+  const removed = rowOrNotFound(data);
+  return removeFilesOrLog('hero_banner_files', id, () =>
+    removeUnusedHeroPhotos(ctx, [removed.image_path, removed.mobile_image_path]),
+  );
 }

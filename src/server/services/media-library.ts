@@ -34,38 +34,80 @@ function countOf(result: CountResult): number {
   return result.count ?? 0;
 }
 
-// Gallery photos are also what RW pages, activity points and schedules show (the CMS and pnpm db:seed --media point
-// them at gallery files), so a file goes only when no row shows it any more.
-async function referenceCount(adminClient: DatabaseClient, path: string): Promise<number> {
-  const head = { count: 'exact' as const, head: true };
+type ReferenceCount = (adminClient: DatabaseClient, path: string) => Promise<number>;
+
+const HEAD_COUNT = { count: 'exact' as const, head: true };
+
+// Gallery photos are also what RW pages and schedules show (they have no upload folder of their own), so a file goes
+// only when no row shows it any more. Activity points and articles keep copies in their own folders
+// (20261021090100_content_media_paths.sql), so they never hold a gallery file.
+const galleryReferences: ReferenceCount = async (adminClient, path) => {
   const counts = await Promise.all([
-    adminClient.from('galleries').select('id', head).eq('storage_path', path),
-    adminClient.from('galleries').select('id', head).eq('thumbnail_path', path),
-    adminClient.from('rw_units').select('id', head).eq('hero_image_path', path),
-    adminClient.from('activity_points').select('id', head).eq('image_path', path),
-    adminClient.from('performance_schedules').select('id', head).eq('image_path', path),
+    adminClient.from('galleries').select('id', HEAD_COUNT).eq('storage_path', path),
+    adminClient.from('galleries').select('id', HEAD_COUNT).eq('thumbnail_path', path),
+    adminClient.from('rw_units').select('id', HEAD_COUNT).eq('hero_image_path', path),
+    adminClient.from('performance_schedules').select('id', HEAD_COUNT).eq('image_path', path),
   ]);
   return counts.reduce((total, result) => total + countOf(result), 0);
+};
+
+// A hero photo is shown by banners only, perhaps by more than one.
+const heroReferences: ReferenceCount = async (adminClient, path) => {
+  const counts = await Promise.all([
+    adminClient.from('hero_banners').select('id', HEAD_COUNT).eq('image_path', path),
+    adminClient.from('hero_banners').select('id', HEAD_COUNT).eq('mobile_image_path', path),
+  ]);
+  return counts.reduce((total, result) => total + countOf(result), 0);
+};
+
+function photosOf(
+  paths: (string | null)[],
+  target: { rwId: RwId | null; purpose: 'gallery' | 'hero' },
+) {
+  return paths.filter(
+    (path): path is string => path !== null && isPublishedImagePathFor(path, target),
+  );
 }
 
-// A removed gallery item's photo and its thumbnail (docs/PRD.md FR-ADMIN-10), once the row is gone.
-export async function removeUnusedGalleryFiles(
+async function removeUnreferenced(
   adminClient: DatabaseClient,
-  rwId: RwId | null,
-  paths: (string | null)[],
+  paths: string[],
+  references: ReferenceCount,
 ): Promise<string[]> {
-  const ownPhotos = paths.filter(
-    (path): path is string =>
-      path !== null && isPublishedImagePathFor(path, { rwId, purpose: 'gallery' }),
-  );
   const unused: string[] = [];
-  for (const path of new Set(ownPhotos)) {
-    if ((await referenceCount(adminClient, path)) === 0) unused.push(path);
+  for (const path of new Set(paths)) {
+    if ((await references(adminClient, path)) === 0) unused.push(path);
   }
   if (unused.length === 0) return [];
   const { error } = await adminClient.storage.from(PUBLIC_MEDIA_BUCKET).remove(unused);
   if (error) throw error;
   return unused;
+}
+
+// A removed gallery item's photo and its thumbnail (docs/PRD.md FR-ADMIN-10), or the photo an RW page or a schedule
+// stopped showing (docs/Security.md R34), once no row shows it.
+export async function removeUnusedGalleryFiles(
+  adminClient: DatabaseClient,
+  rwId: RwId | null,
+  paths: (string | null)[],
+): Promise<string[]> {
+  return removeUnreferenced(
+    adminClient,
+    photosOf(paths, { rwId, purpose: 'gallery' }),
+    galleryReferences,
+  );
+}
+
+// The photos a banner stopped showing or took along when it was removed (docs/Security.md R34).
+export async function removeUnusedHeroFiles(
+  adminClient: DatabaseClient,
+  paths: (string | null)[],
+): Promise<string[]> {
+  return removeUnreferenced(
+    adminClient,
+    photosOf(paths, { rwId: null, purpose: 'hero' }),
+    heroReferences,
+  );
 }
 
 export interface PublishedBooklet {
@@ -129,21 +171,24 @@ export interface RowPhotos {
   entityId: string;
 }
 
-// A removed row's own photo folder (Task P2.9.06): the folder follows from the owner, the purpose and the id alone,
-// and only the photos finalize named in it go.
-export async function removeRowPhotoFolder(
+// A row's own photo folder keeps exactly the photos the row shows now (docs/Security.md R34): an article's cover and
+// body photos, an activity point's photo; none once the row is removed. The folder follows from the owner, the
+// purpose and the id alone, and only the photos finalize named in it go.
+export async function keepOnlyRowPhotos(
   adminClient: DatabaseClient,
   target: RowPhotos,
+  keep: string[],
 ): Promise<number> {
   const bucket = adminClient.storage.from(PUBLIC_MEDIA_BUCKET);
   const folder = rowPhotoFolder(target);
   const files = await bucket.list(folder, { limit: ROW_FOLDER_LIST_LIMIT });
   if (files.error) throw files.error;
-  const paths = files.data
+  const kept = new Set(keep);
+  const unused = files.data
     .map((file) => `${folder}/${file.name}`)
-    .filter((path) => isPublishedImagePathFor(path, target));
-  if (paths.length === 0) return 0;
-  const { error } = await bucket.remove(paths);
+    .filter((path) => isPublishedImagePathFor(path, target) && !kept.has(path));
+  if (unused.length === 0) return 0;
+  const { error } = await bucket.remove(unused);
   if (error) throw error;
-  return paths.length;
+  return unused.length;
 }

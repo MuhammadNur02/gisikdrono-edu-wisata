@@ -60,6 +60,8 @@ beforeEach(() => {
   for (const mock of [createActivityPoint, updateActivityPoint, removeActivityPoint])
     vi.mocked(mock).mockReset();
   vi.mocked(readActivityPointOwner).mockReset().mockResolvedValue(5);
+  // A removal whose files all went, unless a test says otherwise.
+  vi.mocked(removeActivityPoint).mockResolvedValue(true);
   vi.mocked(revalidateTag).mockReset();
 });
 
@@ -68,6 +70,7 @@ describe('createActivityPointAction', () => {
     cookie.value = '8';
     await createActivityPointAction(INPUT);
     expect(createActivityPoint).toHaveBeenCalledWith(
+      ADMIN_05,
       5,
       expect.objectContaining({ slug: INPUT.slug }),
     );
@@ -98,7 +101,11 @@ describe('createActivityPointAction', () => {
 describe('updateActivityPointAction and removeActivityPointAction', () => {
   it("changes a point of the RW admin's own RW and refreshes that RW's points", async () => {
     await updateActivityPointAction(INPUT);
-    expect(updateActivityPoint).toHaveBeenCalledWith(5, expect.objectContaining({ id: POINT_ID }));
+    expect(updateActivityPoint).toHaveBeenCalledWith(
+      ADMIN_05,
+      5,
+      expect.objectContaining({ id: POINT_ID }),
+    );
     expect(revalidateTag).toHaveBeenCalledWith('activity-points:5');
   });
 

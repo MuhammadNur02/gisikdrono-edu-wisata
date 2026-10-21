@@ -39,18 +39,21 @@ beforeEach(() => {
   vi.mocked(requireAal2).mockReset().mockResolvedValue({ ok: true, ctx: ADMIN_05 });
   vi.mocked(updateRwPage)
     .mockReset()
-    .mockImplementation((rwId) =>
+    .mockImplementation((_ctx, rwId) =>
       Promise.resolve({
-        rwId,
-        name: 'RW',
-        tagline: 'Kampung bebas sampah',
-        descriptionMd: null,
-        visionMd: null,
-        heroImagePath: null,
-        contactPhone: null,
-        contactEmail: null,
-        mapLat: null,
-        mapLng: null,
+        value: {
+          rwId,
+          name: 'RW',
+          tagline: 'Kampung bebas sampah',
+          descriptionMd: null,
+          visionMd: null,
+          heroImagePath: null,
+          contactPhone: null,
+          contactEmail: null,
+          mapLat: null,
+          mapLng: null,
+        },
+        filesRemoved: true,
       }),
     );
   vi.mocked(revalidateTag).mockReset();
@@ -60,6 +63,7 @@ describe('updateRwPageAction', () => {
   it("saves the RW admin's own page and refreshes the RW pages", async () => {
     expect(await updateRwPageAction(INPUT)).toMatchObject({ ok: true, data: { rwId: 5 } });
     expect(updateRwPage).toHaveBeenCalledWith(
+      ADMIN_05,
       5,
       expect.objectContaining({ tagline: 'Kampung bebas sampah' }),
     );
@@ -70,8 +74,8 @@ describe('updateRwPageAction', () => {
   it('keeps an RW 05 admin on RW 05 even with an RW scope cookie of RW 08', async () => {
     cookie.value = '8';
     await updateRwPageAction(INPUT);
-    expect(updateRwPage).toHaveBeenCalledWith(5, expect.anything());
-    expect(updateRwPage).not.toHaveBeenCalledWith(8, expect.anything());
+    expect(updateRwPage).toHaveBeenCalledWith(expect.anything(), 5, expect.anything());
+    expect(updateRwPage).not.toHaveBeenCalledWith(expect.anything(), 8, expect.anything());
   });
 
   it('refuses a form that names an RW at all', async () => {
@@ -85,7 +89,7 @@ describe('updateRwPageAction', () => {
     vi.mocked(requireAal2).mockResolvedValue({ ok: true, ctx: SUPERADMIN });
     cookie.value = '8';
     await updateRwPageAction(INPUT);
-    expect(updateRwPage).toHaveBeenCalledWith(8, expect.anything());
+    expect(updateRwPage).toHaveBeenCalledWith(expect.anything(), 8, expect.anything());
 
     cookie.value = undefined;
     vi.mocked(updateRwPage).mockClear();

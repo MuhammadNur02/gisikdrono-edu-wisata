@@ -46,6 +46,8 @@ beforeEach(() => {
   vi.mocked(requireAal2).mockReset().mockResolvedValue({ ok: true, ctx: ADMIN_08 });
   for (const mock of [createSchedule, updateSchedule, removeSchedule]) vi.mocked(mock).mockReset();
   vi.mocked(readScheduleOwner).mockReset().mockResolvedValue(8);
+  // A removal whose files all went, unless a test says otherwise.
+  vi.mocked(removeSchedule).mockResolvedValue(true);
   vi.mocked(revalidateTag).mockReset();
 });
 
@@ -93,6 +95,9 @@ describe('schedule actions', () => {
 
   it('removes an RW 08 schedule', async () => {
     expect(await removeScheduleAction({ id: SCHEDULE_ID })).toEqual({ ok: true, data: null });
-    expect(removeSchedule).toHaveBeenCalledWith(SCHEDULE_ID);
+    expect(removeSchedule).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'admin_rw' }),
+      SCHEDULE_ID,
+    );
   });
 });

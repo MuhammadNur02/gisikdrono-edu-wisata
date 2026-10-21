@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import {
+  insertRw08Article,
   publicMediaUrl,
   readBookletPdfPath,
   removeArticlesTitled,
@@ -129,4 +130,15 @@ test('the superadmin publishes it, and it is on /artikel at the next visit', asy
   await expect(page.getByText(saved)).toBeVisible(AUTH_STEP);
   await page.goto('/artikel');
   await expect(page.getByText(ARTICLE_TITLE)).toBeVisible();
+});
+
+// Decision of 2026-10-21 (review of PR #18): another RW's content reads exactly like content that does not exist,
+// with a real 404, since RLS hides the row from the page.
+test("an RW 05 officer opening an RW 08 article's edit page gets a 404", async ({ page }) => {
+  const id = '00000000-0000-4000-9000-0000000e2e08';
+  await insertRw08Article(id, `${ARTICLE_PREFIX} RW 08`);
+  await signInToDashboard(page, ADMIN_RW05);
+  const response = await page.goto(`/dashboard/articles/${id}/edit`);
+  expect(response?.status()).toBe(404);
+  await expect(page.getByText('Artikel RW 08')).toHaveCount(0);
 });

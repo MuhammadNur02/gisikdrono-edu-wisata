@@ -7,7 +7,10 @@ import { AppError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isPublishedImagePathFor } from '@/lib/uploads/paths';
 import type { UpdateRwPageValues } from '@/lib/validations/rw-page';
-import type { RwPageAdmin } from '@/types/cms';
+import type { StaffContext } from '@/server/auth/guards';
+import { removeFilesOrLog } from '@/server/services/content-files';
+import { removeGalleryFiles } from '@/server/services/upload-service';
+import type { CleanedUp, RwPageAdmin } from '@/types/cms';
 
 // The RW pages through the session client, so rw_units_staff_update, rw_units_guard and the AAL2 policy decide
 // (0004, 0005). Only the content columns are read or written; the treasury account is granted to no API role.
@@ -63,7 +66,11 @@ function checkHeroImage(rwId: RwId, path: string | null, current: string | null)
   }
 }
 
-export async function updateRwPage(rwId: RwId, values: UpdateRwPageValues): Promise<RwPageAdmin> {
+export async function updateRwPage(
+  ctx: StaffContext,
+  rwId: RwId,
+  values: UpdateRwPageValues,
+): Promise<CleanedUp<RwPageAdmin>> {
   const current = await readRwPageForStaff(rwId);
   if (!current) throw new AppError('NOT_FOUND');
   checkHeroImage(rwId, values.heroImagePath, current.heroImagePath);
@@ -87,5 +94,23 @@ export async function updateRwPage(rwId: RwId, values: UpdateRwPageValues): Prom
   if (error) throw error;
   // RLS lets an update of another RW's page touch no row.
   if (!data) throw new AppError('NOT_FOUND');
-  return toRwPageAdmin(rwId, data);
+  return {
+    value: toRwPageAdmin(rwId, data),
+    filesRemoved: await removeReplacedPhoto(ctx, rwId, current, values),
+  };
+}
+
+// The photo the page stopped showing leaves public-media, unless a gallery item still shows it (docs/Security.md
+// R34; removeGalleryFiles counts every row that does).
+async function removeReplacedPhoto(
+  ctx: StaffContext,
+  rwId: RwId,
+  current: RwPageAdmin,
+  values: UpdateRwPageValues,
+): Promise<boolean> {
+  const replaced = current.heroImagePath;
+  if (replaced === null || replaced === values.heroImagePath) return true;
+  return removeFilesOrLog('rw_page_files', String(rwId), () =>
+    removeGalleryFiles(ctx, rwId, [replaced]),
+  );
 }

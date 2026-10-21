@@ -2,7 +2,7 @@
 
 import { revalidateTag } from 'next/cache';
 
-import { mapError, ok } from '@/lib/errors';
+import { mapError, okUnlessFilesLeft } from '@/lib/errors';
 import { TAGS } from '@/lib/queries/tags';
 import { updateRwPageSchema } from '@/lib/validations/rw-page';
 import { requireRwContentOwner } from '@/server/auth/content-owner';
@@ -22,9 +22,9 @@ export async function updateRwPageAction(input: unknown): Promise<ActionResult<R
   if (!target.ok) return target;
 
   try {
-    const page = await updateRwPage(target.rwId, parsed.data);
+    const saved = await updateRwPage(guard.ctx, target.rwId, parsed.data);
     revalidateTag(TAGS.rwUnits);
-    return ok(page);
+    return okUnlessFilesLeft(saved);
   } catch (error) {
     return mapError(error);
   }

@@ -2,7 +2,7 @@
 
 import { revalidateTag } from 'next/cache';
 
-import { fail, mapError, ok } from '@/lib/errors';
+import { fail, mapError, ok, okUnlessFilesLeft } from '@/lib/errors';
 import { TAGS } from '@/lib/queries/tags';
 import { contentOwnerTagOf } from '@/lib/utils/content-owner';
 import { rowRefSchema } from '@/lib/validations/content';
@@ -71,9 +71,9 @@ export async function removeGalleryItemAction(input: unknown): Promise<ActionRes
     const owner = await readGalleryOwner(parsed.data.id);
     if (owner === undefined) return fail('NOT_FOUND');
     if (!canWriteFor(guard.ctx, owner)) return fail('FORBIDDEN');
-    await removeGalleryItem(guard.ctx, owner, parsed.data.id);
+    const filesRemoved = await removeGalleryItem(guard.ctx, owner, parsed.data.id);
     revalidateTag(TAGS.galleries(contentOwnerTagOf(owner)));
-    return ok(null);
+    return okUnlessFilesLeft({ value: null, filesRemoved });
   } catch (error) {
     return mapError(error);
   }

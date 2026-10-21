@@ -12,8 +12,11 @@ import { isPublishedImagePathFor } from '@/lib/uploads/paths';
 import { toJakartaIsoString } from '@/lib/utils/dates';
 import type { ScheduleValues, UpdateScheduleValues } from '@/lib/validations/schedule';
 import { toContentOwner } from '@/server/auth/content-owner';
+import type { StaffContext } from '@/server/auth/guards';
 import { rowOrNotFound } from '@/server/services/content-errors';
-import type { ScheduleAdmin, SchedulePackageOption } from '@/types/cms';
+import { removeFilesOrLog } from '@/server/services/content-files';
+import { removeGalleryFiles } from '@/server/services/upload-service';
+import type { CleanedUp, ScheduleAdmin, SchedulePackageOption } from '@/types/cms';
 
 // RW 08's performance schedules through the session client, so the performance_schedules policies, the
 // package-RW trigger and the AAL2 policy decide (0005). Every write names the RW as well as the id.
@@ -144,7 +147,10 @@ export async function createSchedule(
   return toScheduleAdmin(data);
 }
 
-export async function updateSchedule(values: UpdateScheduleValues): Promise<ScheduleAdmin> {
+export async function updateSchedule(
+  ctx: StaffContext,
+  values: UpdateScheduleValues,
+): Promise<CleanedUp<ScheduleAdmin>> {
   const current = rowOrNotFound(await readSchedule(values.id));
   checkRecurrence(values.recurrenceRule);
   checkImage(values.imagePath, current.imagePath);
@@ -157,18 +163,33 @@ export async function updateSchedule(values: UpdateScheduleValues): Promise<Sche
     .select(COLUMNS)
     .maybeSingle();
   if (error) throw error;
-  return toScheduleAdmin(rowOrNotFound(data));
+  const saved = toScheduleAdmin(rowOrNotFound(data));
+  const replaced = current.imagePath;
+  const filesRemoved =
+    replaced === null ||
+    replaced === saved.imagePath ||
+    (await removeSchedulePhoto(ctx, values.id, replaced));
+  return { value: saved, filesRemoved };
 }
 
-export async function removeSchedule(id: string): Promise<void> {
+// A photo the schedule stopped showing, or took along when it was removed, leaves public-media unless a gallery item
+// still shows it (docs/Security.md R34; removeGalleryFiles counts every row that does).
+async function removeSchedulePhoto(ctx: StaffContext, id: string, path: string): Promise<boolean> {
+  return removeFilesOrLog('schedule_files', id, () =>
+    removeGalleryFiles(ctx, SCHEDULE_RW_ID, [path]),
+  );
+}
+
+export async function removeSchedule(ctx: StaffContext, id: string): Promise<boolean> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('performance_schedules')
     .delete()
     .eq('id', id)
     .eq('rw_id', SCHEDULE_RW_ID)
-    .select('id')
+    .select('image_path')
     .maybeSingle();
   if (error) throw error;
-  rowOrNotFound(data);
+  const removed = rowOrNotFound(data);
+  return removed.image_path === null || removeSchedulePhoto(ctx, id, removed.image_path);
 }

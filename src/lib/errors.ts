@@ -8,6 +8,7 @@ import { ZodError, z } from 'zod';
 import { copy } from '@/lib/copy/id';
 import { createLogger, requestIdFrom } from '@/lib/logger';
 import type { ActionErrorCode, ActionFailure, ActionResult } from '@/types/action-result';
+import type { CleanedUp } from '@/types/cms';
 
 const HTTP_STATUS_BY_CODE = {
   UNAUTHENTICATED: 401,
@@ -115,4 +116,12 @@ export async function mapError(error: unknown): Promise<ActionFailure> {
     postgresCode: isPostgresError(error) ? error.code : undefined,
   });
   return fail('INTERNAL');
+}
+
+// A write that went through but left a file it had to take out of public-media (docs/Security.md R34): the officer
+// hears it, since a photo whose consent was withdrawn must really go.
+export function okUnlessFilesLeft<T>(result: CleanedUp<T>): ActionResult<T> {
+  return result.filesRemoved
+    ? ok(result.value)
+    : fail('INTERNAL', undefined, copy.cms.common.filesLeft);
 }

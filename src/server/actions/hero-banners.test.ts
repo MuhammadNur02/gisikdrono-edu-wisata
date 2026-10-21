@@ -1,6 +1,7 @@
 import { revalidateTag } from 'next/cache';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { copy } from '@/lib/copy/id';
 import { requireAal2, type StaffContext } from '@/server/auth/guards';
 import {
   createHeroBanner,
@@ -44,6 +45,21 @@ const BANNER = {
   endsAt: '',
 };
 
+const SAVED_BANNER = {
+  id: BANNER_ID,
+  title: BANNER.title,
+  subtitle: null,
+  ctaLabel: null,
+  ctaHref: null,
+  imagePath: BANNER.imagePath,
+  mobileImagePath: null,
+  productId: null,
+  sortOrder: 0,
+  isActive: true,
+  startsAt: null,
+  endsAt: null,
+};
+
 beforeEach(() => {
   vi.mocked(requireAal2).mockReset().mockResolvedValue({ ok: true, ctx: SUPERADMIN });
   for (const mock of [createHeroBanner, updateHeroBanner, removeHeroBanner])
@@ -80,5 +96,25 @@ describe('hero banner actions', () => {
       error: { code: 'VALIDATION' },
     });
     expect(createHeroBanner).not.toHaveBeenCalled();
+  });
+});
+
+// docs/Security.md R34 (decision of 2026-10-21): the officer hears when a photo could not be taken out of
+// public-media, once the site has been refreshed.
+describe('hero banner photos left behind', () => {
+  it('says so after a removal that left a photo', async () => {
+    vi.mocked(removeHeroBanner).mockResolvedValue(false);
+    expect(await removeHeroBannerAction({ id: BANNER_ID })).toMatchObject({
+      error: { code: 'INTERNAL', message: copy.cms.common.filesLeft },
+    });
+    expect(revalidateTag).toHaveBeenCalledWith('banners');
+  });
+
+  it('says so after a change that left the replaced photo', async () => {
+    vi.mocked(updateHeroBanner).mockResolvedValue({ value: SAVED_BANNER, filesRemoved: false });
+    expect(await updateHeroBannerAction({ ...BANNER, id: BANNER_ID })).toMatchObject({
+      error: { code: 'INTERNAL', message: copy.cms.common.filesLeft },
+    });
+    expect(updateHeroBanner).toHaveBeenCalledWith(SUPERADMIN, expect.anything());
   });
 });

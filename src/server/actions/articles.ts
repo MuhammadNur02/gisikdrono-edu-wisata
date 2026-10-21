@@ -3,7 +3,7 @@
 import { revalidateTag } from 'next/cache';
 
 import { copy } from '@/lib/copy/id';
-import { fail, mapError, ok } from '@/lib/errors';
+import { fail, mapError, okUnlessFilesLeft } from '@/lib/errors';
 import { TAGS } from '@/lib/queries/tags';
 import { saveArticleSchema, type SaveArticleValues } from '@/lib/validations/article';
 import { rowRefSchema } from '@/lib/validations/content';
@@ -11,7 +11,7 @@ import { canWriteFor, requireNewContentOwner } from '@/server/auth/content-owner
 import { requireAal2, type StaffContext } from '@/server/auth/guards';
 import {
   createArticle,
-  readArticleOwner,
+  readArticleForStaff,
   removeArticle,
   updateArticle,
 } from '@/server/services/article-service';
@@ -19,13 +19,29 @@ import type { ActionFailure, ActionResult } from '@/types/action-result';
 import type { ArticleAdmin } from '@/types/cms';
 
 // /dashboard/articles (Task P2.9.05, docs/PRD.md FR-ADMIN-11). An RW admin writes drafts and sends them for review;
-// only the superadmin publishes, unpublishes and removes (articles_moderation_guard and articles_super_delete say
-// so again in the database). A new article belongs to the RW admin's own RW, or for the superadmin to the RW the
-// RwSwitcher points at (the kelurahan under Semua); an existing one to the owner the database holds.
+// only the superadmin publishes, and once an article is published only the superadmin takes it off the site or moves
+// its address: an RW admin's change to it goes back to review. articles_moderation_guard
+// (20261021090000_article_published_guard.sql) and articles_super_delete say the same again in the database. A new
+// article belongs to the RW admin's own RW, or for the superadmin to the RW the RwSwitcher points at (the kelurahan
+// under Semua); an existing one to the owner the database holds.
+
+const text = copy.cms.articles;
 
 function refusedIntent(ctx: StaffContext, values: SaveArticleValues): ActionFailure | null {
   if (values.intent !== 'publish' || ctx.role === 'superadmin') return null;
-  return fail('FORBIDDEN', undefined, copy.cms.articles.publishOnlySuper);
+  return fail('FORBIDDEN', undefined, text.publishOnlySuper);
+}
+
+// Finding 1 of the independent review of PR #18 (decision of 2026-10-21).
+function refusedLiveChange(
+  ctx: StaffContext,
+  current: ArticleAdmin,
+  values: SaveArticleValues,
+): ActionFailure | null {
+  if (ctx.role === 'superadmin' || current.status !== 'published') return null;
+  if (values.slug !== current.slug) return fail('FORBIDDEN', undefined, text.slugLocked);
+  if (values.intent === 'draft') return fail('FORBIDDEN', undefined, text.unpublishOnlySuper);
+  return null;
 }
 
 export async function createArticleAction(input: unknown): Promise<ActionResult<ArticleAdmin>> {
@@ -39,9 +55,9 @@ export async function createArticleAction(input: unknown): Promise<ActionResult<
   if (!target.ok) return target;
 
   try {
-    const article = await createArticle(guard.ctx, target.owner, parsed.data);
+    const saved = await createArticle(guard.ctx, target.owner, parsed.data);
     revalidateTag(TAGS.articles);
-    return ok(article);
+    return okUnlessFilesLeft(saved);
   } catch (error) {
     return mapError(error);
   }
@@ -56,12 +72,14 @@ export async function updateArticleAction(input: unknown): Promise<ActionResult<
   if (refused) return refused;
 
   try {
-    const owner = await readArticleOwner(parsed.data.id);
-    if (owner === undefined) return fail('NOT_FOUND');
-    if (!canWriteFor(guard.ctx, owner)) return fail('FORBIDDEN');
-    const article = await updateArticle(owner, parsed.data);
+    const current = await readArticleForStaff(parsed.data.id);
+    if (!current) return fail('NOT_FOUND');
+    if (!canWriteFor(guard.ctx, current.owner)) return fail('FORBIDDEN');
+    const liveChange = refusedLiveChange(guard.ctx, current, parsed.data);
+    if (liveChange) return liveChange;
+    const saved = await updateArticle(guard.ctx, current.owner, parsed.data, current);
     revalidateTag(TAGS.articles);
-    return ok(article);
+    return okUnlessFilesLeft(saved);
   } catch (error) {
     return mapError(error);
   }
@@ -73,15 +91,15 @@ export async function removeArticleAction(input: unknown): Promise<ActionResult<
   const guard = await requireAal2();
   if (!guard.ok) return guard;
   if (guard.ctx.role !== 'superadmin') {
-    return fail('FORBIDDEN', undefined, copy.cms.articles.removeOnlySuper);
+    return fail('FORBIDDEN', undefined, text.removeOnlySuper);
   }
 
   try {
-    const owner = await readArticleOwner(parsed.data.id);
-    if (owner === undefined) return fail('NOT_FOUND');
-    await removeArticle(guard.ctx, owner, parsed.data.id);
+    const current = await readArticleForStaff(parsed.data.id);
+    if (!current) return fail('NOT_FOUND');
+    const filesRemoved = await removeArticle(guard.ctx, current.owner, parsed.data.id);
     revalidateTag(TAGS.articles);
-    return ok(null);
+    return okUnlessFilesLeft({ value: null, filesRemoved });
   } catch (error) {
     return mapError(error);
   }

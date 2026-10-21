@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 
 import { ArticleForm } from '@/components/admin/cms/article-form';
 import { articleValues } from '@/components/admin/cms/article-values';
 import { BackToArticles } from '@/components/admin/cms/back-to-articles';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { ContentStatusBadge } from '@/components/admin/status/status-badge';
-import { FormAlert } from '@/components/forms/form-alert';
 import { copy } from '@/lib/copy/id';
 import { rowIdSchema } from '@/lib/validations/content';
 import { updateArticleAction } from '@/server/actions/articles';
@@ -21,21 +21,13 @@ interface EditArticlePageProps {
 }
 
 // Task P2.9.06, docs/PRD.md FR-ADMIN-11. RLS shows an RW admin their own RW's articles only, so another RW's article
-// reads exactly like one that does not exist: the page says neither which.
+// answers exactly like one that does not exist: a 404 (decision of 2026-10-21).
 export default async function EditArticlePage({ params }: EditArticlePageProps) {
   const ctx = await requireDashboardStaff();
   if (!ctx) return null;
   const id = rowIdSchema.safeParse((await params).id);
   const article = id.success ? await readArticleForStaff(id.data) : null;
-  if (!article) {
-    return (
-      <>
-        <BackToArticles />
-        <DashboardPageHeader title={text.editTitle} />
-        <FormAlert tone="info">{text.notFound}</FormAlert>
-      </>
-    );
-  }
+  if (!article) notFound();
 
   return (
     <>
