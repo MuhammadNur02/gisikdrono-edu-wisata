@@ -8,13 +8,19 @@ import { copy } from '@/lib/copy/id';
 import { fail } from '@/lib/errors';
 import { parseRwScope } from '@/lib/utils/rw-scope';
 import type { StaffContext } from '@/server/auth/guards';
+import { listRwUnitsForStaff } from '@/server/services/rw-unit-service';
 import type { ActionFailure } from '@/types/action-result';
 import type { ContentOwner } from '@/types/content';
 
 export type OwnerResult = { ok: true; owner: ContentOwner } | ActionFailure;
 
+// The superadmin's RwSwitcher choice. A number no row of rw_units has (a cookie set by hand) reads as every RW, so no
+// content is ever created for an RW that does not exist (independent review of Task P2.10.02, L2).
 export async function readRwScope(): Promise<RwScope> {
-  return parseRwScope((await cookies()).get(RW_SCOPE_COOKIE)?.value);
+  const scope = parseRwScope((await cookies()).get(RW_SCOPE_COOKIE)?.value);
+  if (scope === RW_SCOPE_ALL) return scope;
+  const rwUnits = await listRwUnitsForStaff();
+  return rwUnits.some((unit) => unit.id === scope) ? scope : RW_SCOPE_ALL;
 }
 
 // The owner of what a staff member creates. It never comes from a form: an RW admin writes for their own RW

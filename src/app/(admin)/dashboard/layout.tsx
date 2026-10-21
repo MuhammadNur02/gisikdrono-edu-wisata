@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import { cookies } from 'next/headers';
 import type { ReactNode } from 'react';
 
 import { ContextChip } from '@/components/admin/shell/context-chip';
@@ -9,14 +8,14 @@ import { RwSwitcher } from '@/components/admin/shell/rw-switcher';
 import { UserCard } from '@/components/admin/shell/user-card';
 import { NoAccessNotice } from '@/components/auth/no-access-notice';
 import { ThemeProvider } from '@/components/providers/theme-provider';
-import { RW_SCOPE_COOKIE } from '@/config/dashboard';
+import { RW_SCOPE_ALL } from '@/config/dashboard';
 import { copy } from '@/lib/copy/id';
 import { requestNonce } from '@/lib/request-nonce';
 import { dashboardNavFor } from '@/lib/utils/dashboard-nav';
-import { parseRwScope } from '@/lib/utils/rw-scope';
 import { rwBadgeFor } from '@/lib/utils/rw-units';
 import { staffRoleLabel } from '@/lib/utils/staff-labels';
 import { setRwScopeAction } from '@/server/actions/dashboard';
+import { readRwScope } from '@/server/auth/content-owner';
 import { requireDashboardStaff } from '@/server/auth/session';
 import { readOwnProfile } from '@/server/services/profile-service';
 import { listRwUnitsForStaff } from '@/server/services/rw-unit-service';
@@ -45,7 +44,7 @@ export default async function DashboardLayout({ children }: Readonly<{ children:
 
   const [profile, rwUnits] = await Promise.all([readOwnProfile(ctx.userId), listRwUnitsForStaff()]);
   const ownRw = rwUnits.find((unit) => unit.id === ctx.rwId) ?? null;
-  const scope = parseRwScope((await cookies()).get(RW_SCOPE_COOKIE)?.value);
+  const scope = ctx.role === 'superadmin' ? await readRwScope() : RW_SCOPE_ALL;
   return (
     <ThemeProvider scope="admin" nonce={nonce}>
       <DashboardShell

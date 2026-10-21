@@ -102,6 +102,17 @@ function profilesApi(profiles: Map<string, FakeProfile>) {
   };
 }
 
+// rw_units by id, as checkUploadAccess asks whether an RW exists.
+function rwUnitsApi(rwUnits: Set<number>) {
+  return {
+    select: () => ({
+      eq: (_column: 'id', id: number) => ({
+        maybeSingle: () => Promise.resolve({ data: rwUnits.has(id) ? { id } : null, error: null }),
+      }),
+    }),
+  };
+}
+
 // site_settings by key, as src/lib/rate-limit.ts reads rate_limit_profile.
 function settingsApi(settings: Map<string, unknown>) {
   return {
@@ -160,12 +171,27 @@ function rpcFor(hits: Map<string, number>, claims: Map<string, number>) {
   };
 }
 
+function tableApi(
+  table: string,
+  tables: {
+    settings: Map<string, unknown>;
+    rwUnits: Set<number>;
+    profiles: Map<string, FakeProfile>;
+  },
+) {
+  if (table === 'site_settings') return settingsApi(tables.settings);
+  if (table === 'rw_units') return rwUnitsApi(tables.rwUnits);
+  return profilesApi(tables.profiles);
+}
+
 export function createFakeAdminClient() {
   const quarantine = new Map<string, StoredFile>();
   const publicMedia = new Map<string, StoredFile>();
   const profiles = new Map<string, FakeProfile>();
   const rateLimitHits = new Map<string, number>();
   const settings = new Map<string, unknown>();
+  // The RWs of rw_units: the two of the seed.
+  const rwUnits = new Set<number>([5, 8]);
   // When each booklet's page claim was taken, by bookletClaimKey.
   const bookletClaims = new Map<string, number>();
   const securityEvents: Record<string, unknown>[] = [];
@@ -179,7 +205,7 @@ export function createFakeAdminClient() {
           : bucketApi(quarantine, downloads),
     },
     from: (table: string) => ({
-      ...(table === 'site_settings' ? settingsApi(settings) : profilesApi(profiles)),
+      ...tableApi(table, { settings, rwUnits, profiles }),
       insert: (row: Record<string, unknown>) => {
         if (table === 'security_events') securityEvents.push(row);
         return Promise.resolve({ error: null });
@@ -195,6 +221,7 @@ export function createFakeAdminClient() {
     profiles,
     rateLimitHits,
     settings,
+    rwUnits,
     bookletClaims,
     securityEvents,
     // Every path read back in full, in order.

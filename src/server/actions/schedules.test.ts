@@ -21,7 +21,10 @@ vi.mock('next/headers', () => ({
 vi.mock('next/cache', () => ({ revalidateTag: vi.fn() }));
 vi.mock('@/server/auth/guards', () => ({ requireAal2: vi.fn() }));
 // RW 08 runs the performance schedule today (rw_units.schedule_enabled).
-vi.mock('@/server/services/rw-unit-service', () => ({ listScheduleRwIds: vi.fn() }));
+vi.mock('@/server/services/rw-unit-service', () => ({
+  listScheduleRwIds: vi.fn(),
+  listRwUnitsForStaff: () => Promise.resolve([{ id: 5 }, { id: 8 }, { id: 13 }]),
+}));
 vi.mock('@/server/services/schedule-service', () => ({
   createSchedule: vi.fn(),
   readScheduleOwner: vi.fn(),

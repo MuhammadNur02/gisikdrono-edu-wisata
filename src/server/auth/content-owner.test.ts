@@ -7,11 +7,17 @@ import {
   canWriteFor,
   listedOwners,
   ownerOfNewContent,
+  readRwScope,
   requireNewContentOwner,
   scheduleRwFor,
 } from './content-owner';
 
 const cookie = vi.hoisted(() => ({ value: undefined as string | undefined }));
+
+// The RWs of rw_units: the two of the seed.
+vi.mock('@/server/services/rw-unit-service', () => ({
+  listRwUnitsForStaff: () => Promise.resolve([{ id: 5 }, { id: 8 }]),
+}));
 
 vi.mock('next/headers', () => ({
   cookies: () =>
@@ -95,6 +101,15 @@ describe('canWriteFor', () => {
   it('lets the superadmin write every row', () => {
     expect(canWriteFor(SUPERADMIN, 8)).toBe(true);
     expect(canWriteFor(SUPERADMIN, null)).toBe(true);
+  });
+});
+
+describe('readRwScope', () => {
+  it('reads the RW the RwSwitcher wrote, and a hand-set number no RW has as every RW', async () => {
+    cookie.value = '8';
+    expect(await readRwScope()).toBe(8);
+    cookie.value = '42';
+    expect(await readRwScope()).toBe('all');
   });
 });
 

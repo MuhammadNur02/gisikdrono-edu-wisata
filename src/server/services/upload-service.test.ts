@@ -257,6 +257,29 @@ describe('L8 and L9: who may upload is read from the profile', () => {
   });
 });
 
+// Independent review of Task P2.10.02, L2: an upload is for an RW that exists, or public-media would collect files under
+// a folder no row of rw_units owns.
+describe('L2: an upload names an RW of rw_units', () => {
+  const SUPERADMIN: StaffContext = {
+    ...OFFICER_05,
+    userId: '00000000-0000-4000-8000-000000000001',
+    role: 'superadmin',
+    rwId: null,
+  };
+
+  it('lets the superadmin upload for an RW that exists, or for the kelurahan', async () => {
+    admin().addStaff(SUPERADMIN);
+    await expect(checkUploadAccess(SUPERADMIN, 8, { step: 'sign' })).resolves.toBe(true);
+    await expect(checkUploadAccess(SUPERADMIN, null, { step: 'sign' })).resolves.toBe(true);
+  });
+
+  it('refuses an RW number no row of rw_units has, and records why', async () => {
+    admin().addStaff(SUPERADMIN);
+    await expect(checkUploadAccess(SUPERADMIN, 42, { step: 'sign' })).resolves.toBe(false);
+    expect(eventsOfType('upload_rejected')[0]).toMatchObject({ details: { why: 'rw' } });
+  });
+});
+
 describe('L11: one sign-pages per booklet', () => {
   it('refuses a second request while the first one’s URLs are alive', async () => {
     await publishBookletPdf();
