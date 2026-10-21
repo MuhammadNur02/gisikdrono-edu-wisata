@@ -9,7 +9,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: siteConfig.name,
     short_name: 'Edu Wisata',
-    description: `Kunjungan edukasi ke dua kampung di ${siteConfig.ownerName}, ${siteConfig.locality.city}.`,
+    description: `Kunjungan edukasi ke kampung-kampung di ${siteConfig.ownerName}, ${siteConfig.locality.city}.`,
     start_url: '/',
     display: 'browser',
     lang: 'id',

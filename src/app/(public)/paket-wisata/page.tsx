@@ -14,7 +14,7 @@ export const revalidate = 3600;
 
 const TITLE = 'Paket wisata';
 const DESCRIPTION =
-  'Paket kunjungan edukasi ke RW 05 Ecowastreme, RW 08 Kampung Seni Budaya, atau kombinasi keduanya, dengan harga per orang atau per rombongan.';
+  'Paket kunjungan edukasi ke satu kampung atau gabungan beberapa kampung di Kelurahan Gisikdrono, dengan harga per orang atau per rombongan.';
 
 export const metadata: Metadata = buildPageMetadata({
   title: TITLE,

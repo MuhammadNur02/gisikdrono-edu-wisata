@@ -14,7 +14,7 @@ export const revalidate = 3600;
 
 const TITLE = 'Produk UMKM';
 const DESCRIPTION =
-  'Produk usaha warga RW 05 dan RW 08. Produk yang bisa jadi tambahan dipesan bersama paket kunjungan.';
+  'Produk usaha warga kampung-kampung edukasi Gisikdrono. Produk yang bisa jadi tambahan dipesan bersama paket kunjungan.';
 
 export const metadata: Metadata = buildPageMetadata({
   title: TITLE,

@@ -7,9 +7,9 @@ import type { PerformanceSchedule, ScheduleOccurrence } from '@/types/schedule';
 // `recurrence_rule`, each time lasting as long as the first. Jakarta has no daylight saving, so repeating at the
 // same UTC time is repeating at the same Semarang time.
 
-// How far ahead the schedule page and the RW 08 preview look.
+// How far ahead the schedule page and the preview on an RW page look.
 export const SCHEDULE_WINDOW_DAYS = 90;
-// docs/PRD.md FR-PUB-09: the RW 08 page previews the next five.
+// docs/PRD.md FR-PUB-09: the page of an RW with a schedule previews the next five.
 export const SCHEDULE_PREVIEW_LIMIT = 5;
 
 const DAY_MS = 86_400_000;

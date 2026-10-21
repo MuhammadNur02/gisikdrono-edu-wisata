@@ -53,8 +53,9 @@ export const copy = {
     menuDescription: 'Semua halaman Edu Wisata Gisikdrono.',
     breadcrumb: 'Lokasi halaman',
     footerNav: 'Navigasi bawah',
-    footerAbout:
-      'Kunjungan edukasi ke dua kampung di Kelurahan Gisikdrono: pengelolaan sampah di RW 05 dan seni budaya di RW 08.',
+    // The number of RWs online, spelled out (countWord), so the line stays true as RWs come and go.
+    footerAbout: (kampungCount: string) =>
+      `Kunjungan edukasi ke ${kampungCount} kampung di Kelurahan Gisikdrono, dipesan dan dibayar lewat situs ini.`,
     footerManagedBy: 'Dikelola oleh',
     footerContactTitle: 'Kontak',
     footerEmail: 'Email',

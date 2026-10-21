@@ -31,8 +31,7 @@ import type { GalleryItem, GalleryPages } from '@/types/gallery';
 import type { RwBadge } from '@/types/rw-unit';
 
 const TITLE = 'Galeri';
-const DESCRIPTION =
-  'Foto dan video kegiatan di RW 05 Ecowastreme dan RW 08 Kampung Seni Budaya, Kelurahan Gisikdrono.';
+const DESCRIPTION = 'Foto dan video kegiatan di kampung-kampung edukasi Kelurahan Gisikdrono.';
 
 interface GalleryPageProps {
   searchParams: Promise<GallerySearchParams>;

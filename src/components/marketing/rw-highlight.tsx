@@ -4,23 +4,28 @@ import { Photo } from '@/components/marketing/photo';
 import { SectionLink } from '@/components/marketing/section-link';
 import { IMAGE_SIZES } from '@/config/images';
 import { RW_ICONS } from '@/config/rw-icons';
+import { cn } from '@/lib/utils/cn';
+import { countWord, countWordAtStart } from '@/lib/utils/number-words';
 import type { RwUnitProfile } from '@/types/rw-unit';
+
+// The photo sits left, then right, then left again: two sides to alternate between.
+const PHOTO_SIDES = 2;
 
 export interface RwHighlightProps {
   id: string;
   units: readonly RwUnitProfile[];
 }
 
-function RwHighlightBlock({ unit }: { unit: RwUnitProfile }) {
+function RwHighlightBlock({ unit, photoLast }: { unit: RwUnitProfile; photoLast: boolean }) {
   return (
-    <article className="grid gap-5 sm:grid-cols-5 sm:items-center">
+    <article className="grid gap-5 sm:grid-cols-5 sm:items-center sm:gap-8">
       <Photo
         image={unit.heroImage}
         caption={unit.name}
         placeholder={{ icon: RW_ICONS[unit.iconKey], rws: [unit] }}
         sizes={IMAGE_SIZES.split}
         aspectClassName="aspect-4/3"
-        className="sm:col-span-2"
+        className={cn('sm:col-span-2', photoLast && 'sm:order-last')}
       />
       <div className="space-y-3 sm:col-span-3">
         <RwEyebrow rw={unit} withName />
@@ -33,17 +38,18 @@ function RwHighlightBlock({ unit }: { unit: RwUnitProfile }) {
 }
 
 // docs/PRD.md FR-PUB-02: every RW online from rw_units (name, theme, tagline, photo), each linking to its page.
-// Photo and text side by side rather than a row of identical cards (docs/StyleGuide.md §1.3 G7).
+// One RW to a row, photo and text alternating sides, rather than a row of identical cards (docs/StyleGuide.md §1.3
+// G7); the eyebrow counts the RWs, so it stays true as RWs go online or offline.
 export function RwHighlight({ id, units }: RwHighlightProps) {
   return (
     <Section
       id={id}
-      eyebrow="Dua kampung, dua program"
+      eyebrow={`${countWordAtStart(units.length)} kampung, ${countWord(units.length)} program`}
       title="Pilih kampung yang ingin Anda kunjungi"
     >
-      <div className="grid gap-12 lg:grid-cols-2 lg:gap-10">
-        {units.map((unit) => (
-          <RwHighlightBlock key={unit.id} unit={unit} />
+      <div className="grid gap-12">
+        {units.map((unit, index) => (
+          <RwHighlightBlock key={unit.id} unit={unit} photoLast={index % PHOTO_SIDES === 1} />
         ))}
       </div>
     </Section>
