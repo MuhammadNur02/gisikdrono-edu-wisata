@@ -3,7 +3,7 @@
 -- never anywhere else, once per quarter hour and three times a day at most, and audits it; revoking bumps
 -- token_version.
 begin;
-select plan(19);
+select plan(21);
 
 select is(
   has_function_privilege('anon', 'public.svc_resend_booking_link(text, text, text)', 'execute')
@@ -28,7 +28,8 @@ from (values
   ('A', '+6281200000901', 'ani@sekolah.test', now(), null::timestamptz),
   ('B', '+6281200000902', 'budi@sekolah.test', null, null),
   ('C', null, null, null, now()),
-  ('D', '+6281200000904', 'dewi@sekolah.test', now(), null)
+  ('D', '+6281200000904', 'dewi@sekolah.test', now(), null),
+  ('E', null, 'eka@sekolah.test', null, now())
 ) as fixture(n, phone, email, verified, purged);
 
 select is(public.svc_resend_booking_link('GSK-7F3K9Q2Z', '+6281200000901'), 'no_match', 'an unknown code matches nothing');
@@ -73,6 +74,10 @@ select is((select channel::text from public.notifications where booking_id = '00
 
 select is(public.svc_resend_booking_link('GSK-7F3K9Q2C', '+6281200000903'), 'no_match',
   'a booking whose contact was anonymised matches nothing');
+select is(public.svc_resend_booking_link('GSK-7F3K9Q2E', '+6281200000999'), 'no_match',
+  'nor does any number for a purged booking whose number is gone');
+select is(public.svc_resend_booking_link('GSK-7F3K9Q2E', null, 'eka@sekolah.test'), 'no_match',
+  'nor its own address, if one was left on file: a purged booking gets no link at all');
 
 select is(public.svc_revoke_guest_links('00000000-0000-4000-9000-00000009c00A'), 2, 'revoking bumps token_version');
 select is(
