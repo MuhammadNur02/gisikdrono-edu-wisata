@@ -115,6 +115,7 @@ export const DB_ENUMS = {
     'admin_new_paid_booking',
     'admin_booking_needs_review',
     'security_alert',
+    'booking_link',
   ],
   document_kind: ['quotation', 'invoice', 'receipt', 'credit_note', 'certificate'],
   otp_purpose: ['booking_phone', 'dsr_identity'],

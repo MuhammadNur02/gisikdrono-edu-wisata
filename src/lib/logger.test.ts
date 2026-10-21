@@ -37,6 +37,20 @@ describe('logger redaction', () => {
     expect(output).toContain(bookingRow.booking_code);
   });
 
+  it("never prints an outbox message's params, where an OTP code waits to be sent, or a code hash", () => {
+    const { lines, logger } = captureLogLines();
+
+    logger.error('internal_error', {
+      notification: { id: 'n-1', template: 'phone_otp', params: { code: '482913' } },
+      params: { code: '482913' },
+      code_hash: 'a'.repeat(64),
+    });
+    const output = lines.join('');
+    expect(output).not.toContain('482913');
+    expect(output).not.toContain('a'.repeat(64));
+    expect(output).toContain('phone_otp');
+  });
+
   it('redacts tokens, signatures and payment details at the top level and one level down', () => {
     const { lines, logger } = captureLogLines();
     logger.warn('webhook_signature_invalid', {
@@ -98,13 +112,49 @@ describe('hashEmailForLog', () => {
     expect(hash).toBe(hashEmailForLog('siti.rahmawati@example.test'));
   });
 
-  it('is keyed with OTP_PEPPER, so it cannot be reproduced by hashing guessed addresses', () => {
+  it('is keyed with OTP_PEPPER under its own label, so it cannot be reproduced by hashing guessed addresses', () => {
     const email = 'siti.rahmawati@example.test';
-    const keyed = createHmac('sha256', sandboxEnv.OTP_PEPPER).update(email).digest('hex');
+    const keyed = createHmac('sha256', sandboxEnv.OTP_PEPPER)
+      .update(`gsk-log-email-v1\n${email}`)
+      .digest('hex');
     const unkeyed = createHash('sha256').update(email).digest('hex');
 
     expect(hashEmailForLog(email)).toBe(keyed.slice(0, 12));
     expect(hashEmailForLog(email)).not.toBe(unkeyed.slice(0, 12));
+  });
+});
+
+// Review of PR #20 (info): redactLinkTokens existed but no log line went through it.
+describe('link tokens in log lines', () => {
+  it('hides guest-link and ticket tokens in any string field of a log line, however deep', () => {
+    const { lines, logger } = captureLogLines();
+    logger.warn('rate_limited', {
+      path: '/reservasi/GSK-7F3K9Q2M?t=eyJzIjoibWFuYWdlIn0.c2lnbmF0dXJlLWd1ZXN0',
+      nested: { links: ['https://site.test/v/GSK.k1.dGlja2V0LWlk.c2lnLXRpY2tldA'] },
+    });
+
+    const output = lines.join('');
+    for (const secret of ['eyJzIjoibWFuYWdlIn0', 'c2lnbmF0dXJlLWd1ZXN0', 'dGlja2V0LWlk']) {
+      expect(output).not.toContain(secret);
+    }
+    expect(output).toContain('/reservasi/GSK-7F3K9Q2M?t=[token]');
+    expect(output).toContain('https://site.test/v/[token]');
+  });
+
+  it('leaves numbers, flags and other fields as they were', () => {
+    const { lines, logger } = captureLogLines();
+    logger.info('job_run', {
+      job: 'process-notifications',
+      processed: 3,
+      failed: 0,
+      dryRun: false,
+    });
+    expect(JSON.parse(lines[0] ?? '{}')).toMatchObject({
+      job: 'process-notifications',
+      processed: 3,
+      failed: 0,
+      dryRun: false,
+    });
   });
 });
 

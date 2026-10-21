@@ -1,8 +1,8 @@
 import 'server-only';
 
-import type { PostgrestSingleResponse, SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 
+import { resultOf, type DatabaseClient } from '@/db/rpc-result';
 import type { Database, Json } from '@/db/types';
 
 // Typed calls to the database functions (CLAUDE.md §6.3). Staff RPCs run on the signed-in user's
@@ -11,19 +11,12 @@ import type { Database, Json } from '@/db/types';
 // internal.* (CLAUDE.md §6.1). Every call throws the PostgREST error unchanged, so mapError can read
 // its code and hint.
 
-type DatabaseClient = SupabaseClient<Database>;
 type Enums = Database['public']['Enums'];
 
 export type BookingParticipant = Database['public']['Tables']['booking_participants']['Row'];
 
 export const UI_EVENTS = ['pii_revealed', 'scanner_opened'] as const;
 export type UiEvent = (typeof UI_EVENTS)[number];
-
-async function resultOf<T>(request: PromiseLike<PostgrestSingleResponse<T>>): Promise<T> {
-  const response = await request;
-  if (response.error) throw response.error;
-  return response.data;
-}
 
 // ===== Staff RPCs (session client) =====
 

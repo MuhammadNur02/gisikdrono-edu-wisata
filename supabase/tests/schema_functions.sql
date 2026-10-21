@@ -176,8 +176,8 @@ select is(
 );
 select is(
   internal.hash_email('siti.rahmawati@example.test'),
-  encode(extensions.hmac('siti.rahmawati@example.test'::bytea, 'local-test-pepper-not-a-real-secret-0000000'::bytea, 'sha256'), 'hex'),
-  'the email hash is HMAC-SHA256 keyed with the Vault pepper'
+  encode(extensions.hmac(convert_to(E'gsk-login-email-v1\n' || 'siti.rahmawati@example.test', 'utf8'), 'local-test-pepper-not-a-real-secret-0000000'::bytea, 'sha256'), 'hex'),
+  'the email hash is HMAC-SHA256 keyed with the Vault pepper under its own label'
 );
 select isnt(
   internal.hash_email('siti.rahmawati@example.test'),

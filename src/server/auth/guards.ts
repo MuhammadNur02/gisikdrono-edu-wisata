@@ -1,11 +1,18 @@
 import 'server-only';
 
+import { cookies, headers } from 'next/headers';
 import { z } from 'zod';
 
+import type { GuestLinkScope } from '@/config/guest';
 import { DB_ENUMS } from '@/db/enums';
 import type { AppRole } from '@/db/enums';
 import { fail } from '@/lib/errors';
+import { guestLinkCookieName } from '@/lib/links/token';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { clientIpFrom } from '@/lib/utils/client-ip';
+import { isBookingCode } from '@/lib/utils/codes';
+import { nowInSeconds } from '@/server/auth/guest-cookies';
+import { verifyGuestAccess, type GuestAccess } from '@/server/services/booking-service';
 import type { ActionFailure } from '@/types/action-result';
 
 const MS_PER_SECOND = 1000;
@@ -130,4 +137,32 @@ export async function requireFreshTotp(maxAgeSeconds: number): Promise<GuardResu
   if (!guard.ok) return guard;
   const nowSeconds = Math.floor(Date.now() / MS_PER_SECOND);
   return hasFreshTotp(guard.ctx, maxAgeSeconds, nowSeconds) ? guard : fail('FORBIDDEN');
+}
+
+export type GuestGuardResult = { ok: true; guest: GuestAccess } | ActionFailure;
+
+// docs/Security.md §6.7, GUEST-02, APP-15: a guest page or action opens only with the bk_<code> cookie that
+// src/middleware.ts made from a ?t= link. A missing, forged, expired or revoked link, one for another booking or too
+// narrow for the page, too many checks from one IP, and an outage all answer the same NOT_FOUND, so the answer tells
+// a guesser nothing; pages turn it into notFound().
+export async function requireGuestToken(
+  bookingCode: string,
+  required: GuestLinkScope,
+): Promise<GuestGuardResult> {
+  const notFound = fail('NOT_FOUND');
+  if (!isBookingCode(bookingCode)) return notFound;
+  const token = (await cookies()).get(guestLinkCookieName(bookingCode))?.value;
+  if (token === undefined) return notFound;
+  try {
+    const guest = await verifyGuestAccess({
+      bookingCode,
+      token,
+      required,
+      clientIp: clientIpFrom(await headers()),
+      nowSeconds: nowInSeconds(),
+    });
+    return guest ? { ok: true, guest } : notFound;
+  } catch {
+    return notFound;
+  }
 }

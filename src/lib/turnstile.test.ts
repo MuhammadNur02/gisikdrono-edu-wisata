@@ -7,6 +7,7 @@ const deployment = vi.hoisted(() => ({ vercelEnv: undefined as string | undefine
 vi.mock('@/lib/public-env', async (importOriginal) => {
   const actual = await importOriginal<{ publicEnv: Record<string, unknown> }>();
   return {
+    ...actual,
     publicEnv: new Proxy(actual.publicEnv, {
       get: (target, name) =>
         name === 'VERCEL_ENV' ? deployment.vercelEnv : target[name as string],
@@ -110,8 +111,9 @@ describe('verifyTurnstile', () => {
     await expect(verifyTurnstile('token-1', '203.0.113.7', 'mfa_verify')).resolves.toBe(false);
   });
 
-  // Cloudflare's testing keys answer without an action, so outside production the form cannot be checked.
-  it('takes a testing-key answer outside production only', async () => {
+  // Cloudflare's testing keys answer without an action, so the form cannot be checked; src/lib/env.ts refuses them on
+  // every deployment, and this refuses their answers there too (review of PR #20, info).
+  it('takes a testing-key answer on a local or CI server only', async () => {
     const testingAnswer = {
       success: true,
       hostname: 'example.com',
@@ -121,8 +123,10 @@ describe('verifyTurnstile', () => {
     cloudflareAnswers(testingAnswer);
     await expect(verifyTurnstile('token-1', '203.0.113.7', 'mfa_verify')).resolves.toBe(true);
 
-    deployment.vercelEnv = 'production';
-    cloudflareAnswers(testingAnswer);
-    await expect(verifyTurnstile('token-1', '203.0.113.7', 'mfa_verify')).resolves.toBe(false);
+    for (const vercelEnv of ['preview', 'production']) {
+      deployment.vercelEnv = vercelEnv;
+      cloudflareAnswers(testingAnswer);
+      await expect(verifyTurnstile('token-1', '203.0.113.7', 'mfa_verify')).resolves.toBe(false);
+    }
   });
 });

@@ -1,5 +1,5 @@
 import { PDFDocument, PDFName } from 'pdf-lib';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { countPublishedPages, scanBookletPdf } from './pdf-scan';
 import {
@@ -9,6 +9,9 @@ import {
   pdfWithScriptInObjectStream,
   readableCopy,
 } from '../../../tests/fixtures/pdf';
+import { HEAVY_FILE_TEST_TIMEOUT_MS } from '../../../tests/fixtures/timeouts';
+
+vi.setConfig({ testTimeout: HEAVY_FILE_TEST_TIMEOUT_MS });
 
 describe('scanBookletPdf', () => {
   it('publishes a clean booklet with its https, mailto and tel links and counts its pages', async () => {

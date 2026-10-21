@@ -4,6 +4,15 @@ import { findPublicEnvProblems } from './public-env';
 
 const SAMPLE_NUMBER = '+6281200000000';
 const OFFICIAL_LOOKING_NUMBER = '+6281234567890';
+const SITE_KEY = '0x4AAAAAAAsiteOwnKey';
+// Cloudflare's published test site keys: pass, block, pass invisibly, block invisibly, always ask.
+const TURNSTILE_TEST_SITE_KEYS = [
+  '1x00000000000000000000AA',
+  '2x00000000000000000000AB',
+  '1x00000000000000000000BB',
+  '2x00000000000000000000BB',
+  '3x00000000000000000000FF',
+];
 
 describe('findPublicEnvProblems', () => {
   it('refuses the sample WhatsApp number on production', () => {
@@ -11,6 +20,7 @@ describe('findPublicEnvProblems', () => {
       findPublicEnvProblems({
         VERCEL_ENV: 'production',
         NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: SAMPLE_NUMBER,
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: SITE_KEY,
       }),
     ).toEqual([
       'NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER looks like a sample number; production needs the kelurahan number',
@@ -22,6 +32,7 @@ describe('findPublicEnvProblems', () => {
       findPublicEnvProblems({
         VERCEL_ENV: 'production',
         NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: OFFICIAL_LOOKING_NUMBER,
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: SITE_KEY,
       }),
     ).toEqual([]);
   });
@@ -29,8 +40,43 @@ describe('findPublicEnvProblems', () => {
   it('lets local, CI and preview builds use the sample', () => {
     for (const VERCEL_ENV of [undefined, 'development', 'preview'] as const) {
       expect(
-        findPublicEnvProblems({ VERCEL_ENV, NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: SAMPLE_NUMBER }),
+        findPublicEnvProblems({
+          VERCEL_ENV,
+          NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: SAMPLE_NUMBER,
+          NEXT_PUBLIC_TURNSTILE_SITE_KEY: SITE_KEY,
+        }),
       ).toEqual([]);
+    }
+  });
+
+  it("lets local and CI builds use Cloudflare's test site keys", () => {
+    for (const VERCEL_ENV of [undefined, 'development'] as const) {
+      for (const NEXT_PUBLIC_TURNSTILE_SITE_KEY of TURNSTILE_TEST_SITE_KEYS) {
+        expect(
+          findPublicEnvProblems({
+            VERCEL_ENV,
+            NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: OFFICIAL_LOOKING_NUMBER,
+            NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+          }),
+        ).toEqual([]);
+      }
+    }
+  });
+
+  // Review of PR #20 (info): a test site key renders a widget that every visitor passes.
+  it('refuses them on preview and production builds', () => {
+    for (const VERCEL_ENV of ['preview', 'production'] as const) {
+      for (const NEXT_PUBLIC_TURNSTILE_SITE_KEY of TURNSTILE_TEST_SITE_KEYS) {
+        expect(
+          findPublicEnvProblems({
+            VERCEL_ENV,
+            NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: OFFICIAL_LOOKING_NUMBER,
+            NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+          }),
+        ).toEqual([
+          `NEXT_PUBLIC_TURNSTILE_SITE_KEY is one of Cloudflare's test keys, which let every visitor through; ${VERCEL_ENV} needs the site's own key`,
+        ]);
+      }
     }
   });
 });
@@ -72,7 +118,17 @@ describe('publicEnv', () => {
     const env = await loadPublicEnv({
       VERCEL_ENV: 'production',
       NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: OFFICIAL_LOOKING_NUMBER,
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: SITE_KEY,
     });
     expect(env.VERCEL_ENV).toBe('production');
+  });
+
+  it("refuses Cloudflare's test site key on a production build", async () => {
+    await expect(
+      loadPublicEnv({
+        VERCEL_ENV: 'production',
+        NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: OFFICIAL_LOOKING_NUMBER,
+      }),
+    ).rejects.toThrow();
   });
 });

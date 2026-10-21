@@ -7,14 +7,28 @@ import {
   requireFreshTotp,
   requireRole,
   requireRwAccess,
+  requireGuestToken,
   requireUser,
   type StaffContext,
 } from '@/server/auth/guards';
+import { verifyGuestAccess } from '@/server/services/booking-service';
 
 const session = vi.hoisted(() => ({
   user: null as { id: string; factors?: { factor_type: string; status: string }[] } | null,
   claims: null as Record<string, unknown> | null,
 }));
+
+const guestCookies = vi.hoisted(() => new Map<string, string>());
+
+vi.mock('next/headers', () => ({
+  cookies: () =>
+    Promise.resolve({
+      get: (name: string) =>
+        guestCookies.has(name) ? { value: guestCookies.get(name) } : undefined,
+    }),
+  headers: () => Promise.resolve(new Headers({ 'x-real-ip': '203.0.113.7' })),
+}));
+vi.mock('@/server/services/booking-service', () => ({ verifyGuestAccess: vi.fn() }));
 
 vi.mock('@/lib/supabase/server', () => ({
   createSupabaseServerClient: () =>
@@ -209,5 +223,42 @@ describe('requireFreshTotp', () => {
 
     signInAs({ app_role: 'superadmin', amr: [{ method: 'password', timestamp: nowSeconds }] });
     expect(await requireFreshTotp(300)).toMatchObject({ error: { code: 'FORBIDDEN' } });
+  });
+});
+
+describe('requireGuestToken', () => {
+  const CODE = 'GSK-7F3K9Q2M';
+  const ACCESS = { bookingId: 'b-1', bookingCode: CODE, scope: 'manage' as const };
+
+  beforeEach(() => {
+    guestCookies.clear();
+    vi.mocked(verifyGuestAccess).mockReset().mockResolvedValue(ACCESS);
+  });
+
+  it('opens with the cookie of this booking, checked against the scope the page needs', async () => {
+    guestCookies.set(`bk_${CODE}`, 'token-1');
+    expect(await requireGuestToken(CODE, 'view')).toEqual({ ok: true, guest: ACCESS });
+    expect(verifyGuestAccess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bookingCode: CODE,
+        token: 'token-1',
+        required: 'view',
+        clientIp: '203.0.113.7',
+      }),
+    );
+  });
+
+  it('answers the same NOT_FOUND for no cookie, a cookie of another booking, a bad code, a refusal or an outage', async () => {
+    guestCookies.set('bk_GSK-7F3K9Q2N', 'token-2');
+    const notFound = { ok: false, error: { code: 'NOT_FOUND' } };
+    expect(await requireGuestToken(CODE, 'view')).toMatchObject(notFound);
+    expect(await requireGuestToken('gsk-7f3k9q2m', 'view')).toMatchObject(notFound);
+    expect(verifyGuestAccess).not.toHaveBeenCalled();
+
+    guestCookies.set(`bk_${CODE}`, 'token-1');
+    vi.mocked(verifyGuestAccess).mockResolvedValueOnce(null);
+    expect(await requireGuestToken(CODE, 'manage')).toMatchObject(notFound);
+    vi.mocked(verifyGuestAccess).mockRejectedValueOnce(new Error('database down'));
+    expect(await requireGuestToken(CODE, 'manage')).toMatchObject(notFound);
   });
 });

@@ -82,6 +82,7 @@ export const templateParamsSchemas = {
     rule: z.string().regex(ALERT_RULE),
     time: moment,
   }),
+  booking_link: z.strictObject({ name, booking_code: bookingCode }),
 } satisfies Record<NotificationTemplate, z.ZodType>;
 
 export type TemplateParams<Template extends NotificationTemplate> = z.infer<

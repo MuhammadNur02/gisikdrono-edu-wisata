@@ -434,7 +434,7 @@ select columns_are('public', 'booking_events', array[
 ]);
 select columns_are('public', 'guest_otps', array[
   'id', 'purpose', 'phone', 'email', 'booking_id', 'code_hash', 'attempts', 'max_attempts',
-  'expires_at', 'verified_at', 'consumed_at', 'ip', 'created_at'
+  'expires_at', 'verified_at', 'consumed_at', 'ip', 'created_at', 'browser_hash'
 ]);
 select is(
   (select count(*)::int from pg_indexes where schemaname = 'public'

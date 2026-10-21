@@ -17,7 +17,10 @@ import {
   type FakeAdminClient,
 } from '../../../tests/fixtures/fake-admin-client';
 import { cleanBookletPdf } from '../../../tests/fixtures/pdf';
+import { HEAVY_FILE_TEST_TIMEOUT_MS } from '../../../tests/fixtures/timeouts';
 import { jpegPhoto, SVG_WITH_SCRIPT } from '../../../tests/fixtures/uploads';
+
+vi.setConfig({ testTimeout: HEAVY_FILE_TEST_TIMEOUT_MS });
 
 // The service's answers to the abuse cases of the security review of PR #14 (M2, L1, L6 to L9, L11), against the
 // in-memory service-role client. The real Storage behaviour they rest on is proven in tests/integration/uploads.

@@ -10,7 +10,7 @@ import {
   type TurnstileAction,
 } from '@/config/auth';
 import { serverEnv } from '@/lib/env';
-import { publicEnv } from '@/lib/public-env';
+import { isHostedDeployment, publicEnv } from '@/lib/public-env';
 
 // docs/Security.md §4.3 and AUTH-06: the one place a Turnstile token is checked with Cloudflare. A token is good
 // once, so a form whose token Supabase Auth checks itself (sign-in, the reset email) never comes here.
@@ -28,12 +28,13 @@ const siteverifySchema = z.object({
 
 type SiteverifyResult = z.infer<typeof siteverifySchema>;
 
-// Cloudflare's testing keys pass every token, report example.com and name no action, which is fine anywhere but
-// production. Any other answer must name this site and the form the widget was rendered for, so a token solved on
-// one form cannot be spent on another (I1 of the PR #17 review).
+// Cloudflare's testing keys pass every token, report example.com and name no action, which is fine on a local or CI
+// server only; src/lib/env.ts refuses them on every deployment visitors reach, and their answers are refused there
+// too (review of PR #20, info). Any other answer must name this site and the form the widget was rendered for, so a
+// token solved on one form cannot be spent on another (I1 of the PR #17 review).
 function isForThisForm(result: SiteverifyResult, expectedAction: TurnstileAction): boolean {
   if (result.metadata?.result_with_testing_key === true) {
-    return publicEnv.VERCEL_ENV !== 'production';
+    return !isHostedDeployment(publicEnv.VERCEL_ENV);
   }
   return (
     result.hostname === new URL(publicEnv.NEXT_PUBLIC_SITE_URL).hostname &&

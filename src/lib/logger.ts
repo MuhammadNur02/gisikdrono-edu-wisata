@@ -1,11 +1,11 @@
 import 'server-only';
 
-import { createHmac, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
 import pino from 'pino';
 import type { DestinationStream, Logger } from 'pino';
 
-import { serverEnv } from '@/lib/env';
+import { pepperedHash } from '@/lib/pepper';
 
 // docs/Security.md §7.7: these never reach a log line, whatever object they arrive in.
 export const REDACTED_PATHS = [
@@ -22,6 +22,11 @@ export const REDACTED_PATHS = [
   '*.signature_key',
   'snap_token',
   '*.snap_token',
+  // An outbox row's params hold the OTP code until it is sent (Task P3.2.01), and names besides.
+  'params',
+  '*.params',
+  'code_hash',
+  '*.code_hash',
 ];
 
 // The only event names a log line may carry: the security_events types of docs/PRD.md §8.4.9 the app logs
@@ -65,12 +70,39 @@ export type LogFields = Record<string, unknown>;
 
 const EMAIL_HASH_LENGTH = 12;
 const LINK_TOKEN_IN_URL = /(\/v\/|[?&]t=)[^/?&#\s]+/g;
+// Log fields are small objects; anything nested deeper than this is left as it is rather than walked.
+const MAX_SCRUB_DEPTH = 6;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) return false;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+// docs/Security.md §7.7: a guest link (?t=) or ticket URL (/v/) may be logged, its token never, in whatever field
+// it arrives. Only strings in plain objects and arrays are rewritten; the app logs ids and names, never Error
+// objects (src/lib/errors.ts), so nothing else needs walking.
+function scrubLinkTokens(value: unknown, depth = 0): unknown {
+  if (typeof value === 'string') return redactLinkTokens(value);
+  if (depth >= MAX_SCRUB_DEPTH) return value;
+  if (Array.isArray(value)) return value.map((item: unknown) => scrubLinkTokens(item, depth + 1));
+  if (!isPlainObject(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [key, scrubLinkTokens(item, depth + 1)]),
+  );
+}
 
 export function createRootLogger(destination?: DestinationStream): Logger {
   const options = {
     redact: { paths: REDACTED_PATHS, censor: '[redacted]' },
     timestamp: pino.stdTimeFunctions.isoTime,
-    formatters: { level: (label: string) => ({ level: label }) },
+    formatters: {
+      level: (label: string) => ({ level: label }),
+      log: (fields: Record<string, unknown>) =>
+        Object.fromEntries(
+          Object.entries(fields).map(([key, value]) => [key, scrubLinkTokens(value)]),
+        ),
+    },
   };
   return destination ? pino(options, destination) : pino(options);
 }
@@ -101,10 +133,7 @@ export function createLogger(requestId: string, root: Logger = stdoutLogger) {
 // (docs/Security.md §7.4, §7.7).
 export function hashEmailForLog(email: string): string {
   const normalised = email.trim().toLowerCase();
-  return createHmac('sha256', serverEnv.OTP_PEPPER)
-    .update(normalised)
-    .digest('hex')
-    .slice(0, EMAIL_HASH_LENGTH);
+  return pepperedHash('gsk-log-email-v1', normalised).slice(0, EMAIL_HASH_LENGTH);
 }
 
 export function redactLinkTokens(url: string): string {

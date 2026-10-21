@@ -38,4 +38,6 @@ export const WHATSAPP_TEMPLATE_NAMES = {
   admin_new_paid_booking: 'gsk_admin_new_paid_booking_v1',
   admin_booking_needs_review: 'gsk_admin_new_paid_booking_v1',
   security_alert: 'gsk_security_alert_v1',
+  // Decision of 2026-10-21 (Task P3.3.03): the link a visitor asks for again at /reservasi/cari.
+  booking_link: 'gsk_booking_link_v1',
 } as const satisfies Record<EnumValue<'notification_template'>, string>;

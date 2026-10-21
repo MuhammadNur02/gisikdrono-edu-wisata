@@ -10,6 +10,9 @@ import type { SignedBookletPages } from '@/types/upload';
 
 import { POST } from './route';
 import { createFakeAdminClient } from '../../../../../tests/fixtures/fake-admin-client';
+import { HEAVY_FILE_TEST_TIMEOUT_MS } from '../../../../../tests/fixtures/timeouts';
+
+vi.setConfig({ testTimeout: HEAVY_FILE_TEST_TIMEOUT_MS });
 
 const fake = vi.hoisted(() => ({ admin: null as ReturnType<typeof createFakeAdminClient> | null }));
 

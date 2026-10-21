@@ -1,5 +1,6 @@
 import bundleAnalyzer from '@next/bundle-analyzer';
 import type { NextConfig } from 'next';
+import { PHASE_DEVELOPMENT_SERVER } from 'next/constants';
 
 import { IMAGE_DEVICE_WIDTHS } from './src/config/images';
 import { PRIVATE_ROUTE_PREFIXES } from './src/config/routes';
@@ -78,4 +79,15 @@ const nextConfig: NextConfig = {
     ]),
 };
 
-export default withBundleAnalyzer(nextConfig);
+// A page named page.dev.tsx exists only under `next dev`: no build knows the extension, so a developer's page such as
+// /dev/otp, which shows where to read the codes the local outbox catches, is in no deployment at all.
+const PAGE_EXTENSIONS = ['tsx', 'ts', 'jsx', 'js'];
+const DEVELOPMENT_PAGE_EXTENSIONS = ['dev.tsx', ...PAGE_EXTENSIONS];
+
+export function pageExtensionsFor(phase: string): string[] {
+  return phase === PHASE_DEVELOPMENT_SERVER ? DEVELOPMENT_PAGE_EXTENSIONS : PAGE_EXTENSIONS;
+}
+
+export default function config(phase: string): NextConfig {
+  return withBundleAnalyzer({ ...nextConfig, pageExtensions: pageExtensionsFor(phase) });
+}

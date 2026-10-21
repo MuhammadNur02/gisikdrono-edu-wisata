@@ -1,14 +1,14 @@
 import 'server-only';
 
-import { createHmac, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { RATE_LIMITS, type RateLimitName } from '@/config/rate-limits';
 import { svcRateLimitHit } from '@/db/rpc';
 import type { Database } from '@/db/types';
-import { serverEnv } from '@/lib/env';
 import { createLogger } from '@/lib/logger';
+import { pepperedHash } from '@/lib/pepper';
 import type { RateLimitRule } from '@/types/rate-limit';
 
 // The one wrapper around internal.rate_limit_hit (Task P1.1.13, docs/Security.md §4.3 and §8.3). It runs over the
@@ -32,10 +32,7 @@ const REFUSED_SUFFIX = 'refused';
 // rate_limit_buckets keeps a key for an hour or so. A keyed hash keeps IPs, emails and ids out of it while one
 // subject still lands in one bucket; OTP_PEPPER is the server's pepper for exactly this kind of hash.
 export function rateLimitKey(name: RateLimitName, subject: string): string {
-  const hash = createHmac('sha256', serverEnv.OTP_PEPPER)
-    .update(subject)
-    .digest('hex')
-    .slice(0, SUBJECT_HASH_LENGTH);
+  const hash = pepperedHash('gsk-rate-limit-v1', subject).slice(0, SUBJECT_HASH_LENGTH);
   return `${name}:${hash}`;
 }
 

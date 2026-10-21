@@ -1,10 +1,13 @@
 import { isBlurhashValid } from 'blurhash';
 import sharp from 'sharp';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { reencodeImage, thumbnailOf, UnsupportedImageError } from '@/lib/images/re-encode';
 
+import { HEAVY_FILE_TEST_TIMEOUT_MS } from '../../../tests/fixtures/timeouts';
 import { iphoneHeicPhoto } from '../../../tests/fixtures/uploads';
+
+vi.setConfig({ testTimeout: HEAVY_FILE_TEST_TIMEOUT_MS });
 
 // A synthetic camera photo: landscape pixels with EXIF orientation 6 (shot with the phone held upright),
 // a camera make and a GPS position, the metadata a visitor's photo must never carry onto the public site.

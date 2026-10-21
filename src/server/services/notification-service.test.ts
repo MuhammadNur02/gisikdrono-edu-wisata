@@ -1,0 +1,201 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { OutboxRow } from '@/db/rpc-outbox';
+import type { DatabaseClient } from '@/db/rpc-result';
+import { readGuestLink } from '@/lib/links/verify';
+import type { NotificationProviders, OutgoingMessage, SendResult } from '@/lib/notifications/types';
+
+import { processNotifications } from './notification-service';
+
+const outbox = vi.hoisted(() => ({
+  claimed: [] as unknown[],
+  completed: [] as unknown[],
+  failed: [] as unknown[],
+}));
+
+vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => ({}) }));
+
+vi.mock('@/db/rpc-outbox', () => ({
+  svcClaimNotifications: vi.fn(() => Promise.resolve(outbox.claimed)),
+  svcCompleteNotification: vi.fn((_client: unknown, sent: unknown) => {
+    outbox.completed.push(sent);
+    return Promise.resolve();
+  }),
+  svcFailNotification: vi.fn((_client: unknown, failure: unknown) => {
+    outbox.failed.push(failure);
+    return Promise.resolve();
+  }),
+}));
+
+const NOW = 1_790_000_000;
+const BOOKING_ID = '0192f3a4-5b6c-7d8e-9f01-23456789abcd';
+
+function row(overrides: Partial<OutboxRow>): OutboxRow {
+  return {
+    id: 'n-1',
+    booking_id: null,
+    channel: 'whatsapp',
+    template: 'phone_otp',
+    recipient: '+6281234567890',
+    recipient_name: null,
+    params: { code: '482913' },
+    status: 'sending',
+    attempts: 1,
+    max_attempts: 8,
+    dedupe_key: 'otp:x',
+    document_path: null,
+    next_attempt_at: '2026-10-21T00:00:00Z',
+    locked_at: '2026-10-21T00:00:00Z',
+    last_error_code: null,
+    last_error: null,
+    dead_at: null,
+    provider_message_id: null,
+    provider_status: null,
+    sent_at: null,
+    delivered_at: null,
+    read_at: null,
+    created_at: '2026-10-21T00:00:00Z',
+    updated_at: '2026-10-21T00:00:00Z',
+    ...overrides,
+  };
+}
+
+// The one read the worker makes besides the outbox: a booking's code and token_version for its link.
+function adminClientWith(booking: { booking_code: string; token_version: number } | null) {
+  const single = () =>
+    Promise.resolve(
+      booking ? { data: booking, error: null } : { data: null, error: { code: 'PGRST116' } },
+    );
+  const query = { select: () => query, eq: () => query, single };
+  return { from: () => query } as unknown as DatabaseClient;
+}
+
+function recordingProviders(answer: SendResult = { ok: true, providerMessageId: 'wamid.1' }) {
+  const sent: OutgoingMessage[] = [];
+  const provider = {
+    send: (message: OutgoingMessage) => {
+      sent.push(message);
+      return Promise.resolve(answer);
+    },
+  };
+  const providers: NotificationProviders = { whatsapp: provider, email: provider };
+  return { providers, sent };
+}
+
+describe('processNotifications', () => {
+  beforeEach(() => {
+    outbox.claimed = [];
+    outbox.completed = [];
+    outbox.failed = [];
+  });
+
+  it('sends an OTP with its code and marks it sent', async () => {
+    outbox.claimed = [row({})];
+    const { providers, sent } = recordingProviders();
+    await expect(processNotifications(adminClientWith(null), providers, NOW)).resolves.toEqual({
+      processed: 1,
+      failed: 0,
+    });
+    expect(sent[0]).toMatchObject({
+      template: 'phone_otp',
+      bodyParams: { code: '482913' },
+      link: null,
+    });
+    expect(outbox.completed).toEqual([{ id: 'n-1', providerMessageId: 'wamid.1' }]);
+  });
+
+  it('mints the link a booking_link carries from the booking code, scope and current token_version', async () => {
+    outbox.claimed = [
+      row({
+        id: 'n-2',
+        template: 'booking_link',
+        booking_id: BOOKING_ID,
+        recipient_name: 'Ani',
+        params: { link_scope: 'manage' },
+      }),
+    ];
+    const { providers, sent } = recordingProviders();
+    await processNotifications(
+      adminClientWith({ booking_code: 'GSK-7F3K9Q2M', token_version: 4 }),
+      providers,
+      NOW,
+    );
+    const message = sent[0];
+    expect(message?.bodyParams).toEqual({ name: 'Ani', booking_code: 'GSK-7F3K9Q2M' });
+    expect(message?.link?.url).toMatch(/^http:\/\/127\.0\.0\.1:3000\/reservasi\/GSK-7F3K9Q2M\?t=/);
+    const token = message?.link?.buttonSuffix.split('?t=')[1] ?? '';
+    await expect(
+      readGuestLink(token, { bookingCode: 'GSK-7F3K9Q2M', nowSeconds: NOW }),
+    ).resolves.toMatchObject({
+      ok: true,
+      link: { s: 'manage', v: 4 },
+    });
+  });
+
+  it('greets a name the template refuses as Bapak/Ibu rather than not at all', async () => {
+    outbox.claimed = [
+      row({
+        template: 'booking_link',
+        booking_id: BOOKING_ID,
+        recipient_name: 'cek 08123456789',
+        params: { link_scope: 'view' },
+      }),
+    ];
+    const { providers, sent } = recordingProviders();
+    await processNotifications(
+      adminClientWith({ booking_code: 'GSK-7F3K9Q2M', token_version: 1 }),
+      providers,
+      NOW,
+    );
+    expect(sent[0]?.bodyParams.name).toBe('Bapak/Ibu');
+  });
+
+  it('records a provider refusal with the provider’s verdict on retrying', async () => {
+    outbox.claimed = [row({})];
+    const refusal: SendResult = {
+      ok: false,
+      errorCode: 'meta_131026',
+      error: 'refused',
+      isPermanent: true,
+    };
+    const { providers } = recordingProviders(refusal);
+    await expect(processNotifications(adminClientWith(null), providers, NOW)).resolves.toEqual({
+      processed: 1,
+      failed: 1,
+    });
+    expect(outbox.failed).toEqual([
+      { id: 'n-1', errorCode: 'meta_131026', error: 'refused', isPermanent: true },
+    ]);
+  });
+
+  it('gives up at once on a message it cannot fill, and retries one whose booking could not be read', async () => {
+    outbox.claimed = [
+      row({ id: 'no-code', params: {} }),
+      row({ id: 'no-scope', template: 'booking_link', booking_id: BOOKING_ID, params: {} }),
+      row({ id: 'not-ready', template: 'review_invite', booking_id: BOOKING_ID, params: {} }),
+      row({
+        id: 'db-down',
+        template: 'booking_link',
+        booking_id: BOOKING_ID,
+        params: { link_scope: 'view' },
+      }),
+    ];
+    const { providers, sent } = recordingProviders();
+    await processNotifications(adminClientWith(null), providers, NOW);
+    expect(sent).toEqual([]);
+    // The batch is sent concurrently, so the failures arrive in any order.
+    expect(outbox.failed).toHaveLength(4);
+    expect(outbox.failed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'no-code', errorCode: 'bad_params', isPermanent: true }),
+        expect.objectContaining({ id: 'no-scope', errorCode: 'bad_params', isPermanent: true }),
+        expect.objectContaining({
+          id: 'not-ready',
+          errorCode: 'template_not_ready',
+          isPermanent: true,
+        }),
+        expect.objectContaining({ id: 'db-down', errorCode: 'compose_failed', isPermanent: false }),
+      ]),
+    );
+  });
+});

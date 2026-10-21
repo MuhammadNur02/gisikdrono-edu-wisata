@@ -28,6 +28,16 @@ export const RATE_LIMITS = {
   upload_forbidden: { limit: 10, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
   // Task P2.4.08: the public "Unduh PDF" of a published booklet, per visitor IP.
   'booklet:download': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
+  // Visitors (Task P3.2, P3.3), per IP. The daily caps on codes (5 per number or address, 20 per IP) are counted by
+  // internal.issue_phone_otp itself; these stop a burst before it reaches Turnstile and the database. A code has five
+  // tries of its own; the verify limit stops one IP from trying many codes at once.
+  'otp_request:ip': { limit: 10, windowSeconds: 900, whenUnavailable: 'fail-closed' },
+  'otp_verify:ip': { limit: 30, windowSeconds: 900, whenUnavailable: 'fail-closed' },
+  // docs/PRD.md FR-BOOK-16: 5 lookups per IP in 15 minutes.
+  'lookup:ip': { limit: 5, windowSeconds: 900, whenUnavailable: 'fail-closed' },
+  // Every guest page and action checks its link; the status page refreshing every 5 s stays well inside this.
+  'link_verify:ip': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
+  'link_revoke:booking': { limit: 5, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitName = keyof typeof RATE_LIMITS;
