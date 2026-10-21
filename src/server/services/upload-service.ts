@@ -106,12 +106,6 @@ async function isUploadOwner(adminClient: DatabaseClient, rwId: number | null): 
   return data !== null;
 }
 
-function refusalReason(isStaff: boolean, mayUpload: boolean, ctx: StaffContext): string {
-  if (!isStaff) return 'profile';
-  if (mayUpload) return 'rw';
-  return ctx.isAal2 ? 'scope' : 'aal1';
-}
-
 export async function checkUploadAccess(
   ctx: StaffContext,
   rwId: number | null,
@@ -122,7 +116,7 @@ export async function checkUploadAccess(
   const mayUpload = current !== null && hasUploadAccess(current, rwId);
   if (mayUpload && (await isUploadOwner(adminClient, rwId))) return true;
   if (await withinUploadLimit(adminClient, ctx, 'upload_forbidden', rwId)) {
-    const why = refusalReason(current !== null, mayUpload, ctx);
+    const why = current === null ? 'profile' : mayUpload ? 'rw' : ctx.isAal2 ? 'scope' : 'aal1';
     await writeUploadEvent(adminClient, ctx, refusalEvent(rwId, 'forbidden', { why, ...details }));
   }
   return false;
