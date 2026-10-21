@@ -12,8 +12,9 @@ import { isRwSlug } from '@/lib/utils/paths';
 export const revalidate = 3600;
 // Built for the RWs online at build time, and rendered on demand for one taken online later: the menu, the sitemap
 // and the home page list RWs from rw_units, so their links must not wait for a release (independent review of Task
-// P2.10.02, M1). An address that is not an RW slug is a 404 before any read; any other is looked up in the one cached
-// list of RWs (getRwUnitBySlug).
+// P2.10.02, M1). src/middleware.ts serves only an address shaped like an RW page from this folder (rwRouteRewriteFor),
+// so any other address keeps its real 404 and leaves no cache entry; the slug is looked up in the one cached list of
+// RWs (getRwUnitBySlug).
 export const dynamicParams = true;
 
 interface RwUnitPageProps {
