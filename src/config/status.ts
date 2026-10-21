@@ -1,9 +1,13 @@
 import type { LucideIcon } from 'lucide-react';
 import {
+  Archive,
   Bug,
   Building2,
+  CheckCircle2,
+  Clock,
   Cookie,
   Drama,
+  FilePen,
   Flag,
   Gamepad2,
   Gift,
@@ -24,7 +28,8 @@ import {
 import type { EnumValue } from '@/db/enums';
 
 // docs/StyleGuide.md §9.2: Postgres enum values are translated here and nowhere else, and icons follow the map of
-// §8.1. A missing value fails the build (Record over the enum). The status badges of §6.5 join this file in P2.8.
+// §8.1. A missing value fails the build (Record over the enum). The status badges of §6.5 join this file one enum at
+// a time, as their screens are built.
 
 export interface EnumMeta {
   label: string;
@@ -80,4 +85,28 @@ export const BOOKLET_KIND_LABELS: Record<EnumValue<'booklet_kind'>, string> = {
   ebooklet: 'E-booklet',
   visit_proposal: 'Proposal Kunjungan',
   price_list: 'Daftar Harga',
+};
+
+export const GALLERY_CATEGORY_LABELS: Record<EnumValue<'gallery_category'>, string> = {
+  activity: 'Kegiatan',
+  umkm: 'UMKM',
+  visit: 'Kunjungan',
+  event: 'Acara',
+};
+
+// docs/StyleGuide.md §6.5: the soft Badge variant and whether it is the outline (terminal) form.
+export type BadgeTone = 'success' | 'warning' | 'info' | 'danger' | 'neutral';
+
+export interface StatusMeta {
+  tone: BadgeTone;
+  outline?: true;
+  label: string;
+  icon: LucideIcon;
+}
+
+export const CONTENT_STATUS: Record<EnumValue<'content_status'>, StatusMeta> = {
+  draft: { tone: 'neutral', label: 'Draf', icon: FilePen },
+  pending_review: { tone: 'warning', label: 'Menunggu Tinjauan', icon: Clock },
+  published: { tone: 'success', label: 'Tayang', icon: CheckCircle2 },
+  archived: { tone: 'neutral', outline: true, label: 'Arsip', icon: Archive },
 };

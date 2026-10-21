@@ -6,22 +6,22 @@ select plan(42);
 \ir helpers/rls_personas.psql
 
 insert into public.galleries (id, rw_id, category, storage_path, alt_text, caption, status) values
-  ('00000000-0000-4000-8000-00000000ca51', 5, 'activity', 'rw-05/g1.webp', 'Kompos', 'g5', 'published'),
-  ('00000000-0000-4000-8000-00000000ca52', 5, 'activity', 'rw-05/g2.webp', 'Draf', 'g5d', 'draft'),
-  ('00000000-0000-4000-8000-00000000ca81', 8, 'activity', 'rw-08/g1.webp', 'Tari', 'g8', 'published');
+  ('00000000-0000-4000-8000-00000000ca51', 5, 'activity', 'rw-05/gallery/g1.webp', 'Kompos', 'g5', 'published'),
+  ('00000000-0000-4000-8000-00000000ca52', 5, 'activity', 'rw-05/gallery/g2.webp', 'Draf', 'g5d', 'draft'),
+  ('00000000-0000-4000-8000-00000000ca81', 8, 'activity', 'rw-08/gallery/g1.webp', 'Tari', 'g8', 'published');
 insert into public.articles (id, rw_id, slug, title, status) values
   ('00000000-0000-4000-8000-00000000cb51', 5, 'a5', 'Artikel RW 05', 'published'),
   ('00000000-0000-4000-8000-00000000cb52', 5, 'a5d', 'Draf RW 05', 'draft'),
   ('00000000-0000-4000-8000-00000000cb81', 8, 'a8', 'Artikel RW 08', 'published');
 insert into public.booklets (id, rw_id, slug, title, pdf_path, status) values
-  ('00000000-0000-4000-8000-00000000cc51', 5, 'bk5', 'Booklet RW 05', 'rw-05/b.pdf', 'published'),
-  ('00000000-0000-4000-8000-00000000cc52', 5, 'bk5d', 'Draf RW 05', 'rw-05/d.pdf', 'draft'),
-  ('00000000-0000-4000-8000-00000000cc81', 8, 'bk8', 'Booklet RW 08', 'rw-08/b.pdf', 'published');
+  ('00000000-0000-4000-8000-00000000cc51', 5, 'bk5', 'Booklet RW 05', 'rw-05/booklets/00000000-0000-4000-8000-00000000cc51/booklet.pdf', 'published'),
+  ('00000000-0000-4000-8000-00000000cc52', 5, 'bk5d', 'Draf RW 05', 'rw-05/booklets/00000000-0000-4000-8000-00000000cc52/booklet.pdf', 'draft'),
+  ('00000000-0000-4000-8000-00000000cc81', 8, 'bk8', 'Booklet RW 08', 'rw-08/booklets/00000000-0000-4000-8000-00000000cc81/booklet.pdf', 'published');
 insert into public.hero_banners (title, image_path, is_active, starts_at, ends_at) values
-  ('On', 'kelurahan/on.webp', true, null, null),
-  ('Off', 'kelurahan/off.webp', false, null, null),
-  ('Past', 'kelurahan/past.webp', true, now() - interval '10 days', now() - interval '1 day'),
-  ('Future', 'kelurahan/future.webp', true, now() + interval '1 day', null);
+  ('On', 'kelurahan/hero/on.webp', true, null, null),
+  ('Off', 'kelurahan/hero/off.webp', false, null, null),
+  ('Past', 'kelurahan/hero/past.webp', true, now() - interval '10 days', now() - interval '1 day'),
+  ('Future', 'kelurahan/hero/future.webp', true, now() + interval '1 day', null);
 insert into public.activity_points (id, rw_id, slug, name, point_type, status) values
   ('00000000-0000-4000-8000-00000000cd51', 5, 'ap5', 'Komposter', 'composter', 'published'),
   ('00000000-0000-4000-8000-00000000cd81', 8, 'ap8', 'Sanggar', 'sanggar', 'published');
@@ -87,7 +87,7 @@ select is(
 select throws_ok($$select reviewer_name from public.reviews$$, '42501', null, 'never the reviewer''s full name');
 select throws_ok($$select booking_id from public.reviews$$, '42501', null, 'nor the booking behind a review');
 select throws_ok($$insert into public.galleries (rw_id, category, storage_path, alt_text)
-  values (5, 'activity', 'rw-05/x.webp', 'Palsu')$$, '42501', null, 'and writes no content');
+  values (5, 'activity', 'rw-05/gallery/x.webp', 'Palsu')$$, '42501', null, 'and writes no content');
 
 -- ===== a signed-in user without a role =====
 reset role;
@@ -108,15 +108,15 @@ select pg_temp.act_as('admin_rw_05');
 select is((select string_agg(caption, ',' order by caption) from public.galleries where pg_temp.is_fixture_content(id)),
   'g5,g5d', 'an RW admin sees their own RW''s gallery, drafts included');
 select lives_ok($$insert into public.galleries (rw_id, category, storage_path, alt_text, booking_id, uploaded_by)
-  values (5, 'visit', 'rw-05/baru.webp', 'Foto baru', '00000000-0000-4000-8000-0000b5000001',
+  values (5, 'visit', 'rw-05/gallery/baru.webp', 'Foto baru', '00000000-0000-4000-8000-0000b5000001',
           '00000000-0000-4000-8000-00000000f005')$$,
   'uploads to their own RW in their own name, linked to one of its visits');
 select throws_ok($$insert into public.galleries (rw_id, category, storage_path, alt_text, booking_id, uploaded_by)
-  values (5, 'visit', 'rw-05/pinjam.webp', 'Foto pinjam', '00000000-0000-4000-8000-0000b8000001',
+  values (5, 'visit', 'rw-05/gallery/pinjam.webp', 'Foto pinjam', '00000000-0000-4000-8000-0000b8000001',
           '00000000-0000-4000-8000-00000000f005')$$,
   '42501', 'a gallery item links a booking that visited its own RW', 'never linked to a visit of RW 08');
 select throws_ok($$insert into public.galleries (rw_id, category, storage_path, alt_text, uploaded_by)
-  values (8, 'activity', 'rw-08/baru.webp', 'Foto baru', '00000000-0000-4000-8000-00000000f005')$$,
+  values (8, 'activity', 'rw-08/gallery/baru.webp', 'Foto baru', '00000000-0000-4000-8000-00000000f005')$$,
   '42501', null, 'nor uploaded to RW 08');
 select is(pg_temp.row_count($$delete from public.galleries where caption = 'g5d'$$), 1, 'and removes their own gallery item');
 select is((select string_agg(slug, ',' order by slug) from public.articles where pg_temp.is_fixture_content(id)),
@@ -135,7 +135,7 @@ select is(pg_temp.row_count($$delete from public.booklets where slug = 'bk5d'$$)
 select is((select count(*)::int from public.hero_banners where title in ('On', 'Off', 'Past', 'Future')), 0,
   'sees no hero banner, which is the superadmin''s');
 select throws_ok($$insert into public.hero_banners (title, image_path, created_by)
-  values ('Milik RW', 'rw-05/h.webp', '00000000-0000-4000-8000-00000000f005')$$, '42501', null, 'nor adds one');
+  values ('Milik RW', 'kelurahan/hero/h.webp', '00000000-0000-4000-8000-00000000f005')$$, '42501', null, 'nor adds one');
 select is(pg_temp.row_count($$delete from public.activity_points where slug = 'ap5'$$), 1,
   'removes their own activity point');
 select is((select count(*)::int from public.performance_schedules where title in ('Lokakarya RW 05', 'Tari RW 08')), 1,
@@ -178,14 +178,14 @@ select is(
   'without AAL2 the superadmin sees no content row, published or not'
 );
 select throws_ok($$insert into public.hero_banners (title, image_path, created_by)
-  values ('Tanpa TOTP', 'kelurahan/tanpa-totp.webp', '00000000-0000-4000-8000-00000000f001')$$, '42501', null,
+  values ('Tanpa TOTP', 'kelurahan/hero/tanpa-totp.webp', '00000000-0000-4000-8000-00000000f001')$$, '42501', null,
   'and adds no hero banner');
 reset role;
 select pg_temp.act_as('superadmin_aal2');
 select lives_ok($$insert into public.hero_banners (title, image_path, created_by)
-  values ('Baru', 'kelurahan/baru.webp', '00000000-0000-4000-8000-00000000f001')$$, 'at AAL2 they add a hero banner');
+  values ('Baru', 'kelurahan/hero/baru.webp', '00000000-0000-4000-8000-00000000f001')$$, 'at AAL2 they add a hero banner');
 select lives_ok($$insert into public.galleries (rw_id, category, storage_path, alt_text, booking_id, uploaded_by)
-  values (null, 'visit', 'kelurahan/kunjungan.webp', 'Kunjungan', '00000000-0000-4000-8000-0000b8000001',
+  values (null, 'visit', 'kelurahan/gallery/kunjungan.webp', 'Kunjungan', '00000000-0000-4000-8000-0000b8000001',
           '00000000-0000-4000-8000-00000000f001')$$,
   'link a kelurahan gallery item to any visit');
 select is(pg_temp.row_count($$update public.reviews set status = 'published'

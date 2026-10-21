@@ -144,6 +144,13 @@ export function bookletPagePaths(prefix: string | null, pageCount: number | null
   return Array.from({ length: count }, (_, index) => `${folder}/${bookletPageFileName(index + 1)}`);
 }
 
+// The folder finalize gives one row's photos: `<owner>/<folder>/<row id>` (an article, an activity point).
+export function rowPhotoFolder(
+  target: MediaTarget & { rwId: RwId | null; entityId: string },
+): string {
+  return `${ownerFor(target.rwId)}/${FOLDER_BY_PURPOSE[target.purpose]}/${target.entityId}`;
+}
+
 function bookletFolder(owner: string, bookletId: string): string {
   return `${owner}/${FOLDER_BY_PURPOSE.booklet}/${bookletId}`;
 }
@@ -173,4 +180,25 @@ export function publicMediaPathFor(upload: QuarantineUpload, target: MediaTarget
 
 export function thumbnailPathFor(imagePath: string): string {
   return imagePath.replace(/\.webp$/, `${THUMBNAIL_SUFFIX}.webp`);
+}
+
+const PUBLISHED_IMAGE_NAME =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:-thumb)?\.webp$/;
+
+// Whether a path is a photo finalize published for this owner and purpose (and row): `<owner>/<folder>[/<row>]/<uuid
+// v7>.webp` or its `-thumb` copy. A CMS row may point only at such a file, so an officer cannot hang another RW's
+// photo, or a file of another kind, on their own content (Task P2.9.05).
+export function isPublishedImagePathFor(
+  path: string,
+  target: MediaTarget & { rwId: RwId | null },
+): boolean {
+  const folder = `${ownerFor(target.rwId)}/${FOLDER_BY_PURPOSE[target.purpose]}`;
+  const entityFolder = target.entityId === undefined ? folder : `${folder}/${target.entityId}`;
+  if (!path.startsWith(`${entityFolder}/`)) return false;
+  return PUBLISHED_IMAGE_NAME.test(path.slice(entityFolder.length + 1));
+}
+
+// A booklet's first page is its cover: the flipbook draws every page, so no second upload is needed for it.
+export function bookletCoverPath(rwId: RwId | null, bookletId: string): string {
+  return `${bookletPagesFolder(rwId, bookletId)}/${bookletPageFileName(1)}`;
 }

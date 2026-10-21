@@ -13,6 +13,7 @@ import {
   removeSignInTraces,
   signInDevAccount,
   signInWithPassword,
+  userIdOf,
 } from './helpers/staff-session';
 import type { ApiClient } from './helpers/staff-session';
 import { DEV_ONLY_PASSWORD } from '../../scripts/dev-accounts';
@@ -78,10 +79,6 @@ async function visibleDrafts(client: ApiClient): Promise<string[]> {
     .order('slug');
   if (error) throw error;
   return data.map((row) => row.slug);
-}
-
-async function userIdOf(client: ApiClient): Promise<string> {
-  return (await client.auth.getUser()).data.user?.id ?? '';
 }
 
 // Signed with the caller's own id, as the insert policy requires, so a refusal is about the RW, not the signature.

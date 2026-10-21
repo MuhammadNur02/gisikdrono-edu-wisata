@@ -938,19 +938,19 @@ select is(
   'a new article starts as an empty ProseMirror document, never HTML'
 );
 select throws_ok(
-  $$insert into public.hero_banners (title, image_path, cta_href) values ('Promo', 'kelurahan/hero.webp', '//evil.test')$$,
+  $$insert into public.hero_banners (title, image_path, cta_href) values ('Promo', 'kelurahan/hero/hero.webp', '//evil.test')$$,
   '23514', null, 'a banner link cannot be protocol-relative'
 );
 select throws_ok(
-  $$insert into public.hero_banners (title, image_path, cta_href) values ('Promo', 'kelurahan/hero.webp', 'https://evil.test')$$,
+  $$insert into public.hero_banners (title, image_path, cta_href) values ('Promo', 'kelurahan/hero/hero.webp', 'https://evil.test')$$,
   '23514', null, 'a banner link cannot leave the site'
 );
 select throws_ok(
-  $$insert into public.hero_banners (title, image_path, cta_href) values ('Promo', 'kelurahan/hero.webp', '/\evil.test')$$,
+  $$insert into public.hero_banners (title, image_path, cta_href) values ('Promo', 'kelurahan/hero/hero.webp', '/\evil.test')$$,
   '23514', null, 'a banner link cannot use the backslash trick'
 );
 select lives_ok(
-  $$insert into public.hero_banners (title, image_path, cta_href) values ('Paket baru', 'kelurahan/hero.webp', '/paket-wisata')$$,
+  $$insert into public.hero_banners (title, image_path, cta_href) values ('Paket baru', 'kelurahan/hero/hero.webp', '/paket-wisata')$$,
   'a banner may link to a path on this site'
 );
 select throws_ok(

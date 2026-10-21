@@ -31,6 +31,8 @@ export interface ImageUploaderProps extends Omit<
   value: UploadedImage | null;
   onChange: (image: UploadedImage | null) => void;
   upload: UploadImage;
+  // Off for a photo whose row keeps no alt text of its own (a banner, an RW page photo): the page describes it.
+  withAltText?: boolean;
 }
 
 const PROBLEM_COPY: Record<ImageFileProblem, string> = {
@@ -196,9 +198,25 @@ function AltTextField({
   );
 }
 
+function UploadProblem({ error }: { error: string | null }) {
+  if (!error) return null;
+  return (
+    <p role="alert" className="text-caption text-destructive">
+      {error}
+    </p>
+  );
+}
+
 // docs/StyleGuide.md §5.6: JPEG, PNG or WebP up to 10 MB, shrunk to 1600 px in the browser, SVG refused
 // with its own message, and an alt text that galleries require (docs/StyleGuide.md §9.1 A8).
-export function ImageUploader({ value, onChange, upload, id, ...inputProps }: ImageUploaderProps) {
+export function ImageUploader({
+  value,
+  onChange,
+  upload,
+  id,
+  withAltText = true,
+  ...inputProps
+}: ImageUploaderProps) {
   const fallbackId = useId();
   const inputId = id ?? fallbackId;
   const { choose, error, isUploading } = useImageUpload({ value, onChange, upload });
@@ -222,12 +240,10 @@ export function ImageUploader({ value, onChange, upload, id, ...inputProps }: Im
           inputProps={inputProps}
         />
       )}
-      {error && (
-        <p role="alert" className="text-caption text-destructive">
-          {error}
-        </p>
+      <UploadProblem error={error} />
+      {value && withAltText && (
+        <AltTextField id={`${inputId}-alt`} image={value} onChange={onChange} />
       )}
-      {value && <AltTextField id={`${inputId}-alt`} image={value} onChange={onChange} />}
     </div>
   );
 }

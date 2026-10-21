@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { createUuidV7 } from '@/lib/utils/uuid-v7';
 
 import {
+  bookletCoverPath,
   bookletPageFileName,
   bookletPageObjectName,
   bookletPagePaths,
   bookletPdfPath,
   isPdfPurpose,
+  isPublishedImagePathFor,
   isTargetAllowed,
   MEDIA_OWNERS,
   ownerFor,
@@ -187,5 +189,56 @@ describe('isPdfPurpose', () => {
     expect(isPdfPurpose('booklet')).toBe(true);
     expect(isPdfPurpose('booklet-page')).toBe(false);
     expect(isPdfPurpose('gallery')).toBe(false);
+  });
+});
+
+describe('isPublishedImagePathFor', () => {
+  const name = createUuidV7();
+  const articleId = '6f1c2d3e-4a5b-4c6d-8e7f-0123456789ab';
+
+  it('accepts a photo finalize published for this owner, purpose and row, and its thumbnail', () => {
+    expect(
+      isPublishedImagePathFor(`rw-05/gallery/${name}.webp`, { rwId: 5, purpose: 'gallery' }),
+    ).toBe(true);
+    expect(
+      isPublishedImagePathFor(`rw-05/gallery/${name}-thumb.webp`, { rwId: 5, purpose: 'gallery' }),
+    ).toBe(true);
+    expect(
+      isPublishedImagePathFor(`kelurahan/articles/${articleId}/${name}.webp`, {
+        rwId: null,
+        purpose: 'article',
+        entityId: articleId,
+      }),
+    ).toBe(true);
+  });
+
+  // An RW 05 officer hanging RW 08's photo, a photo of another kind or of another row on their own content.
+  it.each([
+    ['another RW', `rw-08/gallery/${name}.webp`],
+    ['the kelurahan', `kelurahan/gallery/${name}.webp`],
+    ['another kind of file', `rw-05/products/${name}.webp`],
+    ['a folder below the right one', `rw-05/gallery/x/${name}.webp`],
+    ['a name finalize never writes', 'rw-05/gallery/../rw-08/gallery/foto.webp'],
+    ['a PDF', `rw-05/gallery/${name}.pdf`],
+  ])('refuses a path of %s', (_case, path) => {
+    expect(isPublishedImagePathFor(path, { rwId: 5, purpose: 'gallery' })).toBe(false);
+  });
+
+  it("refuses another row's folder", () => {
+    const otherId = '7a1c2d3e-4a5b-4c6d-8e7f-0123456789ab';
+    expect(
+      isPublishedImagePathFor(`rw-05/articles/${otherId}/${name}.webp`, {
+        rwId: 5,
+        purpose: 'article',
+        entityId: articleId,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('bookletCoverPath', () => {
+  it("is the booklet's first page", () => {
+    const bookletId = '6f1c2d3e-4a5b-4c6d-8e7f-0123456789ab';
+    expect(bookletCoverPath(8, bookletId)).toBe(`rw-08/booklets/${bookletId}/pages/0001.webp`);
   });
 });
