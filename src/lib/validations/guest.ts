@@ -16,28 +16,35 @@ const OTP_CODE_PATTERN = new RegExp(`^\\d{${String(OTP_CODE_LENGTH)}}$`);
 const LOOKUP_FIELD_MAX_LENGTH = 254;
 
 // channel email is the fallback while WhatsApp is limited: the code goes to the address, and the phone is only what
-// the visitor typed (src/lib/links/phone-proof.ts).
+// the visitor typed (src/lib/links/phone-proof.ts). Asking for a code and checking it name the same contact, since
+// the database finds the code by it and by the browser (no OTP id reaches the browser).
+const otpContactFields = {
+  channel: z.enum(['whatsapp', 'email']).default('whatsapp'),
+  phone: picPhoneSchema,
+  email: emailField.nullish().transform((email) => email ?? null),
+};
+
+function requireAddressForEmail(
+  contact: { channel: 'whatsapp' | 'email'; email: string | null },
+  context: z.RefinementCtx,
+) {
+  if (contact.channel === 'email' && contact.email === null) {
+    context.addIssue({ code: 'custom', path: ['email'], message: copy.auth.validation.email });
+  }
+}
+
 export const requestPhoneOtpSchema = z
-  .object({
-    channel: z.enum(['whatsapp', 'email']).default('whatsapp'),
-    phone: picPhoneSchema,
-    email: emailField.nullish().transform((email) => email ?? null),
-    turnstileToken: captchaTokenField,
-  })
+  .object({ ...otpContactFields, turnstileToken: captchaTokenField })
   .strict()
-  .superRefine((request, context) => {
-    if (request.channel === 'email' && request.email === null) {
-      context.addIssue({ code: 'custom', path: ['email'], message: copy.auth.validation.email });
-    }
-  });
+  .superRefine(requireAddressForEmail);
 
 export const verifyPhoneOtpSchema = z
   .object({
-    otpId: z.uuid().toLowerCase(),
+    ...otpContactFields,
     code: z.string().trim().regex(OTP_CODE_PATTERN, otpText.codeFormat),
-    phone: picPhoneSchema,
   })
-  .strict();
+  .strict()
+  .superRefine(requireAddressForEmail);
 
 // What the visitor typed as their contact, in the one spelling the database compares: an E.164 number or a
 // lower-cased address.
@@ -63,6 +70,6 @@ export const lookupBookingSchema = z
   })
   .strict();
 
-export type RequestPhoneOtpInput = z.input<typeof requestPhoneOtpSchema>;
-export type VerifyPhoneOtpInput = z.input<typeof verifyPhoneOtpSchema>;
+export type PhoneOtpRequest = z.output<typeof requestPhoneOtpSchema>;
+export type PhoneOtpCheck = z.output<typeof verifyPhoneOtpSchema>;
 export type LookupBookingInput = z.input<typeof lookupBookingSchema>;

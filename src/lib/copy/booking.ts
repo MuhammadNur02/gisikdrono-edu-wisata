@@ -32,8 +32,12 @@ export const bookingCopy = {
     codeFormat: 'Kode terdiri dari 6 angka.',
     verify: 'Verifikasi',
     changeContact: 'Ganti nomor',
-    sentWhatsapp: 'Kode sudah dikirim ke WhatsApp Anda dan berlaku 5 menit.',
-    sentEmail: 'Kode sudah dikirim ke email Anda dan berlaku 5 menit. Periksa juga folder spam.',
+    // The same words whether the code went out or the number has had too many today (review of PR #20, L4), so they
+    // say what to do when nothing arrives.
+    sentWhatsapp:
+      'Kode 6 angka sedang kami kirim ke WhatsApp nomor itu dan berlaku 5 menit. Belum masuk? Minta kode baru setelah hitungan selesai. Kalau tetap tidak masuk, hubungi kelurahan lewat tombol WhatsApp.',
+    sentEmail:
+      'Kode 6 angka sedang kami kirim ke email itu dan berlaku 5 menit. Periksa juga folder spam. Belum masuk? Minta kode baru setelah hitungan selesai.',
     verifiedWhatsapp: 'Nomor WhatsApp sudah terverifikasi.',
     verifiedEmail: 'Email sudah terverifikasi. Kabar reservasi akan kami kirim lewat email.',
     degradedTitle: 'Verifikasi lewat email dulu, ya',
@@ -41,9 +45,6 @@ export const bookingCopy = {
       'Pengiriman kode WhatsApp sedang dibatasi. Kami kirim kode ke email Anda sebagai gantinya; selesaikan juga pemeriksaan keamanan di bawah.',
     unavailable:
       'Kode lewat email hanya dipakai saat WhatsApp sedang dibatasi. Minta kode lewat WhatsApp, ya.',
-    cooldown: (seconds: number) => `Tunggu ${String(seconds)} detik sebelum meminta kode baru.`,
-    limited:
-      'Kode untuk nomor atau email ini sudah terlalu sering diminta hari ini. Coba lagi besok, atau hubungi kelurahan.',
     wrongCode: (attemptsLeft: number) =>
       `Kodenya belum cocok. Sisa ${String(attemptsLeft)} kali percobaan.`,
     locked: 'Kode ini sudah salah lima kali sehingga tidak berlaku lagi. Minta kode baru, ya.',

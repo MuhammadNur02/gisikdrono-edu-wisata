@@ -39,8 +39,20 @@ export const PHONE_PROOF_COOKIE = 'gsk_phone';
 export const PHONE_PROOF_TTL_SECONDS = 30 * 60;
 
 export const OTP_CODE_LENGTH = 6;
-// The wait between two codes for one number; internal.issue_phone_otp enforces it, the form counts it down.
+// The wait between two codes for one number in one browser; internal.issue_phone_otp enforces it, the form counts it
+// down.
 export const OTP_RESEND_COOLDOWN_SECONDS = 60;
+
+// A pending code belongs to the browser that asked for it (review of PR #20, M1): this cookie names the browser by a
+// signed random id, so another browser can neither replace the code nor use up its daily codes. A day is as long as
+// the daily caps look back.
+export const OTP_BROWSER_COOKIE = 'gsk_otp_browser';
+export const OTP_BROWSER_TTL_SECONDS = DAY_SECONDS;
+
+// Review of PR #20, L4: a code request is answered the same, no sooner than this, whether the code went out, the
+// browser is waiting out its minute or the number has used its codes, so neither words nor timing say that someone
+// else has been asking for that number.
+export const OTP_REQUEST_MIN_RESPONSE_MS = 1200;
 
 // docs/Security.md GUEST-01: /reservasi/cari answers no sooner than this, whatever it found, so how long it takes
 // says nothing about whether the code exists.

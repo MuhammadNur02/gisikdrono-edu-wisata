@@ -39,6 +39,7 @@ const OTP = {
   otpId: OTP_ID,
   purpose: 'booking_phone' as const,
   channel: 'whatsapp' as const,
+  browserHash: '1'.repeat(64),
   codeHash: 'a'.repeat(64),
   code: '482913',
   phone: '+6281234567890',
@@ -64,6 +65,7 @@ describe('svcIssuePhoneOtp', () => {
         p_otp_id: OTP_ID,
         p_purpose: 'booking_phone',
         p_channel: 'whatsapp',
+        p_browser_hash: '1'.repeat(64),
         p_code_hash: 'a'.repeat(64),
         p_code: '482913',
         p_phone: '+6281234567890',
@@ -94,10 +96,31 @@ describe('svcIssuePhoneOtp', () => {
 });
 
 describe('svcVerifyPhoneOtp', () => {
+  const CHECK = {
+    purpose: 'booking_phone' as const,
+    channel: 'whatsapp' as const,
+    browserHash: '1'.repeat(64),
+    codeHash: 'b'.repeat(64),
+    phone: '+6281234567890',
+    email: null,
+  };
+
   it.each([
     [
-      { result: 'verified', purpose: 'booking_phone', phone: '+6281234567890', email: null },
-      { status: 'verified', phone: '+6281234567890', email: null },
+      {
+        result: 'verified',
+        otp_id: OTP_ID,
+        purpose: 'dsr_identity',
+        phone: '+6281234567890',
+        email: null,
+      },
+      {
+        status: 'verified',
+        otpId: OTP_ID,
+        purpose: 'dsr_identity',
+        phone: '+6281234567890',
+        email: null,
+      },
     ],
     [
       { result: 'wrong_code', attempts_left: 2 },
@@ -106,10 +129,14 @@ describe('svcVerifyPhoneOtp', () => {
     [{ result: 'locked' }, { status: 'locked' }],
   ])('reads %j', async (reply, expected) => {
     const { client, requests } = clientAnswering(200, reply);
-    await expect(
-      svcVerifyPhoneOtp(client, { otpId: OTP_ID, codeHash: 'b'.repeat(64) }),
-    ).resolves.toEqual(expected);
-    expect(requests[0]?.body).toEqual({ p_otp_id: OTP_ID, p_code_hash: 'b'.repeat(64) });
+    await expect(svcVerifyPhoneOtp(client, CHECK)).resolves.toEqual(expected);
+    expect(requests[0]?.body).toEqual({
+      p_purpose: 'booking_phone',
+      p_channel: 'whatsapp',
+      p_browser_hash: '1'.repeat(64),
+      p_code_hash: 'b'.repeat(64),
+      p_phone: '+6281234567890',
+    });
   });
 });
 

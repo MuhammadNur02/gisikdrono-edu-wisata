@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { resultOf, type DatabaseClient } from '@/db/rpc-result';
 import type { Database } from '@/db/types';
 
-// Typed calls to the guest identity functions (supabase/migrations/20261021100100_guest_otp_functions.sql and
+// Typed calls to the guest identity functions (supabase/migrations/20261021110100_browser_bound_otps.sql and
 // 20261021100300_guest_link_functions.sql), on the service-role client only: visitors have no session.
 
 type Enums = Database['public']['Enums'];
@@ -25,7 +25,9 @@ export interface OtpToIssue {
   otpId: string;
   purpose: Enums['otp_purpose'];
   channel: Enums['notification_channel'];
-  // HMAC-SHA256(OTP_PEPPER, otpId:code) in hex; the plain code travels only into the outbox message.
+  // The keyed hashes of src/lib/otp.ts, in hex: the browser the code belongs to, and the code itself. The plain code
+  // travels only into the outbox message.
+  browserHash: string;
   codeHash: string;
   code: string;
   phone: string | null;
@@ -43,6 +45,7 @@ export async function svcIssuePhoneOtp(
         p_otp_id: otp.otpId,
         p_purpose: otp.purpose,
         p_channel: otp.channel,
+        p_browser_hash: otp.browserHash,
         p_code_hash: otp.codeHash,
         p_code: otp.code,
         p_phone: otp.phone ?? undefined,
@@ -62,6 +65,7 @@ export async function svcIssuePhoneOtp(
 const checkReplySchema = z.discriminatedUnion('result', [
   z.strictObject({
     result: z.literal('verified'),
+    otp_id: z.uuid(),
     purpose: z.enum(['booking_phone', 'dsr_identity']),
     phone: z.string().nullable(),
     email: z.string().nullable(),
@@ -71,24 +75,46 @@ const checkReplySchema = z.discriminatedUnion('result', [
 ]);
 
 export type OtpCheck =
-  | { status: 'verified'; phone: string | null; email: string | null }
+  | {
+      status: 'verified';
+      otpId: string;
+      purpose: Enums['otp_purpose'];
+      phone: string | null;
+      email: string | null;
+    }
   | { status: 'wrong_code'; attemptsLeft: number }
   | { status: 'locked' | 'expired' | 'invalid' };
 
+export interface OtpToCheck {
+  purpose: Enums['otp_purpose'];
+  channel: Enums['notification_channel'];
+  browserHash: string;
+  codeHash: string;
+  phone: string | null;
+  email: string | null;
+}
+
+// The database finds the code by purpose, channel, number or address and browser; nothing the visitor holds names a
+// row.
 export async function svcVerifyPhoneOtp(
   adminClient: DatabaseClient,
-  check: { otpId: string; codeHash: string },
+  check: OtpToCheck,
 ): Promise<OtpCheck> {
   const reply = checkReplySchema.parse(
     await resultOf(
       adminClient.rpc('svc_verify_phone_otp', {
-        p_otp_id: check.otpId,
+        p_purpose: check.purpose,
+        p_channel: check.channel,
+        p_browser_hash: check.browserHash,
         p_code_hash: check.codeHash,
+        p_phone: check.phone ?? undefined,
+        p_email: check.email ?? undefined,
       }),
     ),
   );
   if (reply.result === 'verified') {
-    return { status: 'verified', phone: reply.phone, email: reply.email };
+    const { otp_id: otpId, purpose, phone, email } = reply;
+    return { status: 'verified', otpId, purpose, phone, email };
   }
   if (reply.result === 'wrong_code')
     return { status: 'wrong_code', attemptsLeft: reply.attempts_left };

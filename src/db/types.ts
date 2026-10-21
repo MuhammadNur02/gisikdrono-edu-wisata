@@ -1225,6 +1225,7 @@ export type Database = {
         Row: {
           attempts: number
           booking_id: string | null
+          browser_hash: string | null
           code_hash: string
           consumed_at: string | null
           created_at: string
@@ -1240,6 +1241,7 @@ export type Database = {
         Insert: {
           attempts?: number
           booking_id?: string | null
+          browser_hash?: string | null
           code_hash: string
           consumed_at?: string | null
           created_at?: string
@@ -1255,6 +1257,7 @@ export type Database = {
         Update: {
           attempts?: number
           booking_id?: string | null
+          browser_hash?: string | null
           code_hash?: string
           consumed_at?: string | null
           created_at?: string
@@ -4339,6 +4342,7 @@ export type Database = {
       svc_issue_phone_otp: {
         Args: {
           p_booking_id?: string
+          p_browser_hash: string
           p_channel: Database["public"]["Enums"]["notification_channel"]
           p_code: string
           p_code_hash: string
@@ -4396,7 +4400,14 @@ export type Database = {
         Returns: number
       }
       svc_verify_phone_otp: {
-        Args: { p_code_hash: string; p_otp_id: string }
+        Args: {
+          p_browser_hash: string
+          p_channel: Database["public"]["Enums"]["notification_channel"]
+          p_code_hash: string
+          p_email?: string
+          p_phone?: string
+          p_purpose: Database["public"]["Enums"]["otp_purpose"]
+        }
         Returns: Json
       }
       today_jkt: { Args: never; Returns: string }

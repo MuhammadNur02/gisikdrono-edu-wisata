@@ -7,7 +7,7 @@ import {
   svcVerifyPhoneOtp,
 } from '@/db/rpc-guest';
 import { mintGuestLink } from '@/lib/links/mint';
-import { otpCodeHash } from '@/lib/otp';
+import { otpBrowserHash, otpCodeHash } from '@/lib/otp';
 import { withinRateLimits } from '@/lib/rate-limit';
 
 import {
@@ -45,7 +45,7 @@ vi.mock('@/lib/rate-limit', () => ({ withinRateLimits: vi.fn(() => Promise.resol
 const NOW = 1_790_000_000;
 const CODE = 'GSK-7F3K9Q2M';
 const BOOKING_ID = '0192f3a4-5b6c-7d8e-9f01-23456789abcd';
-const OTP_ID = '0192f3a4-5b6c-7d8e-9f01-0000000000aa';
+const BROWSER_ID = 'b3J5Lb6Qf0x1Zr2kq9WmTA';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -60,6 +60,7 @@ describe('issuePhoneOtp', () => {
       phone: '+6281234567890',
       email: null,
       clientIp: '203.0.113.9',
+      browserId: BROWSER_ID,
     });
     const otp = vi.mocked(svcIssuePhoneOtp).mock.calls[0]?.[1];
     expect(otp).toMatchObject({
@@ -70,7 +71,21 @@ describe('issuePhoneOtp', () => {
       ip: '203.0.113.9',
     });
     expect(otp?.code).toMatch(/^\d{6}$/);
-    expect(otp?.codeHash).toBe(otpCodeHash(otp?.otpId ?? '', otp?.code ?? ''));
+    expect(otp?.codeHash).toBe(otpCodeHash(BROWSER_ID, otp?.code ?? ''));
+  });
+
+  it('ties the code to the keyed hash of the browser that asked, never to its raw id', async () => {
+    await issuePhoneOtp({
+      channel: 'whatsapp',
+      phone: '+6281234567890',
+      email: null,
+      clientIp: '203.0.113.9',
+      browserId: BROWSER_ID,
+    });
+    const otp = vi.mocked(svcIssuePhoneOtp).mock.calls[0]?.[1];
+    expect(otp?.browserHash).toBe(otpBrowserHash(BROWSER_ID));
+    expect(otp?.browserHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(otp)).not.toContain(BROWSER_ID);
   });
 
   it('targets the address alone for an email code, and counts an IPv6 visitor by their /64', async () => {
@@ -79,6 +94,7 @@ describe('issuePhoneOtp', () => {
       phone: '+6281234567890',
       email: 'ani@example.test',
       clientIp: '2001:db8:1:2:3:4:5:6',
+      browserId: BROWSER_ID,
     });
     expect(vi.mocked(svcIssuePhoneOtp).mock.calls[0]?.[1]).toMatchObject({
       channel: 'email',
@@ -94,17 +110,43 @@ describe('issuePhoneOtp', () => {
       phone: '+6281234567890',
       email: null,
       clientIp: 'unknown',
+      browserId: BROWSER_ID,
     });
     expect(vi.mocked(svcIssuePhoneOtp).mock.calls[0]?.[1].ip).toBeNull();
   });
 });
 
 describe('verifyPhoneOtp and resendBookingLink', () => {
-  it('compares the keyed hash of the code typed against the OTP it names', async () => {
-    await verifyPhoneOtp({ otpId: OTP_ID, code: '482913' });
+  it('checks a booking-phone code of this browser for this number, by the keyed hash of what was typed', async () => {
+    await verifyPhoneOtp({
+      channel: 'whatsapp',
+      phone: '+6281234567890',
+      email: null,
+      code: '482913',
+      browserId: BROWSER_ID,
+    });
     expect(vi.mocked(svcVerifyPhoneOtp).mock.calls[0]?.[1]).toEqual({
-      otpId: OTP_ID,
-      codeHash: otpCodeHash(OTP_ID, '482913'),
+      purpose: 'booking_phone',
+      channel: 'whatsapp',
+      browserHash: otpBrowserHash(BROWSER_ID),
+      codeHash: otpCodeHash(BROWSER_ID, '482913'),
+      phone: '+6281234567890',
+      email: null,
+    });
+  });
+
+  it('checks an email code by the address alone', async () => {
+    await verifyPhoneOtp({
+      channel: 'email',
+      phone: '+6281234567890',
+      email: 'ani@example.test',
+      code: '482913',
+      browserId: BROWSER_ID,
+    });
+    expect(vi.mocked(svcVerifyPhoneOtp).mock.calls[0]?.[1]).toMatchObject({
+      channel: 'email',
+      phone: null,
+      email: 'ani@example.test',
     });
   });
 

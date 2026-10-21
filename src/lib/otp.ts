@@ -16,7 +16,13 @@ export function drawOtpCode(): string {
   return String(randomInt(0, CODE_SPACE)).padStart(OTP_CODE_LENGTH, '0');
 }
 
-// Keyed by the row's own id as well, so one code typed against another OTP never matches its hash.
-export function otpCodeHash(otpId: string, code: string): string {
-  return pepperedHash('gsk-otp-code-v1', `${otpId}:${code}`);
+// Keyed by the browser the code was sent to as well (src/lib/links/otp-browser.ts), so a code typed in another
+// browser never matches its hash.
+export function otpCodeHash(browserId: string, code: string): string {
+  return pepperedHash('gsk-otp-code-v1', `${browserId}:${code}`);
+}
+
+// guest_otps.browser_hash: which browser a code belongs to, without the cookie's id itself in the database.
+export function otpBrowserHash(browserId: string): string {
+  return pepperedHash('gsk-otp-browser-v1', browserId);
 }

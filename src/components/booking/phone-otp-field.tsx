@@ -101,12 +101,11 @@ function CodeField({ otp }: { otp: PhoneOtp }) {
 
 interface CodeStepProps {
   otp: PhoneOtp;
-  otpId: string;
   channel: OtpChannel;
 }
 
 // Another code only after the cooldown internal.issue_phone_otp enforces anyway; the label counts it down.
-function ResendButton({ otp, channel }: Omit<CodeStepProps, 'otpId'>) {
+function ResendButton({ otp, channel }: CodeStepProps) {
   const { action, cooldown } = otp;
   const isWaiting = cooldown.secondsLeft > 0;
   return (
@@ -122,14 +121,14 @@ function ResendButton({ otp, channel }: Omit<CodeStepProps, 'otpId'>) {
   );
 }
 
-function CodeButtons({ otp, otpId, channel }: CodeStepProps) {
+function CodeButtons({ otp, channel }: CodeStepProps) {
   return (
     <div className="flex flex-wrap gap-3">
       <Button
         type="button"
         size="lg"
         loading={otp.action.isBusy}
-        onClick={() => void otp.verifyCode(otpId)}
+        onClick={() => void otp.verifyCode(channel)}
       >
         {text.verify}
       </Button>
@@ -150,8 +149,7 @@ function CodeButtons({ otp, otpId, channel }: CodeStepProps) {
 
 function StepActions({ otp }: { otp: PhoneOtp }) {
   const { step } = otp;
-  if (step.name === 'code')
-    return <CodeButtons otp={otp} otpId={step.otpId} channel={step.channel} />;
+  if (step.name === 'code') return <CodeButtons otp={otp} channel={step.channel} />;
   if (step.name === 'verified') return null;
   return (
     <Button

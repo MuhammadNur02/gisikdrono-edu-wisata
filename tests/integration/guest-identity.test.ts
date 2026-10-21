@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { Database } from '@/db/types';
+import { newOtpBrowserId } from '@/lib/links/otp-browser';
 import type { NotificationProviders, OutgoingMessage } from '@/lib/notifications/types';
 import {
   issuePhoneOtp,
@@ -14,6 +15,7 @@ import {
 } from '@/server/services/booking-service';
 import { processNotifications } from '@/server/services/notification-service';
 
+import { lastAuditId } from './helpers/staff-session';
 import { localStack, runSql, sqlText } from '../../scripts/local-stack';
 
 // The guest identity flow against the real database of the local stack (Task P3.2, P3.3): a code issued through
@@ -33,6 +35,10 @@ const BOOKING_CODE = 'GSK-1NTEGRA7';
 const OTP_PHONE = `+62812${String(randomInt(1_000_000, 9_999_999))}`;
 const BOOKING_PHONE = `+62813${String(randomInt(1_000_000, 9_999_999))}`;
 const CLIENT_IP = '203.0.113.50';
+// Two browsers asking for the same number: the visitor's own, and someone else's.
+const VISITOR_BROWSER = newOtpBrowserId();
+const OTHER_BROWSER = newOtpBrowserId();
+const OTP_CONTACT = { channel: 'whatsapp' as const, phone: OTP_PHONE, email: null };
 
 function adminClient() {
   return createClient<Database>(localStack().apiUrl, localStack().serviceRoleKey, {
@@ -57,7 +63,12 @@ function recordingProviders() {
 
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 
+// The audit log is a hash chain: only rows after the last one that existed before the suite are removed, so what is
+// left still verifies (internal.verify_audit_chain).
+let auditIdBefore = 0;
+
 beforeAll(async () => {
+  auditIdBefore = await lastAuditId();
   await runSql(`update public.site_settings set value = 'true' where key in ('whatsapp_enabled', 'email_enabled');
     insert into public.tour_packages (id, rw_id, category, slug, name, tagline, duration_minutes, price_per_pax, status)
     values ('${PACKAGE_ID}', 5, 'student', 'uji-integrasi-tamu', 'Paket Uji Tamu', 'Uji', 120, 25000, 'published')
@@ -75,18 +86,17 @@ afterAll(async () => {
     delete from public.notifications where booking_id = '${BOOKING_ID}'
       or recipient in (${sqlText(OTP_PHONE)}, ${sqlText(BOOKING_PHONE)});
     delete from public.guest_otps where phone = ${sqlText(OTP_PHONE)};
-    delete from public.audit_logs where entity_id = '${BOOKING_ID}';
+    delete from public.audit_logs where id > ${String(auditIdBefore)};
     delete from public.bookings where id = '${BOOKING_ID}';
     delete from public.tour_packages where id = '${PACKAGE_ID}';`);
 });
 
 describe('a WhatsApp code, end to end', () => {
-  it('is delivered once with its code, leaves the outbox without it, and opens once', async () => {
+  it('is delivered once with its code, leaves the outbox without it, and opens once in its own browser', async () => {
     const issued = await issuePhoneOtp({
-      channel: 'whatsapp',
-      phone: OTP_PHONE,
-      email: null,
+      ...OTP_CONTACT,
       clientIp: CLIENT_IP,
+      browserId: VISITOR_BROWSER,
     });
     if (issued.status !== 'sent') throw new Error(`expected a code, got ${issued.status}`);
 
@@ -103,25 +113,32 @@ describe('a WhatsApp code, end to end', () => {
       .single();
     expect(row).toEqual({ status: 'sent', params: {} });
 
+    const inVisitorBrowser = { ...OTP_CONTACT, browserId: VISITOR_BROWSER };
+    const inOtherBrowser = { ...OTP_CONTACT, browserId: OTHER_BROWSER };
     const wrongCode = code === '000000' ? '000001' : '000000';
-    expect(await verifyPhoneOtp({ otpId: issued.otpId, code: wrongCode })).toEqual({
+    expect(await verifyPhoneOtp({ ...inVisitorBrowser, code: wrongCode })).toEqual({
       status: 'wrong_code',
       attemptsLeft: 4,
     });
-    expect(await verifyPhoneOtp({ otpId: issued.otpId, code })).toEqual({
+    // Review of PR #20, M1: another browser can neither use the code nor push it out with a code of its own.
+    expect(await verifyPhoneOtp({ ...inOtherBrowser, code })).toEqual({ status: 'invalid' });
+    const elsewhere = await issuePhoneOtp({ ...inOtherBrowser, clientIp: CLIENT_IP });
+    expect(elsewhere.status).toBe('sent');
+    expect(await verifyPhoneOtp({ ...inVisitorBrowser, code })).toEqual({
       status: 'verified',
+      otpId: issued.otpId,
+      purpose: 'booking_phone',
       phone: OTP_PHONE,
       email: null,
     });
-    expect(await verifyPhoneOtp({ otpId: issued.otpId, code })).toEqual({ status: 'invalid' });
+    expect(await verifyPhoneOtp({ ...inVisitorBrowser, code })).toEqual({ status: 'invalid' });
   });
 
-  it('refuses a second code for the same number within the minute', async () => {
+  it('refuses a second code for the same number in the same browser within the minute', async () => {
     const again = await issuePhoneOtp({
-      channel: 'whatsapp',
-      phone: OTP_PHONE,
-      email: null,
+      ...OTP_CONTACT,
       clientIp: CLIENT_IP,
+      browserId: VISITOR_BROWSER,
     });
     expect(again.status).toBe('cooldown');
   });

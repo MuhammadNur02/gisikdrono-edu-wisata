@@ -2,7 +2,8 @@ import 'server-only';
 
 import { cookies } from 'next/headers';
 
-import { PHONE_PROOF_COOKIE } from '@/config/guest';
+import { OTP_BROWSER_COOKIE, OTP_BROWSER_TTL_SECONDS, PHONE_PROOF_COOKIE } from '@/config/guest';
+import { newOtpBrowserId, readOtpBrowserId, signOtpBrowserId } from '@/lib/links/otp-browser';
 import { readPhoneProof, signPhoneProof, type PhoneProof } from '@/lib/links/phone-proof';
 
 // The visitor's own cookies (docs/Security.md §4.1, §6.7): httpOnly, so no script on the page reads them, Secure and
@@ -24,4 +25,21 @@ export async function rememberPhoneProof(proof: Omit<PhoneProof, 'expiresAt'>): 
 export async function readPhoneProofCookie(): Promise<PhoneProof | null> {
   const value = (await cookies()).get(PHONE_PROOF_COOKIE)?.value;
   return value === undefined ? null : readPhoneProof(value, nowInSeconds());
+}
+
+export async function readOtpBrowserCookie(): Promise<string | null> {
+  const value = (await cookies()).get(OTP_BROWSER_COOKIE)?.value;
+  return value === undefined ? null : readOtpBrowserId(value);
+}
+
+// Every code request keeps the browser's id, or gives it one, and sets the cookie again either way, so the answer
+// looks the same whatever came before (review of PR #20, M1 and L4).
+export async function ensureOtpBrowserId(): Promise<string> {
+  const browserId = (await readOtpBrowserCookie()) ?? newOtpBrowserId();
+  (await cookies()).set(OTP_BROWSER_COOKIE, await signOtpBrowserId(browserId), {
+    ...GUEST_COOKIE_OPTIONS,
+    path: '/',
+    maxAge: OTP_BROWSER_TTL_SECONDS,
+  });
+  return browserId;
 }

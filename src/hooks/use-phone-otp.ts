@@ -16,7 +16,7 @@ const text = copy.booking.otp;
 
 export type Step =
   | { name: 'contact'; channel: OtpChannel }
-  | { name: 'code'; channel: OtpChannel; otpId: string }
+  | { name: 'code'; channel: OtpChannel }
   | { name: 'verified'; channel: OtpChannel };
 
 export type FieldName = 'phone' | 'email' | 'code' | 'turnstileToken';
@@ -83,7 +83,7 @@ function useOtpSteps(onVerified: PhoneOtpActions['onVerified']) {
       setStatus(text.degraded);
       return;
     }
-    setStep({ name: 'code', channel: answer.channel, otpId: answer.otpId });
+    setStep({ name: 'code', channel: answer.channel });
     setStatus(answer.channel === 'email' ? text.sentEmail : text.sentWhatsapp);
     cooldown.start(answer.resendAfterSeconds);
   }
@@ -102,16 +102,22 @@ export function usePhoneOtp({ requestAction, verifyAction, onVerified }: PhoneOt
   const { values, setValue, captcha } = useOtpValues();
   const action = useActionRun();
 
+  const contactFor = (channel: OtpChannel) => ({
+    channel,
+    phone: values.phone,
+    email: channel === 'email' ? values.email : null,
+  });
+
   // A Turnstile token is good once, so every request, answered or refused, is followed by a fresh one.
   async function sendCode(channel: OtpChannel) {
-    const email = channel === 'email' ? values.email : null;
-    const request = { channel, phone: values.phone, email, turnstileToken: values.turnstileToken };
+    const request = { ...contactFor(channel), turnstileToken: values.turnstileToken };
     await action.run(() => requestAction(request), steps.onCodeSent);
     captcha.renew();
   }
 
-  async function verifyCode(otpId: string) {
-    const check = { otpId, code: values.code, phone: values.phone };
+  // The code is checked against the one this browser asked for, for the same contact.
+  async function verifyCode(channel: OtpChannel) {
+    const check = { ...contactFor(channel), code: values.code };
     await action.run(
       () => verifyAction(check),
       (answer) => {

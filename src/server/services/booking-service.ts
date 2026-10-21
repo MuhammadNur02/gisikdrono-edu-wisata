@@ -15,12 +15,12 @@ import {
 } from '@/db/rpc-guest';
 import type { DatabaseClient } from '@/db/rpc-result';
 import { isCurrentLink, readGuestLink } from '@/lib/links/verify';
-import { drawOtpCode, otpCodeHash } from '@/lib/otp';
+import { drawOtpCode, otpBrowserHash, otpCodeHash } from '@/lib/otp';
 import { withinRateLimits, type RateLimitCheck } from '@/lib/rate-limit';
 // Visitors have no session, so their codes, lookups and links run with the service role (CLAUDE.md §6.1). Every
-// call is keyed by what the server checked first: an OTP id it issued itself, a booking code with a contact the
-// database matches on its own side (the booking's contact never comes back here), or a booking code whose link
-// signature has already passed. The limiter is an internal function no API role may call (P1.3.24).
+// call is keyed by what the server checked first: the browser id of a cookie it signed itself, a booking code with a
+// contact the database matches on its own side (the booking's contact never comes back here), or a booking code
+// whose link signature has already passed. The limiter is an internal function no API role may call (P1.3.24).
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 
@@ -37,30 +37,42 @@ function ipForOtpCaps(clientIp: string): string | null {
   return isIP(clientIp) === 0 ? null : rateLimitIpBucket(clientIp);
 }
 
-export function issuePhoneOtp(request: {
+// The number or address a code goes to: a WhatsApp code is about the phone, an email code about the address alone.
+interface OtpContact {
   channel: 'whatsapp' | 'email';
   phone: string;
   email: string | null;
-  clientIp: string;
-}): Promise<OtpIssue> {
-  const otpId = randomUUID();
+  // The gsk_otp_browser cookie's id (src/server/auth/guest-cookies.ts): the code belongs to this browser.
+  browserId: string;
+}
+
+function targetOf(contact: OtpContact) {
+  return {
+    channel: contact.channel,
+    phone: contact.channel === 'whatsapp' ? contact.phone : null,
+    email: contact.channel === 'email' ? contact.email : null,
+  };
+}
+
+export function issuePhoneOtp(request: OtpContact & { clientIp: string }): Promise<OtpIssue> {
   const code = drawOtpCode();
   return svcIssuePhoneOtp(createSupabaseAdminClient(), {
-    otpId,
+    ...targetOf(request),
+    otpId: randomUUID(),
     purpose: 'booking_phone',
-    channel: request.channel,
-    codeHash: otpCodeHash(otpId, code),
+    browserHash: otpBrowserHash(request.browserId),
+    codeHash: otpCodeHash(request.browserId, code),
     code,
-    phone: request.channel === 'whatsapp' ? request.phone : null,
-    email: request.channel === 'email' ? request.email : null,
     ip: ipForOtpCaps(request.clientIp),
   });
 }
 
-export function verifyPhoneOtp(check: { otpId: string; code: string }): Promise<OtpCheck> {
+export function verifyPhoneOtp(check: OtpContact & { code: string }): Promise<OtpCheck> {
   return svcVerifyPhoneOtp(createSupabaseAdminClient(), {
-    otpId: check.otpId,
-    codeHash: otpCodeHash(check.otpId, check.code),
+    ...targetOf(check),
+    purpose: 'booking_phone',
+    browserHash: otpBrowserHash(check.browserId),
+    codeHash: otpCodeHash(check.browserId, check.code),
   });
 }
 

@@ -17,7 +17,12 @@ describe('pepperedHash', () => {
   });
 
   it('gives one value a different hash for every use, and none equals the unlabelled HMAC', () => {
-    const labels = ['gsk-rate-limit-v1', 'gsk-otp-code-v1', 'gsk-log-email-v1'] as const;
+    const labels = [
+      'gsk-rate-limit-v1',
+      'gsk-otp-code-v1',
+      'gsk-otp-browser-v1',
+      'gsk-log-email-v1',
+    ] as const;
     const hashes = labels.map((label) => pepperedHash(label, value));
     const unlabelled = createHmac('sha256', sandboxEnv.OTP_PEPPER).update(value).digest('hex');
     expect(new Set([...hashes, unlabelled]).size).toBe(labels.length + 1);
