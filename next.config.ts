@@ -3,6 +3,7 @@ import type { NextConfig } from 'next';
 import { PHASE_DEVELOPMENT_SERVER } from 'next/constants';
 
 import { IMAGE_DEVICE_WIDTHS } from './src/config/images';
+import { MOVED_PATHS } from './src/config/redirects';
 import { PRIVATE_ROUTE_PREFIXES } from './src/config/routes';
 import { publicEnv } from './src/lib/public-env';
 
@@ -67,6 +68,8 @@ const nextConfig: NextConfig = {
     // files from disk (src/lib/seo/og-image.tsx).
     '/**/opengraph-image*': ['./public/fonts/*.ttf'],
   },
+  // permanent answers 308, which keeps the method; the query string travels along.
+  redirects: () => Promise.resolve(MOVED_PATHS.map((moved) => ({ ...moved, permanent: true }))),
   headers: () =>
     Promise.resolve([
       { source: '/:path*', headers: baselineHeaders },
