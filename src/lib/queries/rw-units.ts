@@ -2,7 +2,7 @@ import 'server-only';
 
 import type { Tables } from '@/db/types';
 import { toPublicImage } from '@/lib/queries/mappers';
-import { cachedPublicRead, rowOrNull, rowsOf } from '@/lib/queries/public-read';
+import { cachedPublicRead, rowsOf } from '@/lib/queries/public-read';
 import { TAGS } from '@/lib/queries/tags';
 import { createSupabaseAnonClient } from '@/lib/supabase/anon';
 import {
@@ -60,16 +60,8 @@ export const listRwUnits = cachedPublicRead(
   [TAGS.rwUnits],
 );
 
-export const getRwUnitBySlug = cachedPublicRead(
-  async (slug: string): Promise<RwUnitProfile | null> => {
-    const result = await createSupabaseAnonClient()
-      .from('rw_units')
-      .select(RW_UNIT_COLUMNS)
-      .eq('slug', slug)
-      .maybeSingle();
-    const row = rowOrNull(result, 'rw_units');
-    return row ? toRwUnitProfile(row) : null;
-  },
-  ['rw-units', 'by-slug'],
-  [TAGS.rwUnits],
-);
+// An RW page's unit, looked up in the one cached list rather than read per slug, so an address that is no RW's
+// never adds an entry of its own to the cache. NULL for a slug no RW online has.
+export async function getRwUnitBySlug(slug: string): Promise<RwUnitProfile | null> {
+  return (await listRwUnits()).find((unit) => unit.slug === slug) ?? null;
+}

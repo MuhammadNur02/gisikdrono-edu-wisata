@@ -25,8 +25,9 @@ import type { ScheduleOccurrence } from '@/types/schedule';
 
 // CLAUDE.md §5.1: the schedule page refreshes every half hour, so a performance that has ended drops off soon.
 export const revalidate = 1800;
-// Only the RWs that run a schedule (rw_units.schedule_enabled) have this page, built like the RW pages themselves.
-export const dynamicParams = false;
+// Only the RWs that run a schedule (rw_units.schedule_enabled) have this page. Like the RW page itself it is built for
+// the RWs of build time and rendered on demand for one that starts a schedule later.
+export const dynamicParams = true;
 // Sections alternate default and muted (docs/StyleGuide.md §5.7).
 const MONTH_TONES = ['default', 'muted'] as const;
 

@@ -127,7 +127,8 @@ export default async function GalleryPage({ searchParams }: GalleryPageProps) {
   if (!isCanonical) redirect(galleryPath(search));
   const rws = await listRwUnits();
   const query = queryFor(search, rws);
-  if (query === null) redirect(galleryPath({ filter: null, page: search.page }));
+  // The middleware knows no RW, so the filter of an RW that is not online gets this far; it goes to the whole gallery.
+  if (query === null) redirect(PUBLIC_PATHS.gallery);
   const gallery = await listGalleryPages(query, search.page);
   if (gallery.pageCount < search.page)
     redirect(galleryPath({ ...search, page: gallery.pageCount }));

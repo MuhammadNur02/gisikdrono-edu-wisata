@@ -10,10 +10,11 @@ import { buildPageMetadata } from '@/lib/seo/metadata';
 import { isRwSlug } from '@/lib/utils/paths';
 
 export const revalidate = 3600;
-// Every RW page is built from the RWs online at build time (decision of 2026-10-21). Any other address at this level
-// is a 404 without a database read, and is never cached as a page of its own; an RW added later needs a new build
-// until the superadmin's RW page makes it reachable on its own (Task P4.9.03).
-export const dynamicParams = false;
+// Built for the RWs online at build time, and rendered on demand for one taken online later: the menu, the sitemap
+// and the home page list RWs from rw_units, so their links must not wait for a release (independent review of Task
+// P2.10.02, M1). An address that is not an RW slug is a 404 before any read; any other is looked up in the one cached
+// list of RWs (getRwUnitBySlug).
+export const dynamicParams = true;
 
 interface RwUnitPageProps {
   params: Promise<{ rwSlug: string }>;
