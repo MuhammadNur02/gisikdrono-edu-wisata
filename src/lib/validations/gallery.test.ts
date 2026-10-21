@@ -80,3 +80,16 @@ describe('updateGalleryItemSchema', () => {
     expect(updateGalleryItemSchema.safeParse({ id, ...FIELDS, image: PHOTO }).success).toBe(false);
   });
 });
+
+// Finding 3 of the independent review of PR #18: the date a photo was taken is a real calendar date.
+describe('taken-at date', () => {
+  it.each(['2026-02-30', '2027-02-29', '2026-13-01', '2026-04-31'])('refuses %s', (takenAt) => {
+    expect(createGalleryItemSchema.safeParse({ ...IMAGE_ITEM, takenAt }).success).toBe(false);
+  });
+
+  it('takes 29 February of a leap year', () => {
+    expect(
+      createGalleryItemSchema.safeParse({ ...IMAGE_ITEM, takenAt: '2028-02-29' }).success,
+    ).toBe(true);
+  });
+});

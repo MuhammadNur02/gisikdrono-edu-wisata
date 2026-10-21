@@ -16,6 +16,10 @@ const LOCAL_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
 const JAKARTA_DATE_TIME = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}):00\+07:00$/;
 // Asia/Jakarta keeps one offset all year.
 const JAKARTA_OFFSET = ':00+07:00';
+const CALENDAR_PARTS =
+  /^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})(?:T(?<hour>\d{2}):(?<minute>\d{2}))?/;
+const HOURS_PER_DAY = 24;
+const MINUTES_PER_HOUR = 60;
 const BLURHASH_MAX_LENGTH = 100;
 const MEDIA_PATH_MAX_LENGTH = 200;
 
@@ -80,13 +84,30 @@ export type PublishedImage = z.infer<typeof publishedImageSchema>;
 // A path to a published photo without its measurements, for columns that keep the path alone.
 export const imagePathSchema = mediaPathSchema.nullable();
 
+// A date the calendar has, with a time of day that exists when it carries one (finding 3 of the review of PR #18):
+// 30 February, 29 February of a common year, month 13 or 24:00 are refused here rather than by the database.
+export function isCalendarMoment(value: string): boolean {
+  const parts = CALENDAR_PARTS.exec(value)?.groups;
+  if (!parts) return false;
+  const year = Number(parts.year);
+  const month = Number(parts.month);
+  const day = Number(parts.day);
+  if (Number(parts.hour ?? 0) >= HOURS_PER_DAY || Number(parts.minute ?? 0) >= MINUTES_PER_HOUR)
+    return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  );
+}
+
 // A moment in Asia/Jakarta as a datetime-local field writes it (`2026-10-25T19:00`), or as this schema wrote it before
 // (`2026-10-25T19:00:00+07:00`). Stored with its offset, so the database holds the instant the officer meant.
 export const jakartaDateTimeSchema = z
   .string()
   .trim()
   .refine(
-    (value) => LOCAL_DATE_TIME.test(value) || JAKARTA_DATE_TIME.test(value),
+    (value) =>
+      (LOCAL_DATE_TIME.test(value) || JAKARTA_DATE_TIME.test(value)) && isCalendarMoment(value),
     messages.dateTime,
   )
   .transform((value) => (LOCAL_DATE_TIME.test(value) ? `${value}${JAKARTA_OFFSET}` : value));

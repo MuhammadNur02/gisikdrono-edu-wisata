@@ -63,3 +63,13 @@ describe('createHeroBannerSchema', () => {
     expect(updateHeroBannerSchema.safeParse({ ...BANNER, id }).success).toBe(true);
   });
 });
+
+// Finding 3 of the independent review of PR #18: a banner's window starts and ends on real calendar dates.
+describe('banner window dates', () => {
+  it.each([
+    ['startsAt', '2026-02-30T08:00'],
+    ['endsAt', '2026-04-31T08:00'],
+  ])('refuses %s %s', (field, value) => {
+    expect(issuePaths({ ...BANNER, [field]: value })).toContain(field);
+  });
+});

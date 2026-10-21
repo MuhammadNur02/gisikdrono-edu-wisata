@@ -69,3 +69,7 @@ export const MAP_PERCENT_ROUNDING = 100;
 // How deep the JSON of an article body may nest: ARTICLE_MAX_DEPTH blocks take a few levels each (content, attrs,
 // marks), so this leaves room for any document the editor writes and refuses one built to exhaust the server.
 export const ARTICLE_JSON_MAX_DEPTH = 64;
+
+// The longest each month gets, February in a leap year, for the days a schedule's recurrence rule may name
+// (finding 3 of the review of PR #18).
+export const MONTH_LENGTHS_IN_LEAP_YEAR = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] as const;

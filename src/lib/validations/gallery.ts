@@ -11,6 +11,7 @@ import {
   publishedImageSchema,
   rowIdSchema,
   sortOrderSchema,
+  isCalendarMoment,
 } from '@/lib/validations/content';
 
 // /dashboard/galleries (docs/PRD.md FR-ADMIN-10). A photo comes from the upload pipeline; a video is a YouTube address
@@ -27,7 +28,10 @@ const takenAtSchema = z
   .trim()
   .nullable()
   .transform((value) => (value === null || value === '' ? null : value))
-  .refine((value) => value === null || DATE_PATTERN.test(value), messages.dateTime);
+  .refine(
+    (value) => value === null || (DATE_PATTERN.test(value) && isCalendarMoment(value)),
+    messages.dateTime,
+  );
 
 const videoUrlSchema = z
   .string()
