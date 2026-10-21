@@ -3,7 +3,7 @@
 -- schedule, product heading), keeps its number, code, slug and name in step, starts offline, and goes online through
 -- set_rw_unit_status once its default revenue-share rules exist.
 begin;
-select plan(43);
+select plan(45);
 \ir helpers/rls_personas.psql
 
 -- ===== Columns =====
@@ -26,6 +26,11 @@ select is(
   (select string_agg(id || ':' || coalesce(products_heading, '-'), ', ' order by id) from public.rw_units where id in (5, 8)),
   '5:-, 8:Suvenir dan produk UMKM',
   'the arts programme names its souvenirs, every other RW keeps the default heading'
+);
+
+select ok(
+  'products_heading' = any (internal.audit_columns('rw_units')),
+  'the audit log keeps the values of the product heading, as of the other look columns'
 );
 
 -- ===== Number, code, slug and name stay in step =====
@@ -83,6 +88,10 @@ select throws_ok($$update public.rw_units set products_heading = 'Suvenir' where
 
 reset role;
 select pg_temp.act_as('anon');
+select lives_ok(
+  $$select short_name, accent_key, icon_key, schedule_enabled, products_heading from public.rw_units$$,
+  'a visitor reads every column the public pages and the layout need'
+);
 select throws_ok($$select public.set_rw_unit_status(96::smallint, true)$$, '42501', null,
   'a visitor cannot call it');
 reset role;
