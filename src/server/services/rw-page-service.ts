@@ -6,6 +6,7 @@ import { copy } from '@/lib/copy/id';
 import { AppError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isPublishedImagePathFor } from '@/lib/uploads/paths';
+import { rwPagePath } from '@/lib/utils/paths';
 import type { UpdateRwPageValues } from '@/lib/validations/rw-page';
 import type { StaffContext } from '@/server/auth/guards';
 import { removeFilesOrLog } from '@/server/services/content-files';
@@ -16,10 +17,11 @@ import type { CleanedUp, RwPageAdmin } from '@/types/cms';
 // (0004, 0005). Only the content columns are read or written; the treasury account is granted to no API role.
 
 const COLUMNS =
-  'id, name, tagline, description_md, vision_md, hero_image_path, contact_phone, contact_email, map_lat, map_lng';
+  'id, slug, name, tagline, description_md, vision_md, hero_image_path, contact_phone, contact_email, map_lat, map_lng';
 
 type RwPageRow = Pick<
   Tables<'rw_units'>,
+  | 'slug'
   | 'name'
   | 'tagline'
   | 'description_md'
@@ -34,6 +36,7 @@ type RwPageRow = Pick<
 function toRwPageAdmin(rwId: RwId, row: RwPageRow): RwPageAdmin {
   return {
     rwId,
+    path: rwPagePath(row.slug),
     name: row.name,
     tagline: row.tagline,
     descriptionMd: row.description_md,

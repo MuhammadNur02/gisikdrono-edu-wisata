@@ -2,20 +2,25 @@ import 'server-only';
 
 import { cookies } from 'next/headers';
 
-import { SCHEDULE_RW_ID } from '@/config/cms';
 import { RW_SCOPE_ALL, RW_SCOPE_COOKIE, type RwScope } from '@/config/dashboard';
-import { isRwId, RW_IDS, type RwId } from '@/config/rw';
+import type { RwId } from '@/config/rw';
 import { copy } from '@/lib/copy/id';
 import { fail } from '@/lib/errors';
 import { parseRwScope } from '@/lib/utils/rw-scope';
 import type { StaffContext } from '@/server/auth/guards';
+import { listRwUnitsForStaff } from '@/server/services/rw-unit-service';
 import type { ActionFailure } from '@/types/action-result';
 import type { ContentOwner } from '@/types/content';
 
 export type OwnerResult = { ok: true; owner: ContentOwner } | ActionFailure;
 
+// The superadmin's RwSwitcher choice. A number no row of rw_units has (a cookie set by hand) reads as every RW, so no
+// content is ever created for an RW that does not exist (independent review of Task P2.10.02, L2).
 export async function readRwScope(): Promise<RwScope> {
-  return parseRwScope((await cookies()).get(RW_SCOPE_COOKIE)?.value);
+  const scope = parseRwScope((await cookies()).get(RW_SCOPE_COOKIE)?.value);
+  if (scope === RW_SCOPE_ALL) return scope;
+  const rwUnits = await listRwUnitsForStaff();
+  return rwUnits.some((unit) => unit.id === scope) ? scope : RW_SCOPE_ALL;
 }
 
 // The owner of what a staff member creates. It never comes from a form: an RW admin writes for their own RW
@@ -23,7 +28,7 @@ export async function readRwScope(): Promise<RwScope> {
 // kelurahan under `Semua`. undefined: this account may create nothing.
 export function ownerOfNewContent(ctx: StaffContext, scope: RwScope): ContentOwner | undefined {
   if (ctx.role === 'superadmin') return scope === RW_SCOPE_ALL ? null : scope;
-  if (ctx.role === 'admin_rw' && ctx.rwId !== null && isRwId(ctx.rwId)) return ctx.rwId;
+  if (ctx.role === 'admin_rw' && ctx.rwId !== null) return ctx.rwId;
   return undefined;
 }
 
@@ -58,22 +63,39 @@ export async function requireRwContentOwner(
 }
 
 // The owners whose rows a list shows: an RW admin's own RW; for the superadmin the RW the RwSwitcher points at, or
-// every RW and the kelurahan under Semua. RLS narrows the same reads again.
-export function listedOwners(ctx: StaffContext, scope: RwScope): ContentOwner[] {
+// every RW (`allRwIds`, from rw_units) and the kelurahan under Semua. RLS narrows the same reads again.
+export function listedOwners(
+  ctx: StaffContext,
+  scope: RwScope,
+  allRwIds: readonly RwId[],
+): ContentOwner[] {
   if (ctx.role === 'admin_rw') {
     const own = ownerOfNewContent(ctx, scope);
     return own === undefined ? [] : [own];
   }
   if (ctx.role !== 'superadmin') return [];
-  return scope === RW_SCOPE_ALL ? [...RW_IDS, null] : [scope];
+  return scope === RW_SCOPE_ALL ? [...allRwIds, null] : [scope];
 }
 
-// docs/PRD.md FR-ADMIN-13: RW 08's admin and the superadmin manage the performance schedules.
-export function canManageSchedules(ctx: StaffContext): boolean {
-  return ctx.role === 'superadmin' || (ctx.role === 'admin_rw' && ctx.rwId === SCHEDULE_RW_ID);
+// docs/PRD.md FR-ADMIN-13: the RWs with rw_units.schedule_enabled run a performance schedule, which their admin and
+// the superadmin manage.
+export function canManageSchedules(ctx: StaffContext, scheduleRwIds: readonly RwId[]): boolean {
+  if (ctx.role === 'superadmin') return true;
+  return ctx.role === 'admin_rw' && ctx.rwId !== null && scheduleRwIds.includes(ctx.rwId);
 }
 
-export function toContentOwner(rwId: number | null): ContentOwner | undefined {
-  if (rwId === null) return null;
-  return isRwId(rwId) ? rwId : undefined;
+// The RW whose schedule a staff member works on: an RW admin's own, if it runs one; for the superadmin the one the
+// RwSwitcher points at, or under Semua the only one there is. undefined: none to manage here.
+export function scheduleRwFor(
+  ctx: StaffContext,
+  scope: RwScope,
+  scheduleRwIds: readonly RwId[],
+): RwId | undefined {
+  if (ctx.role === 'admin_rw') {
+    return ctx.rwId !== null && scheduleRwIds.includes(ctx.rwId) ? ctx.rwId : undefined;
+  }
+  if (ctx.role !== 'superadmin') return undefined;
+  if (scope !== RW_SCOPE_ALL && scheduleRwIds.includes(scope)) return scope;
+  const [onlyRw, ...others] = scheduleRwIds;
+  return others.length === 0 ? onlyRw : undefined;
 }

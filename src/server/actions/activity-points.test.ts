@@ -17,6 +17,10 @@ import {
 
 const cookie = vi.hoisted(() => ({ value: undefined as string | undefined }));
 
+// The RWs of rw_units the RwSwitcher can point at.
+vi.mock('@/server/services/rw-unit-service', () => ({
+  listRwUnitsForStaff: () => Promise.resolve([{ id: 5 }, { id: 8 }, { id: 13 }]),
+}));
 vi.mock('next/headers', () => ({
   cookies: () =>
     Promise.resolve({ get: () => (cookie.value ? { value: cookie.value } : undefined) }),
@@ -74,7 +78,7 @@ describe('createActivityPointAction', () => {
       5,
       expect.objectContaining({ slug: INPUT.slug }),
     );
-    expect(revalidateTag).toHaveBeenCalledWith('activity-points:5');
+    expect(revalidateTag).toHaveBeenCalledWith('activity-points:all');
   });
 
   // Mass assignment: the RW and the columns no API role writes are not fields of the form.
@@ -106,7 +110,7 @@ describe('updateActivityPointAction and removeActivityPointAction', () => {
       5,
       expect.objectContaining({ id: POINT_ID }),
     );
-    expect(revalidateTag).toHaveBeenCalledWith('activity-points:5');
+    expect(revalidateTag).toHaveBeenCalledWith('activity-points:all');
   });
 
   // The guard half of the task's proof: should RLS ever show an RW 05 admin a point of RW 08, the action still
@@ -135,6 +139,6 @@ describe('updateActivityPointAction and removeActivityPointAction', () => {
       8,
       POINT_ID,
     );
-    expect(revalidateTag).toHaveBeenCalledWith('activity-points:8');
+    expect(revalidateTag).toHaveBeenCalledWith('activity-points:all');
   });
 });

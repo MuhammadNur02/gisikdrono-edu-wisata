@@ -2955,6 +2955,7 @@ export type Database = {
           map_lat: number | null
           map_lng: number | null
           name: string
+          products_heading: string | null
           schedule_enabled: boolean
           short_name: string
           slug: string
@@ -2981,6 +2982,7 @@ export type Database = {
           map_lat?: number | null
           map_lng?: number | null
           name: string
+          products_heading?: string | null
           schedule_enabled?: boolean
           short_name: string
           slug: string
@@ -3007,6 +3009,7 @@ export type Database = {
           map_lat?: number | null
           map_lng?: number | null
           name?: string
+          products_heading?: string | null
           schedule_enabled?: boolean
           short_name?: string
           slug?: string

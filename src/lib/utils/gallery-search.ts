@@ -1,8 +1,4 @@
-import {
-  GALLERY_FILTER_VALUES,
-  GALLERY_MAX_PAGES,
-  type GalleryFilterValue,
-} from '@/config/gallery';
+import { GALLERY_MAX_PAGES, isGalleryFilter, type GalleryFilterValue } from '@/config/gallery';
 import { PUBLIC_PATHS } from '@/lib/utils/paths';
 
 // /galeri reads `?filter=` and `?halaman=` from the URL (docs/StyleGuide.md §5.11, decision of 2026-10-18).
@@ -29,10 +25,6 @@ export interface ReadGallerySearch {
 }
 
 const PAGE_NUMBER_PATTERN = /^\d+$/;
-
-function isGalleryFilter(value: string): value is GalleryFilterValue {
-  return GALLERY_FILTER_VALUES.some((filter) => filter === value);
-}
 
 function readFilter(raw: SearchValue): { value: GalleryFilterValue | null; isCanonical: boolean } {
   if (raw === undefined) return { value: null, isCanonical: true };

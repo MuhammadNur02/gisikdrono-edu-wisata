@@ -11,40 +11,43 @@ import {
   type CatalogueFilterGroup,
 } from '@/components/marketing/filtered-catalogue';
 import { PackageCard } from '@/components/packages/package-card';
-import { RW_IDS, RW_PROGRAMMES } from '@/config/rw';
 import { PACKAGE_CATEGORY } from '@/config/status';
 import { DB_ENUMS } from '@/db/enums';
 import { copy } from '@/lib/copy/id';
 import { COMBO_FILTER, packageFacets, rwFilterFor } from '@/lib/utils/catalogue-filters';
 import type { PackageSummary } from '@/types/package';
+import type { RwBadge } from '@/types/rw-unit';
 
-// `?rw=05|08|combo` and `?type=` (docs/PRD.md FR-PUB-11).
-const FILTER_GROUPS: CatalogueFilterGroup[] = [
-  {
+// `?rw=05`, one value for every RW online, `?rw=combo` and `?type=` (docs/PRD.md FR-PUB-11).
+function rwGroup(rws: readonly RwBadge[]): CatalogueFilterGroup {
+  return {
     param: 'rw',
     label: copy.catalogue.filterRw,
     options: [
-      ...RW_IDS.map((rwId) => ({ value: rwFilterFor(rwId), label: RW_PROGRAMMES[rwId].label })),
+      ...rws.map((rw) => ({ value: rwFilterFor(rw.id), label: rw.label })),
       { value: COMBO_FILTER, label: copy.catalogue.combo },
     ],
-  },
-  {
-    param: 'type',
-    label: copy.catalogue.filterPackageType,
-    options: DB_ENUMS.package_category.map((category) => ({
-      value: category,
-      label: PACKAGE_CATEGORY[category].label,
-    })),
-  },
-];
+  };
+}
+
+const TYPE_GROUP: CatalogueFilterGroup = {
+  param: 'type',
+  label: copy.catalogue.filterPackageType,
+  options: DB_ENUMS.package_category.map((category) => ({
+    value: category,
+    label: PACKAGE_CATEGORY[category].label,
+  })),
+};
 
 export interface PackageCatalogueProps {
   packages: readonly PackageSummary[];
+  // The RWs online, in their order: the `?rw=` options.
+  rws: readonly RwBadge[];
 }
 
 // Every card is rendered here on the server; until the filter island loads, and without script, the full list
 // shows.
-export function PackageCatalogue({ packages }: PackageCatalogueProps) {
+export function PackageCatalogue({ packages, rws }: PackageCatalogueProps) {
   const entries: CatalogueEntry[] = packages.map((pkg) => ({
     key: pkg.id,
     facets: packageFacets(pkg),
@@ -54,7 +57,7 @@ export function PackageCatalogue({ packages }: PackageCatalogueProps) {
     <NuqsAdapter>
       <Suspense fallback={<CatalogueList entries={entries} {...CARD_GRID_CLASSES} />}>
         <FilteredCatalogue
-          groups={FILTER_GROUPS}
+          groups={[rwGroup(rws), TYPE_GROUP]}
           entries={entries}
           emptyMessage={copy.catalogue.packagesFilterEmpty}
           {...CARD_GRID_CLASSES}

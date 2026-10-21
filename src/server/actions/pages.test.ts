@@ -8,6 +8,10 @@ import { updateRwPageAction } from './pages';
 
 const cookie = vi.hoisted(() => ({ value: undefined as string | undefined }));
 
+// The RWs of rw_units the RwSwitcher can point at.
+vi.mock('@/server/services/rw-unit-service', () => ({
+  listRwUnitsForStaff: () => Promise.resolve([{ id: 5 }, { id: 8 }, { id: 13 }]),
+}));
 vi.mock('next/headers', () => ({
   cookies: () =>
     Promise.resolve({ get: () => (cookie.value ? { value: cookie.value } : undefined) }),
@@ -43,6 +47,7 @@ beforeEach(() => {
       Promise.resolve({
         value: {
           rwId,
+          path: '/rw-05-ecowastreme',
           name: 'RW',
           tagline: 'Kampung bebas sampah',
           descriptionMd: null,

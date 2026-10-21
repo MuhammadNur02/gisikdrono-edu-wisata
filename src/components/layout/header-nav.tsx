@@ -4,19 +4,24 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 import { NavLinkLabel } from '@/components/layout/nav-link-label';
-import { HEADER_NAV_ITEMS } from '@/config/nav';
+import type { PublicNavItem } from '@/config/nav';
 import { copy } from '@/lib/copy/id';
 import { cn } from '@/lib/utils/cn';
-import { isPathUnder } from '@/lib/utils/paths';
+import { isPathUnder, visitorPathFor } from '@/lib/utils/paths';
 
 // The current page gets the same 2 px primary underline as the public tabs (docs/StyleGuide.md §5.5),
 // not a filled pill, so the booking button stays the strongest thing in the header.
-export function HeaderNav({ className }: { className?: string }) {
-  const pathname = usePathname();
+export interface HeaderNavProps {
+  items: readonly PublicNavItem[];
+  className?: string;
+}
+
+export function HeaderNav({ items, className }: HeaderNavProps) {
+  const pathname = visitorPathFor(usePathname());
   return (
     <nav aria-label={copy.layout.mainNav} className={className}>
       <ul className="flex items-center gap-1">
-        {HEADER_NAV_ITEMS.map((item) => {
+        {items.map((item) => {
           const isCurrent = isPathUnder(pathname, item.href);
           return (
             <li key={item.href}>

@@ -7,7 +7,6 @@ import { RwPageForm } from '@/components/admin/cms/rw-page-form';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { RW_PROGRAMMES } from '@/config/rw';
 import { copy } from '@/lib/copy/id';
 import { updateRwPageAction } from '@/server/actions/pages';
 import { ownerOfNewContent, readRwScope } from '@/server/auth/content-owner';
@@ -43,7 +42,7 @@ export default async function RwPagesPage() {
         description={text.description}
         action={
           <Button asChild variant="outline">
-            <Link href={RW_PROGRAMMES[rwId].path}>{text.view}</Link>
+            <Link href={page.path}>{text.view}</Link>
           </Button>
         }
       />

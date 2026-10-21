@@ -35,8 +35,8 @@ export function ReviewCard({ review, variant = 'quote' }: ReviewCardProps) {
         <time dateTime={review.createdAt} className="text-muted-foreground">
           · {formatDateShort(review.createdAt)}
         </time>
-        {review.rwIds.map((rwId) => (
-          <RwTag key={rwId} rwId={rwId} />
+        {review.rws.map((rw) => (
+          <RwTag key={rw.id} rw={rw} />
         ))}
       </figcaption>
     </figure>

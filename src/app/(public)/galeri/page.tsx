@@ -9,10 +9,14 @@ import { PageHeader } from '@/components/layout/page-header';
 import { FilterEmpty } from '@/components/marketing/filter-empty';
 import { JsonLd } from '@/components/seo/json-ld';
 import { Button } from '@/components/ui/button';
-import { GALLERY_FILTERS, GALLERY_MAX_PAGES } from '@/config/gallery';
+import { GALLERY_MAX_PAGES, galleryQueryFor } from '@/config/gallery';
 import { copy } from '@/lib/copy/id';
 import { publicMediaUrl } from '@/lib/images/public-media';
-import { listGalleryPages } from '@/lib/queries/galleries';
+import {
+  listGalleryPages,
+  type GalleryFilter as GalleryQueryFilter,
+} from '@/lib/queries/galleries';
+import { listRwUnits } from '@/lib/queries/rw-units';
 import { imageGalleryJsonLd } from '@/lib/seo/json-ld';
 import { buildPageMetadata } from '@/lib/seo/metadata';
 import {
@@ -24,6 +28,7 @@ import {
 } from '@/lib/utils/gallery-search';
 import { PUBLIC_PATHS } from '@/lib/utils/paths';
 import type { GalleryItem, GalleryPages } from '@/types/gallery';
+import type { RwBadge } from '@/types/rw-unit';
 
 const TITLE = 'Galeri';
 const DESCRIPTION =
@@ -84,10 +89,16 @@ function GalleryJsonLd({
   return data ? <JsonLd data={data} /> : null;
 }
 
-function GalleryBody({ search, gallery }: { search: GallerySearch; gallery: GalleryPages }) {
+interface GalleryBodyProps {
+  search: GallerySearch;
+  gallery: GalleryPages;
+  rws: readonly RwBadge[];
+}
+
+function GalleryBody({ search, gallery, rws }: GalleryBodyProps) {
   return (
     <Container className="space-y-8 pb-16 md:pb-24">
-      <GalleryFilter active={search.filter} />
+      <GalleryFilter active={search.filter} rws={rws} />
       {gallery.items.length > 0 ? (
         <MasonryGrid items={gallery.items} />
       ) : (
@@ -99,6 +110,14 @@ function GalleryBody({ search, gallery }: { search: GallerySearch; gallery: Gall
   );
 }
 
+// The whole gallery, a category, or an RW that is online; NULL for the filter of an RW that is not.
+function queryFor(search: GallerySearch, rws: readonly RwBadge[]): GalleryQueryFilter | null {
+  if (search.filter === null) return {};
+  const query = galleryQueryFor(search.filter);
+  if (query === null || ('owner' in query && !rws.some((rw) => rw.id === query.owner))) return null;
+  return query;
+}
+
 // docs/PRD.md FR-PUB-14, Tasks P2.4.07 and P2.6.01. The page follows `?filter=` and `?halaman=`, so it is
 // rendered per request, while every page of items it shows is a cached read (tags `galleries:*`). An address
 // the page would not link to itself, including a page past the last one, is redirected to the nearest valid
@@ -106,7 +125,10 @@ function GalleryBody({ search, gallery }: { search: GallerySearch; gallery: Gall
 export default async function GalleryPage({ searchParams }: GalleryPageProps) {
   const { search, isCanonical } = readGallerySearch(await searchParams);
   if (!isCanonical) redirect(galleryPath(search));
-  const query = search.filter === null ? {} : GALLERY_FILTERS[search.filter].query;
+  const rws = await listRwUnits();
+  const query = queryFor(search, rws);
+  // The middleware knows no RW, so the filter of an RW that is not online gets this far; it goes to the whole gallery.
+  if (query === null) redirect(PUBLIC_PATHS.gallery);
   const gallery = await listGalleryPages(query, search.page);
   if (gallery.pageCount < search.page)
     redirect(galleryPath({ ...search, page: gallery.pageCount }));
@@ -119,7 +141,7 @@ export default async function GalleryPage({ searchParams }: GalleryPageProps) {
         breadcrumbs={[]}
         path={PUBLIC_PATHS.gallery}
       />
-      {isGalleryEmpty ? null : <GalleryBody search={search} gallery={gallery} />}
+      {isGalleryEmpty ? null : <GalleryBody search={search} gallery={gallery} rws={rws} />}
     </>
   );
 }

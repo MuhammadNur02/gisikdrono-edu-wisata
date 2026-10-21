@@ -3,7 +3,6 @@ import 'server-only';
 import { z } from 'zod';
 
 import type { RwId } from '@/config/rw';
-import { toRwId } from '@/lib/queries/mappers';
 import { rowsOf } from '@/lib/queries/public-read';
 import { createSupabaseAnonClient } from '@/lib/supabase/anon';
 import type { AvailableSession } from '@/types/session';
@@ -29,7 +28,7 @@ function toAvailableSession(row: unknown): AvailableSession {
   const session = sessionRowSchema.parse(row);
   return {
     id: session.id,
-    rwId: toRwId(session.rw_id),
+    rwId: session.rw_id,
     sessionDate: session.session_date,
     startTime: session.start_time,
     endTime: session.end_time,

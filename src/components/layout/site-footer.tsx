@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Container } from '@/components/layout/container';
 import { NavLinkLabel } from '@/components/layout/nav-link-label';
 import { SiteWordmark } from '@/components/layout/site-wordmark';
-import { LEGAL_NAV_ITEMS, SITE_NAV_GROUPS, type PublicNavItem } from '@/config/nav';
+import { LEGAL_NAV_ITEMS, type PublicNavGroup, type PublicNavItem } from '@/config/nav';
 import { siteConfig } from '@/config/site';
 import { copy } from '@/lib/copy/id';
 import { formatPhone } from '@/lib/utils/phone';
@@ -35,13 +35,13 @@ function FooterIntro() {
   );
 }
 
-function FooterNav() {
+function FooterNav({ groups }: { groups: readonly PublicNavGroup[] }) {
   return (
     <nav
       aria-label={copy.layout.footerNav}
       className="grid gap-8 sm:grid-cols-3 md:col-span-2 xl:col-span-6"
     >
-      {SITE_NAV_GROUPS.map((group) => (
+      {groups.map((group) => (
         <div key={group.title} className="space-y-3">
           <h2 className="text-overline text-foreground">{group.title}</h2>
           <ul className="space-y-1">
@@ -136,7 +136,12 @@ function FooterBottom() {
   );
 }
 
-export function SiteFooter({ contact }: { contact: FooterContactDetails }) {
+export interface SiteFooterProps {
+  contact: FooterContactDetails;
+  navGroups: readonly PublicNavGroup[];
+}
+
+export function SiteFooter({ contact, navGroups }: SiteFooterProps) {
   return (
     <footer className="border-t border-border bg-muted/40">
       {/* Below xl the contact block sits beside the intro and the links take a full row; from xl all three
@@ -144,7 +149,7 @@ export function SiteFooter({ contact }: { contact: FooterContactDetails }) {
       <Container className="grid gap-10 py-12 md:grid-cols-2 md:py-16 xl:grid-cols-12 xl:gap-x-8">
         <FooterIntro />
         <FooterContact contact={contact} />
-        <FooterNav />
+        <FooterNav groups={navGroups} />
       </Container>
       <FooterBottom />
     </footer>

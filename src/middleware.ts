@@ -18,7 +18,7 @@ import {
 import { redirectGuestLink } from '@/lib/links/redirect';
 import { publicEnv } from '@/lib/public-env';
 import { canonicalGalleryPathFor } from '@/lib/utils/gallery-search';
-import { isPathUnder, PUBLIC_PATHS } from '@/lib/utils/paths';
+import { isPathUnder, PUBLIC_PATHS, rwRouteRewriteFor } from '@/lib/utils/paths';
 import { pathWithNext } from '@/lib/utils/staff-paths';
 
 const NONCE_BYTES = 16;
@@ -46,6 +46,20 @@ function forwardRequest(request: NextRequest, nonce: string | null, csp: string)
   headers.set(NONCE_HEADER, nonce);
   headers.set('Content-Security-Policy', csp);
   return NextResponse.next({ request: { headers } });
+}
+
+// An RW page is served from its internal route folder while the visitor keeps the address they asked for
+// (rwRouteRewriteFor). RW pages are public, so this request carries no nonce either.
+function continueRequestFor(
+  request: NextRequest,
+  nonce: string | null,
+  csp: string,
+): ContinueRequest {
+  const rewrite = rwRouteRewriteFor(request.nextUrl.pathname);
+  if (rewrite === null) return () => forwardRequest(request, nonce, csp);
+  const destination = request.nextUrl.clone();
+  destination.pathname = rewrite;
+  return () => NextResponse.rewrite(destination, { request });
 }
 
 // docs/Security.md §5.2 (AUTH-03, AUTH-13): a verified factor not used yet in this session asks for the code; no
@@ -131,7 +145,7 @@ export async function middleware(request: NextRequest) {
   if (galleryRedirect) return withSecurityHeaders(galleryRedirect, pathname, csp);
   const guestRedirect = await redirectGuestLink(request, Math.floor(Date.now() / MS_PER_SECOND));
   if (guestRedirect) return withSecurityHeaders(guestRedirect, pathname, csp);
-  const continueRequest = () => forwardRequest(request, nonce, csp);
+  const continueRequest = continueRequestFor(request, nonce, csp);
   const response = { current: continueRequest() };
   const step = await signInStepFor(request, response, continueRequest);
 

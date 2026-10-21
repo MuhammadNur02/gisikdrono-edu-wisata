@@ -16,12 +16,18 @@ import {
 // The tests hand every function its client; the module's own default would need the service-role key.
 vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => ({}) }));
 
-type Reply = { status: number; body: unknown };
+// rootBody: what a Storage list answers for the bucket's root (prefix ''), where the owner folders are.
+type Reply = { status: number; body: unknown; rootBody?: unknown };
 type RecordedRequest = { method: string; path: string; body: unknown };
 
 const NOW = new Date('2026-10-16T02:00:00Z');
 const TWO_DAYS_AGO = '2026-10-14T02:00:00Z';
 const ONE_HOUR_AGO = '2026-10-16T01:00:00Z';
+
+function isRootListing(reply: Reply, body: unknown): boolean {
+  if (reply.rootBody === undefined || typeof body !== 'object' || body === null) return false;
+  return 'prefix' in body && body.prefix === '';
+}
 
 // A real typed client whose fetch answers PostgREST and Storage calls from a table keyed by
 // "METHOD path", recording every request so the tests see exactly what was deleted and forgotten.
@@ -37,7 +43,7 @@ function clientWith(replies: Record<string, Reply>) {
       body: { message: 'no route' },
     };
     return Promise.resolve(
-      new Response(JSON.stringify(reply.body), {
+      new Response(JSON.stringify(isRootListing(reply, body) ? reply.rootBody : reply.body), {
         status: reply.status,
         headers: { 'Content-Type': 'application/json' },
       }),
@@ -61,11 +67,25 @@ const quarantineListing = [
   { name: 'nested', id: null, created_at: null },
 ];
 
+// The owner folders at the bucket's root: two RWs, one of them added after RW 05 and RW 08, and the kelurahan. A folder
+// that is no owner's and a file at the root are left alone.
+const quarantineRoot = [
+  { name: 'rw-05', id: null, created_at: null },
+  { name: 'rw-13', id: null, created_at: null },
+  { name: 'kelurahan', id: null, created_at: null },
+  { name: 'lain', id: null, created_at: null },
+  { name: 'stray-file', id: 'o9', created_at: TWO_DAYS_AGO },
+];
+
 const happyReplies: Record<string, Reply> = {
   'POST /rest/v1/rpc/svc_purgeable_files': { status: 200, body: markedFiles },
   'DELETE /storage/v1/object/documents': { status: 200, body: [] },
   'POST /rest/v1/rpc/svc_forget_purged_files': { status: 200, body: 2 },
-  'POST /storage/v1/object/list/uploads-quarantine': { status: 200, body: quarantineListing },
+  'POST /storage/v1/object/list/uploads-quarantine': {
+    status: 200,
+    body: quarantineListing,
+    rootBody: quarantineRoot,
+  },
   'DELETE /storage/v1/object/uploads-quarantine': { status: 200, body: [] },
 };
 
@@ -79,7 +99,7 @@ describe('purgeMarkedFiles', () => {
   it('deletes the marked files, forgets them, and drops quarantine uploads older than a day', async () => {
     const { client, requests } = clientWith(happyReplies);
 
-    // Each of the three quarantine prefixes lists the same objects here, so one stale file per prefix.
+    // Each owner folder lists the same objects here, so one stale file per owner.
     await expect(purgeMarkedFiles(client, NOW)).resolves.toEqual({ processed: 5, failed: 0 });
 
     expect(bodiesOf(requests, 'DELETE', '/storage/v1/object/documents')).toEqual([
@@ -90,7 +110,7 @@ describe('purgeMarkedFiles', () => {
     ]);
     expect(bodiesOf(requests, 'DELETE', '/storage/v1/object/uploads-quarantine')).toEqual([
       { prefixes: ['rw-05/old-upload'] },
-      { prefixes: ['rw-08/old-upload'] },
+      { prefixes: ['rw-13/old-upload'] },
       { prefixes: ['kelurahan/old-upload'] },
     ]);
   });

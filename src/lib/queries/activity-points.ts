@@ -1,8 +1,7 @@
 import 'server-only';
 
-import { RW_IDS } from '@/config/rw';
 import type { Tables } from '@/db/types';
-import { toPublicImage, toRwId } from '@/lib/queries/mappers';
+import { toPublicImage } from '@/lib/queries/mappers';
 import { cachedPublicRead, rowsOf } from '@/lib/queries/public-read';
 import { TAGS } from '@/lib/queries/tags';
 import { createSupabaseAnonClient } from '@/lib/supabase/anon';
@@ -31,7 +30,7 @@ type ActivityPointRow = Pick<
 function toActivityPoint(row: ActivityPointRow): ActivityPoint {
   return {
     id: row.id,
-    rwId: toRwId(row.rw_id),
+    rwId: row.rw_id,
     slug: row.slug,
     name: row.name,
     pointType: row.point_type,
@@ -46,7 +45,7 @@ function toActivityPoint(row: ActivityPointRow): ActivityPoint {
   };
 }
 
-// Published points of both RWs: the site plan and the map show them together.
+// Published points of every RW: the site plan and the map show them together.
 export const listActivityPoints = cachedPublicRead(
   async (): Promise<ActivityPoint[]> => {
     const result = await createSupabaseAnonClient()
@@ -57,5 +56,5 @@ export const listActivityPoints = cachedPublicRead(
     return rowsOf(result, 'activity_points').map(toActivityPoint);
   },
   ['activity-points', 'list'],
-  RW_IDS.map((rwId) => TAGS.activityPoints(rwId)),
+  [TAGS.allActivityPoints],
 );

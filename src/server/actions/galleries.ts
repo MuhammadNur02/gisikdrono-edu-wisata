@@ -35,6 +35,7 @@ export async function createGalleryItemAction(
   try {
     const item = await createGalleryItem(guard.ctx, target.owner, parsed.data);
     revalidateTag(TAGS.galleries(contentOwnerTagOf(target.owner)));
+    revalidateTag(TAGS.allGalleries);
     return ok(item);
   } catch (error) {
     return mapError(error);
@@ -55,6 +56,7 @@ export async function updateGalleryItemAction(
     if (!canWriteFor(guard.ctx, owner)) return fail('FORBIDDEN');
     const item = await updateGalleryItem(owner, parsed.data);
     revalidateTag(TAGS.galleries(contentOwnerTagOf(owner)));
+    revalidateTag(TAGS.allGalleries);
     return ok(item);
   } catch (error) {
     return mapError(error);
@@ -73,6 +75,7 @@ export async function removeGalleryItemAction(input: unknown): Promise<ActionRes
     if (!canWriteFor(guard.ctx, owner)) return fail('FORBIDDEN');
     const filesRemoved = await removeGalleryItem(guard.ctx, owner, parsed.data.id);
     revalidateTag(TAGS.galleries(contentOwnerTagOf(owner)));
+    revalidateTag(TAGS.allGalleries);
     return okUnlessFilesLeft({ value: null, filesRemoved });
   } catch (error) {
     return mapError(error);

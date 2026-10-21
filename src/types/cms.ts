@@ -8,6 +8,8 @@ import type { ContentOwner } from '@/types/content';
 
 export interface RwPageAdmin {
   rwId: RwId;
+  // The RW's public page.
+  path: string;
   name: string;
   tagline: string | null;
   descriptionMd: string | null;

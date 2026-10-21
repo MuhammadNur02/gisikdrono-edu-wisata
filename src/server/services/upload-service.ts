@@ -93,6 +93,19 @@ async function currentStaff(adminClient: DatabaseClient, ctx: StaffContext) {
 
 // A refused officer is recorded as upload_rejected, ten an hour at most; beyond that one rate_limited row stands
 // for the rest (docs/Security.md UPL-04; security review of PR #14, L8).
+// The RWs are rows of rw_units, so an RW number is only an upload owner if its row exists; otherwise public-media
+// would collect files under a folder nobody owns (independent review of Task P2.10.02, L2).
+async function isUploadOwner(adminClient: DatabaseClient, rwId: number | null): Promise<boolean> {
+  if (rwId === null) return true;
+  const { data, error } = await adminClient
+    .from('rw_units')
+    .select('id')
+    .eq('id', rwId)
+    .maybeSingle();
+  if (error) throw error;
+  return data !== null;
+}
+
 export async function checkUploadAccess(
   ctx: StaffContext,
   rwId: number | null,
@@ -100,9 +113,10 @@ export async function checkUploadAccess(
 ): Promise<boolean> {
   const adminClient = createSupabaseAdminClient();
   const current = await currentStaff(adminClient, ctx);
-  if (current && hasUploadAccess(current, rwId)) return true;
+  const mayUpload = current !== null && hasUploadAccess(current, rwId);
+  if (mayUpload && (await isUploadOwner(adminClient, rwId))) return true;
   if (await withinUploadLimit(adminClient, ctx, 'upload_forbidden', rwId)) {
-    const why = current === null ? 'profile' : ctx.isAal2 ? 'scope' : 'aal1';
+    const why = current === null ? 'profile' : mayUpload ? 'rw' : ctx.isAal2 ? 'scope' : 'aal1';
     await writeUploadEvent(adminClient, ctx, refusalEvent(rwId, 'forbidden', { why, ...details }));
   }
   return false;

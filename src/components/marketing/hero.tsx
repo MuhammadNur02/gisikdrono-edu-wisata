@@ -120,7 +120,7 @@ function HeroWithoutBanner({
       <PhotoPlaceholder
         label={`Kegiatan di ${siteConfig.ownerName}`}
         icon={Images}
-        rwIds={[]}
+        rws={[]}
         className="aspect-video"
       />
     </div>

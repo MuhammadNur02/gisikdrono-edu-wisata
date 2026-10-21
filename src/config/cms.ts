@@ -1,4 +1,3 @@
-import type { RwId } from '@/config/rw';
 import type { EnumValue } from '@/db/enums';
 
 // The content screens of the dashboard (Task P2.9.04–P2.9.06, docs/PRD.md FR-ADMIN-10 … FR-ADMIN-15, FR-ADMIN-23).
@@ -42,10 +41,6 @@ export const CMS_LIMITS = {
   tagline: 160,
   sortOrder: 9999,
 } as const;
-
-// docs/PRD.md FR-ADMIN-13: performance schedules belong to RW 08's arts programme; the RW 08 admin and the superadmin
-// manage them, and the superadmin's are RW 08's whatever the RwSwitcher says.
-export const SCHEDULE_RW_ID: RwId = 8;
 
 // The statuses each form offers. Articles move through moderation (articles_moderation_guard, 0004), so their status
 // follows from the button pressed rather than from a field.

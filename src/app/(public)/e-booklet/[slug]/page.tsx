@@ -45,7 +45,7 @@ function BookletEyebrow({ booklet }: { booklet: BookletDetail }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
       {BOOKLET_KIND_LABELS[booklet.kind]}
-      {booklet.rwId ? <RwTag rwId={booklet.rwId} /> : null}
+      {booklet.rw ? <RwTag rw={booklet.rw} /> : null}
     </span>
   );
 }
@@ -80,7 +80,7 @@ function BookletBody({ booklet }: { booklet: BookletDetail }) {
     <Photo
       image={booklet.cover}
       caption={booklet.title}
-      placeholder={{ icon: BookOpen, rwIds: booklet.rwId ? [booklet.rwId] : [] }}
+      placeholder={{ icon: BookOpen, rws: booklet.rw ? [booklet.rw] : [] }}
       sizes={IMAGE_SIZES.split}
       aspectClassName="aspect-3/4"
       fit="contain"

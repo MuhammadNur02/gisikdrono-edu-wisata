@@ -1,7 +1,7 @@
-import type { RwId } from '@/config/rw';
 import type { EnumValue } from '@/db/enums';
 import type { Json } from '@/db/types';
 import type { PublicImage } from '@/types/media';
+import type { RwBadge } from '@/types/rw-unit';
 
 export interface ArticleSummary {
   id: string;
@@ -10,7 +10,7 @@ export interface ArticleSummary {
   excerpt: string | null;
   category: EnumValue<'article_category'>;
   // NULL: written by the Edu Center or the kelurahan rather than by one RW.
-  rwId: RwId | null;
+  rw: RwBadge | null;
   tags: string[];
   cover: PublicImage | null;
   publishedAt: string | null;

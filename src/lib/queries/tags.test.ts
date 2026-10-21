@@ -4,14 +4,14 @@ import { TAGS } from '@/lib/queries/tags';
 
 describe('TAGS', () => {
   it('spells every tag of the CLAUDE.md §5.5 registry', () => {
-    expect(TAGS.packages(5)).toBe('packages:5');
-    expect(TAGS.packages('combo')).toBe('packages:combo');
     expect(TAGS.sessions(8, '2026-11')).toBe('sessions:8:2026-11');
-    expect(TAGS.products(5)).toBe('products:5');
     expect(TAGS.galleries(8)).toBe('galleries:8');
     expect(TAGS.galleries('kelurahan')).toBe('galleries:kelurahan');
     expect(TAGS.rwUnits).toBe('rw-units');
-    expect(TAGS.activityPoints(5)).toBe('activity-points:5');
+    expect(TAGS.allPackages).toBe('packages:all');
+    expect(TAGS.allProducts).toBe('products:all');
+    expect(TAGS.allGalleries).toBe('galleries:all');
+    expect(TAGS.allActivityPoints).toBe('activity-points:all');
     expect(TAGS.articles).toBe('articles');
     expect(TAGS.banners).toBe('banners');
     expect(TAGS.booklets).toBe('booklets');

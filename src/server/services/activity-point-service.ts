@@ -7,7 +7,6 @@ import { AppError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isPublishedImagePathFor } from '@/lib/uploads/paths';
 import type { SaveActivityPointValues } from '@/lib/validations/activity-point';
-import { toContentOwner } from '@/server/auth/content-owner';
 import type { StaffContext } from '@/server/auth/guards';
 import { rowOrNotFound, slugConflictOr } from '@/server/services/content-errors';
 import { removeFilesOrLog } from '@/server/services/content-files';
@@ -39,11 +38,9 @@ type PointRow = Pick<
 >;
 
 function toActivityPointAdmin(row: PointRow): ActivityPointAdmin {
-  const rwId = toContentOwner(row.rw_id);
-  if (rwId === null || rwId === undefined) throw new Error('activity point without a known RW');
   return {
     id: row.id,
-    rwId,
+    rwId: row.rw_id,
     name: row.name,
     slug: row.slug,
     pointType: row.point_type,

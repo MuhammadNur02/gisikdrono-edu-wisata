@@ -6,7 +6,6 @@ import { ActivityPointTable } from '@/components/admin/cms/activity-point-table'
 import { OwnerNotice } from '@/components/admin/cms/owner-notice';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { EmptyState } from '@/components/admin/shell/empty-state';
-import { isRwId, type RwId } from '@/config/rw';
 import { copy } from '@/lib/copy/id';
 import {
   createActivityPointAction,
@@ -16,6 +15,7 @@ import {
 import { listedOwners, ownerOfNewContent, readRwScope } from '@/server/auth/content-owner';
 import { requireDashboardStaff } from '@/server/auth/session';
 import { listActivityPointsForStaff } from '@/server/services/activity-point-service';
+import { listRwUnitsForStaff } from '@/server/services/rw-unit-service';
 
 const text = copy.cms.points;
 
@@ -25,16 +25,24 @@ export const metadata: Metadata = { title: text.title };
 export default async function ActivityPointsPage() {
   const ctx = await requireDashboardStaff();
   if (!ctx) return null;
-  const scope = await readRwScope();
+  const [scope, rwUnits] = await Promise.all([readRwScope(), listRwUnitsForStaff()]);
   const newOwner = ownerOfNewContent(ctx, scope);
-  const rwIds = listedOwners(ctx, scope).filter(
-    (owner): owner is RwId => owner !== null && isRwId(owner),
-  );
+  const rwIds = listedOwners(
+    ctx,
+    scope,
+    rwUnits.map((unit) => unit.id),
+  ).filter((owner) => owner !== null);
   const points = await listActivityPointsForStaff(rwIds);
+  const pagePathOf = (rwId: number) => rwUnits.find((unit) => unit.id === rwId)?.path ?? '';
   const isSuperadmin = ctx.role === 'superadmin';
   const addButton =
     newOwner === null || newOwner === undefined ? null : (
-      <ActivityPointDialog rwId={newOwner} point={null} action={createActivityPointAction} />
+      <ActivityPointDialog
+        rwId={newOwner}
+        pagePath={pagePathOf(newOwner)}
+        point={null}
+        action={createActivityPointAction}
+      />
     );
 
   return (
@@ -46,6 +54,7 @@ export default async function ActivityPointsPage() {
       ) : (
         <ActivityPointTable
           points={points}
+          rwUnits={rwUnits}
           showRw={isSuperadmin}
           updateAction={updateActivityPointAction}
           removeAction={removeActivityPointAction}

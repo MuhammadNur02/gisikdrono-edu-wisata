@@ -81,7 +81,7 @@ describe('schedule photo', () => {
   });
 
   it('takes its photo along when the schedule is removed', async () => {
-    expect(await removeSchedule(ADMIN_08, SCHEDULE_ID)).toBe(true);
+    expect(await removeSchedule(ADMIN_08, 8, SCHEDULE_ID)).toBe(true);
     expect(removeGalleryFiles).toHaveBeenCalledWith(ADMIN_08, 8, [OLD_PHOTO]);
   });
 });

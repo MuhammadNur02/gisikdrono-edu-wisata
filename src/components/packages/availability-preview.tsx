@@ -3,8 +3,8 @@
 import dynamic from 'next/dynamic';
 
 import { Skeleton } from '@/components/ui/skeleton';
-import type { RwId } from '@/config/rw';
 import { copy } from '@/lib/copy/id';
+import type { RwBadge } from '@/types/rw-unit';
 
 // The list and the Supabase client it needs load after the page is on screen, so they stay out of the page's
 // first-load script (CLAUDE.md §5.1, docs/StyleGuide.md §10.1 budget).
@@ -14,17 +14,18 @@ const AvailabilityList = dynamic(
 );
 
 export interface AvailabilityPreviewProps {
-  rwIds: readonly RwId[];
+  // The RWs the package visits; a combo marks each session with its RW.
+  rws: readonly RwBadge[];
 }
 
 // docs/PRD.md FR-PUB-12: the next 14 days of sessions on the package page.
-export function AvailabilityPreview({ rwIds }: AvailabilityPreviewProps) {
+export function AvailabilityPreview({ rws }: AvailabilityPreviewProps) {
   return (
     <section aria-labelledby="ketersediaan-judul" aria-live="polite" className="space-y-3">
       <h2 id="ketersediaan-judul" className="text-h4">
         {copy.catalogue.availabilityTitle}
       </h2>
-      <AvailabilityList rwIds={rwIds} />
+      <AvailabilityList rws={rws} />
     </section>
   );
 }

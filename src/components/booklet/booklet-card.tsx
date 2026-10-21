@@ -31,7 +31,7 @@ function BookletCover({ booklet }: BookletCardProps) {
     <PhotoPlaceholder
       label={booklet.title}
       icon={BookOpen}
-      rwIds={booklet.rwId ? [booklet.rwId] : []}
+      rws={booklet.rw ? [booklet.rw] : []}
       className={`${COVER_ASPECT} rounded-none`}
     />
   );
@@ -60,7 +60,7 @@ export function BookletCard({ booklet }: BookletCardProps) {
           <p className="line-clamp-3 text-body-sm text-muted-foreground">{booklet.description}</p>
         ) : null}
         <div className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
-          {booklet.rwId ? <RwTag rwId={booklet.rwId} /> : null}
+          {booklet.rw ? <RwTag rw={booklet.rw} /> : null}
           {booklet.pageCount ? <span>{copy.booklet.pages(booklet.pageCount)}</span> : null}
         </div>
       </div>

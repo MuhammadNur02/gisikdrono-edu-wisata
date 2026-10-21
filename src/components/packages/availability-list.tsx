@@ -4,10 +4,12 @@ import { useEffect, useState } from 'react';
 
 import { RwTag } from '@/components/layout/rw-tag';
 import { Skeleton } from '@/components/ui/skeleton';
-import { isRwId, type RwId } from '@/config/rw';
+import type { RwId } from '@/config/rw';
 import { copy } from '@/lib/copy/id';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { formatDateLong, formatTimeRange, upcomingVisitDates } from '@/lib/utils/dates';
+import { rwBadgeFor } from '@/lib/utils/rw-units';
+import type { RwBadge } from '@/types/rw-unit';
 
 // docs/PRD.md FR-PUB-12: the next 14 days of open sessions, read fresh in the browser from the public view, so
 // the seats left are never an hour old. Booking itself re-checks everything on the server.
@@ -39,12 +41,7 @@ async function loadSessions(rwIds: readonly RwId[]): Promise<SessionRow[]> {
   if (error) throw new Error(error.code);
   // Every column of a view is nullable to PostgREST; a row missing one is skipped.
   return data.flatMap((row) =>
-    row.id &&
-    row.rw_id !== null &&
-    isRwId(row.rw_id) &&
-    row.session_date &&
-    row.start_time &&
-    row.end_time
+    row.id && row.rw_id !== null && row.session_date && row.start_time && row.end_time
       ? [
           {
             id: row.id,
@@ -64,7 +61,7 @@ function useSessions(rwIds: readonly RwId[]): LoadState {
   const key = rwIds.join(',');
   useEffect(() => {
     let isCurrent = true;
-    loadSessions(key.split(',').map(Number).filter(isRwId)).then(
+    loadSessions(key.split(',').map(Number)).then(
       (sessions) => {
         if (isCurrent) setState({ status: 'ready', sessions });
       },
@@ -86,7 +83,9 @@ function groupByDate(sessions: SessionRow[]): [string, SessionRow[]][] {
   return [...days.entries()];
 }
 
-function SessionDays({ sessions, showRw }: { sessions: SessionRow[]; showRw: boolean }) {
+// A combo marks each session with the RW it is in.
+function SessionDays({ sessions, rws }: { sessions: SessionRow[]; rws: readonly RwBadge[] }) {
+  const showRw = rws.length > 1;
   return (
     <ul className="space-y-4">
       {groupByDate(sessions).map(([date, daySessions]) => (
@@ -98,7 +97,7 @@ function SessionDays({ sessions, showRw }: { sessions: SessionRow[]; showRw: boo
                 key={session.id}
                 className="flex flex-wrap items-center gap-2 text-body-sm text-muted-foreground"
               >
-                {showRw ? <RwTag rwId={session.rwId} /> : null}
+                {showRw ? <RwTag rw={rwBadgeFor(session.rwId, rws)} /> : null}
                 <span className="tabular-nums">
                   {formatTimeRange(session.startTime, session.endTime)}
                 </span>
@@ -113,11 +112,11 @@ function SessionDays({ sessions, showRw }: { sessions: SessionRow[]; showRw: boo
 }
 
 export interface AvailabilityListProps {
-  rwIds: readonly RwId[];
+  rws: readonly RwBadge[];
 }
 
-export function AvailabilityList({ rwIds }: AvailabilityListProps) {
-  const state = useSessions(rwIds);
+export function AvailabilityList({ rws }: AvailabilityListProps) {
+  const state = useSessions(rws.map((rw) => rw.id));
   if (state.status === 'loading') {
     return (
       <div aria-busy="true" className="space-y-2">
@@ -133,5 +132,5 @@ export function AvailabilityList({ rwIds }: AvailabilityListProps) {
     );
   if (state.sessions.length === 0)
     return <p className="text-body-sm text-muted-foreground">{copy.catalogue.availabilityNone}</p>;
-  return <SessionDays sessions={state.sessions} showRw={rwIds.length > 1} />;
+  return <SessionDays sessions={state.sessions} rws={rws} />;
 }

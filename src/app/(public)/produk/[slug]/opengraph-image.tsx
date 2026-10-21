@@ -1,5 +1,4 @@
 import { OG_CONTENT_TYPE, OG_SIZE } from '@/config/og';
-import { RW_PROGRAMMES } from '@/config/rw';
 import { getProductBySlug } from '@/lib/queries/products';
 import { renderOgImage } from '@/lib/seo/og-image';
 import { formatIDR } from '@/lib/utils/currency';
@@ -18,7 +17,7 @@ export default async function ProductOpenGraphImage({ params }: ProductImageProp
   const product = await getProductBySlug(slug);
   return renderOgImage({
     eyebrow: product
-      ? [RW_PROGRAMMES[product.rwId].label, product.vendor?.name].filter(Boolean).join(' · ')
+      ? [product.rw.label, product.vendor?.name].filter(Boolean).join(' · ')
       : 'Produk UMKM',
     title: product?.name ?? 'Produk UMKM',
     detail: product ? `${formatIDR(product.price)} /${product.unitLabel}` : undefined,

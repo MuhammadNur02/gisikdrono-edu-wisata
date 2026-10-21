@@ -1,5 +1,4 @@
 import { OG_CONTENT_TYPE, OG_SIZE } from '@/config/og';
-import { RW_PROGRAMMES } from '@/config/rw';
 import { ARTICLE_CATEGORY_LABELS } from '@/config/status';
 import { copy } from '@/lib/copy/id';
 import { getArticleBySlug } from '@/lib/queries/articles';
@@ -18,7 +17,7 @@ export default async function ArticleOpenGraphImage({ params }: ArticleImageProp
   const { slug } = await params;
   const article = await getArticleBySlug(slug);
   if (!article) return renderOgImage({ eyebrow: 'Artikel', title: 'Artikel' });
-  const rw = article.rwId ? RW_PROGRAMMES[article.rwId].label : null;
+  const rw = article.rw?.label ?? null;
   return renderOgImage({
     eyebrow: [ARTICLE_CATEGORY_LABELS[article.category], rw].filter(Boolean).join(' · '),
     title: article.title,

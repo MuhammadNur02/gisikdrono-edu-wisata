@@ -32,7 +32,7 @@ function ProductCover({ product }: ProductCardProps) {
     <PhotoPlaceholder
       label={product.name}
       icon={PRODUCT_CATEGORY[product.category].icon}
-      rwIds={[product.rwId]}
+      rws={[product.rw]}
       className={cn(COVER_ASPECT, 'rounded-none', fade)}
     />
   );

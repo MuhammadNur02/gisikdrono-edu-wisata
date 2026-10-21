@@ -25,7 +25,7 @@ function BookletRow({ booklet }: { booklet: BookletSummary }) {
           <span className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
             {BOOKLET_KIND_LABELS[booklet.kind]}
             {booklet.pageCount ? <span>· {booklet.pageCount} halaman</span> : null}
-            {booklet.rwId ? <RwTag rwId={booklet.rwId} /> : null}
+            {booklet.rw ? <RwTag rw={booklet.rw} /> : null}
           </span>
         </span>
       </Link>

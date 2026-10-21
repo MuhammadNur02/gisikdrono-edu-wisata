@@ -3,7 +3,7 @@ import { Section } from '@/components/layout/section';
 import { Photo } from '@/components/marketing/photo';
 import { SectionLink } from '@/components/marketing/section-link';
 import { IMAGE_SIZES } from '@/config/images';
-import { RW_PROGRAMMES } from '@/config/rw';
+import { RW_ICONS } from '@/config/rw-icons';
 import type { RwUnitProfile } from '@/types/rw-unit';
 
 export interface RwHighlightProps {
@@ -12,28 +12,27 @@ export interface RwHighlightProps {
 }
 
 function RwHighlightBlock({ unit }: { unit: RwUnitProfile }) {
-  const programme = RW_PROGRAMMES[unit.id];
   return (
     <article className="grid gap-5 sm:grid-cols-5 sm:items-center">
       <Photo
         image={unit.heroImage}
         caption={unit.name}
-        placeholder={{ icon: programme.icon, rwIds: [unit.id] }}
+        placeholder={{ icon: RW_ICONS[unit.iconKey], rws: [unit] }}
         sizes={IMAGE_SIZES.split}
         aspectClassName="aspect-4/3"
         className="sm:col-span-2"
       />
       <div className="space-y-3 sm:col-span-3">
-        <RwEyebrow rwId={unit.id} withName />
+        <RwEyebrow rw={unit} withName />
         <h3 className="text-h3">{unit.themeLabel}</h3>
         {unit.tagline ? <p className="text-body text-muted-foreground">{unit.tagline}</p> : null}
-        <SectionLink href={programme.path} label={`Lihat halaman ${programme.label}`} />
+        <SectionLink href={unit.path} label={`Lihat halaman ${unit.label}`} />
       </div>
     </article>
   );
 }
 
-// docs/PRD.md FR-PUB-02: both RWs from rw_units (name, theme, tagline, photo), each linking to its page.
+// docs/PRD.md FR-PUB-02: every RW online from rw_units (name, theme, tagline, photo), each linking to its page.
 // Photo and text side by side rather than a row of identical cards (docs/StyleGuide.md §1.3 G7).
 export function RwHighlight({ id, units }: RwHighlightProps) {
   return (

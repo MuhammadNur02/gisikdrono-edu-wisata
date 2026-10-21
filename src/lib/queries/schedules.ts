@@ -1,7 +1,7 @@
 import 'server-only';
 
 import type { Tables } from '@/db/types';
-import { toPublicImage, toRwId } from '@/lib/queries/mappers';
+import { toPublicImage } from '@/lib/queries/mappers';
 import { cachedPublicRead, rowsOf } from '@/lib/queries/public-read';
 import { TAGS } from '@/lib/queries/tags';
 import { createSupabaseAnonClient } from '@/lib/supabase/anon';
@@ -28,7 +28,7 @@ type ScheduleRow = Pick<
 function toPerformanceSchedule(row: ScheduleRow): PerformanceSchedule {
   return {
     id: row.id,
-    rwId: toRwId(row.rw_id),
+    rwId: row.rw_id,
     title: row.title,
     scheduleType: row.schedule_type,
     descriptionMd: row.description_md,

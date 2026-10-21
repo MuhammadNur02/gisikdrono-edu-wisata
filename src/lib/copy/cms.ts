@@ -103,12 +103,14 @@ export const cmsCopy = {
   },
   schedules: {
     title: 'Jadwal Pertunjukan',
-    description:
-      'Pertunjukan tari, sesi dolanan, dan kelas seni RW 08 yang tampil di halaman jadwal.',
+    // The RW whose schedule the page shows, which the superadmin works on too.
+    description: (rwLabel: string) =>
+      `Pertunjukan tari, sesi dolanan, dan kelas seni ${rwLabel} yang tampil di halaman jadwal.`,
     add: 'Tambah jadwal',
     addTitle: 'Jadwal baru',
     editTitle: 'Ubah jadwal',
-    onlyRw08: 'Jadwal pertunjukan hanya dikelola RW 08 dan superadmin.',
+    onlyScheduleRws:
+      'Jadwal pertunjukan hanya dikelola RW yang menyelenggarakan pertunjukan dan superadmin.',
     titleField: 'Nama acara',
     scheduleType: 'Jenis acara',
     descriptionMd: 'Keterangan',

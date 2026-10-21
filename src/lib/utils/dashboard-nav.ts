@@ -4,18 +4,30 @@ import { isPathUnder } from '@/lib/utils/paths';
 
 type StaffRole = Exclude<AppRole, 'none'>;
 
-function isVisibleTo(item: DashboardNavItem, role: StaffRole, rwId: number | null): boolean {
+// What the sidebar needs to know about the staff member's own RW; NULL for the superadmin, who has none.
+export interface StaffRwFeatures {
+  scheduleEnabled: boolean;
+}
+
+function isVisibleTo(
+  item: DashboardNavItem,
+  role: StaffRole,
+  ownRw: StaffRwFeatures | null,
+): boolean {
   if (!item.roles.includes(role)) return false;
-  if (role === 'superadmin' || item.rwIds === undefined) return true;
-  return item.rwIds.some((itemRwId) => itemRwId === rwId);
+  if (role === 'superadmin' || item.forScheduleRws !== true) return true;
+  return ownRw?.scheduleEnabled === true;
 }
 
 // The sidebar of one staff member, filtered on the server (docs/StyleGuide.md §6.2). A group with nothing left in it
 // is not shown at all.
-export function dashboardNavFor(role: StaffRole, rwId: number | null): DashboardNavGroup[] {
+export function dashboardNavFor(
+  role: StaffRole,
+  ownRw: StaffRwFeatures | null,
+): DashboardNavGroup[] {
   return DASHBOARD_NAV_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => isVisibleTo(item, role, rwId)),
+    items: group.items.filter((item) => isVisibleTo(item, role, ownRw)),
   })).filter((group) => group.items.length > 0);
 }
 

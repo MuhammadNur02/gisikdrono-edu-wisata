@@ -2,20 +2,22 @@ import 'server-only';
 
 import { z } from 'zod';
 
-import { RW_IDS } from '@/config/rw';
 import type { Tables } from '@/db/types';
-import { toOptionalRwId, toPublicImages, toRwId } from '@/lib/queries/mappers';
+import { toPublicImages } from '@/lib/queries/mappers';
 import { cachedPublicRead, rowOrNull, rowsOf } from '@/lib/queries/public-read';
+import { listRwUnits } from '@/lib/queries/rw-units';
 import { TAGS } from '@/lib/queries/tags';
 import { createSupabaseAnonClient } from '@/lib/supabase/anon';
+import { rwBadgeFor } from '@/lib/utils/rw-units';
 import type { ItineraryStep, PackageDetail, PackageSummary, PriceTier } from '@/types/package';
+import type { RwBadge } from '@/types/rw-unit';
 
 const SUMMARY_COLUMNS =
   'id, slug, name, tagline, category, duration_minutes, pricing_basis, price_per_pax, flat_price, min_pax, max_pax, image_paths, is_featured, tour_package_legs(rw_id, leg_order), tour_package_price_tiers(min_pax, max_pax, price_per_pax)';
 const DETAIL_COLUMNS = `${SUMMARY_COLUMNS}, description_md, highlights, inclusions, itinerary, valid_from, valid_to`;
 
-// A package's owner is not known before it is read, so every package read carries every package tag.
-export const PACKAGE_TAGS = [...RW_IDS.map((rwId) => TAGS.packages(rwId)), TAGS.packages('combo')];
+// A package's owner is not known before it is read, so every package read carries the umbrella tag.
+const PACKAGE_TAGS = [TAGS.allPackages, TAGS.rwUnits];
 
 type PackageRow = Pick<
   Tables<'tour_packages'>,
@@ -56,7 +58,7 @@ const itineraryStepSchema = z.object({
   description: z.string().nullish(),
 });
 
-export function parseItinerary(value: unknown): ItineraryStep[] {
+export function parseItinerary(value: unknown, units: readonly RwBadge[]): ItineraryStep[] {
   if (!Array.isArray(value)) return [];
   return value
     .flatMap((step) => {
@@ -65,7 +67,7 @@ export function parseItinerary(value: unknown): ItineraryStep[] {
     })
     .map((step) => ({
       order: step.order,
-      rwId: toOptionalRwId(step.rw_id ?? null),
+      rw: step.rw_id === null || step.rw_id === undefined ? null : rwBadgeFor(step.rw_id, units),
       time: step.time ?? null,
       title: step.title,
       description: step.description ?? null,
@@ -83,7 +85,7 @@ function toPriceTiers(row: PackageRow): PriceTier[] {
     .sort((first, second) => first.minPax - second.minPax);
 }
 
-function toPackageSummary(row: PackageRow): PackageSummary {
+function toPackageSummary(row: PackageRow, units: readonly RwBadge[]): PackageSummary {
   const tierPrices = row.tour_package_price_tiers.map((tier) => tier.price_per_pax);
   const legs = row.tour_package_legs.toSorted(
     (first, second) => first.leg_order - second.leg_order,
@@ -94,7 +96,7 @@ function toPackageSummary(row: PackageRow): PackageSummary {
     name: row.name,
     tagline: row.tagline,
     category: row.category,
-    rwIds: legs.map((leg) => toRwId(leg.rw_id)),
+    rws: legs.map((leg) => rwBadgeFor(leg.rw_id, units)),
     durationMinutes: row.duration_minutes,
     pricingBasis: row.pricing_basis,
     pricePerPax: row.price_per_pax,
@@ -107,13 +109,13 @@ function toPackageSummary(row: PackageRow): PackageSummary {
   };
 }
 
-function toPackageDetail(row: PackageDetailRow): PackageDetail {
+function toPackageDetail(row: PackageDetailRow, units: readonly RwBadge[]): PackageDetail {
   return {
-    ...toPackageSummary(row),
+    ...toPackageSummary(row, units),
     descriptionMd: row.description_md,
     highlights: row.highlights,
     inclusions: row.inclusions,
-    itinerary: parseItinerary(row.itinerary),
+    itinerary: parseItinerary(row.itinerary, units),
     images: toPublicImages(row.image_paths, row.name),
     priceTiers: toPriceTiers(row),
     validFrom: row.valid_from,
@@ -124,12 +126,15 @@ function toPackageDetail(row: PackageDetailRow): PackageDetail {
 // Published packages only (tour_packages_public_read); pages filter by RW or category in memory.
 export const listPackages = cachedPublicRead(
   async (): Promise<PackageSummary[]> => {
-    const result = await createSupabaseAnonClient()
-      .from('tour_packages')
-      .select(SUMMARY_COLUMNS)
-      .order('sort_order')
-      .order('name');
-    return rowsOf(result, 'tour_packages').map(toPackageSummary);
+    const [result, units] = await Promise.all([
+      createSupabaseAnonClient()
+        .from('tour_packages')
+        .select(SUMMARY_COLUMNS)
+        .order('sort_order')
+        .order('name'),
+      listRwUnits(),
+    ]);
+    return rowsOf(result, 'tour_packages').map((row) => toPackageSummary(row, units));
   },
   ['packages', 'list'],
   PACKAGE_TAGS,
@@ -137,13 +142,16 @@ export const listPackages = cachedPublicRead(
 
 export const getPackageBySlug = cachedPublicRead(
   async (slug: string): Promise<PackageDetail | null> => {
-    const result = await createSupabaseAnonClient()
-      .from('tour_packages')
-      .select(DETAIL_COLUMNS)
-      .eq('slug', slug)
-      .maybeSingle();
+    const [result, units] = await Promise.all([
+      createSupabaseAnonClient()
+        .from('tour_packages')
+        .select(DETAIL_COLUMNS)
+        .eq('slug', slug)
+        .maybeSingle(),
+      listRwUnits(),
+    ]);
     const row = rowOrNull(result, 'tour_packages');
-    return row ? toPackageDetail(row) : null;
+    return row ? toPackageDetail(row, units) : null;
   },
   ['packages', 'by-slug'],
   PACKAGE_TAGS,

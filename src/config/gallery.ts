@@ -1,25 +1,56 @@
-import type { RwId } from '@/config/rw';
+import { RW_ID_MIN, rwNumber, type RwId } from '@/config/rw';
 import type { EnumValue } from '@/db/enums';
 
-// docs/PRD.md FR-PUB-14, docs/StyleGuide.md §5.11: the four filters of /galeri. `rw05` and `rw08` filter on
-// `rw_id`, `umkm` and `kunjungan` on `gallery_category`.
-export const GALLERY_FILTER_VALUES = ['rw05', 'rw08', 'umkm', 'kunjungan'] as const;
-export type GalleryFilterValue = (typeof GALLERY_FILTER_VALUES)[number];
+// docs/PRD.md FR-PUB-14, docs/StyleGuide.md §5.11: the filters of /galeri. `rw05`, `rw08` and so on filter on
+// `rw_id`, one for every RW that is online (decision of 2026-10-21); `umkm` and `kunjungan` on `gallery_category`.
+// src/middleware.ts checks a value before the page renders and knows no RW, so it accepts any `rwNN`; the page, which
+// does, sends an RW that is not online back to the whole gallery.
+export const GALLERY_CATEGORY_FILTER_VALUES = ['umkm', 'kunjungan'] as const;
+export type GalleryCategoryFilter = (typeof GALLERY_CATEGORY_FILTER_VALUES)[number];
+export type GalleryFilterValue = `rw${string}` | GalleryCategoryFilter;
 
 export type GalleryQuery = { owner: RwId } | { category: EnumValue<'gallery_category'> };
 
-export const GALLERY_FILTERS: Record<GalleryFilterValue, { label: string; query: GalleryQuery }> = {
-  rw05: { label: 'RW 05', query: { owner: 5 } },
-  rw08: { label: 'RW 08', query: { owner: 8 } },
-  umkm: { label: 'UMKM', query: { category: 'umkm' } },
-  kunjungan: { label: 'Kunjungan', query: { category: 'visit' } },
+export const GALLERY_CATEGORY_FILTERS: Record<
+  GalleryCategoryFilter,
+  { label: string; category: EnumValue<'gallery_category'> }
+> = {
+  umkm: { label: 'UMKM', category: 'umkm' },
+  kunjungan: { label: 'Kunjungan', category: 'visit' },
 };
+
+const RW_FILTER_PATTERN = /^rw(\d{2})$/;
+
+export function galleryFilterForRw(rwId: RwId): GalleryFilterValue {
+  return `rw${rwNumber(rwId)}`;
+}
+
+function isCategoryFilter(value: string): value is GalleryCategoryFilter {
+  return GALLERY_CATEGORY_FILTER_VALUES.some((filter) => filter === value);
+}
+
+// `rw05` -> 5; NULL for anything that is not an RW filter.
+function rwOfFilter(value: string): RwId | null {
+  const digits = RW_FILTER_PATTERN.exec(value)?.[1];
+  if (digits === undefined) return null;
+  const rwId = Number(digits);
+  return rwId >= RW_ID_MIN ? rwId : null;
+}
+
+export function isGalleryFilter(value: string): value is GalleryFilterValue {
+  return isCategoryFilter(value) || rwOfFilter(value) !== null;
+}
+
+// What a filter asks the gallery for; NULL for a value the page never links to.
+export function galleryQueryFor(filter: string): GalleryQuery | null {
+  if (isCategoryFilter(filter)) return { category: GALLERY_CATEGORY_FILTERS[filter].category };
+  const rwId = rwOfFilter(filter);
+  return rwId === null ? null : { owner: rwId };
+}
 
 // docs/StyleGuide.md §8.2: the lightbox shows a photo up to 1600 px, the largest file the pipeline keeps,
 // with smaller files for smaller screens.
 export const GALLERY_LIGHTBOX_WIDTHS = [960, 1280, 1600] as const;
-
-export const RW_GALLERY_FILTER: Record<RwId, GalleryFilterValue> = { 5: 'rw05', 8: 'rw08' };
 
 // `Muat lagi` adds a page of 24 (GALLERY_PAGE_SIZE) through `?halaman=`, and the page renders every page up to
 // that one. The cap keeps a hand-typed `?halaman=99999` from loading thousands of photos at once: past it,

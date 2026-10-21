@@ -11,6 +11,10 @@ const cookieJar = vi.hoisted(() => ({ set: vi.fn() }));
 vi.mock('next/headers', () => ({ cookies: () => Promise.resolve(cookieJar) }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('@/server/auth/guards', () => ({ requireRole: vi.fn() }));
+// The RWs of rw_units: the two of the seed.
+vi.mock('@/server/services/rw-unit-service', () => ({
+  listRwUnitsForStaff: () => Promise.resolve([{ id: 5 }, { id: 8 }]),
+}));
 vi.mock('@/server/services/profile-service', () => ({
   updateOwnFullName: (userId: string, fullName: string) =>
     Promise.resolve({ fullName, email: `${userId}@dev.gisikdrono.test` }),
@@ -57,8 +61,14 @@ describe('setRwScopeAction', () => {
     expect(cookieJar.set).not.toHaveBeenCalled();
   });
 
+  // Independent review of Task P2.10.02, L2: the switcher points only at an RW that exists.
+  it('refuses an RW number no row of rw_units has', async () => {
+    expect(await setRwScopeAction({ scope: 42 })).toMatchObject({ error: { code: 'VALIDATION' } });
+    expect(cookieJar.set).not.toHaveBeenCalled();
+  });
+
   it('refuses a scope that is not an RW', async () => {
-    expect(await setRwScopeAction({ scope: 7 })).toMatchObject({ error: { code: 'VALIDATION' } });
+    expect(await setRwScopeAction({ scope: 0 })).toMatchObject({ error: { code: 'VALIDATION' } });
     expect(requireRole).not.toHaveBeenCalled();
   });
 });

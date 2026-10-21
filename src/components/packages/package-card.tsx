@@ -27,8 +27,8 @@ function CoverBadges({ pkg }: PackageCardProps) {
   return (
     <div className="absolute inset-x-3 top-3 flex justify-between gap-2">
       <div className="flex gap-1.5">
-        {pkg.rwIds.map((rwId) => (
-          <RwTag key={rwId} rwId={rwId} />
+        {pkg.rws.map((rw) => (
+          <RwTag key={rw.id} rw={rw} />
         ))}
       </div>
       {isCombo ? null : <Badge variant="secondary">{PACKAGE_CATEGORY[pkg.category].label}</Badge>}
@@ -50,7 +50,7 @@ function PackageCover({ pkg }: PackageCardProps) {
         <PhotoPlaceholder
           label={pkg.name}
           icon={PACKAGE_CATEGORY[pkg.category].icon}
-          rwIds={pkg.rwIds}
+          rws={pkg.rws}
           className={`${COVER_ASPECT} rounded-none`}
         />
       )}

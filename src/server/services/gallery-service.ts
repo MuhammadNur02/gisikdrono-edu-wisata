@@ -7,7 +7,6 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isPublishedImagePathFor } from '@/lib/uploads/paths';
 import type { PublishedImage } from '@/lib/validations/content';
 import type { CreateGalleryItemValues, UpdateGalleryItemValues } from '@/lib/validations/gallery';
-import { toContentOwner } from '@/server/auth/content-owner';
 import type { StaffContext } from '@/server/auth/guards';
 import { rowOrNotFound } from '@/server/services/content-errors';
 import { removeFilesOrLog } from '@/server/services/content-files';
@@ -41,17 +40,11 @@ type GalleryRow = Pick<
   | 'status'
 >;
 
-function ownerOfRow(rwId: number | null): ContentOwner {
-  const owner = toContentOwner(rwId);
-  if (owner === undefined) throw new Error('gallery item of an unknown RW');
-  return owner;
-}
-
 function toGalleryItemAdmin(row: GalleryRow): GalleryItemAdmin {
   const isVideo = row.media_type === 'video';
   return {
     id: row.id,
-    owner: ownerOfRow(row.rw_id),
+    owner: row.rw_id,
     category: row.category,
     mediaType: row.media_type,
     previewPath: isVideo ? row.thumbnail_path : (row.thumbnail_path ?? row.storage_path),
@@ -152,7 +145,7 @@ async function readGalleryRow(id: string): Promise<GalleryRow | null> {
 
 export async function readGalleryOwner(id: string): Promise<ContentOwner | undefined> {
   const row = await readGalleryRow(id);
-  return row ? ownerOfRow(row.rw_id) : undefined;
+  return row ? row.rw_id : undefined;
 }
 
 export async function createGalleryItem(

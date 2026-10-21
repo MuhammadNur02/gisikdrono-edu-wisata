@@ -2,11 +2,13 @@ import 'server-only';
 
 import { z } from 'zod';
 
-import { isRwId } from '@/config/rw';
 import { cachedPublicRead, rowsOf } from '@/lib/queries/public-read';
+import { listRwUnits } from '@/lib/queries/rw-units';
 import { TAGS } from '@/lib/queries/tags';
 import { createSupabaseAnonClient } from '@/lib/supabase/anon';
+import { rwBadgeFor } from '@/lib/utils/rw-units';
 import type { PublicReview } from '@/types/review';
+import type { RwBadge } from '@/types/rw-unit';
 
 const REVIEW_COLUMNS =
   'id, rating, title, body, reviewer_name, institution_name, rw_ids, is_featured, created_at';
@@ -24,7 +26,7 @@ const reviewRowSchema = z.object({
   created_at: z.string(),
 });
 
-function toPublicReview(row: unknown): PublicReview {
+function toPublicReview(row: unknown, units: readonly RwBadge[]): PublicReview {
   const review = reviewRowSchema.parse(row);
   return {
     id: review.id,
@@ -33,7 +35,7 @@ function toPublicReview(row: unknown): PublicReview {
     body: review.body,
     reviewerName: review.reviewer_name,
     institutionName: review.institution_name,
-    rwIds: review.rw_ids.filter(isRwId),
+    rws: review.rw_ids.map((rwId) => rwBadgeFor(rwId, units)),
     isFeatured: review.is_featured,
     createdAt: review.created_at,
   };
@@ -42,13 +44,16 @@ function toPublicReview(row: unknown): PublicReview {
 // Published reviews through v_public_reviews (first name or `Pengunjung` only), featured first, then newest.
 export const listPublicReviews = cachedPublicRead(
   async (): Promise<PublicReview[]> => {
-    const result = await createSupabaseAnonClient()
-      .from('v_public_reviews')
-      .select(REVIEW_COLUMNS)
-      .order('is_featured', { ascending: false })
-      .order('created_at', { ascending: false });
-    return rowsOf(result, 'v_public_reviews').map(toPublicReview);
+    const [result, units] = await Promise.all([
+      createSupabaseAnonClient()
+        .from('v_public_reviews')
+        .select(REVIEW_COLUMNS)
+        .order('is_featured', { ascending: false })
+        .order('created_at', { ascending: false }),
+      listRwUnits(),
+    ]);
+    return rowsOf(result, 'v_public_reviews').map((row) => toPublicReview(row, units));
   },
   ['reviews', 'list'],
-  [TAGS.reviews],
+  [TAGS.reviews, TAGS.rwUnits],
 );

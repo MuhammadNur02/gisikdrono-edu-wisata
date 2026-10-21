@@ -10,7 +10,6 @@ import { estimateReadingMinutes } from '@/lib/rich-text/reading-time';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isPublishedImagePathFor } from '@/lib/uploads/paths';
 import type { SaveArticleValues } from '@/lib/validations/article';
-import { toContentOwner } from '@/server/auth/content-owner';
 import type { StaffContext } from '@/server/auth/guards';
 import { rowOrNotFound, slugConflictOr } from '@/server/services/content-errors';
 import { removeFilesOrLog } from '@/server/services/content-files';
@@ -48,16 +47,10 @@ const STATUS_BY_INTENT: Record<ArticleIntent, EnumValue<'content_status'>> = {
   publish: 'published',
 };
 
-function ownerOfRow(rwId: number | null): ContentOwner {
-  const owner = toContentOwner(rwId);
-  if (owner === undefined) throw new Error('article of an unknown RW');
-  return owner;
-}
-
 function toArticleAdmin(row: ArticleRow): ArticleAdmin {
   return {
     id: row.id,
-    owner: ownerOfRow(row.rw_id),
+    owner: row.rw_id,
     slug: row.slug,
     title: row.title,
     excerpt: row.excerpt,
@@ -145,7 +138,7 @@ export async function listArticlesForStaff(
   if (error) throw error;
   return data.map((row) => ({
     id: row.id,
-    owner: ownerOfRow(row.rw_id),
+    owner: row.rw_id,
     slug: row.slug,
     title: row.title,
     category: row.category,

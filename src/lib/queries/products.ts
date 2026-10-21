@@ -1,18 +1,20 @@
 import 'server-only';
 
-import { RW_IDS } from '@/config/rw';
 import type { Tables } from '@/db/types';
-import { toPublicImages, toRwId } from '@/lib/queries/mappers';
+import { toPublicImages } from '@/lib/queries/mappers';
 import { cachedPublicRead, rowOrNull, rowsOf } from '@/lib/queries/public-read';
+import { listRwUnits } from '@/lib/queries/rw-units';
 import { TAGS } from '@/lib/queries/tags';
 import { createSupabaseAnonClient } from '@/lib/supabase/anon';
+import { rwBadgeFor } from '@/lib/utils/rw-units';
 import type { ProductDetail, ProductSummary } from '@/types/product';
+import type { RwBadge } from '@/types/rw-unit';
 
 const SUMMARY_COLUMNS =
   'id, slug, name, category, rw_id, price, unit_label, is_available, is_addon_eligible, is_featured, image_paths, umkm_vendors(slug, name)';
 const DETAIL_COLUMNS = `${SUMMARY_COLUMNS}, description_md, min_order_qty, max_order_qty, lead_time_days`;
 
-export const PRODUCT_TAGS = RW_IDS.map((rwId) => TAGS.products(rwId));
+const PRODUCT_TAGS = [TAGS.allProducts, TAGS.rwUnits];
 
 type ProductRow = Pick<
   Tables<'products_umkm'>,
@@ -35,13 +37,13 @@ type ProductDetailRow = ProductRow &
     'description_md' | 'min_order_qty' | 'max_order_qty' | 'lead_time_days'
   >;
 
-function toProductSummary(row: ProductRow): ProductSummary {
+function toProductSummary(row: ProductRow, units: readonly RwBadge[]): ProductSummary {
   return {
     id: row.id,
     slug: row.slug,
     name: row.name,
     category: row.category,
-    rwId: toRwId(row.rw_id),
+    rw: rwBadgeFor(row.rw_id, units),
     price: row.price,
     unitLabel: row.unit_label,
     isAvailable: row.is_available,
@@ -52,9 +54,9 @@ function toProductSummary(row: ProductRow): ProductSummary {
   };
 }
 
-function toProductDetail(row: ProductDetailRow): ProductDetail {
+function toProductDetail(row: ProductDetailRow, units: readonly RwBadge[]): ProductDetail {
   return {
-    ...toProductSummary(row),
+    ...toProductSummary(row, units),
     descriptionMd: row.description_md,
     minOrderQty: row.min_order_qty,
     maxOrderQty: row.max_order_qty,
@@ -66,12 +68,15 @@ function toProductDetail(row: ProductDetailRow): ProductDetail {
 // Published products only; pages filter by RW, category or add-on eligibility in memory.
 export const listProducts = cachedPublicRead(
   async (): Promise<ProductSummary[]> => {
-    const result = await createSupabaseAnonClient()
-      .from('products_umkm')
-      .select(SUMMARY_COLUMNS)
-      .order('sort_order')
-      .order('name');
-    return rowsOf(result, 'products_umkm').map(toProductSummary);
+    const [result, units] = await Promise.all([
+      createSupabaseAnonClient()
+        .from('products_umkm')
+        .select(SUMMARY_COLUMNS)
+        .order('sort_order')
+        .order('name'),
+      listRwUnits(),
+    ]);
+    return rowsOf(result, 'products_umkm').map((row) => toProductSummary(row, units));
   },
   ['products', 'list'],
   PRODUCT_TAGS,
@@ -79,13 +84,16 @@ export const listProducts = cachedPublicRead(
 
 export const getProductBySlug = cachedPublicRead(
   async (slug: string): Promise<ProductDetail | null> => {
-    const result = await createSupabaseAnonClient()
-      .from('products_umkm')
-      .select(DETAIL_COLUMNS)
-      .eq('slug', slug)
-      .maybeSingle();
+    const [result, units] = await Promise.all([
+      createSupabaseAnonClient()
+        .from('products_umkm')
+        .select(DETAIL_COLUMNS)
+        .eq('slug', slug)
+        .maybeSingle(),
+      listRwUnits(),
+    ]);
     const row = rowOrNull(result, 'products_umkm');
-    return row ? toProductDetail(row) : null;
+    return row ? toProductDetail(row, units) : null;
   },
   ['products', 'by-slug'],
   PRODUCT_TAGS,

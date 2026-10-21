@@ -4,7 +4,7 @@ import { ProfileForm } from '@/components/admin/profile/profile-form';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { Card, CardContent } from '@/components/ui/card';
 import { copy } from '@/lib/copy/id';
-import { staffRoleLabel, staffRwId } from '@/lib/utils/staff-labels';
+import { staffRoleLabel } from '@/lib/utils/staff-labels';
 import { updateProfileAction } from '@/server/actions/profile';
 import { requireDashboardStaff } from '@/server/auth/session';
 import { readOwnProfile } from '@/server/services/profile-service';
@@ -26,7 +26,7 @@ export default async function ProfilePage() {
         <CardContent className="space-y-6">
           <div className="space-y-1">
             <p className="text-body-sm font-medium">{text.role}</p>
-            <p className="text-body-sm">{staffRoleLabel(staffRwId(ctx.rwId))}</p>
+            <p className="text-body-sm">{staffRoleLabel(ctx.rwId)}</p>
           </div>
           <ProfileForm profile={profile} action={updateProfileAction} />
         </CardContent>

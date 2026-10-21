@@ -1,5 +1,4 @@
 import { OG_CONTENT_TYPE, OG_SIZE } from '@/config/og';
-import { RW_PROGRAMMES } from '@/config/rw';
 import { PACKAGE_CATEGORY } from '@/config/status';
 import { copy } from '@/lib/copy/id';
 import { getPackageBySlug } from '@/lib/queries/packages';
@@ -22,10 +21,7 @@ export default async function PackageOpenGraphImage({ params }: PackageImageProp
   const price = pkg ? describePackagePrice(pkg) : null;
   return renderOgImage({
     eyebrow: pkg
-      ? [
-          ...pkg.rwIds.map((rwId) => RW_PROGRAMMES[rwId].label),
-          PACKAGE_CATEGORY[pkg.category].label,
-        ].join(' · ')
+      ? [...pkg.rws.map((rw) => rw.label), PACKAGE_CATEGORY[pkg.category].label].join(' · ')
       : 'Paket wisata',
     title: pkg?.name ?? 'Paket wisata',
     detail: price

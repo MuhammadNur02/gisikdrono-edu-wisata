@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import type { RwId } from '@/config/rw';
 import { SCHEDULE_TYPE_LABELS } from '@/config/status';
 import { copy } from '@/lib/copy/id';
 import { formatDateShort, formatInstantTimeRange } from '@/lib/utils/dates';
@@ -24,16 +25,18 @@ interface ScheduleActions {
 }
 
 export interface ScheduleTableProps extends ScheduleActions {
+  rwId: RwId;
   schedules: ScheduleAdmin[];
   packages: SchedulePackageOption[];
 }
 
 function ScheduleRow({
+  rwId,
   schedule,
   packages,
   updateAction,
   removeAction,
-}: ScheduleActions & { schedule: ScheduleAdmin; packages: SchedulePackageOption[] }) {
+}: ScheduleActions & { rwId: RwId; schedule: ScheduleAdmin; packages: SchedulePackageOption[] }) {
   return (
     <TableRow>
       <TableCell className="font-medium">{schedule.title}</TableCell>
@@ -47,7 +50,12 @@ function ScheduleRow({
       </TableCell>
       <TableCell>
         <div className="flex justify-end gap-1">
-          <ScheduleDialog schedule={schedule} packages={packages} action={updateAction} />
+          <ScheduleDialog
+            rwId={rwId}
+            schedule={schedule}
+            packages={packages}
+            action={updateAction}
+          />
           <RemoveButton
             id={schedule.id}
             noun={text.noun}
@@ -61,7 +69,7 @@ function ScheduleRow({
 }
 
 // A provisional list (Task P2.9.06), newest first; P4.3.03 moves it onto the DataTable.
-export function ScheduleTable({ schedules, packages, ...actions }: ScheduleTableProps) {
+export function ScheduleTable({ rwId, schedules, packages, ...actions }: ScheduleTableProps) {
   return (
     <div className="overflow-x-auto rounded-xl border border-border">
       <Table>
@@ -76,7 +84,13 @@ export function ScheduleTable({ schedules, packages, ...actions }: ScheduleTable
         </TableHeader>
         <TableBody>
           {schedules.map((schedule) => (
-            <ScheduleRow key={schedule.id} schedule={schedule} packages={packages} {...actions} />
+            <ScheduleRow
+              key={schedule.id}
+              rwId={rwId}
+              schedule={schedule}
+              packages={packages}
+              {...actions}
+            />
           ))}
         </TableBody>
       </Table>
