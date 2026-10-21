@@ -42,19 +42,37 @@ describe('requestPhoneOtpSchema', () => {
 });
 
 describe('verifyPhoneOtpSchema', () => {
-  it('lower-cases the OTP id and wants exactly six digits', () => {
-    expect(
-      verifyPhoneOtpSchema.parse({ otpId: OTP_ID, code: ' 482913 ', phone: '081234567890' }),
-    ).toEqual({
-      otpId: OTP_ID.toLowerCase(),
-      code: '482913',
+  it('names the contact the code was sent to and wants exactly six digits', () => {
+    const once = verifyPhoneOtpSchema.parse({ code: ' 482913 ', phone: '081234567890' });
+    expect(once).toEqual({
+      channel: 'whatsapp',
       phone: '+6281234567890',
+      email: null,
+      code: '482913',
     });
+    expect(verifyPhoneOtpSchema.parse(once)).toEqual(once);
     for (const code of ['48291', '4829134', 'abcdef']) {
-      expect(
-        verifyPhoneOtpSchema.safeParse({ otpId: OTP_ID, code, phone: '081234567890' }).success,
-      ).toBe(false);
+      expect(verifyPhoneOtpSchema.safeParse({ code, phone: '081234567890' }).success).toBe(false);
     }
+  });
+
+  it('needs the address for an email code', () => {
+    const parsed = verifyPhoneOtpSchema.safeParse({
+      channel: 'email',
+      code: '482913',
+      phone: '081234567890',
+    });
+    expect(parsed.error && z.flattenError(parsed.error).fieldErrors.email).toEqual([
+      copy.auth.validation.email,
+    ]);
+  });
+
+  // Review of PR #20, M1: the browser no longer learns or sends an OTP id; its cookie names its code.
+  it('refuses an OTP id from the browser', () => {
+    expect(
+      verifyPhoneOtpSchema.safeParse({ otpId: OTP_ID, code: '482913', phone: '081234567890' })
+        .success,
+    ).toBe(false);
   });
 });
 
