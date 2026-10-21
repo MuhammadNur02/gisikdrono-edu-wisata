@@ -124,6 +124,40 @@ describe('hashEmailForLog', () => {
   });
 });
 
+// Review of PR #20 (info): redactLinkTokens existed but no log line went through it.
+describe('link tokens in log lines', () => {
+  it('hides guest-link and ticket tokens in any string field of a log line, however deep', () => {
+    const { lines, logger } = captureLogLines();
+    logger.warn('rate_limited', {
+      path: '/reservasi/GSK-7F3K9Q2M?t=eyJzIjoibWFuYWdlIn0.c2lnbmF0dXJlLWd1ZXN0',
+      nested: { links: ['https://site.test/v/GSK.k1.dGlja2V0LWlk.c2lnLXRpY2tldA'] },
+    });
+
+    const output = lines.join('');
+    for (const secret of ['eyJzIjoibWFuYWdlIn0', 'c2lnbmF0dXJlLWd1ZXN0', 'dGlja2V0LWlk']) {
+      expect(output).not.toContain(secret);
+    }
+    expect(output).toContain('/reservasi/GSK-7F3K9Q2M?t=[token]');
+    expect(output).toContain('https://site.test/v/[token]');
+  });
+
+  it('leaves numbers, flags and other fields as they were', () => {
+    const { lines, logger } = captureLogLines();
+    logger.info('job_run', {
+      job: 'process-notifications',
+      processed: 3,
+      failed: 0,
+      dryRun: false,
+    });
+    expect(JSON.parse(lines[0] ?? '{}')).toMatchObject({
+      job: 'process-notifications',
+      processed: 3,
+      failed: 0,
+      dryRun: false,
+    });
+  });
+});
+
 describe('redactLinkTokens', () => {
   it('hides ticket and guest-link tokens in URLs', () => {
     expect(redactLinkTokens('https://site.test/v/GSK.k1.abc.def')).toBe(

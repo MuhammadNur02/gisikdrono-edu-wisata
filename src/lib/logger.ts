@@ -70,12 +70,39 @@ export type LogFields = Record<string, unknown>;
 
 const EMAIL_HASH_LENGTH = 12;
 const LINK_TOKEN_IN_URL = /(\/v\/|[?&]t=)[^/?&#\s]+/g;
+// Log fields are small objects; anything nested deeper than this is left as it is rather than walked.
+const MAX_SCRUB_DEPTH = 6;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) return false;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+// docs/Security.md §7.7: a guest link (?t=) or ticket URL (/v/) may be logged, its token never, in whatever field
+// it arrives. Only strings in plain objects and arrays are rewritten; the app logs ids and names, never Error
+// objects (src/lib/errors.ts), so nothing else needs walking.
+function scrubLinkTokens(value: unknown, depth = 0): unknown {
+  if (typeof value === 'string') return redactLinkTokens(value);
+  if (depth >= MAX_SCRUB_DEPTH) return value;
+  if (Array.isArray(value)) return value.map((item: unknown) => scrubLinkTokens(item, depth + 1));
+  if (!isPlainObject(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [key, scrubLinkTokens(item, depth + 1)]),
+  );
+}
 
 export function createRootLogger(destination?: DestinationStream): Logger {
   const options = {
     redact: { paths: REDACTED_PATHS, censor: '[redacted]' },
     timestamp: pino.stdTimeFunctions.isoTime,
-    formatters: { level: (label: string) => ({ level: label }) },
+    formatters: {
+      level: (label: string) => ({ level: label }),
+      log: (fields: Record<string, unknown>) =>
+        Object.fromEntries(
+          Object.entries(fields).map(([key, value]) => [key, scrubLinkTokens(value)]),
+        ),
+    },
   };
   return destination ? pino(options, destination) : pino(options);
 }
