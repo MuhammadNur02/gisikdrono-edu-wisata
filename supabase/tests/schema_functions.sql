@@ -1930,8 +1930,8 @@ revoke execute on function public.generate_visit_sessions(smallint, date, date),
   from authenticated;
 
 insert into public.booklets (id, slug, title, pdf_path, status) values
-  ('00000000-0000-4000-8000-000000001b51', 'e-booklet-ecowastreme', 'E-Booklet', 'rw-05/booklet.pdf', 'published'),
-  ('00000000-0000-4000-8000-000000001b52', 'draf-booklet', 'Draf', 'rw-05/draf.pdf', 'draft');
+  ('00000000-0000-4000-8000-000000001b51', 'e-booklet-ecowastreme', 'E-Booklet', 'kelurahan/booklets/00000000-0000-4000-8000-000000001b51/booklet.pdf', 'published'),
+  ('00000000-0000-4000-8000-000000001b52', 'draf-booklet', 'Draf', 'kelurahan/booklets/00000000-0000-4000-8000-000000001b52/booklet.pdf', 'draft');
 select internal.increment_booklet_download('00000000-0000-4000-8000-000000001b51');
 select internal.increment_booklet_download('00000000-0000-4000-8000-000000001b52');
 select is(

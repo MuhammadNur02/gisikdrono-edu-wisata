@@ -2,6 +2,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, parse } from 'node:path';
 import { parseArgs } from 'node:util';
 
+import { z } from 'zod';
+
 import { seedDemoBooklet } from './demo-booklet';
 import { runSql, sqlText, uploadToLocalBucket } from './local-stack';
 import { reencodeImage } from '../src/lib/images/re-encode';
@@ -138,16 +140,36 @@ function galleryPath(photoId: string): string {
   return `rw-05/gallery/${photoId}.webp`;
 }
 
-// The RW 05 page and its activity points reuse gallery photos; a value someone already set is kept.
-async function linkRw05Photos(): Promise<void> {
-  const pointUpdates = Object.entries(POINT_PHOTO_IDS).map(
-    ([slug, photoId]) =>
-      `update public.activity_points set image_path = ${sqlText(galleryPath(photoId))}
-       where slug = ${sqlText(slug)} and image_path is null;`,
-  );
+function galleryPhoto(photoId: string): DemoPhoto {
+  const photo = RW05_GALLERY.find((candidate) => candidate.id === photoId);
+  if (!photo) throw new Error(`no demo photo ${photoId}`);
+  return photo;
+}
+
+async function idOfSlug(
+  table: 'activity_points' | 'articles',
+  slug: string,
+): Promise<string | null> {
+  const rows = z
+    .array(z.object({ id: z.string() }))
+    .parse(await runSql(`select id from public.${table} where slug = ${sqlText(slug)}`));
+  return rows[0]?.id ?? null;
+}
+
+// The RW 05 page shows a gallery photo, which its rule allows; an activity point keeps a copy of its own in its own
+// folder, as the CMS and the database require (supabase/migrations/20261021090100_content_media_paths.sql). A value
+// someone already set is kept.
+async function linkRw05Photos(folder: string): Promise<void> {
   await runSql(`update public.rw_units set hero_image_path = ${sqlText(galleryPath(RW05_PROFILE_PHOTO_ID))}
-      where id = 5 and hero_image_path is null;
-    ${pointUpdates.join('\n')}`);
+      where id = 5 and hero_image_path is null`);
+  for (const [slug, photoId] of Object.entries(POINT_PHOTO_IDS)) {
+    const pointId = await idOfSlug('activity_points', slug);
+    if (!pointId) continue;
+    const path = `rw-05/activity-points/${pointId}/${photoId}.webp`;
+    await uploadPhoto(folder, galleryPhoto(photoId), path);
+    await runSql(`update public.activity_points set image_path = ${sqlText(path)}
+      where id = ${sqlText(pointId)} and image_path is null`);
+  }
 }
 
 // The RW 05 article of seed-dev.sql gets the group photo as its cover and, after its Bank Sampah section, the
@@ -157,16 +179,30 @@ const ARTICLE_SLUG = 'bank-sampah-dan-taman-toga-rw-05';
 const ARTICLE_COVER_PHOTO_ID = '0de00000-0000-4000-8000-0000000000f1';
 const ARTICLE_BODY_PHOTO_ID = '0de00000-0000-4000-8000-0000000000f6';
 
-async function linkArticlePhotos(): Promise<void> {
-  await runSql(`update public.articles set cover_path = ${sqlText(galleryPath(ARTICLE_COVER_PHOTO_ID))}
-      where slug = ${sqlText(ARTICLE_SLUG)} and cover_path is null;
-    update public.articles a
-    set body_json = jsonb_set(a.body_json, '{content}', (a.body_json -> 'content') || jsonb_build_array(
-      jsonb_build_object('type', 'image', 'attrs', jsonb_build_object('src', g.storage_path, 'alt', g.alt_text,
-        'title', g.caption, 'width', g.width, 'height', g.height))))
-    from public.galleries g
-    where a.slug = ${sqlText(ARTICLE_SLUG)} and g.id = ${sqlText(ARTICLE_BODY_PHOTO_ID)}
-      and not a.body_json @> '{"content": [{"type": "image"}]}';`);
+// Both photos are copies in the article's own folder, as the CMS and the database require.
+async function linkArticlePhotos(folder: string): Promise<void> {
+  const articleId = await idOfSlug('articles', ARTICLE_SLUG);
+  if (!articleId) return;
+  const articleFolder = `rw-05/articles/${articleId}`;
+  const cover = await uploadPhoto(
+    folder,
+    galleryPhoto(ARTICLE_COVER_PHOTO_ID),
+    `${articleFolder}/${ARTICLE_COVER_PHOTO_ID}.webp`,
+  );
+  const bodyPhoto = galleryPhoto(ARTICLE_BODY_PHOTO_ID);
+  const body = await uploadPhoto(
+    folder,
+    bodyPhoto,
+    `${articleFolder}/${ARTICLE_BODY_PHOTO_ID}.webp`,
+  );
+  await runSql(`update public.articles set cover_path = ${sqlText(cover.path)}
+      where id = ${sqlText(articleId)} and cover_path is null;
+    update public.articles
+    set body_json = jsonb_set(body_json, '{content}', (body_json -> 'content') || jsonb_build_array(
+      jsonb_build_object('type', 'image', 'attrs', jsonb_build_object('src', ${sqlText(body.path)},
+        'alt', ${sqlText(bodyPhoto.altText)}, 'title', ${sqlText(bodyPhoto.caption)},
+        'width', ${String(body.width)}, 'height', ${String(body.height)}))))
+    where id = ${sqlText(articleId)} and not body_json @> '{"content": [{"type": "image"}]}';`);
 }
 
 async function seedGalleryPhoto(
@@ -190,8 +226,8 @@ export async function seedDemoMedia(folder: string): Promise<number> {
   for (const [index, photo] of RW05_GALLERY.entries()) {
     await seedGalleryPhoto(folder, photo, index + 1);
   }
-  await linkRw05Photos();
-  await linkArticlePhotos();
+  await linkRw05Photos(folder);
+  await linkArticlePhotos(folder);
   await seedDemoBooklet(RW05_GALLERY.map((photo) => findPhotoFile(folder, photo.file)));
   return RW05_GALLERY.length + 1;
 }

@@ -12,7 +12,7 @@ insert into public.galleries (id, rw_id, category, storage_path, alt_text, capti
 insert into public.articles (id, rw_id, slug, title, status) values
   ('00000000-0000-4000-8000-0000000cc582', 8, 'cw-a8', 'Artikel RW 08', 'draft');
 insert into public.booklets (id, rw_id, slug, title, pdf_path, status) values
-  ('00000000-0000-4000-8000-0000000cc583', 8, 'cw-bk8', 'Booklet RW 08', 'rw-08/booklets/x/booklet.pdf', 'draft');
+  ('00000000-0000-4000-8000-0000000cc583', 8, 'cw-bk8', 'Booklet RW 08', 'rw-08/booklets/00000000-0000-4000-8000-0000000cc583/booklet.pdf', 'draft');
 insert into public.activity_points (id, rw_id, slug, name, point_type, status) values
   ('00000000-0000-4000-8000-0000000cc584', 8, 'cw-ap8', 'Sanggar', 'sanggar', 'published');
 insert into public.performance_schedules (id, rw_id, title, schedule_type, starts_at, ends_at, status) values
