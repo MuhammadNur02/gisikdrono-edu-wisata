@@ -18,7 +18,7 @@ import {
 import type { PublicNavGroup } from '@/config/nav';
 import { copy } from '@/lib/copy/id';
 import { cn } from '@/lib/utils/cn';
-import { isPathUnder } from '@/lib/utils/paths';
+import { isPathUnder, visitorPathFor } from '@/lib/utils/paths';
 
 function MenuGroup({ group, pathname }: { group: PublicNavGroup; pathname: string }) {
   return (
@@ -57,7 +57,7 @@ export interface MobileMenuProps {
 }
 
 export function MobileMenu({ groups, className }: MobileMenuProps) {
-  const pathname = usePathname();
+  const pathname = visitorPathFor(usePathname());
   return (
     <Sheet>
       <SheetTrigger asChild>

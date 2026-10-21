@@ -55,6 +55,15 @@ export function rwRouteRewriteFor(pathname: string): string | null {
   return RW_ADDRESS_PATTERN.test(pathname) ? `${RW_ROUTE_FOLDER}${pathname}` : null;
 }
 
+// The address the visitor asked for. A prerendered RW page reads its internal address from usePathname() on the
+// server and the visitor's in the browser, so the public menu reads both through here to mark the same page and
+// hydrate without a mismatch.
+export function visitorPathFor(pathname: string): string {
+  return pathname.startsWith(`${RW_ROUTE_FOLDER}/`)
+    ? pathname.slice(RW_ROUTE_FOLDER.length)
+    : pathname;
+}
+
 export function rwPagePath(slug: string): string {
   return `/${slug}`;
 }

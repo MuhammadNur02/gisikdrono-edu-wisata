@@ -12,6 +12,7 @@ import {
   rwPagePath,
   rwRouteRewriteFor,
   rwSchedulePath,
+  visitorPathFor,
 } from './paths';
 
 describe('isPathUnder', () => {
@@ -88,4 +89,20 @@ describe('rwRouteRewriteFor', () => {
   ])('leaves %s to the routes it matches, or to the 404', (pathname) => {
     expect(rwRouteRewriteFor(pathname)).toBeNull();
   });
+});
+
+describe('visitorPathFor', () => {
+  it('reads an RW page rendered at its internal address as the address the visitor asked for', () => {
+    expect(visitorPathFor('/rw-page/rw-05-ecowastreme')).toBe('/rw-05-ecowastreme');
+    expect(visitorPathFor('/rw-page/rw-08-kampung-seni-budaya/jadwal')).toBe(
+      '/rw-08-kampung-seni-budaya/jadwal',
+    );
+  });
+
+  it.each(['/', '/rw-05-ecowastreme', '/paket-wisata', RW_ROUTE_FOLDER, '/rw-pages/x'])(
+    'keeps %s as it is',
+    (pathname) => {
+      expect(visitorPathFor(pathname)).toBe(pathname);
+    },
+  );
 });

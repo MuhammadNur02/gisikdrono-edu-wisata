@@ -7,7 +7,7 @@ import { NavLinkLabel } from '@/components/layout/nav-link-label';
 import type { PublicNavItem } from '@/config/nav';
 import { copy } from '@/lib/copy/id';
 import { cn } from '@/lib/utils/cn';
-import { isPathUnder } from '@/lib/utils/paths';
+import { isPathUnder, visitorPathFor } from '@/lib/utils/paths';
 
 // The current page gets the same 2 px primary underline as the public tabs (docs/StyleGuide.md §5.5),
 // not a filled pill, so the booking button stays the strongest thing in the header.
@@ -17,7 +17,7 @@ export interface HeaderNavProps {
 }
 
 export function HeaderNav({ items, className }: HeaderNavProps) {
-  const pathname = usePathname();
+  const pathname = visitorPathFor(usePathname());
   return (
     <nav aria-label={copy.layout.mainNav} className={className}>
       <ul className="flex items-center gap-1">
