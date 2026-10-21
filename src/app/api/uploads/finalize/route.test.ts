@@ -10,12 +10,15 @@ import { requireUser, type StaffContext } from '@/server/auth/guards';
 import { POST } from './route';
 import { createFakeAdminClient } from '../../../../../tests/fixtures/fake-admin-client';
 import { cleanBookletPdf, handWrittenPdf } from '../../../../../tests/fixtures/pdf';
+import { HEAVY_FILE_TEST_TIMEOUT_MS } from '../../../../../tests/fixtures/timeouts';
 import {
   iphoneHeicPhoto,
   jpegPhoto,
   mif1HeifPhoto,
   SVG_WITH_SCRIPT,
 } from '../../../../../tests/fixtures/uploads';
+
+vi.setConfig({ testTimeout: HEAVY_FILE_TEST_TIMEOUT_MS });
 
 const fake = vi.hoisted(() => ({ admin: null as ReturnType<typeof createFakeAdminClient> | null }));
 

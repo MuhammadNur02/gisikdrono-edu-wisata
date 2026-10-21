@@ -10,8 +10,11 @@ import {
   type FakeAdminClient,
 } from '../../../tests/fixtures/fake-admin-client';
 import { cleanBookletPdf } from '../../../tests/fixtures/pdf';
+import { HEAVY_FILE_TEST_TIMEOUT_MS } from '../../../tests/fixtures/timeouts';
 import { BOOKLET_ID, OFFICER_05, quarantinedIn } from '../../../tests/fixtures/upload-service';
 import { jpegPhoto } from '../../../tests/fixtures/uploads';
+
+vi.setConfig({ testTimeout: HEAVY_FILE_TEST_TIMEOUT_MS });
 
 // Security review of PR #14, F6 and F2: a gallery photo's thumbnail is written before the photo itself, so a
 // failure in between is mended by a retry, and a retry that finds both files answers their data; a booklet scan

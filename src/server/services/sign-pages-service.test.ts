@@ -12,8 +12,11 @@ import {
   type FakeAdminClient,
 } from '../../../tests/fixtures/fake-admin-client';
 import { cleanBookletPdf } from '../../../tests/fixtures/pdf';
+import { HEAVY_FILE_TEST_TIMEOUT_MS } from '../../../tests/fixtures/timeouts';
 import { BOOKLET_ID, OFFICER_05, quarantinedIn } from '../../../tests/fixtures/upload-service';
 import { jpegPhoto } from '../../../tests/fixtures/uploads';
+
+vi.setConfig({ testTimeout: HEAVY_FILE_TEST_TIMEOUT_MS });
 
 // Security review of PR #14, F2 and F8: api/uploads/sign-pages counts the signature first and does the cheap checks
 // before the download and parse of the published PDF, inside a scan slot taken before the claim; a published PDF

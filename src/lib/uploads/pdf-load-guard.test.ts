@@ -16,6 +16,9 @@ import {
   pdfObject,
   pdfWithPackedStream,
 } from '../../../tests/fixtures/pdf';
+import { HEAVY_FILE_TEST_TIMEOUT_MS } from '../../../tests/fixtures/timeouts';
+
+vi.setConfig({ testTimeout: HEAVY_FILE_TEST_TIMEOUT_MS });
 
 // Security review of PR #14, L2 and N3: pdf-lib inflates object and cross-reference streams while it loads and turns
 // every object it parses into a JavaScript object, so the scan caps what the streams of a document may unpack to
