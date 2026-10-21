@@ -29,10 +29,10 @@ const proofSchema = z
 
 const PROOF_PATTERN = /^([A-Za-z0-9_-]{16,400})\.([A-Za-z0-9_-]{43})$/;
 
-export function signPhoneProof(
+export async function signPhoneProof(
   proof: Omit<PhoneProof, 'expiresAt'>,
   nowSeconds: number,
-): { value: string; maxAge: number } {
+): Promise<{ value: string; maxAge: number }> {
   const payload = Buffer.from(
     JSON.stringify({
       c: proof.channel,
@@ -43,7 +43,7 @@ export function signPhoneProof(
     }),
   ).toString('base64url');
   return {
-    value: `${payload}.${sign('gsk-phone-proof-v1', payload)}`,
+    value: `${payload}.${await sign('gsk-phone-proof-v1', payload)}`,
     maxAge: PHONE_PROOF_TTL_SECONDS,
   };
 }
@@ -57,10 +57,13 @@ function decodeProof(payload: string): z.infer<typeof proofSchema> | null {
   }
 }
 
-export function readPhoneProof(value: string, nowSeconds: number): PhoneProof | null {
+export async function readPhoneProof(
+  value: string,
+  nowSeconds: number,
+): Promise<PhoneProof | null> {
   const parts = PROOF_PATTERN.exec(value);
   if (!parts?.[1] || !parts[2]) return null;
-  if (!hasValidSignature('gsk-phone-proof-v1', parts[1], parts[2])) return null;
+  if (!(await hasValidSignature('gsk-phone-proof-v1', parts[1], parts[2]))) return null;
   const proof = decodeProof(parts[1]);
   if (!proof || proof.exp <= nowSeconds) return null;
   return { channel: proof.c, phone: proof.p, email: proof.e, otpId: proof.o, expiresAt: proof.exp };

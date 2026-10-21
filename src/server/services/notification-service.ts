@@ -53,7 +53,7 @@ async function linkFor(adminClient: DatabaseClient, row: OutboxRow, nowSeconds: 
     .eq('id', row.booking_id)
     .single();
   if (error) throw error;
-  const token = mintGuestLink({
+  const token = await mintGuestLink({
     bookingCode: data.booking_code,
     scope: scope.data.link_scope,
     tokenVersion: data.token_version,

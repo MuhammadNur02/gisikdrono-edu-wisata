@@ -124,7 +124,9 @@ describe('processNotifications', () => {
     expect(message?.bodyParams).toEqual({ name: 'Ani', booking_code: 'GSK-7F3K9Q2M' });
     expect(message?.link?.url).toMatch(/^http:\/\/127\.0\.0\.1:3000\/reservasi\/GSK-7F3K9Q2M\?t=/);
     const token = message?.link?.buttonSuffix.split('?t=')[1] ?? '';
-    expect(readGuestLink(token, { bookingCode: 'GSK-7F3K9Q2M', nowSeconds: NOW })).toMatchObject({
+    await expect(
+      readGuestLink(token, { bookingCode: 'GSK-7F3K9Q2M', nowSeconds: NOW }),
+    ).resolves.toMatchObject({
       ok: true,
       link: { s: 'manage', v: 4 },
     });

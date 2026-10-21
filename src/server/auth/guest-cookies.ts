@@ -16,7 +16,7 @@ export function nowInSeconds(): number {
 }
 
 export async function rememberPhoneProof(proof: Omit<PhoneProof, 'expiresAt'>): Promise<void> {
-  const { value, maxAge } = signPhoneProof(proof, nowInSeconds());
+  const { value, maxAge } = await signPhoneProof(proof, nowInSeconds());
   (await cookies()).set(PHONE_PROOF_COOKIE, value, { ...GUEST_COOKIE_OPTIONS, path: '/', maxAge });
 }
 

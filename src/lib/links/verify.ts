@@ -12,15 +12,15 @@ import { decodePayload, splitToken, type GuestLinkPayload } from '@/lib/links/to
 export type GuestLinkReading =
   { ok: true; link: GuestLinkPayload } | { ok: false; reason: 'malformed' | 'forged' | 'expired' };
 
-export function readGuestLink(
+export async function readGuestLink(
   token: string,
   { bookingCode, nowSeconds }: { bookingCode: string; nowSeconds: number },
-): GuestLinkReading {
+): Promise<GuestLinkReading> {
   const parts = splitToken(token);
   const link = parts ? decodePayload(parts.payload) : null;
   if (!parts || !link) return { ok: false, reason: 'malformed' };
   const message = signedMessage(bookingCode, parts.payload);
-  if (!hasValidSignature('gsk-guest-link-v1', message, parts.signature)) {
+  if (!(await hasValidSignature('gsk-guest-link-v1', message, parts.signature))) {
     return { ok: false, reason: 'forged' };
   }
   if (link.exp <= nowSeconds) return { ok: false, reason: 'expired' };

@@ -124,10 +124,10 @@ describe('verifyPhoneOtp and resendBookingLink', () => {
 });
 
 describe('verifyGuestAccess', () => {
-  const access = (token: string, required: 'view' | 'manage' = 'view') =>
+  const access = async (token: string | Promise<string>, required: 'view' | 'manage' = 'view') =>
     verifyGuestAccess({
       bookingCode: CODE,
-      token,
+      token: await token,
       required,
       clientIp: '203.0.113.9',
       nowSeconds: NOW,
@@ -144,7 +144,7 @@ describe('verifyGuestAccess', () => {
   });
 
   it('turns a forged link away before reading the booking', async () => {
-    await expect(access(`${minted('manage').slice(0, -3)}AAA`)).resolves.toBeNull();
+    await expect(access(`${(await minted('manage')).slice(0, -3)}AAA`)).resolves.toBeNull();
     expect(booking.reads).toBe(0);
   });
 

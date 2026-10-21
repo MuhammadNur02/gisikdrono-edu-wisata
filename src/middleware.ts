@@ -129,7 +129,7 @@ export async function middleware(request: NextRequest) {
   });
   const galleryRedirect = redirectMalformedGallery(request);
   if (galleryRedirect) return withSecurityHeaders(galleryRedirect, pathname, csp);
-  const guestRedirect = redirectGuestLink(request, Math.floor(Date.now() / MS_PER_SECOND));
+  const guestRedirect = await redirectGuestLink(request, Math.floor(Date.now() / MS_PER_SECOND));
   if (guestRedirect) return withSecurityHeaders(guestRedirect, pathname, csp);
   const continueRequest = () => forwardRequest(request, nonce, csp);
   const response = { current: continueRequest() };

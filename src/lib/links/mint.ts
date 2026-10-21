@@ -18,16 +18,16 @@ export function signedMessage(bookingCode: string, payload: string): string {
   return `${bookingCode}.${payload}`;
 }
 
-export function mintGuestLink({
+export async function mintGuestLink({
   bookingCode,
   scope,
   tokenVersion,
   nowSeconds,
-}: GuestLinkRequest): string {
+}: GuestLinkRequest): Promise<string> {
   const payload = encodePayload({
     s: scope,
     v: tokenVersion,
     exp: nowSeconds + GUEST_LINK_TTL_SECONDS[scope],
   });
-  return `${payload}.${sign('gsk-guest-link-v1', signedMessage(bookingCode, payload))}`;
+  return `${payload}.${await sign('gsk-guest-link-v1', signedMessage(bookingCode, payload))}`;
 }

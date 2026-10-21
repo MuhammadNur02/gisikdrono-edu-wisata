@@ -107,7 +107,7 @@ export async function verifyGuestAccess(request: {
   const ip = rateLimitIpBucket(request.clientIp);
   if (!(await withinRateLimits(adminClient, [{ name: 'link_verify:ip', subject: ip }])))
     return null;
-  const reading = readGuestLink(request.token, request);
+  const reading = await readGuestLink(request.token, request);
   if (!reading.ok) return null;
   const booking = await tokenVersionOf(adminClient, request.bookingCode);
   const isCurrent =

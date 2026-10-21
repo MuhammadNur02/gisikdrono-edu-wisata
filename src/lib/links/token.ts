@@ -5,8 +5,8 @@ import { GUEST_LINK_COOKIE_PREFIX, GUEST_LINK_SCOPES, type GuestLinkScope } from
 
 // The shape of a guest link token, `<payload>.<signature>`, both base64url: the payload is {s: scope, v:
 // token_version, exp} and the signature an HMAC over it and the booking code, made in mint.ts. Nothing here uses a
-// key, so src/middleware.ts can read a token's expiry when it moves it into its cookie; only verify.ts says whether a
-// token is genuine. The booking's id is never in it: the code in the address names the booking (docs/Security.md §6.7).
+// key; only verify.ts says whether a token is genuine. The booking's id is never in it: the code in the address names
+// the booking (docs/Security.md §6.7).
 
 export interface GuestLinkPayload {
   s: GuestLinkScope;
@@ -55,13 +55,4 @@ export function splitToken(token: string): { payload: string; signature: string 
 // One cookie per booking, bk_<booking_code>, valid under /reservasi/<booking_code> only.
 export function guestLinkCookieName(bookingCode: string): string {
   return `${GUEST_LINK_COOKIE_PREFIX}${bookingCode}`;
-}
-
-// How long the cookie holding this token may live: until the token expires. Null for something that is not a token
-// or has already expired, which the middleware then drops instead of storing.
-export function guestLinkCookieMaxAge(token: string, nowSeconds: number): number | null {
-  const parts = splitToken(token);
-  const payload = parts ? decodePayload(parts.payload) : null;
-  if (!payload || payload.exp <= nowSeconds) return null;
-  return payload.exp - nowSeconds;
 }
