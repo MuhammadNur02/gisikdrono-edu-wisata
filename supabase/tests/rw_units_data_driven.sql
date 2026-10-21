@@ -1,8 +1,9 @@
--- RWs as data (decision of 2026-10-21, Task P2.10.01, 20261021120000_rw_units_data_driven.sql): an RW's row carries
--- its look (palette key, icon, programme name, schedule), keeps its number, code, slug and name in step, starts
--- offline, and goes online through set_rw_unit_status once its default revenue-share rules exist.
+-- RWs as data (decision of 2026-10-21, Tasks P2.10.01 and P2.10.02, 20261021120000_rw_units_data_driven.sql and
+-- 20261021130000_rw_units_products_heading.sql): an RW's row carries its look (palette key, icon, programme name,
+-- schedule, product heading), keeps its number, code, slug and name in step, starts offline, and goes online through
+-- set_rw_unit_status once its default revenue-share rules exist.
 begin;
-select plan(40);
+select plan(43);
 \ir helpers/rls_personas.psql
 
 -- ===== Columns =====
@@ -20,6 +21,11 @@ select is(
    from public.rw_units where id in (5, 8)),
   '5:Ecowastreme:leaf:recycle:false, 8:Kampung Seni Budaya:terracotta:drama:true',
   'RW 05 and RW 08 keep the look src/config/rw.ts gave them'
+);
+select is(
+  (select string_agg(id || ':' || coalesce(products_heading, '-'), ', ' order by id) from public.rw_units where id in (5, 8)),
+  '5:-, 8:Suvenir dan produk UMKM',
+  'the arts programme names its souvenirs, every other RW keeps the default heading'
 );
 
 -- ===== Number, code, slug and name stay in step =====
@@ -51,6 +57,9 @@ select throws_ok($$select pg_temp.insert_rw(96::smallint, 'RW96', 'rw-96-uji', '
 select throws_ok($$insert into public.rw_units (id, code, slug, name, short_name, theme_label, icon_key)
   values (96, 'RW96', 'rw-96-uji', 'RW 96 Uji', 'Uji', 'Uji', 'users')$$, '23502', null,
   'an RW without an accent is refused');
+select throws_ok($$insert into public.rw_units (id, code, slug, name, short_name, theme_label, accent_key, icon_key,
+  products_heading) values (96, 'RW96', 'rw-96-uji', 'RW 96 Uji', 'Uji', 'Uji', 'teal', 'users', ' Suvenir')$$, '23514', null,
+  'a product heading has no space at either end');
 select lives_ok($$select pg_temp.insert_rw(96::smallint, 'RW96', 'rw-96-uji', 'RW 96 Uji', 'Uji')$$,
   'a consistent RW is accepted');
 select is((select is_active from public.rw_units where id = 96), false, 'and is offline');
@@ -67,6 +76,8 @@ select throws_ok($$update public.rw_units set accent_key = 'violet' where id = 5
   'and changes no accent');
 select throws_ok($$update public.rw_units set schedule_enabled = true where id = 5$$, '42501', null,
   'nor gives their RW the schedule');
+select throws_ok($$update public.rw_units set products_heading = 'Suvenir' where id = 5$$, '42501', null,
+  'nor renames its product section before the page form has the field');
 
 -- ===== set_rw_unit_status =====
 

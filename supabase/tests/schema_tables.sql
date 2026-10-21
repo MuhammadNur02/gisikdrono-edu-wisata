@@ -69,7 +69,9 @@ select columns_are('public', 'rw_units', array[
   'treasury_account_number', 'treasury_account_holder', 'map_lat', 'map_lng', 'is_active',
   'sort_order', 'created_at', 'updated_at',
   -- added by 20261021120000 so the pages, menu and colours of an RW come from its row
-  'short_name', 'accent_key', 'icon_key', 'schedule_enabled'
+  'short_name', 'accent_key', 'icon_key', 'schedule_enabled',
+  -- added by 20261021130000, the heading of the RW page's product section
+  'products_heading'
 ]);
 select columns_are('public', 'profiles', array[
   'id', 'email', 'full_name', 'phone', 'role', 'rw_id', 'is_active', 'mfa_required',
