@@ -613,6 +613,7 @@ create table public.rw_units (
   accent_key              public.rw_accent not null,                             -- *palette key of docs/StyleGuide.md §2.7, never a colour
   icon_key                public.rw_icon not null,                               -- *photo-slot placeholder icon
   schedule_enabled        boolean not null default false,                        -- *the RW runs a performance schedule (/jadwal)
+  products_heading        text check (products_heading ~ '^\S(.*\S)?$' and char_length(products_heading) <= 60),  -- 20261021130000: the product section's heading in place of 'Produk UMKM'
   tagline                 text,
   description_md          text,
   vision_md               text,

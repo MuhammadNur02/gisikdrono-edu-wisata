@@ -57,7 +57,7 @@ The site has to look like Gisikdrono, not like a template. These rules hold for 
 
 | # | Rule | In practice |
 |---|---|---|
-| G1 | No stock or AI-generated images of people or places | Only real Gisikdrono photos from `public-media`. Until a photo exists the slot shows a placeholder without words (`PhotoPlaceholder`, decision of 2026-10-18): the RW's soft accent as background (`RW_ACCENTS[rwId].soft` through `softClassesFor` in `src/config/rw.ts`; a combo, a kelurahan item or anything without one RW uses the neutral soft pair) and the lucide icon of what the slot is about, at 40 px with 1.5 stroke (package category, product category, the RW's own icon, `Newspaper` for an article, `Images` for the hero), never a stand-in image. It is `role="img"` with an `aria-label` that says what the photo will show, so screen readers still hear it. |
+| G1 | No stock or AI-generated images of people or places | Only real Gisikdrono photos from `public-media`. Until a photo exists the slot shows a placeholder without words (`PhotoPlaceholder`, decision of 2026-10-18): the RW's soft accent as background (`softClassesFor` in `src/config/rw.ts`, from the RW's `accent_key`; a combo, a kelurahan item or anything without one RW uses the neutral soft pair) and the lucide icon of what the slot is about, at 40 px with 1.5 stroke (package category, product category, the RW's own icon, `Newspaper` for an article, `Images` for the hero), never a stand-in image. It is `role="img"` with an `aria-label` that says what the photo will show, so screen readers still hear it. |
 | G2 | No gradient text, no purple or indigo gradients, no decorative blobs or orbs, no glow effects | The only decorative backgrounds are the dot-grid SVG and the ice-to-background gradient of §8.5. |
 | G3 | Glass cards only over the hero photo, at most one per screen | `Card variant="glass"` sits on the hero image and nowhere else (§5.2). Blurred sticky bars (§4.3) are not cards and keep their own budget. |
 | G4 | No emoji as UI icons | Icons are `lucide-react` only (§8.1). Emoji may appear inside content people wrote themselves, such as a review. |
@@ -192,14 +192,26 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
   --brand-deep: 222.2 47.4% 11.2%;
   --brand-royal: 226.2 70.7% 40.2%;
   --brand-ice: 213.8 100% 96.9%;
-  --rw05: 89.2 55.1% 27.1%;
-  --rw05-foreground: 0 0% 100%;
-  --rw05-soft: 88 42.9% 93.1%;
-  --rw05-soft-foreground: 89.2 55.1% 27.1%;
-  --rw08: 22.9 58.6% 34.1%;
-  --rw08-foreground: 0 0% 100%;
-  --rw08-soft: 28.6 60% 93.1%;
-  --rw08-soft-foreground: 22.9 58.6% 34.1%;
+  --rw-leaf: 89.2 55.1% 27.1%;
+  --rw-leaf-foreground: 0 0% 100%;
+  --rw-leaf-soft: 88 42.9% 93.1%;
+  --rw-leaf-soft-foreground: 89.2 55.1% 27.1%;
+  --rw-terracotta: 22.9 58.6% 34.1%;
+  --rw-terracotta-foreground: 0 0% 100%;
+  --rw-terracotta-soft: 28.6 60% 93.1%;
+  --rw-terracotta-soft-foreground: 22.9 58.6% 34.1%;
+  --rw-mulberry: 321 32.6% 36.1%;
+  --rw-mulberry-foreground: 0 0% 100%;
+  --rw-mulberry-soft: 324 35.7% 94.5%;
+  --rw-mulberry-soft-foreground: 321 32.6% 36.1%;
+  --rw-teal: 160 30% 25%;
+  --rw-teal-foreground: 0 0% 100%;
+  --rw-teal-soft: 158 32% 93.5%;
+  --rw-teal-soft-foreground: 160 30% 25%;
+  --rw-violet: 270 40% 32%;
+  --rw-violet-foreground: 0 0% 100%;
+  --rw-violet-soft: 270 45% 95%;
+  --rw-violet-soft-foreground: 270 40% 32%;
   --success: 142.1 76.2% 36.3%;
   --success-foreground: 0 0% 100%;
   --success-soft: 140.6 84.2% 92.5%;
@@ -260,14 +272,26 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
   --sidebar-accent-foreground: 210 40% 98%;
   --sidebar-border: 217.2 32.6% 17.5%;
   --sidebar-ring: 217.2 91.2% 59.8%;
-  --rw05: 87.3 43.3% 59.2%;
-  --rw05-foreground: 240 10% 3.9%;
-  --rw05-soft: 97.5 28.6% 11%;
-  --rw05-soft-foreground: 87.3 43.3% 59.2%;
-  --rw08: 27.3 64.4% 65.9%;
-  --rw08-foreground: 240 10% 3.9%;
-  --rw08-soft: 24.5 35.5% 12.2%;
-  --rw08-soft-foreground: 27.3 64.4% 65.9%;
+  --rw-leaf: 87.3 43.3% 59.2%;
+  --rw-leaf-foreground: 240 10% 3.9%;
+  --rw-leaf-soft: 97.5 28.6% 11%;
+  --rw-leaf-soft-foreground: 87.3 43.3% 59.2%;
+  --rw-terracotta: 27.3 64.4% 65.9%;
+  --rw-terracotta-foreground: 240 10% 3.9%;
+  --rw-terracotta-soft: 24.5 35.5% 12.2%;
+  --rw-terracotta-soft-foreground: 27.3 64.4% 65.9%;
+  --rw-mulberry: 322.6 43.3% 72.4%;
+  --rw-mulberry-foreground: 240 10% 3.9%;
+  --rw-mulberry-soft: 321.2 29.8% 11.2%;
+  --rw-mulberry-soft-foreground: 322.6 43.3% 72.4%;
+  --rw-teal: 160 40% 69%;
+  --rw-teal-foreground: 240 10% 3.9%;
+  --rw-teal-soft: 160 30% 11%;
+  --rw-teal-soft-foreground: 160 40% 69%;
+  --rw-violet: 270 60% 82%;
+  --rw-violet-foreground: 240 10% 3.9%;
+  --rw-violet-soft: 270 30% 13%;
+  --rw-violet-soft-foreground: 270 60% 82%;
   --success: 142.1 70.6% 45.3%;
   --success-foreground: 222.2 47.4% 11.2%;
   --success-soft: 142 70% 45% / 0.15;
@@ -326,14 +350,26 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
   --color-brand-deep: hsl(var(--brand-deep));
   --color-brand-royal: hsl(var(--brand-royal));
   --color-brand-ice: hsl(var(--brand-ice));
-  --color-rw05: hsl(var(--rw05));
-  --color-rw05-foreground: hsl(var(--rw05-foreground));
-  --color-rw05-soft: hsl(var(--rw05-soft));
-  --color-rw05-soft-foreground: hsl(var(--rw05-soft-foreground));
-  --color-rw08: hsl(var(--rw08));
-  --color-rw08-foreground: hsl(var(--rw08-foreground));
-  --color-rw08-soft: hsl(var(--rw08-soft));
-  --color-rw08-soft-foreground: hsl(var(--rw08-soft-foreground));
+  --color-rw-leaf: hsl(var(--rw-leaf));
+  --color-rw-leaf-foreground: hsl(var(--rw-leaf-foreground));
+  --color-rw-leaf-soft: hsl(var(--rw-leaf-soft));
+  --color-rw-leaf-soft-foreground: hsl(var(--rw-leaf-soft-foreground));
+  --color-rw-terracotta: hsl(var(--rw-terracotta));
+  --color-rw-terracotta-foreground: hsl(var(--rw-terracotta-foreground));
+  --color-rw-terracotta-soft: hsl(var(--rw-terracotta-soft));
+  --color-rw-terracotta-soft-foreground: hsl(var(--rw-terracotta-soft-foreground));
+  --color-rw-mulberry: hsl(var(--rw-mulberry));
+  --color-rw-mulberry-foreground: hsl(var(--rw-mulberry-foreground));
+  --color-rw-mulberry-soft: hsl(var(--rw-mulberry-soft));
+  --color-rw-mulberry-soft-foreground: hsl(var(--rw-mulberry-soft-foreground));
+  --color-rw-teal: hsl(var(--rw-teal));
+  --color-rw-teal-foreground: hsl(var(--rw-teal-foreground));
+  --color-rw-teal-soft: hsl(var(--rw-teal-soft));
+  --color-rw-teal-soft-foreground: hsl(var(--rw-teal-soft-foreground));
+  --color-rw-violet: hsl(var(--rw-violet));
+  --color-rw-violet-foreground: hsl(var(--rw-violet-foreground));
+  --color-rw-violet-soft: hsl(var(--rw-violet-soft));
+  --color-rw-violet-soft-foreground: hsl(var(--rw-violet-soft-foreground));
   --color-success: hsl(var(--success));
   --color-success-foreground: hsl(var(--success-foreground));
   --color-success-soft: hsl(var(--success-soft));
@@ -407,7 +443,7 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
 | `bg-sidebar text-sidebar-foreground` | `--sidebar-*` | shadcn `Sidebar` |
 | `fill-chart-1` … `stroke-chart-5` | `--chart-n` | Recharts via `ChartContainer` `config.color` |
 | `bg-brand-deep text-white` / `from-brand-ice` | brand customs | CTA band, hero gradient |
-| `text-rw05` / `bg-rw08-soft text-rw08-soft-foreground` (through `src/config/rw.ts`) | `--rw05*`, `--rw08*` | RW eyebrow, RW tag, map hotspot (§2.7) |
+| `text-rw-leaf` / `bg-rw-terracotta-soft text-rw-terracotta-soft-foreground` (through `RW_ACCENT_CLASSES` in `src/config/rw.ts`) | `--rw-<palette>*` (`leaf`, `terracotta`, `mulberry`, `teal`, `violet`) | RW eyebrow, RW tag, map hotspot (§2.7) |
 | `rounded-xl` / `rounded-2xl` / `rounded-full` | `--radius-xl` / `--radius-2xl` | surfaces / modals / badges |
 | `font-display` / `font-sans` | `--font-display` / `--font-sans` | headings / body |
 
@@ -431,12 +467,12 @@ shadcn `components.json`: `"style": "new-york"`, `"tailwind": { "css": "src/styl
 | success / warning / info / danger / neutral soft pairs (dark; 15 % tint composited over `--card` #0F172A, neutral over #1E293B) | 8.0 / 8.3 / 8.1 / 8.2 / 9.8 | AA, badge-safe |
 | `--warning-foreground` #0F172A on `--warning` #D97706 (light) | 5.6:1 | AA text; the only strong fill with dark text in light mode |
 | strong `--success` #16A34A / `--info` #0284C7 with white | 3.3 / 4.1 | large text (≥ 24 px, or ≥ 18.66 px bold) only |
-| `--rw05-foreground` on `--rw05` / `--rw08-foreground` on `--rw08` (light: white on #466B1F / #8A4B24) | 6.2 / 6.8 | AA text |
-| RW soft pairs (light: #466B1F on #EEF5E6, #8A4B24 on #F8EDE3) | 5.6 / 5.9 | AA, tag-safe |
-| RW accents as text on `--background` / `--card` / `--muted` (light) | RW 05 6.2 / 6.2 / 5.7 · RW 08 6.8 / 6.8 / 6.2 | AA |
-| RW fill pairs (dark: #09090B on #9BC46A / #E0A370) | 10.0 / 9.1 | AA text |
-| RW soft pairs (dark: #9BC46A on #1A2414, #E0A370 on #2A1D14) | 8.0 / 7.5 | AA, tag-safe |
-| RW accents as text on `--background` / `--card` / `--muted` (dark) | RW 05 10.0 / 8.9 / 7.3 · RW 08 9.1 / 8.2 / 6.7 | AA |
+| RW fill pairs, white on the accent (light: leaf / terracotta / mulberry / teal / violet) | 6.2 / 6.8 / 7.8 / 8.6 / 10.3 | AA text |
+| RW soft pairs, accent on its soft tint (light) | 5.6 / 5.9 / 6.7 / 7.7 / 8.9 | AA, tag-safe |
+| RW accents as text on `--background` / `--card` / `--muted` (light) | leaf 6.2 / 6.2 / 5.7 · terracotta 6.8 / 6.8 / 6.2 · mulberry 7.8 / 7.8 / 7.1 · teal 8.6 / 8.6 / 7.9 · violet 10.3 / 10.3 / 9.4 | AA |
+| RW fill pairs, #09090B on the accent (dark) | 10.0 / 9.1 / 8.8 / 11.3 / 11.0 | AA text |
+| RW soft pairs, accent on its soft tint (dark) | 8.0 / 7.5 / 7.7 / 9.1 / 9.5 | AA, tag-safe |
+| RW accents as text on `--background` / `--card` / `--muted` (dark) | leaf 10.0 / 8.9 / 7.3 · terracotta 9.1 / 8.2 / 6.7 · mulberry 8.8 / 7.9 / 6.5 · teal 11.3 / 10.1 / 8.3 · violet 11.0 / 9.9 / 8.1 | AA |
 
 ### 2.6 Theme behaviour
 
@@ -444,29 +480,43 @@ shadcn `components.json`: `"style": "new-york"`, `"tailwind": { "css": "src/styl
 
 ### 2.7 RW accent colours
 
-Each RW has an accent so a visitor can tell RW 05 (Ecowastreme, green) from RW 08 (Kampung Seni Budaya, terracotta) at a glance. The accents follow the same shape as the semantic families: a fill, the text on that fill, a tinted background and the text on that tint.
+Each RW has an accent so a visitor can tell the RWs apart at a glance: RW 05 Ecowastreme in green, the arts programme in terracotta. The accents follow the same shape as the semantic families: a fill, the text on that fill, a tinted background and the text on that tint. The RWs are rows of `rw_units` (decision of 2026-10-21), and each names its accent by a palette key, `rw_units.accent_key` (enum `rw_accent`); the database never holds a colour, because the build only knows the palettes below. `leaf` and `terracotta` are in use, `mulberry` is RW 08's from its new programme, and `teal` and `violet` are spares, so the next RW gets a colour of its own without a release.
 
-| Family | Variable | Light HEX | Light HSL | Dark HEX | Dark HSL |
+| Palette | Variable | Light HEX | Light HSL | Dark HEX | Dark HSL |
 |---|---|---|---|---|---|
-| RW 05 | `--rw05` | #466B1F | `89.2 55.1% 27.1%` | #9BC46A | `87.3 43.3% 59.2%` |
-| | `--rw05-foreground` | #FFFFFF | `0 0% 100%` | #09090B | `240 10% 3.9%` |
-| | `--rw05-soft` | #EEF5E6 | `88 42.9% 93.1%` | #1A2414 | `97.5 28.6% 11%` |
-| | `--rw05-soft-foreground` | #466B1F | `89.2 55.1% 27.1%` | #9BC46A | `87.3 43.3% 59.2%` |
-| RW 08 | `--rw08` | #8A4B24 | `22.9 58.6% 34.1%` | #E0A370 | `27.3 64.4% 65.9%` |
-| | `--rw08-foreground` | #FFFFFF | `0 0% 100%` | #09090B | `240 10% 3.9%` |
-| | `--rw08-soft` | #F8EDE3 | `28.6 60% 93.1%` | #2A1D14 | `24.5 35.5% 12.2%` |
-| | `--rw08-soft-foreground` | #8A4B24 | `22.9 58.6% 34.1%` | #E0A370 | `27.3 64.4% 65.9%` |
+| leaf | `--rw-leaf` | #466B1F | `89.2 55.1% 27.1%` | #9BC46A | `87.3 43.3% 59.2%` |
+| | `--rw-leaf-foreground` | #FFFFFF | `0 0% 100%` | #09090B | `240 10% 3.9%` |
+| | `--rw-leaf-soft` | #EEF5E6 | `88 42.9% 93.1%` | #1A2414 | `97.5 28.6% 11%` |
+| | `--rw-leaf-soft-foreground` | #466B1F | `89.2 55.1% 27.1%` | #9BC46A | `87.3 43.3% 59.2%` |
+| terracotta | `--rw-terracotta` | #8A4B24 | `22.9 58.6% 34.1%` | #E0A370 | `27.3 64.4% 65.9%` |
+| | `--rw-terracotta-foreground` | #FFFFFF | `0 0% 100%` | #09090B | `240 10% 3.9%` |
+| | `--rw-terracotta-soft` | #F8EDE3 | `28.6 60% 93.1%` | #2A1D14 | `24.5 35.5% 12.2%` |
+| | `--rw-terracotta-soft-foreground` | #8A4B24 | `22.9 58.6% 34.1%` | #E0A370 | `27.3 64.4% 65.9%` |
+| mulberry | `--rw-mulberry` | #7A3E65 | `321 32.6% 36.1%` | #D79AC0 | `322.6 43.3% 72.4%` |
+| | `--rw-mulberry-foreground` | #FFFFFF | `0 0% 100%` | #09090B | `240 10% 3.9%` |
+| | `--rw-mulberry-soft` | #F6ECF2 | `324 35.7% 94.5%` | #25141F | `321.2 29.8% 11.2%` |
+| | `--rw-mulberry-soft-foreground` | #7A3E65 | `321 32.6% 36.1%` | #D79AC0 | `322.6 43.3% 72.4%` |
+| teal (spare) | `--rw-teal` | #2D5346 | `160 30% 25%` | #90D0BA | `160 40% 69%` |
+| | `--rw-teal-foreground` | #FFFFFF | `0 0% 100%` | #09090B | `240 10% 3.9%` |
+| | `--rw-teal-soft` | #E9F4F0 | `158 32% 93.5%` | #14241F | `160 30% 11%` |
+| | `--rw-teal-soft-foreground` | #2D5346 | `160 30% 25%` | #90D0BA | `160 40% 69%` |
+| violet (spare) | `--rw-violet` | #523172 | `270 40% 32%` | #D1B6ED | `270 60% 82%` |
+| | `--rw-violet-foreground` | #FFFFFF | `0 0% 100%` | #09090B | `240 10% 3.9%` |
+| | `--rw-violet-soft` | #F2EDF8 | `270 45% 95%` | #21172B | `270 30% 13%` |
+| | `--rw-violet-soft-foreground` | #523172 | `270 40% 32%` | #D1B6ED | `270 60% 82%` |
+
+Every pair passes AA in both modes (§2.5). The spares were also chosen against colour blindness: simulated for protanopia, deuteranopia and tritanopia, each stays at least 5.3 OKLab units (×100) from every other palette, mulberry and teal under deuteranopia being the closest pair. The palettes already in use are closer than that: leaf and terracotta all but merge under deuteranopia (0.5), and terracotta and mulberry come to 3.5 under tritanopia. Colour is therefore never the only sign of an RW: its label (`RW 05`) is always written next to the accent, on map hotspots too.
 
 Use them only where the RW itself is the point:
 
 - the RW eyebrow or label (`RW 05 · Ecowastreme`) and the title accent on an RW page;
 - map hotspots of that RW (fill pair);
 - the RW tag on a package card (soft pair);
-- a combo package shows both accents, RW 05 first.
+- a combo package shows the accent of every RW it visits, in leg order.
 
 Never use them for call-to-action buttons (those stay `--primary`), for statuses (those use the semantic families of §2.2 through `src/config/status.ts`), or as paragraph text colour.
 
-Components never write these classes by hand. `src/config/rw.ts` maps `rw_id` 5 and 8 to their classes (`RW_ACCENTS[rwId].text`, `.fill`, `.soft`, `.border`), so a new RW or a colour change touches one file.
+Components never write these classes by hand. `RW_ACCENT_CLASSES` in `src/config/rw.ts` spells each palette's classes out in full (Tailwind only generates classes it finds written, so a class is never built from a key at runtime), and `rwAccentClasses(accentKey)` hands them out. An RW that is offline has no accent on the public site and is shown in the neutral pair. A new palette needs its four variables here and in `globals.css`, a value of the `rw_accent` enum, and its classes in `src/config/rw.ts`.
 
 ## 3. Typography
 
@@ -724,7 +774,7 @@ Avatar initial in `bg-secondary text-secondary-foreground`, `reviewer_name` (the
 
 ### 5.11 MasonryGallery and lightbox (`src/components/gallery`)
 
-CSS columns `columns-2 md:columns-3 lg:columns-4 gap-4`, items `break-inside-avoid mb-4 rounded-xl overflow-hidden`; images keep native ratio with `width`/`height` from `galleries` to avoid CLS and show the average colour of the stored `galleries.blurhash`, read server-side by `src/lib/images/blur.ts`, as the tile background while the photo loads (§8.2). `GalleryFilter` is a row of pill links (`FilterChipLink`, `aria-current="page"` on the chosen one) to `?filter=rw05|rw08|umkm|kunjungan` (`docs/PRD.md` FR-PUB-14: `rw05`/`rw08` filter on `rw_id`, `umkm` and `kunjungan` on `gallery_category` `umkm` / `visit`; RW pages link to `/galeri?filter=rw05` and `?filter=rw08`). Lightbox: `yet-another-react-lightbox` (`next/dynamic`, `ssr:false`), captions from `caption` with `alt_text` as the image alt, swipe and arrow keys, `Esc` closes, focus returns to the thumbnail. `Muat lagi` is a `Link` to `?halaman=<n+1>#foto-<first new>`: the page renders every page up to `n` (24 items each, each a cached read), so it works without script, and the link jumps to the first new tile; never infinite scroll. `?halaman=` stops at 20 pages (`GALLERY_MAX_PAGES`) and at the last page that exists; any other value (not an integer, zero, negative, too large, `1`) and any unknown `?filter=` redirect to the nearest valid address (`src/lib/utils/gallery-search.ts`, decision of 2026-10-18; this replaces the public Server Action Task P2.6.01 named). `media_type = video` items show a play glyph and `Video YouTube` over the 16:9 still (`thumbnail_path`, or YouTube's own from `i.ytimg.com` without one) and load nothing from YouTube until the visitor presses play; the player from `youtube-nocookie.com` then replaces the still and takes the focus (click-to-load, decision of 2026-10-18; CSP and id handling in `docs/Security.md` §8.2). The RW pages use the same grid for their gallery section. States: loading (skeleton tiles with the stored ratio), filter-empty (`Belum ada foto untuk filter ini`), lightbox open. Do: 24 items per page, lazy-load everything below the fold. Don't: crop gallery photos to a fixed ratio (a video still is 16:9, the player's frame), autoplay video before the visitor presses play, or render items whose `status` is not `published`.
+CSS columns `columns-2 md:columns-3 lg:columns-4 gap-4`, items `break-inside-avoid mb-4 rounded-xl overflow-hidden`; images keep native ratio with `width`/`height` from `galleries` to avoid CLS and show the average colour of the stored `galleries.blurhash`, read server-side by `src/lib/images/blur.ts`, as the tile background while the photo loads (§8.2). `GalleryFilter` is a row of pill links (`FilterChipLink`, `aria-current="page"` on the chosen one) to `?filter=rw05`, `rw08` and so on, one for every RW online in the RWs' order, then `umkm` and `kunjungan` (`docs/PRD.md` FR-PUB-14: `rwNN` filters on `rw_id`, `umkm` and `kunjungan` on `gallery_category` `umkm` / `visit`; each RW page links to its own `/galeri?filter=rwNN`; a filter of an RW that is not online goes back to the whole gallery). Lightbox: `yet-another-react-lightbox` (`next/dynamic`, `ssr:false`), captions from `caption` with `alt_text` as the image alt, swipe and arrow keys, `Esc` closes, focus returns to the thumbnail. `Muat lagi` is a `Link` to `?halaman=<n+1>#foto-<first new>`: the page renders every page up to `n` (24 items each, each a cached read), so it works without script, and the link jumps to the first new tile; never infinite scroll. `?halaman=` stops at 20 pages (`GALLERY_MAX_PAGES`) and at the last page that exists; any other value (not an integer, zero, negative, too large, `1`) and any unknown `?filter=` redirect to the nearest valid address (`src/lib/utils/gallery-search.ts`, decision of 2026-10-18; this replaces the public Server Action Task P2.6.01 named). `media_type = video` items show a play glyph and `Video YouTube` over the 16:9 still (`thumbnail_path`, or YouTube's own from `i.ytimg.com` without one) and load nothing from YouTube until the visitor presses play; the player from `youtube-nocookie.com` then replaces the still and takes the focus (click-to-load, decision of 2026-10-18; CSP and id handling in `docs/Security.md` §8.2). The RW pages use the same grid for their gallery section. States: loading (skeleton tiles with the stored ratio), filter-empty (`Belum ada foto untuk filter ini`), lightbox open. Do: 24 items per page, lazy-load everything below the fold. Don't: crop gallery photos to a fixed ratio (a video still is 16:9, the player's frame), autoplay video before the visitor presses play, or render items whose `status` is not `published`.
 
 ```tsx
 <GalleryFilter active={search.filter} />
@@ -780,9 +830,9 @@ Fixed `bottom-6 right-6` (`bottom-20` when a sticky mobile CTA is present), 56 p
 
 | Part | Specification |
 |---|---|
-| `AppSidebar` | shadcn `Sidebar` (sidebar-07 pattern): 264 px expanded, 72 px icon rail collapsed (tooltips on rail), state persisted in cookie `sidebar_state`, toggle `Ctrl+B`; below `md` becomes a `Sheet` from the left. Header: logo + RW context chip (`RW 05` / `RW 08` / `Kelurahan`). Footer: user card (avatar, name, `app_role` badge), theme toggle, `Keluar`. Nav items CSS-only hover/active (`bg-sidebar-accent text-sidebar-accent-foreground`), active item has a 3 px `bg-sidebar-primary` left bar. |
+| `AppSidebar` | shadcn `Sidebar` (sidebar-07 pattern): 264 px expanded, 72 px icon rail collapsed (tooltips on rail), state persisted in cookie `sidebar_state`, toggle `Ctrl+B`; below `md` becomes a `Sheet` from the left. Header: logo + RW context chip (the officer's `RW 05`, `RW 08` and so on in the RW's accent, or `Kelurahan`). Footer: user card (avatar, name, `app_role` badge), theme toggle, `Keluar`. Nav items CSS-only hover/active (`bg-sidebar-accent text-sidebar-accent-foreground`), active item has a 3 px `bg-sidebar-primary` left bar. |
 | `Topbar` | `h-16 sticky top-0 z-40` with backdrop blur; left: sidebar trigger + breadcrumb (`Dashboard / Reservasi / GSK-7F3K9Q2M`); right: `RwSwitcher`, `Scan Tiket` button (`default sm`, `ScanLine`; opens `ScannerModal`, whose header offers `Buka scanner penuh` → `/dashboard/scanner?return=<path>`, see 6.6), notification bell (badge count of `security_alerts` unread for superadmin, `needs_review` bookings for admin_rw), avatar menu (`Profil`, `Keluar`). |
-| `RwSwitcher` | superadmin only; segmented control `Semua · RW 05 · RW 08`, persisted in cookie `rw_scope`, applied as a filter on every list query and KPI; admin_rw never sees it (their scope is fixed by `app_rw_id`). |
+| `RwSwitcher` | superadmin only; segmented control `Semua · RW 05 · RW 08 · …`, one segment for every RW in `rw_units` (offline ones included, so an RW can be prepared before it goes online), persisted in cookie `rw_scope`, applied as a filter on every list query and KPI; admin_rw never sees it (their scope is fixed by `app_rw_id`). |
 | `CommandMenu` | `cmdk` palette on `Ctrl+K` / `⌘K`: navigation items for the current role, `Cari reservasi GSK-…`, quick actions (`Buka scanner`, `Sesi hari ini`). Results grouped by nav group; `shadow-modal rounded-2xl`. |
 | Page frame | `PageHeader` (title `text-h1` in display font, description, right-aligned primary action), content `max-w-(--breakpoint-2xl) p-4 md:p-6 lg:p-8 space-y-6`. |
 
@@ -792,7 +842,7 @@ Fixed `bottom-6 right-6` (`bottom-20` when a sticky mobile CTA is present), 56 p
 |---|---|---|---|
 | Overview | Dashboard → `/dashboard` | yes | yes |
 | Operasional | Reservasi → `/dashboard/bookings`; Sesi Kunjungan → `/dashboard/sessions`; Scanner → `/dashboard/scanner`; Kehadiran → `/dashboard/attendance`; Sertifikat → `/dashboard/certificates` | yes | yes (own RW) |
-| Konten | Halaman RW → `/dashboard/pages`; Artikel → `/dashboard/articles`; Galeri → `/dashboard/galleries`; E-Booklet → `/dashboard/booklets`; Jadwal Pertunjukan → `/dashboard/schedules` (RW 08 and superadmin only); Titik Aktivitas → `/dashboard/activity-points` | yes | yes (own RW) |
+| Konten | Halaman RW → `/dashboard/pages`; Artikel → `/dashboard/articles`; Galeri → `/dashboard/galleries`; E-Booklet → `/dashboard/booklets`; Jadwal Pertunjukan → `/dashboard/schedules` (superadmin, and the admin of an RW with `rw_units.schedule_enabled`); Titik Aktivitas → `/dashboard/activity-points` | yes | yes (own RW) |
 | Katalog | Paket Wisata → `/dashboard/packages`; Produk UMKM → `/dashboard/products` | yes | yes (own RW; combos read-only) |
 | Moderasi | Ulasan → `/dashboard/reviews` | yes | no |
 | Keuangan | Rekap → `/dashboard/finance`; Bagi Hasil → `/dashboard/finance/revenue-share`; Rekonsiliasi → `/dashboard/finance/reconciliation`; Penyesuaian → `/dashboard/finance/adjustments`; Ekspor → `/dashboard/exports` | yes | no |
@@ -1077,7 +1127,7 @@ Icons are imported individually (`import { ScanLine } from 'lucide-react'`), nev
 | WhatsApp | `MessageCircle` | Telepon / Email | `Phone` / `Mail` |
 | Search / Command | `Search` / `Command` | Theme | `Sun` / `Moon` |
 
-`activity_point_type` icons: `bank_sampah` `Recycle` · `composter` `Leaf` · `maggot` `Bug` · `urban_farming` `Sprout` · `pkk_craft` `Scissors` · `sanggar` `Music` · `culture_house` `Landmark` · `stage` `Drama` · `dolanan_area` `Gamepad2` · `inclusion_center` `HeartHandshake` · `child_friendly_space` `Baby` · `umkm_stall` `Store` · `meeting_point` `Flag` · `other` `MapPin`. `package_category`: `regular` `Ticket`, `student` `GraduationCap`, `institutional` `Building2`, `combo` `Layers`. `product_category`: `compost` `Leaf`, `seedling` `Sprout`, `recycled_craft` `Recycle`, `snack` `Cookie`, `souvenir` `Gift`, `other` `ShoppingBag`. RW photo slots: RW 05 `Recycle`, RW 08 `Drama` (`RW_PROGRAMMES[rwId].icon`); article `Newspaper`; home hero without a banner `Images`. Status icons: success `CheckCircle2`, warning `AlertTriangle`, info `Info`, danger `XCircle`, neutral `Circle`.
+`activity_point_type` icons: `bank_sampah` `Recycle` · `composter` `Leaf` · `maggot` `Bug` · `urban_farming` `Sprout` · `pkk_craft` `Scissors` · `sanggar` `Music` · `culture_house` `Landmark` · `stage` `Drama` · `dolanan_area` `Gamepad2` · `inclusion_center` `HeartHandshake` · `child_friendly_space` `Baby` · `umkm_stall` `Store` · `meeting_point` `Flag` · `other` `MapPin`. `package_category`: `regular` `Ticket`, `student` `GraduationCap`, `institutional` `Building2`, `combo` `Layers`. `product_category`: `compost` `Leaf`, `seedling` `Sprout`, `recycled_craft` `Recycle`, `snack` `Cookie`, `souvenir` `Gift`, `other` `ShoppingBag`. RW photo slots: by `rw_units.icon_key` (`RW_ICONS` in `src/config/rw-icons.ts`): `recycle` `Recycle`, `drama` `Drama`, `heart_handshake` `HeartHandshake`, spares `landmark` `Landmark` and `users` `Users`; article `Newspaper`; home hero without a banner `Images`. Status icons: success `CheckCircle2`, warning `AlertTriangle`, info `Info`, danger `XCircle`, neutral `Circle`.
 
 ### 8.2 Imagery rules
 
