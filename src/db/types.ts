@@ -4439,6 +4439,8 @@ export type Database = {
         | "culture_house"
         | "stage"
         | "dolanan_area"
+        | "inclusion_center"
+        | "child_friendly_space"
         | "umkm_stall"
         | "meeting_point"
         | "other"
@@ -4717,6 +4719,8 @@ export const Constants = {
         "culture_house",
         "stage",
         "dolanan_area",
+        "inclusion_center",
+        "child_friendly_space",
         "umkm_stall",
         "meeting_point",
         "other",

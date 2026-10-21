@@ -35,7 +35,7 @@ select enum_has_labels('public', 'gallery_category', array['activity', 'umkm', '
 select enum_has_labels('public', 'media_type', array['image', 'video']);
 select enum_has_labels('public', 'article_category', array['news', 'education', 'announcement']);
 select enum_has_labels('public', 'booklet_kind', array['ebooklet', 'visit_proposal', 'price_list']);
-select enum_has_labels('public', 'activity_point_type', array['bank_sampah', 'composter', 'maggot', 'urban_farming', 'pkk_craft', 'sanggar', 'culture_house', 'stage', 'dolanan_area', 'umkm_stall', 'meeting_point', 'other']);
+select enum_has_labels('public', 'activity_point_type', array['bank_sampah', 'composter', 'maggot', 'urban_farming', 'pkk_craft', 'sanggar', 'culture_house', 'stage', 'dolanan_area', 'inclusion_center', 'child_friendly_space', 'umkm_stall', 'meeting_point', 'other']);
 select enum_has_labels('public', 'schedule_type', array['dance_performance', 'dolanan_session', 'workshop', 'art_class', 'other']);
 select enum_has_labels('public', 'revenue_rule_scope', array['package_default', 'addon_default', 'package', 'product']);
 select enum_has_labels('public', 'revenue_beneficiary', array['kelurahan', 'rw_treasury', 'umkm_vendor']);

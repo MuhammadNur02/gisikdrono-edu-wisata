@@ -81,6 +81,8 @@ export const DB_ENUMS = {
     'culture_house',
     'stage',
     'dolanan_area',
+    'inclusion_center',
+    'child_friendly_space',
     'umkm_stall',
     'meeting_point',
     'other',
