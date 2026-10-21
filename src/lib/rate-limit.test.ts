@@ -1,3 +1,5 @@
+import { createHmac } from 'node:crypto';
+
 import { createClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -5,6 +7,7 @@ import type { Database } from '@/db/types';
 import type { RateLimitRule } from '@/types/rate-limit';
 
 import { isFirstRefusal, rateLimitKey, withinRateLimits } from './rate-limit';
+import { sandboxEnv } from '../../tests/fixtures/env';
 
 // Booking creation (Task P3.4.02) brings the first fail-open limit; until then booklet:download plays that part
 // here so the fail-open branch is proven before anything depends on it.
@@ -53,6 +56,15 @@ describe('rateLimitKey', () => {
 
     expect(key).toMatch(/^booklet:download:[0-9a-f]{24}$/);
     expect(key).not.toContain('203.0.113.7');
+  });
+
+  it('hashes the subject under OTP_PEPPER with its own label, apart from every other use of the pepper', () => {
+    const keyed = createHmac('sha256', sandboxEnv.OTP_PEPPER)
+      .update('gsk-rate-limit-v1\n203.0.113.7')
+      .digest('hex');
+    expect(rateLimitKey('booklet:download', '203.0.113.7')).toBe(
+      `booklet:download:${keyed.slice(0, 24)}`,
+    );
   });
 
   it('gives one subject one bucket per limit, and different subjects different buckets', () => {

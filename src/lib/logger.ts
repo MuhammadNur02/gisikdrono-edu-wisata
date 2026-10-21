@@ -1,11 +1,11 @@
 import 'server-only';
 
-import { createHmac, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
 import pino from 'pino';
 import type { DestinationStream, Logger } from 'pino';
 
-import { serverEnv } from '@/lib/env';
+import { pepperedHash } from '@/lib/pepper';
 
 // docs/Security.md §7.7: these never reach a log line, whatever object they arrive in.
 export const REDACTED_PATHS = [
@@ -106,10 +106,7 @@ export function createLogger(requestId: string, root: Logger = stdoutLogger) {
 // (docs/Security.md §7.4, §7.7).
 export function hashEmailForLog(email: string): string {
   const normalised = email.trim().toLowerCase();
-  return createHmac('sha256', serverEnv.OTP_PEPPER)
-    .update(normalised)
-    .digest('hex')
-    .slice(0, EMAIL_HASH_LENGTH);
+  return pepperedHash('gsk-log-email-v1', normalised).slice(0, EMAIL_HASH_LENGTH);
 }
 
 export function redactLinkTokens(url: string): string {

@@ -17,9 +17,9 @@ describe('drawOtpCode', () => {
 describe('otpCodeHash', () => {
   const OTP_ID = '0192f3a4-5b6c-7d8e-9f01-0000000000aa';
 
-  it('is an HMAC under OTP_PEPPER over the OTP id and the code', () => {
+  it('is an HMAC under OTP_PEPPER over its own label, the OTP id and the code', () => {
     const expected = createHmac('sha256', sandboxEnv.OTP_PEPPER)
-      .update(`${OTP_ID}:482913`)
+      .update(`gsk-otp-code-v1\n${OTP_ID}:482913`)
       .digest('hex');
     expect(otpCodeHash(OTP_ID, '482913')).toBe(expected);
   });

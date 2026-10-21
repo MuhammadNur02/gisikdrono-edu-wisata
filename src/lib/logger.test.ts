@@ -112,9 +112,11 @@ describe('hashEmailForLog', () => {
     expect(hash).toBe(hashEmailForLog('siti.rahmawati@example.test'));
   });
 
-  it('is keyed with OTP_PEPPER, so it cannot be reproduced by hashing guessed addresses', () => {
+  it('is keyed with OTP_PEPPER under its own label, so it cannot be reproduced by hashing guessed addresses', () => {
     const email = 'siti.rahmawati@example.test';
-    const keyed = createHmac('sha256', sandboxEnv.OTP_PEPPER).update(email).digest('hex');
+    const keyed = createHmac('sha256', sandboxEnv.OTP_PEPPER)
+      .update(`gsk-log-email-v1\n${email}`)
+      .digest('hex');
     const unkeyed = createHash('sha256').update(email).digest('hex');
 
     expect(hashEmailForLog(email)).toBe(keyed.slice(0, 12));
