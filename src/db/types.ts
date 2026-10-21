@@ -4270,6 +4270,48 @@ export type Database = {
         }
         Returns: boolean
       }
+      svc_claim_notifications: {
+        Args: {
+          p_limit: number
+          p_templates: Database["public"]["Enums"]["notification_template"][]
+        }
+        Returns: {
+          attempts: number
+          booking_id: string | null
+          channel: Database["public"]["Enums"]["notification_channel"]
+          created_at: string
+          dead_at: string | null
+          dedupe_key: string
+          delivered_at: string | null
+          document_path: string | null
+          id: string
+          last_error: string | null
+          last_error_code: string | null
+          locked_at: string | null
+          max_attempts: number
+          next_attempt_at: string
+          params: Json
+          provider_message_id: string | null
+          provider_status: string | null
+          read_at: string | null
+          recipient: string
+          recipient_name: string | null
+          sent_at: string | null
+          status: Database["public"]["Enums"]["notification_status"]
+          template: Database["public"]["Enums"]["notification_template"]
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "notifications"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      svc_complete_notification: {
+        Args: { p_id: string; p_provider_message_id: string }
+        Returns: undefined
+      }
       svc_enqueue_notification: {
         Args: {
           p_booking_id: string
@@ -4280,10 +4322,33 @@ export type Database = {
         Returns: string
       }
       svc_expire_stale_bookings: { Args: never; Returns: number }
+      svc_fail_notification: {
+        Args: {
+          p_error: string
+          p_error_code: string
+          p_id: string
+          p_permanent: boolean
+        }
+        Returns: undefined
+      }
       svc_forget_purged_files: { Args: { p_paths: string[] }; Returns: number }
       svc_increment_booklet_download: {
         Args: { p_booklet_id: string }
         Returns: undefined
+      }
+      svc_issue_phone_otp: {
+        Args: {
+          p_booking_id?: string
+          p_channel: Database["public"]["Enums"]["notification_channel"]
+          p_code: string
+          p_code_hash: string
+          p_email?: string
+          p_ip?: unknown
+          p_otp_id: string
+          p_phone?: string
+          p_purpose: Database["public"]["Enums"]["otp_purpose"]
+        }
+        Returns: Json
       }
       svc_job_health: {
         Args: never
@@ -4321,6 +4386,18 @@ export type Database = {
       svc_record_job_run: {
         Args: { p_error_code?: string; p_job: string; p_succeeded: boolean }
         Returns: undefined
+      }
+      svc_resend_booking_link: {
+        Args: { p_booking_code: string; p_email?: string; p_phone?: string }
+        Returns: string
+      }
+      svc_revoke_guest_links: {
+        Args: { p_booking_id: string }
+        Returns: number
+      }
+      svc_verify_phone_otp: {
+        Args: { p_code_hash: string; p_otp_id: string }
+        Returns: Json
       }
       today_jkt: { Args: never; Returns: string }
     }
@@ -4412,6 +4489,7 @@ export type Database = {
         | "admin_new_paid_booking"
         | "admin_booking_needs_review"
         | "security_alert"
+        | "booking_link"
       otp_purpose: "booking_phone" | "dsr_identity"
       package_category: "regular" | "student" | "institutional" | "combo"
       payment_method: "qris" | "virtual_account" | "manual_transfer" | "cash"
@@ -4694,6 +4772,7 @@ export const Constants = {
         "admin_new_paid_booking",
         "admin_booking_needs_review",
         "security_alert",
+        "booking_link",
       ],
       otp_purpose: ["booking_phone", "dsr_identity"],
       package_category: ["regular", "student", "institutional", "combo"],
