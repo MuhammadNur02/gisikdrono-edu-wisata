@@ -6,6 +6,7 @@ import { ScheduleTable } from '@/components/admin/cms/schedule-table';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { EmptyState } from '@/components/admin/shell/empty-state';
 import { FormAlert } from '@/components/forms/form-alert';
+import { rwLabel } from '@/config/rw';
 import { copy } from '@/lib/copy/id';
 import {
   createScheduleAction,
@@ -39,7 +40,9 @@ export default async function SchedulesPage() {
   const ctx = await requireDashboardStaff();
   if (!ctx) return null;
   const scheduleRwIds = await listScheduleRwIds();
-  if (!canManageSchedules(ctx, scheduleRwIds)) return <NoScheduleNotice message={text.onlyRw08} />;
+  if (!canManageSchedules(ctx, scheduleRwIds)) {
+    return <NoScheduleNotice message={text.onlyScheduleRws} />;
+  }
   const rwId = scheduleRwFor(ctx, await readRwScope(), scheduleRwIds);
   if (rwId === undefined) return <NoScheduleNotice message={copy.cms.chooseRw} />;
   const [schedules, packages] = await Promise.all([
@@ -52,7 +55,11 @@ export default async function SchedulesPage() {
 
   return (
     <>
-      <DashboardPageHeader title={text.title} description={text.description} action={addButton} />
+      <DashboardPageHeader
+        title={text.title}
+        description={text.description(rwLabel(rwId))}
+        action={addButton}
+      />
       {schedules.length === 0 ? (
         <EmptyState icon={CalendarDays} title={text.empty} description={text.emptyHint} />
       ) : (
