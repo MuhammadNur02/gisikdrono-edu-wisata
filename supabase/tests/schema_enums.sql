@@ -1,11 +1,11 @@
--- Structure test for 0002_enums: public holds exactly the 40 enums of docs/PRD.md §8.3, each with
--- exactly its values in the same order.
+-- Structure test for 0002_enums and the migrations that add to it: public holds exactly the 42 enums of
+-- docs/PRD.md §8.3, each with exactly its values in the same order.
 begin;
-select plan(41);
+select plan(43);
 
 select enums_are(
   'public',
-  array['app_role', 'content_status', 'session_status', 'package_category', 'pricing_basis', 'product_category', 'booker_type', 'booking_channel', 'booking_status', 'booking_leg_status', 'addon_fulfillment_status', 'payment_provider', 'payment_method', 'payment_status', 'quotation_status', 'invoice_status', 'ticket_status', 'scan_phase', 'scan_result', 'certificate_kind', 'certificate_status', 'review_status', 'gallery_category', 'media_type', 'article_category', 'booklet_kind', 'activity_point_type', 'schedule_type', 'revenue_rule_scope', 'revenue_beneficiary', 'revenue_entry_type', 'adjustment_type', 'adjustment_status', 'notification_channel', 'notification_status', 'notification_template', 'document_kind', 'otp_purpose', 'export_kind', 'alert_severity'],
+  array['app_role', 'content_status', 'session_status', 'package_category', 'pricing_basis', 'product_category', 'booker_type', 'booking_channel', 'booking_status', 'booking_leg_status', 'addon_fulfillment_status', 'payment_provider', 'payment_method', 'payment_status', 'quotation_status', 'invoice_status', 'ticket_status', 'scan_phase', 'scan_result', 'certificate_kind', 'certificate_status', 'review_status', 'gallery_category', 'media_type', 'article_category', 'booklet_kind', 'activity_point_type', 'schedule_type', 'revenue_rule_scope', 'revenue_beneficiary', 'revenue_entry_type', 'adjustment_type', 'adjustment_status', 'notification_channel', 'notification_status', 'notification_template', 'document_kind', 'otp_purpose', 'export_kind', 'alert_severity', 'rw_accent', 'rw_icon'],
   'public has exactly the enums of PRD §8.3'
 );
 
@@ -35,7 +35,7 @@ select enum_has_labels('public', 'gallery_category', array['activity', 'umkm', '
 select enum_has_labels('public', 'media_type', array['image', 'video']);
 select enum_has_labels('public', 'article_category', array['news', 'education', 'announcement']);
 select enum_has_labels('public', 'booklet_kind', array['ebooklet', 'visit_proposal', 'price_list']);
-select enum_has_labels('public', 'activity_point_type', array['bank_sampah', 'composter', 'maggot', 'urban_farming', 'pkk_craft', 'sanggar', 'culture_house', 'stage', 'dolanan_area', 'umkm_stall', 'meeting_point', 'other']);
+select enum_has_labels('public', 'activity_point_type', array['bank_sampah', 'composter', 'maggot', 'urban_farming', 'pkk_craft', 'sanggar', 'culture_house', 'stage', 'dolanan_area', 'inclusion_center', 'child_friendly_space', 'umkm_stall', 'meeting_point', 'other']);
 select enum_has_labels('public', 'schedule_type', array['dance_performance', 'dolanan_session', 'workshop', 'art_class', 'other']);
 select enum_has_labels('public', 'revenue_rule_scope', array['package_default', 'addon_default', 'package', 'product']);
 select enum_has_labels('public', 'revenue_beneficiary', array['kelurahan', 'rw_treasury', 'umkm_vendor']);
@@ -49,6 +49,8 @@ select enum_has_labels('public', 'document_kind', array['quotation', 'invoice', 
 select enum_has_labels('public', 'otp_purpose', array['booking_phone', 'dsr_identity']);
 select enum_has_labels('public', 'export_kind', array['visits', 'attendance', 'finance', 'audit']);
 select enum_has_labels('public', 'alert_severity', array['info', 'medium', 'high', 'critical']);
+select enum_has_labels('public', 'rw_accent', array['leaf', 'terracotta', 'mulberry', 'teal', 'violet']);
+select enum_has_labels('public', 'rw_icon', array['recycle', 'drama', 'heart_handshake', 'landmark', 'users']);
 
 select * from finish();
 rollback;

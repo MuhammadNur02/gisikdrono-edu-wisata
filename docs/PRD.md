@@ -573,7 +573,7 @@ create type public.gallery_category         as enum ('activity','umkm','visit','
 create type public.media_type               as enum ('image','video');
 create type public.article_category         as enum ('news','education','announcement');
 create type public.booklet_kind             as enum ('ebooklet','visit_proposal','price_list');
-create type public.activity_point_type      as enum ('bank_sampah','composter','maggot','urban_farming','pkk_craft','sanggar','culture_house','stage','dolanan_area','umkm_stall','meeting_point','other');
+create type public.activity_point_type      as enum ('bank_sampah','composter','maggot','urban_farming','pkk_craft','sanggar','culture_house','stage','dolanan_area','inclusion_center','child_friendly_space','umkm_stall','meeting_point','other');  -- inclusion_center, child_friendly_space: 20261021120100
 create type public.schedule_type            as enum ('dance_performance','dolanan_session','workshop','art_class','other');
 create type public.revenue_rule_scope       as enum ('package_default','addon_default','package','product');
 create type public.revenue_beneficiary      as enum ('kelurahan','rw_treasury','umkm_vendor');
@@ -587,9 +587,11 @@ create type public.document_kind            as enum ('quotation','invoice','rece
 create type public.otp_purpose              as enum ('booking_phone','dsr_identity');
 create type public.export_kind              as enum ('visits','attendance','finance','audit');
 create type public.alert_severity           as enum ('info','medium','high','critical');
+create type public.rw_accent                as enum ('leaf','terracotta','mulberry','teal','violet');  -- 20261021120000
+create type public.rw_icon                  as enum ('recycle','drama','heart_handshake','landmark','users');  -- 20261021120000
 ```
 
-`src/db/enums.ts` mirrors these values exactly. A notification that has exhausted its attempts stays `failed` with `dead_at` set (dead letter); a `security_alert` of severity `high` is raised.
+`src/db/enums.ts` mirrors these values exactly. `rw_accent` names a palette of `docs/StyleGuide.md` §2.7 and `rw_icon` a placeholder icon of §8.1; `teal`, `violet`, `landmark` and `users` are spares for the next RW (decision of 2026-10-21). A notification that has exhausted its attempts stays `failed` with `dead_at` set (dead letter); a `security_alert` of severity `high` is raised.
 
 ### 8.4 Tables (DDL)
 
@@ -598,13 +600,19 @@ Every table ends up with `enable row level security`, `force row level security`
 #### 8.4.1 Configuration and staff
 
 ```sql
--- rw_units (A): the neighbourhood units; public profile + private treasury columns.
+-- rw_units (A): the neighbourhood units; public profile + private treasury columns. Pages, menu and accent
+-- colours are read from these rows, so an RW is added as data (decision of 2026-10-21; columns and checks
+-- marked * come from 20261021120000).
 create table public.rw_units (
-  id                      smallint primary key,                                  -- 5, 8
-  code                    text not null unique check (code ~ '^RW[0-9]{2}$'),    -- 'RW05'
-  slug                    text not null unique check (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
-  name                    text not null,                                         -- 'RW 05 Ecowastreme'
+  id                      smallint primary key,                                  -- 5, 8; *1..99, two digits
+  code                    text not null unique check (code ~ '^RW[0-9]{2}$'),    -- 'RW05'; *'RW' + the two-digit id
+  slug                    text not null unique check (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),  -- *starts 'rw-' + two-digit id + '-'
+  name                    text not null,                                         -- 'RW 05 Ecowastreme'; *'RW ' + two-digit id + ' ' + short_name
+  short_name              text not null,                                         -- *'Ecowastreme': the programme name the pages colour
   theme_label             text not null,                                         -- 'Ekowisata & Lingkungan'
+  accent_key              public.rw_accent not null,                             -- *palette key of docs/StyleGuide.md §2.7, never a colour
+  icon_key                public.rw_icon not null,                               -- *photo-slot placeholder icon
+  schedule_enabled        boolean not null default false,                        -- *the RW runs a performance schedule (/jadwal)
   tagline                 text,
   description_md          text,
   vision_md               text,
@@ -616,7 +624,7 @@ create table public.rw_units (
   treasury_account_holder text,                                                  -- private
   map_lat                 numeric(9,6),
   map_lng                 numeric(9,6),
-  is_active               boolean not null default true,
+  is_active               boolean not null default false,                        -- *a new RW starts offline; set_rw_unit_status
   sort_order              smallint not null default 0,
   created_at              timestamptz not null default now(),
   updated_at              timestamptz not null default now()
@@ -1769,11 +1777,11 @@ Policies always wrap helpers as `(select public.owns_rw(rw_id))` so the JWT is r
 
 #### 8.5.2 Policy matrix
 
-Legend: S/I/U/D = select/insert/update/delete; "—" = denied; "fn" = only through a SECURITY DEFINER RPC granted to `authenticated` that re-checks scope; "svc" = `internal.*` from allow-listed service-role code or cron; AAL2 = restrictive policy `using ((select public.aal2()))` applied to every staff command on that table. Every table `authenticated` holds a right on carries it (review of 0005, H1, decision of 2026-10-17): every staff read and write needs a verified authenticator, so an AAL1 session reads no row and writes none anywhere. "fresh TOTP" = a further restrictive policy per command, `(select public.fresh_totp())`, that asks for a TOTP code verified in the last five minutes (`docs/Security.md` §5.3, AUTH-11): the superadmin's writes to `staff_invites`, `site_settings`, `revenue_share_rules`, `revenue_share_rule_lines` and the acknowledgement of `security_alerts` need it, while their reads need AAL2 only (decision of 2026-10-17).
+Legend: S/I/U/D = select/insert/update/delete; "—" = denied; "fn" = only through a SECURITY DEFINER RPC granted to `authenticated` that re-checks scope; "svc" = `internal.*` from allow-listed service-role code or cron; AAL2 = restrictive policy `using ((select public.aal2()))` applied to every staff command on that table. Every table `authenticated` holds a right on carries it (review of 0005, H1, decision of 2026-10-17): every staff read and write needs a verified authenticator, so an AAL1 session reads no row and writes none anywhere. "fresh TOTP" = a further restrictive policy per command, `(select public.fresh_totp())`, that asks for a TOTP code verified in the last five minutes (`docs/Security.md` §5.3, AUTH-11): the superadmin's writes to `staff_invites`, `site_settings`, `revenue_share_rules`, `revenue_share_rule_lines`, a new `rw_units` row (20261021120000) and the acknowledgement of `security_alerts` need it, while their reads need AAL2 only (decision of 2026-10-17).
 
 | Table | anon | admin_rw (own RW) | superadmin | AAL2 | svc-only writes |
 |---|---|---|---|---|---|
-| rw_units | S `is_active` (public columns via column grant) | S all (public columns); U own row content columns (`code`, `slug`, `is_active` not granted; `rw_units_guard` as well) | S all (public columns); U content columns; I. The treasury columns are granted to no API role: the superadmin edits them through an RPC that comes with the finance pages (P4; decision of 2026-10-16) | yes | — |
+| rw_units | S `is_active` (public columns via column grant) | S all (public columns); U own row content columns and `short_name` together with `name` (`code`, `slug`, `is_active`, `accent_key`, `icon_key`, `schedule_enabled` not granted; `rw_units_guard` as well) | S all (public columns); U content columns; I with a fresh TOTP, always offline (`is_active` is not granted for insert); online and offline only through fn `set_rw_unit_status` (20261021120000). The treasury columns are granted to no API role: the superadmin edits them through an RPC that comes with the finance pages (P4; decision of 2026-10-16) | yes | — |
 | profiles | — | S own row + same RW; U own `full_name, phone, avatar_path` | S all; U (not `role, rw_id, is_active, mfa_required, claims_version` — fn `set_staff_role`, `set_staff_status`; nor the pending-request columns — fn `set_staff_role`, `reset_staff_mfa`, `cancel_staff_mfa_reset`, `cancel_superadmin_promotion`) | yes | insert by auth trigger |
 | staff_invites | — | — | S without `invite_code_hash`, which is written with the invite and read by no API role; I of `admin_rw` invites, expiring at most 72 h after creation (CHECK `staff_invites_expiry_72h`); a `superadmin` invite only through fn `invite_superadmin` (24 h before it can be accepted, critical alerts); revoke via U `revoked_at`, never undone; every write with a fresh TOTP | yes | accept via onboarding (svc) |
 | site_settings | S `is_public` | S `is_public` | S; I/U/D with a fresh TOTP; only the keys §8.6 marks public may be made public (CHECK `site_settings_public_keys`); the keys functions read (`pricing.min_price_per_pax`, `booking.quotation_valid_days`, `pii_retention_months`) are never removed and always numbers (`site_settings_required_keys`) | yes | — |
@@ -1956,6 +1964,7 @@ Only the keys marked public below may have `is_public = true` (CHECK `site_setti
 | `invite_superadmin` | `(p_email text, p_invite_code_hash text) returns jsonb` | superadmin, fresh TOTP | The only way to invite a superadmin (0005, review L9, decision of 2026-10-17): creates the invite (72 h) and returns `{stage: 'requested', invite_id, completes_after, lapses_after}`; `staff_invites_guard` lets it be accepted no sooner than 24 h later, and the request, the acceptance and a revocation each raise the critical `superadmin_invite` alert that a promotion raises |
 | `set_staff_status` | `(p_user_id uuid, p_is_active boolean, p_reason text) returns void` | superadmin, fresh TOTP, never own row | Sets `app.privileged_rpc`; bumps `claims_version`; deactivation also sets `role = 'none'`, `rw_id = NULL` and drops pending requests, deletes sessions and factors, and writes security event `staff_disabled` (`from_role`, `from_rw_id`); reactivation only sets `is_active`, so the role comes back through `set_staff_role`, a former superadmin's through the 24 h promotion |
 | `cancel_staff_mfa_reset` / `cancel_superadmin_promotion` | `(p_user_id uuid) returns void` | superadmin with fresh TOTP; for an MFA reset also the targeted staff member with a fresh TOTP | Clears the pending request; critical event, alert and audit row with stage `cancelled`; `STATE_INVALID` when nothing is pending |
+| `set_rw_unit_status` | `(p_rw_id smallint, p_is_active boolean) returns void` | superadmin, fresh TOTP | Takes an RW online or offline (20261021120000, decision of 2026-10-21). Going online needs an active, current `package_default` and `addon_default` rule for the RW (`STATE_INVALID` otherwise), so no booking can settle without a rule that pays its treasury; going offline hides the page and stops new sessions, and leaves bookings alone. Audit rows `rw_units.update` and `rw_unit.activated` / `rw_unit.deactivated` |
 | `reset_staff_mfa` | `(p_user_id uuid) returns jsonb` | superadmin, fresh TOTP, never own MFA | First call records `profiles.mfa_reset_requested_at/_by` and returns `{stage: 'requested', completes_after, lapses_after}`; a call 24 h – 7 days later deletes every factor and session, bumps `claims_version` and returns `{stage: 'completed'}`; an older request has lapsed and the call starts a new one; each step writes `security_events` `mfa_reset` (critical), a critical `security_alerts` row for out-of-band delivery and an audit row `staff.mfa_reset_requested` / `staff.mfa_reset_completed` (decision of 2026-10-16) |
 
 No function is executable by `anon`. Public writes (OTP, bookings, reviews, DSR requests, booklet download counts, funnel events) reach the database only through Server Actions or route handlers that validate, rate-limit and then call `internal.*` under the service role.

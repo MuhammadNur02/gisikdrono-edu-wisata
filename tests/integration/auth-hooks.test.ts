@@ -96,8 +96,10 @@ describe('Auth hooks through GoTrue', () => {
 
   beforeAll(async () => {
     auditIdBefore = await lastAuditId();
-    const inserted = await runSql(`insert into public.rw_units (id, code, slug, name, theme_label)
-      values (5, 'RW05', 'rw-05-ecowastreme', 'RW 05 Ecowastreme', 'Ekowisata & Lingkungan')
+    const inserted = await runSql(`insert into public.rw_units
+        (id, code, slug, name, short_name, theme_label, accent_key, icon_key, is_active)
+      values (5, 'RW05', 'rw-05-ecowastreme', 'RW 05 Ecowastreme', 'Ecowastreme', 'Ekowisata & Lingkungan',
+        'leaf', 'recycle', true)
       on conflict (id) do nothing returning id`);
     rwUnitCreated = inserted.length > 0;
   });

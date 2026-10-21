@@ -1,12 +1,12 @@
 -- RLS matrix for the configuration tables: rw_units, profiles, staff_invites, site_settings (docs/PRD.md §8.5.2,
 -- Task P1.4.01, P1.4.05, P1.4.06, P1.9.02). Every check runs as an API role with GoTrue-shaped claims.
 begin;
-select plan(65);
+select plan(68);
 \ir helpers/rls_personas.psql
 
 update public.rw_units set treasury_account_number = '1230005' where id = 5;
-insert into public.rw_units (id, code, slug, name, theme_label, is_active)
-values (9, 'RW09', 'rw-09-uji', 'RW 09 Uji', 'Uji', false);
+insert into public.rw_units (id, code, slug, name, short_name, theme_label, accent_key, icon_key, is_active)
+values (9, 'RW09', 'rw-09-uji', 'RW 09 Uji', 'Uji', 'Uji', 'teal', 'users', false);
 insert into auth.users (id, email) values ('00000000-0000-4000-8000-00000000f055', 'rls-admin05-b@example.test');
 insert into public.profiles (id, email, full_name, role, rw_id)
 values ('00000000-0000-4000-8000-00000000f055', 'rls-admin05-b@example.test', 'Rekan RW 05', 'admin_rw', 5);
@@ -96,8 +96,8 @@ select is((select count(*)::int from public.site_settings where key in ('seo.def
   'no setting');
 select is((select count(*)::int from public.staff_invites where email::text like 'calon%'), 0, 'no invite');
 select is((select count(*)::int from public.rw_units where id in (5, 8, 9)), 0, 'and no RW');
-select throws_ok($$insert into public.rw_units (id, code, slug, name, theme_label)
-  values (11, 'RW11', 'rw-11-uji', 'RW 11 Uji', 'Uji')$$, '42501', null, 'nor adds one');
+select throws_ok($$insert into public.rw_units (id, code, slug, name, short_name, theme_label, accent_key, icon_key)
+  values (11, 'RW11', 'rw-11-uji', 'RW 11 Uji', 'Uji', 'Uji', 'teal', 'users')$$, '42501', null, 'nor adds one');
 
 -- ===== superadmin at AAL2 with a TOTP code two hours old (docs/Security.md §5.3) =====
 reset role;
@@ -117,6 +117,9 @@ select throws_ok($$insert into public.site_settings (key, value, updated_by)
 select is(pg_temp.row_count($$update public.site_settings set value = '"basi"',
   updated_by = '00000000-0000-4000-8000-00000000f001' where key = 'rls.private'$$), 0, 'changes none');
 select is(pg_temp.row_count($$delete from public.site_settings where key = 'rls.private'$$), 0, 'and removes none');
+select throws_ok($$insert into public.rw_units (id, code, slug, name, short_name, theme_label, accent_key, icon_key)
+  values (11, 'RW11', 'rw-11-uji', 'RW 11 Uji', 'Uji', 'Uji', 'teal', 'users')$$, '42501',
+  'new row violates row-level security policy "rw_units_fresh_totp_insert" for table "rw_units"', 'nor adds an RW');
 
 -- ===== superadmin at AAL2 =====
 reset role;
@@ -168,8 +171,13 @@ select throws_ok($$update public.site_settings set is_public = true,
   updated_by = '00000000-0000-4000-8000-00000000f001' where key = 'rls.private'$$, '23514', null,
   'but makes no key public that docs/PRD.md §8.6 keeps private');
 select is(pg_temp.row_count($$update public.rw_units set tagline = 'Baru' where id = 8$$), 1, 'edits any RW''s content');
-select lives_ok($$insert into public.rw_units (id, code, slug, name, theme_label)
-  values (10, 'RW10', 'rw-10-uji', 'RW 10 Uji', 'Uji')$$, 'adds an RW');
+select lives_ok($$insert into public.rw_units (id, code, slug, name, short_name, theme_label, accent_key, icon_key)
+  values (10, 'RW10', 'rw-10-uji', 'RW 10 Uji', 'Uji', 'Uji', 'teal', 'users')$$, 'adds an RW');
+select is((select is_active from public.rw_units where id = 10), false, 'which starts offline');
+select throws_ok($$insert into public.rw_units
+  (id, code, slug, name, short_name, theme_label, accent_key, icon_key, is_active)
+  values (12, 'RW12', 'rw-12-uji', 'RW 12 Uji', 'Uji', 'Uji', 'violet', 'landmark', true)$$, '42501', null,
+  'and puts it online only through set_rw_unit_status, never by an insert');
 select throws_ok($$select treasury_account_number from public.rw_units$$, '42501', null,
   'and reads no treasury account through the API either');
 select throws_ok($$update public.profiles set role = 'admin_rw', rw_id = 5

@@ -2942,17 +2942,21 @@ export type Database = {
       }
       rw_units: {
         Row: {
+          accent_key: Database["public"]["Enums"]["rw_accent"]
           code: string
           contact_email: string | null
           contact_phone: string | null
           created_at: string
           description_md: string | null
           hero_image_path: string | null
+          icon_key: Database["public"]["Enums"]["rw_icon"]
           id: number
           is_active: boolean
           map_lat: number | null
           map_lng: number | null
           name: string
+          schedule_enabled: boolean
+          short_name: string
           slug: string
           sort_order: number
           tagline: string | null
@@ -2964,17 +2968,21 @@ export type Database = {
           vision_md: string | null
         }
         Insert: {
+          accent_key: Database["public"]["Enums"]["rw_accent"]
           code: string
           contact_email?: string | null
           contact_phone?: string | null
           created_at?: string
           description_md?: string | null
           hero_image_path?: string | null
+          icon_key: Database["public"]["Enums"]["rw_icon"]
           id: number
           is_active?: boolean
           map_lat?: number | null
           map_lng?: number | null
           name: string
+          schedule_enabled?: boolean
+          short_name: string
           slug: string
           sort_order?: number
           tagline?: string | null
@@ -2986,17 +2994,21 @@ export type Database = {
           vision_md?: string | null
         }
         Update: {
+          accent_key?: Database["public"]["Enums"]["rw_accent"]
           code?: string
           contact_email?: string | null
           contact_phone?: string | null
           created_at?: string
           description_md?: string | null
           hero_image_path?: string | null
+          icon_key?: Database["public"]["Enums"]["rw_icon"]
           id?: number
           is_active?: boolean
           map_lat?: number | null
           map_lng?: number | null
           name?: string
+          schedule_enabled?: boolean
+          short_name?: string
           slug?: string
           sort_order?: number
           tagline?: string | null
@@ -4252,6 +4264,10 @@ export type Database = {
         Args: { p_booking_id: string; p_reason: string }
         Returns: Json
       }
+      set_rw_unit_status: {
+        Args: { p_is_active: boolean; p_rw_id: number }
+        Returns: undefined
+      }
       set_staff_role: {
         Args: {
           p_role: Database["public"]["Enums"]["app_role"]
@@ -4423,6 +4439,8 @@ export type Database = {
         | "culture_house"
         | "stage"
         | "dolanan_area"
+        | "inclusion_center"
+        | "child_friendly_space"
         | "umkm_stall"
         | "meeting_point"
         | "other"
@@ -4540,6 +4558,8 @@ export type Database = {
         | "package"
         | "product"
       review_status: "pending" | "published" | "rejected"
+      rw_accent: "leaf" | "terracotta" | "mulberry" | "teal" | "violet"
+      rw_icon: "recycle" | "drama" | "heart_handshake" | "landmark" | "users"
       scan_phase: "validate" | "check_in"
       scan_result:
         | "ok"
@@ -4699,6 +4719,8 @@ export const Constants = {
         "culture_house",
         "stage",
         "dolanan_area",
+        "inclusion_center",
+        "child_friendly_space",
         "umkm_stall",
         "meeting_point",
         "other",
@@ -4822,6 +4844,8 @@ export const Constants = {
         "product",
       ],
       review_status: ["pending", "published", "rejected"],
+      rw_accent: ["leaf", "terracotta", "mulberry", "teal", "violet"],
+      rw_icon: ["recycle", "drama", "heart_handshake", "landmark", "users"],
       scan_phase: ["validate", "check_in"],
       scan_result: [
         "ok",

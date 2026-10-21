@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   Archive,
+  Baby,
   Bug,
   Building2,
   CheckCircle2,
@@ -12,6 +13,7 @@ import {
   Gamepad2,
   Gift,
   GraduationCap,
+  HeartHandshake,
   Landmark,
   Layers,
   Leaf,
@@ -62,6 +64,8 @@ export const ACTIVITY_POINT_TYPE: Record<EnumValue<'activity_point_type'>, EnumM
   culture_house: { label: 'Rumah Budaya', icon: Landmark },
   stage: { label: 'Panggung', icon: Drama },
   dolanan_area: { label: 'Area Dolanan', icon: Gamepad2 },
+  inclusion_center: { label: 'Pusat Inklusi', icon: HeartHandshake },
+  child_friendly_space: { label: 'Ruang Ramah Anak', icon: Baby },
   umkm_stall: { label: 'Lapak UMKM', icon: Store },
   meeting_point: { label: 'Titik Kumpul', icon: Flag },
   other: { label: 'Lainnya', icon: MapPin },

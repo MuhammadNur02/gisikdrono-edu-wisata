@@ -1,5 +1,5 @@
-// Mirrors the Postgres enums of supabase/migrations/0002_enums.sql, which stay the source of truth
-// (CLAUDE.md §6.3). enums.test.ts fails as soon as this file and the generated types disagree.
+// Mirrors the Postgres enums of supabase/migrations/0002_enums.sql and the migrations after it, which stay the
+// source of truth (CLAUDE.md §6.3). enums.test.ts fails as soon as this file and the generated types disagree.
 export const DB_ENUMS = {
   app_role: ['superadmin', 'admin_rw', 'none'],
   content_status: ['draft', 'pending_review', 'published', 'archived'],
@@ -81,6 +81,8 @@ export const DB_ENUMS = {
     'culture_house',
     'stage',
     'dolanan_area',
+    'inclusion_center',
+    'child_friendly_space',
     'umkm_stall',
     'meeting_point',
     'other',
@@ -121,6 +123,9 @@ export const DB_ENUMS = {
   otp_purpose: ['booking_phone', 'dsr_identity'],
   export_kind: ['visits', 'attendance', 'finance', 'audit'],
   alert_severity: ['info', 'medium', 'high', 'critical'],
+  // 20261021120000_rw_units_data_driven: the palette key and placeholder icon of an RW.
+  rw_accent: ['leaf', 'terracotta', 'mulberry', 'teal', 'violet'],
+  rw_icon: ['recycle', 'drama', 'heart_handshake', 'landmark', 'users'],
 } as const;
 
 export type EnumValue<Name extends keyof typeof DB_ENUMS> = (typeof DB_ENUMS)[Name][number];
