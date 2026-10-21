@@ -16,9 +16,10 @@
 -- A suite counts and lists its own fixture rows only (by id, code, slug or key), never a whole table, so the
 -- reference rows of 0008_seed and the rows of other suites never change its answers.
 
-insert into public.rw_units (id, code, slug, name, theme_label) values
-  (5, 'RW05', 'rw-05-ecowastreme', 'RW 05 Ecowastreme', 'Ekowisata & Lingkungan'),
-  (8, 'RW08', 'rw-08-kampung-seni-budaya', 'RW 08 Kampung Seni Budaya', 'Seni & Budaya')
+insert into public.rw_units (id, code, slug, name, short_name, theme_label, accent_key, icon_key) values
+  (5, 'RW05', 'rw-05-ecowastreme', 'RW 05 Ecowastreme', 'Ecowastreme', 'Ekowisata & Lingkungan', 'leaf', 'recycle'),
+  (8, 'RW08', 'rw-08-kampung-seni-budaya', 'RW 08 Kampung Seni Budaya', 'Kampung Seni Budaya', 'Seni & Budaya',
+   'terracotta', 'drama')
 on conflict (id) do nothing;
 -- Every package write checks the price floor, which refuses to run without its setting (0005).
 insert into public.site_settings (key, value) values ('pricing.min_price_per_pax', '5000') on conflict (key) do nothing;

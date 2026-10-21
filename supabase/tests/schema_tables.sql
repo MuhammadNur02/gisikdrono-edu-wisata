@@ -67,7 +67,9 @@ select columns_are('public', 'rw_units', array[
   'id', 'code', 'slug', 'name', 'theme_label', 'tagline', 'description_md', 'vision_md',
   'hero_image_path', 'contact_phone', 'contact_email', 'treasury_bank_name',
   'treasury_account_number', 'treasury_account_holder', 'map_lat', 'map_lng', 'is_active',
-  'sort_order', 'created_at', 'updated_at'
+  'sort_order', 'created_at', 'updated_at',
+  -- added by 20261021120000 so the pages, menu and colours of an RW come from its row
+  'short_name', 'accent_key', 'icon_key', 'schedule_enabled'
 ]);
 select columns_are('public', 'profiles', array[
   'id', 'email', 'full_name', 'phone', 'role', 'rw_id', 'is_active', 'mfa_required',
@@ -102,9 +104,10 @@ select is(
 );
 
 -- Fixtures for the behaviour checks below; everything is rolled back at the end.
-insert into public.rw_units (id, code, slug, name, theme_label) values
-  (5, 'RW05', 'rw-05-ecowastreme', 'RW 05 Ecowastreme', 'Ekowisata & Lingkungan'),
-  (8, 'RW08', 'rw-08-kampung-seni-budaya', 'RW 08 Kampung Seni Budaya', 'Seni & Budaya')
+insert into public.rw_units (id, code, slug, name, short_name, theme_label, accent_key, icon_key) values
+  (5, 'RW05', 'rw-05-ecowastreme', 'RW 05 Ecowastreme', 'Ecowastreme', 'Ekowisata & Lingkungan', 'leaf', 'recycle'),
+  (8, 'RW08', 'rw-08-kampung-seni-budaya', 'RW 08 Kampung Seni Budaya', 'Kampung Seni Budaya', 'Seni & Budaya',
+   'terracotta', 'drama')
 on conflict (id) do nothing;
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-000000000001', 'superadmin@example.test'),
@@ -114,16 +117,18 @@ insert into public.profiles (id, email, full_name, role) values
   ('00000000-0000-4000-8000-000000000001', 'superadmin@example.test', 'Super Admin', 'superadmin');
 
 select throws_ok(
-  $$insert into public.rw_units (id, code, slug, name, theme_label) values (9, 'RW9', 'rw-09', 'x', 'x')$$,
+  $$insert into public.rw_units (id, code, slug, name, short_name, theme_label, accent_key, icon_key)
+    values (9, 'RW9', 'rw-09-uji', 'RW 09 Uji', 'Uji', 'x', 'teal', 'users')$$,
   '23514', null, 'rw_units.code must look like RW05'
 );
 select throws_ok(
-  $$insert into public.rw_units (id, code, slug, name, theme_label) values (9, 'RW09', 'RW 09', 'x', 'x')$$,
+  $$insert into public.rw_units (id, code, slug, name, short_name, theme_label, accent_key, icon_key)
+    values (9, 'RW09', 'RW 09', 'RW 09 Uji', 'Uji', 'x', 'teal', 'users')$$,
   '23514', null, 'rw_units.slug must be a lowercase slug'
 );
 select throws_ok(
-  $$insert into public.rw_units (id, code, slug, name, theme_label, contact_phone)
-    values (9, 'RW09', 'rw-09', 'x', 'x', '081234567890')$$,
+  $$insert into public.rw_units (id, code, slug, name, short_name, theme_label, accent_key, icon_key, contact_phone)
+    values (9, 'RW09', 'rw-09-uji', 'RW 09 Uji', 'Uji', 'x', 'teal', 'users', '081234567890')$$,
   '23514', null, 'rw_units.contact_phone must be +62 E.164'
 );
 select throws_ok(

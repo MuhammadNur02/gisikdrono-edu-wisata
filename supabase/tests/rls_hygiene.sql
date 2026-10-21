@@ -73,9 +73,9 @@ select is(
   ),
   array['revenue_share_rule_lines:DELETE', 'revenue_share_rule_lines:INSERT', 'revenue_share_rule_lines:UPDATE',
         'revenue_share_rules:DELETE', 'revenue_share_rules:INSERT', 'revenue_share_rules:UPDATE',
-        'security_alerts:UPDATE', 'site_settings:DELETE', 'site_settings:INSERT', 'site_settings:UPDATE',
+        'rw_units:INSERT', 'security_alerts:UPDATE', 'site_settings:DELETE', 'site_settings:INSERT', 'site_settings:UPDATE',
         'staff_invites:DELETE', 'staff_invites:INSERT', 'staff_invites:UPDATE'],
-  'invites, settings, revenue-share rules and their lines, and alert acknowledgements ask for a fresh TOTP code'
+  'invites, settings, revenue-share rules and their lines, a new RW and alert acknowledgements ask for a fresh TOTP code'
 );
 select is(
   array(
