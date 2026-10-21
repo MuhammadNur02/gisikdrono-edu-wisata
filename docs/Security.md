@@ -287,6 +287,8 @@ Response contract: `200` processed/duplicate/ignored/needs_review; `400/413/415`
 
 ### 3.4 Status map and transitions (WH-07)
 
+> **Correction pending in Task P3.8.02 (decision of 2026-10-21, review of PR #19).** Where the "Booking effect" column below differs from docs/PRD.md §9.2 and `internal.bookings_status_transition`, those two decide: a `cancel` or `expire` notification closes the attempt and leaves the booking `pending_payment` until `expire_stale_bookings` expires it, and a `refund` notification never moves the booking, which becomes `refunded` only through `record_refund`. P3.8.02 rewrites the rows.
+
 | `transaction_status` × `fraud_status` | `payment_status` | Booking effect | Tickets |
 |---|---|---|---|
 | `settlement`; `capture`+`accept` | `settled` | `pending_payment`/`expired` → `paid`; invoice `INV/GSK/YYYY/MM/NNNN` + receipt `KW/GSK/YYYY/MM/NNNN`; ledger posted; outbox `payment_received_ticket`, `admin_new_paid_booking` | issued (one per `booking_legs` row) |
