@@ -46,6 +46,10 @@ The demo content has no photos of its own, so the hero and RW photo slots show t
 
 The public pages are prerendered from the database, so `pnpm build` needs the local stack running (`pnpm db:start`), as CI starts one before its builds. Images are resized by Supabase's own transformer (`[storage.image_transformation]` in `supabase/config.toml`, the Pro plan on staging and production).
 
+### Trying the WhatsApp code locally
+
+No WhatsApp number is needed on your laptop. On `pnpm dev` with the local stack (`src/lib/local-development.ts`: development, no `VERCEL_ENV`, the site and Supabase on `127.0.0.1` or `localhost`), the outbox delivers every message to Mailpit at http://127.0.0.1:54324 instead of Meta and Resend, one-time codes and booking links included. Open http://localhost:3000/dev/otp, type a number, press "Kirim kode", read the code in Mailpit (the mail to `wa<number>@whatsapp.lokal`) and verify it. `/dev/otp` is a `page.dev.tsx`, which only `next dev` serves and no build contains, and it answers 404 on any server that is not local; staging and production never send a code anywhere but WhatsApp or email, and never log one (`docs/Security.md` §4.1).
+
 ### Local development accounts
 
 `pnpm db:seed` (`scripts/seed-dev.ts` with `scripts/seed-dev.sql`) creates three staff accounts with a verified TOTP factor. They exist only on your local database and in CI: the script takes its address from `supabase status` and refuses anything but `127.0.0.1`, and its SQL refuses any database whose Vault secret `environment` says anything but `local`, so these known credentials never reach an online project. The Supabase CLI's own seed is switched off, so `supabase db reset` writes no account anywhere. The credentials are not in `.env.example` on purpose.
