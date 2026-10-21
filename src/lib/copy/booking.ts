@@ -35,9 +35,9 @@ export const bookingCopy = {
     // The same words whether the code went out or the number has had too many today (review of PR #20, L4), so they
     // say what to do when nothing arrives.
     sentWhatsapp:
-      'Kode 6 angka sedang kami kirim ke WhatsApp nomor itu dan berlaku 5 menit. Belum masuk? Minta kode baru setelah hitungan selesai. Kalau tetap tidak masuk, hubungi kelurahan lewat tombol WhatsApp.',
+      'Kode 6 angka sedang kami kirim ke WhatsApp nomor itu dan berlaku 5 menit. Belum masuk? Minta kode baru setelah hitungan selesai. Kalau tetap tidak masuk, coba lagi nanti atau hubungi kelurahan.',
     sentEmail:
-      'Kode 6 angka sedang kami kirim ke email itu dan berlaku 5 menit. Periksa juga folder spam. Belum masuk? Minta kode baru setelah hitungan selesai.',
+      'Kode 6 angka sedang kami kirim ke email itu dan berlaku 5 menit. Periksa juga folder spam. Belum masuk? Minta kode baru setelah hitungan selesai. Kalau tetap tidak masuk, coba lagi nanti atau hubungi kelurahan.',
     verifiedWhatsapp: 'Nomor WhatsApp sudah terverifikasi.',
     verifiedEmail: 'Email sudah terverifikasi. Kabar reservasi akan kami kirim lewat email.',
     degradedTitle: 'Verifikasi lewat email dulu, ya',
