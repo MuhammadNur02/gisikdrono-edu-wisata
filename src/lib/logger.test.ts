@@ -37,6 +37,20 @@ describe('logger redaction', () => {
     expect(output).toContain(bookingRow.booking_code);
   });
 
+  it("never prints an outbox message's params, where an OTP code waits to be sent, or a code hash", () => {
+    const { lines, logger } = captureLogLines();
+
+    logger.error('internal_error', {
+      notification: { id: 'n-1', template: 'phone_otp', params: { code: '482913' } },
+      params: { code: '482913' },
+      code_hash: 'a'.repeat(64),
+    });
+    const output = lines.join('');
+    expect(output).not.toContain('482913');
+    expect(output).not.toContain('a'.repeat(64));
+    expect(output).toContain('phone_otp');
+  });
+
   it('redacts tokens, signatures and payment details at the top level and one level down', () => {
     const { lines, logger } = captureLogLines();
     logger.warn('webhook_signature_invalid', {

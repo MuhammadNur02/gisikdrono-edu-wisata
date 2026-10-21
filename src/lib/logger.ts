@@ -22,6 +22,11 @@ export const REDACTED_PATHS = [
   '*.signature_key',
   'snap_token',
   '*.snap_token',
+  // An outbox row's params hold the OTP code until it is sent (Task P3.2.01), and names besides.
+  'params',
+  '*.params',
+  'code_hash',
+  '*.code_hash',
 ];
 
 // The only event names a log line may carry: the security_events types of docs/PRD.md §8.4.9 the app logs
