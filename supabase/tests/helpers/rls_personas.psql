@@ -7,7 +7,7 @@
 -- act_as switches to the persona's API role, anon or authenticated, never postgres, and sets
 -- request.jwt.claims the way GoTrue does: the standard claims plus what the real access-token hook adds
 -- (internal.staff_token_claims), so the helpers read exactly what they read in production. The personas are
--- anon, none (signed in without a role), admin_rw_05 and admin_rw_08, all at AAL2 as the dashboard requires,
+-- anon, none (signed in without a role), admin_rw_05, admin_rw_08 and admin_rw_13, all at AAL2 as the dashboard requires,
 -- so their checks test the role and never just the missing factor, and admin_rw_05_aal1, superadmin_aal1,
 -- superadmin_aal2 and superadmin_stale_totp. The AAL2 personas verified their TOTP code a minute ago;
 -- superadmin_stale_totp did two hours ago, an AAL2 session left open on a desk, which reads but cannot take the
@@ -18,7 +18,9 @@
 
 insert into public.rw_units (id, code, slug, name, short_name, theme_label, accent_key, icon_key) values
   (5, 'RW05', 'rw-05-ecowastreme', 'RW 05 Ecowastreme', 'Ecowastreme', 'Ekowisata & Lingkungan', 'leaf', 'recycle'),
-  (8, 'RW08', 'rw-08-kampung-seni-budaya', 'RW 08 Kampung Seni Budaya', 'Kampung Seni Budaya', 'Seni & Budaya',
+  (8, 'RW08', 'rw-08-inklusif-ramah-anak', 'RW 08 Kampung Inklusif & Ramah Anak', 'Kampung Inklusif & Ramah Anak',
+   'Inklusif & Ramah Anak', 'mulberry', 'heart_handshake'),
+  (13, 'RW13', 'rw-13-kampung-budaya-seni', 'RW 13 Kampung Budaya & Seni', 'Kampung Budaya & Seni', 'Seni & Budaya',
    'terracotta', 'drama')
 on conflict (id) do nothing;
 -- Every package write checks the price floor, which refuses to run without its setting (0005).
@@ -28,12 +30,14 @@ insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-00000000f000', 'rls-none@example.test'),
   ('00000000-0000-4000-8000-00000000f001', 'rls-super@example.test'),
   ('00000000-0000-4000-8000-00000000f005', 'rls-admin05@example.test'),
-  ('00000000-0000-4000-8000-00000000f008', 'rls-admin08@example.test');
+  ('00000000-0000-4000-8000-00000000f008', 'rls-admin08@example.test'),
+  ('00000000-0000-4000-8000-00000000f013', 'rls-admin13@example.test');
 insert into public.profiles (id, email, full_name, role, rw_id) values
   ('00000000-0000-4000-8000-00000000f000', 'rls-none@example.test', 'Tanpa Peran', 'none', null),
   ('00000000-0000-4000-8000-00000000f001', 'rls-super@example.test', 'Super RLS', 'superadmin', null),
   ('00000000-0000-4000-8000-00000000f005', 'rls-admin05@example.test', 'Admin RLS 05', 'admin_rw', 5),
-  ('00000000-0000-4000-8000-00000000f008', 'rls-admin08@example.test', 'Admin RLS 08', 'admin_rw', 8);
+  ('00000000-0000-4000-8000-00000000f008', 'rls-admin08@example.test', 'Admin RLS 08', 'admin_rw', 8),
+  ('00000000-0000-4000-8000-00000000f013', 'rls-admin13@example.test', 'Admin RLS 13', 'admin_rw', 13);
 
 create function pg_temp.persona_id(p_persona text) returns uuid
   language sql immutable
@@ -46,6 +50,7 @@ as $$
     when 'admin_rw_05' then '00000000-0000-4000-8000-00000000f005'
     when 'admin_rw_05_aal1' then '00000000-0000-4000-8000-00000000f005'
     when 'admin_rw_08' then '00000000-0000-4000-8000-00000000f008'
+    when 'admin_rw_13' then '00000000-0000-4000-8000-00000000f013'
   end)::uuid;
 $$;
 
@@ -54,7 +59,8 @@ create function pg_temp.act_as(p_persona text) returns void
 as $$
 declare
   user_id uuid := pg_temp.persona_id(p_persona);
-  is_aal2 boolean := p_persona in ('none', 'admin_rw_05', 'admin_rw_08', 'superadmin_aal2', 'superadmin_stale_totp');
+  is_aal2 boolean := p_persona in ('none', 'admin_rw_05', 'admin_rw_08', 'admin_rw_13', 'superadmin_aal2',
+                                   'superadmin_stale_totp');
   totp_verified_at bigint := extract(epoch from now())::bigint
                              - case when p_persona = 'superadmin_stale_totp' then 7200 else 60 end;
   signed_in_at bigint := totp_verified_at - 60;

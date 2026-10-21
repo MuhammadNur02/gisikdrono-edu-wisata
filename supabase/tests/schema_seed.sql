@@ -1,14 +1,15 @@
--- Reference data of 0008_seed (docs/PRD.md §8.6, assumption A4, Task P1.8.01) and the development seed guard
+-- Reference data of 0008_seed and 20261022080000 (docs/PRD.md §8.6, assumption A4, Tasks P1.8.01, P2.10.03) and
+-- the development seed guard
 -- (Task P1.8.02, security review of PR #5). Vault secrets are written and removed inside the suite's own transaction.
 begin;
 select plan(21);
 
 -- ===== RWs and settings =====
 select is(
-  (select string_agg(id || ':' || code || ':' || slug || ':' || is_active, ', ' order by id) from public.rw_units
-   where id in (5, 8)),
-  '5:RW05:rw-05-ecowastreme:true, 8:RW08:rw-08-kampung-seni-budaya:true',
-  'both RWs exist in every environment'
+  (select string_agg(id || ':' || code || ':' || slug || ':' || is_active, ', ' order by sort_order) from public.rw_units
+   where id in (5, 8, 13)),
+  '5:RW05:rw-05-ecowastreme:true, 13:RW13:rw-13-kampung-budaya-seni:true, 8:RW08:rw-08-inklusif-ramah-anak:true',
+  'the three RWs exist in every environment, online, in the order 05, 13, 08'
 );
 select is(
   array(select key || ':' || is_public from public.site_settings order by key collate "C"),
@@ -50,8 +51,10 @@ select is(
    ) as lines
    where r.package_id is null and r.product_id is null and r.is_active),
   'package_default/5: kelurahan=20.00 rw_treasury/5=80.00 | package_default/8: kelurahan=20.00 rw_treasury/8=80.00 | '
+  || 'package_default/13: kelurahan=20.00 rw_treasury/13=80.00 | '
   || 'package_default/combo: kelurahan=20.00 rw_treasury/5=40.00 rw_treasury/8=40.00 | '
-  || 'addon_default/5: rw_treasury/5=10.00 umkm_vendor=90.00 | addon_default/8: rw_treasury/8=10.00 umkm_vendor=90.00',
+  || 'addon_default/5: rw_treasury/5=10.00 umkm_vendor=90.00 | addon_default/8: rw_treasury/8=10.00 umkm_vendor=90.00 | '
+  || 'addon_default/13: rw_treasury/13=10.00 umkm_vendor=90.00',
   'the default splits of assumption A4, the add-on share going to the product''s own vendor'
 );
 
@@ -124,8 +127,8 @@ select throws_ok($$select internal.require_local_database()$$, '42501',
   'and refuses it too');
 select ok(
   (select count(*) from public.revenue_share_rules r where r.package_id is null and r.product_id is null
-     and r.name like 'Bawaan %') = 5,
-  'the seed wrote each default rule once'
+     and r.name like 'Bawaan %') = 7,
+  'the seeds wrote each default rule once'
 );
 
 select * from finish();

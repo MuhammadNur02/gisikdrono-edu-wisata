@@ -108,8 +108,8 @@ select is(
 -- Fixtures for the behaviour checks below; everything is rolled back at the end.
 insert into public.rw_units (id, code, slug, name, short_name, theme_label, accent_key, icon_key) values
   (5, 'RW05', 'rw-05-ecowastreme', 'RW 05 Ecowastreme', 'Ecowastreme', 'Ekowisata & Lingkungan', 'leaf', 'recycle'),
-  (8, 'RW08', 'rw-08-kampung-seni-budaya', 'RW 08 Kampung Seni Budaya', 'Kampung Seni Budaya', 'Seni & Budaya',
-   'terracotta', 'drama')
+  (8, 'RW08', 'rw-08-inklusif-ramah-anak', 'RW 08 Kampung Inklusif & Ramah Anak', 'Kampung Inklusif & Ramah Anak',
+   'Inklusif & Ramah Anak', 'mulberry', 'heart_handshake')
 on conflict (id) do nothing;
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-000000000001', 'superadmin@example.test'),

@@ -31,8 +31,8 @@ $$;
 select vault.create_secret('local-test-pepper-not-a-real-secret-0000000', 'otp_pepper', 'test only');
 insert into public.rw_units (id, code, slug, name, short_name, theme_label, accent_key, icon_key) values
   (5, 'RW05', 'rw-05-ecowastreme', 'RW 05 Ecowastreme', 'Ecowastreme', 'Ekowisata & Lingkungan', 'leaf', 'recycle'),
-  (8, 'RW08', 'rw-08-kampung-seni-budaya', 'RW 08 Kampung Seni Budaya', 'Kampung Seni Budaya', 'Seni & Budaya',
-   'terracotta', 'drama')
+  (8, 'RW08', 'rw-08-inklusif-ramah-anak', 'RW 08 Kampung Inklusif & Ramah Anak', 'Kampung Inklusif & Ramah Anak',
+   'Inklusif & Ramah Anak', 'mulberry', 'heart_handshake')
 -- Reference rows: the seed and the integration tests may have written them already.
 on conflict (id) do nothing;
 insert into auth.users (id, email) values

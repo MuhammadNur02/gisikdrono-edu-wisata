@@ -18,13 +18,15 @@ select col_default_is('public', 'rw_units', 'is_active', 'false', 'a new RW star
 select is(
   (select string_agg(id || ':' || short_name || ':' || accent_key || ':' || icon_key || ':' || schedule_enabled, ', '
                      order by id)
-   from public.rw_units where id in (5, 8)),
-  '5:Ecowastreme:leaf:recycle:false, 8:Kampung Seni Budaya:terracotta:drama:true',
-  'RW 05 and RW 08 keep the look src/config/rw.ts gave them'
+   from public.rw_units where id in (5, 8, 13)),
+  '5:Ecowastreme:leaf:recycle:false, 8:Kampung Inklusif & Ramah Anak:mulberry:heart_handshake:false, '
+  || '13:Kampung Budaya & Seni:terracotta:drama:true',
+  'RW 05 keeps its look; the arts look and schedule are RW 13''s, RW 08 has its own (Task P2.10.03)'
 );
 select is(
-  (select string_agg(id || ':' || coalesce(products_heading, '-'), ', ' order by id) from public.rw_units where id in (5, 8)),
-  '5:-, 8:Suvenir dan produk UMKM',
+  (select string_agg(id || ':' || coalesce(products_heading, '-'), ', ' order by id) from public.rw_units
+   where id in (5, 8, 13)),
+  '5:-, 8:-, 13:Suvenir dan produk UMKM',
   'the arts programme names its souvenirs, every other RW keeps the default heading'
 );
 
