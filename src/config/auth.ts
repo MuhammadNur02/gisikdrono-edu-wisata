@@ -52,5 +52,10 @@ export const TURNSTILE_ACTIONS = {
   passwordReset: 'password_reset',
   passwordChange: 'password_change',
   mfaVerify: 'mfa_verify',
+  // The visitor's forms (Task P3.2, P3.3). The email code has its own action, so a token solved for the WhatsApp
+  // request cannot open the email fallback the breaker reserves for an interactive check.
+  otpRequest: 'otp_request',
+  otpEmail: 'otp_email',
+  bookingLookup: 'booking_lookup',
 } as const;
 export type TurnstileAction = (typeof TURNSTILE_ACTIONS)[keyof typeof TURNSTILE_ACTIONS];

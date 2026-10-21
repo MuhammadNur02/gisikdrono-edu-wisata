@@ -11,6 +11,8 @@ export const PRIVATE_ROUTE_PREFIXES = [
   '/onboarding',
   '/auth',
   '/v',
+  // Development-only pages (page.dev.tsx), which no build contains.
+  '/dev',
 ] as const;
 
 // The WhatsApp button stays off checkout and the dashboard (docs/StyleGuide.md §5.16): a booking in progress

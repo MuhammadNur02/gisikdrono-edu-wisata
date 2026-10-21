@@ -19,4 +19,51 @@ export const bookingCopy = {
       'Daftar peserta lebih banyak dari jumlah peserta. Tambah jumlah peserta atau hapus beberapa nama.',
     guardianConsent: 'Centang persetujuan orang tua atau wali untuk daftar peserta ini, ya.',
   },
+  // The WhatsApp code of the booking form (Task P3.2.03) and its email fallback while WhatsApp is limited.
+  otp: {
+    phoneLabel: 'Nomor WhatsApp penanggung jawab',
+    phoneHint: 'Kode verifikasi 6 angka dikirim lewat WhatsApp ke nomor ini.',
+    emailLabel: 'Email penanggung jawab',
+    send: 'Kirim kode',
+    sendEmail: 'Kirim kode ke email',
+    resend: 'Kirim ulang kode',
+    resendIn: (seconds: number) => `Kirim ulang dalam ${String(seconds)} detik`,
+    codeLabel: 'Kode verifikasi',
+    codeFormat: 'Kode terdiri dari 6 angka.',
+    verify: 'Verifikasi',
+    changeContact: 'Ganti nomor',
+    sentWhatsapp: 'Kode sudah dikirim ke WhatsApp Anda dan berlaku 5 menit.',
+    sentEmail: 'Kode sudah dikirim ke email Anda dan berlaku 5 menit. Periksa juga folder spam.',
+    verifiedWhatsapp: 'Nomor WhatsApp sudah terverifikasi.',
+    verifiedEmail: 'Email sudah terverifikasi. Kabar reservasi akan kami kirim lewat email.',
+    degradedTitle: 'Verifikasi lewat email dulu, ya',
+    degraded:
+      'Pengiriman kode WhatsApp sedang dibatasi. Kami kirim kode ke email Anda sebagai gantinya; selesaikan juga pemeriksaan keamanan di bawah.',
+    unavailable:
+      'Kode lewat email hanya dipakai saat WhatsApp sedang dibatasi. Minta kode lewat WhatsApp, ya.',
+    cooldown: (seconds: number) => `Tunggu ${String(seconds)} detik sebelum meminta kode baru.`,
+    limited:
+      'Kode untuk nomor atau email ini sudah terlalu sering diminta hari ini. Coba lagi besok, atau hubungi kelurahan.',
+    wrongCode: (attemptsLeft: number) =>
+      `Kodenya belum cocok. Sisa ${String(attemptsLeft)} kali percobaan.`,
+    locked: 'Kode ini sudah salah lima kali sehingga tidak berlaku lagi. Minta kode baru, ya.',
+    expired: 'Kode sudah kedaluwarsa. Minta kode baru, ya.',
+    invalid: 'Kode ini sudah tidak berlaku. Minta kode baru, ya.',
+    captchaFailed: 'Pemeriksaan keamanan belum berhasil. Coba lagi, ya.',
+  },
+  // /reservasi/cari (docs/PRD.md FR-BOOK-16): the answer is the same whether or not anything matched.
+  lookup: {
+    title: 'Cari reservasi',
+    description:
+      'Masukkan kode reservasi dan nomor WhatsApp atau email yang dipakai saat memesan. Tautan reservasi akan kami kirim ulang ke kontak itu.',
+    codeLabel: 'Kode reservasi',
+    codeHint: 'Contoh: GSK-7F3K9Q2M',
+    contactLabel: 'Nomor WhatsApp atau email',
+    submit: 'Kirim ulang tautan',
+    sentTitle: 'Permintaan sudah kami terima',
+    sent: 'Jika kode dan kontaknya cocok dengan reservasi kami, tautan sudah dikirim ulang ke WhatsApp atau email yang terdaftar. Belum ada dalam beberapa menit? Periksa folder spam atau hubungi kelurahan.',
+    again: 'Cari reservasi lain',
+    invalidCode: 'Kode reservasi diawali GSK- lalu 8 huruf atau angka.',
+    invalidContact: 'Tulis nomor WhatsApp atau email yang dipakai saat memesan.',
+  },
 };

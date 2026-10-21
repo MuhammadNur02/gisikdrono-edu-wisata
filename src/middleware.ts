@@ -15,12 +15,14 @@ import {
   NONCE_HEADER,
   permissionsPolicyFor,
 } from '@/lib/csp';
+import { redirectGuestLink } from '@/lib/links/redirect';
 import { publicEnv } from '@/lib/public-env';
 import { canonicalGalleryPathFor } from '@/lib/utils/gallery-search';
 import { isPathUnder, PUBLIC_PATHS } from '@/lib/utils/paths';
 import { pathWithNext } from '@/lib/utils/staff-paths';
 
 const NONCE_BYTES = 16;
+const MS_PER_SECOND = 1000;
 // Temporary on purpose: the page cap (GALLERY_MAX_PAGES) may change, and a browser keeps a permanent one.
 const TEMPORARY_REDIRECT = 307;
 
@@ -127,6 +129,8 @@ export async function middleware(request: NextRequest) {
   });
   const galleryRedirect = redirectMalformedGallery(request);
   if (galleryRedirect) return withSecurityHeaders(galleryRedirect, pathname, csp);
+  const guestRedirect = redirectGuestLink(request, Math.floor(Date.now() / MS_PER_SECOND));
+  if (guestRedirect) return withSecurityHeaders(guestRedirect, pathname, csp);
   const continueRequest = () => forwardRequest(request, nonce, csp);
   const response = { current: continueRequest() };
   const step = await signInStepFor(request, response, continueRequest);
