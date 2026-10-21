@@ -18,7 +18,7 @@ export const metadata: Metadata = { robots: { index: false, follow: false } };
 export default async function BookingLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <ThemeProvider scope="public" nonce={await requestNonce()}>
-      <div className="flex min-h-dvh flex-col bg-linear-to-b from-brand-ice to-background">
+      <div className="flex min-h-dvh flex-col bg-linear-to-b from-brand-ice to-background dark:from-secondary">
         <Container className="py-6">
           <Link
             href={HOME_NAV_ITEM.href}
