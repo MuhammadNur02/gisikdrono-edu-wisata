@@ -23,13 +23,24 @@ describe('normalizeEmail', () => {
 });
 
 describe('normalizeMobilePhone', () => {
-  it('returns the E.164 form of an Indonesian mobile number', () => {
-    expect(normalizeMobilePhone('0812-3456-7890')).toBe('+6281234567890');
-    expect(normalizeMobilePhone('+62 812 3456 7890')).toBe('+6281234567890');
+  it.each([
+    ['0812-3456-7890', '+6281234567890'],
+    ['081234567890', '+6281234567890'],
+    ['6281234567890', '+6281234567890'],
+    ['62 857 1234 5678', '+6285712345678'],
+    ['+62 812 3456 7890', '+6281234567890'],
+    ['+62 (821) 1234-567', '+628211234567'],
+  ])('returns the E.164 form of the Indonesian mobile number %s', (input, expected) => {
+    expect(normalizeMobilePhone(input)).toBe(expected);
   });
 
-  it('refuses landlines and numbers from other countries', () => {
-    expect(normalizeMobilePhone('024 7612345')).toBeNull();
-    expect(normalizeMobilePhone('+60 12 345 6789')).toBeNull();
+  it.each([
+    ['a Semarang landline', '024 7612345'],
+    ['a landline written with +62', '+62 24 7612345'],
+    ['a Malaysian number', '+60 12 345 6789'],
+    ['a number with 0 after the country code', '+62 0812 3456 7890'],
+    ['a number too short', '0812 345'],
+  ])('refuses %s', (_case, input) => {
+    expect(normalizeMobilePhone(input)).toBeNull();
   });
 });

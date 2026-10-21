@@ -30,11 +30,31 @@ export function isSafeFreeText(value: string): boolean {
   return !FORBIDDEN_PATTERNS.some((pattern) => pattern.test(withoutTitles));
 }
 
-export function freeTextSchema(maxLength: number) {
+// What a form shows when the text is missing or too long; a field no visitor types needs neither.
+interface FreeTextMessages {
+  required?: string;
+  tooLong?: string;
+}
+
+export function freeTextSchema(maxLength: number, messages: FreeTextMessages = {}) {
   return z
     .string()
     .trim()
-    .min(1)
-    .max(maxLength)
+    .min(1, messages.required)
+    .max(maxLength, messages.tooLong)
     .refine(isSafeFreeText, { message: copy.validation.freeText });
+}
+
+// The same for a field that may stay empty: left out, blank or null, it becomes null, and null parses again unchanged.
+export function optionalFreeTextSchema(
+  maxLength: number,
+  messages: Pick<FreeTextMessages, 'tooLong'> = {},
+) {
+  return z
+    .string()
+    .trim()
+    .max(maxLength, messages.tooLong)
+    .refine(isSafeFreeText, { message: copy.validation.freeText })
+    .nullish()
+    .transform((value) => (value === undefined || value === null || value === '' ? null : value));
 }
