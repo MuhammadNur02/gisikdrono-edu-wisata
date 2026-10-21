@@ -33,7 +33,6 @@ export async function createActivityPointAction(
 
   try {
     const saved = await createActivityPoint(guard.ctx, target.rwId, parsed.data);
-    revalidateTag(TAGS.activityPoints(target.rwId));
     revalidateTag(TAGS.allActivityPoints);
     return okUnlessFilesLeft(saved);
   } catch (error) {
@@ -54,7 +53,6 @@ export async function updateActivityPointAction(
     if (rwId === undefined) return fail('NOT_FOUND');
     if (!canWriteFor(guard.ctx, rwId)) return fail('FORBIDDEN');
     const saved = await updateActivityPoint(guard.ctx, rwId, parsed.data);
-    revalidateTag(TAGS.activityPoints(rwId));
     revalidateTag(TAGS.allActivityPoints);
     return okUnlessFilesLeft(saved);
   } catch (error) {
@@ -73,7 +71,6 @@ export async function removeActivityPointAction(input: unknown): Promise<ActionR
     if (rwId === undefined) return fail('NOT_FOUND');
     if (!canWriteFor(guard.ctx, rwId)) return fail('FORBIDDEN');
     const filesRemoved = await removeActivityPoint(guard.ctx, rwId, parsed.data.id);
-    revalidateTag(TAGS.activityPoints(rwId));
     revalidateTag(TAGS.allActivityPoints);
     return okUnlessFilesLeft({ value: null, filesRemoved });
   } catch (error) {

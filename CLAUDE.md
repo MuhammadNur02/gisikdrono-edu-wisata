@@ -338,7 +338,7 @@ export async function updatePackageAction(input: unknown): Promise<ActionResult<
 
   try {
     const pkg = await updatePackage(guard.ctx, parsed.data);
-    revalidateTag(TAGS.packages(parsed.data.rwId));
+    revalidateTag(TAGS.allPackages);
     return ok(pkg);
   } catch (error) {
     return mapError(error);
@@ -396,17 +396,17 @@ No CORS headers on any route. All handlers reject bodies above their cap and par
 
 ### 5.5 Caching and revalidation tag registry
 
-`src/lib/queries/tags.ts` is the only place tag strings are built. Public reads wrap `unstable_cache(fn, keys, { tags, revalidate })` with these tags; actions revalidate the same constants. A read whose DTOs name an RW (its label and accent) also caches under `rw-units`.
+`src/lib/queries/tags.ts` is the only place tag strings are built. Public reads wrap `unstable_cache(fn, keys, { tags, revalidate })` with these tags; actions revalidate the same constants. A read whose DTOs name an RW (its label and accent) also caches under `rw-units`. The RWs are rows of `rw_units` (decision of 2026-10-21), so a read that spans every RW caches under an umbrella tag (`…:all`) instead of a list of owner tags that would miss the next RW; packages, products and activity points are read only that way, so their actions revalidate the umbrella.
 
 | Tag | Invalidated by |
 |---|---|
-| `packages:<rw\|combo>` | package create/update/archive, price change |
 | `sessions:<rwId>:<YYYY-MM>` | session generate/edit/close |
-| `products:<rwId>` | product CRUD |
 | `galleries:<rwId\|kelurahan>` | gallery CRUD; `kelurahan` for a photo with `rw_id` NULL (decision of 2026-10-18) |
 | `rw-units` | RW page content in `rw_units` (the `pages` action) (decision of 2026-10-18) |
-| `activity-points:<rwId>` | activity point CRUD (decision of 2026-10-18) |
-| `packages:all`, `products:all`, `galleries:all`, `activity-points:all` | the write of any owner: a read that spans every RW caches under the umbrella tag, since the RWs are rows of `rw_units` and a fixed list of owner tags would miss the next one; a write revalidates its owner's tag and the umbrella (decision of 2026-10-21) |
+| `packages:all` | package create/update/archive, price change, of any RW or combo |
+| `products:all` | product and vendor CRUD of any RW |
+| `activity-points:all` | activity point CRUD of any RW |
+| `galleries:all` | gallery CRUD of any owner, together with `galleries:<rwId\|kelurahan>` |
 | `articles` | article publish/unpublish |
 | `banners` | hero banner CRUD |
 | `booklets` | booklet upload/publish |
@@ -795,7 +795,7 @@ Add the admin module <entity> under src/app/(admin)/dashboard/<entity>/ for RW s
 - Create/edit form in a shadcn Sheet (>= md) / Drawer (< md) with react-hook-form +
   zodResolver(<entity>Schema) from src/lib/validations/<entity>.ts; confirmations use ResponsiveDialog.
 - Actions create<Entity>Action / update<Entity>Action / archive<Entity>Action in
-  src/server/actions/<entity>.ts: validate -> requireRwAccess(rwId) -> service -> revalidateTag(TAGS.<entity>(rwId)) -> ok().
+  src/server/actions/<entity>.ts: validate -> requireRwAccess(rwId) -> service -> revalidateTag(TAGS.all<Entity>) -> ok().
 - Empty, loading (skeleton) and error states per segment.
 - Vitest for the schema; pgTAP asserting admin_rw 05 sees 0 rows of RW 08.
 - Superadmin sees the RwSwitcher; admin_rw never sees it and never receives an rwId from the form.
@@ -976,7 +976,7 @@ Codes: `booking_code` = `GSK-` + 8 chars Crockford base32 (`GSK-7F3K9Q2M`); `pay
 | Buckets | `uploads-quarantine`, `public-media`, `documents` |
 | pg_cron jobs | `expire_stale_bookings */5`, `process-notifications * * * * *` (pg_net), `payments-poll */5` (pg_net), `enqueue_visit_reminders 09:00 WIB`, `close_past_bookings + reconcile_session_counters 23:30 WIB`, `generate_visit_sessions 00:00 WIB`, `reconcile-payments 02:30 WIB` (pg_net), `anomaly-scan */5` (pg_net), `check_job_responses */5` (reads the pg_net answers), `purge/retention 02:00 WIB` (`purge_participants` + `anonymise_booker_pii` + `guest_otps` > 24 h), `purge-storage` hourly at :15, so 02:15 WIB after the retention run (pg_net; deletes the files the retention run marked plus `uploads-quarantine` > 24 h), `prune_rate_limit_buckets hourly`, `prune_operational_tables monthly`; every database job runs as `internal.run_scheduled_job('<job>')` and every pg_net job as `internal.call_job('<job>')` (0007), each leaving a heartbeat in `job_heartbeats`, which `svc_job_health()` reports as stalled once a job passes its `max_age` without a success |
 | WhatsApp templates (language `id`) | `gsk_otp_v1`, `gsk_booking_created_v1`, `gsk_quotation_ready_v1`, `gsk_payment_reminder_v1`, `gsk_ticket_issued_v1`, `gsk_booking_expired_v1`, `gsk_booking_cancelled_v1`, `gsk_visit_reminder_d1_v1`, `gsk_checked_in_thanks_v1`, `gsk_certificate_ready_v1`, `gsk_review_invite_v1`, `gsk_refund_processed_v1`, `gsk_admin_new_paid_booking_v1`, `gsk_security_alert_v1`, `gsk_booking_link_v1` (decision of 2026-10-21: the link `/reservasi/cari` sends again) |
-| Revalidation tags | `packages:<rw\|combo>`, `sessions:<rwId>:<YYYY-MM>`, `products:<rwId>`, `galleries:<rwId\|kelurahan>`, `rw-units`, `activity-points:<rwId>`, `packages:all`, `products:all`, `galleries:all`, `activity-points:all`, `articles`, `banners`, `booklets`, `schedules`, `reviews`, `settings`, `booking:<id>` |
+| Revalidation tags | `packages:all`, `sessions:<rwId>:<YYYY-MM>`, `products:all`, `galleries:<rwId\|kelurahan>`, `galleries:all`, `rw-units`, `activity-points:all`, `articles`, `banners`, `booklets`, `schedules`, `reviews`, `settings`, `booking:<id>` |
 | Security control prefixes | `PAY, WH, REC, BOOK, AUTH, AZ, GUEST, DATA, PDP, APP, HDR, RL, UPL, SEC, DB, QR, SC, OPS, MON, STAFF, DOC, RES` |
 
 ### A.5 Env vars (names)
