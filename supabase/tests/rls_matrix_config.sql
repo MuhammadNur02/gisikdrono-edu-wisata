@@ -124,7 +124,7 @@ select throws_ok($$insert into public.rw_units (id, code, slug, name, short_name
 -- ===== superadmin at AAL2 =====
 reset role;
 select pg_temp.act_as('superadmin_aal2');
-select is((select count(*)::int from public.profiles where email::text like 'rls-%'), 5, 'the superadmin sees every profile');
+select is((select count(*)::int from public.profiles where email::text like 'rls-%'), 6, 'the superadmin sees every profile');
 select is((select count(*)::int from public.site_settings where key in ('seo.default_description', 'rls.private')), 2,
   'every setting');
 select lives_ok($$insert into public.staff_invites (email, role, rw_id, invite_code_hash, expires_at, created_by)

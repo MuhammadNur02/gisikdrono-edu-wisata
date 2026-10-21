@@ -2,12 +2,12 @@
 -- RW 13 has the arts programme's name, look, schedule and tagline, its default revenue-share rules and is online;
 -- RW 08 is Kampung Inklusif & Ramah Anak, a profile page with its own default rules; the RWs read 05, 13, 08.
 begin;
-select plan(13);
+select plan(14);
 
 -- ===== RW 13 =====
 select is(
-  (select concat_ws(' | ', code, slug, name, short_name, theme_label, tagline, accent_key, icon_key, schedule_enabled,
-                    products_heading, is_active)
+  (select concat_ws(' | ', code, slug, name, short_name, theme_label, tagline, accent_key, icon_key, schedule_enabled::text,
+                    products_heading, is_active::text)
    from public.rw_units where id = 13),
   'RW13 | rw-13-kampung-budaya-seni | RW 13 Kampung Budaya & Seni | Kampung Budaya & Seni | Seni & Budaya | '
   || 'Menari, bermain dolanan dan berkarya di sanggar kampung | terracotta | drama | true | Suvenir dan produk UMKM | true',
@@ -33,12 +33,17 @@ select is(internal.media_owner(13::smallint), 'rw-13', 'RW 13''s files live unde
 
 -- ===== RW 08 =====
 select is(
-  (select concat_ws(' | ', code, slug, name, short_name, theme_label, coalesce(tagline, '-'), accent_key, icon_key,
-                    schedule_enabled, coalesce(products_heading, '-'), is_active)
+  (select concat_ws(' | ', code, slug, name, short_name, theme_label, accent_key, icon_key, schedule_enabled::text,
+                    coalesce(products_heading, '-'), is_active::text)
    from public.rw_units where id = 8),
   'RW08 | rw-08-inklusif-ramah-anak | RW 08 Kampung Inklusif & Ramah Anak | Kampung Inklusif & Ramah Anak | '
-  || 'Inklusif & Ramah Anak | - | mulberry | heart_handshake | false | - | true',
-  'RW 08 is Kampung Inklusif & Ramah Anak: mulberry, no schedule, and no arts tagline or product heading left'
+  || 'Inklusif & Ramah Anak | mulberry | heart_handshake | false | - | true',
+  'RW 08 is Kampung Inklusif & Ramah Anak: mulberry, no schedule and no product heading'
+);
+-- What RW 08 says about itself is the kelurahan's to write (pnpm db:seed gives a local database one); the arts line is gone.
+select ok(
+  (select tagline is distinct from 'Menari, bermain dolanan dan berkarya di sanggar kampung' from public.rw_units where id = 8),
+  'RW 08 no longer carries the arts tagline'
 );
 select is(
   (select count(*)::int from public.revenue_share_rules r
