@@ -11,17 +11,43 @@ import { MOBILE_PHONE_PATTERN } from './utils/phone';
 // at a sample (go-live check #21 confirms the official number on top of this).
 const SAMPLE_PHONE_PATTERN = /0{6,}/;
 
+// Cloudflare's published Turnstile test keys, site and secret alike (1x… pass, 2x… block, 3x… challenge or fail):
+// they let every visitor through, so only a local or CI server may use them (review of PR #20, info).
+export const TURNSTILE_TEST_KEY_PATTERN = /^[123]x0+[A-F]{2}$/;
+
+type VercelEnv = 'production' | 'preview' | 'development' | undefined;
+
+// A Vercel deployment real visitors reach; `vercel dev` and servers off Vercel are not one.
+export function isHostedDeployment(vercelEnv: VercelEnv): vercelEnv is 'production' | 'preview' {
+  return vercelEnv === 'production' || vercelEnv === 'preview';
+}
+
 interface PublicEnvValues {
-  VERCEL_ENV?: 'production' | 'preview' | 'development' | undefined;
+  VERCEL_ENV?: VercelEnv;
   NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: string;
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY: string;
 }
 
 export function findPublicEnvProblems(values: PublicEnvValues): string[] {
-  if (values.VERCEL_ENV !== 'production') return [];
-  if (!SAMPLE_PHONE_PATTERN.test(values.NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER)) return [];
-  return [
-    'NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER looks like a sample number; production needs the kelurahan number',
-  ];
+  const problems: string[] = [];
+  const { VERCEL_ENV: vercelEnv } = values;
+  if (
+    vercelEnv === 'production' &&
+    SAMPLE_PHONE_PATTERN.test(values.NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER)
+  ) {
+    problems.push(
+      'NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER looks like a sample number; production needs the kelurahan number',
+    );
+  }
+  if (
+    isHostedDeployment(vercelEnv) &&
+    TURNSTILE_TEST_KEY_PATTERN.test(values.NEXT_PUBLIC_TURNSTILE_SITE_KEY)
+  ) {
+    problems.push(
+      `NEXT_PUBLIC_TURNSTILE_SITE_KEY is one of Cloudflare's test keys, which let every visitor through; ${vercelEnv} needs the site's own key`,
+    );
+  }
+  return problems;
 }
 
 // Kept apart from src/lib/env.ts because that module is server-only and client components need these.

@@ -4,7 +4,7 @@ import { createEnv } from '@t3-oss/env-nextjs';
 import { z } from 'zod';
 
 import { findMidtransKeyProblems, MIDTRANS_MERCHANT_ID_PATTERN } from '@/lib/midtrans/environment';
-import { publicEnv } from '@/lib/public-env';
+import { isHostedDeployment, publicEnv, TURNSTILE_TEST_KEY_PATTERN } from '@/lib/public-env';
 import { MOBILE_PHONE_PATTERN } from '@/lib/utils/phone';
 
 const MIN_SECRET_LENGTH = 32;
@@ -52,6 +52,7 @@ type EnvValues = {
   WHATSAPP_ACCESS_TOKEN?: string | undefined;
   WHATSAPP_PHONE_NUMBER_ID?: string | undefined;
   WHATSAPP_APP_SECRET?: string | undefined;
+  TURNSTILE_SECRET_KEY: string;
 };
 
 // CLAUDE.md §7.7: production never runs a sandbox "SB-" key, and MIDTRANS_IS_PRODUCTION follows the deployment.
@@ -101,11 +102,22 @@ function findMissingProductionSecrets(values: EnvValues): string[] {
     .map(([name]) => `${name} is required in production`);
 }
 
+// src/lib/public-env.ts refuses the test site key on the same deployments.
+function findTurnstileTestSecret(values: EnvValues): string[] {
+  const vercelEnv = values.VERCEL_ENV;
+  if (!isHostedDeployment(vercelEnv)) return [];
+  if (!TURNSTILE_TEST_KEY_PATTERN.test(values.TURNSTILE_SECRET_KEY)) return [];
+  return [
+    `TURNSTILE_SECRET_KEY is one of Cloudflare's test keys, which let every visitor through; ${vercelEnv} needs the site's own secret`,
+  ];
+}
+
 export function findEnvProblems(values: EnvValues): string[] {
   return [
     ...findMidtransMismatches(values),
     ...findKeyRingProblems(values),
     ...findMissingProductionSecrets(values),
+    ...findTurnstileTestSecret(values),
   ];
 }
 
