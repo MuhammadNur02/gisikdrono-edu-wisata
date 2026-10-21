@@ -1226,7 +1226,7 @@ Code-split with `next/dynamic` (`ssr: false` where DOM-only): Leaflet map, `page
 
 | Surface | Below `md` | `md` and above |
 |---|---|---|
-| Site header | below `xl`: logo + `Pesan` button (`Pesan Kunjungan` from `md`) + menu Sheet | from `xl`: full nav, sticky blur (six links, the wordmark and the button only fit from about 1100 px; decision of 2026-10-17) |
+| Site header | below `xl`: logo + `Pesan` button (`Pesan Kunjungan` from `md`) + menu Sheet | from `xl`: full nav, sticky blur: five links (`Kampung Wisata` to the home page's RW section `/#kampung`, then `Paket wisata`, `Produk UMKM`, `Galeri`, `Peta & kontak`), the wordmark and `Pesan Kunjungan`. The RWs are not named one by one in the header: with three RWs the links needed 975 px of the 901 px the 1280 px container leaves, visitors do not know RWs by number, and a menu of them would add client script to every public page. `Kampung Wisata` is the current section (`aria-current="true"`) on every RW page; each RW keeps its direct link in the menu Sheet, the footer, the home section, the breadcrumbs and the sitemap (decision of 2026-10-22, replacing the six links of 2026-10-17; the planned home page redesign may revisit it) |
 | Hero | text stacked over the carousel, `text-display-xl` at 2.5 rem | two columns |
 | Package detail | sticky bottom CTA bar (`Pesan Sekarang` + price) above `WhatsAppFab` | sidebar card with price and CTA |
 | Booking wizard | stepper collapsed to `Langkah 2/4`, full-width fields, inline DatePicker | horizontal stepper, Popover DatePicker |

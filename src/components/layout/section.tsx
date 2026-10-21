@@ -8,7 +8,8 @@ import { cn } from '@/lib/utils/cn';
 export type SectionTone = 'default' | 'muted' | 'brand';
 export type SectionAlign = 'left' | 'center';
 
-const sectionVariants = cva('py-16 md:py-24', {
+// scroll-mt-16 keeps an anchored section (/#kampung, /rw-05-ecowastreme#profil) clear of the sticky h-16 header.
+const sectionVariants = cva('scroll-mt-16 py-16 md:py-24', {
   variants: {
     tone: { default: 'bg-background', muted: 'bg-muted/40', brand: 'bg-background' },
   },

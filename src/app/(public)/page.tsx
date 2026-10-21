@@ -10,6 +10,7 @@ import { MapTeaser } from '@/components/marketing/map-teaser';
 import { RwHighlight } from '@/components/marketing/rw-highlight';
 import { Testimonials } from '@/components/marketing/testimonials';
 import { JsonLd } from '@/components/seo/json-ld';
+import { HOME_RW_SECTION_ID } from '@/config/nav';
 import { getHomePageData } from '@/lib/queries/home-page';
 import { rwAttractionJsonLd, webSiteJsonLd } from '@/lib/seo/json-ld';
 
@@ -19,7 +20,7 @@ export const metadata: Metadata = { alternates: { canonical: '/' } };
 
 // Anchors within the page; `Lihat Paket` in the hero scrolls to the featured packages.
 const SECTION_IDS = {
-  rw: 'program',
+  rw: HOME_RW_SECTION_ID,
   packages: 'paket-unggulan',
   products: 'produk-unggulan',
   map: 'peta',

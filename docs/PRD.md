@@ -208,7 +208,7 @@ Public slugs are Indonesian; admin and API paths are English. Public pages use I
 |---|---|---|
 | Home (Beranda Utama) | `/` | FR-PUB-01..07 |
 | Hero Banner (Produk Unggulan UMKM & Direct CTA) | `/` (section, `hero_banners`) | FR-PUB-01 |
-| Quick Highlight Edu Wisata (every RW online) | `/` (section, `rw_units`) | FR-PUB-02 |
+| Quick Highlight Edu Wisata (every RW online) | `/#kampung` (section, `rw_units`; the desktop header's `Kampung Wisata` link, decision of 2026-10-22) | FR-PUB-02 |
 | Peta Denah Interaktif | `/` (section, `activity_points` + `public/map/denah.svg`) | FR-PUB-03 |
 | Katalog Paket Wisata Pilihan | `/` (section, `tour_packages.is_featured`) | FR-PUB-04 |
 | Ulasan & Testimoni Rombongan | `/` (section, `v_public_reviews.is_featured`) | FR-PUB-05 |
