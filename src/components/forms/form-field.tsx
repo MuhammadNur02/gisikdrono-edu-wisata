@@ -13,8 +13,13 @@ import {
 } from '@/components/ui/form';
 import { copy } from '@/lib/copy/id';
 
-export interface FormFieldProps<TValues extends FieldValues, TName extends FieldPath<TValues>> {
-  control: Control<TValues>;
+// TOutput is what the form's resolver hands on once it passes, when that differs from what the fields hold.
+export interface FormFieldProps<
+  TValues extends FieldValues,
+  TName extends FieldPath<TValues>,
+  TOutput = TValues,
+> {
+  control: Control<TValues, unknown, TOutput>;
   name: TName;
   label: string;
   description?: string;
@@ -28,7 +33,7 @@ export interface FormFieldProps<TValues extends FieldValues, TName extends Field
 }
 
 // Sighted users see the red asterisk; screen readers hear "wajib" instead (docs/StyleGuide.md §5.6).
-function RequiredMark() {
+export function RequiredMark() {
   return (
     <>
       <span aria-hidden className="text-destructive">
@@ -41,7 +46,11 @@ function RequiredMark() {
 
 // Label, control, helper and error in one call. The control receives id, aria-describedby and
 // aria-invalid through FormControl, so errors are announced and linked without extra wiring.
-export function FormField<TValues extends FieldValues, TName extends FieldPath<TValues>>({
+export function FormField<
+  TValues extends FieldValues,
+  TName extends FieldPath<TValues>,
+  TOutput = TValues,
+>({
   control,
   name,
   label,
@@ -50,7 +59,7 @@ export function FormField<TValues extends FieldValues, TName extends FieldPath<T
   className,
   wrapsOwnControl = false,
   render,
-}: FormFieldProps<TValues, TName>) {
+}: FormFieldProps<TValues, TName, TOutput>) {
   return (
     <FieldController
       control={control}

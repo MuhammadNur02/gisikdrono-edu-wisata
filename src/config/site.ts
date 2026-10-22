@@ -20,6 +20,14 @@ export const siteConfig = {
 // Every visit date, session time and "today" is Semarang time, whatever the visitor's device says.
 export const APP_TZ = 'Asia/Jakarta';
 
+// The version of the /privasi notice a booking records as consent_version (docs/Security.md §7.6, PDP-01; decision
+// of 2026-10-22 on P3.5, Q3). It changes whenever the text of /privasi changes.
+export const PRIVACY_NOTICE_VERSION = '2026-10-18';
+
+// The booking wizard's steps in order, each bound to ?step= (docs/StyleGuide.md §5.14, docs/PRD.md FR-BOOK-01).
+export const BOOKING_STEPS = ['jadwal', 'data', 'tambahan', 'ringkasan'] as const;
+export type BookingStep = (typeof BOOKING_STEPS)[number];
+
 // Meta template names per notification_template (CLAUDE.md Appendix A.4, docs/Task.md Appendix B).
 // admin_booking_needs_review has no template of its own: it reuses the paid-booking template with other text.
 export const WHATSAPP_TEMPLATE_NAMES = {

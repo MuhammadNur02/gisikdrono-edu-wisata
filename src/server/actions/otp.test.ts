@@ -151,6 +151,7 @@ describe('verifyPhoneOtpAction', () => {
     email: null,
   } as const;
 
+  // Review of PR #27, L8: the proof is signed for the browser that entered the code.
   it('checks the code this browser holds and remembers the number the database verified', async () => {
     vi.mocked(verifyPhoneOtp).mockResolvedValue(VERIFIED);
     await expect(verifyPhoneOtpAction(CHECK)).resolves.toEqual({
@@ -164,12 +165,10 @@ describe('verifyPhoneOtpAction', () => {
       code: '482913',
       browserId: BROWSER_ID,
     });
-    expect(rememberPhoneProof).toHaveBeenCalledWith({
-      channel: 'whatsapp',
-      phone: '+6281111111111',
-      email: null,
-      otpId: OTP_ID,
-    });
+    expect(rememberPhoneProof).toHaveBeenCalledWith(
+      { channel: 'whatsapp', phone: '+6281111111111', email: null, otpId: OTP_ID },
+      BROWSER_ID,
+    );
   });
 
   it('marks an email code as proving the address only', async () => {
@@ -186,6 +185,7 @@ describe('verifyPhoneOtpAction', () => {
     expect(vi.mocked(verifyPhoneOtp).mock.calls[0]?.[0].email).toBe('ani@example.test');
     expect(rememberPhoneProof).toHaveBeenCalledWith(
       expect.objectContaining({ channel: 'email', phone: '+6281234567890' }),
+      BROWSER_ID,
     );
   });
 

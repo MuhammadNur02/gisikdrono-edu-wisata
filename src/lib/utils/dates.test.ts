@@ -8,6 +8,7 @@ import {
   formatInstantTimeRange,
   formatMonthLong,
   jakartaMonthKey,
+  sessionStartsAt,
   toJakartaIsoString,
   formatTimeRange,
   todayInJakarta,
@@ -83,6 +84,19 @@ describe('bookableRange', () => {
   it('keeps today open when the lead time still fits in it', () => {
     const now = new Date('2026-10-17T00:00:00Z'); // 07:00 WIB
     expect(bookableRange({ now, minLeadHours: 12, maxAdvanceDays: 1 }).first).toBe('2026-10-17');
+  });
+});
+
+describe('sessionStartsAt', () => {
+  it('reads a session date and time as Semarang wall time', () => {
+    expect(sessionStartsAt('2026-11-12', '08:30:00').toISOString()).toBe(
+      '2026-11-12T01:30:00.000Z',
+    );
+    expect(sessionStartsAt('2026-11-12', '00:15').toISOString()).toBe('2026-11-11T17:15:00.000Z');
+  });
+
+  it('refuses a time that is not a session time', () => {
+    expect(() => sessionStartsAt('2026-11-12', '8.30')).toThrow(RangeError);
   });
 });
 

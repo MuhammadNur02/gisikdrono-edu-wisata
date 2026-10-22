@@ -97,12 +97,9 @@ function codeRefusal(
   return fail('VALIDATION', { code: [message] }, message);
 }
 
-// The browser's own code for this contact: one that holds no gsk_otp_browser cookie has none to check. Review of
-// PR #20, L3: only a code issued to prove a booking's phone counts here; the database looks for no other purpose,
-// and a reply that names one is refused all the same.
-async function checkCode(check: PhoneOtpCheck): Promise<OtpCheck> {
-  const browserId = await readOtpBrowserCookie();
-  if (browserId === null) return { status: 'invalid' };
+// The browser's own code for this contact. Review of PR #20, L3: only a code issued to prove a booking's phone counts
+// here; the database looks for no other purpose, and a reply that names one is refused all the same.
+async function checkCode(check: PhoneOtpCheck, browserId: string): Promise<OtpCheck> {
   const { channel, phone, email, code } = check;
   const checked = await verifyPhoneOtp({ channel, phone, email, code, browserId });
   if (checked.status === 'verified' && checked.purpose !== 'booking_phone') {
@@ -121,17 +118,22 @@ export async function verifyPhoneOtpAction(input: unknown): Promise<ActionResult
     if (!(await withinGuestLimits([{ name: 'otp_verify:ip', subject: ipBucket }]))) {
       return fail('RATE_LIMITED');
     }
-    const checked = await checkCode(parsed.data);
+    // A browser that holds no gsk_otp_browser cookie has no code to check; the proof holds only beside that cookie
+    // (review of PR #27, L8).
+    const browserId = await readOtpBrowserCookie();
+    if (browserId === null) return codeRefusal({ status: 'invalid' });
+    const checked = await checkCode(parsed.data, browserId);
     if (checked.status !== 'verified') return codeRefusal(checked);
     // A WhatsApp code proves the number it was sent to, which the database returns; an email code proves only the
     // address, and the phone stays what the visitor typed (src/lib/links/phone-proof.ts).
     const channel: OtpChannel = checked.phone === null ? 'email' : 'whatsapp';
-    await rememberPhoneProof({
+    const proof = {
       channel,
       phone: checked.phone ?? parsed.data.phone,
       email: checked.email,
       otpId: checked.otpId,
-    });
+    };
+    await rememberPhoneProof(proof, browserId);
     return ok({ channel });
   } catch (error) {
     return mapError(error);

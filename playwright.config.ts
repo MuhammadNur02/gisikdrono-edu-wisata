@@ -12,4 +12,7 @@ export default defineConfig({
     { name: 'phone-360', use: { ...devices['Pixel 7'], viewport: SMALLEST_PHONE } },
   ],
   webServer: { command: 'pnpm start', url: LOCAL_APP_URL, reuseExistingServer: true },
+  // Booking is closed on every database until the guest pages exist; the run opens it and closes it again.
+  globalSetup: './tests/e2e/global-setup.ts',
+  globalTeardown: './tests/e2e/global-teardown.ts',
 });

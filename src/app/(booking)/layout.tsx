@@ -10,8 +10,9 @@ import { copy } from '@/lib/copy/id';
 import { requestNonce } from '@/lib/request-nonce';
 
 // Booking and reservation pages hold a visitor's own booking, so none is cached or indexed (CLAUDE.md §5.1);
-// next.config.ts adds `private, no-store`, noindex and no-referrer headers for these routes as well. The wizard's
-// stepper joins this slim header in P3.5.01.
+// next.config.ts adds `private, no-store`, noindex and no-referrer headers for these routes as well. Each page sets
+// its own width: a short form a narrow card, the booking wizard the wider column it needs (docs/StyleGuide.md §4.1).
+// The wizard's stepper sits in the wizard, since a layout is not told the step in the address.
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { robots: { index: false, follow: false } };
 
@@ -28,9 +29,7 @@ export default async function BookingLayout({ children }: Readonly<{ children: R
             <SiteWordmark />
           </Link>
         </Container>
-        <main className="flex flex-1 justify-center px-4 pt-2 pb-16 sm:items-center sm:pt-0">
-          <div className="w-full max-w-md">{children}</div>
-        </main>
+        <main className="flex flex-1 flex-col items-center px-4 pt-2 pb-16">{children}</main>
       </div>
     </ThemeProvider>
   );

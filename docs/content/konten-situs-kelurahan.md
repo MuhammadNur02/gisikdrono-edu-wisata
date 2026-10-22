@@ -334,3 +334,4 @@ The directory lists 442 businesses. Every entry gives its address as "Gisikdrono
 12. Izin menampilkan daftar tamu studi banding dan prestasi.
 13. Apa produk olahan minyak jelantah RW 05 (section 1).
 14. A photo of RW 08's programme without children, for its page (section 3).
+15. Syarat & Ketentuan kunjungan: pembatalan, jadwal ulang (reschedule), dan pengembalian dana (refund). The booking summary shows them beside the privacy notice once the kelurahan has written them; until then the site states no terms of its own (decision of 2026-10-22 on P3.5, Q3).
