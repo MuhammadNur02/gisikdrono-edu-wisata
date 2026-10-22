@@ -1500,7 +1500,7 @@ create table public.revenue_share_rule_lines (
   pct         numeric(5,2) not null check (pct >= 0 and pct <= 100),
   constraint rule_line_target_ok check (
     (beneficiary = 'kelurahan' and rw_id is null and vendor_id is null) or
-    (beneficiary = 'rw_treasury' and rw_id is not null and vendor_id is null) or
+    (beneficiary = 'rw_treasury' and vendor_id is null) or            -- 20261022100000: rw_id NULL = the booking's leg RWs, equally
     (beneficiary = 'umkm_vendor' and rw_id is null))                 -- vendor_id NULL = "the product's vendor"
 );
 -- constraint trigger revenue_rule_sum_guard (deferrable initially deferred): sum(pct) per rule = 100.00.
@@ -2342,9 +2342,9 @@ Recap pages read only the ledger views (`v_revenue_recap_daily`, `v_revenue_reca
 
 | Element | Rule |
 |---|---|
-| Rule resolution | `product` rule > `addon_default` for the product's RW > `package` rule > `package_default` for the package's RW (`rw_id IS NULL` for combo) > global default |
-| Defaults (A4) | package: kelurahan 20 % / RW treasury 80 %; add-on: UMKM vendor 90 % / RW treasury 10 %; combo: kelurahan 20 % / RW 05 treasury 40 % / RW 08 treasury 40 %; all editable by superadmin |
-| Computation | `internal.allocate_revenue_share` at settlement, in the same transaction as `paid`; per line (`package`, `addon:<id>`) the base amount is split by the rule lines with largest-remainder rounding so the parts sum exactly to the base; `rule_version` snapshot stored on each entry |
+| Rule resolution | `product` rule > `addon_default` for the product's RW > `package` rule > `package_default` for the package's RW (`rw_id IS NULL` for combo). There is no global default: no rule in force, or more than one in force for the same target, refuses the allocation (`internal.resolve_package_rule`, decision of 2026-10-21, Task P3.9.04) |
+| Defaults (A4) | package: kelurahan 20 % / RW treasury 80 %; add-on: UMKM vendor 90 % / RW treasury 10 %; combo: kelurahan 20 % / the RWs of the booking's legs 80 % in equal parts, two to four RWs (`MAX_PACKAGE_LEGS`), written as an `rw_treasury` line without an RW; a `package` rule may set any other split; all editable by superadmin |
+| Computation | `internal.allocate_revenue_share` at settlement, in the same transaction as `paid`; per line (`package`, `addon:<id>`) the base amount is split by `internal.revenue_split` in whole rupiah, so the parts sum exactly to the base: first over the rule's lines by largest remainder, then a combo's equal-split line over the booking's legs by largest remainder. A tie goes to the kelurahan, then to the RW treasuries in the booking's leg order, then to vendors, so RWs of a combo never differ by more than one rupiah (80 000 over three legs: 26 667, 26 667, 26 666). An `rw_treasury` line for an RW the booking does not visit refuses the allocation, never pays. `rule_version` snapshot stored on each entry |
 | Discounts | Applied to the package line before the split; add-on lines are never discounted |
 | Midtrans fees | Borne by the kelurahan share (recorded in the recap as a memo line from `v_finance_daily`, not in the ledger) |
 | Reversal | `record_refund` writes `reversal` rows (negative, proportional to the refunded amount); adjustments write `adjustment` rows referencing `payment_adjustments` |
@@ -2412,7 +2412,7 @@ Signature-failure burst for known `order_id`s; amount mismatch; Status API disag
 | A1 | WhatsApp OTP before quota reservation | Yes, mandatory; email is a link-only secondary channel | Email OTP or no verification | Removes the main defence against quota lock-out and misdelivered tickets; `FR-BOOK-06`, `create_booking` |
 | A2 | Staff MFA (TOTP) | Mandatory for `superadmin` and `admin_rw` from day one | Mandatory for superadmin only | The AAL2 restrictive policy on every staff table would need role-specific variants |
 | A3 | Supabase plan and region | Pro plan, `ap-southeast-1` (Singapore), disclosed in the privacy notice; it stays on Pro although the Password and MFA Verification Attempt hooks need Team or Enterprise, which leaves both lockouts to the local stack (decision of 2026-10-20, docs/Security.md §5.5) | Free plan (no backups, project pauses) | Backups, PITR, image transforms, leaked-password protection |
-| A4 | Revenue share defaults | Package 20 % kelurahan / 80 % RW treasury; add-on 90 % UMKM vendor / 10 % RW treasury; combo 20 / 40 / 40 | Any split summing to 100 % | Seed values in `0008_seed.sql` only |
+| A4 | Revenue share defaults | Package 20 % kelurahan / 80 % RW treasury; add-on 90 % UMKM vendor / 10 % RW treasury; combo 20 % kelurahan / 80 % over the booking's RWs in equal parts (decision of 2026-10-21; the 20 / 40 / 40 combo rule of `0008_seed.sql` is closed by `20261022100000_combo_revenue_share_any_rws.sql`) | Any split summing to 100 %, a package rule overriding the default | Seed values in `0008_seed.sql` and later migrations only |
 | A5 | Hold TTL | Individual 120 min; institutions 24 h; staff extension <= 14 d; quotation holds no quota | Quotation holds quota for 7 d | Larger lock-out risk; `booking_legs.status` semantics |
 | A6 | Ticket granularity | One group ticket per booking leg; officer records attendee count | Per-participant tickets | Gate throughput; PDF size; scanner UX |
 | A7 | Retention | OTP 24 h; unpaid-expired PII 7 d; participants 90 d after visit; booker PII anonymised 24 mo; financial records 10 y; audit 24 mo | Longer participant retention | `purge_participants`, privacy notice text |
