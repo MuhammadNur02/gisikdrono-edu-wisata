@@ -52,10 +52,10 @@ select is(
    where r.package_id is null and r.product_id is null and r.is_active),
   'package_default/5: kelurahan=20.00 rw_treasury/5=80.00 | package_default/8: kelurahan=20.00 rw_treasury/8=80.00 | '
   || 'package_default/13: kelurahan=20.00 rw_treasury/13=80.00 | '
-  || 'package_default/combo: kelurahan=20.00 rw_treasury/5=40.00 rw_treasury/8=40.00 | '
+  || 'package_default/combo: kelurahan=20.00 rw_treasury=80.00 | '
   || 'addon_default/5: rw_treasury/5=10.00 umkm_vendor=90.00 | addon_default/8: rw_treasury/8=10.00 umkm_vendor=90.00 | '
   || 'addon_default/13: rw_treasury/13=10.00 umkm_vendor=90.00',
-  'the default splits of assumption A4, the add-on share going to the product''s own vendor'
+  'the default splits of assumption A4: the add-on share to the product''s own vendor, a combo''s RW share to the booking''s RWs equally'
 );
 
 -- ===== Placeholders =====
@@ -127,8 +127,8 @@ select throws_ok($$select internal.require_local_database()$$, '42501',
   'and refuses it too');
 select ok(
   (select count(*) from public.revenue_share_rules r where r.package_id is null and r.product_id is null
-     and r.name like 'Bawaan %') = 7,
-  'the seeds wrote each default rule once'
+     and r.name like 'Bawaan %') = 8,
+  'the seeds wrote each default rule once, the closed combo rule of 0008 included'
 );
 
 select * from finish();
