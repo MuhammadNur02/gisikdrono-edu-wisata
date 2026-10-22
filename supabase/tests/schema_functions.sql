@@ -556,9 +556,10 @@ select throws_ok(
   'the fourth quotation is refused'
 );
 
--- Revenue rules: lines add up to 100 at commit; a used rule only closes.
-insert into public.revenue_share_rules (id, scope, rw_id, name)
-values ('00000000-0000-4000-8000-000000000501', 'package_default', 5, 'Default RW 05');
+-- Revenue rules: lines add up to 100 at commit; a used rule only closes. The package's own rule, as the seed's RW 05
+-- default is already in force (revenue_share_rules_no_overlap).
+insert into public.revenue_share_rules (id, scope, package_id, name)
+values ('00000000-0000-4000-8000-000000000501', 'package', '00000000-0000-4000-8000-0000000000c1', 'Paket Eduwisata');
 -- The sum check is deferred to commit; switching it to immediate mode shows what commit would say.
 set constraints revenue_rule_sum_guard immediate;
 select throws_ok(
@@ -583,7 +584,7 @@ insert into public.revenue_share_entries (booking_id, entry_type, line_ref, rule
 values ('00000000-0000-4000-8000-0000000000e1', 'settlement', 'package', '00000000-0000-4000-8000-000000000501', '{}',
   'rw_treasury', 'rw:5', 5, 1000000, 80, 800000, 'hash-rule-used');
 select throws_ok(
-  $$update public.revenue_share_rules set name = 'Default RW 05 v2' where id = '00000000-0000-4000-8000-000000000501'$$,
+  $$update public.revenue_share_rules set name = 'Paket Eduwisata v2' where id = '00000000-0000-4000-8000-000000000501'$$,
   'P0001', null, 'a rule the ledger used cannot be renamed'
 );
 select throws_ok(

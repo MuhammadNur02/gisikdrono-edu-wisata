@@ -13,12 +13,14 @@ insert into public.umkm_vendors (id, rw_id, slug, name) values
 insert into public.products_umkm (id, rw_id, vendor_id, slug, name, category, price) values
   ('00000000-0000-4000-8000-00000000e501', 5, '00000000-0000-4000-8000-00000000d501', 'pr5', 'Kompos', 'compost', 15000),
   ('00000000-0000-4000-8000-00000000e801', 8, '00000000-0000-4000-8000-00000000d801', 'pr8', 'Batik', 'souvenir', 50000);
-insert into public.revenue_share_rules (id, scope, rw_id, package_id, product_id, name) values
-  ('00000000-0000-4000-8000-0000ad000001', 'package_default', null, null, null, 'Global'),
-  ('00000000-0000-4000-8000-0000ad000005', 'package_default', 5, null, null, 'Default RW 05'),
-  ('00000000-0000-4000-8000-0000ad000008', 'package_default', 8, null, null, 'Default RW 08'),
-  ('00000000-0000-4000-8000-0000ad000051', 'package', null, '00000000-0000-4000-8000-00000000c501', null, 'Paket RW 05'),
-  ('00000000-0000-4000-8000-0000ad000081', 'product', null, null, '00000000-0000-4000-8000-00000000e801', 'Produk RW 08');
+-- The defaults are written switched off: the seed's defaults are in force for the same targets, and two in force are
+-- refused (revenue_share_rules_no_overlap). Who reads a rule does not depend on it.
+insert into public.revenue_share_rules (id, scope, rw_id, package_id, product_id, name, is_active) values
+  ('00000000-0000-4000-8000-0000ad000001', 'package_default', null, null, null, 'Global', false),
+  ('00000000-0000-4000-8000-0000ad000005', 'package_default', 5, null, null, 'Default RW 05', false),
+  ('00000000-0000-4000-8000-0000ad000008', 'package_default', 8, null, null, 'Default RW 08', false),
+  ('00000000-0000-4000-8000-0000ad000051', 'package', null, '00000000-0000-4000-8000-00000000c501', null, 'Paket RW 05', true),
+  ('00000000-0000-4000-8000-0000ad000081', 'product', null, null, '00000000-0000-4000-8000-00000000e801', 'Produk RW 08', true);
 insert into public.revenue_share_rule_lines (rule_id, beneficiary, rw_id, pct) values
   ('00000000-0000-4000-8000-0000ad000005', 'kelurahan', null, 30), ('00000000-0000-4000-8000-0000ad000005', 'rw_treasury', 5, 70),
   ('00000000-0000-4000-8000-0000ad000008', 'kelurahan', null, 30), ('00000000-0000-4000-8000-0000ad000008', 'rw_treasury', 8, 70);
@@ -187,8 +189,9 @@ select lives_ok($$insert into public.payout_batches (beneficiary_key, period_fro
 select throws_ok($$insert into public.payout_batches (beneficiary_key, period_from, period_to, total_amount, created_by)
   values ('rw:5', public.today_jkt() - 7, public.today_jkt(), 5000, '00000000-0000-4000-8000-00000000f005')$$,
   '42501', null, 'never in someone else''s');
-select lives_ok($$insert into public.revenue_share_rules (scope, rw_id, name, created_by)
-  values ('addon_default', 5, 'Tambahan RW 05', '00000000-0000-4000-8000-00000000f001')$$, 'and writes a rule');
+select lives_ok($$insert into public.revenue_share_rules (scope, product_id, name, created_by)
+  values ('product', '00000000-0000-4000-8000-00000000e501', 'Kompos RW 05', '00000000-0000-4000-8000-00000000f001')$$,
+  'and writes a rule');
 
 select * from finish();
 rollback;

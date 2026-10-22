@@ -1029,17 +1029,20 @@ select throws_ok(
   '23514', null, 'a rule period never ends before it starts'
 );
 
-insert into public.revenue_share_rules (id, scope, rw_id, name)
-values ('00000000-0000-4000-8000-000000000501', 'package_default', 5, 'Default RW 05');
+-- The package's own rule, as the seed's RW 05 default is already in force (revenue_share_rules_no_overlap).
+insert into public.revenue_share_rules (id, scope, package_id, name)
+values ('00000000-0000-4000-8000-000000000501', 'package', '00000000-0000-4000-8000-0000000000c1', 'Paket Eduwisata');
 select throws_ok(
   $$insert into public.revenue_share_rule_lines (rule_id, beneficiary, rw_id, pct)
     values ('00000000-0000-4000-8000-000000000501', 'kelurahan', 5, 20)$$,
   '23514', null, 'the kelurahan share is not tied to an RW'
 );
+-- An RW treasury share without an RW means the booking's leg RWs in equal parts (Task P3.9.04); it never names a
+-- vendor.
 select throws_ok(
-  $$insert into public.revenue_share_rule_lines (rule_id, beneficiary, pct)
-    values ('00000000-0000-4000-8000-000000000501', 'rw_treasury', 80)$$,
-  '23514', null, 'an RW treasury share names its RW'
+  $$insert into public.revenue_share_rule_lines (rule_id, beneficiary, vendor_id, pct)
+    values ('00000000-0000-4000-8000-000000000501', 'rw_treasury', gen_random_uuid(), 80)$$,
+  '23514', null, 'an RW treasury share names no vendor'
 );
 select throws_ok(
   $$insert into public.revenue_share_rule_lines (rule_id, beneficiary, pct)
