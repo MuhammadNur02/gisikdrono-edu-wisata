@@ -188,7 +188,7 @@ jobs:
           pnpm db:seed
           # Booking is closed on every database until the guest pages exist (20261023090000), and the build caches
           # the public settings, so the booking specs need it open before the build (tests/e2e/helpers/booking-flag.ts).
-          pnpm exec tsx -e "import { setBookingEnabled } from './tests/e2e/helpers/booking-flag'; await setBookingEnabled(true);"
+          pnpm exec tsx scripts/e2e-booking-flag.ts on
           echo "anon_key=$(supabase status -o json | jq -r .ANON_KEY)" >> "$GITHUB_OUTPUT"
           service_role_key="$(supabase status -o json | jq -r .SERVICE_ROLE_KEY)"
           echo "::add-mask::$service_role_key"
