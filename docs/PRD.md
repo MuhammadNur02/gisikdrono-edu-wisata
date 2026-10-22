@@ -949,7 +949,7 @@ create index bookings_pic_phone_idx     on public.bookings (pic_phone);
 create index bookings_pic_email_idx     on public.bookings (pic_email);
 create index bookings_created_idx       on public.bookings (created_at desc);
 create index bookings_search_idx        on public.bookings using gin ((coalesce(institution_name,'') || ' ' || pic_name) gin_trgm_ops);
--- trigger bookings_immutable_guard: rw_ids, package_id, booking_code, created_at, consent_version never change;
+-- trigger bookings_immutable_guard: rw_ids, package_id, booking_code, created_at, consent_version, guardian_consented_at never change;
 --   money columns frozen once paid_at is set; status only when app.in_rpc = '1'.
 -- trigger bookings_discount_guard: discount columns only by superadmin while status in ('quoted','pending_payment').
 
