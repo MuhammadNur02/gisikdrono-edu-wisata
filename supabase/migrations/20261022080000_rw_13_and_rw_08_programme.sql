@@ -4,23 +4,136 @@
 -- with Semar Cakep and the child-friendly Ketan Ronggolawe. It starts as a profile page; its packages come later
 -- through the CMS, priced by the kelurahan.
 
--- Everything RW 8 owns so far was made for the arts programme. Content can be moved or rewritten in the CMS, but a
--- booking, ticket, payment or ledger row records what a visitor paid for, and renaming RW 8 under it would make
--- it say something else. No environment holds such a row today (staging was never migrated and production does
--- not exist yet); should one appear, this migration stops so someone moves it by hand first.
-do $$
+-- What still ties an RW to the programme it runs, kind by kind (independent review of PR #23, 1). Changing an RW's
+-- programme is stopped by every row that would quietly start to mean something else:
+-- - what a visitor booked or paid: bookings, legs, tickets, payments, ledger entries and payouts;
+-- - what a visitor can still book or buy: published packages and the RW's legs of published combos, active session
+--   templates, sessions from today on, products and vendors;
+-- - the performance schedule;
+-- - who may still edit the RW: its admins and their open invitations.
+-- What only describes the RW (photos, articles, booklets, activity points, the profile text and the files under the
+-- RW's folder) is reported but does not stop the change, because the new programme rewrites it in the CMS.
+create function internal.rw_programme_ties(p_rw_id smallint)
+  returns table (kind text, row_count bigint, is_blocking boolean)
+  language sql stable
+  set search_path = ''
+as $$
+  select tie.kind, tie.row_count, tie.is_blocking
+  from (values
+    ('bookings', (select count(*) from public.bookings b where p_rw_id = any (b.rw_ids)), true),
+    ('booking legs', (select count(*) from public.booking_legs l where l.rw_id = p_rw_id), true),
+    ('tickets', (select count(*) from public.tickets_qr t where t.rw_id = p_rw_id), true),
+    ('payments', (select count(*) from public.payments p join public.bookings b on b.id = p.booking_id
+                  where p_rw_id = any (b.rw_ids)), true),
+    ('ledger entries', (select count(*) from public.revenue_share_entries e
+                        where e.rw_id = p_rw_id or e.beneficiary_key = 'rw:' || p_rw_id), true),
+    ('payout batches', (select count(*) from public.payout_batches b where b.beneficiary_key = 'rw:' || p_rw_id), true),
+    ('published packages', (select count(*) from public.tour_packages t
+                            where t.rw_id = p_rw_id and t.status = 'published'), true),
+    ('legs of published combos', (select count(*) from public.tour_package_legs l
+                                  join public.tour_packages t on t.id = l.package_id
+                                  where l.rw_id = p_rw_id and t.rw_id is null and t.status = 'published'), true),
+    ('active session templates', (select count(*) from public.session_templates t
+                                  where t.rw_id = p_rw_id and t.is_active), true),
+    ('sessions from today', (select count(*) from public.visit_sessions v
+                             where v.rw_id = p_rw_id and v.session_date >= public.today_jkt()), true),
+    ('products', (select count(*) from public.products_umkm p where p.rw_id = p_rw_id), true),
+    ('vendors', (select count(*) from public.umkm_vendors v where v.rw_id = p_rw_id), true),
+    ('performance schedules', (select count(*) from public.performance_schedules p where p.rw_id = p_rw_id), true),
+    ('RW admins', (select count(*) from public.profiles p where p.rw_id = p_rw_id and p.role = 'admin_rw'), true),
+    ('open admin invitations', (select count(*) from public.staff_invites i
+                                where i.rw_id = p_rw_id and i.role = 'admin_rw' and i.accepted_at is null
+                                  and i.revoked_at is null and i.expires_at > now()), true),
+    ('gallery items', (select count(*) from public.galleries g where g.rw_id = p_rw_id), false),
+    ('articles', (select count(*) from public.articles a where a.rw_id = p_rw_id), false),
+    ('booklets', (select count(*) from public.booklets b where b.rw_id = p_rw_id), false),
+    ('activity points', (select count(*) from public.activity_points a where a.rw_id = p_rw_id), false),
+    ('profile text or photo', (select count(*) from public.rw_units u where u.id = p_rw_id
+                               and (u.description_md is not null or u.vision_md is not null
+                                    or u.hero_image_path is not null)), false),
+    ('stored files', (select count(*) from storage.objects o
+                      where o.name like internal.media_owner(p_rw_id) || '/%'), false)
+  ) as tie (kind, row_count, is_blocking)
+  where tie.row_count > 0;
+$$;
+revoke execute on function internal.rw_programme_ties(smallint) from public, anon, authenticated;
+
+-- Stops when any blocking tie is left, naming each; reports the others as notices.
+create function internal.require_rw_programme_change(p_rw_id smallint) returns void
+  language plpgsql
+  set search_path = ''
+as $$
+declare
+  blocking text;
+  tie record;
 begin
-  if exists (select 1 from public.bookings where 8 = any(rw_ids))
-     or exists (select 1 from public.booking_legs where rw_id = 8)
-     or exists (select 1 from public.tickets_qr where rw_id = 8)
-     or exists (select 1 from public.payments p join public.bookings b on b.id = p.booking_id
-                where 8 = any(b.rw_ids))
-     or exists (select 1 from public.revenue_share_entries where rw_id = 8 or beneficiary_key = 'rw:8')
-     or exists (select 1 from public.payout_batches where beneficiary_key = 'rw:8') then
-    raise exception using
-      message = 'RW 8 already has bookings, tickets, payments or ledger rows of the arts programme; move them to '
-                || 'RW 13 by hand before RW 8 becomes Kampung Inklusif & Ramah Anak (Task P2.10.03)';
+  select string_agg(t.kind || ' (' || t.row_count || ')', ', ' order by t.kind) into blocking
+  from internal.rw_programme_ties(p_rw_id) t where t.is_blocking;
+  if blocking is not null then
+    raise exception 'RW % still has rows of the programme it runs: %', p_rw_id, blocking
+      using errcode = 'P0001', hint = 'STATE_INVALID',
+            detail = 'Move or close them by hand before the RW takes on another programme (Task P2.10.03).';
   end if;
+  for tie in
+    select t.kind, t.row_count from internal.rw_programme_ties(p_rw_id) t where not t.is_blocking order by t.kind
+  loop
+    raise notice 'RW % keeps % % of the programme it runs; rewrite them in the CMS', p_rw_id, tie.row_count, tie.kind;
+  end loop;
+end;
+$$;
+revoke execute on function internal.require_rw_programme_change(smallint) from public, anon, authenticated;
+
+-- The arts programme is all RW 8 holds so far. No environment has such rows today (staging was never migrated and
+-- production does not exist yet); a development database seeded before this change does, and is rebuilt with
+-- pnpm db:reset.
+select internal.require_rw_programme_change(8::smallint);
+
+-- Whether an RW has the current default revenue-share rules for packages and add-ons it needs before it may go
+-- online (docs/PRD.md §11.2: there is no global fallback). set_rw_unit_status and this migration ask the same thing.
+create function internal.has_current_default_rules(p_rw_id smallint) returns boolean
+  language sql stable
+  set search_path = ''
+as $$
+  select not exists (
+    select 1 from unnest(array['package_default', 'addon_default']::public.revenue_rule_scope[]) as needed(scope)
+    where not exists (
+      select 1 from public.revenue_share_rules r
+      where r.scope = needed.scope and r.rw_id = p_rw_id and r.is_active
+        and r.effective_from <= public.today_jkt()
+        and (r.effective_to is null or r.effective_to >= public.today_jkt()))
+  );
+$$;
+revoke execute on function internal.has_current_default_rules(smallint) from public, anon, authenticated;
+
+-- The body of 20261021120000 with the rule check moved into internal.has_current_default_rules; create or replace
+-- keeps the owner and the grants.
+create or replace function public.set_rw_unit_status(p_rw_id smallint, p_is_active boolean) returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if not public.is_superadmin() then
+    raise exception 'only the superadmin takes an RW online or offline' using errcode = '42501';
+  end if;
+  if not internal.has_fresh_totp() then
+    raise exception 'confirm with a fresh authenticator code first' using errcode = '42501';
+  end if;
+  if p_is_active is null then
+    raise exception 'say whether the RW goes online or offline' using errcode = '22023';
+  end if;
+  perform 1 from public.rw_units u where u.id = p_rw_id for update;
+  if not found then
+    raise exception 'no RW %', p_rw_id using errcode = 'P0002';
+  end if;
+
+  if p_is_active and not internal.has_current_default_rules(p_rw_id) then
+    raise exception 'RW % needs its default revenue-share rules for packages and add-ons first', p_rw_id
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+
+  update public.rw_units set is_active = p_is_active where id = p_rw_id;
+  perform internal.log_audit(case when p_is_active then 'rw_unit.activated' else 'rw_unit.deactivated' end,
+    'rw_units', p_rw_id::text, '{}');
 end;
 $$;
 
@@ -58,6 +171,18 @@ join (values
 ) as line(scope, beneficiary, rw_id, pct)
   on line.scope = r.scope::text;
 
+-- An RW 13 that already existed is kept as it was (on conflict do nothing), so it must be this one. It goes online as
+-- set_rw_unit_status would let it: only with its rules in force.
+do $$
+begin
+  if (select u.slug from public.rw_units u where u.id = 13) is distinct from 'rw-13-kampung-budaya-seni' then
+    raise exception 'RW 13 exists already with another slug; check it by hand (Task P2.10.03)';
+  end if;
+  if not internal.has_current_default_rules(13::smallint) then
+    raise exception 'RW 13 has no current default revenue-share rules, so it stays offline (Task P2.10.03)';
+  end if;
+end;
+$$;
 update public.rw_units set is_active = true where id = 13 and not is_active;
 
 -- RW 08's new identity. The arts tagline and product heading move to RW 13 above, so RW 08 shows none until the
