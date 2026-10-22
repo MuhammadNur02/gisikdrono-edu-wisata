@@ -18,6 +18,7 @@ import {
 } from '@/db/rpc-guest';
 import type { DatabaseClient } from '@/db/rpc-result';
 import { AppError } from '@/lib/errors';
+import { mintGuestLink } from '@/lib/links/mint';
 import type { PhoneProof } from '@/lib/links/phone-proof';
 import { isCurrentLink, readGuestLink } from '@/lib/links/verify';
 import { drawOtpCode, otpBrowserHash, otpCodeHash } from '@/lib/otp';
@@ -162,6 +163,8 @@ export type BookingOutcome =
       bookingCode: string;
       status: EnumValue<'booking_status'>;
       expiresAt: string | null;
+      // The booking's manage link, for the bk_<code> cookie of the browser that made it; never sent to that browser.
+      manageToken: string;
     }
   | { kind: 'resent' }
   | { kind: 'pay_to_confirm' };
@@ -234,6 +237,21 @@ async function createRetryingOnDeadlock(adminClient: DatabaseClient, booking: Bo
   }
 }
 
+const MS_PER_SECOND = 1000;
+
+// docs/Security.md §3.2 (decision of 2026-10-22 on P3.5, Q1): the browser that proved the PIC's contact and made the
+// booking holds its manage link at once, as the WhatsApp number or the proven address receives it.
+async function manageLinkFor(adminClient: DatabaseClient, bookingCode: string): Promise<string> {
+  const booking = await tokenVersionOf(adminClient, bookingCode);
+  if (!booking) throw new AppError('NOT_FOUND');
+  return mintGuestLink({
+    bookingCode,
+    scope: 'manage',
+    tokenVersion: booking.token_version,
+    nowSeconds: Math.floor(Date.now() / MS_PER_SECOND),
+  });
+}
+
 // docs/Security.md §4.3: five bookings a day per proven contact and ten per IP and browser, counted before the
 // database is asked. Everything else, from the price to the caps per contact and per session, internal.create_booking
 // decides.
@@ -267,6 +285,7 @@ async function submitBooking(
     bookingCode: reply.bookingCode,
     status: reply.status,
     expiresAt: reply.expiresAt,
+    manageToken: await manageLinkFor(adminClient, reply.bookingCode),
   };
 }
 

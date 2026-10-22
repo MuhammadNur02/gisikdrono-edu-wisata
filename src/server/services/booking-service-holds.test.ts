@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { svcCreateBooking, svcResendBookingLink } from '@/db/rpc-guest';
 import { AppError } from '@/lib/errors';
+import { readGuestLink } from '@/lib/links/verify';
 import { withinRateLimits } from '@/lib/rate-limit';
 import { createBookingSchema } from '@/lib/validations/booking';
 
@@ -10,7 +11,13 @@ import { createHold, createQuotedBooking } from './booking-service';
 // The hold and quotation side of booking-service.ts (Task P3.4.03): what it counts before the database is asked, what
 // it hands internal.create_booking, and what the visitor is told. internal.create_booking itself is tested in
 // supabase/tests/create_booking.sql and, end to end, in tests/integration/booking.test.ts.
-vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => ({}) }));
+// The one table read the service makes itself: the new booking's token_version, for its manage link.
+const adminClient = vi.hoisted(() => {
+  const bookingRow = { id: '0192f3a4-5b6c-7d8e-9f01-23456789abcd', token_version: 3 };
+  const lookup = { maybeSingle: () => Promise.resolve({ data: bookingRow, error: null }) };
+  return { from: () => ({ select: () => ({ eq: () => lookup }) }) };
+});
+vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => adminClient }));
 vi.mock('@/db/rpc-guest', () => ({
   svcCreateBooking: vi.fn(),
   svcIssuePhoneOtp: vi.fn(),
@@ -49,6 +56,7 @@ describe('createHold and createQuotedBooking', () => {
       participants: [{ fullName: 'Budi Santoso', groupLabel: '5A', roleLabel: 'student' }],
       guardianConsent: true,
       consentVersion: '2026-10-18',
+      privacyAccepted: true,
       idempotencyKey: WIZARD_MOUNT,
       quoteHash: 'f'.repeat(64),
       turnstileToken: 'XXXX.DUMMY.TOKEN.XXXX',
@@ -93,6 +101,7 @@ describe('createHold and createQuotedBooking', () => {
       bookingCode: CODE,
       status: 'pending_payment',
       expiresAt: '2026-10-23T08:00:00+00:00',
+      manageToken: expect.any(String) as unknown,
     });
     expect(vi.mocked(svcCreateBooking).mock.calls[0]?.[1]).toEqual({
       packageId: '0192f3a4-5b6c-7d8e-9f01-000000000001',
@@ -122,6 +131,23 @@ describe('createHold and createQuotedBooking', () => {
     vi.mocked(svcCreateBooking).mockResolvedValue(created);
     await createHold({ ...request, clientIp: 'unknown' });
     expect(vi.mocked(svcCreateBooking).mock.calls[0]?.[1].clientIp).toBeNull();
+  });
+
+  // Decision of 2026-10-22 on P3.5, Q1 (docs/Security.md §3.2): the browser that proved the contact and made the
+  // booking gets its manage link at once, for the bk_<code> cookie createBookingAction sets.
+  it('hands back a manage link for the new booking, minted at its token_version', async () => {
+    vi.mocked(svcCreateBooking).mockResolvedValue(created);
+    const outcome = await createHold(request);
+    if (outcome.kind !== 'created') throw new Error('the hold should be created');
+    const reading = await readGuestLink(outcome.manageToken, {
+      bookingCode: CODE,
+      nowSeconds: Math.floor(Date.now() / 1000),
+    });
+    expect(reading).toMatchObject({ ok: true, link: { s: 'manage', v: 3 } });
+    expect(
+      (await readGuestLink(outcome.manageToken, { bookingCode: 'GSK-AAAAAAAA', nowSeconds: NOW }))
+        .ok,
+    ).toBe(false);
   });
 
   it('answers a repeat of the same form with the booking it made', async () => {

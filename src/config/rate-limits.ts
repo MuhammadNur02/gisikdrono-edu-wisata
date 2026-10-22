@@ -45,6 +45,10 @@ export const RATE_LIMITS = {
   'booking:phone': { limit: 5, windowSeconds: 86400, whenUnavailable: 'fail-open' },
   'booking:email': { limit: 5, windowSeconds: 86400, whenUnavailable: 'fail-open' },
   'booking:ip+ua': { limit: 10, windowSeconds: 86400, whenUnavailable: 'fail-open' },
+  // The wizard's read-only answers (Task P3.5.01, P3.5.03): the seats left every 15 s and the quote as add-ons change.
+  // They show what the database already says, so a refusal costs the visitor a refresh, never a booking.
+  'session_availability:ip': { limit: 12, windowSeconds: 60, whenUnavailable: 'fail-closed' },
+  'quote_preview:ip': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitName = keyof typeof RATE_LIMITS;

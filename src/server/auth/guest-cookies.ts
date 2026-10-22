@@ -2,9 +2,16 @@ import 'server-only';
 
 import { cookies } from 'next/headers';
 
-import { OTP_BROWSER_COOKIE, OTP_BROWSER_TTL_SECONDS, PHONE_PROOF_COOKIE } from '@/config/guest';
+import {
+  GUEST_BOOKING_PATH,
+  GUEST_LINK_TTL_SECONDS,
+  OTP_BROWSER_COOKIE,
+  OTP_BROWSER_TTL_SECONDS,
+  PHONE_PROOF_COOKIE,
+} from '@/config/guest';
 import { newOtpBrowserId, readOtpBrowserId, signOtpBrowserId } from '@/lib/links/otp-browser';
 import { readPhoneProof, signPhoneProof, type PhoneProof } from '@/lib/links/phone-proof';
+import { guestLinkCookieName } from '@/lib/links/token';
 
 // The visitor's own cookies (docs/Security.md §4.1, §6.7): httpOnly, so no script on the page reads them, Secure and
 // SameSite=Lax like the staff session (src/config/auth.ts).
@@ -25,6 +32,22 @@ export async function rememberPhoneProof(proof: Omit<PhoneProof, 'expiresAt'>): 
 export async function readPhoneProofCookie(): Promise<PhoneProof | null> {
   const value = (await cookies()).get(PHONE_PROOF_COOKIE)?.value;
   return value === undefined ? null : readPhoneProof(value, nowInSeconds());
+}
+
+// A booking spends the code its proof names (internal.create_booking), so the next booking from this browser proves
+// the contact again.
+export async function forgetPhoneProof(): Promise<void> {
+  (await cookies()).delete({ name: PHONE_PROOF_COOKIE, path: '/' });
+}
+
+// Decision of 2026-10-22 on P3.5, Q1 (docs/Security.md §3.2): the browser that made a booking holds its manage link,
+// stored as src/lib/links/redirect.ts stores one that arrives by ?t=, under that booking's pages only.
+export async function rememberGuestLink(bookingCode: string, token: string): Promise<void> {
+  (await cookies()).set(guestLinkCookieName(bookingCode), token, {
+    ...GUEST_COOKIE_OPTIONS,
+    path: `${GUEST_BOOKING_PATH}/${bookingCode}`,
+    maxAge: GUEST_LINK_TTL_SECONDS.manage,
+  });
 }
 
 export async function readOtpBrowserCookie(): Promise<string | null> {

@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ensureOtpBrowserId,
+  forgetPhoneProof,
   readOtpBrowserCookie,
   readPhoneProofCookie,
+  rememberGuestLink,
   rememberPhoneProof,
 } from '@/server/auth/guest-cookies';
 
@@ -15,6 +17,7 @@ vi.mock('next/headers', () => ({
       set: (name: string, value: string, options: unknown) =>
         void jar.set(name, { value, options }),
       get: (name: string) => jar.get(name),
+      delete: ({ name }: { name: string }) => void jar.delete(name),
     }),
 }));
 
@@ -29,7 +32,31 @@ beforeEach(() => {
   jar.clear();
 });
 
+// Decision of 2026-10-22 on P3.5, Q1: createBookingAction leaves the new booking's manage link in this browser, as
+// src/lib/links/redirect.ts stores a link that arrives by ?t=.
+describe('the bk_<code> cookie of a booking made in this browser', () => {
+  it("is httpOnly, Secure and SameSite=Lax under the booking's own pages, for as long as a manage link lives", async () => {
+    await rememberGuestLink('GSK-7F3K9Q2M', 'payload.signature');
+    expect(jar.get('bk_GSK-7F3K9Q2M')).toEqual({
+      value: 'payload.signature',
+      options: {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'lax',
+        path: '/reservasi/GSK-7F3K9Q2M',
+        maxAge: 72 * 3600,
+      },
+    });
+  });
+});
+
 describe('the gsk_phone cookie', () => {
+  it('is forgotten once a booking spent the code it names', async () => {
+    await rememberPhoneProof(PROOF);
+    await forgetPhoneProof();
+    await expect(readPhoneProofCookie()).resolves.toBeNull();
+  });
+
   it('is httpOnly, Secure and SameSite=Lax for 30 minutes, and reads back what was proven', async () => {
     await rememberPhoneProof(PROOF);
     expect(jar.get('gsk_phone')?.options).toEqual({

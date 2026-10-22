@@ -3,7 +3,14 @@ import { z } from 'zod';
 
 import { BOOKING_LIMITS, MAX_PACKAGE_LEGS } from '@/config/booking';
 import { copy } from '@/lib/copy/id';
-import { createBookingSchema, picPhoneSchema } from '@/lib/validations/booking';
+import {
+  addonsStepSchema,
+  bookerStepSchema,
+  createBookingSchema,
+  picPhoneSchema,
+  scheduleStepSchema,
+  summaryStepSchema,
+} from '@/lib/validations/booking';
 
 const MAX_PAX = 500;
 const schema = createBookingSchema(MAX_PAX);
@@ -34,7 +41,7 @@ const SCHOOL_BOOKING = {
   ],
   guardianConsent: true,
   consentVersion: '2026-10-18',
-  marketingOptIn: false,
+  privacyAccepted: true,
   idempotencyKey: WIZARD_MOUNT,
   // The fingerprint of the quote the summary showed (src/lib/pricing/quote-hash.ts).
   quoteHash: '0f7e523b88cecafeceb9f1a3cfe4a75104b7fc26b81c5d01c07f827e02261e5e',
@@ -71,9 +78,24 @@ describe('createBookingSchema', () => {
       addons: [],
       participants: [],
       guardianConsent: false,
-      marketingOptIn: undefined,
     });
-    expect(parsed).toMatchObject({ institutionName: null, marketingOptIn: false });
+    expect(parsed).toMatchObject({ institutionName: null, addons: [], participants: [] });
+  });
+
+  // Decision of 2026-10-22 on P3.5, Q3: the visitor ticks that they read the privacy notice, which is stored with
+  // its version.
+  it.each([
+    ['unticked', false],
+    ['missing', undefined],
+  ])('refuses a booking whose privacy notice is %s', (_case, privacyAccepted) => {
+    expect(fieldErrorsOf({ ...SCHOOL_BOOKING, privacyAccepted }).privacyAccepted).toEqual([
+      messages.privacyAccepted,
+    ]);
+  });
+
+  // Q4: no marketing channel and no column exist, so the form asks for no marketing consent at all.
+  it('refuses a marketing opt-in, a consent nothing would use', () => {
+    expect(schema.safeParse({ ...SCHOOL_BOOKING, marketingOptIn: false }).success).toBe(false);
   });
 
   it.each([
@@ -251,4 +273,63 @@ describe('picPhoneSchema', () => {
       expect(parsed.error?.issues[0]?.message).toBe(messages.phone);
     },
   );
+});
+
+type StepParse = { success: true } | { success: false; error: z.ZodError };
+
+function stepErrorsOf(parsed: StepParse): Record<string, string[] | undefined> {
+  return parsed.success ? {} : z.flattenError(parsed.error).fieldErrors;
+}
+
+// Task P3.5.01: each wizard step checks its own slice of the booking before the visitor moves on.
+describe('the step slices of the booking', () => {
+  it('checks the date, the sessions and the group size at jadwal', () => {
+    const schedule = scheduleStepSchema(MAX_PAX);
+    const values = { visitDate: '2026-11-12', visitSessionIds: [SESSION_RW05], pax: 40 };
+    expect(schedule.parse(values)).toEqual(values);
+    expect(schedule.safeParse({ ...values, pax: MAX_PAX + 1 }).success).toBe(false);
+    expect(schedule.safeParse({ ...values, visitSessionIds: [] }).success).toBe(false);
+    expect(schedule.safeParse({ ...values, picName: 'Ani' }).success).toBe(false);
+  });
+
+  it('checks the booker, the participants and the guardian consent at data, against the group size', () => {
+    const booker = {
+      bookerType: 'school',
+      institutionName: 'SD Negeri Gisikdrono 01',
+      picName: 'Ani Lestari',
+      picEmail: 'ani@sekolah.sch.id',
+      notes: '',
+      participants: [{ fullName: 'Budi Santoso', groupLabel: 'Kelas 5A' }],
+      guardianConsent: true,
+    };
+    expect(bookerStepSchema(40).safeParse(booker).success).toBe(true);
+    const issuesOf = (input: unknown, pax: number) =>
+      stepErrorsOf(bookerStepSchema(pax).safeParse(input));
+    expect(issuesOf({ ...booker, guardianConsent: false }, 40).guardianConsent).toEqual([
+      messages.guardianConsent,
+    ]);
+    expect(issuesOf({ ...booker, institutionName: '' }, 40).institutionName).toEqual([
+      messages.institutionName,
+    ]);
+    expect(issuesOf(booker, 0).participants).toEqual([messages.participantsOverPax]);
+    expect(bookerStepSchema(40).safeParse({ ...booker, pax: 40 }).success).toBe(false);
+  });
+
+  it('checks the add-on lines at tambahan', () => {
+    expect(addonsStepSchema.safeParse({ addons: [] }).success).toBe(true);
+    const twice = [
+      { productId: KERIPIK, qty: 1 },
+      { productId: KERIPIK, qty: 2 },
+    ];
+    expect(stepErrorsOf(addonsStepSchema.safeParse({ addons: twice })).addons).toEqual([
+      messages.addonRepeated,
+    ]);
+  });
+
+  it('checks the privacy notice and the security check at ringkasan', () => {
+    const summary = { privacyAccepted: true, turnstileToken: 'XXXX.DUMMY.TOKEN.XXXX' };
+    expect(summaryStepSchema.safeParse(summary).success).toBe(true);
+    expect(summaryStepSchema.safeParse({ ...summary, privacyAccepted: false }).success).toBe(false);
+    expect(summaryStepSchema.safeParse({ ...summary, turnstileToken: '' }).success).toBe(false);
+  });
 });

@@ -108,6 +108,7 @@ async function requestFor(
     participants: [],
     guardianConsent: false,
     consentVersion: '2026-10-18',
+    privacyAccepted: true,
     idempotencyKey: randomUUID(),
     quoteHash: options.combo
       ? quoteHashFor(COMBO_ID, COMBO_PRICE_PER_PAX, [5, 13], pax)
