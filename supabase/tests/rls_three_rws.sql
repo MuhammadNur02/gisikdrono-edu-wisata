@@ -3,7 +3,7 @@
 -- bookings, which no public policy shows, so every row an admin sees came through the staff policies; RW 13's
 -- uploads live under rw-13/ like every RW's.
 begin;
-select plan(17);
+select plan(30);
 \ir helpers/rls_personas.psql
 
 -- One row of each kind per RW, every key ending in the RW's number so a list of them reads as the RWs it holds.
@@ -12,6 +12,7 @@ create function pg_temp.fixture_id(p_kind text, p_rw smallint) returns uuid
 as $$
   select ('00000000-0000-4000-8000-' || p_kind || lpad(p_rw::text, 4, '0'))::uuid;
 $$;
+grant execute on function pg_temp.fixture_id(text, smallint) to authenticated;
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax, status)
 select pg_temp.fixture_id('000003c1', rw), rw, 'regular', 'tiga-paket-' || rw, 'Draf RW ' || rw, 25000, 'draft'
 from unnest(array[5, 8, 13]::smallint[]) as rw;
@@ -75,6 +76,83 @@ as $$
 $$;
 grant execute on function pg_temp.insert_package_for(smallint) to authenticated;
 
+-- One new row of each content and catalogue kind for an RW, signed with the caller's own id as each insert policy
+-- requires, so a refusal is about the RW alone (independent review of PR #23, 4).
+create function pg_temp.insert_for(p_kind text, p_rw smallint) returns void
+  language plpgsql
+as $$
+declare
+  marker text := 'tiga-baru-' || p_kind || '-' || p_rw || '-' || auth.uid();
+begin
+  case p_kind
+    when 'vendor' then
+      insert into public.umkm_vendors (rw_id, slug, name, created_by) values (p_rw, marker, 'Vendor Baru', auth.uid());
+    when 'produk' then
+      insert into public.products_umkm (rw_id, vendor_id, slug, name, category, price, created_by)
+      values (p_rw, pg_temp.fixture_id('000003c2', p_rw), marker, 'Produk Baru', 'souvenir', 20000, auth.uid());
+    when 'artikel' then
+      insert into public.articles (rw_id, slug, title, author_id) values (p_rw, marker, 'Artikel Baru', auth.uid());
+    when 'titik' then
+      insert into public.activity_points (rw_id, slug, name, point_type) values (p_rw, marker, 'Titik Baru', 'other');
+    when 'galeri' then
+      insert into public.galleries (rw_id, category, storage_path, alt_text, uploaded_by)
+      values (p_rw, 'activity', 'rw-' || lpad(p_rw::text, 2, '0') || '/gallery/' || marker || '.webp', 'Kegiatan',
+              auth.uid());
+    when 'jadwal' then
+      insert into public.performance_schedules (rw_id, title, schedule_type, starts_at, ends_at, created_by)
+      values (p_rw, marker, 'workshop', now() + interval '4 days', now() + interval '4 days 1 hour', auth.uid());
+  end case;
+end;
+$$;
+grant execute on function pg_temp.insert_for(text, smallint) to authenticated;
+
+create function pg_temp.insert_every_kind_for(p_rw smallint) returns void
+  language plpgsql
+as $$
+declare
+  kind text;
+begin
+  foreach kind in array array['vendor', 'produk', 'artikel', 'titik', 'galeri', 'jadwal'] loop
+    perform pg_temp.insert_for(kind, p_rw);
+  end loop;
+end;
+$$;
+grant execute on function pg_temp.insert_every_kind_for(smallint) to authenticated;
+
+-- The kinds the caller may not add for an RW: refused by the row-level policy (42501). Any other error stops the
+-- suite, so a refusal is never mistaken for a broken fixture.
+create function pg_temp.refused_kinds(p_rw smallint) returns text
+  language plpgsql
+as $$
+declare
+  kind text;
+  refused text[] := '{}';
+begin
+  foreach kind in array array['vendor', 'produk', 'artikel', 'titik', 'galeri', 'jadwal'] loop
+    begin
+      perform pg_temp.insert_for(kind, p_rw);
+    exception when insufficient_privilege then
+      refused := refused || kind;
+    end;
+  end loop;
+  return array_to_string(refused, ',');
+end;
+$$;
+grant execute on function pg_temp.refused_kinds(smallint) to authenticated;
+
+-- Renames every fixture row of every RW; the row-level policies let each admin's statement reach their own RW only.
+create function pg_temp.rename_every_fixture(p_name text) returns void
+  language sql
+as $$
+  update public.umkm_vendors set name = p_name where slug like 'tiga-vendor-%';
+  update public.products_umkm set name = p_name where slug like 'tiga-produk-%';
+  update public.articles set title = p_name where slug like 'tiga-artikel-%';
+  update public.activity_points set name = p_name where slug like 'tiga-titik-%';
+  update public.galleries set alt_text = p_name where caption like 'tiga-galeri-%';
+  update public.performance_schedules set description_md = p_name where title like 'tiga-jadwal-%';
+$$;
+grant execute on function pg_temp.rename_every_fixture(text) to authenticated;
+
 -- ===== anon and the superadmin =====
 select pg_temp.act_as('anon');
 select is(pg_temp.visible_content_rws(), '', 'anon sees no draft or inactive vendor of any RW');
@@ -94,6 +172,11 @@ select is(pg_temp.visible_rws(),
 select throws_ok($$select pg_temp.insert_package_for(8::smallint)$$, '42501', null, 'and adds nothing for RW 08');
 select throws_ok($$select pg_temp.insert_package_for(13::smallint)$$, '42501', null, 'or for RW 13');
 update public.tour_packages set name = 'Diubah RW 05', updated_by = auth.uid() where slug like 'tiga-paket-%';
+select lives_ok($$select pg_temp.insert_every_kind_for(5::smallint)$$,
+  'RW 05''s admin adds a vendor, product, article, point, photo and schedule for RW 05');
+select is(pg_temp.refused_kinds(8::smallint), 'vendor,produk,artikel,titik,galeri,jadwal', 'but none of them for RW 08');
+select is(pg_temp.refused_kinds(13::smallint), 'vendor,produk,artikel,titik,galeri,jadwal', 'nor for RW 13');
+select lives_ok($$select pg_temp.rename_every_fixture('Diubah RW 05')$$, 'and renames what the policies let it reach');
 
 reset role;
 select pg_temp.act_as('admin_rw_08');
@@ -103,6 +186,11 @@ select is(pg_temp.visible_rws(),
 select throws_ok($$select pg_temp.insert_package_for(5::smallint)$$, '42501', null, 'and adds nothing for RW 05');
 select throws_ok($$select pg_temp.insert_package_for(13::smallint)$$, '42501', null, 'or for RW 13');
 update public.tour_packages set name = 'Diubah RW 08', updated_by = auth.uid() where slug like 'tiga-paket-%';
+select lives_ok($$select pg_temp.insert_every_kind_for(8::smallint)$$,
+  'RW 08''s admin adds a vendor, product, article, point, photo and schedule for RW 08');
+select is(pg_temp.refused_kinds(5::smallint), 'vendor,produk,artikel,titik,galeri,jadwal', 'but none of them for RW 05');
+select is(pg_temp.refused_kinds(13::smallint), 'vendor,produk,artikel,titik,galeri,jadwal', 'nor for RW 13');
+select lives_ok($$select pg_temp.rename_every_fixture('Diubah RW 08')$$, 'and renames what the policies let it reach');
 
 reset role;
 select pg_temp.act_as('admin_rw_13');
@@ -112,6 +200,11 @@ select is(pg_temp.visible_rws(),
 select throws_ok($$select pg_temp.insert_package_for(5::smallint)$$, '42501', null, 'and adds nothing for RW 05');
 select throws_ok($$select pg_temp.insert_package_for(8::smallint)$$, '42501', null, 'or for RW 08');
 update public.tour_packages set name = 'Diubah RW 13', updated_by = auth.uid() where slug like 'tiga-paket-%';
+select lives_ok($$select pg_temp.insert_every_kind_for(13::smallint)$$,
+  'RW 13''s admin adds a vendor, product, article, point, photo and schedule for RW 13');
+select is(pg_temp.refused_kinds(5::smallint), 'vendor,produk,artikel,titik,galeri,jadwal', 'but none of them for RW 05');
+select is(pg_temp.refused_kinds(8::smallint), 'vendor,produk,artikel,titik,galeri,jadwal', 'nor for RW 08');
+select lives_ok($$select pg_temp.rename_every_fixture('Diubah RW 13')$$, 'and renames what the policies let it reach');
 select lives_ok($$select pg_temp.insert_package_for(13::smallint)$$, 'but adds a package for RW 13 itself');
 
 reset role;
@@ -120,21 +213,35 @@ select is(
   '5=Diubah RW 05, 8=Diubah RW 08, 13=Diubah RW 13',
   'each admin''s update over all three drafts changed their own RW''s draft and nothing else'
 );
+select is(
+  concat_ws(' | ',
+    (select string_agg(rw_id || '=' || name, ', ' order by rw_id) from public.umkm_vendors where slug like 'tiga-vendor-%'),
+    (select string_agg(rw_id || '=' || name, ', ' order by rw_id) from public.products_umkm where slug like 'tiga-produk-%'),
+    (select string_agg(rw_id || '=' || title, ', ' order by rw_id) from public.articles where slug like 'tiga-artikel-%'),
+    (select string_agg(rw_id || '=' || name, ', ' order by rw_id)
+     from (select distinct rw_id, name from public.activity_points where slug like 'tiga-titik-%') as points),
+    (select string_agg(rw_id || '=' || alt_text, ', ' order by rw_id) from public.galleries where caption like 'tiga-galeri-%'),
+    (select string_agg(rw_id || '=' || description_md, ', ' order by rw_id) from public.performance_schedules
+     where title like 'tiga-jadwal-%')),
+  concat_ws(' | ', variadic array_fill('5=Diubah RW 05, 8=Diubah RW 08, 13=Diubah RW 13'::text, array[6])),
+  'and so did their updates of vendors, products, articles, points, photos and schedules'
+);
 
--- ===== RW 13's uploads =====
+-- ===== RW 13's file paths =====
+-- The media-path CHECK of the content triggers, not who may upload: that is checkUploadAccess (upload-service).
 select is(internal.media_owner(13::smallint), 'rw-13', 'RW 13''s files live under rw-13/');
 select lives_ok(
   $$insert into public.galleries (rw_id, category, storage_path, alt_text, status)
     values (13, 'activity', 'rw-13/gallery/tiga-milik-13.webp', 'Kegiatan', 'draft')$$,
-  'an RW 13 photo may point at a file under rw-13/');
+  'the path check lets an RW 13 photo point at a file under rw-13/');
 select throws_ok(
   $$insert into public.galleries (rw_id, category, storage_path, alt_text, status)
     values (5, 'activity', 'rw-13/gallery/tiga-bukan-milik-05.webp', 'Kegiatan', 'draft')$$,
-  '23514', null, 'an RW 05 photo may not');
+  '23514', null, 'and refuses it to an RW 05 photo');
 select throws_ok(
   $$insert into public.galleries (rw_id, category, storage_path, alt_text, status)
     values (13, 'activity', 'rw-08/gallery/tiga-bukan-milik-13.webp', 'Kegiatan', 'draft')$$,
-  '23514', null, 'nor an RW 13 photo a file of RW 08');
+  '23514', null, 'and an RW 13 photo a file of RW 08');
 
 select * from finish();
 rollback;

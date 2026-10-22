@@ -98,6 +98,28 @@ async function insertPackageFor(client: ApiClient, rwId: number): Promise<boolea
   return error === null;
 }
 
+// An update the row-level policy hides: PostgREST answers without an error and changes no row.
+async function expectHiddenUpdate(client: ApiClient, draftId: string, name: string): Promise<void> {
+  const signer = (await userIdOf(client)) || null;
+  const { data, error } = await client
+    .from('tour_packages')
+    .update({ name, updated_by: signer })
+    .eq('id', draftId)
+    .select('id');
+  expect(error).toBeNull();
+  expect(data).toEqual([]);
+}
+
+// The drafts' names as the database holds them, read with the service role.
+async function draftNames(): Promise<Record<string, string>> {
+  const { data, error } = await serviceClient()
+    .from('tour_packages')
+    .select('slug, name')
+    .in('slug', DRAFT_SLUGS);
+  if (error) throw error;
+  return Object.fromEntries(data.map((row) => [row.slug, row.name]));
+}
+
 async function canReadDocument(client: ApiClient): Promise<boolean> {
   const download = await client.storage.from('documents').download(DOCUMENT_PATH);
   const signed = await client.storage.from('documents').createSignedUrl(DOCUMENT_PATH, 60);
@@ -189,12 +211,8 @@ describe(
       expect(await visibleDrafts(staff.admin13)).toEqual([DRAFT_13.slug]);
 
       const admin05Id = await userIdOf(staff.admin05);
-      const crossEdit = await staff.admin05
-        .from('tour_packages')
-        .update({ name: 'Diubah RW 05', updated_by: admin05Id })
-        .eq('id', DRAFT_08.id)
-        .select('id');
-      expect(crossEdit.data ?? []).toEqual([]);
+      await expectHiddenUpdate(staff.admin05, DRAFT_08.id, 'Diubah RW 05');
+      expect((await draftNames())[DRAFT_08.slug]).toBe('Draf RW 08');
       expect(await insertPackageFor(staff.admin05, 8)).toBe(false);
       expect(await insertPackageFor(staff.admin05, 13)).toBe(false);
 
@@ -212,16 +230,13 @@ describe(
         [staff.admin13, [DRAFT_05, DRAFT_08]],
         [staff.admin08, [DRAFT_05, DRAFT_13]],
       ] as const) {
-        const adminId = await userIdOf(admin);
-        for (const other of others) {
-          const crossEdit = await admin
-            .from('tour_packages')
-            .update({ name: 'Diubah dari RW lain', updated_by: adminId })
-            .eq('id', other.id)
-            .select('id');
-          expect(crossEdit.data ?? []).toEqual([]);
-        }
+        for (const other of others)
+          await expectHiddenUpdate(admin, other.id, 'Diubah dari RW lain');
       }
+      const names = await draftNames();
+      expect(names[DRAFT_08.slug]).toBe('Draf RW 08');
+      expect(names[DRAFT_13.slug]).toBe('Draf RW 13');
+      expect(names[DRAFT_05.slug]).not.toBe('Diubah dari RW lain');
       expect(await insertPackageFor(staff.admin13, 5)).toBe(false);
       expect(await insertPackageFor(staff.admin13, 8)).toBe(false);
       expect(await insertPackageFor(staff.admin08, 13)).toBe(false);
