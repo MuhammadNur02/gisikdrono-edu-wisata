@@ -90,12 +90,12 @@ const RW05_GALLERY: DemoPhoto[] = [
 ];
 
 // pnpm passes a `--` through when the caller writes one, so it is dropped before parsing.
-export function mediaFolderFromArgs(args: string[]): string | undefined {
+export function mediaFoldersFromArgs(args: string[]): { media?: string; officialMedia?: string } {
   const { values } = parseArgs({
     args: args.filter((arg) => arg !== '--'),
-    options: { media: { type: 'string' } },
+    options: { media: { type: 'string' }, 'official-media': { type: 'string' } },
   });
-  return values.media;
+  return { media: values.media, officialMedia: values['official-media'] };
 }
 
 async function seedHeroBanner(folder: string): Promise<void> {

@@ -181,19 +181,27 @@ describe('public queries as a visitor', () => {
     );
   });
 
+  // RW 08 may hold photos of its own (pnpm db:seed --official-media), so these compare the test's rows alone.
   it('pages the gallery with published items only, each with its placeholder colour', async () => {
     const page = await listGalleryPage({ owner: 8, category: 'event' });
+    const ids = page.items.map((item) => item.id);
 
-    expect(page.items.map((item) => item.id)).toEqual([PUBLISHED_PHOTO_ID]);
-    expect(page.items[0]?.image?.placeholderColour).toMatch(/^#[0-9a-f]{6}$/);
+    expect(ids).toContain(PUBLISHED_PHOTO_ID);
+    expect(ids).not.toContain(DRAFT_PHOTO_ID);
+    expect(
+      page.items.find((item) => item.id === PUBLISHED_PHOTO_ID)?.image?.placeholderColour,
+    ).toMatch(/^#[0-9a-f]{6}$/);
     expect(page.hasMore).toBe(false);
     expect((await listGalleryPage({ owner: 'kelurahan' })).items).toEqual([]);
   });
 
   it('passes a video on as its YouTube id alone and leaves out one without a usable id', async () => {
     const page = await listGalleryPage({ owner: 8, category: 'activity' });
+    const videos = page.items.filter(
+      (item) => item.id === VIDEO_ID || item.id === VIDEO_WITHOUT_ID,
+    );
 
-    expect(page.items).toEqual([
+    expect(videos).toEqual([
       expect.objectContaining({
         id: VIDEO_ID,
         youtubeId: YOUTUBE_ID,

@@ -55,6 +55,11 @@ on conflict (id) do nothing;
 -- ===== Demo content (local only, never in a migration) =====
 -- RW 05 and RW 13 take visits; RW 08 has a profile page only until the kelurahan sets up its packages (Task
 -- P2.10.03), so it gets no session templates, vendors, products or packages here.
+--
+-- Two kinds of content follow. The session templates, vendors, products and packages are DATA CONTOH, BUKAN DATA
+-- KELURAHAN: invented names, times, capacities and prices that let the booking flow be built locally until the
+-- kelurahan gives its own (docs/content/konten-situs-kelurahan.md, "Data contoh"; decision of 2026-10-22). The RW
+-- profiles and activity points further down come from the kelurahan's own site and are marked by their source.
 
 -- A database seeded before Task P2.10.03 holds the arts demo under RW 08. Those rows go first, by their own ids and
 -- names, so the inserts below write them again for RW 13 and the combo ends up visiting RW 05 and RW 13 (independent
@@ -75,6 +80,7 @@ delete from public.visit_sessions s using public.session_templates t
 where s.template_id = t.id and t.rw_id = 8 and t.label in ('Sesi Pagi', 'Sesi Siang') and s.reserved_pax = 0;
 delete from public.session_templates where rw_id = 8 and label in ('Sesi Pagi', 'Sesi Siang');
 
+-- DATA CONTOH: sessions, times and capacity are invented.
 insert into public.session_templates (rw_id, weekday, label, start_time, end_time, capacity)
 select rw, weekday, label, start_time::time, end_time::time, 40
 from (values (5::smallint), (13::smallint)) as rws(rw)
@@ -82,6 +88,8 @@ cross join generate_series(2, 6) as weekday
 cross join (values ('Sesi Pagi', '08:30', '10:30'), ('Sesi Siang', '13:30', '15:30')) as slot(label, start_time, end_time)
 on conflict do nothing;
 
+-- DATA CONTOH: the vendors, products and prices are invented. The kelurahan's own products wait for a price, a
+-- vendor and an RW (docs/content/konten-situs-kelurahan.md, "Produk UMKM").
 insert into public.umkm_vendors (id, rw_id, slug, name, description_md, is_active) values
   ('0de00000-0000-4000-8000-0000000000a5', 5, 'bank-sampah-lestari', 'Bank Sampah Lestari',
    'Pengelola bank sampah dan rumah kompos RW 05.', true),
@@ -99,6 +107,7 @@ insert into public.products_umkm (rw_id, vendor_id, slug, name, category, descri
    'Gantungan kunci kain batik buatan anak sanggar.', 20000, 'buah', true, 'published')
 on conflict do nothing;
 
+-- DATA CONTOH: packages, durations and prices are invented.
 insert into public.tour_packages (id, rw_id, category, slug, name, tagline, duration_minutes, price_per_pax, status)
 values
   ('0de00000-0000-4000-8000-0000000000c5', 5, 'student', 'paket-eduwisata-ecowastreme', 'Eduwisata Ecowastreme',
@@ -124,21 +133,72 @@ where id in ('0de00000-0000-4000-8000-0000000000c5', '0de00000-0000-4000-8000-00
 update public.products_umkm set is_featured = true
 where slug in ('pupuk-kompos-1kg', 'gantungan-kunci-batik') and not is_featured;
 
--- RW 05 as the development photos show it (decision of 2026-10-18): the two places named on the signs in
--- them, nothing more. RW 13 has no photos yet, so its profile, vision and points stay empty and its page leaves
--- those sections out.
+-- The RW profiles and activity points as the kelurahan's own site describes them (gisikdrono.semarangkota.go.id
+-- /zero-wastreme, /seni-budaya and /potensi, read on 2026-10-21 and 2026-10-22, not yet checked by the kelurahan),
+-- retold in our own words with no numbers, prices or times; docs/content/konten-situs-kelurahan.md lists each fact
+-- with its page. The awards and the guests of past study visits wait for the kelurahan's permission (request 12).
+
+-- RW 05. A database seeded before this text holds the line the development photos gave; only that line is replaced,
+-- so a profile someone wrote stays.
 update public.rw_units
-set description_md = 'Rombongan yang berkunjung ke RW 05 singgah di Bank Sampah Sumber Rejeki dan Taman TOGA Sumber Saras.'
-where id = 5 and description_md is null;
+set description_md = 'RW 05 dulu menghadapi sampah rumah tangga yang banyak, tercampur, dan langsung dibuang ke TPA. '
+      || 'Warga lalu mengelolanya dari sumbernya: sampah anorganik dipilah dan ditabung di bank sampah, sedangkan '
+      || 'sampah organik diolah menjadi pakan maggot dan dikubur dengan sistem teba modern. Kini kampung ini menjadi '
+      || 'tujuan wisata edukasi lingkungan di Kota Semarang, digerakkan ibu-ibu PKK, pengurus RT/RW, dan kader '
+      || 'wilayah.' || chr(10) || chr(10)
+      || 'Kebun TOGA dan tanaman pangan warga diolah menjadi minuman herbal untuk tamu, seperti senikir, wedang '
+      || 'rosuwuh, suwun, dan kombucha buah lokal. Ibu-ibu PKK membuat tas dan pakaian dari kain perca serta miniatur '
+      || 'mainan dari logam bekas.'
+where id = 5
+  and (description_md is null
+       or description_md = 'Rombongan yang berkunjung ke RW 05 singgah di Bank Sampah Sumber Rejeki dan Taman TOGA Sumber Saras.');
 insert into public.activity_points (rw_id, slug, name, point_type, short_description, sort_order, status) values
-  (5, 'bank-sampah-sumber-rejeki', 'Bank Sampah Sumber Rejeki', 'bank_sampah', null, 1, 'published'),
+  (5, 'bank-sampah-sumber-rejeki', 'Bank Sampah Sumber Rejeki', 'bank_sampah',
+   'Belajar memilah sampah dan menabung sampah yang masih bernilai.', 1, 'published'),
   (5, 'taman-toga-sumber-saras', 'Taman TOGA Sumber Saras', 'urban_farming',
-   'Tanaman dalam pot dari botol plastik bekas, di bawah paranet.', 2, 'published')
+   'Tanaman dalam pot dari botol plastik bekas, di bawah paranet.', 2, 'published'),
+  (5, 'komposter-dan-eco-enzyme', 'Komposter dan Eco-Enzyme', 'composter',
+   'Pelatihan membuat komposter dan eco-enzyme.', 3, 'published'),
+  (5, 'budidaya-maggot', 'Budidaya Maggot', 'maggot', 'Sampah organik diolah menjadi pakan maggot.', 4, 'published'),
+  (5, 'sistem-teba-modern', 'Sistem Teba Modern', 'other',
+   'Sampah organik dikubur di lubang yang dikelola.', 5, 'published'),
+  (5, 'kreasi-daur-ulang-pkk', 'Kreasi Daur Ulang PKK', 'pkk_craft',
+   'Ibu-ibu PKK membuat tas dan pakaian dari kain perca, kerajinan dari plastik bekas, dan miniatur mainan dari '
+   || 'logam bekas.', 6, 'published')
+on conflict do nothing;
+-- The Bank Sampah point was first written without a description.
+update public.activity_points
+set short_description = 'Belajar memilah sampah dan menabung sampah yang masih bernilai.'
+where slug = 'bank-sampah-sumber-rejeki' and short_description is null;
+
+-- RW 13. /seni-budaya names the dances and games but gives no times, so no performance schedule is written.
+update public.rw_units
+set description_md = 'Kampung Budaya & Seni di Jl. Jatisari, RW 13, diresmikan Wali Kota Semarang pada 26 Juni 2020. '
+      || 'Warganya memegang semangat nguri-nguri budaya: tradisi Jawa dirawat dalam kegiatan sehari-hari. Di sini '
+      || 'warga mementaskan Tari Golek, Tari Semarangan, dan Tari Jatilan, menghidupkan dolanan seperti gobak sodor, '
+      || 'egrang, bentik, dan dakon, dan mendidik anak-anak kampung di sekolah seni.' || chr(10) || chr(10)
+      || 'Kampung ini menjadi rumah Kelompok Seni Kartika Sari, binaan Disbudpar Kota Semarang, yang pernah tampil di '
+      || 'puncak Dugderan, Pawai Ogoh-ogoh, dan penyambutan kapal pesiar di Pelabuhan Tanjung Emas. RW 13 juga '
+      || 'dikenal sebagai Kampung Pancasila dan menjadi Pilot Project Nasional Kampung Siaga Tangguh Bencana Kebakaran.'
+where id = 13 and description_md is null;
+insert into public.activity_points (rw_id, slug, name, point_type, short_description, sort_order, status) values
+  (13, 'pentas-tari-tradisional', 'Pentas Tari Tradisional', 'stage',
+   'Pementasan Tari Golek, Tari Semarangan, dan Tari Jatilan.', 1, 'published'),
+  (13, 'dolanan-anak', 'Dolanan Anak', 'dolanan_area',
+   'Permainan tradisional bersama: gobak sodor, egrang, bentik, dan dakon.', 2, 'published'),
+  (13, 'sekolah-seni-anak', 'Sekolah Seni Anak', 'sanggar',
+   'Tempat anak-anak kampung belajar mencintai dan melestarikan keseniannya.', 3, 'published'),
+  (13, 'upacara-serah-tampi-lurah', 'Upacara Serah Tampi Lurah', 'other',
+   'Upacara adat turun-temurun untuk penyambutan atau pergantian lurah; dapat disaksikan bila waktunya bertepatan.',
+   4, 'published'),
+  (13, 'mural-dan-spot-foto', 'Mural dan Spot Foto', 'other',
+   'Mural dan spot foto bernuansa Jawa di sepanjang jalan kampung.', 5, 'published'),
+  (13, 'kampung-siaga-bencana-kebakaran', 'Kampung Siaga Tangguh Bencana Kebakaran', 'other',
+   'Pilot Project Nasional: latihan rutin, alat pemadam api ringan, dan relawan pemadam warga yang terlatih.', 6,
+   'published')
 on conflict do nothing;
 
--- RW 08 as the kelurahan's own site describes it (gisikdrono.semarangkota.go.id, read on 2026-10-21, not yet
--- checked by the kelurahan): the public service centre, Semar Cakep and Ketan Ronggolawe, retold in our own words,
--- with no numbers or prices.
+-- RW 08: the public service centre, Semar Cakep and Ketan Ronggolawe (/potensi).
 update public.rw_units
 set tagline = 'Layanan publik yang inklusif dan ruang bermain yang aman bagi anak',
     description_md = 'RW 08 adalah pusat pelayanan publik Kelurahan Gisikdrono: Kantor Kecamatan Semarang Barat, '
@@ -157,7 +217,8 @@ insert into public.activity_points (rw_id, slug, name, point_type, short_descrip
 on conflict do nothing;
 
 -- Gallery photos and the hero banner need real files in public-media, so they come only from
--- pnpm db:seed --media <folder> (scripts/demo-media.ts); without it the pages show Foto menyusul.
+-- pnpm db:seed --media <folder> (scripts/demo-media.ts) and --official-media <folder>
+-- (scripts/official-media.ts); without them the pages show Foto menyusul.
 
 -- Two demo articles that exercise the RichText allowlist (Task P2.4.09) and invent nothing (StyleGuide §1.3 G5):
 -- the RW 05 one says only what the development photos and their signs show, the kelurahan one restates the
