@@ -257,6 +257,81 @@
   --shadow-modal: 0 24px 48px rgb(15 23 42 / 0.18);
 }
 
+/* public/map/denah.svg (docs/StyleGuide.md §8.3): the plan carries no colour of its own. Each RW layer names its
+   palette with a .denah-rw-<palette> class, which mirrors RW_ACCENT_CLASSES in src/config/rw.ts, and the shapes
+   read the two variables it sets, so the plan follows the tokens of §2.7 in both themes. A hotspot's bound element
+   gets .denah-active while its hotspot is open (§5.13). The Leaflet markers of src/components/map/leaflet-map.tsx
+   share the palette classes: Leaflet writes its colours as presentation attributes, which these rules outrank. */
+@layer components {
+  .denah-rw-leaf {
+    --denah-accent: hsl(var(--rw-leaf));
+    --denah-soft: hsl(var(--rw-leaf-soft));
+  }
+  .denah-rw-terracotta {
+    --denah-accent: hsl(var(--rw-terracotta));
+    --denah-soft: hsl(var(--rw-terracotta-soft));
+  }
+  .denah-rw-mulberry {
+    --denah-accent: hsl(var(--rw-mulberry));
+    --denah-soft: hsl(var(--rw-mulberry-soft));
+  }
+  .denah-rw-teal {
+    --denah-accent: hsl(var(--rw-teal));
+    --denah-soft: hsl(var(--rw-teal-soft));
+  }
+  .denah-rw-violet {
+    --denah-accent: hsl(var(--rw-violet));
+    --denah-soft: hsl(var(--rw-violet-soft));
+  }
+  .denah-rw-neutral {
+    --denah-accent: hsl(var(--neutral));
+    --denah-soft: hsl(var(--neutral-soft));
+  }
+  .denah-ground {
+    fill: hsl(var(--muted));
+  }
+  .denah-area {
+    fill: var(--denah-soft);
+    stroke: var(--denah-accent);
+    stroke-width: 3;
+    stroke-dasharray: 14 10;
+  }
+  .denah-building {
+    fill: hsl(var(--card));
+    stroke: var(--denah-accent);
+    stroke-width: 3;
+    transition: fill 150ms ease;
+  }
+  .denah-building.denah-active,
+  .denah-area.denah-active {
+    fill: var(--denah-accent);
+    fill-opacity: 0.35;
+  }
+  .denah-road {
+    fill: none;
+    stroke: hsl(var(--background));
+    stroke-width: 26;
+    stroke-linecap: round;
+  }
+  .denah-label {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 30px;
+    fill: var(--denah-accent);
+  }
+  .denah-label-road {
+    font-weight: 500;
+    font-size: 22px;
+    fill: hsl(var(--muted-foreground));
+  }
+  .denah-marker {
+    fill: var(--denah-accent);
+    fill-opacity: 1;
+    stroke: hsl(var(--background));
+    stroke-width: 3;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { YOUTUBE_PLAYER_HOST, YOUTUBE_STILL_HOST } from '@/config/gallery';
+import { GOOGLE_MAPS_HOST, OSM_TILE_HOST } from '@/config/map';
 import {
   BACKUP_RETENTION_DAYS,
   BREACH_NOTICE_HOURS,
@@ -134,6 +135,27 @@ export function YoutubeThirdParty() {
         <li>saat Anda menekan tombol putar: videonya diputar lewat {YOUTUBE_PLAYER_HOST}.</li>
       </ul>
       <p>Sebelum Anda menekan tombol putar, pemutar YouTube tidak dimuat.</p>
+    </NoticeSection>
+  );
+}
+
+// The maps of /peta-kontak (docs/PRD.md FR-PUB-18): the OpenStreetMap tiles load with the page, the Google Maps
+// frame only when the visitor asks for it (click-to-load, as the YouTube player).
+export function MapsThirdParty() {
+  return (
+    <NoticeSection id="pihak-ketiga-peta" title="Pihak ketiga: peta">
+      <p>Halaman Peta &amp; kontak dan beranda memuat peta dari dua pihak ketiga:</p>
+      <ul className="list-disc space-y-1 pl-5">
+        <li>
+          saat halaman Peta &amp; kontak dibuka, gambar petanya dimuat dari {OSM_TILE_HOST} milik
+          OpenStreetMap Foundation, yang menerima alamat IP Anda;
+        </li>
+        <li>
+          saat Anda menekan tombol Tampilkan Google Maps: peta Google dimuat dari {GOOGLE_MAPS_HOST},
+          dan Google menerima alamat IP Anda. Sebelum tombol ditekan, peta Google tidak dimuat.
+        </li>
+      </ul>
+      <p>Denah kampung di beranda digambar sendiri dan tidak memuat apa pun dari pihak ketiga.</p>
     </NoticeSection>
   );
 }

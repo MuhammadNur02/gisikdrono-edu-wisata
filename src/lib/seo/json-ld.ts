@@ -44,13 +44,37 @@ const officeAddress: Node<PostalAddress> = {
   addressCountry: siteConfig.locality.countryCode,
 };
 
-export function governmentOrganizationJsonLd(): Node<GovernmentOrganization> {
+export interface OrganizationContactInput {
+  // site_settings `kelurahan.address`, once the kelurahan has written it.
+  streetAddress?: string;
+  // The public WhatsApp number, E.164.
+  telephone?: string;
+  email?: string;
+  // The office on Google Maps (googleMapsPlaceUrl), for `hasMap`.
+  mapUrl?: string;
+}
+
+// The root layout gives the organisation alone; /peta-kontak adds its contact point and map (FR-PUB-18).
+export function governmentOrganizationJsonLd(
+  contact: OrganizationContactInput = {},
+): Node<GovernmentOrganization> {
+  const hasContactPoint = contact.telephone !== undefined || contact.email !== undefined;
   return {
     '@type': 'GovernmentOrganization',
     '@id': ORGANIZATION_ID,
     name: siteConfig.ownerName,
     url: siteConfig.url,
-    address: officeAddress,
+    address: { ...officeAddress, streetAddress: contact.streetAddress },
+    hasMap: contact.mapUrl,
+    contactPoint: hasContactPoint
+      ? {
+          '@type': 'ContactPoint',
+          contactType: 'customer service',
+          telephone: contact.telephone,
+          email: contact.email,
+          availableLanguage: 'id',
+        }
+      : undefined,
   };
 }
 

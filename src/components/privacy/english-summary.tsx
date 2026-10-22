@@ -1,5 +1,6 @@
 import { EmailLink, NoticeSection } from '@/components/privacy/privacy-sections';
 import { YOUTUBE_PLAYER_HOST, YOUTUBE_STILL_HOST } from '@/config/gallery';
+import { GOOGLE_MAPS_HOST, OSM_TILE_HOST } from '@/config/map';
 import {
   BACKUP_RETENTION_DAYS,
   BREACH_NOTICE_HOURS,
@@ -12,6 +13,27 @@ import { siteConfig } from '@/config/site';
 // 2026-10-18; docs/Security.md §7.6): foreign visitors do come. Every sentence restates a section of the
 // Indonesian notice above it and adds nothing; when that text changes, this changes with it, and the
 // Indonesian version is the one that applies.
+
+// The third parties of the notice: YouTube in the gallery and the two map providers of the map page.
+function SummaryThirdParties() {
+  return (
+    <>
+      <p>
+        Gallery videos come from YouTube, owned by Google, a third party outside our processors.
+        Google receives your IP address at two moments: when the gallery opens and a video&apos;s
+        still loads from {YOUTUBE_STILL_HOST} because staff have not uploaded their own, and when
+        you press play and the video plays through {YOUTUBE_PLAYER_HOST}. Before you press play, the
+        YouTube player is not loaded.
+      </p>
+      <p>
+        The map page loads its map tiles from {OSM_TILE_HOST}, run by the OpenStreetMap Foundation,
+        which receives your IP address when that page opens. The Google Maps frame loads from{' '}
+        {GOOGLE_MAPS_HOST} only after you press the button for it, and Google receives your IP
+        address then; before that, nothing from Google is loaded.
+      </p>
+    </>
+  );
+}
 
 function SummaryData() {
   return (
@@ -39,13 +61,7 @@ function SummaryData() {
         Turnstile (outside Indonesia) and Resend (United States) process data for us, under data
         processing agreements and contractual safeguards.
       </p>
-      <p>
-        Gallery videos come from YouTube, owned by Google, a third party outside our processors.
-        Google receives your IP address at two moments: when the gallery opens and a video&apos;s
-        still loads from {YOUTUBE_STILL_HOST} because staff have not uploaded their own, and when
-        you press play and the video plays through {YOUTUBE_PLAYER_HOST}. Before you press play, the
-        YouTube player is not loaded.
-      </p>
+      <SummaryThirdParties />
     </>
   );
 }

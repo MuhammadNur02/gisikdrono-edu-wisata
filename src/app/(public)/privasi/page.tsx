@@ -8,6 +8,7 @@ import {
   ChildrenData,
   DataInventory,
   EmailLink,
+  MapsThirdParty,
   NoticeSection,
   NotCollected,
   Processors,
@@ -86,6 +87,7 @@ export default async function PrivacyPage() {
         <ChildrenData />
         <Processors />
         <YoutubeThirdParty />
+        <MapsThirdParty />
         <Rights dpoEmail={settings.dpoEmail} />
         <Breach />
         <EnglishSummary dpoEmail={settings.dpoEmail} />
