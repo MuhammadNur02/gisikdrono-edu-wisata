@@ -4360,7 +4360,7 @@ export type Database = {
         }
         Returns: string
       }
-      svc_expire_stale_bookings: { Args: never; Returns: number }
+      svc_expire_stale_bookings: { Args: never; Returns: Json }
       svc_fail_notification: {
         Args: {
           p_error: string

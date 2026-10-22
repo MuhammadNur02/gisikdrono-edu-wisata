@@ -17,7 +17,8 @@ const JOB_NAME = 'purge-storage';
 const RUN_FAILED = 'run_failed';
 const FILES_LEFT_BEHIND = 'files_not_deleted';
 
-export async function GET(request: Request): Promise<Response> {
+// A POST, like every job route (internal.call_job): a run deletes files, so nothing that repeats GETs may start one.
+export async function POST(request: Request): Promise<Response> {
   if (!hasValidCronSecret(request.headers.get('authorization'))) {
     return new Response(null, { status: 401 });
   }

@@ -209,8 +209,16 @@ export async function svcIncrementBookletDownload(
   await resultOf(adminClient.rpc('svc_increment_booklet_download', { p_booklet_id: bookletId }));
 }
 
-export function svcExpireStaleBookings(adminClient: DatabaseClient): Promise<number> {
-  return resultOf(adminClient.rpc('svc_expire_stale_bookings'));
+// How many lapsed holds and quotations one run expired, and how many it rolled back on their own and reported as
+// cron_failed, to be tried again next run.
+const expiryReportSchema = z.strictObject({
+  processed: z.int().nonnegative(),
+  failed: z.int().nonnegative(),
+});
+export type ExpiryReport = z.infer<typeof expiryReportSchema>;
+
+export async function svcExpireStaleBookings(adminClient: DatabaseClient): Promise<ExpiryReport> {
+  return expiryReportSchema.parse(await resultOf(adminClient.rpc('svc_expire_stale_bookings')));
 }
 
 // The jobs pg_cron runs through their /api/jobs route (0007, internal.call_job).

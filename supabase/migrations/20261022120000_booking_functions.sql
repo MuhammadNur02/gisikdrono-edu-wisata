@@ -3,7 +3,45 @@
 -- (Q1), a quotation booking needs the verified contact too and queues nothing (Q2), a hold beyond half a session's
 -- capacity is refused as pay_to_confirm with nothing written (Q3), a large group raises an info alert instead of a review
 -- (Q4), an institution's 24-hour hold wins over the shortening for large groups (Q5), the summary's quote travels as a
--- hash (Q6), and an email code stands in for the phone only while WhatsApp codes are degraded (Q7).
+-- hash (Q6), and an email code stands in for the phone only while WhatsApp codes are degraded (Q7). The independent
+-- review of PR #26 added the one lock order (M1), the proven contact as the only identity (M2) and the checks of L1–L5.
+
+
+-- ===== One lock order: the audit chain first (independent review of PR #26, M1) =====
+
+-- Every audited write appends to the audit hash chain, and internal.chain_append holds the chain's advisory lock until
+-- the transaction ends. A transaction that locks booking, leg or session rows and audits afterwards can therefore wait
+-- for the chain while the chain's holder waits for those rows. So the chain comes first for every writer of these
+-- tables: a function that locks their rows with SELECT ... FOR UPDATE calls this before it does, and every other write
+-- takes it through the statement triggers below. Taking it again in the same transaction waits for nothing.
+create function internal.take_audit_turn() returns void
+  language plpgsql
+  set search_path = ''
+as $$
+begin
+  perform pg_advisory_xact_lock(hashtext('chain:audit_logs'));
+end;
+$$;
+
+-- A statement trigger fires before its statement locks a single row.
+create function internal.take_audit_turn_first() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  perform internal.take_audit_turn();
+  return null;
+end;
+$$;
+
+revoke execute on function internal.take_audit_turn(), internal.take_audit_turn_first() from public, anon, authenticated;
+
+create trigger take_audit_turn before insert or update or delete on public.bookings
+  for each statement execute function internal.take_audit_turn_first();
+create trigger take_audit_turn before insert or update or delete on public.booking_legs
+  for each statement execute function internal.take_audit_turn_first();
+create trigger take_audit_turn before insert or update or delete on public.visit_sessions
+  for each statement execute function internal.take_audit_turn_first();
 
 
 -- ===== Codes (BOOK-10, GUEST-01) =====
@@ -62,8 +100,8 @@ $$;
 
 -- The lines of a booking priced from the catalogue rows, exactly as computeBookingQuote prices them in
 -- src/lib/pricing/compute-booking-quote.ts: a flat price buys the group as one unit, a per-person price follows the tier
--- that covers the group, and an add-on is a product on sale as one, from an RW the package visits (p_rw_ids), in a
--- quantity its vendor takes. Add-on lines follow the package line in product-id order.
+-- that covers the group, and an add-on is a product on sale as one, from an active vendor of an RW the package visits
+-- (p_rw_ids), in a quantity its vendor takes. Add-on lines follow the package line in product-id order.
 create function internal.booking_quote(p_package_id uuid, p_pax integer, p_addons jsonb, p_rw_ids smallint[])
   returns jsonb
   language plpgsql stable
@@ -107,7 +145,8 @@ begin
     from jsonb_array_elements(coalesce(p_addons, '[]')) as a
     order by a ->> 'product_id' collate "C"
   loop
-    select * into product from public.products_umkm pr
+    select pr.* into product from public.products_umkm pr
+    join public.umkm_vendors v on v.id = pr.vendor_id and v.is_active
     where pr.id = requested.product_id and pr.status = 'published' and pr.is_addon_eligible and pr.is_available
       and pr.rw_id = any (p_rw_ids);
     if not found then
@@ -204,8 +243,8 @@ end;
 $$;
 
 -- The sessions of a booking matched to the package's legs, one session for each RW it visits (review note I1; at most
--- MAX_PACKAGE_LEGS of src/config/booking.ts), each open and bookable between booking.min_lead_hours and
--- booking.max_advance_days. Returns them in leg order.
+-- MAX_PACKAGE_LEGS of src/config/booking.ts), each open, of an RW that is online, on a day the package is sold for, and
+-- bookable between booking.min_lead_hours and booking.max_advance_days. Returns them in leg order.
 create function internal.booking_sessions(p_package_id uuid, p_session_ids uuid[])
   returns table (leg_order smallint, rw_id smallint, session_id uuid, session_date date, starts_at timestamptz)
   language plpgsql stable
@@ -218,11 +257,13 @@ declare
   max_advance_days integer := (select (s.value #>> '{}')::integer from public.site_settings s
                                where s.key = 'booking.max_advance_days');
   closed uuid;
+  unsold_day date;
 begin
   select requested.id into closed
   from unnest(coalesce(p_session_ids, '{}')) as requested(id)
   left join public.visit_sessions s on s.id = requested.id
-  where s.id is null or s.status <> 'open'
+  left join public.rw_units u on u.id = s.rw_id
+  where s.id is null or s.status <> 'open' or u.is_active is not true
   limit 1;
   if closed is not null then
     raise exception 'session % is not open for booking', closed using errcode = 'P0001', hint = 'STATE_INVALID';
@@ -236,6 +277,18 @@ begin
         (select array_agg(l.rw_id order by l.rw_id) from public.tour_package_legs l where l.package_id = p_package_id)
   then
     raise exception 'a booking takes one session for each RW the package visits'
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+
+  -- Independent review of PR #26, L5: valid_from and valid_to bound the visit days a package is sold for.
+  select s.session_date into unsold_day
+  from public.visit_sessions s
+  join public.tour_packages p on p.id = p_package_id
+  where s.id = any (p_session_ids) and (s.session_date < p.valid_from or s.session_date > p.valid_to)
+  order by s.session_date
+  limit 1;
+  if unsold_day is not null then
+    raise exception 'package % is not sold for visits on %', p_package_id, unsold_day
       using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
 
@@ -263,7 +316,9 @@ $$;
 -- What the OTP a booking presents proves (BOOK-12, GUEST-08; decision of 2026-10-22, Q7): 'whatsapp' when it verified
 -- this PIC's number, 'email' when it verified this PIC's address while WhatsApp codes are degraded, else a refusal. The
 -- code is for booking_phone, verified within ten minutes (docs/Security.md §4.1 point 3) and not spent yet; its row stays
--- locked until the booking that spends it commits.
+-- locked until the booking that spends it commits. Only a code no booking owns is locked: verify_phone_otp marks the
+-- number of the booking a code belongs to while it holds that code's row, so this never waits for such a row while it
+-- holds the audit chain.
 create function internal.verified_booking_contact(p_otp_id uuid, p_phone text, p_email text) returns text
   language plpgsql
   set search_path = ''
@@ -272,13 +327,12 @@ declare
   freshness constant interval := interval '10 minutes';
   otp public.guest_otps;
 begin
-  select * into otp from public.guest_otps o where o.id = p_otp_id for update;
-  if found and otp.purpose = 'booking_phone' and otp.verified_at > now() - freshness
-     and otp.consumed_at is null and otp.booking_id is null then
+  select * into otp from public.guest_otps o where o.id = p_otp_id and o.booking_id is null for update;
+  if found and otp.purpose = 'booking_phone' and otp.verified_at > now() - freshness and otp.consumed_at is null then
     if otp.phone is not null and otp.phone = p_phone then
       return 'whatsapp';
     end if;
-    if otp.phone is null and otp.email = p_email and not internal.whatsapp_otp_open() then
+    if otp.phone is null and lower(otp.email::text) = p_email and not internal.whatsapp_otp_open() then
       return 'email';
     end if;
   end if;
@@ -321,21 +375,65 @@ as $$
                             'status', p_booking.status, 'expires_at', p_booking.expires_at);
 $$;
 
--- Holds more than two unpaid bookings for one phone number or one email address are refused (BOOK-13). The two
--- advisory locks, taken in that order, make two requests for one contact count each other.
-create function internal.check_unpaid_caps(p_phone text, p_email text) returns void
+-- The one spelling of an address that caps count by (BOOK-11), as normalizeEmail in src/lib/validations/normalize.ts
+-- writes it: lower-cased and trimmed, and for Gmail without dots or a plus tag in the mailbox, googlemail.com included.
+create function internal.email_key(p_email text) returns text
+  language sql immutable
+  set search_path = ''
+as $$
+  select case when parts.mailbox <> '' and parts.domain in ('gmail.com', 'googlemail.com')
+              then replace(split_part(parts.mailbox, '+', 1), '.', '') || '@gmail.com'
+              else parts.lowered end
+  from (select typed.lowered, substring(typed.lowered from '^(.*)@[^@]*$') as mailbox,
+               substring(typed.lowered from '@([^@]*)$') as domain
+        from (select lower(trim(p_email)) as lowered) as typed) as parts;
+$$;
+
+-- A booker is the contact their code proved (independent review of PR #26, M2): the WhatsApp number, or while WhatsApp
+-- codes are degraded the address. The other one is what they typed, contact data that is never an identity, so it
+-- finds no hold and counts against no cap. The lock on that contact, taken before the duplicate check (L4), makes two
+-- requests for one contact see each other.
+create function internal.lock_booking_contact(p_contact text, p_phone text, p_email text) returns void
+  language plpgsql
+  set search_path = ''
+as $$
+begin
+  perform pg_advisory_xact_lock(hashtext('booking:unpaid:' || case p_contact when 'whatsapp' then 'phone:' || p_phone
+                                                                  else 'email:' || internal.email_key(p_email) end));
+end;
+$$;
+
+-- The proven contact's unpaid hold of one of these sessions, whose link booking-service.ts sends again (BOOK-15). An
+-- address is matched as it was proved, not by its BOOK-11 key, because resend_booking_link sends to the address the hold
+-- has and matches it as typed.
+create function internal.unpaid_hold_for(p_contact text, p_phone text, p_email text, p_session_ids uuid[])
+  returns public.bookings
+  language sql stable
+  set search_path = ''
+as $$
+  select b.* from public.bookings b
+  where b.status = 'pending_payment'
+    and case p_contact when 'whatsapp' then b.pic_phone = p_phone and b.phone_verified_at is not null
+                       else lower(b.pic_email::text) = p_email and b.email_verified_at is not null end
+    and exists (select 1 from public.booking_legs l where l.booking_id = b.id and l.visit_session_id = any (p_session_ids))
+  order by b.created_at desc
+  limit 1;
+$$;
+
+-- No proven contact holds more than two unpaid bookings (BOOK-13), an address counted in its BOOK-11 spelling (L3).
+create function internal.check_unpaid_caps(p_contact text, p_phone text, p_email text) returns void
   language plpgsql
   set search_path = ''
 as $$
 declare
   unpaid_per_contact constant integer := 2;
 begin
-  perform pg_advisory_xact_lock(hashtext('booking:unpaid:phone:' || p_phone));
-  perform pg_advisory_xact_lock(hashtext('booking:unpaid:email:' || p_email));
-  if (select count(*) from public.bookings b where b.status = 'pending_payment' and b.pic_phone = p_phone)
-       >= unpaid_per_contact
-     or (select count(*) from public.bookings b where b.status = 'pending_payment' and b.pic_email = p_email)
-       >= unpaid_per_contact then
+  if (select count(*) from public.bookings b
+      where b.status = 'pending_payment'
+        and case p_contact when 'whatsapp' then b.pic_phone = p_phone and b.phone_verified_at is not null
+                           else internal.email_key(b.pic_email) = internal.email_key(p_email)
+                                and b.email_verified_at is not null end)
+     >= unpaid_per_contact then
     raise exception 'a phone number or an email address holds at most two unpaid bookings'
       using errcode = 'P0001', hint = 'RATE_LIMITED';
   end if;
@@ -347,7 +445,8 @@ revoke execute on function internal.crockford_base32(bytea, integer), internal.n
   internal.hold_deadline(public.booker_type, integer, timestamptz), internal.whatsapp_otp_open(),
   internal.booking_sessions(uuid, uuid[]), internal.verified_booking_contact(uuid, text, text),
   internal.over_unpaid_share(uuid[], integer), internal.booking_reply(text, public.bookings),
-  internal.check_unpaid_caps(text, text)
+  internal.email_key(text), internal.lock_booking_contact(text, text, text),
+  internal.unpaid_hold_for(text, text, text, uuid[]), internal.check_unpaid_caps(text, text, text)
   from public, anon, authenticated;
 
 
@@ -358,8 +457,9 @@ revoke execute on function internal.crockford_base32(bytea, integer), internal.n
 -- as the verified cookie gave the phone (docs/Security.md §4.1 point 3); p_quote_hash is the summary the visitor saw.
 -- Every price is computed here again from the catalogue rows. Replies, never with another visitor's booking:
 --   created         the new booking;
---   existing        the booking this form key already made for this phone (BOOK-06);
---   duplicate       this phone's unpaid hold for the same session, whose link booking-service.ts sends again (BOOK-15);
+--   existing        the booking this form key already made, to a request that brings the code it spent (BOOK-06, L1);
+--   duplicate       the proven contact's unpaid hold for the same session, whose link booking-service.ts sends again
+--                   (BOOK-15);
 --   pay_to_confirm  the hold would leave more than half a session unpaid; nothing is written (Q3).
 create function internal.create_booking(
   p_package_id uuid, p_session_ids uuid[], p_pax integer, p_booker jsonb, p_addons jsonb, p_participants jsonb,
@@ -378,6 +478,7 @@ declare
   sessions record;
   quote jsonb;
   contact text;
+  deadline timestamptz;
   booking public.bookings;
 begin
   if p_mode is null or p_mode not in ('pay', 'quote') then
@@ -387,14 +488,21 @@ begin
     raise exception 'an officer''s booking is not taken here yet (Task P4.3.10)'
       using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
+  -- The audit chain's turn before any row lock (M1), and before the form key is looked up, so the same form sent twice
+  -- at once finds the booking the first request made (L2).
+  perform internal.take_audit_turn();
   previous_settings := internal.push_settings(jsonb_build_object('app.in_rpc', '1', 'app.actor_role', 'visitor')
     || case when p_actor_id is null then '{}' else jsonb_build_object('app.actor_id', p_actor_id::text) end);
 
   if p_idempotency_key is not null then
     select * into booking from public.bookings b where b.idempotency_key = p_idempotency_key;
     if found then
-      if booking.pic_phone is distinct from phone then
-        raise exception 'this form was already sent for another booking' using errcode = '23505';
+      -- L1: the key alone opens nothing; a repeat brings the code the booking spent.
+      if not exists (select 1 from public.guest_otps o where o.id = p_otp_id and o.booking_id = booking.id) then
+        if booking.pic_phone is distinct from phone then
+          raise exception 'this form was already sent for another booking' using errcode = '23505';
+        end if;
+        raise exception 'the PIC''s contact is not verified' using errcode = 'P0001', hint = 'STATE_INVALID';
       end if;
       perform internal.restore_settings(previous_settings);
       return internal.booking_reply('existing', booking);
@@ -410,6 +518,12 @@ begin
     into sessions
   from internal.booking_sessions(p_package_id, p_session_ids) as s;
   perform internal.check_booking_size(p_pax, p_participants);
+  if p_mode = 'pay' then
+    deadline := internal.hold_deadline((p_booker ->> 'booker_type')::public.booker_type, p_pax, sessions.first_start);
+    if deadline <= now() then
+      raise exception 'no time is left to pay before the session starts' using errcode = 'P0001', hint = 'STATE_INVALID';
+    end if;
+  end if;
 
   quote := internal.booking_quote(p_package_id, p_pax, p_addons, sessions.rw_ids);
   if internal.booking_quote_hash(quote) is distinct from p_quote_hash then
@@ -418,16 +532,13 @@ begin
   contact := internal.verified_booking_contact(p_otp_id, phone, email);
 
   if p_mode = 'pay' then
-    select b.* into booking from public.bookings b
-    where b.pic_phone = phone and b.status = 'pending_payment'
-      and exists (select 1 from public.booking_legs l where l.booking_id = b.id and l.visit_session_id = any (sessions.ids))
-    order by b.created_at desc
-    limit 1;
-    if found then
+    perform internal.lock_booking_contact(contact, phone, email);
+    booking := internal.unpaid_hold_for(contact, phone, email, sessions.ids);
+    if booking.id is not null then
       perform internal.restore_settings(previous_settings);
       return internal.booking_reply('duplicate', booking);
     end if;
-    perform internal.check_unpaid_caps(phone, email);
+    perform internal.check_unpaid_caps(contact, phone, email);
     if internal.over_unpaid_share(sessions.ids, p_pax) then
       perform internal.restore_settings(previous_settings);
       return jsonb_build_object('result', 'pay_to_confirm');
@@ -435,13 +546,7 @@ begin
   end if;
 
   booking := internal.insert_booking(p_mode, tour_package, sessions.rw_ids, sessions.first_day, sessions.last_day,
-    sessions.first_start, quote, p_pax, p_booker, contact, p_idempotency_key, p_consent, p_client_meta);
-  if booking.id is null then
-    -- The same form, sent twice at once, made its booking in the other request.
-    select * into booking from public.bookings b where b.idempotency_key = p_idempotency_key;
-    perform internal.restore_settings(previous_settings);
-    return internal.booking_reply('existing', booking);
-  end if;
+    deadline, quote, p_pax, p_booker, contact, p_idempotency_key, p_consent, p_client_meta);
   perform internal.insert_booking_lines(booking, p_mode, sessions.ids, p_pax, quote, p_addons, p_participants);
   update public.guest_otps set consumed_at = now(), booking_id = booking.id where id = p_otp_id;
 
@@ -489,18 +594,17 @@ begin
 end;
 $$;
 
--- The booking row itself, priced and snapshotted from the quote. A hold gets its deadline once, here (BOOK-14). When the
--- same form key, sent for the same phone, made its booking in a request that committed first, nothing is inserted and
--- an empty row comes back, so the caller answers with that booking instead.
+-- The booking row itself, priced and snapshotted from the quote. A hold gets its deadline once, here (BOOK-14). Two
+-- requests with one form key never both get here: the second waits for the audit chain and then finds the first one's
+-- booking.
 create function internal.insert_booking(p_mode text, p_package public.tour_packages, p_rw_ids smallint[],
-  p_first_day date, p_last_day date, p_first_start timestamptz, p_quote jsonb, p_pax integer, p_booker jsonb,
+  p_first_day date, p_last_day date, p_expires_at timestamptz, p_quote jsonb, p_pax integer, p_booker jsonb,
   p_contact text, p_idempotency_key text, p_consent jsonb, p_client_meta jsonb)
   returns public.bookings
   language plpgsql
   set search_path = ''
 as $$
 declare
-  booker_type public.booker_type := (p_booker ->> 'booker_type')::public.booker_type;
   booking public.bookings;
 begin
   if coalesce(p_consent ->> 'version', '') = '' then
@@ -514,29 +618,22 @@ begin
     case p_mode when 'pay' then 'pending_payment' else 'quoted' end::public.booking_status, 'web', p_package.id,
     jsonb_build_object('name', p_package.name, 'category', p_package.category, 'pricing_basis', p_package.pricing_basis,
                        'unit_price', (p_quote #>> '{lines,0,unit_price}')::bigint, 'tier', p_quote -> 'tier'),
-    p_rw_ids, booker_type, nullif(trim(p_booker ->> 'institution_name'), ''), p_booker ->> 'pic_name',
-    p_booker ->> 'pic_phone', lower(trim(p_booker ->> 'pic_email')), p_pax, p_first_day, p_last_day,
-    nullif(trim(p_booker ->> 'notes'), ''), (p_quote ->> 'subtotal_package')::bigint,
-    (p_quote ->> 'subtotal_addons')::bigint, (p_quote ->> 'total')::bigint,
-    case when p_mode = 'pay' then internal.hold_deadline(booker_type, p_pax, p_first_start) end,
+    p_rw_ids, (p_booker ->> 'booker_type')::public.booker_type, nullif(trim(p_booker ->> 'institution_name'), ''),
+    p_booker ->> 'pic_name', p_booker ->> 'pic_phone', lower(trim(p_booker ->> 'pic_email')), p_pax, p_first_day,
+    p_last_day, nullif(trim(p_booker ->> 'notes'), ''), (p_quote ->> 'subtotal_package')::bigint,
+    (p_quote ->> 'subtotal_addons')::bigint, (p_quote ->> 'total')::bigint, p_expires_at,
     case when p_mode = 'quote' then now() end,
     case when p_contact = 'whatsapp' then now() end, case when p_contact = 'email' then now() end,
     p_consent ->> 'version', now(), p_idempotency_key, nullif(p_client_meta ->> 'ip', '')::inet,
     left(p_client_meta ->> 'user_agent', 500))
   returning * into booking;
   return booking;
-exception when unique_violation then
-  if not exists (select 1 from public.bookings b where b.idempotency_key = p_idempotency_key
-                 and b.pic_phone = p_booker ->> 'pic_phone') then
-    raise;
-  end if;
-  return null;
 end;
 $$;
 
 -- The legs, add-on lines and participants of a new booking. A hold takes its seats session by session in id order, the
--- order release_booking_quota gives them back in, so two holds never wait on each other; a combo whose second session
--- is full raises QUOTA_UNAVAILABLE and so keeps neither (BOOK-01). A quotation's legs reserve nothing (BOOK-08).
+-- order release_booking_quota gives them back in; a combo whose second session is full raises QUOTA_UNAVAILABLE and so
+-- keeps neither (BOOK-01). A quotation's legs reserve nothing (BOOK-08).
 create function internal.insert_booking_lines(p_booking public.bookings, p_mode text, p_session_ids uuid[],
   p_pax integer, p_quote jsonb, p_addons jsonb, p_participants jsonb) returns void
   language plpgsql
@@ -621,3 +718,223 @@ $$;
 revoke execute on function internal.bookings_hold_deadline_guard() from public, anon, authenticated;
 create trigger bookings_hold_deadline_guard before update of expires_at on public.bookings
   for each row execute function internal.bookings_hold_deadline_guard();
+
+
+-- ===== The other writers of a session take the same turn (independent review of PR #26, M1) =====
+-- These replace the 0004 versions, which locked booking, leg or session rows with SELECT ... FOR UPDATE before their
+-- audit rows asked for the chain. Each now takes the chain's turn first; nothing else in them changes, except that the
+-- expiry run also reports the holds it could not expire.
+
+create or replace function internal.release_booking_quota(p_booking_id uuid) returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  previous_settings jsonb;
+  leg record;
+  stored integer;
+begin
+  perform internal.take_audit_turn();
+  previous_settings := internal.push_settings('{"app.in_rpc": "1"}');
+  for leg in
+    select l.id, l.visit_session_id, l.pax_count
+    from public.booking_legs l
+    where l.booking_id = p_booking_id and l.status = 'reserved' and l.quota_released_at is null
+    order by l.visit_session_id
+    for update
+  loop
+    select s.reserved_pax into stored from public.visit_sessions s where s.id = leg.visit_session_id for update;
+    if stored < leg.pax_count then
+      perform internal.log_audit('quota.drift', 'visit_sessions', leg.visit_session_id::text,
+        jsonb_build_object('stored', stored, 'released', leg.pax_count, 'corrected', true,
+                           'source', 'release_booking_quota'));
+    end if;
+    update public.visit_sessions set reserved_pax = greatest(stored - leg.pax_count, 0) where id = leg.visit_session_id;
+    update public.booking_legs set status = 'released', quota_released_at = now() where id = leg.id;
+  end loop;
+  perform internal.restore_settings(previous_settings);
+end;
+$$;
+
+-- The 0004 version returned only how many holds it expired; /api/jobs/expire-bookings logs { processed, failed }.
+drop function public.svc_expire_stale_bookings();
+drop function internal.expire_stale_bookings();
+
+create function internal.expire_stale_bookings() returns jsonb
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  previous_settings jsonb;
+  quotation_days integer := (select (value #>> '{}')::integer from public.site_settings
+                             where key = 'booking.quotation_valid_days');
+  stale record;
+  expired_count integer := 0;
+  failed_count integer := 0;
+begin
+  perform internal.take_audit_turn();
+  previous_settings := internal.begin_scheduled_job();
+  for stale in
+    select b.id, b.status
+    from public.bookings b
+    where (b.status = 'pending_payment' and b.expires_at < now() - interval '5 minutes')
+       or (b.status = 'quoted' and coalesce(
+             (select max(q.valid_until) from public.quotations q where q.booking_id = b.id and q.status = 'issued'),
+             (b.created_at at time zone 'Asia/Jakarta')::date + quotation_days
+           ) < public.today_jkt())
+    order by b.id
+    for update skip locked
+  loop
+    -- One booking that fails must not keep every other hold from expiring: it is rolled back on its
+    -- own, reported as cron_failed, and tried again on the next run.
+    begin
+      update public.bookings set status = 'expired', expired_at = now() where id = stale.id;
+      perform internal.release_booking_quota(stale.id);
+      update public.payments set status = 'expired' where booking_id = stale.id and status in ('initiated', 'pending');
+      update public.quotations set status = 'expired' where booking_id = stale.id and status = 'issued';
+      insert into public.booking_events (booking_id, from_status, to_status, actor_type, reason)
+      values (stale.id, stale.status, 'expired', 'cron',
+              case when stale.status = 'quoted' then 'quotation_lapsed' else 'hold_lapsed' end);
+      perform internal.enqueue_notification(stale.id, 'booking_expired', 'whatsapp', '{}');
+      perform internal.enqueue_notification(stale.id, 'booking_expired', 'email', '{}');
+      expired_count := expired_count + 1;
+    exception when others then
+      failed_count := failed_count + 1;
+      insert into public.security_events (event_type, severity, entity_type, entity_id, details)
+      values ('cron_failed', 'high', 'bookings', stale.id::text,
+              jsonb_build_object('job', 'expire_stale_bookings', 'sqlstate', sqlstate));
+    end;
+  end loop;
+  perform internal.restore_settings(previous_settings);
+  return jsonb_build_object('processed', expired_count, 'failed', failed_count);
+end;
+$$;
+revoke execute on function internal.expire_stale_bookings() from public, anon, authenticated;
+
+create function public.svc_expire_stale_bookings() returns jsonb
+  language sql security definer
+  set search_path = ''
+as $$ select internal.expire_stale_bookings(); $$;
+revoke execute on function public.svc_expire_stale_bookings() from public, anon, authenticated;
+grant execute on function public.svc_expire_stale_bookings() to service_role;
+
+create or replace function internal.close_past_bookings() returns integer
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  previous_settings jsonb;
+  past record;
+  next_status public.booking_status;
+  closed_count integer := 0;
+begin
+  perform internal.take_audit_turn();
+  previous_settings := internal.begin_scheduled_job();
+  for past in
+    select b.id, b.status
+    from public.bookings b
+    where b.status in ('checked_in', 'paid') and b.visit_date_end < public.today_jkt()
+    order by b.id
+    for update skip locked
+  loop
+    if past.status = 'checked_in' then
+      next_status := 'completed';
+      update public.bookings set status = next_status, completed_at = now() where id = past.id;
+      perform internal.enqueue_notification(past.id, 'review_invite', 'whatsapp', '{"link_scope": "review"}');
+      perform internal.enqueue_notification(past.id, 'review_invite', 'email', '{"link_scope": "review"}');
+    else
+      next_status := 'no_show';
+      update public.bookings set status = next_status where id = past.id;
+    end if;
+    insert into public.booking_events (booking_id, from_status, to_status, actor_type)
+    values (past.id, past.status, next_status, 'cron');
+    closed_count := closed_count + 1;
+  end loop;
+
+  update public.tickets_qr set status = 'expired' where status = 'issued' and valid_until < now();
+  perform internal.restore_settings(previous_settings);
+  return closed_count;
+end;
+$$;
+
+create or replace function internal.reconcile_session_counters() returns integer
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  previous_settings jsonb;
+  upcoming record;
+  stored integer;
+  held integer;
+  drift_count integer := 0;
+begin
+  perform internal.take_audit_turn();
+  previous_settings := internal.begin_scheduled_job();
+  for upcoming in
+    select s.id from public.visit_sessions s where s.session_date >= public.today_jkt() order by s.id
+  loop
+    select s.reserved_pax into stored from public.visit_sessions s where s.id = upcoming.id for update;
+    select coalesce(sum(l.pax_count), 0) into held
+    from public.booking_legs l
+    where l.visit_session_id = upcoming.id and l.status in ('reserved', 'checked_in');
+    continue when stored = held;
+
+    if stored > held then
+      update public.visit_sessions set reserved_pax = held where id = upcoming.id;
+    end if;
+    perform internal.log_audit('quota.drift', 'visit_sessions', upcoming.id::text,
+      jsonb_build_object('stored', stored, 'held', held, 'corrected', stored > held));
+    drift_count := drift_count + 1;
+  end loop;
+  perform internal.restore_settings(previous_settings);
+  return drift_count;
+end;
+$$;
+
+
+-- ===== Every application job is a POST (independent review of PR #26) =====
+-- This replaces the 0007 version of call_job. Every job changes something: it claims outbox rows, settles payments,
+-- records reconciliation runs, raises alerts or deletes files. So none is a GET that a prefetch, a crawler or a cache
+-- could send again.
+
+create or replace function internal.call_job(p_job text) returns bigint
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  route_timeout_ms constant integer := 60000;   -- the job routes' maxDuration
+  path text := case p_job
+    when 'process-notifications' then '/api/jobs/process-notifications'
+    when 'payments-poll' then '/api/jobs/payments-poll'
+    when 'anomaly-scan' then '/api/jobs/anomaly-scan'
+    when 'reconcile-payments' then '/api/jobs/reconcile-payments'
+    when 'purge-storage' then '/api/jobs/purge-storage'
+  end;
+  is_local boolean := internal.environment() is not distinct from 'local';
+  base_url text := (select s.decrypted_secret from vault.decrypted_secrets s where s.name = 'jobs_base_url');
+  cron_secret text := (select s.decrypted_secret from vault.decrypted_secrets s where s.name = 'cron_secret');
+  request_id bigint;
+begin
+  if path is null then
+    raise exception 'no application job is called %', p_job using errcode = '22023';
+  end if;
+  perform internal.settle_job_response(p_job);
+  if base_url is null or cron_secret is null then
+    if not is_local then
+      perform internal.record_job_run(p_job, false, 'secret_missing');
+    end if;
+    return null;
+  end if;
+  if base_url !~ '^https://' and not is_local then
+    perform internal.record_job_run(p_job, false, 'insecure_base_url');
+    return null;
+  end if;
+
+  request_id := net.http_post(url := rtrim(base_url, '/') || path, body := '{}'::jsonb,
+                              headers := jsonb_build_object('Authorization', 'Bearer ' || cron_secret,
+                                                            'Content-Type', 'application/json'),
+                              timeout_milliseconds := route_timeout_ms);
+  update public.job_heartbeats set last_request_id = request_id, last_requested_at = now() where job = p_job;
+  return request_id;
+end;
+$$;

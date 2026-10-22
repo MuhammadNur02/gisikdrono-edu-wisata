@@ -4,7 +4,7 @@
 -- duplicate and idempotent repeats, the unpaid share of a session, the large-group flag and the deadline that is
 -- written once.
 begin;
-select plan(70);
+select plan(88);
 
 -- ===== Fixtures =====
 insert into public.umkm_vendors (id, rw_id, slug, name) values
@@ -261,10 +261,11 @@ select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1001',
     array['00000000-0000-4000-8000-0000000c2004']::uuid[], 1, pg_temp.otp('+6281300000070'), '+6281300000070',
     'tamu70b@contoh.test')$$,
   'P0001', 'a phone number or an email address holds at most two unpaid bookings', 'but not a third');
-select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1001',
-    array['00000000-0000-4000-8000-0000000c2004']::uuid[], 1, pg_temp.otp('+6281300000071'), '+6281300000071',
-    'tamu70@contoh.test')$$,
-  'P0001', 'a phone number or an email address holds at most two unpaid bookings', 'nor its email address from another phone');
+-- Only the contact a code proved counts (independent review of PR #26, M2): an address typed beside another verified
+-- number proves nothing, so it caps nobody.
+select is((pg_temp.book('00000000-0000-4000-8000-0000000c1001', array['00000000-0000-4000-8000-0000000c2004']::uuid[],
+    1, pg_temp.otp('+6281300000071'), '+6281300000071', 'tamu70@contoh.test')) ->> 'result', 'created',
+  'another verified phone typing the same address is not capped by it');
 select is((pg_temp.book('00000000-0000-4000-8000-0000000c1001', array['00000000-0000-4000-8000-0000000c2001']::uuid[],
     10, pg_temp.otp('+6281300000030'), '+6281300000030', 'tamu30@contoh.test')) - 'booking_code' - 'expires_at',
   jsonb_build_object('result', 'duplicate', 'booking_id', (select id from hold), 'status', 'pending_payment'),
@@ -273,13 +274,23 @@ select is((select count(*)::int from public.bookings where pic_phone = '+6281300
 select is((select count(*)::int from public.guest_otps where phone = '+6281300000030' and consumed_at is null), 1,
   'and the new code is not spent');
 
+create temporary table form_code on commit drop as select pg_temp.otp('+6281300000080') as id;
 select lives_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1001',
-    array['00000000-0000-4000-8000-0000000c2002']::uuid[], 1, pg_temp.otp('+6281300000080'), '+6281300000080',
+    array['00000000-0000-4000-8000-0000000c2002']::uuid[], 1, (select id from form_code), '+6281300000080',
     'tamu80@contoh.test', p_form_id => 'f8c3de3d-1fea-4d7c-a8b0-29f63c4c3454')$$, 'a booking with a form key');
 select is((pg_temp.book('00000000-0000-4000-8000-0000000c1001', array['00000000-0000-4000-8000-0000000c2002']::uuid[],
-    1, pg_temp.otp('+6281300000080'), '+6281300000080', 'tamu80@contoh.test',
+    1, (select id from form_code), '+6281300000080', 'tamu80@contoh.test',
     p_form_id => 'f8c3de3d-1fea-4d7c-a8b0-29f63c4c3454')) ->> 'result', 'existing',
-  'sent again with the same key, it is the same booking');
+  'sent again with the same key and the code it spent, it is the same booking');
+-- Independent review of PR #26, L1: the key alone opens nothing; the replay brings the code that booking spent.
+select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1001',
+    array['00000000-0000-4000-8000-0000000c2002']::uuid[], 1, null, '+6281300000080', 'tamu80@contoh.test',
+    p_form_id => 'f8c3de3d-1fea-4d7c-a8b0-29f63c4c3454')$$,
+  'P0001', 'the PIC''s contact is not verified', 'a replay without a code gets nothing back');
+select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1001',
+    array['00000000-0000-4000-8000-0000000c2002']::uuid[], 1, pg_temp.otp('+6281300000080'), '+6281300000080',
+    'tamu80@contoh.test', p_form_id => 'f8c3de3d-1fea-4d7c-a8b0-29f63c4c3454')$$,
+  'P0001', 'the PIC''s contact is not verified', 'nor one with another code of the same phone');
 select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1001',
     array['00000000-0000-4000-8000-0000000c2002']::uuid[], 1, pg_temp.otp('+6281300000081'), '+6281300000081',
     'tamu81@contoh.test', p_form_id => 'f8c3de3d-1fea-4d7c-a8b0-29f63c4c3454')$$,
@@ -298,6 +309,97 @@ select is((select (pg_temp.reserved('00000000-0000-4000-8000-0000000c2005'),
 select is((pg_temp.book('00000000-0000-4000-8000-0000000c1001', array['00000000-0000-4000-8000-0000000c2005']::uuid[],
     3, pg_temp.otp('+6281300000092'), '+6281300000092', 'tamu92@contoh.test', p_mode => 'quote',
     p_booker_type => 'school')) ->> 'result', 'created', 'a quotation takes no seat, so the share does not stop it');
+
+-- ===== A typed phone is never an identity (independent review of PR #26, M2) =====
+-- A victim's verified WhatsApp hold, and an attacker who, while WhatsApp codes are degraded, proves an address of
+-- their own and types the victim's number.
+select is((pg_temp.book('00000000-0000-4000-8000-0000000c1001', array['00000000-0000-4000-8000-0000000c2003']::uuid[],
+    1, pg_temp.otp('+6281300000110'), '+6281300000110', 'korban@contoh.test')) ->> 'result', 'created',
+  'the victim holds a seat with their verified WhatsApp');
+create temporary table victim_hold on commit drop as
+  select id from public.bookings where pic_email = 'korban@contoh.test';
+update public.site_settings set value = 'false' where key = 'whatsapp_enabled';
+select is((pg_temp.book('00000000-0000-4000-8000-0000000c1001', array['00000000-0000-4000-8000-0000000c2003']::uuid[],
+    1, pg_temp.otp('+6281300000110', p_email => 'penyerang@contoh.test'), '+6281300000110',
+    'penyerang@contoh.test')) ->> 'result', 'created',
+  'the typed number is no duplicate of the victim''s hold: no answer tells the attacker what that number holds');
+select lives_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1001',
+    array['00000000-0000-4000-8000-0000000c2004']::uuid[], 1,
+    pg_temp.otp('+6281300000110', p_email => 'penyerang@contoh.test'), '+6281300000110', 'penyerang@contoh.test')$$,
+  'a second hold for the proven address');
+select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1001',
+    array['00000000-0000-4000-8000-0000000c2009']::uuid[], 1,
+    pg_temp.otp('+6281300000111', p_email => 'penyerang@contoh.test'), '+6281300000111', 'penyerang@contoh.test')$$,
+  'P0001', 'a phone number or an email address holds at most two unpaid bookings',
+  'a third is refused by the address the code proved, whatever number is typed');
+update public.site_settings set value = 'true' where key = 'whatsapp_enabled';
+select is((select count(*)::int from public.bookings
+           where pic_email = 'penyerang@contoh.test' and phone_verified_at is null), 2,
+  'the typed number stays unverified contact data');
+select is((pg_temp.book('00000000-0000-4000-8000-0000000c1001', array['00000000-0000-4000-8000-0000000c2004']::uuid[],
+    1, pg_temp.otp('+6281300000110'), '+6281300000110', 'korban@contoh.test')) ->> 'result', 'created',
+  'the attacker''s holds do not count against the victim''s number');
+select is((pg_temp.book('00000000-0000-4000-8000-0000000c1001', array['00000000-0000-4000-8000-0000000c2003']::uuid[],
+    1, pg_temp.otp('+6281300000110'), '+6281300000110', 'korban@contoh.test')) ->> 'booking_id',
+  (select id::text from victim_hold), 'and the victim''s own repeat finds the victim''s hold, never the attacker''s');
+
+-- ===== One address however it is spelt (BOOK-11; independent review of PR #26, L3) =====
+select is(internal.email_key(' A.Budi+promo@Gmail.com '), 'abudi@gmail.com', 'Gmail ignores dots and plus tags');
+select is(internal.email_key('a.budi@googlemail.com'), 'abudi@gmail.com', 'and googlemail.com is the same mailbox');
+select is(internal.email_key('Ani.Lestari+x@Sekolah.sch.id'), 'ani.lestari+x@sekolah.sch.id',
+  'another domain keeps its dots and tags, lower-cased: as normalizeEmail in src/lib/validations/normalize.ts');
+update public.site_settings set value = 'false' where key = 'whatsapp_enabled';
+select lives_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1001',
+    array['00000000-0000-4000-8000-0000000c2001']::uuid[], 1,
+    pg_temp.otp('+6281300000120', p_email => 'tamu.gmail+a@gmail.com'), '+6281300000120', 'tamu.gmail+a@gmail.com');
+  select pg_temp.book('00000000-0000-4000-8000-0000000c1001', array['00000000-0000-4000-8000-0000000c2002']::uuid[], 1,
+    pg_temp.otp('+6281300000121', p_email => 'tamugmail@gmail.com'), '+6281300000121', 'tamugmail@gmail.com')$$,
+  'two holds for two spellings of one Gmail address');
+select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1001',
+    array['00000000-0000-4000-8000-0000000c2010']::uuid[], 1,
+    pg_temp.otp('+6281300000122', p_email => 'Tamu.Gmail@googlemail.com'), '+6281300000122', 'Tamu.Gmail@googlemail.com')$$,
+  'P0001', 'a phone number or an email address holds at most two unpaid bookings', 'and the third spelling is refused');
+update public.site_settings set value = 'true' where key = 'whatsapp_enabled';
+
+-- ===== What may be booked at all (independent review of PR #26, L5) =====
+update public.tour_packages set valid_to = pg_temp.visit_day() - 1 where id = '00000000-0000-4000-8000-0000000c1001';
+select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1001',
+    array['00000000-0000-4000-8000-0000000c2011']::uuid[], 1, pg_temp.otp('+6281300000130'), '+6281300000130',
+    'tamu130@contoh.test')$$,
+  'P0001', 'package 00000000-0000-4000-8000-0000000c1001 is not sold for visits on ' || pg_temp.visit_day(),
+  'a package is not sold for visits after its valid_to');
+update public.tour_packages set valid_to = null, valid_from = pg_temp.visit_day() + 1
+where id = '00000000-0000-4000-8000-0000000c1001';
+select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1001',
+    array['00000000-0000-4000-8000-0000000c2011']::uuid[], 1, pg_temp.otp('+6281300000131'), '+6281300000131',
+    'tamu131@contoh.test')$$,
+  'P0001', 'package 00000000-0000-4000-8000-0000000c1001 is not sold for visits on ' || pg_temp.visit_day(),
+  'nor before its valid_from');
+update public.tour_packages set valid_from = null where id = '00000000-0000-4000-8000-0000000c1001';
+insert into public.rw_units (id, code, slug, name, short_name, theme_label, accent_key, icon_key)
+values (21, 'RW21', 'rw-21-uji', 'RW 21 Uji', 'Uji', 'Uji', 'teal', 'users');
+insert into public.tour_packages (id, rw_id, category, slug, name, pricing_basis, price_per_pax, status) values
+  ('00000000-0000-4000-8000-0000000c1021', 21, 'regular', 'uji-buat-paket-21', 'Paket Uji 21', 'per_pax', 30000,
+   'published');
+insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
+  ('00000000-0000-4000-8000-0000000c2021', 21, pg_temp.visit_day(), '09:05', '10:05', 'Uji 21', 40);
+select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1021',
+    array['00000000-0000-4000-8000-0000000c2021']::uuid[], 1, pg_temp.otp('+6281300000132'), '+6281300000132',
+    'tamu132@contoh.test')$$,
+  'P0001', 'session 00000000-0000-4000-8000-0000000c2021 is not open for booking',
+  'a session of an RW that is not online is not open');
+update public.site_settings set value = '0' where key = 'booking.min_lead_hours';
+insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity)
+select '00000000-0000-4000-8000-0000000c2014', 5, (start at time zone 'Asia/Jakarta')::date,
+       least((start at time zone 'Asia/Jakarta')::time, time '23:58'),
+       least((start at time zone 'Asia/Jakarta')::time, time '23:58') + interval '1 minute', 'Uji mepet', 40
+from (select date_trunc('minute', now() + interval '50 minutes') as start) as soon;
+select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1001',
+    array['00000000-0000-4000-8000-0000000c2014']::uuid[], 1, pg_temp.otp('+6281300000133'), '+6281300000133',
+    'tamu133@contoh.test')$$,
+  'P0001', 'no time is left to pay before the session starts',
+  'a hold whose deadline would already have passed is refused');
+update public.site_settings set value = '12' where key = 'booking.min_lead_hours';
 
 -- ===== Large groups are flagged, not stopped (decision of 2026-10-22, Q4) =====
 select lives_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1001',

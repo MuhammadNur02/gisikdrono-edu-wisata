@@ -121,8 +121,8 @@ select ok(internal.call_job('purge-storage') is not null, 'the storage purge is 
 select is(
   (select method || ' ' || url from net.http_request_queue
    where url like 'https://gisikdrono.example.test/api/jobs/purge-storage%' order by id desc limit 1),
-  'GET https://gisikdrono.example.test/api/jobs/purge-storage',
-  'as a GET to its own route'
+  'POST https://gisikdrono.example.test/api/jobs/purge-storage',
+  'as a POST to its own route: every job changes something, so none is a GET (independent review of PR #26)'
 );
 
 -- ===== Answers from the routes (net._http_response) =====

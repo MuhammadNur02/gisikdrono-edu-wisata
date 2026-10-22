@@ -3,7 +3,7 @@
 -- hold deadline (decision of 2026-10-22, Q5) and whether WhatsApp codes are open, which decides when an email code may
 -- stand in for the phone (Q7).
 begin;
-select plan(43);
+select plan(44);
 
 -- ===== The booking code: GSK- and 8 Crockford base32 symbols from 40 random bits (BOOK-10, GUEST-01) =====
 select is(internal.crockford_base32('\x0000000000', 8), '00000000', 'forty zero bits are eight zeros');
@@ -102,6 +102,14 @@ select throws_ok(
   'P0001', 'product 00000000-0000-4000-8000-0000000b0a01 is not on sale as an add-on for this package',
   'a product that is out of stock is not on sale');
 update public.products_umkm set is_available = true where id = '00000000-0000-4000-8000-0000000b0a01';
+-- Independent review of PR #26, L5: a vendor that stopped selling sells no add-on.
+update public.umkm_vendors set is_active = false where id = '00000000-0000-4000-8000-0000000b0051';
+select throws_ok(
+  $$select internal.booking_quote('00000000-0000-4000-8000-0000000b0001', 10,
+    '[{"product_id": "00000000-0000-4000-8000-0000000b0a02", "qty": 1}]', array[5]::smallint[])$$,
+  'P0001', 'product 00000000-0000-4000-8000-0000000b0a02 is not on sale as an add-on for this package',
+  'nor is the product of a vendor that is no longer active');
+update public.umkm_vendors set is_active = true where id = '00000000-0000-4000-8000-0000000b0051';
 
 -- ===== internal.booking_quote_hash: pinned to the same hex as src/lib/pricing/quote-hash.test.ts =====
 select is(internal.booking_quote_hash(

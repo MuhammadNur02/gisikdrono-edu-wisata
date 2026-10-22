@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { svcExpireStaleBookings, svcRecordJobRun } from '@/db/rpc';
 import { serverEnv } from '@/lib/env';
 
-import { GET } from './route';
+import { POST } from './route';
 
 vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => ({}) }));
 vi.mock('@/db/rpc', () => ({ svcExpireStaleBookings: vi.fn(), svcRecordJobRun: vi.fn() }));
@@ -12,10 +12,10 @@ const JOB_URL = 'http://localhost/api/jobs/expire-bookings';
 
 function callJob(authorization?: string) {
   const headers = authorization === undefined ? undefined : { authorization };
-  return GET(new Request(JOB_URL, { headers }));
+  return POST(new Request(JOB_URL, { method: 'POST', headers }));
 }
 
-describe('GET /api/jobs/expire-bookings', () => {
+describe('POST /api/jobs/expire-bookings', () => {
   beforeEach(() => {
     vi.mocked(svcExpireStaleBookings).mockReset();
   });
@@ -30,17 +30,17 @@ describe('GET /api/jobs/expire-bookings', () => {
   });
 
   it('expires the lapsed holds and reports how many', async () => {
-    vi.mocked(svcExpireStaleBookings).mockResolvedValue(3);
+    vi.mocked(svcExpireStaleBookings).mockResolvedValue({ processed: 3, failed: 1 });
 
     const response = await callJob(`Bearer ${serverEnv.CRON_SECRET}`);
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ processed: 3 });
+    expect(await response.json()).toMatchObject({ processed: 3, failed: 1 });
     expect(svcExpireStaleBookings).toHaveBeenCalledTimes(1);
   });
 
   it('records no heartbeat, which belongs to the pg_cron job it backs up', async () => {
-    vi.mocked(svcExpireStaleBookings).mockResolvedValue(0);
+    vi.mocked(svcExpireStaleBookings).mockResolvedValue({ processed: 0, failed: 0 });
 
     await callJob(`Bearer ${serverEnv.CRON_SECRET}`);
 

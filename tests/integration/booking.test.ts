@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
-import { GET as expireBookings } from '@/app/api/jobs/expire-bookings/route';
+import { POST as expireBookings } from '@/app/api/jobs/expire-bookings/route';
 import type { Database } from '@/db/types';
 import { serverEnv } from '@/lib/env';
 import { mapError } from '@/lib/errors';
@@ -274,6 +274,7 @@ describe('internal.create_booking through booking-service', () => {
 
     const response = await expireBookings(
       new Request('http://localhost/api/jobs/expire-bookings', {
+        method: 'POST',
         headers: { authorization: `Bearer ${serverEnv.CRON_SECRET}` },
       }),
     );

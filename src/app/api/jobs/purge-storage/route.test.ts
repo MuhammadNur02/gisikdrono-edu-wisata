@@ -4,7 +4,7 @@ import { svcRecordJobRun } from '@/db/rpc';
 import { serverEnv } from '@/lib/env';
 import { purgeMarkedFiles } from '@/server/services/document-service';
 
-import { GET } from './route';
+import { POST } from './route';
 
 vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => ({}) }));
 vi.mock('@/server/services/document-service', () => ({ purgeMarkedFiles: vi.fn() }));
@@ -14,10 +14,10 @@ const JOB_URL = 'http://localhost/api/jobs/purge-storage';
 
 function callJob(authorization?: string) {
   const headers = authorization === undefined ? undefined : { authorization };
-  return GET(new Request(JOB_URL, { headers }));
+  return POST(new Request(JOB_URL, { method: 'POST', headers }));
 }
 
-describe('GET /api/jobs/purge-storage', () => {
+describe('POST /api/jobs/purge-storage', () => {
   beforeEach(() => {
     vi.mocked(purgeMarkedFiles).mockReset();
     vi.mocked(svcRecordJobRun).mockReset().mockResolvedValue(undefined);

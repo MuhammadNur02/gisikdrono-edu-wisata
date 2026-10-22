@@ -17,7 +17,8 @@ const JOB_NAME = 'expire-bookings';
 // Task P3.4.04: the HTTP backstop of the pg_cron job expire_stale_bookings, which stays the primary every five
 // minutes. It records no heartbeat: job_heartbeats watches that pg_cron job, and a run from here must not hide one that
 // stopped. A booking that fails to expire is rolled back on its own inside the function and reported as cron_failed.
-export async function GET(request: Request): Promise<Response> {
+// A POST, like every job route: a run changes bookings, so nothing that repeats GETs may start one.
+export async function POST(request: Request): Promise<Response> {
   if (!hasValidCronSecret(request.headers.get('authorization'))) {
     return new Response(null, { status: 401 });
   }
@@ -25,9 +26,9 @@ export async function GET(request: Request): Promise<Response> {
   const log = createLogger(requestIdFrom(request.headers));
   const runId = randomUUID();
   try {
-    const processed = await svcExpireStaleBookings(createSupabaseAdminClient());
-    log.info('job_run', { job: JOB_NAME, runId, processed });
-    return Response.json({ runId, processed });
+    const report = await svcExpireStaleBookings(createSupabaseAdminClient());
+    log.info('job_run', { job: JOB_NAME, runId, ...report });
+    return Response.json({ runId, ...report });
   } catch {
     // 503 makes the caller try again; nothing expired, since the function runs in one transaction.
     log.error('cron_failed', { job: JOB_NAME, runId });

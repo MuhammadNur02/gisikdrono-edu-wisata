@@ -8,6 +8,7 @@ import {
   resetStaffMfa,
   setStaffRole,
   svcEnqueueNotification,
+  svcExpireStaleBookings,
   svcLogAudit,
   svcRateLimitHit,
 } from './rpc';
@@ -33,6 +34,14 @@ function clientAnswering(status: number, reply: unknown) {
 }
 
 const STAFF_ID = '00000000-0000-4000-8000-000000000002';
+
+describe('svcExpireStaleBookings', () => {
+  it('reads how many holds it expired and how many it could not', async () => {
+    const { client, requests } = clientAnswering(200, { processed: 3, failed: 1 });
+    await expect(svcExpireStaleBookings(client)).resolves.toEqual({ processed: 3, failed: 1 });
+    expect(requests[0]?.url).toBe('http://supabase.test/rest/v1/rpc/svc_expire_stale_bookings');
+  });
+});
 
 describe('rpc wrappers', () => {
   it('calls the RPC by name with p_ parameters', async () => {
