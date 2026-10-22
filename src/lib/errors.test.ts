@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { copy } from '@/lib/copy/id';
-import { AppError, fail, mapError, ok, resultResponse } from '@/lib/errors';
+import { AppError, fail, mapError, ok, raisedHintOf, resultResponse } from '@/lib/errors';
 
 vi.mock('next/headers', () => ({
   headers: () => Promise.reject(new Error('outside a request')),
@@ -53,6 +53,8 @@ describe('mapError', () => {
     ['STATE_INVALID', 'STATE_INVALID'],
     ['PRICE_MISMATCH', 'PRICE_MISMATCH'],
     ['RATE_LIMITED', 'RATE_LIMITED'],
+    // Review of PR #27, M1: booking-service.ts answers it itself; anywhere else it reads as before it had a name.
+    ['CONTACT_UNVERIFIED', 'STATE_INVALID'],
   ])('maps a raised exception with hint %s to %s', async (hint, code) => {
     expect((await mapError({ code: 'P0001', hint })).error.code).toBe(code);
   });
@@ -72,5 +74,14 @@ describe('mapError', () => {
 
   it('gives AppError the HTTP status of its code', () => {
     expect(new AppError('RATE_LIMITED').status).toBe(429);
+  });
+});
+
+describe('raisedHintOf', () => {
+  it('reads the hint of an exception an internal function raised, and of nothing else', () => {
+    expect(raisedHintOf({ code: 'P0001', hint: 'CONTACT_UNVERIFIED' })).toBe('CONTACT_UNVERIFIED');
+    expect(raisedHintOf({ code: 'P0001', hint: null })).toBeUndefined();
+    expect(raisedHintOf({ code: '23505', hint: 'CONTACT_UNVERIFIED' })).toBeUndefined();
+    expect(raisedHintOf(new Error('CONTACT_UNVERIFIED'))).toBeUndefined();
   });
 });

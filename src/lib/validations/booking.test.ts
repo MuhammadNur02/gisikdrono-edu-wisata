@@ -40,7 +40,6 @@ const SCHOOL_BOOKING = {
     { fullName: 'Rina Wati', groupLabel: '' },
   ],
   guardianConsent: true,
-  consentVersion: '2026-10-18',
   privacyAccepted: true,
   idempotencyKey: WIZARD_MOUNT,
   // The fingerprint of the quote the summary showed (src/lib/pricing/quote-hash.ts).
@@ -247,10 +246,9 @@ describe('createBookingSchema', () => {
     ).toBe(true);
   });
 
-  it('refuses a consent version that is not a short identifier', () => {
-    expect(schema.safeParse({ ...SCHOOL_BOOKING, consentVersion: '' }).success).toBe(false);
-    expect(schema.safeParse({ ...SCHOOL_BOOKING, consentVersion: '<v1>' }).success).toBe(false);
-    expect(schema.safeParse({ ...SCHOOL_BOOKING, consentVersion: 'v'.repeat(33) }).success).toBe(
+  // Review of PR #27, M2: the server records the privacy notice it shows; the browser names none.
+  it('refuses a privacy notice version sent by the browser', () => {
+    expect(schema.safeParse({ ...SCHOOL_BOOKING, consentVersion: '2026-10-18' }).success).toBe(
       false,
     );
   });

@@ -11,11 +11,8 @@ import { mapError } from '@/lib/errors';
 import { computeBookingQuote } from '@/lib/pricing/compute-booking-quote';
 import { bookingQuoteHash } from '@/lib/pricing/quote-hash';
 import { createBookingSchema } from '@/lib/validations/booking';
-import {
-  createHold,
-  createQuotedBooking,
-  type BookingRequest,
-} from '@/server/services/booking-service';
+import type { BookingRequest } from '@/server/services/booking-request';
+import { createHold, createQuotedBooking } from '@/server/services/booking-service';
 
 import { lastAuditId } from './helpers/staff-session';
 import { localStack, runSql, sqlText } from '../../scripts/local-stack';
@@ -35,8 +32,16 @@ const RACE_SESSION = '00000000-0000-4000-9000-0000000b0101';
 const SHARE_SESSION = '00000000-0000-4000-9000-0000000b0102';
 const OPEN_SESSION = '00000000-0000-4000-9000-0000000b0103';
 const SPARE_SESSION = '00000000-0000-4000-9000-0000000b0104';
+const LAB_FULL_SESSION = '00000000-0000-4000-9000-0000000b0105';
 const FULL_SESSION_13 = '00000000-0000-4000-9000-0000000b0113';
-const SESSIONS = [RACE_SESSION, SHARE_SESSION, OPEN_SESSION, SPARE_SESSION, FULL_SESSION_13];
+const SESSIONS = [
+  RACE_SESSION,
+  SHARE_SESSION,
+  OPEN_SESSION,
+  SPARE_SESSION,
+  LAB_FULL_SESSION,
+  FULL_SESSION_13,
+];
 const PRICE_PER_PAX = 30000;
 const COMBO_PRICE_PER_PAX = 50000;
 const PARALLEL_HOLDS = 20;
@@ -107,7 +112,6 @@ async function requestFor(
     addons: [],
     participants: [],
     guardianConsent: false,
-    consentVersion: '2026-10-18',
     privacyAccepted: true,
     idempotencyKey: randomUUID(),
     quoteHash: options.combo
@@ -158,10 +162,12 @@ beforeAll(async () => {
       ('${SHARE_SESSION}', 5, public.today_jkt() + 6, '08:15', '09:15', 'Uji separuh', 10),
       ('${OPEN_SESSION}', 5, public.today_jkt() + 6, '09:25', '10:25', 'Uji terbuka', 40),
       ('${SPARE_SESSION}', 5, public.today_jkt() + 6, '10:35', '11:35', 'Uji cadangan', 40),
+      ('${LAB_FULL_SESSION}', 5, public.today_jkt() + 6, '11:45', '12:45', 'Uji lab penuh', 2),
       ('${FULL_SESSION_13}', 13, public.today_jkt() + 6, '07:05', '08:05', 'Uji penuh', 10);
     select set_config('app.in_rpc', '1', true);
     update public.visit_sessions set reserved_pax = 30 where id = '${RACE_SESSION}';
-    update public.visit_sessions set reserved_pax = 10 where id = '${FULL_SESSION_13}';`);
+    update public.visit_sessions set reserved_pax = 10 where id = '${FULL_SESSION_13}';
+    update public.visit_sessions set reserved_pax = 2 where id = '${LAB_FULL_SESSION}';`);
 }, SLOW_MS);
 
 // One query string is one transaction, so the purge and fence switches end with it.
@@ -247,10 +253,27 @@ describe('internal.create_booking through booking-service', () => {
     await expect(createHold(third).catch(errorCodeOf)).resolves.toBe('RATE_LIMITED');
   });
 
-  it('refuses a hold without a verified code', async () => {
+  // Review of PR #27, M1: the wizard answers it by asking for a new code.
+  it('asks for a new code for a hold without a verified one', async () => {
     const request = await requestFor(35, [OPEN_SESSION]);
     const unverified = { ...request, proof: { ...request.proof, otpId: randomUUID() } };
-    await expect(createHold(unverified).catch(errorCodeOf)).resolves.toBe('STATE_INVALID');
+    await expect(createHold(unverified)).resolves.toEqual({ kind: 'reverify' });
+  });
+
+  // Review of PR #27, M1: the first answer never reached the browser, and by the time the visitor sent the form
+  // again its code was stale, so they proved the same number once more.
+  it('opens the booking a form made when it comes again with a fresh code of the same number', async () => {
+    const first = await requestFor(47, [SPARE_SESSION]);
+    const made = await createHold(first);
+    if (made.kind !== 'created') throw new Error('the hold should have been created');
+    const again = {
+      ...first,
+      proof: { ...first.proof, otpId: await verifiedOtp(first.proof.phone) },
+    };
+    await expect(createHold(again)).resolves.toMatchObject({
+      kind: 'created',
+      bookingCode: made.bookingCode,
+    });
   });
 
   it('asks the visitor to pay to confirm once unpaid holds would pass half the session', async () => {
@@ -294,4 +317,22 @@ describe('internal.create_booking through booking-service', () => {
     );
     expect(notices[0]?.count).toBe(2);
   });
+
+  // Review of PR #27, L2: teachers booking from one computer in the school's lab, the same IP and browser, keep
+  // finding the session full. Those refusals give their hits back, so neither the teacher's five a day nor the lab's
+  // ten lock them out of the booking that does fit.
+  it(
+    'lets a school retry from one computer past the daily limits after full sessions',
+    async () => {
+      const lab = { clientIp: '198.51.100.77', userAgent: `Lab ${RUN}` };
+      const retries = [40, 40, 40, 40, 40, 40, 41, 42, 43, 44, 45];
+      for (const teacher of retries) {
+        const request = { ...(await requestFor(teacher, [LAB_FULL_SESSION])), ...lab };
+        await expect(createHold(request).catch(errorCodeOf)).resolves.toBe('QUOTA_EXCEEDED');
+      }
+      const fits = { ...(await requestFor(40, [OPEN_SESSION])), ...lab };
+      await expect(createHold(fits)).resolves.toMatchObject({ kind: 'created' });
+    },
+    SLOW_MS,
+  );
 });

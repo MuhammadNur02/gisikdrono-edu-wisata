@@ -4,13 +4,14 @@ import { useState } from 'react';
 
 import type { QuotePreviewState } from '@/hooks/use-quote-preview';
 import { copy } from '@/lib/copy/id';
-import { bookingToSend, type BookingDraft } from '@/lib/utils/booking-wizard';
+import { bookingToSend, shownContactOf, type BookingDraft } from '@/lib/utils/booking-wizard';
 import type { BookingMode } from '@/lib/validations/booking';
 import type { ActionFailure } from '@/types/action-result';
-import type { BookingSubmitAnswer, WizardActions, WizardPackage } from '@/types/booking';
+import type { WizardActions, WizardPackage } from '@/types/booking';
 
-// The summary's send (Task P3.5.04): the booking assembled from the draft with the hash of the quote shown, and what
-// the visitor is told for every answer that made no booking. pay_to_confirm and resent are answers, not errors.
+// The summary's send (Task P3.5.04): the booking assembled from the draft with the hash of the quote shown and the
+// contact shown as verified, and what the visitor is told for every answer that made no booking. pay_to_confirm and
+// resent are answers, not errors.
 
 const text = copy.booking.wizard.summary;
 
@@ -21,13 +22,11 @@ export interface SubmitNotice {
   offersOtherSession: boolean;
 }
 
-function noticeOf(
-  answer: Extract<BookingSubmitAnswer, { kind: 'pay_to_confirm' | 'resent' }>,
-): SubmitNotice {
-  return answer.kind === 'pay_to_confirm'
-    ? { tone: 'info', message: text.payToConfirm, offersOtherSession: true }
-    : { tone: 'info', message: text.resent, offersOtherSession: false };
-}
+const PAY_TO_CONFIRM_NOTICE: SubmitNotice = {
+  tone: 'info',
+  message: text.payToConfirm,
+  offersOtherSession: true,
+};
 
 function failureNotice(failure: ActionFailure['error']): SubmitNotice {
   if (failure.code === 'PRICE_MISMATCH') {
@@ -46,6 +45,9 @@ export interface BookingSubmitOptions {
   preview: QuotePreviewState;
   createBooking: WizardActions['createBooking'];
   onBooked: (nextUrl: string) => void;
+  // The visitor already holds an unpaid hold for this, whose link went to them again: the draft is done with too
+  // (review of PR #27, L5).
+  onResent: () => void;
   // After PRICE_MISMATCH: the summary shows the price the catalogue holds now (docs/PRD.md FR-BOOK-05).
   refreshPreview: () => void;
   // A Turnstile token is good once, so every answer but a booking is followed by a fresh one.
@@ -62,12 +64,16 @@ export function useBookingSubmit(options: BookingSubmitOptions) {
       options.onBooked(result.data.nextUrl);
       return;
     }
+    if (result.ok && result.data.kind === 'resent') {
+      options.onResent();
+      return;
+    }
     options.renewCaptcha();
     if (!result.ok) {
       if (result.error.code === 'PRICE_MISMATCH') options.refreshPreview();
       setNotice(failureNotice(result.error));
     } else if (result.data.kind === 'reverify') setIsAskedToReverify(true);
-    else if (result.data.kind !== 'created') setNotice(noticeOf(result.data));
+    else setNotice(PAY_TO_CONFIRM_NOTICE);
   }
 
   async function send(
@@ -79,7 +85,12 @@ export function useBookingSubmit(options: BookingSubmitOptions) {
     setIsBusy(true);
     setNotice(null);
     const booking = bookingToSend(draft, wizardPackage, summary, preview.answer.quoteHash);
-    const result = await options.createBooking({ mode, packageSlug: wizardPackage.slug, booking });
+    const result = await options.createBooking({
+      mode,
+      packageSlug: wizardPackage.slug,
+      booking,
+      shownContact: shownContactOf(draft),
+    });
     setIsBusy(false);
     answer(result);
   }

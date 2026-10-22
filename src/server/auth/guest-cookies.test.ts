@@ -52,13 +52,13 @@ describe('the bk_<code> cookie of a booking made in this browser', () => {
 
 describe('the gsk_phone cookie', () => {
   it('is forgotten once a booking spent the code it names', async () => {
-    await rememberPhoneProof(PROOF);
+    await rememberPhoneProof(PROOF, await ensureOtpBrowserId());
     await forgetPhoneProof();
     await expect(readPhoneProofCookie()).resolves.toBeNull();
   });
 
   it('is httpOnly, Secure and SameSite=Lax for 30 minutes, and reads back what was proven', async () => {
-    await rememberPhoneProof(PROOF);
+    await rememberPhoneProof(PROOF, await ensureOtpBrowserId());
     expect(jar.get('gsk_phone')?.options).toEqual({
       httpOnly: true,
       secure: true,
@@ -70,8 +70,18 @@ describe('the gsk_phone cookie', () => {
   });
 
   it('reads nothing from no cookie or a forged one', async () => {
+    await ensureOtpBrowserId();
     await expect(readPhoneProofCookie()).resolves.toBeNull();
     jar.set('gsk_phone', { value: 'forged.value', options: {} });
+    await expect(readPhoneProofCookie()).resolves.toBeNull();
+  });
+
+  // Review of PR #27, L8: the proof belongs to the browser whose gsk_otp_browser asked for and entered the code.
+  it('proves nothing without the gsk_otp_browser it was made under', async () => {
+    await rememberPhoneProof(PROOF, await ensureOtpBrowserId());
+    jar.delete('gsk_otp_browser');
+    await expect(readPhoneProofCookie()).resolves.toBeNull();
+    await ensureOtpBrowserId();
     await expect(readPhoneProofCookie()).resolves.toBeNull();
   });
 });

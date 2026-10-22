@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, type ReactNode } from 'react';
+import { useId, type KeyboardEvent, type ReactNode } from 'react';
 
 import { TotpCodeInput } from '@/components/auth/totp-code-input';
 import { FormAlert } from '@/components/forms/form-alert';
@@ -46,11 +46,22 @@ function describedBy(id: string, error: string | undefined) {
   return error ? { 'aria-invalid': true, 'aria-describedby': `${id}-error` } : {};
 }
 
+// Enter in the number, address or code does what the button beside it does, and never sends the step's form around
+// the field (review of PR #27, L6). A keyboard still composing a word keeps its Enter.
+function onEnter(otp: PhoneOtp, run: () => Promise<void>) {
+  return (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    if (!otp.action.isBusy) void run();
+  };
+}
+
 function ContactFields({ otp }: { otp: PhoneOtp }) {
   const phoneId = useId();
   const emailId = useId();
   const { step, values, setValue, action } = otp;
   const isEditable = step.name === 'contact' && !otp.isContactFixed;
+  const sendOnEnter = onEnter(otp, () => otp.sendCode(step.channel));
   return (
     <>
       <Field id={phoneId} label={text.phoneLabel} error={action.errors.phone}>
@@ -58,6 +69,7 @@ function ContactFields({ otp }: { otp: PhoneOtp }) {
           id={phoneId}
           value={values.phone}
           onChange={setValue('phone')}
+          onKeyDown={sendOnEnter}
           disabled={!isEditable}
           {...describedBy(phoneId, action.errors.phone)}
         />
@@ -70,6 +82,7 @@ function ContactFields({ otp }: { otp: PhoneOtp }) {
             autoComplete="email"
             inputMode="email"
             value={values.email}
+            onKeyDown={sendOnEnter}
             disabled={!isEditable}
             {...describedBy(emailId, action.errors.email)}
             onChange={(event) => {
@@ -82,7 +95,7 @@ function ContactFields({ otp }: { otp: PhoneOtp }) {
   );
 }
 
-function CodeField({ otp }: { otp: PhoneOtp }) {
+function CodeField({ otp, channel }: { otp: PhoneOtp; channel: OtpChannel }) {
   const codeId = useId();
   const error = otp.action.errors.code;
   return (
@@ -90,6 +103,7 @@ function CodeField({ otp }: { otp: PhoneOtp }) {
       <TotpCodeInput
         id={codeId}
         value={otp.values.code}
+        onKeyDown={onEnter(otp, () => otp.verifyCode(channel))}
         {...describedBy(codeId, error)}
         onChange={(event) => {
           otp.setValue('code')(event.target.value);
@@ -183,7 +197,7 @@ export function PhoneOtpField(props: PhoneOtpFieldProps) {
       {action.failure ? <FormAlert tone="danger">{action.failure}</FormAlert> : null}
       {isDegraded ? <FormAlert tone="info">{text.degradedTitle}</FormAlert> : null}
       <ContactFields otp={otp} />
-      {step.name === 'code' ? <CodeField otp={otp} /> : null}
+      {step.name === 'code' ? <CodeField otp={otp} channel={step.channel} /> : null}
       {step.name === 'verified' ? null : (
         <TurnstileField
           ref={captcha.ref}

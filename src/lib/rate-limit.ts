@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { RATE_LIMITS, type RateLimitName } from '@/config/rate-limits';
-import { svcRateLimitHit } from '@/db/rpc';
+import { svcRateLimitHit, svcRateLimitRefund } from '@/db/rpc';
 import type { Database } from '@/db/types';
 import { createLogger } from '@/lib/logger';
 import { pepperedHash } from '@/lib/pepper';
@@ -89,6 +89,30 @@ export async function withinRateLimits(
       outcome: 'allowed_while_unavailable',
     });
     return true;
+  }
+}
+
+// Gives back the hit each check counted, for a refusal the visitor could not have avoided (review of PR #27, L2). A
+// refund that fails leaves the counts where they would be without refunds, so it is logged and the answer goes on.
+export async function refundRateLimits(
+  adminClient: DatabaseClient,
+  checks: readonly RateLimitCheck[],
+): Promise<void> {
+  try {
+    await Promise.all(
+      checks.map((check) =>
+        svcRateLimitRefund(adminClient, {
+          key: rateLimitKey(check.name, check.subject),
+          windowSeconds: ruleFor(check.name).windowSeconds,
+        }),
+      ),
+    );
+  } catch {
+    createLogger(randomUUID()).warn('internal_error', {
+      source: 'rate_limit',
+      limits: checks.map((check) => check.name),
+      outcome: 'refund_failed',
+    });
   }
 }
 

@@ -20,7 +20,6 @@ export const BOOKING_LIMITS = {
   participants: 300,
   participantName: { min: 2, max: 120 },
   groupLabel: 60,
-  consentVersion: 32,
 } as const;
 
 // The bookers whose treasurer pays through its own approvals: they get the 24-hour hold (internal.hold_deadline) and
@@ -36,3 +35,7 @@ export const PHONE_PROOF_FRESH_SECONDS = 8 * 60;
 
 // booking_participants.role_label CHECK.
 export const PARTICIPANT_ROLES = ['student', 'teacher', 'chaperone', 'participant'] as const;
+
+// Review of PR #27, L5: a draft left untouched this long is dropped, so a tab open since the morning starts again with
+// a new form key rather than sending an old booking.
+export const DRAFT_TTL_MS = 2 * 60 * 60 * 1000;

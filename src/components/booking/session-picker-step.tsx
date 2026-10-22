@@ -27,6 +27,8 @@ const text = copy.booking.wizard.schedule;
 export interface SessionPickerStepProps extends WizardStepProps {
   // The seats left, read again every 15 s by the shell (docs/PRD.md FR-BOOK-02).
   legs: BookableLeg[];
+  // The last read was refused or failed, so the seats shown may be out of date (review of PR #27, L7).
+  isStale: boolean;
 }
 
 interface ScheduleValues {
@@ -192,8 +194,15 @@ function SessionsField({ form, legs }: { form: ScheduleForm; legs: BookableLeg[]
           {sessionsError.message ?? copy.booking.validation.sessions}
         </p>
       )}
-      <p className="text-caption text-muted-foreground">{text.refreshed}</p>
     </div>
+  );
+}
+
+function FreshnessNote({ isStale }: { isStale: boolean }) {
+  return (
+    <p aria-live="polite" className="text-caption text-muted-foreground">
+      {isStale ? text.stale : text.refreshed}
+    </p>
   );
 }
 
@@ -217,6 +226,7 @@ export function SessionPickerStep(props: SessionPickerStepProps) {
           <PaxField form={form} minPax={wizardPackage.minPax} maxPax={wizardPackage.maxPax} />
           <DateField form={form} legs={legs} pax={pax} />
           <SessionsField form={form} legs={legs} />
+          <FreshnessNote isStale={props.isStale} />
         </WizardStepFrame>
       </PostForm>
     </Form>

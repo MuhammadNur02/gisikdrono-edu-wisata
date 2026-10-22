@@ -1,8 +1,8 @@
 import { addDays } from 'date-fns';
 import { z } from 'zod';
 
-import { MAX_PACKAGE_LEGS } from '@/config/booking';
-import { BOOKING_STEPS, PRIVACY_NOTICE_VERSION, type BookingStep } from '@/config/site';
+import { DRAFT_TTL_MS, MAX_PACKAGE_LEGS } from '@/config/booking';
+import { BOOKING_STEPS, type BookingStep } from '@/config/site';
 import { DB_ENUMS, type EnumValue } from '@/db/enums';
 import { calendarDateToVisitDate, visitDateToCalendarDate } from '@/lib/utils/dates';
 import {
@@ -10,6 +10,7 @@ import {
   bookerStepSchema,
   scheduleStepSchema,
   type CreateBookingInput,
+  type ShownContact,
 } from '@/lib/validations/booking';
 import type { WizardPackage } from '@/types/booking';
 import type { ParticipantRow } from '@/types/forms';
@@ -37,6 +38,8 @@ export interface BookingDraft {
   contact: ProvenContact | null;
   // Drawn once per draft, so the same form sent twice makes one booking (BOOK-06).
   idempotencyKey: string;
+  // When the draft was last written, in milliseconds; it lives DRAFT_TTL_MS from then.
+  savedAt: number;
 }
 
 export function emptyDraft(wizardPackage: WizardPackage): BookingDraft {
@@ -54,6 +57,7 @@ export function emptyDraft(wizardPackage: WizardPackage): BookingDraft {
     addons: [],
     contact: null,
     idempotencyKey: '',
+    savedAt: 0,
   };
 }
 
@@ -92,15 +96,21 @@ const draftSchema = z
       .strict()
       .nullable(),
     idempotencyKey: id,
+    savedAt: z.number().nonnegative(),
   })
   .strict();
 
-export function readDraft(stored: string | null, wizardPackage: WizardPackage): BookingDraft {
+export function readDraft(
+  stored: string | null,
+  wizardPackage: WizardPackage,
+  nowMs: number,
+): BookingDraft {
   if (stored === null) return emptyDraft(wizardPackage);
   try {
     const parsed = draftSchema.safeParse(JSON.parse(stored));
     const fitsPackage = parsed.data?.sessionIds.length === wizardPackage.rws.length;
-    return parsed.success && fitsPackage ? parsed.data : emptyDraft(wizardPackage);
+    const isFresh = parsed.data !== undefined && nowMs - parsed.data.savedAt <= DRAFT_TTL_MS;
+    return parsed.success && fitsPackage && isFresh ? parsed.data : emptyDraft(wizardPackage);
   } catch {
     return emptyDraft(wizardPackage);
   }
@@ -216,9 +226,16 @@ export function unbookableDatesBetween(
   return days;
 }
 
-// What createBookingAction is sent from the summary (Task P3.5.04): the draft's identifiers, quantities and words, the
-// privacy notice version the visitor ticked, and the hash of the quote they saw. An individual names no institution,
-// and while WhatsApp is limited the PIC's address is the one the code proved, which internal.create_booking checks.
+// Review of PR #27, M1: the contact the summary shows as verified, which createBookingAction holds against the cookie.
+export function shownContactOf(draft: BookingDraft): ShownContact {
+  if (draft.contact === null) return null;
+  const { channel, phone, email } = draft.contact;
+  return { channel, phone, email };
+}
+
+// What createBookingAction is sent from the summary (Task P3.5.04): the draft's identifiers, quantities and words,
+// that the privacy notice was ticked, and the hash of the quote they saw. An individual names no institution, and while
+// WhatsApp is limited the PIC's address is the one the code proved, which the server takes from the proof in any case.
 export function bookingToSend(
   draft: BookingDraft,
   wizardPackage: WizardPackage,
@@ -248,7 +265,6 @@ export function bookingToSend(
       roleLabel: null,
     })),
     guardianConsent: draft.guardianConsent,
-    consentVersion: PRIVACY_NOTICE_VERSION,
     privacyAccepted: summary.privacyAccepted,
     idempotencyKey: draft.idempotencyKey,
     quoteHash,

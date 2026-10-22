@@ -17,7 +17,13 @@ import {
 import { loadBookingWizard } from '@/server/services/booking-wizard-service';
 
 import { createBookingAction } from './booking';
-import { comboWizard as WIZARD, PACKAGE_ID } from '../../../tests/fixtures/booking-wizard';
+import {
+  bookingRequest as REQUEST,
+  comboWizard as WIZARD,
+  freshProof,
+  PACKAGE_ID,
+  schoolBooking as BOOKING,
+} from '../../../tests/fixtures/booking-wizard';
 
 vi.mock('next/headers', () => ({
   headers: () =>
@@ -49,47 +55,17 @@ vi.mock('@/server/services/booking-wizard-service', async (importOriginal) => ({
 
 const text = copy.booking.wizard;
 const CODE = 'GSK-7F3K9Q2M';
-const SESSION_RW05 = '0192f3a4-5b6c-7d8e-9f01-000000000005';
-const SESSION_RW13 = '0192f3a4-5b6c-7d8e-9f01-000000000013';
 // A made-up manage link: payload.signature, as src/lib/links/mint.ts writes one.
 const MANAGE_LINK = 'link-payload.link-signature';
-// The form key the wizard drew once for its draft.
-const WIZARD_MOUNT = '7d444840-9dc0-11d1-b245-5ffdce74fad2';
-const NOW_SECONDS = Math.floor(Date.now() / 1000);
+const PROOF = freshProof(Math.floor(Date.now() / 1000));
 
-const BOOKING = {
-  packageId: PACKAGE_ID,
-  visitSessionIds: [SESSION_RW05, SESSION_RW13],
-  visitDate: '2026-11-12',
-  pax: 30,
-  bookerType: 'school',
-  institutionName: 'SD Negeri Gisikdrono 01',
-  picName: 'Ani Lestari',
-  picEmail: 'ani@sekolah.sch.id',
-  notes: '',
-  addons: [],
-  participants: [],
-  guardianConsent: false,
-  consentVersion: '2026-10-18',
-  privacyAccepted: true,
-  idempotencyKey: WIZARD_MOUNT,
-  quoteHash: 'f'.repeat(64),
-  turnstileToken: 'XXXX.DUMMY.TOKEN.XXXX',
-};
-const REQUEST = { mode: 'pay', packageSlug: 'paket-kombinasi', booking: BOOKING };
-const PROOF = {
-  channel: 'whatsapp' as const,
-  phone: '+6281234567890',
-  email: null,
-  otpId: '0192f3a4-5b6c-7d8e-9f01-0000000000aa',
-  // Verified a minute ago: the cookie lives 30 minutes.
-  expiresAt: NOW_SECONDS + 29 * 60,
-};
 const CREATED = {
   kind: 'created' as const,
   bookingCode: CODE,
   status: 'pending_payment' as const,
   expiresAt: '2026-10-23T08:00:00+00:00',
+  visitDate: '2026-11-12',
+  visitDateEnd: '2026-11-12',
   manageToken: MANAGE_LINK,
 };
 
@@ -143,6 +119,22 @@ describe('createBookingAction', () => {
     ]);
   });
 
+  // Review of PR #27, L3: the months come from the visit days the database booked, not from the form.
+  it('revalidates the months of the visit days the database names', async () => {
+    vi.mocked(createHold).mockResolvedValue({
+      ...CREATED,
+      visitDate: '2026-11-30',
+      visitDateEnd: '2026-12-01',
+    });
+    await createBookingAction(REQUEST);
+    expect(vi.mocked(revalidateTag).mock.calls).toEqual([
+      ['sessions:5:2026-11'],
+      ['sessions:5:2026-12'],
+      ['sessions:13:2026-11'],
+      ['sessions:13:2026-12'],
+    ]);
+  });
+
   it('asks for a quotation booking for an institution and answers its status page', async () => {
     const answer = await createBookingAction({ ...REQUEST, mode: 'quote' });
     expect(answer).toEqual({
@@ -166,6 +158,34 @@ describe('createBookingAction', () => {
   it('refuses a malformed booking before anything is checked or asked', async () => {
     const answer = await createBookingAction({ ...REQUEST, booking: { ...BOOKING, total: 1 } });
     expect(answer).toMatchObject({ ok: false, error: { code: 'VALIDATION' } });
+    expect(withinGuestLimits).not.toHaveBeenCalled();
+    expect(verifyTurnstile).not.toHaveBeenCalled();
+    expect(createHold).not.toHaveBeenCalled();
+  });
+
+  it('refuses a privacy notice version from the browser (review of PR #27, M2)', async () => {
+    const answer = await createBookingAction({
+      ...REQUEST,
+      booking: { ...BOOKING, consentVersion: '2020-01-01' },
+    });
+    expect(answer).toMatchObject({ ok: false, error: { code: 'VALIDATION' } });
+    expect(createHold).not.toHaveBeenCalled();
+  });
+
+  // Review of PR #27, L1: a burst of submits from one IP stops before Turnstile and the database are asked.
+  it('counts the booking attempts of the IP before the security check', async () => {
+    await createBookingAction(REQUEST);
+    expect(withinGuestLimits).toHaveBeenCalledWith([
+      { name: 'booking_create:ip', subject: '203.0.113.7' },
+    ]);
+  });
+
+  it('refuses an IP over its booking attempts without the security check or a booking', async () => {
+    vi.mocked(withinGuestLimits).mockResolvedValue(false);
+    await expect(createBookingAction(REQUEST)).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'RATE_LIMITED' },
+    });
     expect(verifyTurnstile).not.toHaveBeenCalled();
     expect(createHold).not.toHaveBeenCalled();
   });
@@ -202,33 +222,7 @@ describe('createBookingAction', () => {
     expect(createHold).not.toHaveBeenCalled();
   });
 
-  it('refuses a failed security check before reading the proof', async () => {
-    vi.mocked(verifyTurnstile).mockResolvedValue(false);
-    const answer = await createBookingAction(REQUEST);
-    expect(answer).toMatchObject({
-      ok: false,
-      error: {
-        code: 'VALIDATION',
-        fieldErrors: { turnstileToken: [copy.booking.otp.captchaFailed] },
-      },
-    });
-    expect(readPhoneProofCookie).not.toHaveBeenCalled();
-    expect(createHold).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ['no proof', null],
-    ['a proof verified nine minutes ago', { ...PROOF, expiresAt: NOW_SECONDS + 21 * 60 }],
-  ])('asks for the code again with %s (decision on P3.5, Q2)', async (_case, proof) => {
-    vi.mocked(readPhoneProofCookie).mockResolvedValue(proof);
-    await expect(createBookingAction(REQUEST)).resolves.toEqual({
-      ok: true,
-      data: { kind: 'reverify' },
-    });
-    expect(createHold).not.toHaveBeenCalled();
-  });
-
-  it.each([['pay_to_confirm' as const], ['resent' as const]])(
+  it.each([['pay_to_confirm' as const], ['resent' as const], ['reverify' as const]])(
     'answers %s as it is and keeps the unspent code',
     async (kind) => {
       vi.mocked(createHold).mockResolvedValue({ kind });

@@ -34,6 +34,7 @@ export const bookingWizardCopy = {
     noDates:
       'Belum ada tanggal yang bisa dipesan untuk paket ini. Coba lagi nanti, atau hubungi kelurahan.',
     refreshed: 'Sisa kuota diperbarui otomatis.',
+    stale: 'Sisa kuota belum bisa diperbarui, jadi angkanya mungkin sudah berubah.',
   },
   booker: {
     title: 'Data penanggung jawab rombongan',
@@ -111,12 +112,16 @@ export const bookingWizardCopy = {
     reverifyTitle: 'Verifikasi ulang nomor WhatsApp',
     reverify:
       'Verifikasi nomor sudah lebih dari 8 menit yang lalu. Minta kode baru untuk nomor yang sama sebelum mengirim pesanan, ya.',
+    reverifyAsked:
+      'Kontak ini perlu diverifikasi ulang sebelum pesanan dikirim, misalnya karena kodenya sudah kedaluwarsa atau kontak lain baru diverifikasi di tab lain. Minta kode baru, ya.',
     priceChanged:
       'Harga baru saja berubah, jadi ringkasan di atas sudah kami hitung ulang. Periksa totalnya, lalu kirim lagi.',
     payToConfirm:
       'Sesi ini sedang penuh oleh pesanan yang belum dibayar. Pilih sesi lain, atau coba lagi beberapa saat lagi.',
     resent:
       'Anda sudah punya pesanan yang belum dibayar untuk sesi ini. Tautannya sudah kami kirim ulang ke WhatsApp atau email Anda.',
+    resentTitle: 'Pesanan Anda sudah ada',
+    resentLookup: 'Tautannya belum sampai? Minta kirim ulang di Cari Reservasi.',
     otherSession: 'Pilih sesi lain',
     redirecting: 'Pesanan tercatat. Membuka halaman berikutnya…',
   },

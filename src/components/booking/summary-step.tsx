@@ -50,6 +50,8 @@ export interface SummaryStepProps extends WizardStepProps {
   onOpen: (step: BookingStep) => void;
   // After a booking is made: the draft goes and the browser opens its next page.
   onBooked: (nextUrl: string) => void;
+  // After the link of a hold the visitor already has went to them again: the draft goes too.
+  onResent: () => void;
 }
 
 // What the fields hold: the box starts unticked, and the schema wants it ticked.
@@ -95,22 +97,34 @@ function PrivacyField({ form }: { form: SummaryForm }) {
   );
 }
 
+type ReverifyRequest = Pick<
+  ReturnType<typeof useBookingSubmit>,
+  'isAskedToReverify' | 'setIsAskedToReverify'
+>;
+
+// The contact proved again, as it stands. isAskedToReverify: the server found the code stale or of another contact
+// than the one shown (review of PR #27, M1), rather than the clock passing eight minutes here.
 function ReverifyPanel(
-  props: Pick<SummaryStepProps, 'draft' | 'actions'> & {
-    onVerified: (contact: VerifiedContact) => void;
-  },
+  props: Pick<SummaryStepProps, 'draft' | 'actions' | 'update'> & { request: ReverifyRequest },
 ) {
-  const contact = props.draft.contact;
+  const { draft, request } = props;
+  const contact = draft.contact;
   if (!contact) return null;
+  const onVerified = (verified: VerifiedContact) => {
+    props.update({ contact: { ...verified, verifiedAt: Date.now() } });
+    request.setIsAskedToReverify(false);
+  };
   return (
     <div className="space-y-3 rounded-xl border border-warning bg-warning-soft/40 p-4">
       <p className="text-body-sm font-medium">{text.reverifyTitle}</p>
-      <p className="text-caption">{text.reverify}</p>
+      <p className="text-caption">
+        {request.isAskedToReverify ? text.reverifyAsked : text.reverify}
+      </p>
       <PhoneOtpField
         requestAction={props.actions.requestOtp}
         verifyAction={props.actions.verifyOtp}
         fixedContact={{ phone: contact.phone, email: contact.email }}
-        onVerified={props.onVerified}
+        onVerified={onVerified}
       />
     </div>
   );
@@ -256,10 +270,8 @@ export function SummaryStep(props: SummaryStepProps) {
               key={String(draft.contact?.verifiedAt)}
               draft={draft}
               actions={props.actions}
-              onVerified={(contact) => {
-                update({ contact: { ...contact, verifiedAt: Date.now() } });
-                send.setIsAskedToReverify(false);
-              }}
+              update={update}
+              request={send}
             />
           )}
           <CheckAndSend

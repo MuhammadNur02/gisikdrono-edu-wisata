@@ -21,17 +21,18 @@ import {
   quotePreviewSchema,
   type BookingMode,
   type CreateBookingValues,
+  type ShownContact,
 } from '@/lib/validations/booking';
 import {
   readPhoneProofCookie,
   forgetPhoneProof,
   rememberGuestLink,
 } from '@/server/auth/guest-cookies';
+import type { BookingOutcome } from '@/server/services/booking-request';
 import {
   createHold,
   createQuotedBooking,
   withinGuestLimits,
-  type BookingOutcome,
 } from '@/server/services/booking-service';
 import {
   listBookableSessions,
@@ -61,7 +62,9 @@ async function openWizard(packageSlug: string): Promise<WizardRead> {
   return { ok: true, wizard };
 }
 
-async function isWithinIpLimit(name: 'session_availability:ip' | 'quote_preview:ip') {
+async function isWithinIpLimit(
+  name: 'session_availability:ip' | 'quote_preview:ip' | 'booking_create:ip',
+) {
   const clientIp = clientIpFrom(await headers());
   return withinGuestLimits([{ name, subject: rateLimitIpBucket(clientIp) }]);
 }
@@ -111,6 +114,7 @@ interface CheckedBooking {
   mode: BookingMode;
   wizard: BookingWizard;
   values: CreateBookingValues;
+  shownContact: ShownContact;
 }
 
 const isInstitution = (bookerType: EnumValue<'booker_type'>) =>
@@ -131,10 +135,8 @@ async function checkBooking(
   if (request.data.mode === 'quote' && !isInstitution(parsed.data.bookerType)) {
     return fail('VALIDATION', undefined, text.quoteForInstitutions);
   }
-  return {
-    ok: true,
-    booking: { mode: request.data.mode, wizard: read.wizard, values: parsed.data },
-  };
+  const { mode, shownContact } = request.data;
+  return { ok: true, booking: { mode, wizard: read.wizard, values: parsed.data, shownContact } };
 }
 
 // internal.create_booking takes a code at most ten minutes old; past eight the wizard asks for a new one, so the
@@ -145,19 +147,32 @@ function isFresh(proof: PhoneProof | null): proof is PhoneProof {
   return Date.now() / MS_PER_SECOND - verifiedAt <= PHONE_PROOF_FRESH_SECONDS;
 }
 
+// Review of PR #27, M1: gsk_phone is one cookie for every tab of this browser, so the code another tab entered since
+// may prove a contact other than the one this summary shows. The booking then waits for a code of the shown contact.
+function provesShownContact(proof: PhoneProof, shown: ShownContact): boolean {
+  if (shown === null || shown.channel !== proof.channel || shown.phone !== proof.phone)
+    return false;
+  return proof.channel === 'whatsapp' || shown.email === proof.email?.toLowerCase();
+}
+
 function nextUrlOf(outcome: Extract<BookingOutcome, { kind: 'created' }>): string {
   const bookingPage = `${GUEST_BOOKING_PATH}/${outcome.bookingCode}`;
   return outcome.status === 'pending_payment' ? `${bookingPage}/bayar` : bookingPage;
 }
 
-// Steps 4 and 5 for a new booking: its month's sessions, the manage link in this browser, and the spent code
-// forgotten. The visitor's own browser goes on to the pay page or the booking's status page (decision on P3.5, Q1).
+const monthOf = (visitDate: string) => visitDate.slice(0, 'YYYY-MM'.length);
+
+// Steps 4 and 5 for a new booking: the sessions of the months it visits, as the database booked them (review of PR
+// #27, L3), the manage link in this browser, and the spent code forgotten. The visitor's own browser goes on to the
+// pay page or the booking's status page (decision on P3.5, Q1).
 async function settleCreated(
   booking: CheckedBooking,
   outcome: Extract<BookingOutcome, { kind: 'created' }>,
 ): Promise<BookingSubmitAnswer> {
-  const month = booking.values.visitDate.slice(0, 'YYYY-MM'.length);
-  for (const rw of booking.wizard.package.rws) revalidateTag(TAGS.sessions(rw.id, month));
+  const months = new Set([monthOf(outcome.visitDate), monthOf(outcome.visitDateEnd)]);
+  for (const rw of booking.wizard.package.rws) {
+    for (const month of months) revalidateTag(TAGS.sessions(rw.id, month));
+  }
   await rememberGuestLink(outcome.bookingCode, outcome.manageToken);
   await forgetPhoneProof();
   after(kickNotificationWorker);
@@ -196,6 +211,7 @@ export async function createBookingAction(
   try {
     const checked = await checkBooking(input);
     if (!checked.ok) return checked;
+    if (!(await isWithinIpLimit('booking_create:ip'))) return fail('RATE_LIMITED');
     const clientIp = clientIpFrom(await headers());
     const isHuman = await verifyTurnstile(
       checked.booking.values.turnstileToken,
@@ -205,7 +221,9 @@ export async function createBookingAction(
     const captchaFailed = copy.booking.otp.captchaFailed;
     if (!isHuman) return fail('VALIDATION', { turnstileToken: [captchaFailed] }, captchaFailed);
     const proof = await readPhoneProofCookie();
-    if (!isFresh(proof)) return ok({ kind: 'reverify' });
+    if (!isFresh(proof) || !provesShownContact(proof, checked.booking.shownContact)) {
+      return ok({ kind: 'reverify' });
+    }
     return ok(await submit(checked.booking, proof));
   } catch (error) {
     return submitFailure(error);

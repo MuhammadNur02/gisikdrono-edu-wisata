@@ -12,12 +12,12 @@ import { normalizeMobilePhone } from '@/lib/validations/normalize';
 // docs/PRD.md FR-BOOK-03 and FR-BOOK-05 (Task P3.1.01), shared by the booking wizard and createBookingAction. It carries
 // identifiers and quantities only: the server prices every line from database rows (docs/Security.md §3.2, PAY-03), so
 // a price, total or discount key is refused like any other key the schema does not name. The PIC's phone is not here
-// either: the action takes it from the cookie the WhatsApp OTP set, never from the form (docs/Security.md §4.1).
+// either: the action takes it from the cookie the WhatsApp OTP set, never from the form (docs/Security.md §4.1). Nor is
+// the privacy notice version, which the server records as the one it shows (review of PR #27, M2).
 
 const messages = copy.booking.validation;
 const limits = BOOKING_LIMITS;
 const PHONE_INPUT_MAX_LENGTH = 32;
-const CONSENT_VERSION_PATTERN = /^[0-9A-Za-z._-]+$/;
 // The SHA-256 hex of src/lib/pricing/quote-hash.ts, as the summary step hands it out.
 const QUOTE_HASH_PATTERN = /^[0-9a-f]{64}$/;
 
@@ -148,8 +148,8 @@ const addonFields = {
   addons: z.array(addonSchema).max(limits.addonLines, messages.addonLines(limits.addonLines)),
 };
 
-// Decision of 2026-10-22 on P3.5 (Q3, Q4): the visitor ticks that they read the privacy notice, whose version is
-// stored with the booking; no marketing consent is asked for, since nothing would use it.
+// Decision of 2026-10-22 on P3.5 (Q3, Q4): the visitor ticks that they read the privacy notice, whose version the
+// server stores with the booking; no marketing consent is asked for, since nothing would use it.
 const summaryFields = {
   privacyAccepted: z.literal(true, messages.privacyAccepted),
   turnstileToken: captchaTokenField,
@@ -163,7 +163,6 @@ export function createBookingSchema(maxPax: number) {
       ...bookerFields,
       ...addonFields,
       ...summaryFields,
-      consentVersion: z.string().max(limits.consentVersion).regex(CONSENT_VERSION_PATTERN),
       idempotencyKey: z.uuid().toLowerCase(),
       // The quote the visitor saw, which internal.create_booking compares with the one it prices (PRICE_MISMATCH).
       quoteHash: z.string(messages.quoteHash).regex(QUOTE_HASH_PATTERN, messages.quoteHash),
@@ -223,6 +222,25 @@ export const quotePreviewSchema = z
 export const BOOKING_MODES = ['pay', 'quote'] as const;
 export type BookingMode = (typeof BOOKING_MODES)[number];
 
+// Review of PR #27, M1: the contact the summary shows as verified, which proves nothing itself. createBookingAction
+// holds it against the gsk_phone cookie, which this browser's other tabs share, and asks for a new code when they
+// differ, so a booking is never made for a contact other than the one on screen.
+const shownContactSchema = z
+  .object({
+    channel: z.enum(['whatsapp', 'email']),
+    phone: picPhoneSchema,
+    email: emailField.nullable(),
+  })
+  .strict()
+  .nullable();
+
+export type ShownContact = z.output<typeof shownContactSchema>;
+
 export const bookingRequestSchema = z
-  .object({ mode: z.enum(BOOKING_MODES), packageSlug: slugSchema, booking: z.unknown() })
+  .object({
+    mode: z.enum(BOOKING_MODES),
+    packageSlug: slugSchema,
+    booking: z.unknown(),
+    shownContact: shownContactSchema,
+  })
   .strict();

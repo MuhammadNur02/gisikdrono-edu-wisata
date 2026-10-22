@@ -201,7 +201,7 @@ describe('svcCreateBooking', () => {
     mode: 'pay' as const,
     idempotencyKey: WIZARD_MOUNT,
     otpId: OTP_ID,
-    consentVersion: '2026-10-18',
+    consent: { version: '2026-10-18', guardianConsent: true },
     clientIp: '203.0.113.7',
     userAgent: 'Mozilla/5.0',
     quoteHash: 'f'.repeat(64),
@@ -214,6 +214,8 @@ describe('svcCreateBooking', () => {
       booking_code: 'GSK-7F3K9Q2M',
       status: 'pending_payment',
       expires_at: '2026-10-23T08:00:00+00:00',
+      visit_date: '2026-11-12',
+      visit_date_end: '2026-11-12',
     });
     await expect(svcCreateBooking(client, REQUEST)).resolves.toEqual({
       result: 'created',
@@ -221,6 +223,8 @@ describe('svcCreateBooking', () => {
       bookingCode: 'GSK-7F3K9Q2M',
       status: 'pending_payment',
       expiresAt: '2026-10-23T08:00:00+00:00',
+      visitDate: '2026-11-12',
+      visitDateEnd: '2026-11-12',
     });
     expect(requests[0]).toEqual({
       url: 'http://supabase.test/rest/v1/rpc/svc_create_booking',
@@ -241,7 +245,8 @@ describe('svcCreateBooking', () => {
         p_mode: 'pay',
         p_idempotency_key: REQUEST.idempotencyKey,
         p_otp_id: OTP_ID,
-        p_consent: { version: '2026-10-18' },
+        // The guardian's consent goes with the participant list (review of PR #27, L4).
+        p_consent: { version: '2026-10-18', guardian_consent: true },
         p_client_meta: { ip: '203.0.113.7', user_agent: 'Mozilla/5.0' },
         p_quote_hash: 'f'.repeat(64),
       },
@@ -255,6 +260,8 @@ describe('svcCreateBooking', () => {
       booking_code: 'GSK-7F3K9Q2M',
       status: 'quoted',
       expires_at: null,
+      visit_date: '2026-11-12',
+      visit_date_end: '2026-11-12',
     };
     await expect(
       svcCreateBooking(clientAnswering(200, quoted).client, REQUEST),
@@ -280,6 +287,8 @@ describe('svcCreateBooking', () => {
         booking_code: 'GSK-7F3K9Q2M',
         status,
         expires_at: null,
+        visit_date: '2026-11-12',
+        visit_date_end: '2026-11-12',
       };
       await expect(
         svcCreateBooking(clientAnswering(200, replay).client, REQUEST),

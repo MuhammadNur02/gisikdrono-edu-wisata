@@ -29,11 +29,14 @@ const UNIQUE_VIOLATION = '23505';
 const RAISED_EXCEPTION = 'P0001';
 
 // internal.* functions raise P0001 with one of these hints; each one is a business outcome, not a bug.
+// CONTACT_UNVERIFIED is the booking's own (review of PR #27, M1): booking-service.ts answers it by asking for a new
+// code, and anywhere else it reads as the state it was before it had a hint of its own.
 const CODE_BY_POSTGRES_HINT: Record<string, ActionErrorCode> = {
   QUOTA_UNAVAILABLE: 'QUOTA_EXCEEDED',
   STATE_INVALID: 'STATE_INVALID',
   PRICE_MISMATCH: 'PRICE_MISMATCH',
   RATE_LIMITED: 'RATE_LIMITED',
+  CONTACT_UNVERIFIED: 'STATE_INVALID',
 };
 
 export class AppError extends Error {
@@ -75,6 +78,12 @@ function isPostgresError(error: unknown): error is PostgresError {
   return (
     typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
   );
+}
+
+// The hint of a P0001 an internal.* function raised, for a service that answers one refusal itself.
+export function raisedHintOf(error: unknown): string | undefined {
+  if (!isPostgresError(error) || error.code !== RAISED_EXCEPTION) return undefined;
+  return error.hint ?? undefined;
 }
 
 function codeForPostgresError(error: PostgresError): ActionErrorCode | undefined {

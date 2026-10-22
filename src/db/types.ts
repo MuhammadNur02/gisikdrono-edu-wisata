@@ -553,6 +553,7 @@ export type Database = {
           email_verified_at: string | null
           expired_at: string | null
           expires_at: string | null
+          guardian_consented_at: string | null
           id: string
           idempotency_key: string | null
           institution_name: string | null
@@ -607,6 +608,7 @@ export type Database = {
           email_verified_at?: string | null
           expired_at?: string | null
           expires_at?: string | null
+          guardian_consented_at?: string | null
           id?: string
           idempotency_key?: string | null
           institution_name?: string | null
@@ -661,6 +663,7 @@ export type Database = {
           email_verified_at?: string | null
           expired_at?: string | null
           expires_at?: string | null
+          guardian_consented_at?: string | null
           id?: string
           idempotency_key?: string | null
           institution_name?: string | null
@@ -4422,6 +4425,10 @@ export type Database = {
       svc_rate_limit_hit: {
         Args: { p_key: string; p_limit: number; p_window_seconds: number }
         Returns: boolean
+      }
+      svc_rate_limit_refund: {
+        Args: { p_key: string; p_window_seconds: number }
+        Returns: undefined
       }
       svc_record_job_run: {
         Args: { p_error_code?: string; p_job: string; p_succeeded: boolean }

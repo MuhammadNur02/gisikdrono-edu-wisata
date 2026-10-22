@@ -13,6 +13,7 @@ import {
   namedRows,
   readDraft,
   sessionsOn,
+  shownContactOf,
   unbookableDatesBetween,
   type BookingDraft,
 } from './booking-wizard';
@@ -32,6 +33,8 @@ const COMBO: WizardPackage = {
 const WIZARD_MOUNT = '7d444840-9dc0-11d1-b245-5ffdce74fad2';
 const SESSION_RW05 = '0192f3a4-5b6c-7d8e-9f01-000000000005';
 const SESSION_RW13 = '0192f3a4-5b6c-7d8e-9f01-000000000013';
+const SAVED_AT = Date.UTC(2026, 9, 22, 8, 0);
+const HOUR_MS = 3_600_000;
 
 const COMPLETE: BookingDraft = {
   ...emptyDraft(COMBO),
@@ -44,6 +47,7 @@ const COMPLETE: BookingDraft = {
   picEmail: 'ani@sekolah.sch.id',
   contact: { channel: 'whatsapp', phone: '+6281234567890', email: null, verifiedAt: 1 },
   idempotencyKey: WIZARD_MOUNT,
+  savedAt: SAVED_AT,
 };
 
 function session(
@@ -67,7 +71,7 @@ function session(
 
 describe('readDraft', () => {
   it('starts an empty draft with one unchosen session per leg and the smallest group', () => {
-    expect(readDraft(null, COMBO)).toMatchObject({
+    expect(readDraft(null, COMBO, SAVED_AT)).toMatchObject({
       sessionIds: ['', ''],
       pax: 1,
       bookerType: null,
@@ -76,7 +80,14 @@ describe('readDraft', () => {
   });
 
   it('reads back a draft it wrote', () => {
-    expect(readDraft(JSON.stringify(COMPLETE), COMBO)).toEqual(COMPLETE);
+    expect(readDraft(JSON.stringify(COMPLETE), COMBO, SAVED_AT)).toEqual(COMPLETE);
+  });
+
+  // Review of PR #27, L5: a tab left open since the morning starts again, with a new form key.
+  it('reads back a draft for two hours after it was last saved, and starts again after', () => {
+    const stored = JSON.stringify(COMPLETE);
+    expect(readDraft(stored, COMBO, SAVED_AT + 2 * HOUR_MS)).toEqual(COMPLETE);
+    expect(readDraft(stored, COMBO, SAVED_AT + 2 * HOUR_MS + 1)).toEqual(emptyDraft(COMBO));
   });
 
   it.each([
@@ -86,8 +97,12 @@ describe('readDraft', () => {
       'a draft of another package shape',
       JSON.stringify({ ...COMPLETE, sessionIds: [SESSION_RW05] }),
     ],
+    [
+      'a draft that never said when it was saved',
+      JSON.stringify({ ...COMPLETE, savedAt: undefined }),
+    ],
   ])('starts again over %s', (_case, stored) => {
-    expect(readDraft(stored, COMBO)).toEqual(emptyDraft(COMBO));
+    expect(readDraft(stored, COMBO, SAVED_AT)).toEqual(emptyDraft(COMBO));
   });
 });
 
@@ -193,7 +208,8 @@ describe('bookingToSend', () => {
   const summary = { privacyAccepted: true as const, turnstileToken: 'XXXX.DUMMY.TOKEN.XXXX' };
   const QUOTE_HASH = 'f'.repeat(64);
 
-  it('sends identifiers, quantities and what was typed, with the privacy notice version, never a price', () => {
+  // Review of PR #27, M2: the server records the privacy notice version itself.
+  it('sends identifiers, quantities and what was typed, never a price or a privacy notice version', () => {
     const booking = bookingToSend(
       {
         ...COMPLETE,
@@ -218,7 +234,6 @@ describe('bookingToSend', () => {
       addons: [{ productId: SESSION_RW05, qty: 30, notes: null }],
       participants: [{ fullName: 'Budi Santoso', groupLabel: null, roleLabel: null }],
       guardianConsent: true,
-      consentVersion: '2026-10-18',
       privacyAccepted: true,
       idempotencyKey: COMPLETE.idempotencyKey,
       quoteHash: QUOTE_HASH,
@@ -245,5 +260,17 @@ describe('bookingToSend', () => {
     expect(bookingToSend(emailProof, COMBO, summary, QUOTE_HASH).picEmail).toBe(
       'ani@sekolah.sch.id',
     );
+  });
+});
+
+// Review of PR #27, M1: what the summary shows as verified, for createBookingAction to hold against the cookie.
+describe('shownContactOf', () => {
+  it('names the contact the draft shows as verified, or none', () => {
+    expect(shownContactOf(COMPLETE)).toEqual({
+      channel: 'whatsapp',
+      phone: '+6281234567890',
+      email: null,
+    });
+    expect(shownContactOf({ ...COMPLETE, contact: null })).toBeNull();
   });
 });

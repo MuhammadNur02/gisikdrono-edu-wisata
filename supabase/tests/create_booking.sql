@@ -73,7 +73,7 @@ as $$
     jsonb_build_object('booker_type', p_booker_type, 'institution_name',
                        case when p_booker_type = 'individual' then null else 'Sekolah Uji' end,
                        'pic_name', 'Tamu Uji', 'pic_phone', p_phone, 'pic_email', p_email, 'notes', null),
-    p_addons, p_participants, p_mode, p_channel, p_form_id, p_otp, '{"version": "2026-10-15"}', null,
+    p_addons, p_participants, p_mode, p_channel, p_form_id, p_otp, '{"version": "2026-10-15", "guardian_consent": true}', null,
     '{"ip": "203.0.113.7", "user_agent": "pgTAP"}',
     coalesce(p_hash, internal.booking_quote_hash(internal.booking_quote(p_package, p_pax, p_addons,
       array(select l.rw_id from public.tour_package_legs l where l.package_id = p_package order by l.leg_order)))));
@@ -267,7 +267,8 @@ select is((pg_temp.book('00000000-0000-4000-8000-0000000c1001', array['00000000-
     1, pg_temp.otp('+6281300000071'), '+6281300000071', 'tamu70@contoh.test')) ->> 'result', 'created',
   'another verified phone typing the same address is not capped by it');
 select is((pg_temp.book('00000000-0000-4000-8000-0000000c1001', array['00000000-0000-4000-8000-0000000c2001']::uuid[],
-    10, pg_temp.otp('+6281300000030'), '+6281300000030', 'tamu30@contoh.test')) - 'booking_code' - 'expires_at',
+    10, pg_temp.otp('+6281300000030'), '+6281300000030', 'tamu30@contoh.test'))
+    - 'booking_code' - 'expires_at' - 'visit_date' - 'visit_date_end',
   jsonb_build_object('result', 'duplicate', 'booking_id', (select id from hold), 'status', 'pending_payment'),
   'the same phone for the same session is the hold it already has: a duplicate, its link to be sent again');
 select is((select count(*)::int from public.bookings where pic_phone = '+6281300000030'), 1, 'no second booking');
@@ -287,10 +288,12 @@ select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1001',
     array['00000000-0000-4000-8000-0000000c2002']::uuid[], 1, null, '+6281300000080', 'tamu80@contoh.test',
     p_form_id => 'f8c3de3d-1fea-4d7c-a8b0-29f63c4c3454')$$,
   'P0001', 'the PIC''s contact is not verified', 'a replay without a code gets nothing back');
-select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1001',
-    array['00000000-0000-4000-8000-0000000c2002']::uuid[], 1, pg_temp.otp('+6281300000080'), '+6281300000080',
-    'tamu80@contoh.test', p_form_id => 'f8c3de3d-1fea-4d7c-a8b0-29f63c4c3454')$$,
-  'P0001', 'the PIC''s contact is not verified', 'nor one with another code of the same phone');
+-- Independent review of PR #27, M1: a fresh code of the booking's own number proves the same contact the first one
+-- did, so a form whose answer was lost opens its booking instead of failing for ever.
+select is((pg_temp.book('00000000-0000-4000-8000-0000000c1001', array['00000000-0000-4000-8000-0000000c2002']::uuid[],
+    1, pg_temp.otp('+6281300000080'), '+6281300000080', 'tamu80@contoh.test',
+    p_form_id => 'f8c3de3d-1fea-4d7c-a8b0-29f63c4c3454')) ->> 'result', 'existing',
+  'one with a fresh code of the booking''s own number opens it too');
 select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1001',
     array['00000000-0000-4000-8000-0000000c2002']::uuid[], 1, pg_temp.otp('+6281300000081'), '+6281300000081',
     'tamu81@contoh.test', p_form_id => 'f8c3de3d-1fea-4d7c-a8b0-29f63c4c3454')$$,

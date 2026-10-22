@@ -164,6 +164,19 @@ export function svcRateLimitHit(
   );
 }
 
+// Takes one hit off the key's current window, never below none (review of PR #27, L2).
+export function svcRateLimitRefund(
+  adminClient: DatabaseClient,
+  refund: { key: string; windowSeconds: number },
+): Promise<void> {
+  return resultOf(
+    adminClient.rpc('svc_rate_limit_refund', {
+      p_key: refund.key,
+      p_window_seconds: refund.windowSeconds,
+    }),
+  );
+}
+
 // True when the caller now holds the booklet's page claim: none existed, or the one there is older than
 // holdSeconds (docs/Security.md §8.4; security review of PR #14, N4). rwId NULL is a kelurahan booklet.
 export function svcClaimBookletPages(

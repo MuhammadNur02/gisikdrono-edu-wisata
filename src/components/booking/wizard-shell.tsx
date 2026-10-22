@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
@@ -9,6 +10,7 @@ import { STEP_HEADING_ID, type WizardStepProps } from '@/components/booking/wiza
 import { FormAlert } from '@/components/forms/form-alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SESSION_REFRESH_MS } from '@/config/booking';
+import { GUEST_LOOKUP_PATH } from '@/config/guest';
 import { BOOKING_STEPS, type BookingStep } from '@/config/site';
 import { useBookingDraft } from '@/hooks/use-booking-draft';
 import { useQuotePreview, type QuotePreviewState } from '@/hooks/use-quote-preview';
@@ -83,7 +85,9 @@ function useWizardStep() {
   return { step, open };
 }
 
-// docs/PRD.md FR-BOOK-02: the seats left, read again through the server every 15 s while the visitor chooses.
+// docs/PRD.md FR-BOOK-02: the seats left, read again through the server every 15 s while the visitor chooses. A read
+// that is refused (the per-IP limit) or fails leaves the last seats on screen, marked as perhaps out of date (review
+// of PR #27, L7).
 function useLiveSessions(
   actions: WizardActions,
   packageSlug: string,
@@ -91,12 +95,19 @@ function useLiveSessions(
   isActive: boolean,
 ) {
   const [legs, setLegs] = useState(initialLegs);
+  const [isStale, setIsStale] = useState(false);
   useEffect(() => {
     if (!isActive) return undefined;
     const read = () => {
-      void actions.listSessions({ packageSlug }).then((result) => {
-        if (result.ok) setLegs(result.data);
-      });
+      actions.listSessions({ packageSlug }).then(
+        (result) => {
+          if (result.ok) setLegs(result.data);
+          setIsStale(!result.ok);
+        },
+        () => {
+          setIsStale(true);
+        },
+      );
     };
     read();
     const timer = setInterval(read, SESSION_REFRESH_MS);
@@ -104,7 +115,7 @@ function useLiveSessions(
       clearInterval(timer);
     };
   }, [actions, packageSlug, isActive]);
-  return legs;
+  return { legs, isStale };
 }
 
 // Each step opens with its heading in focus and at the top of the page, so the keyboard and the screen reader start
@@ -130,6 +141,22 @@ function TotalBar({ preview }: { preview: QuotePreviewState }) {
   );
 }
 
+// Review of PR #27, L5: the visitor already holds an unpaid hold for this, whose link just went to them again, so the
+// draft is gone and the wizard says so instead of a step.
+function ResentPanel() {
+  return (
+    <FormAlert tone="info">
+      <p className="font-medium">{text.summary.resentTitle}</p>
+      <p className="mt-1">{text.summary.resent}</p>
+      <p className="mt-2">
+        <Link href={GUEST_LOOKUP_PATH} className="text-primary-text underline underline-offset-4">
+          {text.summary.resentLookup}
+        </Link>
+      </p>
+    </FormAlert>
+  );
+}
+
 function WizardSkeleton() {
   return (
     <div className="space-y-4" aria-busy>
@@ -139,13 +166,30 @@ function WizardSkeleton() {
   );
 }
 
+// How the wizard ends, the draft gone either way: a booking made, whose next page the browser opens (decision on
+// P3.5, Q1), or a hold the visitor already had, whose link went to them again (review of PR #27, L5).
+function useWizardEnding(clear: () => void) {
+  const router = useRouter();
+  const [bookedUrl, setBookedUrl] = useState<string | null>(null);
+  const [isResent, setIsResent] = useState(false);
+  const onBooked = (nextUrl: string) => {
+    setBookedUrl(nextUrl);
+    clear();
+    router.push(nextUrl);
+  };
+  const onResent = () => {
+    setIsResent(true);
+    clear();
+  };
+  return { bookedUrl, isResent, isFinished: bookedUrl !== null || isResent, onBooked, onResent };
+}
+
 // Everything the steps share: the draft, the step in the address, the seats left, the quote, and the booking made.
 function useWizardFlow({ wizardPackage, initialLegs, actions }: WizardShellProps) {
-  const router = useRouter();
   const { draft, update, clear } = useBookingDraft(wizardPackage);
   const { step, open } = useWizardStep();
-  const [bookedUrl, setBookedUrl] = useState<string | null>(null);
-  const legs = useLiveSessions(actions, wizardPackage.slug, initialLegs, step === 'jadwal');
+  const ending = useWizardEnding(clear);
+  const sessions = useLiveSessions(actions, wizardPackage.slug, initialLegs, step === 'jadwal');
   const pricesNow = draft !== null && (step === 'tambahan' || step === 'ringkasan');
   const quote = useQuotePreview(
     actions.previewQuote,
@@ -155,16 +199,11 @@ function useWizardFlow({ wizardPackage, initialLegs, actions }: WizardShellProps
   useStepFocus(step);
   usePreloadedSteps();
   useEffect(() => {
-    if (draft && bookedUrl === null && stepIndex(step) > stepIndex(reachable))
+    if (draft && !ending.isFinished && stepIndex(step) > stepIndex(reachable)) {
       open(reachable, 'replace');
+    }
   });
-  // The draft goes once the booking is made, and the browser opens the booking's next page (decision on P3.5, Q1).
-  const onBooked = (nextUrl: string) => {
-    setBookedUrl(nextUrl);
-    clear();
-    router.push(nextUrl);
-  };
-  return { draft, update, step, open, legs, quote, reachable, bookedUrl, onBooked };
+  return { ...ending, draft, update, step, open, sessions, quote, reachable };
 }
 
 type WizardFlow = ReturnType<typeof useWizardFlow>;
@@ -198,7 +237,11 @@ function CurrentStep(props: WizardShellProps & { flow: WizardFlow; draft: Bookin
   const openStep = (target: BookingStep) => {
     flow.open(target);
   };
-  if (flow.step === 'jadwal') return <SessionPickerStep {...stepProps} legs={flow.legs} />;
+  if (flow.step === 'jadwal') {
+    return (
+      <SessionPickerStep {...stepProps} legs={flow.sessions.legs} isStale={flow.sessions.isStale} />
+    );
+  }
   if (flow.step === 'data') return <BookerFormStep {...stepProps} actions={actions} />;
   if (flow.step === 'tambahan') {
     return <AddonsStep {...stepProps} addons={addons} preview={flow.quote.state} />;
@@ -207,11 +250,12 @@ function CurrentStep(props: WizardShellProps & { flow: WizardFlow; draft: Bookin
     <SummaryStep
       {...stepProps}
       actions={actions}
-      legs={flow.legs}
+      legs={flow.sessions.legs}
       preview={flow.quote.state}
       refreshPreview={flow.quote.refresh}
       onOpen={openStep}
       onBooked={flow.onBooked}
+      onResent={flow.onResent}
     />
   );
 }
@@ -221,6 +265,7 @@ function CurrentStep(props: WizardShellProps & { flow: WizardFlow; draft: Bookin
 export function WizardShell(props: WizardShellProps) {
   const flow = useWizardFlow(props);
   if (flow.bookedUrl !== null) return <FormAlert tone="info">{text.summary.redirecting}</FormAlert>;
+  if (flow.isResent) return <ResentPanel />;
   if (flow.draft === null) return <WizardSkeleton />;
   const index = stepIndex(flow.step);
   const invalid = BOOKING_STEPS.filter(
