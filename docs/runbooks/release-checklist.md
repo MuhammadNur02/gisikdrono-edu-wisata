@@ -28,3 +28,10 @@ A migration that stops is a release that stops: fix its cause, never edit an app
   - `/rw-13-kampung-budaya-seni` and `/rw-08-inklusif-ramah-anak` answer 200.
   - `/rw-08-kampung-seni-budaya` answers 308 to RW 13.
   - `select id, slug, is_active, sort_order from public.rw_units order by sort_order` reads 5, 13, 8, all online.
+
+### Task P3.5: the booking wizard (`/pesan/[packageSlug]`, PR #27; `20261022140000_booking_wizard_review.sql`)
+
+- **`booking_enabled` is off on every database** (`20261023090000`, second review of PR #27, N1) until Task P3.7.03 (`/reservasi/[bookingCode]/bayar`) and Task P3.12.01 (`/reservasi/[bookingCode]`) are released, when the later of the two turns it on again in a migration. Nobody turns it on by hand before that. A hold sends the visitor to its pay page and a quotation to its status page; until then both answer 404, while the hold keeps its seats until it lapses (independent review of PR #27, rollout note).
+  - Check: `select value from public.site_settings where key = 'booking_enabled'` reads `false`. While it does, the wizard says that booking is closed, and `createBookingAction` books nothing.
+  - A trial on staging may open it by hand with the superadmin's fresh TOTP (`site_settings_fresh_totp_update`), and closes it again afterwards.
+- **Migrate before the deploy.** The new code reads `visit_date` and `visit_date_end` from the reply of `internal.create_booking`, and refunds limits through `public.svc_rate_limit_refund`. Against the older database every booking would fail the reply check.

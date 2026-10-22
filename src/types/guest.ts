@@ -13,3 +13,16 @@ export type OtpRequestAnswer =
 export interface OtpVerifyAnswer {
   channel: OtpChannel;
 }
+
+// The contact a code proved: the WhatsApp number, or while WhatsApp is limited the address beside the typed number.
+export interface VerifiedContact {
+  channel: OtpChannel;
+  phone: string;
+  email: string | null;
+}
+
+// What the booking wizard keeps of it in its draft (Task P3.5.02): never the code, only when it was proved, since the
+// summary asks again after eight minutes (decision of 2026-10-22 on P3.5, Q2).
+export interface ProvenContact extends VerifiedContact {
+  verifiedAt: number;
+}

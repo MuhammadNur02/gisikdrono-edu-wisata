@@ -1,5 +1,5 @@
--- Reference data of 0008_seed and 20261022080000 (docs/PRD.md §8.6, assumption A4, Tasks P1.8.01, P2.10.03) and
--- the development seed guard
+-- Reference data of 0008_seed, 20261022080000 and 20261023090000 (docs/PRD.md §8.6, assumption A4, Tasks P1.8.01,
+-- P2.10.03, P3.5.04) and the development seed guard
 -- (Task P1.8.02, security review of PR #5). Vault secrets are written and removed inside the suite's own transaction.
 begin;
 select plan(21);
@@ -35,8 +35,8 @@ select is(
 select is(
   (select string_agg(key || '=' || value, ', ' order by key)
    from public.site_settings where key in ('booking_enabled', 'maintenance_mode', 'rate_limit_profile')),
-  'booking_enabled=true, maintenance_mode=false, rate_limit_profile="normal"',
-  'booking opens with the normal rate-limit profile and no maintenance notice'
+  'booking_enabled=false, maintenance_mode=false, rate_limit_profile="normal"',
+  'booking stays closed until the guest pages exist (review of PR #27, N1), with the normal rate-limit profile and no maintenance notice'
 );
 
 -- ===== Revenue-share defaults (A4) =====

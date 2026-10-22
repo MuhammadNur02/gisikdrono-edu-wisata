@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Database } from '@/db/types';
 import type { RateLimitRule } from '@/types/rate-limit';
 
-import { isFirstRefusal, rateLimitKey, withinRateLimits } from './rate-limit';
+import { isFirstRefusal, rateLimitKey, refundRateLimits, withinRateLimits } from './rate-limit';
 import { sandboxEnv } from '../../tests/fixtures/env';
 
 // Booking creation (Task P3.4.02) brings the first fail-open limit; until then booklet:download plays that part
@@ -21,13 +21,15 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 type Hit = { p_key: string; p_limit: number; p_window_seconds: number };
+type Refund = { p_key: string; p_window_seconds: number };
 
 const OFFICER_ID = '00000000-0000-4000-8000-000000000005';
 
-// A real typed client whose fetch plays PostgREST: site_settings answers the profile, and svc_rate_limit_hit
-// counts hits per key the way internal.rate_limit_hit does within one window.
+// A real typed client whose fetch plays PostgREST: site_settings answers the profile, svc_rate_limit_hit counts
+// hits per key the way internal.rate_limit_hit does within one window, and svc_rate_limit_refund gives one back.
 function limiterClient(options: { profile?: string; isDown?: boolean } = {}) {
   const hits: Hit[] = [];
+  const refunds: Refund[] = [];
   const counts = new Map<string, number>();
   const reply = (status: number, body: unknown) =>
     Promise.resolve(new Response(JSON.stringify(body), { status }));
@@ -37,7 +39,14 @@ function limiterClient(options: { profile?: string; isDown?: boolean } = {}) {
     if (url.pathname === '/rest/v1/site_settings') {
       return reply(200, options.profile === undefined ? [] : [{ value: options.profile }]);
     }
-    const hit = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as Hit;
+    const body = typeof init?.body === 'string' ? init.body : '{}';
+    if (url.pathname === '/rest/v1/rpc/svc_rate_limit_refund') {
+      const refund = JSON.parse(body) as Refund;
+      refunds.push(refund);
+      counts.set(refund.p_key, Math.max((counts.get(refund.p_key) ?? 0) - 1, 0));
+      return reply(204, null);
+    }
+    const hit = JSON.parse(body) as Hit;
     hits.push(hit);
     const count = (counts.get(hit.p_key) ?? 0) + 1;
     counts.set(hit.p_key, count);
@@ -47,7 +56,7 @@ function limiterClient(options: { profile?: string; isDown?: boolean } = {}) {
     auth: { persistSession: false, autoRefreshToken: false },
     global: { fetch: fakeFetch },
   });
-  return { client, hits };
+  return { client, hits, refunds };
 }
 
 describe('rateLimitKey', () => {
@@ -161,5 +170,30 @@ describe('isFirstRefusal', () => {
       p_limit: 1,
       p_window_seconds: 3600,
     });
+  });
+});
+
+// Review of PR #27, L2: a refusal the visitor could not have avoided gives its hits back.
+describe('refundRateLimits', () => {
+  it('gives back the hit each check counted, so a used-up window fits one more request', async () => {
+    const { client, refunds } = limiterClient();
+    const checks = [{ name: 'upload_forbidden', subject: OFFICER_ID }] as const;
+    for (let attempt = 0; attempt < 10; attempt += 1) await withinRateLimits(client, checks);
+
+    await refundRateLimits(client, checks);
+
+    expect(refunds).toEqual([
+      { p_key: rateLimitKey('upload_forbidden', OFFICER_ID), p_window_seconds: 3600 },
+    ]);
+    await expect(withinRateLimits(client, checks)).resolves.toBe(true);
+    await expect(withinRateLimits(client, checks)).resolves.toBe(false);
+  });
+
+  it('leaves the counts as they are when the database cannot answer, without failing the request', async () => {
+    const { client } = limiterClient({ isDown: true });
+
+    await expect(
+      refundRateLimits(client, [{ name: 'upload_sign', subject: OFFICER_ID }]),
+    ).resolves.toBeUndefined();
   });
 });

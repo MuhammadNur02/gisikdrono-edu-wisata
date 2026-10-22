@@ -12,8 +12,10 @@ export const metadata: Metadata = { title: text.title };
 // docs/PRD.md FR-BOOK-16, Task P3.3.03: sends a link again and never shows a booking.
 export default function BookingLookupPage() {
   return (
-    <AuthCard title={text.title} description={text.description}>
-      <BookingLookupForm action={lookupBookingAction} />
-    </AuthCard>
+    <div className="w-full max-w-md sm:my-auto">
+      <AuthCard title={text.title} description={text.description}>
+        <BookingLookupForm action={lookupBookingAction} />
+      </AuthCard>
+    </div>
   );
 }

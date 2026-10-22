@@ -17,11 +17,13 @@ export const metadata: Metadata = { title: 'Coba kode WhatsApp (lokal)' };
 export default function DevOtpPage() {
   if (!isLocalDevelopment()) notFound();
   return (
-    <AuthCard
-      title="Coba kode WhatsApp"
-      description={`Halaman ini hanya ada di server pengembangan lokal. Kode tidak dikirim ke WhatsApp; bacalah di Mailpit (${LOCAL_MAILPIT_URL}).`}
-    >
-      <PhoneOtpField requestAction={requestPhoneOtpAction} verifyAction={verifyPhoneOtpAction} />
-    </AuthCard>
+    <div className="w-full max-w-md sm:my-auto">
+      <AuthCard
+        title="Coba kode WhatsApp"
+        description={`Halaman ini hanya ada di server pengembangan lokal. Kode tidak dikirim ke WhatsApp; bacalah di Mailpit (${LOCAL_MAILPIT_URL}).`}
+      >
+        <PhoneOtpField requestAction={requestPhoneOtpAction} verifyAction={verifyPhoneOtpAction} />
+      </AuthCard>
+    </div>
   );
 }

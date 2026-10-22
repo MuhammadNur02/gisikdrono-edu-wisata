@@ -1,5 +1,8 @@
+import { bookingWizardCopy } from '@/lib/copy/booking-wizard';
+
 // The booking wizard (docs/PRD.md FR-BOOK-01…05), read through copy.booking in src/lib/copy/id.ts.
 export const bookingCopy = {
+  wizard: bookingWizardCopy,
   validation: {
     sessions: 'Pilih satu sesi untuk setiap RW yang dikunjungi, ya.',
     visitDate: 'Pilih tanggal kunjungan yang benar.',
@@ -18,6 +21,7 @@ export const bookingCopy = {
     participantsOverPax:
       'Daftar peserta lebih banyak dari jumlah peserta. Tambah jumlah peserta atau hapus beberapa nama.',
     guardianConsent: 'Centang persetujuan orang tua atau wali untuk daftar peserta ini, ya.',
+    privacyAccepted: 'Centang dulu bahwa Anda telah membaca Pemberitahuan Privasi, ya.',
     // The summary's quote hash is not typed by anyone: without it the summary was not loaded, or is from another tab.
     quoteHash:
       'Ringkasan pesanan perlu dimuat ulang. Buka lagi langkah ringkasan, lalu kirim pesanan.',

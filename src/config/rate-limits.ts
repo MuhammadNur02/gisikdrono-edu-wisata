@@ -45,6 +45,14 @@ export const RATE_LIMITS = {
   'booking:phone': { limit: 5, windowSeconds: 86400, whenUnavailable: 'fail-open' },
   'booking:email': { limit: 5, windowSeconds: 86400, whenUnavailable: 'fail-open' },
   'booking:ip+ua': { limit: 10, windowSeconds: 86400, whenUnavailable: 'fail-open' },
+  // Every "Konfirmasi & Bayar" or "Minta Surat Penawaran" sent from one IP, counted right after the form is read and
+  // before Turnstile, so a burst of submits reaches neither siteverify nor the database (review of PR #27, L1).
+  'booking_create:ip': { limit: 20, windowSeconds: 900, whenUnavailable: 'fail-closed' },
+  // The wizard's read-only answers (Task P3.5.01, P3.5.03): the seats left every 15 s and the quote as add-ons change.
+  // They show what the database already says, so a refusal costs the visitor a refresh, never a booking. A school lab
+  // or a kampung behind one IP has several visitors choosing at once (review of PR #27, L7).
+  'session_availability:ip': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
+  'quote_preview:ip': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitName = keyof typeof RATE_LIMITS;

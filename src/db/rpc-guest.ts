@@ -153,7 +153,8 @@ export function svcRevokeGuestLinks(
 const BOOKING_CODE = /^GSK-[0-9A-HJKMNP-TV-Z]{8}$/;
 
 // A form sent again answers with its booking as it stands by now, which may be paid, expired or cancelled already
-// (independent review of PR #26, L6).
+// (independent review of PR #26, L6). The visit days are the booking's own, for the sessions to revalidate (review of
+// PR #27, L3).
 const bookingReplySchema = z.union([
   z.strictObject({
     result: z.enum(['created', 'existing', 'duplicate']),
@@ -161,6 +162,8 @@ const bookingReplySchema = z.union([
     booking_code: z.string().regex(BOOKING_CODE),
     status: z.enum(DB_ENUMS.booking_status),
     expires_at: z.string().nullable(),
+    visit_date: z.iso.date(),
+    visit_date_end: z.iso.date(),
   }),
   z.strictObject({ result: z.literal('pay_to_confirm') }),
 ]);
@@ -172,6 +175,8 @@ export type BookingReply =
       bookingCode: string;
       status: Enums['booking_status'];
       expiresAt: string | null;
+      visitDate: string;
+      visitDateEnd: string;
     }
   | { result: 'pay_to_confirm' };
 
@@ -194,7 +199,8 @@ export interface BookingToCreate {
   mode: 'pay' | 'quote';
   idempotencyKey: string;
   otpId: string;
-  consentVersion: string;
+  // The privacy notice this server shows (review of PR #27, M2) and the guardians' consent to the participant list.
+  consent: { version: string; guardianConsent: boolean };
   clientIp: string | null;
   userAgent: string;
   quoteHash: string;
@@ -227,7 +233,10 @@ function bookingArgs(booking: BookingToCreate) {
     p_mode: booking.mode,
     p_idempotency_key: booking.idempotencyKey,
     p_otp_id: booking.otpId,
-    p_consent: { version: booking.consentVersion },
+    p_consent: {
+      version: booking.consent.version,
+      guardian_consent: booking.consent.guardianConsent,
+    },
     p_client_meta: { ip: booking.clientIp, user_agent: booking.userAgent },
     p_quote_hash: booking.quoteHash,
   };
@@ -249,5 +258,7 @@ export async function svcCreateBooking(
     bookingCode: reply.booking_code,
     status: reply.status,
     expiresAt: reply.expires_at,
+    visitDate: reply.visit_date,
+    visitDateEnd: reply.visit_date_end,
   };
 }

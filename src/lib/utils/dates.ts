@@ -99,6 +99,16 @@ export function calendarDateToVisitDate(date: Date): string {
   return format(date, VISIT_DATE_FORMAT);
 }
 
+// The instant a session starts: its date and its Semarang wall time ('08:30:00').
+export function sessionStartsAt(sessionDate: string, startTime: string): Date {
+  const [year, monthIndex, day] = parseVisitDateParts(sessionDate);
+  const match = SESSION_TIME_PATTERN.exec(startTime);
+  if (!match) throw new RangeError(`Not a session time: ${startTime}`);
+  return new Date(
+    new TZDate(year, monthIndex, day, Number(match[1]), Number(match[2]), APP_TZ).getTime(),
+  );
+}
+
 export interface BookingWindowRules {
   now: Date;
   minLeadHours: number;

@@ -57,5 +57,6 @@ export const TURNSTILE_ACTIONS = {
   otpRequest: 'otp_request',
   otpEmail: 'otp_email',
   bookingLookup: 'booking_lookup',
+  bookingCreate: 'booking_create',
 } as const;
 export type TurnstileAction = (typeof TURNSTILE_ACTIONS)[keyof typeof TURNSTILE_ACTIONS];

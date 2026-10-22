@@ -5,19 +5,19 @@ import { DB_ENUMS, type EnumValue } from '@/db/enums';
 import { copy } from '@/lib/copy/id';
 import { MOBILE_PHONE_PATTERN } from '@/lib/utils/phone';
 import { captchaTokenField, emailField } from '@/lib/validations/auth';
-import { rowIdSchema } from '@/lib/validations/content';
+import { rowIdSchema, slugSchema } from '@/lib/validations/content';
 import { freeTextSchema, optionalFreeTextSchema } from '@/lib/validations/free-text';
 import { normalizeMobilePhone } from '@/lib/validations/normalize';
 
 // docs/PRD.md FR-BOOK-03 and FR-BOOK-05 (Task P3.1.01), shared by the booking wizard and createBookingAction. It carries
 // identifiers and quantities only: the server prices every line from database rows (docs/Security.md §3.2, PAY-03), so
 // a price, total or discount key is refused like any other key the schema does not name. The PIC's phone is not here
-// either: the action takes it from the cookie the WhatsApp OTP set, never from the form (docs/Security.md §4.1).
+// either: the action takes it from the cookie the WhatsApp OTP set, never from the form (docs/Security.md §4.1). Nor is
+// the privacy notice version, which the server records as the one it shows (review of PR #27, M2).
 
 const messages = copy.booking.validation;
 const limits = BOOKING_LIMITS;
 const PHONE_INPUT_MAX_LENGTH = 32;
-const CONSENT_VERSION_PATTERN = /^[0-9A-Za-z._-]+$/;
 // The SHA-256 hex of src/lib/pricing/quote-hash.ts, as the summary step hands it out.
 const QUOTE_HASH_PATTERN = /^[0-9a-f]{64}$/;
 
@@ -67,74 +67,180 @@ const addonSchema = z
   })
   .strict();
 
-interface BookingRules {
-  bookerType: EnumValue<'booker_type'>;
-  institutionName: string | null;
-  pax: number;
-  addons: { productId: string }[];
-  participants: unknown[];
-  guardianConsent: boolean;
+// A group other than an individual names its institution (FR-BOOK-03).
+function requireInstitution(
+  booker: { bookerType: EnumValue<'booker_type'>; institutionName: string | null },
+  context: z.RefinementCtx,
+): void {
+  if (booker.bookerType !== 'individual' && booker.institutionName === null) {
+    context.addIssue({
+      code: 'custom',
+      path: ['institutionName'],
+      message: messages.institutionName,
+    });
+  }
 }
 
-// Rules across fields. A group other than an individual names its institution (FR-BOOK-03); a participant list needs
-// the guardian's consent, since many participants are children (docs/Security.md PDP-01).
-function checkAcrossFields(booking: BookingRules, context: z.RefinementCtx): void {
-  const refuse = (field: keyof BookingRules, message: string) => {
-    context.addIssue({ code: 'custom', path: [field], message });
-  };
-  if (booking.bookerType !== 'individual' && booking.institutionName === null) {
-    refuse('institutionName', messages.institutionName);
+// No more names than visitors, and a participant list needs the guardian's consent, since many participants are
+// children (docs/Security.md PDP-01).
+function checkParticipants(
+  booking: { pax: number; participants: unknown[]; guardianConsent: boolean },
+  context: z.RefinementCtx,
+): void {
+  if (booking.participants.length > booking.pax) {
+    context.addIssue({
+      code: 'custom',
+      path: ['participants'],
+      message: messages.participantsOverPax,
+    });
   }
-  if (hasRepeats(booking.addons.map((addon) => addon.productId))) {
-    refuse('addons', messages.addonRepeated);
-  }
-  if (booking.participants.length > booking.pax)
-    refuse('participants', messages.participantsOverPax);
   if (booking.participants.length > 0 && !booking.guardianConsent) {
-    refuse('guardianConsent', messages.guardianConsent);
+    context.addIssue({
+      code: 'custom',
+      path: ['guardianConsent'],
+      message: messages.guardianConsent,
+    });
+  }
+}
+
+function refuseRepeatedAddons(
+  booking: { addons: { productId: string }[] },
+  context: z.RefinementCtx,
+) {
+  if (hasRepeats(booking.addons.map((addon) => addon.productId))) {
+    context.addIssue({ code: 'custom', path: ['addons'], message: messages.addonRepeated });
   }
 }
 
 // pax runs up to site_settings `booking.max_pax`, which the page reads and hands in, like freeTextSchema's length.
 // The package's own min_pax..max_pax is checked by computeBookingQuote, which has the package row.
-export function createBookingSchema(maxPax: number) {
+function scheduleFields(maxPax: number) {
   const paxMessage = messages.pax(maxPax);
+  return {
+    visitSessionIds: z
+      .array(rowIdSchema)
+      .min(1, messages.sessions)
+      .max(limits.sessions, messages.sessions)
+      .refine((ids) => !hasRepeats(ids), messages.sessions),
+    visitDate: z.iso.date(messages.visitDate),
+    pax: z.int(paxMessage).min(1, paxMessage).max(maxPax, paxMessage),
+  };
+}
+
+const bookerFields = {
+  bookerType: z.enum(DB_ENUMS.booker_type),
+  institutionName: optionalFreeTextSchema(limits.institutionName, {
+    tooLong: messages.tooLong(limits.institutionName),
+  }),
+  picName: freeTextSchema(limits.picName, {
+    required: messages.picName,
+    tooLong: messages.tooLong(limits.picName),
+  }),
+  picEmail: emailField,
+  notes: optionalFreeTextSchema(limits.notes, { tooLong: messages.tooLong(limits.notes) }),
+  participants: z
+    .array(participantSchema)
+    .max(limits.participants, messages.participants(limits.participants)),
+  guardianConsent: z.boolean(),
+};
+
+const addonFields = {
+  addons: z.array(addonSchema).max(limits.addonLines, messages.addonLines(limits.addonLines)),
+};
+
+// Decision of 2026-10-22 on P3.5 (Q3, Q4): the visitor ticks that they read the privacy notice, whose version the
+// server stores with the booking; no marketing consent is asked for, since nothing would use it.
+const summaryFields = {
+  privacyAccepted: z.literal(true, messages.privacyAccepted),
+  turnstileToken: captchaTokenField,
+};
+
+export function createBookingSchema(maxPax: number) {
   return z
     .object({
       packageId: rowIdSchema,
-      visitSessionIds: z
-        .array(rowIdSchema)
-        .min(1, messages.sessions)
-        .max(limits.sessions, messages.sessions)
-        .refine((ids) => !hasRepeats(ids), messages.sessions),
-      visitDate: z.iso.date(messages.visitDate),
-      pax: z.int(paxMessage).min(1, paxMessage).max(maxPax, paxMessage),
-      bookerType: z.enum(DB_ENUMS.booker_type),
-      institutionName: optionalFreeTextSchema(limits.institutionName, {
-        tooLong: messages.tooLong(limits.institutionName),
-      }),
-      picName: freeTextSchema(limits.picName, {
-        required: messages.picName,
-        tooLong: messages.tooLong(limits.picName),
-      }),
-      picEmail: emailField,
-      notes: optionalFreeTextSchema(limits.notes, { tooLong: messages.tooLong(limits.notes) }),
-      addons: z.array(addonSchema).max(limits.addonLines, messages.addonLines(limits.addonLines)),
-      participants: z
-        .array(participantSchema)
-        .max(limits.participants, messages.participants(limits.participants)),
-      guardianConsent: z.boolean(),
-      consentVersion: z.string().max(limits.consentVersion).regex(CONSENT_VERSION_PATTERN),
-      marketingOptIn: z.boolean().default(false),
+      ...scheduleFields(maxPax),
+      ...bookerFields,
+      ...addonFields,
+      ...summaryFields,
       idempotencyKey: z.uuid().toLowerCase(),
       // The quote the visitor saw, which internal.create_booking compares with the one it prices (PRICE_MISMATCH).
       quoteHash: z.string(messages.quoteHash).regex(QUOTE_HASH_PATTERN, messages.quoteHash),
-      turnstileToken: captchaTokenField,
     })
     .strict()
-    .superRefine(checkAcrossFields);
+    .superRefine((booking, context) => {
+      requireInstitution(booking, context);
+      refuseRepeatedAddons(booking, context);
+      checkParticipants(booking, context);
+    });
 }
 
 type CreateBookingSchema = ReturnType<typeof createBookingSchema>;
 export type CreateBookingInput = z.input<CreateBookingSchema>;
 export type CreateBookingValues = z.output<CreateBookingSchema>;
+
+// Task P3.5.01: one slice per wizard step, each a part of createBookingSchema, which createBookingAction checks whole.
+export function scheduleStepSchema(maxPax: number) {
+  return z.object(scheduleFields(maxPax)).strict();
+}
+
+// The group size comes from the jadwal step, since the participant list may not outgrow it.
+export function bookerStepSchema(pax: number) {
+  return z
+    .object(bookerFields)
+    .strict()
+    .superRefine((booker, context) => {
+      requireInstitution(booker, context);
+      checkParticipants({ ...booker, pax }, context);
+    });
+}
+
+export const addonsStepSchema = z.object(addonFields).strict().superRefine(refuseRepeatedAddons);
+
+export const summaryStepSchema = z.object(summaryFields).strict();
+
+// What the wizard's three actions are asked (Task P3.5.01, P3.5.03, P3.5.04). The package is named by its slug, as
+// in the address. createBookingAction checks the booking itself with createBookingSchema once it has read the
+// package's booking.max_pax.
+export const packageRequestSchema = z.object({ packageSlug: slugSchema }).strict();
+
+export const quotePreviewSchema = z
+  .object({
+    packageSlug: slugSchema,
+    // The package's own min_pax..max_pax is the quote's answer to give, not a refusal.
+    pax: z.int().positive(),
+    addons: z
+      .array(
+        z
+          .object({ productId: rowIdSchema, qty: z.int().min(1).max(limits.addonQuantity) })
+          .strict(),
+      )
+      .max(limits.addonLines),
+  })
+  .strict();
+
+export const BOOKING_MODES = ['pay', 'quote'] as const;
+export type BookingMode = (typeof BOOKING_MODES)[number];
+
+// Review of PR #27, M1: the contact the summary shows as verified, which proves nothing itself. createBookingAction
+// holds it against the gsk_phone cookie, which this browser's other tabs share, and asks for a new code when they
+// differ, so a booking is never made for a contact other than the one on screen.
+const shownContactSchema = z
+  .object({
+    channel: z.enum(['whatsapp', 'email']),
+    phone: picPhoneSchema,
+    email: emailField.nullable(),
+  })
+  .strict()
+  .nullable();
+
+export type ShownContact = z.output<typeof shownContactSchema>;
+
+export const bookingRequestSchema = z
+  .object({
+    mode: z.enum(BOOKING_MODES),
+    packageSlug: slugSchema,
+    booking: z.unknown(),
+    shownContact: shownContactSchema,
+  })
+  .strict();
