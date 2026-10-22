@@ -3,7 +3,7 @@
 -- booking's own contact (M1), the reply names the visit days (L3), the guardian's consent is required with a
 -- participant list and kept with the booking (L4), and a rate limit can give a hit back (L2).
 begin;
-select plan(17);
+select plan(19);
 
 -- ===== Fixtures =====
 insert into public.tour_packages (id, rw_id, category, slug, name, pricing_basis, price_per_pax, status) values
@@ -106,6 +106,10 @@ select pg_temp.book(pg_temp.otp('+6281300000232'), '+6281300000232', 'tamu232@co
   '00000000-0000-4000-8000-0000000d4003', null, '[]', '{"version": "2026-10-18", "guardian_consent": true}');
 select ok((select guardian_consented_at is null from public.bookings where pic_phone = '+6281300000232'),
   'not even when the consent was ticked, since no participant was listed');
+-- Review of PR #27, N4: a consent record, audited and never changed once the booking is made.
+select ok('guardian_consented_at' = any (internal.audit_columns('bookings')), 'the consent is an audited column');
+select throws_ok($$update public.bookings set guardian_consented_at = now() where pic_phone = '+6281300000210'$$,
+  '42501', null, 'and never changes once the booking is made');
 
 -- ===== L2: a rate limit gives a hit back for a refusal the visitor could not avoid =====
 select internal.rate_limit_hit('test:refund:a', 5, 3600);

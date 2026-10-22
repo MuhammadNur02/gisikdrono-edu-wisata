@@ -11,6 +11,7 @@ import {
   firstIncompleteStep,
   isBookingStep,
   namedRows,
+  parseDraft,
   readDraft,
   sessionsOn,
   shownContactOf,
@@ -88,6 +89,9 @@ describe('readDraft', () => {
     const stored = JSON.stringify(COMPLETE);
     expect(readDraft(stored, COMBO, SAVED_AT + 2 * HOUR_MS)).toEqual(COMPLETE);
     expect(readDraft(stored, COMBO, SAVED_AT + 2 * HOUR_MS + 1)).toEqual(emptyDraft(COMBO));
+    // The hook removes what parseDraft finds unusable, since it holds the PIC's details (review of PR #27, L5).
+    expect(parseDraft(stored, COMBO, SAVED_AT + 2 * HOUR_MS + 1)).toBeNull();
+    expect(parseDraft(stored, COMBO, SAVED_AT)).toEqual(COMPLETE);
   });
 
   it.each([

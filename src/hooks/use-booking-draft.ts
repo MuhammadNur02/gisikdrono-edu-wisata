@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
-import { readDraft, type BookingDraft } from '@/lib/utils/booking-wizard';
+import { parseDraft, readDraft, type BookingDraft } from '@/lib/utils/booking-wizard';
 import type { WizardPackage } from '@/types/booking';
 
 // docs/PRD.md FR-BOOK-01, docs/StyleGuide.md §5.14: the wizard's draft lives in sessionStorage under the package's
@@ -63,6 +63,12 @@ export function useBookingDraft(wizardPackage: WizardPackage) {
     () => (stored === NOT_READ ? null : readDraft(stored, wizardPackage, openedAt)),
     [stored, wizardPackage, openedAt],
   );
+  // A draft that can no longer be used (too old, another package shape) holds the PIC's details, so it goes at once
+  // rather than at the next write (review of PR #27, L5).
+  useEffect(() => {
+    if (stored === NOT_READ || stored === null) return;
+    if (parseDraft(stored, wizardPackage, openedAt) === null) writeStored(key, null);
+  }, [stored, wizardPackage, openedAt, key]);
 
   // The form key is drawn with the first change and kept until the booking is made (BOOK-06).
   const update = useCallback(

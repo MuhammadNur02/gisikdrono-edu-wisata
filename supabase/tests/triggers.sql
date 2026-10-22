@@ -158,7 +158,7 @@ select throws_ok(
 );
 select throws_ok(
   $$update public.bookings set booking_code = 'GSK-TR1GGR99' where id = '00000000-0000-4000-9000-000000000321'$$,
-  '42501', 'rw_ids, package_id, booking_code, created_at and consent_version never change',
+  '42501', 'rw_ids, package_id, booking_code, created_at, consent_version and guardian_consented_at never change',
   'and every booking keeps its identity'
 );
 select throws_ok(

@@ -100,20 +100,32 @@ const draftSchema = z
   })
   .strict();
 
+// The stored draft when it can still be used, else null: it is for another package shape, older than DRAFT_TTL_MS, or
+// not a draft at all. The hook removes such a draft at once, since it holds the PIC's details (review of PR #27, L5).
+export function parseDraft(
+  stored: string,
+  wizardPackage: WizardPackage,
+  nowMs: number,
+): BookingDraft | null {
+  try {
+    const parsed = draftSchema.safeParse(JSON.parse(stored));
+    if (!parsed.success) return null;
+    const fitsPackage = parsed.data.sessionIds.length === wizardPackage.rws.length;
+    const isFresh = nowMs - parsed.data.savedAt <= DRAFT_TTL_MS;
+    return fitsPackage && isFresh ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
 export function readDraft(
   stored: string | null,
   wizardPackage: WizardPackage,
   nowMs: number,
 ): BookingDraft {
-  if (stored === null) return emptyDraft(wizardPackage);
-  try {
-    const parsed = draftSchema.safeParse(JSON.parse(stored));
-    const fitsPackage = parsed.data?.sessionIds.length === wizardPackage.rws.length;
-    const isFresh = parsed.data !== undefined && nowMs - parsed.data.savedAt <= DRAFT_TTL_MS;
-    return parsed.success && fitsPackage && isFresh ? parsed.data : emptyDraft(wizardPackage);
-  } catch {
-    return emptyDraft(wizardPackage);
-  }
+  return (
+    (stored === null ? null : parseDraft(stored, wizardPackage, nowMs)) ?? emptyDraft(wizardPackage)
+  );
 }
 
 // A participant row left empty is no participant; one with a name too short is still refused.
