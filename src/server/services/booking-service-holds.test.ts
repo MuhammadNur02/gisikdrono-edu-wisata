@@ -148,6 +148,42 @@ describe('createHold and createQuotedBooking', () => {
     await expect(createHold(request)).resolves.toEqual({ kind: 'pay_to_confirm' });
   });
 
+  it('tries once more when the database broke a deadlock, and no more than once (independent review of PR #26, M1)', async () => {
+    const deadlock = { code: '40P01', message: 'deadlock detected' };
+    vi.mocked(svcCreateBooking).mockRejectedValueOnce(deadlock).mockResolvedValueOnce(created);
+    await expect(createHold(request)).resolves.toMatchObject({ kind: 'created' });
+    expect(svcCreateBooking).toHaveBeenCalledTimes(2);
+
+    vi.mocked(svcCreateBooking).mockReset().mockRejectedValue(deadlock);
+    await expect(createHold(request)).rejects.toBe(deadlock);
+    expect(svcCreateBooking).toHaveBeenCalledTimes(2);
+  });
+
+  it('never tries a business refusal twice', async () => {
+    const full = { code: 'P0001', hint: 'QUOTA_UNAVAILABLE', message: 'no room' };
+    vi.mocked(svcCreateBooking).mockRejectedValue(full);
+    await expect(createHold(request)).rejects.toBe(full);
+    expect(svcCreateBooking).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts an email proof by the address it proved, never the typed number (independent review of PR #26, M2)', async () => {
+    const emailProof = {
+      ...request,
+      proof: { ...request.proof, channel: 'email' as const, email: 'ani@sekolah.sch.id' },
+    };
+    vi.mocked(svcCreateBooking).mockResolvedValue({ ...created, result: 'duplicate' });
+    await expect(createHold(emailProof)).resolves.toEqual({ kind: 'resent' });
+    expect(vi.mocked(withinRateLimits).mock.calls[0]?.[1]).toEqual([
+      { name: 'booking:email', subject: 'ani@sekolah.sch.id' },
+      { name: 'booking:ip+ua', subject: '203.0.113.9|Mozilla/5.0' },
+    ]);
+    expect(vi.mocked(svcResendBookingLink).mock.calls[0]?.[1]).toEqual({
+      bookingCode: CODE,
+      phone: null,
+      email: 'ani@sekolah.sch.id',
+    });
+  });
+
   it('asks for a quotation booking in quote mode', async () => {
     vi.mocked(svcCreateBooking).mockResolvedValue({
       ...created,

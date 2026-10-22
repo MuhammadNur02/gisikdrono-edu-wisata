@@ -271,6 +271,25 @@ describe('svcCreateBooking', () => {
     ).resolves.toEqual({ result: 'pay_to_confirm' });
   });
 
+  it.each(['paid', 'expired', 'cancelled'])(
+    'reads a replay of a booking that is %s by now, as it is (independent review of PR #26, L6)',
+    async (status) => {
+      const replay = {
+        result: 'existing',
+        booking_id: BOOKING_ID,
+        booking_code: 'GSK-7F3K9Q2M',
+        status,
+        expires_at: null,
+      };
+      await expect(
+        svcCreateBooking(clientAnswering(200, replay).client, REQUEST),
+      ).resolves.toMatchObject({
+        result: 'existing',
+        status,
+      });
+    },
+  );
+
   it('refuses a reply of another shape', async () => {
     const { client } = clientAnswering(200, { result: 'created', booking_code: 'GSK-1' });
     await expect(svcCreateBooking(client, REQUEST)).rejects.toBeInstanceOf(ZodError);

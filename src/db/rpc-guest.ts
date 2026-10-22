@@ -2,6 +2,7 @@ import 'server-only';
 
 import { z } from 'zod';
 
+import { DB_ENUMS } from '@/db/enums';
 import { resultOf, type DatabaseClient } from '@/db/rpc-result';
 import type { Database } from '@/db/types';
 
@@ -151,12 +152,14 @@ export function svcRevokeGuestLinks(
 
 const BOOKING_CODE = /^GSK-[0-9A-HJKMNP-TV-Z]{8}$/;
 
+// A form sent again answers with its booking as it stands by now, which may be paid, expired or cancelled already
+// (independent review of PR #26, L6).
 const bookingReplySchema = z.union([
   z.strictObject({
     result: z.enum(['created', 'existing', 'duplicate']),
     booking_id: z.uuid(),
     booking_code: z.string().regex(BOOKING_CODE),
-    status: z.enum(['quoted', 'pending_payment']),
+    status: z.enum(DB_ENUMS.booking_status),
     expires_at: z.string().nullable(),
   }),
   z.strictObject({ result: z.literal('pay_to_confirm') }),
@@ -167,7 +170,7 @@ export type BookingReply =
       result: 'created' | 'existing' | 'duplicate';
       bookingId: string;
       bookingCode: string;
-      status: 'quoted' | 'pending_payment';
+      status: Enums['booking_status'];
       expiresAt: string | null;
     }
   | { result: 'pay_to_confirm' };

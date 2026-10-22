@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
 
 import type { GuestLinkScope } from '@/config/guest';
+import type { EnumValue } from '@/db/enums';
 import {
   svcCreateBooking,
   svcIssuePhoneOtp,
@@ -28,6 +29,7 @@ import { withinRateLimits, type RateLimitCheck } from '@/lib/rate-limit';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 import type { CreateBookingValues } from '@/lib/validations/booking';
+import { normalizeEmail } from '@/lib/validations/normalize';
 
 // The guest side of a booking (Task P3.2, P3.3, P3.4): proving the PIC's phone with a one-time code, making the hold
 // or quotation booking itself, sending a link again from /reservasi/cari, and checking or revoking the links
@@ -153,12 +155,12 @@ export interface BookingRequest {
 }
 
 // What the visitor is told. A duplicate hold's code is never handed back (BOOK-15): its link goes again to the
-// number that holds it.
+// contact that holds it. A form sent again gets its booking as it stands by now, paid or expired included.
 export type BookingOutcome =
   | {
       kind: 'created';
       bookingCode: string;
-      status: 'quoted' | 'pending_payment';
+      status: EnumValue<'booking_status'>;
       expiresAt: string | null;
     }
   | { kind: 'resent' }
@@ -190,15 +192,59 @@ function bookingToCreate(mode: BookingToCreate['mode'], request: BookingRequest)
   };
 }
 
-// docs/Security.md §4.3: five bookings a day per phone and ten per IP and browser, counted before the database is
-// asked. Everything else, from the price to the caps per contact and per session, internal.create_booking decides.
+// A booker is the contact their code proved (independent review of PR #26, M2): the WhatsApp number, or while WhatsApp
+// codes are degraded the address. The number typed beside that address counts against no limit and gets no link.
+function provenContact(proof: PhoneProof) {
+  if (proof.channel === 'whatsapp') {
+    return {
+      limit: 'booking:phone',
+      subject: proof.phone,
+      phone: proof.phone,
+      email: null,
+    } as const;
+  }
+  if (proof.email === null) throw new AppError('STATE_INVALID');
+  return {
+    limit: 'booking:email',
+    subject: normalizeEmail(proof.email),
+    phone: null,
+    email: proof.email,
+  } as const;
+}
+
+// Postgres breaks a deadlock by failing one of its transactions, which is then safe to run again as a whole. Every
+// writer takes the audit chain first, so this is a backstop for a writer that one day does not.
+const DEADLOCK_DETECTED = '40P01';
+
+function isDeadlock(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === DEADLOCK_DETECTED
+  );
+}
+
+async function createRetryingOnDeadlock(adminClient: DatabaseClient, booking: BookingToCreate) {
+  try {
+    return await svcCreateBooking(adminClient, booking);
+  } catch (error) {
+    if (!isDeadlock(error)) throw error;
+    return svcCreateBooking(adminClient, booking);
+  }
+}
+
+// docs/Security.md §4.3: five bookings a day per proven contact and ten per IP and browser, counted before the
+// database is asked. Everything else, from the price to the caps per contact and per session, internal.create_booking
+// decides.
 async function submitBooking(
   mode: BookingToCreate['mode'],
   request: BookingRequest,
 ): Promise<BookingOutcome> {
   const adminClient = createSupabaseAdminClient();
+  const contact = provenContact(request.proof);
   const isWithinLimits = await withinRateLimits(adminClient, [
-    { name: 'booking:phone', subject: request.proof.phone },
+    { name: contact.limit, subject: contact.subject },
     {
       name: 'booking:ip+ua',
       subject: `${rateLimitIpBucket(request.clientIp)}|${request.userAgent}`,
@@ -206,13 +252,13 @@ async function submitBooking(
   ]);
   if (!isWithinLimits) throw new AppError('RATE_LIMITED');
 
-  const reply = await svcCreateBooking(adminClient, bookingToCreate(mode, request));
+  const reply = await createRetryingOnDeadlock(adminClient, bookingToCreate(mode, request));
   if (reply.result === 'pay_to_confirm') return { kind: 'pay_to_confirm' };
   if (reply.result === 'duplicate') {
     await svcResendBookingLink(adminClient, {
       bookingCode: reply.bookingCode,
-      phone: request.proof.phone,
-      email: null,
+      phone: contact.phone,
+      email: contact.email,
     });
     return { kind: 'resent' };
   }
