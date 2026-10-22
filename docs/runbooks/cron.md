@@ -10,15 +10,15 @@ Times are stored in UTC; WIB = UTC + 7. Every job runs as `postgres`.
 |---|---|---|---|
 | `expire_stale_bookings` | `*/5 * * * *` | every 5 min | `internal.run_scheduled_job` |
 | `process-notifications` | `* * * * *` | every minute | `internal.call_job` → `POST /api/jobs/process-notifications` |
-| `payments-poll` | `*/5 * * * *` | every 5 min | `internal.call_job` → `GET /api/jobs/payments-poll` |
-| `anomaly-scan` | `*/5 * * * *` | every 5 min | `internal.call_job` → `GET /api/jobs/anomaly-scan` |
+| `payments-poll` | `*/5 * * * *` | every 5 min | `internal.call_job` → `POST /api/jobs/payments-poll` |
+| `anomaly-scan` | `*/5 * * * *` | every 5 min | `internal.call_job` → `POST /api/jobs/anomaly-scan` |
 | `check_job_responses` | `*/5 * * * *` | every 5 min | `internal.run_scheduled_job`, reads the routes' answers in `net._http_response` |
 | `enqueue_visit_reminders` | `0 2 * * *` | 09:00 | `internal.run_scheduled_job` |
 | `close_past_bookings` | `30 16 * * *` | 23:30 | `internal.run_scheduled_job` (also `reconcile_session_counters`) |
 | `generate_visit_sessions` | `0 17 * * *` | 00:00 | `internal.run_scheduled_job`, horizon `booking.max_advance_days` |
 | `purge/retention` | `0 19 * * *` | 02:00 | `internal.run_scheduled_job` (`purge_participants`, `anonymise_booker_pii`) |
-| `purge-storage` | `15 * * * *` | hourly at :15 (so 02:15 after the retention run) | `internal.call_job` → `GET /api/jobs/purge-storage` |
-| `reconcile-payments` | `30 19 * * *` | 02:30 | `internal.call_job` → `GET /api/jobs/reconcile-payments` |
+| `purge-storage` | `15 * * * *` | hourly at :15 (so 02:15 after the retention run) | `internal.call_job` → `POST /api/jobs/purge-storage` |
+| `reconcile-payments` | `30 19 * * *` | 02:30 | `internal.call_job` → `POST /api/jobs/reconcile-payments` |
 | `prune_rate_limit_buckets` | `15 * * * *` | hourly | `internal.run_scheduled_job` |
 | `prune_operational_tables` | `0 18 1 * *` | 01:00 on the 2nd | `internal.run_scheduled_job` |
 

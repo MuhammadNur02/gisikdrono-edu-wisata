@@ -156,7 +156,7 @@ Boundary rules: Z1 is the only place secrets exist; Z2 assumes Z1 has bugs (RLS 
 
 **T2 — Block the quota for free**
 - Hold with invented phones/emails → BOOK-12 (OTP before hold)
-- Many holds from one verified SIM → BOOK-13 (≤ 2 concurrent unpaid per phone, ≤ 50 % of a session unpaid, 5/day)
+- Many holds from one verified SIM → BOOK-13 (≤ 2 concurrent unpaid per proven contact, ≤ 50 % of a session unpaid, 5/day)
 - Bypass the Server Action via PostgREST → AZ-11 (`internal.create_booking` not exposed)
 - Exhaust the limiter → BOOK-16 (Postgres `rate_limit_buckets`, fail-closed matrix)
 - Hold forever via NULL `expires_at` → BOOK-14
@@ -233,7 +233,7 @@ sequenceDiagram
   participant DB as Postgres (internal.*)
   participant M as Midtrans
   participant W as POST /api/webhooks/midtrans/[token]
-  participant J as GET /api/jobs/payments-poll
+  participant J as POST /api/jobs/payments-poll
   V->>A: "Konfirmasi & Bayar" (booking_code + guest cookie bk_(code))
   A->>DB: internal.create_payment_attempt(booking_id)
   DB-->>A: payments row (order_id = GSK-7F3K9Q2M-01, gross_amount from DB)
@@ -344,8 +344,8 @@ Triggers fire for the service role too (it bypasses RLS, not triggers); only the
 
 ### 3.7 Pull fallback and reconciliation (WH-13, REC-01, REC-02)
 
-- `GET /api/jobs/payments-poll` every 5 min (pg_cron + pg_net, `Authorization: Bearer CRON_SECRET` from Vault): Status API for `payments` in `pending`/`needs_review` created 2 min – 48 h ago, batch 200, 10 s budget; also re-issues tickets for `paid` bookings with zero `tickets_qr` rows older than 2 min (`tickets.reissued_by_job`), and checks holds within 5 min of expiry so a just-paid VA is caught before the sweeper.
-- `GET /api/jobs/reconcile-payments` daily 02:30 WIB: window A open items (72 h) → Status API → apply; window B every `settled`/`partially_refunded` payment of the last 7 days re-verified (`transaction_status`, `gross_amount`, `refunds[]`, `settlement_time`); SQL invariants: one invoice per settled payment, at most one settled payment per booking, ledger sum per payment = `gross_amount − refunded`, every `paid` booking has ≥ 1 ticket, no `issued` ticket on a non-paid booking, `sum(pax_count)` per session ≤ `capacity`, `internal.verify_ledger_chain()` and `internal.verify_audit_chain()` return `ok`, all protective triggers present in `pg_trigger`; discrepancies → `reconciliation_issues(run_id, kind, order_id, expected, actual, status)` (closed with a reason, never deleted) + digest to `SECURITY_ALERT_EMAIL`.
+- `POST /api/jobs/payments-poll` every 5 min (pg_cron + pg_net, `Authorization: Bearer CRON_SECRET` from Vault): Status API for `payments` in `pending`/`needs_review` created 2 min – 48 h ago, batch 200, 10 s budget; also re-issues tickets for `paid` bookings with zero `tickets_qr` rows older than 2 min (`tickets.reissued_by_job`), and checks holds within 5 min of expiry so a just-paid VA is caught before the sweeper.
+- `POST /api/jobs/reconcile-payments` daily 02:30 WIB: window A open items (72 h) → Status API → apply; window B every `settled`/`partially_refunded` payment of the last 7 days re-verified (`transaction_status`, `gross_amount`, `refunds[]`, `settlement_time`); SQL invariants: one invoice per settled payment, at most one settled payment per booking, ledger sum per payment = `gross_amount − refunded`, every `paid` booking has ≥ 1 ticket, no `issued` ticket on a non-paid booking, `sum(pax_count)` per session ≤ `capacity`, `internal.verify_ledger_chain()` and `internal.verify_audit_chain()` return `ok`, all protective triggers present in `pg_trigger`; discrepancies → `reconciliation_issues(run_id, kind, order_id, expected, actual, status)` (closed with a reason, never deleted) + digest to `SECURITY_ALERT_EMAIL`.
 - Weekly (should): superadmin uploads the Midtrans dashboard transaction CSV; unknown `order_id`s (money taken outside the app), amount and status deltas become `reconciliation_issues`. Monthly: Midtrans payout report vs `v_revenue_recap_daily`; the expected delta is the Midtrans fee; the **payout bank account on the report must equal `site_settings.finance.expected_payout_account_masked`** **[RT]**.
 
 ### 3.8 Ledger hash chain, adjustments, refunds, numbering (REC-05…REC-11, REC-16)
@@ -384,17 +384,19 @@ Triggers fire for the service role too (it bypasses RLS, not triggers); only the
 - `internal.create_booking` (service role only, called from `src/server/services/booking-service.ts` after zod, Turnstile and limiter): validates package/legs/sessions/add-ons from DB rows, snapshots prices, then `internal.reserve_session_quota` per leg `ORDER BY id` — conditional `UPDATE visit_sessions SET reserved_pax = reserved_pax + p_pax WHERE … AND reserved_pax + p_pax <= capacity` under the row lock (READ COMMITTED re-check); zero rows → `QUOTA_UNAVAILABLE`; combo is both-or-nothing. `CHECK (reserved_pax <= capacity)` is the second line. Nightly `internal.reconcile_session_counters()` logs drift (`quota.drift`) and corrects downward only.
 - `expires_at` is **NOT NULL for `pending_payment`**, set **once** inside `internal.create_booking` (`booker_type in ('school','university','government','company')` 24 h; any other booker 120 min, or 30 min for pax > 20; capped at the first session start − 1 h; decision of 2026-10-22, Q5) and immutable thereafter (`bookings_hold_deadline_guard`, 20261022120000; the staff RPCs that move it announce themselves with `app.hold_extension`), the sole exception being the staff RPC `extend_booking_hold` (≤ 14 days, audited). Snap `expiry.duration = ceil((expires_at − now())/60)`; new attempt refused if < 5 min remain. `internal.expire_stale_bookings()` every 5 min expires at `expires_at + 5 min` grace with `FOR UPDATE SKIP LOCKED`, releases quota idempotently via `booking_legs.quota_released_at`, expires open payments, enqueues `booking_expired`. pgTAP: a `pending_payment` row with NULL `expires_at` cannot exist; Snap expiry never exceeds the hold.
 - **Quotation holds no quota** (`booking_legs.status = 'unreserved'`, `bookings.status = 'quoted'`); "Konfirmasi & Bayar" reserves and starts the TTL (BOOK-08).
+- **One lock order: the audit chain first** (BOOK-01; independent review of PR #26, M1). Every audited write appends to the audit hash chain, whose advisory lock `internal.chain_append` holds until commit, so a writer that locked booking, leg or session rows before it audited could wait for the chain while the chain's holder waited for those rows (40P01). Every writer of `bookings`, `booking_legs` and `visit_sessions` now takes the chain's turn first: the `take_audit_turn` statement triggers take it before any write statement locks a row, and `create_booking`, `release_booking_quota`, `expire_stale_bookings`, `close_past_bookings` and `reconcile_session_counters` call `internal.take_audit_turn()` before their `SELECT … FOR UPDATE`. Bookings are therefore made one at a time; `booking-service.ts` still tries a booking once more on a 40P01, as a backstop. `tests/integration/booking-races.test.ts` runs holds, quotations and an expiry run on one session at once.
+- **Repeats** (BOOK-06, BOOK-15). A repeated form key answers `existing` only to a request that brings the code that booking spent (L1); since the second request waits for the chain and then looks the key up, a form sent twice at once gets one booking and `existing` (L2). A repeat by the proven contact for the same session answers `duplicate`, and its link goes again to that contact.
 
 ### 4.3 Caps and limiter rules (BOOK-04, BOOK-11, BOOK-13, BOOK-16)
 
 | Rule | Value | Where |
 |---|---|---|
-| Concurrent unpaid bookings | ≤ 2 per verified phone and per email | `internal.create_booking` (count of `pending_payment` for the contact) |
-| Bookings per day | ≤ 5 per phone; ≤ 10 per IP+UA bucket | `booking:phone` and `booking:ip+ua` of `src/config/rate-limits.ts`, counted by `booking-service.ts` before `create_booking` (fail-open, BOOK-16) |
+| Concurrent unpaid bookings | ≤ 2 per proven contact: the verified WhatsApp number, or while WhatsApp codes are degraded the verified address in its BOOK-11 spelling. The other contact is only what was typed: it finds no hold, caps nobody and gets no link, so an attacker who proves an address and types a victim's number neither learns of nor blocks the victim's holds (independent review of PR #26, M2). The contact's advisory lock is taken before the duplicate check (L4) | `internal.create_booking` (`lock_booking_contact`, `unpaid_hold_for`, `check_unpaid_caps`) |
+| Bookings per day | ≤ 5 per proven contact; ≤ 10 per IP+UA bucket | `booking:phone` or `booking:email`, and `booking:ip+ua`, of `src/config/rate-limits.ts`, counted by `booking-service.ts` before `create_booking` (fail-open, BOOK-16) |
 | Unpaid share of a session | ≤ 50 % of `capacity` in `pending_payment`; beyond that the UI says "bayar untuk konfirmasi" and the hold is created only when Snap reports `pending` with a VA/QRIS issued; until that flow lands with P3.7.03/04, `internal.create_booking` answers `pay_to_confirm` and writes nothing (decision of 2026-10-22, Q3) | `internal.create_booking` |
 | Large groups | pax > 20 → hold 30 min, except for an institution, whose 24 h hold wins (decision of 2026-10-22, Q5); pax > 60 → one `security_alerts` info row `large_group`, not a block and not `needs_review` (Q4); `booking.max_pax 500`, `booking.min_lead_hours 12`, `booking.max_advance_days 180` from `site_settings` | DTO + DB CHECK |
 | Quota pressure | `quota_pressure` event when a session's pending share > 60 %; RW admin "Batalkan hold" (void hold) action, audited | `anomaly-scan`, dashboard |
-| Key normalisation | email lower-cased, gmail dots and `+tags` stripped; phone E.164 `+62` mobile only; applied before limits, dedupe and notifications | `src/lib/validations/normalize.ts` |
+| Key normalisation | email lower-cased, gmail dots and `+tags` stripped; phone E.164 `+62` mobile only; applied before limits, dedupe and notifications | `src/lib/validations/normalize.ts`, and `internal.email_key` for the caps and locks of `create_booking` (L3) |
 | Evaluation order | per-IP → Turnstile (fail-closed) → global window counting **only Turnstile-verified** requests | `src/server/actions/booking.ts` |
 | Global breaker | **soft**: switch `site_settings.rate_limit_profile` to `strict`, enable Vercel Attack Challenge Mode, alert; never a hard reject | `anomaly-scan` + runbook DoS |
 | Limiter backend | Postgres `rate_limit_buckets` via `internal.rate_limit_hit` (no external quota to exhaust; an external store such as Upstash is only an optional later upgrade and must keep this fail-closed matrix); **fails closed** for login, password reset, scanner, exports and link minting; fails open only for booking creation while Turnstile stays mandatory | `src/lib/rate-limit.ts`, every limit and its outage mode in `src/config/rate-limits.ts` |
@@ -958,7 +960,7 @@ Signed URLs are never persisted, logged or placed in messages; `document.signed_
 
 ### 11.2 Alert rules (MON-02, MON-03, MON-04, MON-07)
 
-`GET /api/jobs/anomaly-scan` every 5 min (inline for the first three):
+`POST /api/jobs/anomaly-scan` every 5 min (inline for the first three):
 
 | Rule | Threshold | Severity |
 |---|---|---|
@@ -1071,9 +1073,9 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 | BOOK-08 | must | Quotation ≠ reservation: no hold, disclaimer, validity, numbering | Quotation misuse | `internal.create_quotation`, PDF template | snapshot; capacity unchanged test | P3 - B2B Invoice PDF |
 | BOOK-09 | should | Large-booking review flag | Fraud/mistakes | `anomaly-scan` | seeded test | P4 - Dashboards & CRUD |
 | BOOK-10 | should | 40-bit codes; masked status page; last-4 step-up | Enumeration | `src/lib/links`, `/reservasi/*` | entropy test; e2e masking | P3 - Booking Engine & Quota |
-| BOOK-11 | must | Phone/email normalisation before limits | Limit bypass | `src/lib/validations/normalize.ts` | unit tests | P3 - Booking Engine & Quota |
+| BOOK-11 | must | Phone/email normalisation before limits | Limit bypass | `src/lib/validations/normalize.ts`, `internal.email_key` | unit tests, pgTAP | P3 - Booking Engine & Quota |
 | BOOK-12 | must | WhatsApp OTP before any quota hold; phone from cookie only | Zero-cost quota lockout; misdelivery | `internal.issue_phone_otp`/`verify_phone_otp`, `booking-service.ts` | integration: hold refused without OTP | P3 - Booking Engine & Quota |
-| BOOK-13 | must | ≤ 2 concurrent unpaid, 5/day/phone, 10/day/IP+UA, ≤ 50 % unpaid per session, pax > 20 short hold, `quota_pressure` + void hold | Quota hoarding from one verified SIM | `internal.create_booking`, `anomaly-scan`, dashboard | pgTAP pending-share rule; Playwright | P3 - Booking Engine & Quota |
+| BOOK-13 | must | ≤ 2 concurrent unpaid and 5/day per proven contact, 10/day/IP+UA, ≤ 50 % unpaid per session, pax > 20 short hold, `quota_pressure` + void hold | Quota hoarding from one verified SIM | `internal.create_booking`, `anomaly-scan`, dashboard | pgTAP pending-share rule; Playwright | P3 - Booking Engine & Quota |
 | BOOK-14 | must | `expires_at` NOT NULL, set once, immutable; Snap expiry derived; refuse < 5 min | Infinite/extended holds; paid-no-seat | `internal.create_booking`, `bookings_hold_deadline_guard`, `payment-service.ts` | pgTAP NULL/immutability; unit expiry bound | P3 - Booking Engine & Quota |
 | BOOK-15 | must | Duplicate hold never reveals another code; resume link to verified channel; cancel requires link/cookie | Hold hijack/cancel by phone number | `booking-service.ts`, `/reservasi/cari` | integration | P3 - Booking Engine & Quota |
 | BOOK-16 | must | Limiter evaluation order; soft global breaker; Postgres buckets; fail-closed matrix | Limiter exhaustion/kill switch | `src/lib/rate-limit.ts`, `src/server/actions/booking.ts` | unit order test; outage simulation | P3 - Booking Engine & Quota |
