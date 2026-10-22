@@ -1,6 +1,6 @@
 // The content screens of the dashboard (Task P2.9.04–P2.9.06), read through copy.cms in src/lib/copy/id.ts.
 export const cmsCopy = {
-  chooseRw: 'Pilih RW 05 atau RW 08 di pengalih RW dulu, lalu ulangi.',
+  chooseRw: 'Pilih salah satu RW di pengalih RW dulu, lalu ulangi.',
   // A page of another RW reads exactly like one that does not exist (decision of 2026-10-21).
   notFound: {
     title: 'Tidak ditemukan',
@@ -10,10 +10,9 @@ export const cmsCopy = {
   owner: {
     kelurahan: 'Kelurahan',
     savedFor: (owner: string) => `Konten baru disimpan untuk ${owner}.`,
-    kelurahanHint:
-      'Pilih RW 05 atau RW 08 di pengalih RW di atas bila konten ini milik salah satu RW.',
+    kelurahanHint: 'Pilih RW-nya di pengalih RW di atas bila konten ini milik salah satu RW.',
     chooseRwFirst:
-      'Pilih RW 05 atau RW 08 di pengalih RW di atas dulu. Konten ini selalu milik salah satu RW.',
+      'Pilih RW-nya di pengalih RW di atas dulu. Konten ini selalu milik salah satu RW.',
   },
   validation: {
     required: 'Bagian ini wajib diisi.',

@@ -83,7 +83,8 @@ describe('public queries as a visitor', () => {
 
     expect(units.map((unit) => unit.slug)).toEqual([
       'rw-05-ecowastreme',
-      'rw-08-kampung-seni-budaya',
+      'rw-13-kampung-budaya-seni',
+      'rw-08-inklusif-ramah-anak',
     ]);
     expect(Object.keys(units[0] ?? {})).not.toContain('treasuryAccountNumber');
     expect(units[0]).toMatchObject({
@@ -95,18 +96,33 @@ describe('public queries as a visitor', () => {
       scheduleEnabled: false,
       productsHeading: null,
     });
-    expect((await getRwUnitBySlug('rw-08-kampung-seni-budaya'))?.id).toBe(8);
+    expect(units[1]).toMatchObject({
+      label: 'RW 13',
+      accentKey: 'terracotta',
+      iconKey: 'drama',
+      scheduleEnabled: true,
+      productsHeading: 'Suvenir dan produk UMKM',
+    });
+    expect(units[2]).toMatchObject({
+      label: 'RW 08',
+      accentKey: 'mulberry',
+      iconKey: 'heart_handshake',
+      scheduleEnabled: false,
+    });
+    expect((await getRwUnitBySlug('rw-08-inklusif-ramah-anak'))?.id).toBe(8);
+    // The arts programme's old address is a redirect (src/config/redirects.ts), not an RW of its own.
+    expect(await getRwUnitBySlug('rw-08-kampung-seni-budaya')).toBeNull();
     expect(await getRwUnitBySlug('rw-99')).toBeNull();
   });
 
-  it('reads published packages with their legs, the combo visiting both RWs', async () => {
+  it('reads published packages with their legs, the combo visiting RW 05 and RW 13', async () => {
     const packages = await listPackages();
     const combo = packages.find((item) => item.category === 'combo');
 
     expect(packages.length).toBeGreaterThanOrEqual(3);
     expect(combo?.rws).toEqual([
       { id: 5, label: 'RW 05', accentKey: 'leaf' },
-      { id: 8, label: 'RW 08', accentKey: 'terracotta' },
+      { id: 13, label: 'RW 13', accentKey: 'terracotta' },
     ]);
     const detail = await getPackageBySlug('paket-eduwisata-ecowastreme');
     expect(detail).toMatchObject({

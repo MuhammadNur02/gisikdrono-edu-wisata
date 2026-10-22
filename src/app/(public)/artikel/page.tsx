@@ -13,7 +13,7 @@ export const revalidate = 3600;
 
 const TITLE = 'Artikel';
 const DESCRIPTION =
-  'Kabar, bahan edukasi, dan pengumuman dari Edu Center Kelurahan Gisikdrono, RW 05, dan RW 08.';
+  'Kabar, bahan edukasi, dan pengumuman dari Edu Center Kelurahan Gisikdrono dan kampung-kampung edukasinya.';
 
 export const metadata: Metadata = buildPageMetadata({
   title: TITLE,

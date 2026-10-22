@@ -15,10 +15,10 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import type { PublicNavGroup } from '@/config/nav';
+import { isCurrentNavItem, type PublicNavGroup } from '@/config/nav';
 import { copy } from '@/lib/copy/id';
 import { cn } from '@/lib/utils/cn';
-import { isPathUnder, visitorPathFor } from '@/lib/utils/paths';
+import { visitorPathFor } from '@/lib/utils/paths';
 
 function MenuGroup({ group, pathname }: { group: PublicNavGroup; pathname: string }) {
   return (
@@ -26,7 +26,7 @@ function MenuGroup({ group, pathname }: { group: PublicNavGroup; pathname: strin
       <p className="px-3 text-overline text-muted-foreground">{group.title}</p>
       <ul>
         {group.items.map((item) => {
-          const isCurrent = isPathUnder(pathname, item.href);
+          const isCurrent = isCurrentNavItem(item, pathname);
           return (
             <li key={item.href}>
               {/* Closing on tap matters because a client navigation keeps the sheet mounted. */}

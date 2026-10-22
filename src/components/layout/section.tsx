@@ -8,7 +8,9 @@ import { cn } from '@/lib/utils/cn';
 export type SectionTone = 'default' | 'muted' | 'brand';
 export type SectionAlign = 'left' | 'center';
 
-const sectionVariants = cva('py-16 md:py-24', {
+// scroll-mt-17 keeps an anchored section (/#kampung, /rw-05-ecowastreme#profil) clear of the sticky header: its h-16
+// plus the 1 px border below it.
+const sectionVariants = cva('scroll-mt-17 py-16 md:py-24', {
   variants: {
     tone: { default: 'bg-background', muted: 'bg-muted/40', brand: 'bg-background' },
   },
@@ -26,6 +28,11 @@ export interface SectionProps {
   description?: string;
   tone?: SectionTone;
   align?: SectionAlign;
+  // A section a header link points at (/#kampung): following the link moves the focus to its heading as well, so a
+  // keyboard or screen-reader user goes on from there and not from the top of the page. The heading carries the id and
+  // takes the focus rather than the whole section: Chrome centres a focused element taller than the window, which would
+  // scroll the heading out of sight. It draws no ring of its own.
+  isLinkTarget?: boolean;
   children?: ReactNode;
 }
 
@@ -36,6 +43,8 @@ interface SectionHeadingProps {
   description?: string;
   align: SectionAlign;
   isOnBrand: boolean;
+  // Set when the section is a link target: the heading carries the section's id and takes the focus.
+  anchorId?: string;
 }
 
 function SectionHeading({
@@ -45,9 +54,17 @@ function SectionHeading({
   description,
   align,
   isOnBrand,
+  anchorId,
 }: SectionHeadingProps) {
   return (
-    <div className={headingVariants({ align })}>
+    <div
+      id={anchorId}
+      tabIndex={anchorId === undefined ? undefined : -1}
+      className={cn(
+        headingVariants({ align }),
+        anchorId !== undefined && 'scroll-mt-17 outline-none',
+      )}
+    >
       {eyebrow ? (
         <p className={cn('text-overline', isOnBrand ? 'text-brand-ice' : 'text-primary-text')}>
           {eyebrow}
@@ -79,10 +96,21 @@ function DotGrid({ patternId }: { patternId: string }) {
   );
 }
 
+// The brand tone sets the section's content in the dark brand panel with its dot grid.
+function BrandPanel({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <div className="relative overflow-hidden rounded-2xl bg-brand-deep px-6 py-12 text-white md:px-12 md:py-16">
+      <DotGrid patternId={`${id}-titik`} />
+      {children}
+    </div>
+  );
+}
+
 export function Section({
   id,
   tone = 'default',
   align = 'left',
+  isLinkTarget = false,
   children,
   ...heading
 }: SectionProps) {
@@ -90,22 +118,23 @@ export function Section({
   const isOnBrand = tone === 'brand';
   const body = (
     <div className="relative space-y-10">
-      <SectionHeading titleId={titleId} align={align} isOnBrand={isOnBrand} {...heading} />
+      <SectionHeading
+        titleId={titleId}
+        align={align}
+        isOnBrand={isOnBrand}
+        anchorId={isLinkTarget ? id : undefined}
+        {...heading}
+      />
       {children}
     </div>
   );
   return (
-    <section id={id} aria-labelledby={titleId} className={sectionVariants({ tone })}>
-      <Container>
-        {isOnBrand ? (
-          <div className="relative overflow-hidden rounded-2xl bg-brand-deep px-6 py-12 text-white md:px-12 md:py-16">
-            <DotGrid patternId={`${id}-titik`} />
-            {body}
-          </div>
-        ) : (
-          body
-        )}
-      </Container>
+    <section
+      id={isLinkTarget ? undefined : id}
+      aria-labelledby={titleId}
+      className={sectionVariants({ tone })}
+    >
+      <Container>{isOnBrand ? <BrandPanel id={id}>{body}</BrandPanel> : body}</Container>
     </section>
   );
 }

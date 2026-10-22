@@ -157,7 +157,7 @@ function WhatFields({ control }: { control: ScheduleControl }) {
   );
 }
 
-// Task P2.9.06, docs/PRD.md FR-ADMIN-13: one performance of RW 08, new or as it is, inside its FormDialog.
+// Task P2.9.06, docs/PRD.md FR-ADMIN-13: one performance of an RW with a schedule, new or as it is, in its FormDialog.
 export function ScheduleForm({ rwId, schedule, packages, action, onSaved }: ScheduleFormProps) {
   const router = useRouter();
   const form = useForm({ resolver: zodResolver(createScheduleSchema), defaultValues: schedule });

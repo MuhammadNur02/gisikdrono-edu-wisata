@@ -45,7 +45,7 @@
 
 ### 2.1 Summary
 
-Kelurahan Gisikdrono (an urban-village administrative unit in Semarang Barat) runs two community edu-tourism programmes: **RW 05 "Ecowastreme"** (zero-waste ecotourism: *Bank Sampah* community waste bank, composting, maggot farming, urban farming and recycled crafts by the *PKK* women's family-welfare group) and **RW 08 "Kampung Seni Budaya"** (traditional dance, a children's *sanggar* arts studio and *dolanan*, traditional Javanese children's games). Today these programmes are promoted and booked by phone, chat and paper.
+Kelurahan Gisikdrono (an urban-village administrative unit in Semarang Barat) runs community edu-tourism programmes in three of its RWs (decision of 2026-10-21; the site reads them from `rw_units`): **RW 05 "Ecowastreme"** (zero-waste ecotourism: *Bank Sampah* community waste bank, composting, maggot farming, urban farming and recycled crafts by the *PKK* women's family-welfare group), **RW 13 "Kampung Budaya & Seni"** (traditional dance, a children's *sanggar* arts studio and *dolanan*, traditional Javanese children's games) and **RW 08 "Kampung Inklusif & Ramah Anak"** (the kelurahan's public service centre, with *Semar Cakep*, an inclusive service for vulnerable groups and people with disabilities, and *Ketan Ronggolawe*, a child-friendly community hall; a profile page until the kelurahan sets up its study-visit packages). Today these programmes are promoted and booked by phone, chat and paper.
 
 The **Edu Center & Edu Wisata Kelurahan Gisikdrono** platform is a single public website plus a role-based administration portal that:
 
@@ -95,7 +95,7 @@ A visiting teacher can find the programme on Google on Monday, download a visit 
 
 | Area | Included |
 |---|---|
-| Public site | Home, RW 05 and RW 08 pages, package catalogue, UMKM marketplace, integrated gallery, e-booklets (flipbook + PDF), articles, reviews, map and contact, privacy notice, certificate verification, QR landing |
+| Public site | Home, one page per RW (RW 05, RW 13, RW 08), package catalogue, UMKM marketplace, integrated gallery, e-booklets (flipbook + PDF), articles, reviews, map and contact, privacy notice, certificate verification, QR landing |
 | Booking engine | Session calendar with quota, booking wizard, WhatsApp OTP, add-ons, server-side pricing, Midtrans Snap (redirect mode, QRIS + VA), hold expiry, guest links, lookup, cancellation |
 | B2B automation | Quotation PDF, invoice and receipt PDF, credit note, participant list, hold extension, manual payment recording, walk-in bookings |
 | Tickets and scanner | Signed QR per booking leg, WhatsApp + email delivery, PWA scanner (preview/commit), manual check-in, undo, manifest |
@@ -122,19 +122,22 @@ A visiting teacher can find the programme on Google on Monday, download a visit 
 | Term | Meaning |
 |---|---|
 | Kelurahan | Urban-village administrative unit (here Kelurahan Gisikdrono, Semarang Barat); the platform owner and the `rw_id IS NULL` level of content |
-| RW (Rukun Warga) | Neighbourhood unit inside a kelurahan; `rw_units` rows `5` and `8` |
+| RW (Rukun Warga) | Neighbourhood unit inside a kelurahan; `rw_units` rows `5`, `13` and `8`, in that order (`sort_order`) |
 | RW 05 Ecowastreme | RW 05's zero-waste ecotourism programme (`rw_id = 5`) |
-| RW 08 Kampung Seni Budaya | RW 08's arts-and-culture village programme (`rw_id = 8`) |
+| RW 13 Kampung Budaya & Seni | RW 13's arts-and-culture village programme (`rw_id = 13`), Jl. Jatisari; until 2026-10-21 the site called it "RW 08 Kampung Seni Budaya" |
+| RW 08 Kampung Inklusif & Ramah Anak | RW 08's programme (`rw_id = 8`): the public service centre with Semar Cakep and Ketan Ronggolawe |
+| Semar Cakep | Semarang Barat Cinta Kelompok Rentan & Penyandang Disabilitas: the district's inclusive public service and its Rumah Pemberdayaan in RW 08 (`activity_point_type` `inclusion_center`) |
+| Ketan Ronggolawe | RW 08's community hall turned into a safe place for children to play and learn (`activity_point_type` `child_friendly_space`) |
 | UMKM | Usaha Mikro, Kecil dan Menengah: micro, small and medium enterprises; the vendors behind `products_umkm` |
 | PKK | Pemberdayaan Kesejahteraan Keluarga: the family-welfare women's group; an UMKM vendor of recycled crafts in RW 05 |
 | Bank Sampah | Community waste bank where residents deposit sorted recyclables; an activity point in RW 05 |
-| Dolanan | Traditional Javanese children's games performed and taught in RW 08 |
-| Sanggar | Community arts studio (dance, music) for children in RW 08 |
+| Dolanan | Traditional Javanese children's games performed and taught in RW 13 |
+| Sanggar | Community arts studio (dance, music) for children in RW 13 |
 | PIC | Person in charge: the booker who represents a group; the only contact stored on a booking |
 | Pax | Number of visitors in a booking (`pax_count`) |
 | Session | A bookable time window on one date for one RW (`visit_sessions`) |
 | Leg | The part of a booking that visits one RW (`booking_legs`); combo bookings have two legs |
-| Combo package | Kelurahan-owned package visiting both RWs (`tour_packages.category = 'combo'`, `rw_id IS NULL`) |
+| Combo package | Kelurahan-owned package visiting two or more RWs (`tour_packages.category = 'combo'`, `rw_id IS NULL`) |
 | Hold | The period a `pending_payment` booking keeps quota reserved (`bookings.expires_at`) |
 | Quotation (Surat Penawaran) | B2B offer letter `SP/GSK/YYYY/MM/NNNN`; holds no quota |
 | Invoice / receipt (Kwitansi) | `INV/GSK/YYYY/MM/NNNN` issued at settlement; `KW/GSK/YYYY/MM/NNNN` receipt |
@@ -154,20 +157,20 @@ A visiting teacher can find the programme on Google on Monday, download a visit 
 | Attribute | Detail |
 |---|---|
 | Who | Kelurahan staff member (Kasi Pelayanan, the head of the public-service section, or a designated operator) accountable to the Lurah (the kelurahan head); one or two accounts |
-| Role | `superadmin`; sees both RWs through `RwSwitcher`; AAL2 mandatory |
+| Role | `superadmin`; sees every RW through `RwSwitcher`; AAL2 mandatory |
 | Goals | Correct money: every paid booking reconciled, revenue split transparently, payouts documented; moderated public content; staff accounts under control; exportable statistics for the kelurahan and for Diskominfo (the municipal communications and informatics office) reports |
-| Pain points | Not a full-time engineer; limited time; fears personal liability for mishandled funds or children's data; receives escalations from both RWs |
+| Pain points | Not a full-time engineer; limited time; fears personal liability for mishandled funds or children's data; receives escalations from every RW |
 | Devices | Office laptop (Chrome, 1366 px) and personal Android phone |
 | Key scenarios | Invite an RW admin (FR-ADMIN-18); approve a price change and moderate an article (FR-ADMIN-11, §11.4); resolve a `needs_review` booking after a late settlement (FR-ADMIN-26); record a payout batch with proof (FR-ADMIN-20); export monthly visits to XLSX (FR-ADMIN-22); review `security-alerts` after a signature-failure burst (FR-ADMIN-25) |
 
-### 4.2 RW officer / Admin RW 05 and Admin RW 08
+### 4.2 RW officer / Admin RW 05, Admin RW 13 and Admin RW 08
 
 | Attribute | Detail |
 |---|---|
 | Who | Pokdarwis (tourism awareness group) or RW committee member; one account per RW; operates the gate on visit days |
-| Role | `admin_rw` with `app_rw_id = 5` or `8`; AAL2 mandatory |
+| Role | `admin_rw` with `app_rw_id = 5`, `13` or `8`; AAL2 mandatory |
 | Goals | Keep the RW page, gallery and product catalogue current; set weekly session templates and close sessions for holidays; see tomorrow's groups; check in a group in seconds; print the day's manifest; see what the RW treasury and local vendors earned |
-| Pain points | Works from a phone in the field, often with poor signal and bright sunlight; cannot see or should not see the other RW's data; cannot handle money disputes |
+| Pain points | Works from a phone in the field, often with poor signal and bright sunlight; cannot see or should not see another RW's data; cannot handle money disputes |
 | Devices | Android phone (Chrome, 360-412 px) as the scanner; occasional laptop for content |
 | Key scenarios | Generate next month's sessions from templates (FR-ADMIN-05); upload gallery photos (FR-ADMIN-10, FR-ADMIN-16); scan a ticket at the gate and record 38 attendees (FR-SCAN-03, FR-SCAN-04); manual check-in when a QR is unreadable (FR-SCAN-07); draft an article for superadmin review (FR-ADMIN-11); record a cash walk-in (FR-B2B-08) |
 
@@ -205,7 +208,7 @@ Public slugs are Indonesian; admin and API paths are English. Public pages use I
 |---|---|---|
 | Home (Beranda Utama) | `/` | FR-PUB-01..07 |
 | Hero Banner (Produk Unggulan UMKM & Direct CTA) | `/` (section, `hero_banners`) | FR-PUB-01 |
-| Quick Highlight Edu Wisata (RW 05 & RW 08) | `/` (section, `rw_units`) | FR-PUB-02 |
+| Quick Highlight Edu Wisata (every RW online) | `/#kampung` (section, `rw_units`; the desktop header's `Kampung Wisata` link, decision of 2026-10-22) | FR-PUB-02 |
 | Peta Denah Interaktif | `/` (section, `activity_points` + `public/map/denah.svg`) | FR-PUB-03 |
 | Katalog Paket Wisata Pilihan | `/` (section, `tour_packages.is_featured`) | FR-PUB-04 |
 | Ulasan & Testimoni Rombongan | `/` (section, `v_public_reviews.is_featured`) | FR-PUB-05 |
@@ -217,13 +220,15 @@ Public slugs are Indonesian; admin and API paths are English. Public pages use I
 | Galeri Dokumentasi Kegiatan RW 05 | `/rw-05-ecowastreme#galeri`, `/galeri?filter=rw05` | FR-PUB-08, FR-PUB-14 |
 | Marketplace / Produk Olahan UMKM RW 05 | `/rw-05-ecowastreme#produk`, `/produk?rw=05` | FR-PUB-13 |
 | Paket Wisata Khusus RW 05 | `/rw-05-ecowastreme#paket`, `/paket-wisata?rw=05` | FR-PUB-11 |
-| Edu Wisata RW 08 (Seni & Budaya) | `/rw-08-kampung-seni-budaya` | FR-PUB-09 |
-| Profil Sanggar Seni & Rumah Budaya | `/rw-08-kampung-seni-budaya#profil` | FR-PUB-09 |
-| Jadwal Pertunjukan & Workshop | `/rw-08-kampung-seni-budaya/jadwal` | FR-PUB-10 |
-| Galeri Dokumentasi Kegiatan RW 08 | `/rw-08-kampung-seni-budaya#galeri`, `/galeri?filter=rw08` | FR-PUB-14 |
-| Suvenir & Cinderamata Khas RW 08 | `/rw-08-kampung-seni-budaya#produk`, `/produk?rw=08` | FR-PUB-13 |
+| Edu Wisata RW 13 (Kampung Budaya & Seni) | `/rw-13-kampung-budaya-seni` (the old `/rw-08-kampung-seni-budaya` answers 308 here) | FR-PUB-09 |
+| Profil Sanggar Seni & Rumah Budaya | `/rw-13-kampung-budaya-seni#profil` | FR-PUB-09 |
+| Jadwal Pertunjukan & Workshop | `/rw-13-kampung-budaya-seni/jadwal` (the old `/rw-08-kampung-seni-budaya/jadwal` answers 308 here) | FR-PUB-10 |
+| Galeri Dokumentasi Kegiatan RW 13 | `/rw-13-kampung-budaya-seni#galeri`, `/galeri?filter=rw13` | FR-PUB-14 |
+| Suvenir & Cinderamata Khas RW 13 | `/rw-13-kampung-budaya-seni#produk`, `/produk?rw=13` | FR-PUB-13 |
+| Edu Wisata RW 08 (Kampung Inklusif & Ramah Anak) | `/rw-08-inklusif-ramah-anak` | FR-PUB-24 |
+| Profil Semar Cakep & Ketan Ronggolawe | `/rw-08-inklusif-ramah-anak#profil`, `#titik-aktivitas` | FR-PUB-24 |
 | Marketplace UMKM terpadu (katalog gabungan dan detail produk) | `/produk`, `/produk/[slug]` | FR-PUB-13 |
-| Paket Wisata Khusus RW 08 | `/paket-wisata?rw=08` | FR-PUB-11 |
+| Paket Wisata Khusus RW 13 | `/rw-13-kampung-budaya-seni#paket`, `/paket-wisata?rw=13` | FR-PUB-11 |
 | Paket Wisata & Pemesanan Tiket: Katalog Semua Paket | `/paket-wisata`, `/paket-wisata/[slug]` | FR-PUB-11, FR-PUB-12 |
 | Kalender Kunjungan & Pemilihan Kuota/Sesi Waktu | `/pesan/[packageSlug]?step=jadwal` | FR-BOOK-01, FR-BOOK-02 |
 | Add-on Rombongan (Pre-order Snack / Oleh-oleh UMKM) | `/pesan/[packageSlug]?step=tambahan` | FR-BOOK-04 |
@@ -232,7 +237,7 @@ Public slugs are Indonesian; admin and API paths are English. Public pages use I
 | Tiket Digital (QR + WhatsApp & Email) | `/reservasi/[bookingCode]/tiket`, `/v/[token]` | FR-BOOK-13, FR-BOOK-14, FR-PUB-21 |
 | Layanan Pasca Kunjungan: Unduh E-Sertifikat | `/reservasi/[bookingCode]/sertifikat`, `/verifikasi/[code]` | FR-POST-01..04 |
 | Formulir Buku Tamu, Rating & Ulasan | `/reservasi/[bookingCode]/ulasan` | FR-POST-05, FR-POST-06 |
-| Galeri Terpadu (Filter RW 05, RW 08, UMKM, Kunjungan) | `/galeri?filter=rw05\|rw08\|umkm\|kunjungan` | FR-PUB-14 |
+| Galeri Terpadu (Filter per RW, UMKM, Kunjungan) | `/galeri?filter=rw05\|rw13\|rw08\|umkm\|kunjungan` | FR-PUB-14 |
 | E-Booklet (Flipbook & Unduhan PDF) | `/e-booklet`, `/e-booklet/[slug]`, `api/documents/booklet/[id]` | FR-PUB-07, FR-PUB-15 |
 | Artikel & Kabar Edu Center Kelurahan | `/artikel`, `/artikel/[slug]` | FR-PUB-16 |
 | Ulasan (published guest book) | `/ulasan` | FR-PUB-17 |
@@ -247,16 +252,16 @@ Public slugs are Indonesian; admin and API paths are English. Public pages use I
 | Login, reset, MFA, onboarding | `/login`, `/forgot-password`, `/reset-password`, `/mfa/enroll`, `/mfa/verify`, `/onboarding`, `auth/callback`, `auth/signout` | staff | FR-ADMIN-01 |
 | Overview | `/dashboard` | all staff | FR-ADMIN-02, FR-ADMIN-03 |
 | Reservasi | `/dashboard/bookings`, `/dashboard/bookings/[id]` | all staff (scope) | FR-ADMIN-04 |
-| Pengaturan Kuota Harian & Jam Sesi (RW 05 / RW 08) | `/dashboard/sessions` | admin_rw own RW, superadmin | FR-ADMIN-05 |
-| Web PWA QR Scanner (RW 05 / RW 08) | `/dashboard/scanner` | all staff | FR-SCAN-01..11 |
+| Pengaturan Kuota Harian & Jam Sesi (per RW) | `/dashboard/sessions` | admin_rw own RW, superadmin | FR-ADMIN-05 |
+| Web PWA QR Scanner (per RW) | `/dashboard/scanner` | all staff | FR-SCAN-01..11 |
 | Daftar Kehadiran | `/dashboard/attendance` | all staff (scope) | FR-ADMIN-06 |
-| Penerbitan E-Sertifikat (RW 05 / RW 08) | `/dashboard/certificates` | all staff (scope) | FR-ADMIN-07 |
-| Manajemen Paket Wisata (RW 05 / RW 08) | `/dashboard/packages`, `/new`, `/[id]/edit` | admin_rw own RW; combos superadmin | FR-ADMIN-08 |
-| Katalog Produk UMKM / Suvenir (RW 05 / RW 08) | `/dashboard/products`, `/new`, `/[id]/edit` | admin_rw own RW, superadmin | FR-ADMIN-09 |
-| CMS Galeri (RW 05 / RW 08) | `/dashboard/galleries` | admin_rw own RW, superadmin | FR-ADMIN-10 |
+| Penerbitan E-Sertifikat (per RW) | `/dashboard/certificates` | all staff (scope) | FR-ADMIN-07 |
+| Manajemen Paket Wisata (per RW) | `/dashboard/packages`, `/new`, `/[id]/edit` | admin_rw own RW; combos superadmin | FR-ADMIN-08 |
+| Katalog Produk UMKM / Suvenir (per RW) | `/dashboard/products`, `/new`, `/[id]/edit` | admin_rw own RW, superadmin | FR-ADMIN-09 |
+| CMS Galeri (per RW) | `/dashboard/galleries` | admin_rw own RW, superadmin | FR-ADMIN-10 |
 | CMS Edukasi / Artikel | `/dashboard/articles`, `/new`, `/[id]/edit` | admin_rw drafts; superadmin publishes | FR-ADMIN-11 |
 | E-Booklet | `/dashboard/booklets` | admin_rw own RW, superadmin | FR-ADMIN-12 |
-| Jadwal Pagelaran (RW 08) | `/dashboard/schedules` | admin_rw 08, superadmin | FR-ADMIN-13 |
+| Jadwal Pagelaran (an RW with `schedule_enabled`: RW 13) | `/dashboard/schedules` | admin_rw of such an RW, superadmin | FR-ADMIN-13 |
 | Titik Aktivitas | `/dashboard/activity-points` | admin_rw own RW, superadmin | FR-ADMIN-14 |
 | CMS Halaman RW | `/dashboard/pages` | admin_rw own RW, superadmin | FR-ADMIN-15 |
 | Moderasi Ulasan | `/dashboard/reviews` | superadmin (admin_rw read-only) | FR-ADMIN-19 |
@@ -295,19 +300,19 @@ Priority uses MoSCoW: **M** must, **S** should, **C** could, **W** won't (this r
 | ID | Requirement | Pri | Acceptance criteria |
 |---|---|---|---|
 | FR-PUB-01 | Home hero carousel from `hero_banners` (active, within `starts_at`/`ends_at`), each slide optionally linking a featured `products_umkm` row and carrying a CTA | M | Slides render in `sort_order`; inactive or out-of-window slides never appear; first slide image is the LCP element with `priority`; CTA deep-links to `/paket-wisata` or the product |
-| FR-PUB-02 | Quick highlight cards for RW 05 and RW 08 from `rw_units` (name, `theme_label`, tagline, hero image) | M | Both cards link to the RW pages; content editable from `/dashboard/pages` |
+| FR-PUB-02 | Quick highlight of every RW online from `rw_units` (name, `theme_label`, tagline, hero image), one RW to a row with photo and text alternating | M | Each block links to its RW page; the eyebrow counts the RWs online; content editable from `/dashboard/pages` |
 | FR-PUB-03 | Interactive map: inline SVG floor plan (`public/map/denah.svg`) with hotspots bound to `activity_points.svg_hotspot_id`, zoom/pan, and a Leaflet (OSM) layer using `lat`/`lng` | M | Every hotspot is a `<button aria-label>`; clicking opens the point's card (name, type, description, image); works with keyboard; map island is `next/dynamic` |
 | FR-PUB-04 | Featured package cards (`tour_packages.is_featured`, `status = 'published'`) with price from `price_per_pax`/`flat_price` formatted by `formatIDR()` | M | Max 6 cards; each links to `/paket-wisata/[slug]`; price shown as "mulai Rp …" when tiers exist |
 | FR-PUB-05 | Testimonials section from `v_public_reviews` where `is_featured`, showing rating, excerpt, institution and first name only | M | Anonymous reviews show "Pengunjung"; no PII beyond institution + first name |
 | FR-PUB-06 | Latest 3 published articles with cover, category, date | M | Ordered by `published_at desc`; links to `/artikel/[slug]` |
 | FR-PUB-07 | E-booklet and visit-proposal download block (`booklets` published, kinds `ebooklet`, `visit_proposal`, `price_list`) | M | Download link is `api/documents/booklet/[id]` (public, rate-limited per IP), which increments `download_count` through `internal.increment_booklet_download` under the service role (`document-service.ts`) and then redirects to the published `public-media` object served as an attachment; no RPC is executable by `anon` |
 | FR-PUB-08 | RW 05 page: profile/vision/philosophy (`rw_units.description_md`, `vision_md`), activity points list, gallery preview, UMKM products, RW packages | M | All sections read only `rw_id = 5` published rows; anchors `#profil #titik-aktivitas #galeri #produk #paket` |
-| FR-PUB-09 | RW 08 page: profile of sanggar and culture house, upcoming schedule preview, gallery, souvenirs, RW packages | M | Schedule preview shows next 5 published `performance_schedules`; same anchor pattern |
-| FR-PUB-10 | Full schedule page `/rw-08-kampung-seni-budaya/jadwal` with month navigation and `Event` JSON-LD | M | Shows `starts_at`/`ends_at` in WIB, venue, type badge; links to the bookable package when `package_id` is set |
-| FR-PUB-11 | Package catalogue with filters `?rw=05\|08\|combo&type=regular\|student\|institutional\|combo` via `nuqs` | M | Filters apply in memory on the cached list; empty state in Indonesian; URL is shareable |
+| FR-PUB-09 | RW 13 page (Kampung Budaya & Seni): profile of sanggar and culture house, upcoming schedule preview, gallery, souvenirs, RW packages | M | Schedule preview shows next 5 published `performance_schedules`; same anchor pattern |
+| FR-PUB-10 | Full schedule page `/<rw slug>/jadwal` of an RW with `schedule_enabled` (`/rw-13-kampung-budaya-seni/jadwal`) with month navigation and `Event` JSON-LD | M | Shows `starts_at`/`ends_at` in WIB, venue, type badge; links to the bookable package when `package_id` is set |
+| FR-PUB-11 | Package catalogue with filters `?rw=<RW number>\|combo&type=regular\|student\|institutional\|combo` via `nuqs` | M | Filters apply in memory on the cached list; empty state in Indonesian; URL is shareable |
 | FR-PUB-12 | Package detail: highlights, inclusions, itinerary, duration, pricing tiers, gallery, availability preview for the next 14 days from `v_session_availability`, CTA "Pesan Sekarang" | M | Availability island fetches uncached through the server; CTA goes to `/pesan/[slug]?step=jadwal`; `Product`/`Offer` JSON-LD with IDR price |
 | FR-PUB-13 | UMKM marketplace list and detail (`products_umkm` published) with vendor name, category filter and "Pesan sebagai tambahan" hint | M | No cart; add-on-eligible products show the hint; vendor private columns never serialised |
-| FR-PUB-14 | Integrated gallery with filters `rw05 \| rw08 \| umkm \| kunjungan`, CSS-column masonry, lightbox, load-more cursor | M | Filter maps to `rw_id`/`category`; every image has `alt_text`; videos embed YouTube by `video_url` |
+| FR-PUB-14 | Integrated gallery with filters `rwNN` (one per RW online: `rw05 \| rw13 \| rw08`) `\| umkm \| kunjungan`, CSS-column masonry, lightbox, load-more cursor | M | Filter maps to `rw_id`/`category`; every image has `alt_text`; videos embed YouTube by `video_url` |
 | FR-PUB-15 | E-booklet viewer: flipbook over pre-rendered `pages/0001.webp…` with PDF download | M | Flipbook is `next/dynamic` `ssr:false`; page images lazy; download link is `api/documents/booklet/[id]` (FR-PUB-07) |
 | FR-PUB-16 | Articles list and detail rendering `articles.body_json` through the allowlisted `RichText` React renderer | M | Unknown node types are dropped, never rendered as HTML; `Article` JSON-LD; reading time |
 | FR-PUB-17 | Reviews page listing published reviews with rating filter and aggregate rating | M | Reads `v_public_reviews` only; `AggregateRating` JSON-LD |
@@ -317,13 +322,14 @@ Priority uses MoSCoW: **M** must, **S** should, **C** could, **W** won't (this r
 | FR-PUB-21 | QR landing `/v/[token]` showing "Tiket valid / tidak valid" only | M | Verifies the HMAC via `src/lib/qr/verify.ts`; no PII, no booking code; `noindex` |
 | FR-PUB-22 | SEO infrastructure: `metadataBase`, title template `%s \| Edu Wisata Gisikdrono`, canonical, `generateMetadata` on dynamic pages, JSON-LD builders, `sitemap.ts`, `robots.ts`, OG images | M | Lighthouse SEO >= 95; sitemap lists all published slugs; robots disallows `/dashboard`, `/api`, `/pesan`, `/reservasi`, `/login`, `/v` |
 | FR-PUB-23 | Every public page verified at 360 px with no horizontal scroll and touch targets >= 44 px | M | Playwright viewport test; StyleGuide checklist |
+| FR-PUB-24 | RW 08 page (Kampung Inklusif & Ramah Anak): profile of the public service centre, Semar Cakep and Ketan Ronggolawe, activity points (`inclusion_center`, `child_friendly_space`), gallery; packages, products and the schedule stay hidden until RW 08 has them (decision of 2026-10-21) | M | Same route and anchors as every RW page; sections without rows are hidden whole (`docs/StyleGuide.md` §6.9) |
 
 ### 6.2 BOOK: Booking engine and QR system
 
 | ID | Requirement | Pri | Acceptance criteria |
 |---|---|---|---|
 | FR-BOOK-01 | Booking wizard `/pesan/[packageSlug]` with steps `jadwal -> data -> tambahan -> ringkasan` driven by `?step=`, one `react-hook-form` instance with a zod schema per step, draft persisted in `sessionStorage` | M | Refresh keeps the draft; back navigation keeps values; `booking_enabled = false` or `maintenance_mode` shows a closed notice instead of the wizard |
-| FR-BOOK-02 | Session picker reads `v_session_availability` for the package's RW (both RWs for combo, RW 05 leg first); shows remaining seats; refreshes every 15 s through the server | M | Sessions with `remaining < pax` are disabled; sessions earlier than `booking.min_lead_hours` or later than `booking.max_advance_days` are hidden; combo requires one session per leg |
+| FR-BOOK-02 | Session picker reads `v_session_availability` for the package's RW (every RW of a combo, in its leg order); shows remaining seats; refreshes every 15 s through the server | M | Sessions with `remaining < pax` are disabled; sessions earlier than `booking.min_lead_hours` or later than `booking.max_advance_days` are hidden; combo requires one session per leg |
 | FR-BOOK-03 | Booker form: `booker_type`, institution (required for non-individual), PIC name, phone (`+62`), email, pax within package `min_pax..max_pax` and `booking.max_pax`, notes, consent checkbox with version | M | Phone normalised to E.164; validation messages in Indonesian; `aria-invalid` + `aria-describedby`; consent stored as `consent_version`, `consented_at` |
 | FR-BOOK-04 | Add-on step lists `products_umkm` where `is_addon_eligible` and published for the package's RW(s), with quantity steppers within `min_order_qty..max_order_qty` | M | Add-on subtotal updates from a server-computed quote; lead-time note shown |
 | FR-BOOK-05 | Summary step shows the server-computed quote (`computeBookingQuote()`), T&C, and the CTA "Konfirmasi & Bayar" (or "Minta Surat Penawaran" for institutional types) | M | Client never sends prices; quote lines sum to total; `PRICE_MISMATCH` re-renders the summary with the new total |
@@ -365,7 +371,7 @@ Priority uses MoSCoW: **M** must, **S** should, **C** could, **W** won't (this r
 
 | ID | Requirement | Pri | Acceptance criteria |
 |---|---|---|---|
-| FR-POST-01 | Group certificate (`SERT/GSK/YYYY/NNNNN`) auto-issued by `issue_certificates` when all legs are checked in; idempotent; rendered lazily on first download | M | Combo bookings get one group certificate covering both RWs; second call creates nothing |
+| FR-POST-01 | Group certificate (`SERT/GSK/YYYY/NNNNN`) auto-issued by `issue_certificates` when all legs are checked in; idempotent; rendered lazily on first download | M | Combo bookings get one group certificate covering every RW visited; second call creates nothing |
 | FR-POST-02 | Participant certificates issued for `booking_participants` when the list exists and count <= `checked_in_pax`; single multi-page PDF rendered on first download, individual pages extracted with `pdf-lib` | M | Released only when `unpaid_pax = 0` or a superadmin waiver is recorded (audited) |
 | FR-POST-03 | Certificate page `/reservasi/[bookingCode]/sertifikat` requires the `certificate` or `manage` link plus the last 4 digits of the verified phone; refuses after `visit_date + 90 d` | M | Wrong last-4 -> generic error, rate-limited; signed URLs 600 s |
 | FR-POST-04 | Public verification `/verifikasi/[code]` per FR-PUB-20; superadmin may `revoke_certificate` with reason | M | Revoked certificate verification shows status "Dicabut" |
@@ -410,7 +416,7 @@ Priority uses MoSCoW: **M** must, **S** should, **C** could, **W** won't (this r
 | FR-ADMIN-10 | Galleries CRUD with multi-upload, category, `alt_text` required, caption, sort, visit link | M | Delete removes the storage object in the same action |
 | FR-ADMIN-11 | Articles: Tiptap editor storing ProseMirror JSON in `body_json`; admin_rw creates drafts and submits `pending_review`; superadmin publishes/unpublishes; editing a published article as admin_rw returns it to `pending_review` | M | HTML is never stored; XSS canary article renders as text |
 | FR-ADMIN-12 | Booklets: PDF upload through the quarantine pipeline, page rasterisation for the flipbook, kind, status | M | PDFs with `/JavaScript`, `/OpenAction`, `/AA`, `/Launch`, `/EmbeddedFile`, `/RichMedia` or non-allow-listed `/URI` are rejected (allow-list `https:`, `mailto:`, `tel:`), except that an `/OpenAction` which only opens a page is left out of the published copy and recorded as `upload_sanitized`; the published copy carries no document information dictionary and no XMP metadata; at most 100 pages, all signed by one `api/uploads/sign-pages` call and each finalized only as the page its path names (decisions of 2026-10-18, `docs/Security.md` §8.4); only `/Link` annotations with a `/GoTo` or allow-listed `/URI` action are kept, comments are deleted whole, any other annotation or action refuses the file, a booklet with form values, a signature, hidden layers, JBIG2, JPEG 2000 or PostScript content is refused, and a scan stays within 64 MB inflated, 2,000,000 parsed objects, object numbers up to 200,000, names up to 127 bytes and 20 s (security review of PR #14 and its follow-ups, 2026-10-19; isolated in a worker thread before go-live, `docs/Task.md` P2.9.09) |
-| FR-ADMIN-13 | Performance schedules (RW 08 and superadmin): title, type, start/end, venue, recurrence rule, image, bookable package link | M | Nav item hidden for admin_rw 05 |
+| FR-ADMIN-13 | Performance schedules (an RW with `rw_units.schedule_enabled`, today RW 13, and superadmin): title, type, start/end, venue, recurrence rule, image, bookable package link | M | Nav item hidden for the admin of an RW without a schedule (RW 05, RW 08) |
 | FR-ADMIN-14 | Activity points: name, type, description, image, SVG hotspot id, lat/lng, order, status | M | Hotspot id validated against `public/map/denah.svg` ids list |
 | FR-ADMIN-15 | Pages: RW profile fields (`rw_units` content columns: tagline, description, vision, hero image, contact) | M | Treasury and account columns are not editable here (trigger) |
 | FR-ADMIN-16 | Upload pipeline: `api/uploads/sign` issues a 5-min signed upload URL into `uploads-quarantine/rw-XX/<uuid>`; `api/uploads/finalize` re-encodes images with sharp (strip EXIF, max 1600 px, webp, magic-byte check) or scans PDFs, moves to `public-media`, deletes the quarantine object; SVG rejected; hourly purge > 24 h | M | `api/uploads/sign` binds a staff upload to their own RW's prefix after `requireRwAccess`; staff hold no Storage policy, so finalize is the only writer of `public-media` |
@@ -434,13 +440,19 @@ Priority uses MoSCoW: **M** must, **S** should, **C** could, **W** won't (this r
 
 | ID | Requirement | Pri | Acceptance criteria |
 |---|---|---|---|
-| FR-ADMIN-27 | Scope `app_rw_id = 5`: CMS for RW 05 page, articles (draft), galleries, activity points; sessions and templates for RW 05; RW 05 packages and UMKM products/vendors (compost, seedlings, recycled crafts); scanner validates RW 05 tickets only; attendance and certificates for RW 05 legs; finance recap for RW 05 treasury and RW 05 vendors | M | pgTAP: admin_rw 05 selects 0 rows of RW 08 content, sessions, bookings, tickets and ledger; RW 08 ticket at the RW 05 gate -> `wrong_rw` |
+| FR-ADMIN-27 | Scope `app_rw_id = 5`: CMS for RW 05 page, articles (draft), galleries, activity points; sessions and templates for RW 05; RW 05 packages and UMKM products/vendors (compost, seedlings, recycled crafts); scanner validates RW 05 tickets only; attendance and certificates for RW 05 legs; finance recap for RW 05 treasury and RW 05 vendors | M | pgTAP: admin_rw 05 selects 0 rows of RW 08 and RW 13 content, sessions, bookings, tickets and ledger (`rls_three_rws.sql`); another RW's ticket at the RW 05 gate -> `wrong_rw` |
 
-#### 6.6.4 Admin RW 08 (Kampung Seni Budaya)
+#### 6.6.4 Admin RW 13 (Kampung Budaya & Seni)
 
 | ID | Requirement | Pri | Acceptance criteria |
 |---|---|---|---|
-| FR-ADMIN-28 | Scope `app_rw_id = 8`: as FR-ADMIN-27 for RW 08 plus `performance_schedules` management (dance performances, dolanan sessions, workshops, art classes) and souvenir products | M | Schedules nav visible only for RW 08 and superadmin; same isolation tests with roles swapped |
+| FR-ADMIN-28 | Scope `app_rw_id = 13`: as FR-ADMIN-27 for RW 13 plus `performance_schedules` management (dance performances, dolanan sessions, workshops, art classes) and souvenir products (until 2026-10-21 this was RW 08's scope) | M | Schedules nav visible only for an RW with `schedule_enabled` and the superadmin; same isolation tests with roles swapped |
+
+#### 6.6.5 Admin RW 08 (Kampung Inklusif & Ramah Anak)
+
+| ID | Requirement | Pri | Acceptance criteria |
+|---|---|---|---|
+| FR-ADMIN-29 | Scope `app_rw_id = 8`: as FR-ADMIN-27 for RW 08: its page (profile, Semar Cakep and Ketan Ronggolawe points), galleries, articles (draft); packages, sessions and products once the kelurahan sets them up; no schedule (decision of 2026-10-21) | M | Same isolation tests with roles swapped; no schedule nav |
 
 ---
 
@@ -449,7 +461,7 @@ Priority uses MoSCoW: **M** must, **S** should, **C** could, **W** won't (this r
 | ID | Area | Requirement | Verification |
 |---|---|---|---|
 | NFR-01 | Security (summary) | The platform implements the controls matrix in `docs/Security.md` (families `PAY, WH, REC, BOOK, AUTH, AZ, GUEST, DATA, PDP, APP, HDR, RL, UPL, SEC, DB, QR, SC, OPS, MON, STAFF, DOC, RES`). Non-negotiables: server-side pricing; SHA-512 webhook signature + Status API confirmation + idempotency; QR HMAC with key ids; staff TOTP; RLS enabled and forced on every table; `internal` schema for transitions; nonce CSP with `strict-dynamic`, HSTS, `frame-ancestors 'none'`, COOP/CORP `same-origin`; Turnstile on public forms; Postgres rate limiting that fails closed for login, reset, scanner, exports and link minting; secrets only in `src/lib/env.ts`; gitleaks, semgrep, `pnpm audit` in CI; Security Advisor zero errors at release | `tests/e2e/security.spec.ts`, pgTAP, semgrep rules, go-live checklist in `docs/Security.md` |
-| NFR-02 | RLS data isolation | Every table has RLS enabled + forced, deny-by-default grants and policies per §8.5; admin_rw 05 and admin_rw 08 cannot read or write each other's content, sessions, bookings, tickets, ledger or storage prefixes; superadmin finance/PII tables require AAL2; service role used only from the allow-listed modules | pgTAP matrix (anon / admin_rw 05 / admin_rw 08 / superadmin aal1 & aal2 / none), `tests/integration/rls-http.test.ts`, CI enumeration of tables without RLS and functions exposed to anon/authenticated |
+| NFR-02 | RLS data isolation | Every table has RLS enabled + forced, deny-by-default grants and policies per §8.5; no RW admin can read or write another RW's content, sessions, bookings, tickets, ledger or storage prefixes (checked for RW 05, RW 08 and RW 13); superadmin finance/PII tables require AAL2; service role used only from the allow-listed modules | pgTAP matrix (anon / admin_rw 05 / admin_rw 08 / superadmin aal1 & aal2 / none), `tests/integration/rls-http.test.ts`, CI enumeration of tables without RLS and functions exposed to anon/authenticated |
 | NFR-03 | SEO | Indonesian slugs, canonical URLs, `generateMetadata`, JSON-LD (`GovernmentOrganization`, `WebSite`, `TouristAttraction`, `Event`, `Product`/`Offer`, `Article`, `Review`/`AggregateRating`, `BreadcrumbList`, `ImageGallery`, `DigitalDocument`), sitemap, robots, OG images 1200x630, ISR with tag revalidation so published content is live within one request after revalidation | Lighthouse SEO >= 95 on `/`, RW pages, package and article detail; Rich Results test passes |
 | NFR-04 | Mobile responsiveness | Every public, booking and admin screen usable at 360 px wide with 16 px gutters, no horizontal scroll, touch targets >= 44 px; scanner usable one-handed in sunlight (high-contrast result screens) | Playwright viewport suite (360, 768, 1280); manual phone test for scanner and wizard per PR |
 | NFR-05 | Performance budget | LCP <= 2.5 s, CLS <= 0.05, INP <= 200 ms (p75, 4G); first-load JS public <= 170 KB, wizard <= 250 KB, admin <= 350 KB; heavy modules (`react-leaflet`, flipbook, scanner, charts, Tiptap) code-split with `next/dynamic`; images via `next/image` with pinned `remotePatterns`, mandatory `sizes`, webp <= 1600 px | `pnpm analyze` budget check in CI; Vercel Analytics Web Vitals |
@@ -1410,7 +1422,7 @@ create table public.activity_points (
   updated_at        timestamptz not null default now()
 );
 
--- performance_schedules: RW 08 performance & workshop calendar.
+-- performance_schedules: the performance & workshop calendar of an RW with schedule_enabled (RW 13).
 create table public.performance_schedules (
   id              uuid primary key default gen_random_uuid(),
   rw_id           smallint not null references public.rw_units(id),
@@ -2019,8 +2031,8 @@ Auth hooks (`supabase_auth_admin`): `public.custom_access_token_hook(event jsonb
 
 | Bucket | Visibility | Content | Path | Access rules |
 |---|---|---|---|---|
-| `uploads-quarantine` | private, 50 MB, `image/jpeg`, `image/png`, `image/webp`, `application/pdf` | Raw admin uploads via 5-min signed upload URL | `rw-05/<uuid>`, `rw-08/<uuid>`, `kelurahan/<uuid>` | No policy for any API role (the signed URL is the only way in; 0006, decision of 2026-10-17); `api/uploads/sign` holds images to 10 MB; `api/uploads/finalize` reads it with the service role, re-encodes images (sharp: strip EXIF, max 1600 px, webp, magic-byte check) or scans PDFs (`pdf-lib` catalog walk rejecting `/OpenAction /AA /JavaScript /JS /Launch /EmbeddedFile /RichMedia` and non-allow-listed `/URI`), moves to `public-media`, deletes the object; hourly purge > 24 h; SVG rejected |
-| `public-media` | public, 50 MB, `image/webp`, `application/pdf` (what finalize writes) | Gallery, products, packages, hero, articles, activity points, booklets (PDF + `pages/0001.webp`), staff avatars | `rw-05/…`, `rw-08/…`, `kelurahan/…` then `gallery/<uuid>.webp`, `products/<id>/<uuid>.webp`, `packages/<id>/<uuid>.webp`, `articles/<id>/<uuid>.webp`, `hero/<uuid>.webp`, `activity-points/<id>/<uuid>.webp`, `booklets/<id>/booklet.pdf`, `staff/<profile_id>.webp` | No policy for any API role (security review of PR #5): `api/uploads/finalize` with the service role is the only writer, so no file reaches the public site without being re-encoded or scanned; anyone downloads a file by its URL, nobody lists the bucket, so a draft's files cannot be browsed; booklet PDFs served as attachment |
+| `uploads-quarantine` | private, 50 MB, `image/jpeg`, `image/png`, `image/webp`, `application/pdf` | Raw admin uploads via 5-min signed upload URL | `rw-NN/<uuid>` (`rw-05`, `rw-13`, `rw-08`), `kelurahan/<uuid>` | No policy for any API role (the signed URL is the only way in; 0006, decision of 2026-10-17); `api/uploads/sign` holds images to 10 MB; `api/uploads/finalize` reads it with the service role, re-encodes images (sharp: strip EXIF, max 1600 px, webp, magic-byte check) or scans PDFs (`pdf-lib` catalog walk rejecting `/OpenAction /AA /JavaScript /JS /Launch /EmbeddedFile /RichMedia` and non-allow-listed `/URI`), moves to `public-media`, deletes the object; hourly purge > 24 h; SVG rejected |
+| `public-media` | public, 50 MB, `image/webp`, `application/pdf` (what finalize writes) | Gallery, products, packages, hero, articles, activity points, booklets (PDF + `pages/0001.webp`), staff avatars | `rw-NN/…` (`rw-05`, `rw-13`, `rw-08`), `kelurahan/…` then `gallery/<uuid>.webp`, `products/<id>/<uuid>.webp`, `packages/<id>/<uuid>.webp`, `articles/<id>/<uuid>.webp`, `hero/<uuid>.webp`, `activity-points/<id>/<uuid>.webp`, `booklets/<id>/booklet.pdf`, `staff/<profile_id>.webp` | No policy for any API role (security review of PR #5): `api/uploads/finalize` with the service role is the only writer, so no file reaches the public site without being re-encoded or scanned; anyone downloads a file by its URL, nobody lists the bucket, so a draft's files cannot be browsed; booklet PDFs served as attachment |
 | `documents` | private, 20 MB, `application/pdf`, `image/jpeg`, `image/png`, `image/webp`, `text/csv`, XLSX (server-written PDFs, proof photos, exports) | Tickets, quotations, invoices, receipts, credit notes, certificates, payment/payout proofs, adjustment evidence, exports | `bookings/<id>/…`, `certificates/<booking_id>/…`, `payouts/<batch>/…`, `exports/<profile_id>/…` | No anon/authenticated policies; server-issued signed URLs after authorisation, each kind only from its own folder (`createDocumentSignedUrl`): 600 s tickets/certificates, 900 s invoices, 300 s exports, 60 min WhatsApp document header; never persisted or messaged |
 
 `0006_storage.sql` creates the three buckets and nothing else: no API role holds any policy on `storage.objects` or `storage.buckets`, so every upload goes through the server-bound signed URL of `api/uploads/sign` and every published file through the service-role finalize (security review of PR #5, which replaces the staff write policies on `public-media` and their `storage_owner_prefix_ok` helper; Security §6.8 and §8.4). `supabase/tests/rls_storage.sql` checks that no persona can write, rename, delete or list anything in any bucket.
@@ -2113,7 +2125,7 @@ Terminal states: `completed`, `no_show`, `cancelled`, `refunded`. `expired` is r
 
 ### 9.3 Combo semantics
 
-- `bookings.rw_ids = '{5,8}'`, two `booking_legs`, two quota reservations in one transaction (`ORDER BY id`), two `tickets_qr` rows (`<code>-05`, `<code>-08`) on one ticket PDF labelled "Gerbang RW 05" / "Gerbang RW 08", one invoice, one group certificate issued by the kelurahan covering both RWs.
+- `bookings.rw_ids = '{5,13}'`, two `booking_legs`, two quota reservations in one transaction (`ORDER BY id`), two `tickets_qr` rows (`<code>-05`, `<code>-13`) on one ticket PDF labelled "Gerbang RW 05" / "Gerbang RW 13", one invoice, one group certificate issued by the kelurahan covering both RWs.
 - `bookings.status = checked_in` at the first leg check-in; per-leg state lives in `booking_legs.status` and `tickets_qr.status`; `issue_certificates` runs only when all legs are `used`; `close_past_bookings` sets `completed` when all leg dates have passed.
 - Refund and cancel revoke every ticket of the booking; `check_in_ticket` re-checks `bookings.status in ('paid','checked_in')` so a revoked combo cannot pass the second gate.
 - Each RW admin sees the booking (array membership), checks in its own leg, and sees ledger rows for its own treasury only.
@@ -2488,12 +2500,12 @@ Numbers are gapless per period under row lock, never reused; a voided invoice ke
 
 | Module | IDs | Count |
 |---|---|---|
-| Public pages | FR-PUB-01 … FR-PUB-23 | 23 |
+| Public pages | FR-PUB-01 … FR-PUB-24 | 24 |
 | Booking engine and QR system | FR-BOOK-01 … FR-BOOK-22 | 22 |
 | B2B automation | FR-B2B-01 … FR-B2B-11 | 11 |
 | Post-visit service | FR-POST-01 … FR-POST-09 | 9 |
 | PWA scanner | FR-SCAN-01 … FR-SCAN-12 | 12 |
-| Admin CMS | FR-ADMIN-01 … FR-ADMIN-28 | 28 |
+| Admin CMS | FR-ADMIN-01 … FR-ADMIN-29 | 29 |
 | Non-functional | NFR-01 … NFR-13 | 13 |
 
 Every item in `docs/Task.md` cites one of these IDs; every control in `docs/Security.md` maps to NFR-01, NFR-02, NFR-07 or NFR-09.

@@ -16,7 +16,8 @@ import type { PublicReview, RatingSummary } from '@/types/review';
 export const revalidate = 3600;
 
 const TITLE = 'Ulasan pengunjung';
-const DESCRIPTION = 'Ulasan dari rombongan yang sudah berkunjung ke RW 05 dan RW 08 Gisikdrono.';
+const DESCRIPTION =
+  'Ulasan dari rombongan yang sudah berkunjung ke kampung-kampung edukasi Gisikdrono.';
 
 export const metadata: Metadata = buildPageMetadata({
   title: TITLE,

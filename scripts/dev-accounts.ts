@@ -10,6 +10,7 @@ export const DEV_ONLY_TOTP_SECRET = 'DEVONLYLOCALTOTPGISIKDRONOSECRET';
 export const DEV_ACCOUNTS = [
   { email: 'superadmin@dev.gisikdrono.test', role: 'superadmin', rwId: null },
   { email: 'admin-rw05@dev.gisikdrono.test', role: 'admin_rw', rwId: 5 },
+  { email: 'admin-rw13@dev.gisikdrono.test', role: 'admin_rw', rwId: 13 },
   { email: 'admin-rw08@dev.gisikdrono.test', role: 'admin_rw', rwId: 8 },
 ] as const;
 
