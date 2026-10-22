@@ -62,7 +62,7 @@ The platform is operated by a small municipal team: one Superadmin Kelurahan and
 | Tables, charts, URL state | `@tanstack/react-table`, Recharts via shadcn Chart, `nuqs` | Tables and charts dashboard only; `nuqs` also holds the public catalogue filters (`/paket-wisata`, `/produk`, `/ulasan`; `docs/PRD.md` FR-PUB-11, FR-PUB-13, FR-PUB-17), filtered in memory on the cached list |
 | Long lists | `@tanstack/react-virtual` | `ParticipantsEditor` (up to `booking.max_pax` rows, docs/StyleGuide.md §5.6) |
 | Dates | `date-fns` + `@date-fns/tz`, locale `id`, `APP_TZ = 'Asia/Jakarta'`; `rrule` expands `performance_schedules.recurrence_rule` (`src/lib/utils/schedules.ts`, server only) | DB `timestamptz`; visit dates `date` |
-| Images | `next/image` with the custom loader `src/lib/images/supabase-loader.ts` (Supabase `render/image`, Pro plan); `sharp` re-encodes in `src/lib/images/re-encode.ts` (shared by `api/uploads/finalize` and `pnpm db:seed --media`); `blurhash` encodes the placeholder there and `src/lib/images/blur.ts` reads its average colour for the slot background (no `blurDataURL`: the CSP has no `data:` in `img-src`) | `sharp` and `blur.ts` server only |
+| Images | `next/image` with the custom loader `src/lib/images/supabase-loader.ts` (Supabase `render/image`, Pro plan); `sharp` re-encodes in `src/lib/images/re-encode.ts` (shared by `api/uploads/finalize` and `pnpm db:seed --media` / `--official-media`); `blurhash` encodes the placeholder there and `src/lib/images/blur.ts` reads its average colour for the slot background (no `blurDataURL`: the CSP has no `data:` in `img-src`) | `sharp` and `blur.ts` server only |
 | Structured data | `schema-dts` (types only, dev dependency) | JSON-LD builders in `src/lib/seo/json-ld.ts`, rendered by `src/components/seo/json-ld.tsx` |
 | Payments | Midtrans Snap, **redirect mode**, thin typed fetch wrapper in `src/lib/midtrans/client.ts` (no SDK) | QRIS + Virtual Account only |
 | Messaging | Meta WhatsApp Business Cloud API (Graph v21+), Resend + React Email | Outbox table `notifications` |
@@ -140,7 +140,7 @@ flowchart LR
 
 ```
 CLAUDE.md                      this file (root)
-docs/                          PRD.md, Task.md, StyleGuide.md, Security.md, notifications.md
+docs/                          PRD.md, Task.md, StyleGuide.md, Security.md, notifications.md, content/ (facts from the kelurahan's site, to be confirmed)
 src/
   app/                         routes only; thin page files (fetch -> compose)
     (public)/                  Indonesian slugs, ISR 3600 + tag revalidation
@@ -207,7 +207,7 @@ public/                        icons/, map/denah.svg, fonts/, og/
 | `supabase/migrations` | Tables + RLS + grants + triggers + pgTAP-covered functions, one concern per file | Edits to an applied migration; data fixes without a new migration |
 | `scripts` | Local/CI tooling; `seed-dev.ts` reaches the local stack only (`local-stack.ts` refuses anything but 127.0.0.1) | Production data manipulation |
 | `tests` | `integration/` (Vitest against `supabase start`), `e2e/` (Playwright), `fixtures/` (synthetic data only; a real booking-shaped fixture for the redaction test) | Real PII, real keys, production URLs; unit tests (those are colocated `*.test.ts` next to the module) |
-| `docs` | `PRD.md`, `Task.md`, `StyleGuide.md`, `Security.md`, `notifications.md` (template texts for Meta approval) | Secrets, env values, generated artefacts, copies of code that drift from `src` |
+| `docs` | `PRD.md`, `Task.md`, `StyleGuide.md`, `Security.md`, `notifications.md` (template texts for Meta approval), `content/konten-situs-kelurahan.md` (facts, photo and product sources from the kelurahan's site, waiting for its confirmation) | Secrets, env values, generated artefacts, copies of code that drift from `src` |
 
 ### 3.3 Naming conventions
 
@@ -497,6 +497,7 @@ pnpm db:start          # supabase start (Docker)
 pnpm db:reset          # drop + migrate + db:seed + db:types
 pnpm db:seed           # local only: DEV-ONLY staff accounts + demo content, prints the current TOTP code
 pnpm db:seed --media <folder>  # also re-encodes the demo photos of scripts/demo-media.ts (never committed)
+pnpm db:seed --official-media <folder>  # also the kelurahan-site photos of scripts/official-media.ts (never committed)
 pnpm dev               # http://localhost:3000; outbox messages (OTP codes, links) land in Mailpit, http://127.0.0.1:54324,
                        # and /dev/otp tries the WhatsApp code (page.dev.tsx: next dev only, 404 unless local)
 pnpm tunnel            # cloudflared: receive Midtrans sandbox webhooks locally
@@ -702,7 +703,7 @@ PRD requirement cited; migration + RLS + pgTAP merged; types regenerated; valida
 | `pnpm db:diff <slug>` | `supabase db diff -f` from local schema changes (review before committing) |
 | `pnpm db:push` | `supabase db push --linked` to staging/production; **CI only** |
 | `pnpm db:types` / `db:types:check` | Regenerate `src/db/types.ts` through `scripts/gen-db-types.mjs` (temporary file, replaced only on success) / fail on drift |
-| `pnpm db:seed` | `tsx scripts/seed-dev.ts`: development accounts and demo content (local only; refuses non-127.0.0.1 and any database not marked local); `--media <folder>` re-encodes the demo photos named in `scripts/demo-media.ts` from that folder into the local `public-media` bucket, through the same step as `api/uploads/finalize` |
+| `pnpm db:seed` | `tsx scripts/seed-dev.ts`: development accounts and demo content (local only; refuses non-127.0.0.1 and any database not marked local); `--media <folder>` re-encodes the demo photos named in `scripts/demo-media.ts` from that folder into the local `public-media` bucket, through the same step as `api/uploads/finalize`; `--official-media <folder>` does the same for the photos of the kelurahan's own site named in `scripts/official-media.ts` (`docs/content/konten-situs-kelurahan.md`) |
 | `pnpm db:test` | `supabase test db` (all pgTAP suites) |
 | `pnpm midtrans:simulate -- --order <code> --status settlement\|expire\|deny` | Post a correctly signed sandbox notification to the local webhook |
 | `pnpm midtrans:status -- --order <code>` | Query the Midtrans Status API for an order |
