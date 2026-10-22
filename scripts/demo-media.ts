@@ -1,17 +1,19 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join, parse } from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { z } from 'zod';
-
 import { seedDemoBooklet } from './demo-booklet';
-import { runSql, sqlText, uploadToLocalBucket } from './local-stack';
-import { reencodeImage } from '../src/lib/images/re-encode';
+import { runSql, sqlText } from './local-stack';
+import {
+  findPhotoFile,
+  idOfSlug,
+  linkPointPhoto,
+  linkRwHero,
+  seedGalleryPhoto,
+  uploadPhoto,
+} from './seed-photos';
 
 // pnpm db:seed --media <folder>: real Gisikdrono photos for the local demo content (decision of 2026-10-18).
 // The photos themselves never enter the repository: faces are in them and the consent is still being
-// arranged. Only their file names and the descriptions below live here. Each photo goes through
-// reencodeImage, the step api/uploads/finalize uses, so the local site shows exactly what an upload becomes.
+// arranged. Only their file names and the descriptions below live here; scripts/seed-photos.ts uploads them.
 // Without --media the seed writes no hero banner, no gallery rows and no e-booklet, and the pages show
 // `Foto menyusul`.
 
@@ -23,9 +25,7 @@ interface DemoPhoto {
   caption: string;
 }
 
-const PUBLIC_MEDIA_BUCKET = 'public-media';
-const WEBP_TYPE = 'image/webp';
-const PHOTO_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+const RW05 = 5;
 
 // Descriptions say only what the photo shows; the place names are on the signs in the photos themselves.
 // hero_banners has no alt text or caption of its own: the subtitle says what the photo shows (G8) and is
@@ -98,35 +98,12 @@ export function mediaFolderFromArgs(args: string[]): string | undefined {
   return values.media;
 }
 
-// Camera files differ in case (IMG_7571.JPG, img_7571.jpg); the folder is matched by name, not spelling.
-function findPhotoFile(folder: string, name: string): string {
-  const match = readdirSync(folder).find((entry) => {
-    const { name: base, ext } = parse(entry);
-    return base.toLowerCase() === name.toLowerCase() && PHOTO_EXTENSIONS.has(ext.toLowerCase());
-  });
-  if (!match) throw new Error(`--media: ${name} is not in ${folder}`);
-  return join(folder, match);
-}
-
-interface UploadedPhoto {
-  path: string;
-  width: number;
-  height: number;
-  blurhash: string;
-}
-
-async function uploadPhoto(
-  folder: string,
-  photo: Pick<DemoPhoto, 'file'>,
-  path: string,
-): Promise<UploadedPhoto> {
-  const image = await reencodeImage(readFileSync(findPhotoFile(folder, photo.file)));
-  await uploadToLocalBucket(PUBLIC_MEDIA_BUCKET, path, image.webp, WEBP_TYPE);
-  return { path, width: image.width, height: image.height, blurhash: image.blurhash };
-}
-
 async function seedHeroBanner(folder: string): Promise<void> {
-  const uploaded = await uploadPhoto(folder, HERO_PHOTO, `kelurahan/hero/${HERO_PHOTO.id}.webp`);
+  const uploaded = await uploadPhoto(
+    folder,
+    HERO_PHOTO.file,
+    `kelurahan/hero/${HERO_PHOTO.id}.webp`,
+  );
   // The texts follow this file, so a database seeded before they changed catches up on the next run.
   await runSql(`insert into public.hero_banners (id, title, subtitle, cta_label, cta_href, image_path,
       sort_order)
@@ -136,39 +113,16 @@ async function seedHeroBanner(folder: string): Promise<void> {
       cta_label = excluded.cta_label, cta_href = excluded.cta_href`);
 }
 
-function galleryPath(photoId: string): string {
-  return `rw-05/gallery/${photoId}.webp`;
-}
-
 function galleryPhoto(photoId: string): DemoPhoto {
   const photo = RW05_GALLERY.find((candidate) => candidate.id === photoId);
   if (!photo) throw new Error(`no demo photo ${photoId}`);
   return photo;
 }
 
-async function idOfSlug(
-  table: 'activity_points' | 'articles',
-  slug: string,
-): Promise<string | null> {
-  const rows = z
-    .array(z.object({ id: z.string() }))
-    .parse(await runSql(`select id from public.${table} where slug = ${sqlText(slug)}`));
-  return rows[0]?.id ?? null;
-}
-
-// The RW 05 page shows a gallery photo, which its rule allows; an activity point keeps a copy of its own in its own
-// folder, as the CMS and the database require (supabase/migrations/20261021090100_content_media_paths.sql). A value
-// someone already set is kept.
 async function linkRw05Photos(folder: string): Promise<void> {
-  await runSql(`update public.rw_units set hero_image_path = ${sqlText(galleryPath(RW05_PROFILE_PHOTO_ID))}
-      where id = 5 and hero_image_path is null`);
+  await linkRwHero(RW05, RW05_PROFILE_PHOTO_ID);
   for (const [slug, photoId] of Object.entries(POINT_PHOTO_IDS)) {
-    const pointId = await idOfSlug('activity_points', slug);
-    if (!pointId) continue;
-    const path = `rw-05/activity-points/${pointId}/${photoId}.webp`;
-    await uploadPhoto(folder, galleryPhoto(photoId), path);
-    await runSql(`update public.activity_points set image_path = ${sqlText(path)}
-      where id = ${sqlText(pointId)} and image_path is null`);
+    await linkPointPhoto(folder, slug, { ...galleryPhoto(photoId), rwId: RW05 });
   }
 }
 
@@ -186,13 +140,13 @@ async function linkArticlePhotos(folder: string): Promise<void> {
   const articleFolder = `rw-05/articles/${articleId}`;
   const cover = await uploadPhoto(
     folder,
-    galleryPhoto(ARTICLE_COVER_PHOTO_ID),
+    galleryPhoto(ARTICLE_COVER_PHOTO_ID).file,
     `${articleFolder}/${ARTICLE_COVER_PHOTO_ID}.webp`,
   );
   const bodyPhoto = galleryPhoto(ARTICLE_BODY_PHOTO_ID);
   const body = await uploadPhoto(
     folder,
-    bodyPhoto,
+    bodyPhoto.file,
     `${articleFolder}/${ARTICLE_BODY_PHOTO_ID}.webp`,
   );
   await runSql(`update public.articles set cover_path = ${sqlText(cover.path)}
@@ -205,26 +159,19 @@ async function linkArticlePhotos(folder: string): Promise<void> {
     where id = ${sqlText(articleId)} and not body_json @> '{"content": [{"type": "image"}]}';`);
 }
 
-async function seedGalleryPhoto(
-  folder: string,
-  photo: DemoPhoto,
-  sortOrder: number,
-): Promise<void> {
-  const uploaded = await uploadPhoto(folder, photo, galleryPath(photo.id));
-  await runSql(`insert into public.galleries (id, rw_id, category, storage_path, width, height, blurhash,
-      alt_text, caption, status, sort_order)
-    values (${sqlText(photo.id)}, 5, 'visit', ${sqlText(uploaded.path)}, ${String(uploaded.width)},
-            ${String(uploaded.height)}, ${sqlText(uploaded.blurhash)}, ${sqlText(photo.altText)},
-            ${sqlText(photo.caption)}, 'published', ${String(sortOrder)})
-    on conflict (id) do nothing`);
-}
-
 // The file goes up before its row, so no row ever points at a missing file. Running it again uploads the
 // same files over themselves and keeps the rows as they are.
 export async function seedDemoMedia(folder: string): Promise<number> {
   await seedHeroBanner(folder);
   for (const [index, photo] of RW05_GALLERY.entries()) {
-    await seedGalleryPhoto(folder, photo, index + 1);
+    await seedGalleryPhoto(folder, photo.file, {
+      id: photo.id,
+      rwId: RW05,
+      category: 'visit',
+      altText: photo.altText,
+      caption: photo.caption,
+      sortOrder: index + 1,
+    });
   }
   await linkRw05Photos(folder);
   await linkArticlePhotos(folder);
