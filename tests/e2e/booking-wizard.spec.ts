@@ -89,6 +89,13 @@ async function waitForOtpCode(phone: string): Promise<string> {
   throw new Error(`no WhatsApp code was queued for ${phone}`);
 }
 
+// The worker may still be retrying an earlier code's message, whose row keeps that code, so a second code for the
+// same number is read only after the earlier messages are gone.
+async function forgetOtpMessages(phone: string): Promise<void> {
+  await runSql(`select set_config('app.purge', 'on', true);
+    delete from public.notifications where template = 'phone_otp' and recipient = ${sqlText(phone)}`);
+}
+
 async function expectNoSideScroll(page: Page) {
   expect(await hasHorizontalScroll(page)).toBe(false);
 }
@@ -232,6 +239,35 @@ test('tells a session that filled meanwhile as full, and offers another', async 
   await expect(page).toHaveURL(/step=jadwal$/);
 });
 
+// Review of PR #27, L5: a visitor who already holds this session unpaid hears that its link went out again, and the
+// draft goes, as it does after a booking. The second try comes from a fresh browser, as a visitor's laptop after
+// their phone would.
+test('sends the link of a hold the visitor already has again, and lets the draft go', async ({
+  page,
+  context,
+}, testInfo) => {
+  const isDesktop = testInfo.project.name === 'desktop';
+  const phone = phoneOf(isDesktop ? 0 : 1, 4);
+  for (const attempt of ['hold', 'again']) {
+    await context.clearCookies();
+    await forgetOtpMessages(phone);
+    await chooseSchedule(page, sessions, sessions.booked.time, isDesktop);
+    await fillBooker(page, phone);
+    await page.getByRole('button', { name: 'Lanjut' }).click();
+    await readySummary(page);
+    await page.getByRole('button', { name: 'Konfirmasi & Bayar' }).click();
+    if (attempt === 'hold') await expect(page).toHaveURL(/\/bayar$/, STEP);
+  }
+
+  await expect(page.getByText('Pesanan Anda sudah ada')).toBeVisible(STEP);
+  const draft = await page.evaluate(
+    (key) => window.sessionStorage.getItem(key),
+    `gsk-booking-draft:${PACKAGE_SLUG}`,
+  );
+  expect(draft).toBeNull();
+  expect(await bookingOf(phone)).toHaveLength(1);
+});
+
 // docs/StyleGuide.md A13: every control of the wizard works without a pointer. Focus is moved to a control and the
 // keyboard does the rest: Enter sends a step, Space ticks and chooses, the arrows move through a list.
 test('can be completed with the keyboard alone', async ({ page }, testInfo) => {
@@ -270,17 +306,21 @@ test('can be completed with the keyboard alone', async ({ page }, testInfo) => {
   await page.keyboard.type('Tamu Papan Ketik');
   await page.getByLabel(/Email penanggung jawab/).focus();
   await page.keyboard.type(`ketik${RUN}@contoh.test`);
-  await page.getByLabel('Nomor WhatsApp penanggung jawab').focus();
+  const phoneField = page.getByLabel('Nomor WhatsApp penanggung jawab');
+  await phoneField.focus();
   await page.keyboard.type(`0${phone.slice(3)}`);
   await waitForTurnstile(page);
   const code = waitForOtpCode(phone);
-  await page.getByRole('button', { name: 'Kirim kode' }).focus();
+  // Enter in the number asks for the code and in the code checks it; neither sends the step (review of PR #27, L6).
+  await phoneField.focus();
   await page.keyboard.press('Enter');
   await page.getByLabel('Kode verifikasi').focus();
   await page.keyboard.type(await code);
-  await page.getByRole('button', { name: 'Verifikasi' }).focus();
   await page.keyboard.press('Enter');
   await expect(page.getByText('Nomor WhatsApp sudah terverifikasi.')).toBeVisible(STEP);
+  await expect(
+    page.getByRole('heading', { name: 'Data penanggung jawab rombongan' }),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Lanjut' }).focus();
   await page.keyboard.press('Enter');
 
