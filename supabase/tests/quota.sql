@@ -161,8 +161,11 @@ select is(
   'and the expiry lands in the booking timeline'
 );
 
--- Once its grace has passed too, the second hold goes the same way.
+-- Once its grace has passed too, the second hold goes the same way. A deadline is written once
+-- (bookings_hold_deadline_guard), so moving it back in time takes the flag a hold extension sets.
+select set_config('app.hold_extension', '1', true);
 update public.bookings set expires_at = now() - interval '6 minutes' where id = '00000000-0000-4000-9000-000000000431';
+select set_config('app.hold_extension', '', true);
 select internal.expire_stale_bookings();
 select set_config('app.in_rpc', '', true), set_config('app.actor_role', '', true);
 select is(
