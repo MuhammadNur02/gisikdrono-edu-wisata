@@ -18,6 +18,9 @@ export const bookingCopy = {
     participantsOverPax:
       'Daftar peserta lebih banyak dari jumlah peserta. Tambah jumlah peserta atau hapus beberapa nama.',
     guardianConsent: 'Centang persetujuan orang tua atau wali untuk daftar peserta ini, ya.',
+    // The summary's quote hash is not typed by anyone: without it the summary was not loaded, or is from another tab.
+    quoteHash:
+      'Ringkasan pesanan perlu dimuat ulang. Buka lagi langkah ringkasan, lalu kirim pesanan.',
   },
   // The WhatsApp code of the booking form (Task P3.2.03) and its email fallback while WhatsApp is limited.
   otp: {

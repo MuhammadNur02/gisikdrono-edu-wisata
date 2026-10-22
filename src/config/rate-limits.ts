@@ -38,6 +38,11 @@ export const RATE_LIMITS = {
   // Every guest page and action checks its link; the status page refreshing every 5 s stays well inside this.
   'link_verify:ip': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   'link_revoke:booking': { limit: 5, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  // docs/Security.md §4.3 (BOOK-13): bookings a day per phone and per IP and browser. These two fail open, the only
+  // ones that do, because Turnstile and the database's own caps (two unpaid holds per contact, half a session) still
+  // stand (BOOK-16). A day is as long as rate_limit_buckets keeps a row.
+  'booking:phone': { limit: 5, windowSeconds: 86400, whenUnavailable: 'fail-open' },
+  'booking:ip+ua': { limit: 10, windowSeconds: 86400, whenUnavailable: 'fail-open' },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitName = keyof typeof RATE_LIMITS;
