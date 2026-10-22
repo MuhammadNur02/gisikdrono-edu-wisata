@@ -2,11 +2,13 @@ import 'server-only';
 
 import { z } from 'zod';
 
+import { DB_ENUMS } from '@/db/enums';
 import { resultOf, type DatabaseClient } from '@/db/rpc-result';
 import type { Database } from '@/db/types';
 
-// Typed calls to the guest identity functions (supabase/migrations/20261021110100_browser_bound_otps.sql and
-// 20261021100300_guest_link_functions.sql), on the service-role client only: visitors have no session.
+// Typed calls to the guest functions (supabase/migrations/20261021110100_browser_bound_otps.sql,
+// 20261021100300_guest_link_functions.sql and 20261022120000_booking_functions.sql), on the service-role client only:
+// visitors have no session.
 
 type Enums = Database['public']['Enums'];
 
@@ -146,4 +148,106 @@ export function svcRevokeGuestLinks(
   bookingId: string,
 ): Promise<number> {
   return resultOf(adminClient.rpc('svc_revoke_guest_links', { p_booking_id: bookingId }));
+}
+
+const BOOKING_CODE = /^GSK-[0-9A-HJKMNP-TV-Z]{8}$/;
+
+// A form sent again answers with its booking as it stands by now, which may be paid, expired or cancelled already
+// (independent review of PR #26, L6).
+const bookingReplySchema = z.union([
+  z.strictObject({
+    result: z.enum(['created', 'existing', 'duplicate']),
+    booking_id: z.uuid(),
+    booking_code: z.string().regex(BOOKING_CODE),
+    status: z.enum(DB_ENUMS.booking_status),
+    expires_at: z.string().nullable(),
+  }),
+  z.strictObject({ result: z.literal('pay_to_confirm') }),
+]);
+
+export type BookingReply =
+  | {
+      result: 'created' | 'existing' | 'duplicate';
+      bookingId: string;
+      bookingCode: string;
+      status: Enums['booking_status'];
+      expiresAt: string | null;
+    }
+  | { result: 'pay_to_confirm' };
+
+// What booking-service.ts asks internal.create_booking for: identifiers and quantities from the form, the PIC's phone
+// and code from the verified cookie, and the summary's quote hash. No price travels.
+export interface BookingToCreate {
+  packageId: string;
+  sessionIds: string[];
+  pax: number;
+  booker: {
+    bookerType: Enums['booker_type'];
+    institutionName: string | null;
+    picName: string;
+    picPhone: string;
+    picEmail: string;
+    notes: string | null;
+  };
+  addons: { productId: string; qty: number; notes: string | null }[];
+  participants: { fullName: string; groupLabel: string | null; roleLabel: string | null }[];
+  mode: 'pay' | 'quote';
+  idempotencyKey: string;
+  otpId: string;
+  consentVersion: string;
+  clientIp: string | null;
+  userAgent: string;
+  quoteHash: string;
+}
+
+function bookingArgs(booking: BookingToCreate) {
+  const { booker } = booking;
+  return {
+    p_package_id: booking.packageId,
+    p_session_ids: booking.sessionIds,
+    p_pax: booking.pax,
+    p_booker: {
+      booker_type: booker.bookerType,
+      institution_name: booker.institutionName,
+      pic_name: booker.picName,
+      pic_phone: booker.picPhone,
+      pic_email: booker.picEmail,
+      notes: booker.notes,
+    },
+    p_addons: booking.addons.map((addon) => ({
+      product_id: addon.productId,
+      qty: addon.qty,
+      notes: addon.notes,
+    })),
+    p_participants: booking.participants.map((participant) => ({
+      full_name: participant.fullName,
+      group_label: participant.groupLabel,
+      role_label: participant.roleLabel,
+    })),
+    p_mode: booking.mode,
+    p_idempotency_key: booking.idempotencyKey,
+    p_otp_id: booking.otpId,
+    p_consent: { version: booking.consentVersion },
+    p_client_meta: { ip: booking.clientIp, user_agent: booking.userAgent },
+    p_quote_hash: booking.quoteHash,
+  };
+}
+
+// Refusals (a full session, a changed price, the caps, an unverified contact) come back as the Postgres error, which
+// mapError reads by its hint.
+export async function svcCreateBooking(
+  adminClient: DatabaseClient,
+  booking: BookingToCreate,
+): Promise<BookingReply> {
+  const reply = bookingReplySchema.parse(
+    await resultOf(adminClient.rpc('svc_create_booking', bookingArgs(booking))),
+  );
+  if (reply.result === 'pay_to_confirm') return reply;
+  return {
+    result: reply.result,
+    bookingId: reply.booking_id,
+    bookingCode: reply.booking_code,
+    status: reply.status,
+    expiresAt: reply.expires_at,
+  };
 }

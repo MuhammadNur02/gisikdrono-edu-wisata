@@ -36,6 +36,8 @@ const SCHOOL_BOOKING = {
   consentVersion: '2026-10-18',
   marketingOptIn: false,
   idempotencyKey: WIZARD_MOUNT,
+  // The fingerprint of the quote the summary showed (src/lib/pricing/quote-hash.ts).
+  quoteHash: '0f7e523b88cecafeceb9f1a3cfe4a75104b7fc26b81c5d01c07f827e02261e5e',
   turnstileToken: 'XXXX.DUMMY.TOKEN.XXXX',
 };
 
@@ -83,6 +85,20 @@ describe('createBookingSchema', () => {
   ])('refuses a %s key, which only the server decides', (_name, extra) => {
     expect(schema.safeParse({ ...SCHOOL_BOOKING, ...extra }).success).toBe(false);
   });
+
+  it.each([
+    ['missing', undefined],
+    ['in capitals', '0F7E523B88CECAFECEB9F1A3CFE4A75104B7FC26B81C5D01C07F827E02261E5E'],
+    ['too short', '0f7e523b'],
+    ['not hex', 'z'.repeat(64)],
+  ])(
+    'refuses a summary hash that is %s, with a message to open the summary again',
+    (_case, quoteHash) => {
+      expect(fieldErrorsOf({ ...SCHOOL_BOOKING, quoteHash }).quoteHash).toEqual([
+        messages.quoteHash,
+      ]);
+    },
+  );
 
   it('refuses prices hidden inside an add-on or a participant line', () => {
     const pricedAddon = { productId: KERIPIK, qty: 1, unitPrice: 1 };

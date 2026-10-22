@@ -4,16 +4,21 @@ import { randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
 
 import type { GuestLinkScope } from '@/config/guest';
+import type { EnumValue } from '@/db/enums';
 import {
+  svcCreateBooking,
   svcIssuePhoneOtp,
   svcResendBookingLink,
   svcRevokeGuestLinks,
   svcVerifyPhoneOtp,
+  type BookingToCreate,
   type LinkResend,
   type OtpCheck,
   type OtpIssue,
 } from '@/db/rpc-guest';
 import type { DatabaseClient } from '@/db/rpc-result';
+import { AppError } from '@/lib/errors';
+import type { PhoneProof } from '@/lib/links/phone-proof';
 import { isCurrentLink, readGuestLink } from '@/lib/links/verify';
 import { drawOtpCode, otpBrowserHash, otpCodeHash } from '@/lib/otp';
 import { withinRateLimits, type RateLimitCheck } from '@/lib/rate-limit';
@@ -23,9 +28,12 @@ import { withinRateLimits, type RateLimitCheck } from '@/lib/rate-limit';
 // whose link signature has already passed. The limiter is an internal function no API role may call (P1.3.24).
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
+import type { CreateBookingValues } from '@/lib/validations/booking';
+import { normalizeEmail } from '@/lib/validations/normalize';
 
-// The guest side of a booking (Task P3.2, P3.3): proving the PIC's phone with a one-time code, sending a link again
-// from /reservasi/cari, and checking or revoking the links themselves (docs/Security.md §4.1, §6.7).
+// The guest side of a booking (Task P3.2, P3.3, P3.4): proving the PIC's phone with a one-time code, making the hold
+// or quotation booking itself, sending a link again from /reservasi/cari, and checking or revoking the links
+// (docs/Security.md §4.1–§4.4, §6.7).
 
 export function withinGuestLimits(checks: readonly RateLimitCheck[]): Promise<boolean> {
   return withinRateLimits(createSupabaseAdminClient(), checks);
@@ -135,4 +143,139 @@ export async function verifyGuestAccess(request: {
 
 export async function revokeGuestLinks(bookingId: string): Promise<void> {
   await svcRevokeGuestLinks(createSupabaseAdminClient(), bookingId);
+}
+
+// A booking request as createBookingAction hands it over (Task P3.5.04): the parsed form, and the gsk_phone cookie that
+// says which number, or while WhatsApp is degraded which address, the visitor proved. The form carries no phone.
+export interface BookingRequest {
+  values: CreateBookingValues;
+  proof: PhoneProof;
+  clientIp: string;
+  userAgent: string;
+}
+
+// What the visitor is told. A duplicate hold's code is never handed back (BOOK-15): its link goes again to the
+// contact that holds it. A form sent again gets its booking as it stands by now, paid or expired included.
+export type BookingOutcome =
+  | {
+      kind: 'created';
+      bookingCode: string;
+      status: EnumValue<'booking_status'>;
+      expiresAt: string | null;
+    }
+  | { kind: 'resent' }
+  | { kind: 'pay_to_confirm' };
+
+function bookingToCreate(mode: BookingToCreate['mode'], request: BookingRequest): BookingToCreate {
+  const { values, proof } = request;
+  return {
+    packageId: values.packageId,
+    sessionIds: values.visitSessionIds,
+    pax: values.pax,
+    booker: {
+      bookerType: values.bookerType,
+      institutionName: values.institutionName,
+      picName: values.picName,
+      picPhone: proof.phone,
+      picEmail: values.picEmail,
+      notes: values.notes,
+    },
+    addons: values.addons,
+    participants: values.participants,
+    mode,
+    idempotencyKey: values.idempotencyKey,
+    otpId: proof.otpId,
+    consentVersion: values.consentVersion,
+    clientIp: isIP(request.clientIp) === 0 ? null : request.clientIp,
+    userAgent: request.userAgent,
+    quoteHash: values.quoteHash,
+  };
+}
+
+// A booker is the contact their code proved (independent review of PR #26, M2): the WhatsApp number, or while WhatsApp
+// codes are degraded the address. The number typed beside that address counts against no limit and gets no link.
+function provenContact(proof: PhoneProof) {
+  if (proof.channel === 'whatsapp') {
+    return {
+      limit: 'booking:phone',
+      subject: proof.phone,
+      phone: proof.phone,
+      email: null,
+    } as const;
+  }
+  if (proof.email === null) throw new AppError('STATE_INVALID');
+  return {
+    limit: 'booking:email',
+    subject: normalizeEmail(proof.email),
+    phone: null,
+    email: proof.email,
+  } as const;
+}
+
+// Postgres breaks a deadlock by failing one of its transactions, which is then safe to run again as a whole. Every
+// writer takes the audit chain first, so this is a backstop for a writer that one day does not.
+const DEADLOCK_DETECTED = '40P01';
+
+function isDeadlock(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === DEADLOCK_DETECTED
+  );
+}
+
+async function createRetryingOnDeadlock(adminClient: DatabaseClient, booking: BookingToCreate) {
+  try {
+    return await svcCreateBooking(adminClient, booking);
+  } catch (error) {
+    if (!isDeadlock(error)) throw error;
+    return svcCreateBooking(adminClient, booking);
+  }
+}
+
+// docs/Security.md §4.3: five bookings a day per proven contact and ten per IP and browser, counted before the
+// database is asked. Everything else, from the price to the caps per contact and per session, internal.create_booking
+// decides.
+async function submitBooking(
+  mode: BookingToCreate['mode'],
+  request: BookingRequest,
+): Promise<BookingOutcome> {
+  const adminClient = createSupabaseAdminClient();
+  const contact = provenContact(request.proof);
+  const isWithinLimits = await withinRateLimits(adminClient, [
+    { name: contact.limit, subject: contact.subject },
+    {
+      name: 'booking:ip+ua',
+      subject: `${rateLimitIpBucket(request.clientIp)}|${request.userAgent}`,
+    },
+  ]);
+  if (!isWithinLimits) throw new AppError('RATE_LIMITED');
+
+  const reply = await createRetryingOnDeadlock(adminClient, bookingToCreate(mode, request));
+  if (reply.result === 'pay_to_confirm') return { kind: 'pay_to_confirm' };
+  if (reply.result === 'duplicate') {
+    await svcResendBookingLink(adminClient, {
+      bookingCode: reply.bookingCode,
+      phone: contact.phone,
+      email: contact.email,
+    });
+    return { kind: 'resent' };
+  }
+  return {
+    kind: 'created',
+    bookingCode: reply.bookingCode,
+    status: reply.status,
+    expiresAt: reply.expiresAt,
+  };
+}
+
+// "Konfirmasi & Bayar": a hold, the seats reserved until its deadline (Task P3.4.03).
+export function createHold(request: BookingRequest): Promise<BookingOutcome> {
+  return submitBooking('pay', request);
+}
+
+// "Minta Surat Penawaran": a quotation booking, no seat held; the quotation itself comes from create_quotation.
+export function createQuotedBooking(request: BookingRequest): Promise<BookingOutcome> {
+  return submitBooking('quote', request);
 }

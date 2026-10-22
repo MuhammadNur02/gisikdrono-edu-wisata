@@ -18,6 +18,8 @@ const messages = copy.booking.validation;
 const limits = BOOKING_LIMITS;
 const PHONE_INPUT_MAX_LENGTH = 32;
 const CONSENT_VERSION_PATTERN = /^[0-9A-Za-z._-]+$/;
+// The SHA-256 hex of src/lib/pricing/quote-hash.ts, as the summary step hands it out.
+const QUOTE_HASH_PATTERN = /^[0-9a-f]{64}$/;
 
 // The PIC's WhatsApp number as the OTP field takes it, returned in E.164. Indonesian mobile numbers only, because the
 // OTP and the ticket leave by WhatsApp (decision of 2026-10-21, docs/PRD.md §13.1 A13).
@@ -125,6 +127,8 @@ export function createBookingSchema(maxPax: number) {
       consentVersion: z.string().max(limits.consentVersion).regex(CONSENT_VERSION_PATTERN),
       marketingOptIn: z.boolean().default(false),
       idempotencyKey: z.uuid().toLowerCase(),
+      // The quote the visitor saw, which internal.create_booking compares with the one it prices (PRICE_MISMATCH).
+      quoteHash: z.string(messages.quoteHash).regex(QUOTE_HASH_PATTERN, messages.quoteHash),
       turnstileToken: captchaTokenField,
     })
     .strict()

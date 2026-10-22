@@ -4334,6 +4334,23 @@ export type Database = {
         Args: { p_id: string; p_provider_message_id: string }
         Returns: undefined
       }
+      svc_create_booking: {
+        Args: {
+          p_addons: Json
+          p_booker: Json
+          p_client_meta: Json
+          p_consent: Json
+          p_idempotency_key: string
+          p_mode: string
+          p_otp_id: string
+          p_package_id: string
+          p_participants: Json
+          p_pax: number
+          p_quote_hash: string
+          p_session_ids: string[]
+        }
+        Returns: Json
+      }
       svc_enqueue_notification: {
         Args: {
           p_booking_id: string
@@ -4343,7 +4360,7 @@ export type Database = {
         }
         Returns: string
       }
-      svc_expire_stale_bookings: { Args: never; Returns: number }
+      svc_expire_stale_bookings: { Args: never; Returns: Json }
       svc_fail_notification: {
         Args: {
           p_error: string
