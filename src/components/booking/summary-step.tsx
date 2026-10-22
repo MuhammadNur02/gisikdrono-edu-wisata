@@ -111,7 +111,8 @@ function ReverifyPanel(
   const contact = draft.contact;
   if (!contact) return null;
   const onVerified = (verified: VerifiedContact) => {
-    props.update({ contact: { ...verified, verifiedAt: Date.now() } });
+    const { channel, phone, email } = verified;
+    props.update({ contact: { channel, phone, email, verifiedAt: Date.now() } });
     request.setIsAskedToReverify(false);
   };
   return (
