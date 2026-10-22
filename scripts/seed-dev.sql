@@ -56,6 +56,25 @@ on conflict (id) do nothing;
 -- RW 05 and RW 13 take visits; RW 08 has a profile page only until the kelurahan sets up its packages (Task
 -- P2.10.03), so it gets no session templates, vendors, products or packages here.
 
+-- A database seeded before Task P2.10.03 holds the arts demo under RW 08. Those rows go first, by their own ids and
+-- names, so the inserts below write them again for RW 13 and the combo ends up visiting RW 05 and RW 13 (independent
+-- review of PR #23, 3). None of them has a booking, since the seed never writes one; the combo is a draft while its
+-- RW 08 leg goes, and is published again below.
+update public.tour_packages set status = 'draft'
+where id = '0de00000-0000-4000-8000-0000000000c9'
+  and exists (select 1 from public.tour_package_legs l
+              where l.package_id = '0de00000-0000-4000-8000-0000000000c9' and l.rw_id = 8);
+delete from public.tour_package_legs where package_id = '0de00000-0000-4000-8000-0000000000c9' and rw_id = 8;
+-- A package's price history is append-only; removing a demo package removes its history with it.
+select set_config('app.purge', 'on', true);
+delete from public.tour_packages where id = '0de00000-0000-4000-8000-0000000000c8' and rw_id = 8;
+delete from public.products_umkm where slug = 'gantungan-kunci-batik' and rw_id = 8;
+delete from public.umkm_vendors where id = '0de00000-0000-4000-8000-0000000000a8' and rw_id = 8;
+select set_config('app.purge', 'off', true);
+delete from public.visit_sessions s using public.session_templates t
+where s.template_id = t.id and t.rw_id = 8 and t.label in ('Sesi Pagi', 'Sesi Siang') and s.reserved_pax = 0;
+delete from public.session_templates where rw_id = 8 and label in ('Sesi Pagi', 'Sesi Siang');
+
 insert into public.session_templates (rw_id, weekday, label, start_time, end_time, capacity)
 select rw, weekday, label, start_time::time, end_time::time, 40
 from (values (5::smallint), (13::smallint)) as rws(rw)
