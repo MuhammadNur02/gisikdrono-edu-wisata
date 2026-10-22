@@ -4354,6 +4354,10 @@ export type Database = {
         }
         Returns: Json
       }
+      svc_create_quotation: {
+        Args: { p_actor_id?: string; p_booking_id: string }
+        Returns: Json
+      }
       svc_enqueue_notification: {
         Args: {
           p_booking_id: string
