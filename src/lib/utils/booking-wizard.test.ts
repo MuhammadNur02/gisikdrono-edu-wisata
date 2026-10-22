@@ -1,0 +1,249 @@
+import { describe, expect, it } from 'vitest';
+
+import type { WizardPackage } from '@/types/booking';
+import type { AvailableSession, BookableLeg } from '@/types/session';
+
+import {
+  bookableDates,
+  bookingToSend,
+  busyDates,
+  emptyDraft,
+  firstIncompleteStep,
+  isBookingStep,
+  namedRows,
+  readDraft,
+  sessionsOn,
+  unbookableDatesBetween,
+  type BookingDraft,
+} from './booking-wizard';
+
+const COMBO: WizardPackage = {
+  id: '0192f3a4-5b6c-7d8e-9f01-000000000001',
+  slug: 'paket-kombinasi',
+  name: 'Paket Kombinasi',
+  rws: [
+    { id: 5, label: 'RW 05', accentKey: 'leaf' },
+    { id: 13, label: 'RW 13', accentKey: 'terracotta' },
+  ],
+  minPax: 1,
+  maxPax: 200,
+};
+// The form key the wizard drew once for its draft.
+const WIZARD_MOUNT = '7d444840-9dc0-11d1-b245-5ffdce74fad2';
+const SESSION_RW05 = '0192f3a4-5b6c-7d8e-9f01-000000000005';
+const SESSION_RW13 = '0192f3a4-5b6c-7d8e-9f01-000000000013';
+
+const COMPLETE: BookingDraft = {
+  ...emptyDraft(COMBO),
+  visitDate: '2026-11-12',
+  sessionIds: [SESSION_RW05, SESSION_RW13],
+  pax: 30,
+  bookerType: 'school',
+  institutionName: 'SD Negeri Gisikdrono 01',
+  picName: 'Ani Lestari',
+  picEmail: 'ani@sekolah.sch.id',
+  contact: { channel: 'whatsapp', phone: '+6281234567890', email: null, verifiedAt: 1 },
+  idempotencyKey: WIZARD_MOUNT,
+};
+
+function session(
+  id: string,
+  rwId: 5 | 13,
+  sessionDate: string,
+  remaining: number,
+  capacity = 40,
+): AvailableSession {
+  return {
+    id,
+    rwId,
+    sessionDate,
+    startTime: '08:30:00',
+    endTime: '10:30:00',
+    label: 'Sesi Pagi',
+    capacity,
+    remaining,
+  };
+}
+
+describe('readDraft', () => {
+  it('starts an empty draft with one unchosen session per leg and the smallest group', () => {
+    expect(readDraft(null, COMBO)).toMatchObject({
+      sessionIds: ['', ''],
+      pax: 1,
+      bookerType: null,
+      contact: null,
+    });
+  });
+
+  it('reads back a draft it wrote', () => {
+    expect(readDraft(JSON.stringify(COMPLETE), COMBO)).toEqual(COMPLETE);
+  });
+
+  it.each([
+    ['broken JSON', '{"visitDate":'],
+    ['a key it does not know', JSON.stringify({ ...COMPLETE, total: 1 })],
+    [
+      'a draft of another package shape',
+      JSON.stringify({ ...COMPLETE, sessionIds: [SESSION_RW05] }),
+    ],
+  ])('starts again over %s', (_case, stored) => {
+    expect(readDraft(stored, COMBO)).toEqual(emptyDraft(COMBO));
+  });
+});
+
+describe('firstIncompleteStep', () => {
+  it('sends a fresh draft to jadwal and a complete one to ringkasan', () => {
+    expect(firstIncompleteStep(emptyDraft(COMBO), COMBO)).toBe('jadwal');
+    expect(firstIncompleteStep(COMPLETE, COMBO)).toBe('ringkasan');
+  });
+
+  it('holds jadwal until every leg has its session and the group fits the package', () => {
+    expect(firstIncompleteStep({ ...COMPLETE, sessionIds: [SESSION_RW05, ''] }, COMBO)).toBe(
+      'jadwal',
+    );
+    expect(firstIncompleteStep({ ...COMPLETE, pax: 201 }, COMBO)).toBe('jadwal');
+    expect(firstIncompleteStep({ ...COMPLETE, visitDate: null }, COMBO)).toBe('jadwal');
+  });
+
+  it('holds data until the booker is filled in and the contact is proved', () => {
+    expect(firstIncompleteStep({ ...COMPLETE, contact: null }, COMBO)).toBe('data');
+    expect(firstIncompleteStep({ ...COMPLETE, bookerType: null }, COMBO)).toBe('data');
+    expect(
+      firstIncompleteStep(
+        { ...COMPLETE, participants: [{ fullName: 'Budi Santoso', groupLabel: '5A' }] },
+        COMBO,
+      ),
+    ).toBe('data');
+  });
+
+  it('holds tambahan while an add-on is listed twice', () => {
+    const twice = [
+      { productId: SESSION_RW05, qty: 1 },
+      { productId: SESSION_RW05, qty: 2 },
+    ];
+    expect(firstIncompleteStep({ ...COMPLETE, addons: twice }, COMBO)).toBe('tambahan');
+  });
+});
+
+describe('namedRows', () => {
+  it('drops the rows nobody filled in and keeps every other one', () => {
+    expect(
+      namedRows([
+        { fullName: 'Budi Santoso', groupLabel: '' },
+        { fullName: ' ', groupLabel: '  ' },
+        { fullName: '', groupLabel: '5A' },
+      ]),
+    ).toEqual([
+      { fullName: 'Budi Santoso', groupLabel: '' },
+      { fullName: '', groupLabel: '5A' },
+    ]);
+  });
+});
+
+describe('isBookingStep', () => {
+  it('knows the four steps and nothing else', () => {
+    expect(['jadwal', 'data', 'tambahan', 'ringkasan'].every(isBookingStep)).toBe(true);
+    expect(isBookingStep('bayar')).toBe(false);
+    expect(isBookingStep(undefined)).toBe(false);
+  });
+});
+
+describe('the dates a package can be booked on', () => {
+  const legs: BookableLeg[] = [
+    {
+      rw: COMBO.rws[0] ?? { id: 5, label: 'RW 05', accentKey: null },
+      sessions: [
+        session('a', 5, '2026-11-12', 40),
+        session('b', 5, '2026-11-13', 4),
+        session('c', 5, '2026-11-14', 40),
+      ],
+    },
+    {
+      rw: COMBO.rws[1] ?? { id: 13, label: 'RW 13', accentKey: null },
+      sessions: [session('d', 13, '2026-11-12', 30), session('e', 13, '2026-11-13', 40)],
+    },
+  ];
+
+  it('opens a day only when every RW has a session on it with room for the group', () => {
+    expect(bookableDates(legs, 1)).toEqual(['2026-11-12', '2026-11-13']);
+    expect(bookableDates(legs, 10)).toEqual(['2026-11-12']);
+    expect(bookableDates([], 1)).toEqual([]);
+  });
+
+  it('marks a day whose sessions are at least 80 % reserved', () => {
+    const full = [{ ...legs[0], sessions: [session('f', 5, '2026-11-20', 7)] }] as BookableLeg[];
+    expect(busyDates(full)).toEqual(['2026-11-20']);
+    expect(busyDates(legs)).toEqual([]);
+  });
+
+  it('lists the days in between that cannot be booked', () => {
+    expect(
+      unbookableDatesBetween('2026-11-11', '2026-11-14', ['2026-11-12', '2026-11-14']),
+    ).toEqual(['2026-11-11', '2026-11-13']);
+  });
+
+  it('shows the sessions of one RW on the chosen day', () => {
+    const [firstLeg] = legs;
+    if (!firstLeg) throw new Error('a leg');
+    expect(sessionsOn(firstLeg, '2026-11-13').map((each) => each.id)).toEqual(['b']);
+  });
+});
+
+describe('bookingToSend', () => {
+  const summary = { privacyAccepted: true as const, turnstileToken: 'XXXX.DUMMY.TOKEN.XXXX' };
+  const QUOTE_HASH = 'f'.repeat(64);
+
+  it('sends identifiers, quantities and what was typed, with the privacy notice version, never a price', () => {
+    const booking = bookingToSend(
+      {
+        ...COMPLETE,
+        addons: [{ productId: SESSION_RW05, qty: 30 }],
+        participants: [{ fullName: 'Budi Santoso', groupLabel: '' }],
+        guardianConsent: true,
+      },
+      COMBO,
+      summary,
+      QUOTE_HASH,
+    );
+    expect(booking).toEqual({
+      packageId: COMBO.id,
+      visitSessionIds: [SESSION_RW05, SESSION_RW13],
+      visitDate: '2026-11-12',
+      pax: 30,
+      bookerType: 'school',
+      institutionName: 'SD Negeri Gisikdrono 01',
+      picName: 'Ani Lestari',
+      picEmail: 'ani@sekolah.sch.id',
+      notes: '',
+      addons: [{ productId: SESSION_RW05, qty: 30, notes: null }],
+      participants: [{ fullName: 'Budi Santoso', groupLabel: null, roleLabel: null }],
+      guardianConsent: true,
+      consentVersion: '2026-10-18',
+      privacyAccepted: true,
+      idempotencyKey: COMPLETE.idempotencyKey,
+      quoteHash: QUOTE_HASH,
+      turnstileToken: 'XXXX.DUMMY.TOKEN.XXXX',
+    });
+  });
+
+  it('names no institution for an individual, whatever was typed before the type changed', () => {
+    const individual = { ...COMPLETE, bookerType: 'individual' as const };
+    expect(bookingToSend(individual, COMBO, summary, QUOTE_HASH).institutionName).toBeNull();
+  });
+
+  it('sends the address an email code proved as the PIC email (P3.5.04 note)', () => {
+    const emailProof = {
+      ...COMPLETE,
+      picEmail: 'typed@contoh.test',
+      contact: {
+        channel: 'email' as const,
+        phone: '+6281234567890',
+        email: 'ani@sekolah.sch.id',
+        verifiedAt: 1,
+      },
+    };
+    expect(bookingToSend(emailProof, COMBO, summary, QUOTE_HASH).picEmail).toBe(
+      'ani@sekolah.sch.id',
+    );
+  });
+});

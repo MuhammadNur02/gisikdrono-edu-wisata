@@ -6,7 +6,7 @@ import { useCountdown } from '@/hooks/use-countdown';
 import { useTurnstileToken } from '@/hooks/use-turnstile-token';
 import { copy } from '@/lib/copy/id';
 import type { ActionFailure, ActionResult } from '@/types/action-result';
-import type { OtpChannel, OtpRequestAnswer, OtpVerifyAnswer } from '@/types/guest';
+import type { OtpChannel, OtpRequestAnswer, OtpVerifyAnswer, VerifiedContact } from '@/types/guest';
 
 // The state behind PhoneOtpField (src/components/booking/phone-otp-field.tsx): the step the visitor is at, what they
 // typed, the action running and its refusal. The actions come in from the page, so nothing here reaches the server
@@ -25,7 +25,16 @@ export type Errors = Partial<Record<FieldName, string>>;
 export interface PhoneOtpActions {
   requestAction: (values: unknown) => Promise<ActionResult<OtpRequestAnswer>>;
   verifyAction: (values: unknown) => Promise<ActionResult<OtpVerifyAnswer>>;
-  onVerified?: (verified: OtpVerifyAnswer & { phone: string }) => void;
+  onVerified?: (verified: VerifiedContact) => void;
+}
+
+export interface PhoneOtpOptions extends PhoneOtpActions {
+  // A contact this browser proved before, shown as verified (the wizard's data step, visited again).
+  verified?: VerifiedContact | null;
+  // A contact proved again, which may not change (the wizard's summary step, decision of 2026-10-22 on P3.5, Q2).
+  fixedContact?: { phone: string; email: string | null } | null;
+  // The visitor left a verified contact to type another one.
+  onContactChange?: () => void;
 }
 
 function fieldErrorsOf(failure: ActionFailure): Errors {
@@ -60,8 +69,13 @@ function useActionRun() {
   return { isBusy, failure, errors, run };
 }
 
-function useOtpValues() {
-  const [values, setValues] = useState({ phone: '', email: '', code: '', turnstileToken: '' });
+function useOtpValues(initial: { phone: string; email: string | null } | null) {
+  const [values, setValues] = useState({
+    phone: initial?.phone ?? '',
+    email: initial?.email ?? '',
+    code: '',
+    turnstileToken: '',
+  });
   const captcha = useTurnstileToken((turnstileToken) => {
     setValues((current) => ({ ...current, turnstileToken }));
   });
@@ -71,10 +85,16 @@ function useOtpValues() {
   return { values, setValue, captcha };
 }
 
+function verifiedStatus(channel: OtpChannel): string {
+  return channel === 'email' ? text.verifiedEmail : text.verifiedWhatsapp;
+}
+
 // Where the visitor is (number, code, done) and what the polite status line says about it.
-function useOtpSteps(onVerified: PhoneOtpActions['onVerified']) {
-  const [step, setStep] = useState<Step>({ name: 'contact', channel: 'whatsapp' });
-  const [status, setStatus] = useState('');
+function useOtpSteps(onVerified: PhoneOtpActions['onVerified'], initialStep: Step) {
+  const [step, setStep] = useState<Step>(initialStep);
+  const [status, setStatus] = useState(
+    initialStep.name === 'verified' ? verifiedStatus(initialStep.channel) : '',
+  );
   const cooldown = useCountdown();
 
   function onCodeSent(answer: OtpRequestAnswer) {
@@ -88,20 +108,25 @@ function useOtpSteps(onVerified: PhoneOtpActions['onVerified']) {
     cooldown.start(answer.resendAfterSeconds);
   }
 
-  function onCodeVerified(answer: OtpVerifyAnswer, phone: string) {
+  function onCodeVerified(answer: OtpVerifyAnswer, contact: { phone: string; email: string }) {
     setStep({ name: 'verified', channel: answer.channel });
-    setStatus(answer.channel === 'email' ? text.verifiedEmail : text.verifiedWhatsapp);
-    onVerified?.({ ...answer, phone });
+    setStatus(verifiedStatus(answer.channel));
+    onVerified?.({
+      channel: answer.channel,
+      phone: contact.phone,
+      email: answer.channel === 'email' ? contact.email : null,
+    });
   }
 
   return { step, setStep, status, cooldown, onCodeSent, onCodeVerified };
 }
 
-export function usePhoneOtp({ requestAction, verifyAction, onVerified }: PhoneOtpActions) {
-  const steps = useOtpSteps(onVerified);
-  const { values, setValue, captcha } = useOtpValues();
-  const action = useActionRun();
+type OtpSteps = ReturnType<typeof useOtpSteps>;
+type OtpValues = ReturnType<typeof useOtpValues>;
 
+// Asking for a code and checking it, for the contact typed in.
+function useOtpRequests(options: PhoneOtpOptions, steps: OtpSteps, { values, captcha }: OtpValues) {
+  const action = useActionRun();
   const contactFor = (channel: OtpChannel) => ({
     channel,
     phone: values.phone,
@@ -111,7 +136,7 @@ export function usePhoneOtp({ requestAction, verifyAction, onVerified }: PhoneOt
   // A Turnstile token is good once, so every request, answered or refused, is followed by a fresh one.
   async function sendCode(channel: OtpChannel) {
     const request = { ...contactFor(channel), turnstileToken: values.turnstileToken };
-    await action.run(() => requestAction(request), steps.onCodeSent);
+    await action.run(() => options.requestAction(request), steps.onCodeSent);
     captcha.renew();
   }
 
@@ -119,14 +144,40 @@ export function usePhoneOtp({ requestAction, verifyAction, onVerified }: PhoneOt
   async function verifyCode(channel: OtpChannel) {
     const check = { ...contactFor(channel), code: values.code };
     await action.run(
-      () => verifyAction(check),
+      () => options.verifyAction(check),
       (answer) => {
-        steps.onCodeVerified(answer, values.phone);
+        steps.onCodeVerified(answer, values);
       },
     );
   }
 
-  return { ...steps, values, setValue, action, captcha, sendCode, verifyCode };
+  return { action, sendCode, verifyCode };
+}
+
+export function usePhoneOtp(options: PhoneOtpOptions) {
+  const { onVerified, verified, fixedContact } = options;
+  const steps = useOtpSteps(
+    onVerified,
+    verified
+      ? { name: 'verified', channel: verified.channel }
+      : { name: 'contact', channel: 'whatsapp' },
+  );
+  const otpValues = useOtpValues(verified ?? fixedContact ?? null);
+  const requests = useOtpRequests(options, steps, otpValues);
+
+  // Typing another number or address leaves the proof of the last one behind.
+  function changeContact(channel: OtpChannel) {
+    steps.setStep({ name: 'contact', channel });
+    options.onContactChange?.();
+  }
+
+  return {
+    ...steps,
+    ...otpValues,
+    ...requests,
+    isContactFixed: Boolean(fixedContact),
+    changeContact,
+  };
 }
 
 export type PhoneOtp = ReturnType<typeof usePhoneOtp>;
