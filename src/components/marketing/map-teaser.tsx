@@ -19,15 +19,20 @@ export interface MapTeaserProps {
 }
 
 // docs/PRD.md FR-PUB-03: the interactive site plan on the home page (Task P2.5.01), with the list of its points
-// as the readable alternative, the office address, and the way to /peta-kontak.
+// as the readable alternative, the office address, and the way to /peta-kontak. Without a published point the
+// section keeps the address alone (docs/StyleGuide.md §6.9); /peta-kontak is where the empty plan is explained.
 export function MapTeaser({ id, address, points, units }: MapTeaserProps) {
   return (
     <Section id={id} eyebrow="Peta" title="Titik kunjungan di Gisikdrono" tone="muted">
-      <div className="space-y-2">
-        <SiteMap points={points} units={units} />
-        <p className="text-caption text-muted-foreground">{mapCopy.planProvisional}</p>
-      </div>
-      <RwPointsList points={points} units={units} />
+      {points.length > 0 ? (
+        <>
+          <div className="space-y-2">
+            <SiteMap points={points} units={units} />
+            <p className="text-caption text-muted-foreground">{mapCopy.planProvisional}</p>
+          </div>
+          <RwPointsList points={points} units={units} />
+        </>
+      ) : null}
       {address ? (
         <p className="flex gap-2 text-body text-muted-foreground">
           <MapPin aria-hidden className="mt-1 size-4 shrink-0" />

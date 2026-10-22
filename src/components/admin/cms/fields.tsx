@@ -151,16 +151,18 @@ function LabelledSelect({ value, onValueChange, options, required, trigger }: La
   );
 }
 
-export interface SelectFieldProps<TValues extends FieldValues> extends FieldBase<TValues> {
-  name: FieldPathByValue<TValues, string>;
+// TValue is the union the field holds when it is narrower than string, such as a status enum (StatusField).
+export interface SelectFieldProps<TValues extends FieldValues, TValue extends string = string>
+  extends FieldBase<TValues> {
+  name: FieldPathByValue<TValues, TValue>;
   options: readonly SelectOption[];
 }
 
-export function SelectField<TValues extends FieldValues>({
+export function SelectField<TValues extends FieldValues, TValue extends string = string>({
   name,
   options,
   ...base
-}: SelectFieldProps<TValues>) {
+}: SelectFieldProps<TValues, TValue>) {
   return (
     <FormField
       {...base}

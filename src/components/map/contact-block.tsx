@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { RwEyebrow } from '@/components/layout/rw-eyebrow';
 import { Button } from '@/components/ui/button';
 import { siteConfig } from '@/config/site';
+import { copy } from '@/lib/copy/id';
 import { mapCopy } from '@/lib/copy/map';
 import { formatPhone } from '@/lib/utils/phone';
 import { buildWhatsAppChatUrl } from '@/lib/utils/whatsapp';
@@ -41,24 +42,31 @@ function ContactRow({
   );
 }
 
-function ContactDetails({ email, address, routeUrl }: Omit<ContactBlockProps, 'units'>) {
+// The public WhatsApp number (NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER), with the greeting of the floating button.
+function WhatsAppRow() {
   const chatUrl = buildWhatsAppChatUrl(
     siteConfig.whatsappContactNumber,
     copy.layout.whatsAppGreeting(siteConfig.name),
   );
   return (
+    <ContactRow icon={<MessageCircle aria-hidden className="size-5" />} label={mapCopy.contactWhatsApp}>
+      <a
+        href={chatUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex min-h-11 items-center tabular-nums underline-offset-4 hover:underline md:min-h-0"
+      >
+        {formatPhone(siteConfig.whatsappContactNumber)}
+      </a>
+    </ContactRow>
+  );
+}
+
+function ContactDetails({ email, address, routeUrl }: Omit<ContactBlockProps, 'units'>) {
+  return (
     <div className="space-y-6 rounded-xl border border-border bg-card p-5 shadow-card md:p-6">
       <ul className="space-y-4">
-        <ContactRow icon={<MessageCircle aria-hidden className="size-5" />} label={mapCopy.contactWhatsApp}>
-          <a
-            href={chatUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex min-h-11 items-center tabular-nums underline-offset-4 hover:underline md:min-h-0"
-          >
-            {formatPhone(siteConfig.whatsappContactNumber)}
-          </a>
-        </ContactRow>
+        <WhatsAppRow />
         {email ? (
           <ContactRow icon={<Mail aria-hidden className="size-5" />} label={mapCopy.contactEmail}>
             <a

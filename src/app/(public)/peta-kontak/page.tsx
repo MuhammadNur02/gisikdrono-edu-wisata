@@ -5,6 +5,7 @@ import { Section } from '@/components/layout/section';
 import { ContactBlock } from '@/components/map/contact-block';
 import { GeoMap } from '@/components/map/geo-map';
 import { GoogleMapEmbed } from '@/components/map/google-map-embed';
+import { PlanEmptyState } from '@/components/map/plan-empty-state';
 import { RwPointsList } from '@/components/map/rw-points-list';
 import { SiteMap } from '@/components/map/site-map';
 import { JsonLd } from '@/components/seo/json-ld';
@@ -18,6 +19,8 @@ import { buildPageMetadata } from '@/lib/seo/metadata';
 import { googleMapsDirectionsUrl, googleMapsEmbedUrl, googleMapsPlaceUrl } from '@/lib/utils/geo';
 import { buildGeoMarkers, mapCentreOf } from '@/lib/utils/geo-markers';
 import { PUBLIC_PATHS } from '@/lib/utils/paths';
+import type { ActivityPoint } from '@/types/activity-point';
+import type { RwUnitSummary } from '@/types/rw-unit';
 
 export const revalidate = 3600;
 
@@ -32,9 +35,35 @@ export const metadata: Metadata = buildPageMetadata({
 
 const SECTION_IDS = { plan: 'denah', geo: 'lokasi', contact: 'kontak' } as const;
 
-// docs/PRD.md FR-PUB-03 and FR-PUB-18. The plan is always shown; the geographic maps appear once the kelurahan
-// has set coordinates (rw_units.map_lat/map_lng or a point's lat/lng), and a contact detail it has not given
-// is left out (docs/StyleGuide.md §6.9).
+interface PlanSectionProps {
+  points: readonly ActivityPoint[];
+  units: readonly RwUnitSummary[];
+}
+
+function PlanSection({ points, units }: PlanSectionProps) {
+  return (
+    <Section id={SECTION_IDS.plan} eyebrow="Denah" title={mapCopy.planTitle}>
+      {points.length > 0 ? (
+        <>
+          <div className="space-y-2">
+            <SiteMap points={points} units={units} />
+            <p className="text-caption text-muted-foreground">{mapCopy.planProvisional}</p>
+          </div>
+          <div className="space-y-4">
+            <h3 className="text-h4">{mapCopy.pointsTitle}</h3>
+            <RwPointsList points={points} units={units} />
+          </div>
+        </>
+      ) : (
+        <PlanEmptyState />
+      )}
+    </Section>
+  );
+}
+
+// docs/PRD.md FR-PUB-03 and FR-PUB-18. The plan shows once activity_points has a published row, and says so until
+// then; the geographic maps appear once the kelurahan has set coordinates (rw_units.map_lat/map_lng or a point's
+// lat/lng), and a contact detail it has not given is left out (docs/StyleGuide.md §6.9).
 export default async function MapContactPage() {
   const [points, units, settings] = await Promise.all([
     listActivityPoints(),
@@ -47,18 +76,7 @@ export default async function MapContactPage() {
   return (
     <>
       <PageHeader title={TITLE} description={DESCRIPTION} breadcrumbs={[]} path={PUBLIC_PATHS.map} />
-      <Section id={SECTION_IDS.plan} eyebrow="Denah" title={mapCopy.planTitle}>
-        <div className="space-y-2">
-          <SiteMap points={points} units={units} />
-          <p className="text-caption text-muted-foreground">{mapCopy.planProvisional}</p>
-        </div>
-        {points.length > 0 ? (
-          <div className="space-y-4">
-            <h3 className="text-h4">{mapCopy.pointsTitle}</h3>
-            <RwPointsList points={points} units={units} />
-          </div>
-        ) : null}
-      </Section>
+      <PlanSection points={points} units={units} />
       {centre ? (
         <Section id={SECTION_IDS.geo} eyebrow="Lokasi" title={mapCopy.geoTitle} tone="muted">
           <GeoMap markers={markers} />

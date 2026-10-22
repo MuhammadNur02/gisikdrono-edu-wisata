@@ -13,13 +13,14 @@ const INSTANT_MS = 0;
 
 function ZoomButton({
   label,
-  icon: Icon,
+  icon,
   onPress,
 }: {
   label: string;
   icon: LucideIcon;
   onPress: () => void;
 }) {
+  const Icon = icon;
   return (
     <Button
       type="button"

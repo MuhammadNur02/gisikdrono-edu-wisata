@@ -21,15 +21,41 @@ export interface HotspotPopoverProps {
   hasGallery: boolean;
 }
 
-// What an open hotspot shows (docs/StyleGuide.md §5.13): the photo, the RW and type, the short description, and
-// the way to the gallery and to the place itself.
-export function HotspotPopover({ point, rw, hasGallery }: HotspotPopoverProps) {
-  const type = ACTIVITY_POINT_TYPE[point.pointType];
-  const TypeIcon = type.icon;
+// The way to the gallery and to the place itself; nothing when the point offers neither.
+function HotspotActions({ point, rw, hasGallery }: HotspotPopoverProps) {
   const routeUrl =
     point.lat !== null && point.lng !== null
       ? googleMapsDirectionsUrl({ lat: point.lat, lng: point.lng })
       : null;
+  if (!hasGallery && routeUrl === null) return null;
+  return (
+    <div className="flex flex-wrap gap-2 px-4">
+      {hasGallery ? (
+        <Button variant="secondary" size="sm" asChild>
+          <Link href={galleryPath({ filter: galleryFilterForRw(rw.id), page: 1 })}>
+            <Images aria-hidden />
+            {mapCopy.gallery}
+          </Link>
+        </Button>
+      ) : null}
+      {routeUrl ? (
+        <Button variant="outline" size="sm" asChild>
+          <a href={routeUrl} target="_blank" rel="noopener noreferrer">
+            <ExternalLink aria-hidden />
+            {mapCopy.route}
+          </a>
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+// What an open hotspot shows (docs/StyleGuide.md §5.13): the photo, the RW and type, the short description, and
+// the way to the gallery and to the place itself.
+export function HotspotPopover(props: HotspotPopoverProps) {
+  const { point, rw } = props;
+  const type = ACTIVITY_POINT_TYPE[point.pointType];
+  const TypeIcon = type.icon;
   return (
     <article className="space-y-3 pb-4">
       {point.image ? (
@@ -53,26 +79,7 @@ export function HotspotPopover({ point, rw, hasGallery }: HotspotPopoverProps) {
           <p className="text-body-sm text-muted-foreground">{point.shortDescription}</p>
         ) : null}
       </div>
-      {hasGallery || routeUrl ? (
-        <div className="flex flex-wrap gap-2 px-4">
-          {hasGallery ? (
-            <Button variant="secondary" size="sm" asChild>
-              <Link href={galleryPath({ filter: galleryFilterForRw(rw.id), page: 1 })}>
-                <Images aria-hidden />
-                {mapCopy.gallery}
-              </Link>
-            </Button>
-          ) : null}
-          {routeUrl ? (
-            <Button variant="outline" size="sm" asChild>
-              <a href={routeUrl} target="_blank" rel="noopener noreferrer">
-                <ExternalLink aria-hidden />
-                {mapCopy.route}
-              </a>
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
+      <HotspotActions {...props} />
     </article>
   );
 }

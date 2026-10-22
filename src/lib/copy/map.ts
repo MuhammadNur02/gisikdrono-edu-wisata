@@ -11,6 +11,10 @@ export const mapCopy = {
   zoomOut: 'Perkecil denah',
   resetView: 'Kembalikan tampilan denah',
   hotspot: (name: string, rw: string) => `${name}, ${rw}`,
+  // Shown in place of the plan while activity_points has no published row (docs/StyleGuide.md §8.5).
+  planEmptyTitle: 'Titik aktivitas belum ditambahkan',
+  planEmptyDescription:
+    'Denah titik aktivitas akan tampil di sini setelah pengelola kampung menambahkan titik aktivitasnya.',
   pointsTitle: 'Daftar titik aktivitas',
   gallery: 'Lihat di galeri',
   route: 'Rute',

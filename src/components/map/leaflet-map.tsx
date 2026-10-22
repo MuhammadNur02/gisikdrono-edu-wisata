@@ -106,8 +106,25 @@ function viewFor(markers: readonly GeoMarker[]) {
   return { bounds: markers.map((marker): LatLngTuple => [marker.lat, marker.lng]) };
 }
 
+// The credit under the map is a condition of the OSM tile usage policy.
+function OsmCredit() {
+  return (
+    <figcaption className="text-caption text-muted-foreground">
+      {mapCopy.osmCredit} ©{' '}
+      <a
+        href={OSM_COPYRIGHT_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline underline-offset-4 hover:text-foreground"
+      >
+        {mapCopy.osmContributors}
+      </a>
+    </figcaption>
+  );
+}
+
 // docs/StyleGuide.md §5.13, docs/PRD.md FR-PUB-18: OpenStreetMap tiles under the RW centres and the activity
-// points. The credit under the map is a condition of the OSM tile usage policy.
+// points.
 export function LeafletMap({ markers }: LeafletMapProps) {
   const [map, setMap] = useState<LeafletMapInstance | null>(null);
   const prefersReducedMotion = useReducedMotion() === true;
@@ -137,17 +154,7 @@ export function LeafletMap({ markers }: LeafletMapProps) {
         </MapContainer>
         <GeoZoomControls map={map} />
       </div>
-      <figcaption className="text-caption text-muted-foreground">
-        {mapCopy.osmCredit} ©{' '}
-        <a
-          href={OSM_COPYRIGHT_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="underline underline-offset-4 hover:text-foreground"
-        >
-          {mapCopy.osmContributors}
-        </a>
-      </figcaption>
+      <OsmCredit />
     </figure>
   );
 }
