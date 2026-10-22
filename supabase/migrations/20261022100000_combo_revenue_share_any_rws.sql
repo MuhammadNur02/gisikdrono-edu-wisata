@@ -28,9 +28,10 @@ select combo_rule.id, line.beneficiary::public.revenue_beneficiary, null, line.p
 from combo_rule
 cross join (values ('kelurahan', 20.00), ('rw_treasury', 80.00)) as line(beneficiary, pct);
 
--- The shape of a rule with an equal split (proposed defaults Q3, Q4 of PR 4): at most one RW-less rw_treasury line,
--- no fixed rw_treasury line next to it, and only in a package's rules, since "the booking's legs" means nothing to
--- a product of one RW. Checked at commit, like revenue_rule_sum_guard, so a rule can be written line by line.
+-- The shape of a rule with an equal split (decision of 2026-10-22 on Task P3.9.04, Q3 and Q4): at most one RW-less
+-- rw_treasury line, no fixed rw_treasury line next to it, and only in a package's rules, since "the booking's legs"
+-- means nothing to a product of one RW. Checked at commit, like revenue_rule_sum_guard, so a rule can be written line
+-- by line.
 create function internal.revenue_rule_shape_guard() returns trigger
   language plpgsql security definer
   set search_path = ''
@@ -119,7 +120,7 @@ end;
 $$;
 revoke execute on function internal.largest_remainder_split(bigint, numeric[]) from public, anon, authenticated;
 
--- The order of a rule's lines in a split, which is also who wins a tie (proposed default Q1 of PR 4): the kelurahan,
+-- The order of a rule's lines in a split, which is also who wins a tie (decision of 2026-10-22, Q1): the kelurahan,
 -- the RW treasuries in the booking's leg order (an equal-split line after the named ones), then vendors.
 create function internal.revenue_line_order(p_beneficiary public.revenue_beneficiary, p_rw_id smallint,
   p_vendor_id uuid, p_legs smallint[]) returns text
@@ -135,10 +136,10 @@ $$;
 revoke execute on function internal.revenue_line_order(public.revenue_beneficiary, smallint, uuid, smallint[])
   from public, anon, authenticated;
 
--- A rule's split of an amount for a booking whose legs visit p_rw_ids, in leg order (decision of 2026-10-21 and
--- proposed defaults Q1, Q2 of PR 4). First the amount goes over the rule's lines by largest remainder in the order
--- of internal.revenue_line_order; then an equal-split line's part goes over the legs by largest remainder, ties to
--- the earlier leg. A line for an RW the booking does not visit is refused, never paid.
+-- A rule's split of an amount for a booking whose legs visit p_rw_ids, in leg order (decision of 2026-10-21, and of
+-- 2026-10-22 on its rounding, Q1 and Q2). First the amount goes over the rule's lines by largest remainder in the
+-- order of internal.revenue_line_order; then an equal-split line's part goes over the legs by largest remainder, ties
+-- to the earlier leg. A line for an RW the booking does not visit is refused, never paid.
 create function internal.revenue_split(p_rule_id uuid, p_amount bigint, p_rw_ids smallint[])
   returns table (part_order integer, beneficiary public.revenue_beneficiary, rw_id smallint, vendor_id uuid,
                  pct numeric, amount bigint)

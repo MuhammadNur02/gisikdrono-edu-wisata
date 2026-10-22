@@ -61,7 +61,7 @@ select throws_ok(
   $$insert into public.revenue_share_rule_lines (rule_id, beneficiary, rw_id, pct)
     values ('00000000-0000-4000-8000-0000000c4001', 'umkm_vendor', 5, 0.00)$$,
   '23514', null, 'nor a vendor line an RW');
--- ===== The shape of an equal split (proposed defaults Q3, Q4 of PR 4) =====
+-- ===== The shape of an equal split (decision of 2026-10-22, Q3 and Q4) =====
 select lives_ok($$set constraints revenue_rule_shape_guard immediate$$,
   'a package rule with one equal-split line and the kelurahan passes the shape check');
 insert into public.revenue_share_rules (id, scope, package_id, name) values
