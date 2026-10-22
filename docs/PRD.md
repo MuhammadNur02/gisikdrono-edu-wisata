@@ -1491,6 +1491,8 @@ create table public.revenue_share_rules (
     (scope = 'product' and product_id is not null and package_id is null)),
   constraint revenue_rule_period_ok check (effective_to is null or effective_to >= effective_from)
 );
+-- 20261022100000: exclusion constraint revenue_share_rules_no_overlap (btree_gist, deferrable initially immediate):
+-- one active rule per (scope, rw_id, package_id, product_id) on any day of daterange(effective_from, effective_to, '[]').
 create table public.revenue_share_rule_lines (
   id          uuid primary key default gen_random_uuid(),
   rule_id     uuid not null references public.revenue_share_rules(id) on delete cascade,
@@ -1504,6 +1506,8 @@ create table public.revenue_share_rule_lines (
     (beneficiary = 'umkm_vendor' and rw_id is null))                 -- vendor_id NULL = "the product's vendor"
 );
 -- constraint trigger revenue_rule_sum_guard (deferrable initially deferred): sum(pct) per rule = 100.00.
+-- 20261022100000: unique nulls not distinct (rule_id, beneficiary, rw_id, vendor_id) as
+-- revenue_share_rule_lines_one_per_beneficiary; constraint trigger revenue_rule_shape_guard for the equal split.
 
 -- payout_batches (A): superadmin records an actual transfer to an RW treasury / vendor with proof.
 create table public.payout_batches (
@@ -2342,13 +2346,13 @@ Recap pages read only the ledger views (`v_revenue_recap_daily`, `v_revenue_reca
 
 | Element | Rule |
 |---|---|
-| Rule resolution | `product` rule > `addon_default` for the product's RW > `package` rule > `package_default` for the package's RW (`rw_id IS NULL` for combo). There is no global default: no rule in force, or more than one in force for the same target, refuses the allocation (`internal.resolve_package_rule`, decision of 2026-10-21, Task P3.9.04) |
+| Rule resolution | `product` rule > `addon_default` for the product's RW > `package` rule > `package_default` for the package's RW (`rw_id IS NULL` for combo). There is no global default: no rule in force refuses the allocation (`internal.resolve_package_rule`, decision of 2026-10-21, Task P3.9.04). Two rules in force for one target on one day are refused when written (`revenue_share_rules_no_overlap`), and `resolve_package_rule` still refuses them should one get past |
 | Defaults (A4) | package: kelurahan 20 % / RW treasury 80 %; add-on: UMKM vendor 90 % / RW treasury 10 %; combo: kelurahan 20 % / the RWs of the booking's legs 80 % in equal parts, two to four RWs (`MAX_PACKAGE_LEGS`), written as an `rw_treasury` line without an RW; a `package` rule may set any other split; all editable by superadmin |
-| Computation | `internal.allocate_revenue_share` at settlement, in the same transaction as `paid`; per line (`package`, `addon:<id>`) the base amount is split by `internal.revenue_split` in whole rupiah, so the parts sum exactly to the base: first over the rule's lines by largest remainder, then a combo's equal-split line over the booking's legs by largest remainder. A tie goes to the kelurahan, then to the RW treasuries in the booking's leg order, then to vendors, so RWs of a combo never differ by more than one rupiah (80 000 over three legs: 26 667, 26 667, 26 666). An `rw_treasury` line for an RW the booking does not visit refuses the allocation, never pays. `rule_version` snapshot stored on each entry |
+| Computation | `internal.allocate_revenue_share` at settlement, in the same transaction as `paid`; per line (`package`, `addon:<id>`) the base amount is split by `internal.revenue_split` in whole rupiah, so the parts sum exactly to the base, exact up to the bigint maximum: first over the rule's lines by largest remainder, then a combo's equal-split line over the booking's legs by largest remainder. A tie goes to the kelurahan, then to the RW treasuries in the booking's leg order, then to vendors, so RWs of a combo never differ by more than one rupiah (80 000 over three legs: 26 667, 26 667, 26 666). An `rw_treasury` line for an RW the booking does not visit refuses the allocation, never pays. `rule_version` snapshot stored on each entry |
 | Discounts | Applied to the package line before the split; add-on lines are never discounted |
 | Midtrans fees | Borne by the kelurahan share (recorded in the recap as a memo line from `v_finance_daily`, not in the ledger) |
 | Reversal | `record_refund` writes `reversal` rows (negative, proportional to the refunded amount); adjustments write `adjustment` rows referencing `payment_adjustments` |
-| Immutability | Entries are append-only and hash-chained (`prev_hash`, `entry_hash`); `internal.verify_ledger_chain` runs nightly; a rule used by any entry becomes immutable (new version via `effective_from`) |
+| Immutability | Entries are append-only and hash-chained (`prev_hash`, `entry_hash`); `internal.verify_ledger_chain` runs nightly; a rule used by any entry becomes immutable (new version via `effective_from`). `effective_to` is a rule's last day, so a new version starts the day after the old one closes, or the old one is switched off; a rule names each beneficiary once |
 | Payouts | `settle_revenue_entries` creates a `payout_batches` row (period, total, reference, proof) and stamps `payout_batch_id`; outstanding = entries without a batch; monthly check against `finance.expected_payout_account_masked` |
 | Visibility | admin_rw sees its own treasury key `rw:<id>` and vendors in its RW; superadmin sees all |
 
