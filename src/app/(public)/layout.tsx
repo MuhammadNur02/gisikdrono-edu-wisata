@@ -32,7 +32,6 @@ export default async function PublicLayout({ children }: Readonly<{ children: Re
         <SiteFooter
           contact={{ email: settings.contactEmail, address: settings.kelurahanAddress }}
           navGroups={nav.groups}
-          rwCount={rwUnits.length}
         />
         <WhatsAppFab />
       </div>

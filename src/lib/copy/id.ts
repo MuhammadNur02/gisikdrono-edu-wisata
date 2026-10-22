@@ -53,9 +53,8 @@ export const copy = {
     menuDescription: 'Semua halaman Edu Wisata Gisikdrono.',
     breadcrumb: 'Lokasi halaman',
     footerNav: 'Navigasi bawah',
-    // The number of RWs online, spelled out (countWord), so the line stays true as RWs come and go.
-    footerAbout: (kampungCount: string) =>
-      `Kunjungan edukasi ke ${kampungCount} kampung di Kelurahan Gisikdrono, dipesan dan dibayar lewat situs ini.`,
+    // Names no number of RWs, and promises no booking: an RW may show its profile before it takes visits.
+    footerAbout: 'Kunjungan edukasi ke kampung-kampung di Kelurahan Gisikdrono.',
     footerManagedBy: 'Dikelola oleh',
     footerContactTitle: 'Kontak',
     footerEmail: 'Email',

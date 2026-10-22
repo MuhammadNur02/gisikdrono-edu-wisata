@@ -7,7 +7,6 @@ import { SiteWordmark } from '@/components/layout/site-wordmark';
 import { LEGAL_NAV_ITEMS, type PublicNavGroup, type PublicNavItem } from '@/config/nav';
 import { siteConfig } from '@/config/site';
 import { copy } from '@/lib/copy/id';
-import { countWord } from '@/lib/utils/number-words';
 import { formatPhone } from '@/lib/utils/phone';
 import { buildWhatsAppChatUrl } from '@/lib/utils/whatsapp';
 
@@ -22,14 +21,12 @@ function FooterLink({ item }: { item: PublicNavItem }) {
   );
 }
 
-function FooterIntro({ rwCount }: { rwCount: number }) {
+function FooterIntro() {
   const { district, city } = siteConfig.locality;
   return (
     <div className="space-y-4 xl:col-span-4">
       <SiteWordmark />
-      <p className="max-w-sm text-body-sm text-muted-foreground">
-        {copy.layout.footerAbout(countWord(rwCount))}
-      </p>
+      <p className="max-w-sm text-body-sm text-muted-foreground">{copy.layout.footerAbout}</p>
       <p className="text-body-sm">
         {copy.layout.footerManagedBy} <span className="font-medium">{siteConfig.ownerName}</span>,{' '}
         {district}, {city}.
@@ -142,17 +139,15 @@ function FooterBottom() {
 export interface SiteFooterProps {
   contact: FooterContactDetails;
   navGroups: readonly PublicNavGroup[];
-  // How many RWs are online, for the line about the site.
-  rwCount: number;
 }
 
-export function SiteFooter({ contact, navGroups, rwCount }: SiteFooterProps) {
+export function SiteFooter({ contact, navGroups }: SiteFooterProps) {
   return (
     <footer className="border-t border-border bg-muted/40">
       {/* Below xl the contact block sits beside the intro and the links take a full row; from xl all three
           share one row, links in the middle. */}
       <Container className="grid gap-10 py-12 md:grid-cols-2 md:py-16 xl:grid-cols-12 xl:gap-x-8">
-        <FooterIntro rwCount={rwCount} />
+        <FooterIntro />
         <FooterContact contact={contact} />
         <FooterNav groups={navGroups} />
       </Container>

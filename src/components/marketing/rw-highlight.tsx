@@ -39,11 +39,14 @@ function RwHighlightBlock({ unit, photoLast }: { unit: RwUnitProfile; photoLast:
 
 // docs/PRD.md FR-PUB-02: every RW online from rw_units (name, theme, tagline, photo), each linking to its page.
 // One RW to a row, photo and text alternating sides, rather than a row of identical cards (docs/StyleGuide.md §1.3
-// G7); the eyebrow counts the RWs, so it stays true as RWs go online or offline.
+// G7); the eyebrow counts the RWs, so it stays true as RWs go online or offline. With none online the section is
+// left out whole (docs/StyleGuide.md §6.9). The desktop header's Kampung Wisata link points here.
 export function RwHighlight({ id, units }: RwHighlightProps) {
+  if (units.length === 0) return null;
   return (
     <Section
       id={id}
+      isLinkTarget
       eyebrow={`${countWordAtStart(units.length)} kampung, ${countWord(units.length)} program`}
       title="Pilih kampung yang ingin Anda kunjungi"
     >

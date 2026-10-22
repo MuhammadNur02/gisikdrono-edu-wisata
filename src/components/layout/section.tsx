@@ -8,8 +8,9 @@ import { cn } from '@/lib/utils/cn';
 export type SectionTone = 'default' | 'muted' | 'brand';
 export type SectionAlign = 'left' | 'center';
 
-// scroll-mt-16 keeps an anchored section (/#kampung, /rw-05-ecowastreme#profil) clear of the sticky h-16 header.
-const sectionVariants = cva('scroll-mt-16 py-16 md:py-24', {
+// scroll-mt-17 keeps an anchored section (/#kampung, /rw-05-ecowastreme#profil) clear of the sticky header: its h-16
+// plus the 1 px border below it.
+const sectionVariants = cva('scroll-mt-17 py-16 md:py-24', {
   variants: {
     tone: { default: 'bg-background', muted: 'bg-muted/40', brand: 'bg-background' },
   },
@@ -27,6 +28,9 @@ export interface SectionProps {
   description?: string;
   tone?: SectionTone;
   align?: SectionAlign;
+  // A section a header link points at (/#kampung): following the link moves the focus here as well, so a keyboard or
+  // screen-reader user goes on from the section and not from the top of the page. The section itself draws no ring.
+  isLinkTarget?: boolean;
   children?: ReactNode;
 }
 
@@ -84,6 +88,7 @@ export function Section({
   id,
   tone = 'default',
   align = 'left',
+  isLinkTarget = false,
   children,
   ...heading
 }: SectionProps) {
@@ -96,7 +101,12 @@ export function Section({
     </div>
   );
   return (
-    <section id={id} aria-labelledby={titleId} className={sectionVariants({ tone })}>
+    <section
+      id={id}
+      aria-labelledby={titleId}
+      tabIndex={isLinkTarget ? -1 : undefined}
+      className={cn(sectionVariants({ tone }), isLinkTarget && 'outline-none')}
+    >
       <Container>
         {isOnBrand ? (
           <div className="relative overflow-hidden rounded-2xl bg-brand-deep px-6 py-12 text-white md:px-12 md:py-16">
