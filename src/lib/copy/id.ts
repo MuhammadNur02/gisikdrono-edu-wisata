@@ -2,6 +2,7 @@ import { authCopy } from '@/lib/copy/auth';
 import { bookingCopy } from '@/lib/copy/booking';
 import { cmsCopy } from '@/lib/copy/cms';
 import { dashboardCopy } from '@/lib/copy/dashboard';
+import { packagesCopy } from '@/lib/copy/packages';
 import { sessionsCopy } from '@/lib/copy/sessions';
 import type { ActionErrorCode } from '@/types/action-result';
 import type { UploadProblem } from '@/types/upload';
@@ -34,6 +35,7 @@ export const copy = {
   dashboard: dashboardCopy,
   cms: cmsCopy,
   sessions: sessionsCopy,
+  packages: packagesCopy,
   // Labels the base components read out to screen readers and show on their own controls.
   ui: {
     close: 'Tutup',
