@@ -32,6 +32,8 @@ export interface ActivityPointAdmin {
   imagePath: string | null;
   mapX: number | null;
   mapY: number | null;
+  // activity_points.svg_hotspot_id as stored, text; the form narrows it to the plan's ids (PLAN_HOTSPOT_IDS).
+  svgHotspotId: string | null;
   lat: number | null;
   lng: number | null;
   sortOrder: number;
