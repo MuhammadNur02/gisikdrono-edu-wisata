@@ -1,9 +1,9 @@
 import { Quote } from 'lucide-react';
 
 import { Section } from '@/components/layout/section';
-import { RevealList } from '@/components/marketing/reveal';
 import { SectionLink } from '@/components/marketing/section-link';
 import { ReviewCard } from '@/components/reviews/review-card';
+import { cn } from '@/lib/utils/cn';
 import { PUBLIC_PATHS } from '@/lib/utils/paths';
 import type { PublicReview } from '@/types/review';
 
@@ -44,14 +44,13 @@ export function Testimonials({ id, reviews }: TestimonialsProps) {
       title="Kata rombongan yang sudah berkunjung"
       headerAction={<SectionLink href={PUBLIC_PATHS.reviews} label="Lihat semua ulasan" />}
     >
-      <RevealList
-        items={reviews.map((review, index) => ({
-          key: review.id,
-          node: <ReviewItem review={review} isLead={index === 0} />,
-          className: index === 0 ? LEAD_ITEM : SIDE_ITEM,
-        }))}
-        className="grid gap-6 lg:grid-cols-12"
-      />
+      <ul className="grid gap-6 lg:grid-cols-12">
+        {reviews.map((review, index) => (
+          <li key={review.id} className={cn('reveal', index === 0 ? LEAD_ITEM : SIDE_ITEM)}>
+            <ReviewItem review={review} isLead={index === 0} />
+          </li>
+        ))}
+      </ul>
     </Section>
   );
 }

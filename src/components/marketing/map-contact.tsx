@@ -5,7 +5,6 @@ import { RwTag } from '@/components/layout/rw-tag';
 import { Section } from '@/components/layout/section';
 import { RwPointsList } from '@/components/map/rw-points-list';
 import { SiteMap } from '@/components/map/site-map';
-import { Reveal } from '@/components/marketing/reveal';
 import { SectionLink } from '@/components/marketing/section-link';
 import { siteConfig } from '@/config/site';
 import { BOOKLET_KIND_LABELS } from '@/config/status';
@@ -122,9 +121,9 @@ export function MapContact({ id, address, points, units, booklets }: MapContactP
             <RwPointsList points={points} units={units} />
           </div>
         ) : null}
-        <Reveal className={hasPlan ? 'lg:col-span-5' : 'lg:col-span-12'}>
+        <div className={cn('reveal', hasPlan ? 'lg:col-span-5' : 'lg:col-span-12')}>
           <ContactColumn address={address} booklets={booklets} />
-        </Reveal>
+        </div>
       </div>
     </Section>
   );

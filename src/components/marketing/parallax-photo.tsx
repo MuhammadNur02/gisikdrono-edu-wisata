@@ -1,14 +1,6 @@
-import dynamic from 'next/dynamic';
-
 import { PhotoFrame } from '@/components/marketing/photo';
 import { cn } from '@/lib/utils/cn';
 import type { PublicImage } from '@/types/media';
-
-// The scroll hooks reach the browser after the page itself; the frame and the photo are server HTML of a fixed
-// size, so nothing shifts when the drift starts (docs/StyleGuide.md §10.1).
-const ParallaxLayer = dynamic(() =>
-  import('@/components/marketing/parallax-layer').then((module) => module.ParallaxLayer),
-);
 
 export interface ParallaxPhotoProps {
   image: PublicImage;
@@ -19,19 +11,21 @@ export interface ParallaxPhotoProps {
   className?: string;
 }
 
-// A decorative photo in a fixed frame whose image drifts with the scroll from md (§7.3). Never the LCP image: the
-// hero photo is pinned with CSS instead.
+// docs/StyleGuide.md §7.3 (decision of 2026-10-23): a decorative photo in a fixed frame whose image drifts against
+// the page's native scroll, after dusunbambu.id's parallax bands. It is CSS only (`parallax-frame` / `parallax-drift`
+// in src/styles/globals.css): no script, no scroll handler, nothing to hydrate. The layer is taller than its frame
+// from the first paint, so the drift moves nothing around it. Never the LCP image: the hero photo is pinned instead.
 export function ParallaxPhoto({ image, sizes, aspectClassName, className }: ParallaxPhotoProps) {
   return (
-    <div className={cn('relative overflow-hidden bg-muted', aspectClassName, className)}>
-      <ParallaxLayer>
+    <div className={cn('parallax-frame relative overflow-hidden bg-muted', aspectClassName, className)}>
+      <div className="parallax-drift absolute inset-x-0 top-1/2 h-(--parallax-overscan) -translate-y-1/2">
         <PhotoFrame
           image={image}
           sizes={sizes}
           aspectClassName=""
           className="absolute inset-0 rounded-none"
         />
-      </ParallaxLayer>
+      </div>
     </div>
   );
 }

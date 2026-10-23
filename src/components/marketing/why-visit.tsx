@@ -4,8 +4,6 @@ import dynamic from 'next/dynamic';
 import { Container } from '@/components/layout/container';
 import { SectionShell } from '@/components/layout/section';
 import { ParallaxPhoto } from '@/components/marketing/parallax-photo';
-import { Reveal } from '@/components/marketing/reveal';
-import { SplitWords } from '@/components/marketing/split-words';
 import { IMAGE_SIZES } from '@/config/images';
 import { copy } from '@/lib/copy/id';
 import type { HomeGalleryPhoto } from '@/lib/utils/home-gallery';
@@ -154,17 +152,17 @@ export function WhyVisit({ id, rwCount, stats, bandPhoto }: WhyVisitProps) {
           <div className="space-y-3">
             <p className="text-overline text-primary-text">Mengapa Gisikdrono</p>
             <h2 id={titleId} className="text-h1 text-balance">
-              <SplitWords text={headlineFor(rwCount)} />
+              {headlineFor(rwCount)}
             </h2>
           </div>
-          <Reveal>
+          <div className="reveal">
             <ReasonList />
-          </Reveal>
+          </div>
         </div>
         {hasHomeStats(stats) ? (
-          <Reveal className="lg:col-span-6">
+          <div className="reveal lg:col-span-6">
             <StatGrid stats={stats} />
-          </Reveal>
+          </div>
         ) : null}
       </div>
     </SectionShell>

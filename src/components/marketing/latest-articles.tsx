@@ -2,7 +2,6 @@ import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
 import { Section } from '@/components/layout/section';
-import { Reveal } from '@/components/marketing/reveal';
 import { SectionLink } from '@/components/marketing/section-link';
 import { formatDateShort } from '@/lib/utils/dates';
 import { articlePath, PUBLIC_PATHS } from '@/lib/utils/paths';
@@ -50,13 +49,11 @@ export function LatestArticles({ id, articles }: LatestArticlesProps) {
       title="Kabar dari Edu Center"
       headerAction={<SectionLink href={PUBLIC_PATHS.articles} label="Lihat semua artikel" />}
     >
-      <Reveal>
-        <ul className="divide-y divide-border border-y border-border">
-          {articles.map((article) => (
-            <ArticleRow key={article.id} article={article} />
-          ))}
-        </ul>
-      </Reveal>
+      <ul className="reveal divide-y divide-border border-y border-border">
+        {articles.map((article) => (
+          <ArticleRow key={article.id} article={article} />
+        ))}
+      </ul>
     </Section>
   );
 }

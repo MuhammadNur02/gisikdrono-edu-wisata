@@ -485,6 +485,52 @@
 @utility clip-inset {
   clip-path: inset(0);
 }
+/* Scroll-linked decorative photos (docs/StyleGuide.md §7.3), with no script: the frame names a view timeline, and
+   the photo layer inside it, --parallax-overscan tall, drifts 5 % of its own height each way (about 5.6 % of the
+   frame) while the frame crosses the screen. From md, without reduced motion, in browsers with scroll-driven
+   animations; everywhere else the photo simply stays still. */
+@keyframes parallax-drift {
+  from {
+    transform: translateY(-5%);
+  }
+  to {
+    transform: translateY(5%);
+  }
+}
+@utility parallax-frame {
+  view-timeline-name: --parallax-frame;
+}
+@utility parallax-drift {
+  @media (width >= 48rem) and (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: view()) {
+      animation: parallax-drift linear both;
+      animation-timeline: --parallax-frame;
+    }
+  }
+}
+/* Section reveals on the home page (docs/StyleGuide.md §7.3, decision of 2026-10-24): a block fades up 16 px as it
+   enters the screen, driven by the scroll itself rather than by script, so it ships no JS and never hides content
+   from a browser without scroll-driven animations, from a visitor without JS, or from one who asks for reduced
+   motion. The 16 px is fadeInUp's distance (src/lib/motion/variants.ts). */
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    translate: 0 1rem;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+@utility reveal {
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: view()) {
+      animation: reveal-up linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 80%;
+    }
+  }
+}
 /* Scroll-snap rows that peek at the next item instead of showing a scrollbar. */
 @utility scrollbar-none {
   scrollbar-width: none;
