@@ -34,8 +34,14 @@ export const RW_SECTION_IDS = {
 
 // An RW whose shop is mostly something else names it in rw_units.products_heading (the arts programme's souvenirs).
 const DEFAULT_PRODUCTS_HEADING = 'Produk UMKM';
-// Sections alternate default and muted (docs/StyleGuide.md §5.7), counted over the ones shown.
+// Sections alternate default and muted (docs/StyleGuide.md §5.7), counted over the ones shown and from the last one,
+// so the page always ends on the plain background and the footer's warm wave meets it, not the muted tint
+// (review of PR #36).
 const SECTION_TONES: readonly SectionTone[] = ['default', 'muted'];
+
+function toneFromEnd(index: number, count: number): SectionTone | undefined {
+  return SECTION_TONES[(count - 1 - index) % SECTION_TONES.length];
+}
 
 export interface RwSectionContent {
   id: string;
@@ -161,7 +167,7 @@ export function RwPage({ data }: { data: RwPageData }) {
     <>
       <RwHeader unit={data.unit} />
       {shown.map(({ content, ...section }, index) => (
-        <Section key={section.id} tone={SECTION_TONES[index % SECTION_TONES.length]} {...section}>
+        <Section key={section.id} tone={toneFromEnd(index, shown.length)} {...section}>
           {content}
         </Section>
       ))}

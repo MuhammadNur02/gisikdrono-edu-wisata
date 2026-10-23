@@ -25,6 +25,8 @@ export interface PhotoFrameProps {
   // Only the first hero image of a page (docs/StyleGuide.md §8.2).
   priority?: boolean;
   className?: string;
+  // Classes on the image itself inside the clipping frame, such as a card's hover zoom (§7.3).
+  imageClassName?: string;
 }
 
 // The colour and the native ratio come from the data, not from design values, so they are the inline styles
@@ -50,6 +52,7 @@ export function PhotoFrame({
   fit = 'cover',
   priority = false,
   className,
+  imageClassName,
 }: PhotoFrameProps) {
   return (
     <div
@@ -70,6 +73,7 @@ export function PhotoFrame({
         className={cn(
           fit === 'contain' ? 'object-contain' : 'object-cover',
           objectPositionClassName,
+          imageClassName,
         )}
       />
     </div>

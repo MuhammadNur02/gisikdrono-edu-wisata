@@ -33,7 +33,7 @@ const RW05 = 5;
 const HERO_PHOTO: Pick<DemoPhoto, 'file' | 'id'> & { title: string; subtitle: string } = {
   file: 'IMG_7571',
   id: '0de00000-0000-4000-8000-0000000000e1',
-  // The home hero speaks for both kampung (decision of 2026-10-18); the subtitle stays with this photo.
+  // The home hero speaks for every kampung (decision of 2026-10-18); the subtitle stays with this photo.
   title: 'Belajar mengolah sampah dan mengenal seni budaya di kampung-kampung Gisikdrono',
   subtitle: 'Rombongan tamu mendengarkan pemaparan di halaman beratap tanaman rambat, RW 05.',
 };
