@@ -44,13 +44,40 @@ const officeAddress: Node<PostalAddress> = {
   addressCountry: siteConfig.locality.countryCode,
 };
 
-export function governmentOrganizationJsonLd(): Node<GovernmentOrganization> {
+export interface OrganizationContactInput {
+  // site_settings `kelurahan.address`, once the kelurahan has written it.
+  streetAddress?: string;
+  // The public WhatsApp number, E.164.
+  telephone?: string;
+  email?: string;
+  // The office on Google Maps (googleMapsPlaceUrl), for the `hasMap` of its `location`.
+  mapUrl?: string;
+}
+
+// The root layout gives the organisation alone; /peta-kontak adds its contact point and map (FR-PUB-18). schema.org
+// puts `hasMap` on a Place, so the map hangs off the organisation's `location`, not the organisation itself.
+export function governmentOrganizationJsonLd(
+  contact: OrganizationContactInput = {},
+): Node<GovernmentOrganization> {
+  const hasContactPoint = contact.telephone !== undefined || contact.email !== undefined;
+  const address = { ...officeAddress, streetAddress: contact.streetAddress };
   return {
     '@type': 'GovernmentOrganization',
     '@id': ORGANIZATION_ID,
     name: siteConfig.ownerName,
     url: siteConfig.url,
-    address: officeAddress,
+    address,
+    location:
+      contact.mapUrl !== undefined ? { '@type': 'Place', address, hasMap: contact.mapUrl } : undefined,
+    contactPoint: hasContactPoint
+      ? {
+          '@type': 'ContactPoint',
+          contactType: 'customer service',
+          telephone: contact.telephone,
+          email: contact.email,
+          availableLanguage: 'id',
+        }
+      : undefined,
   };
 }
 

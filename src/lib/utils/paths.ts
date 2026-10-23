@@ -13,6 +13,7 @@ export const PUBLIC_PATHS = {
   gallery: '/galeri',
   articles: '/artikel',
   booklets: '/e-booklet',
+  map: '/peta-kontak',
 } as const;
 
 export function packagePath(slug: string): string {

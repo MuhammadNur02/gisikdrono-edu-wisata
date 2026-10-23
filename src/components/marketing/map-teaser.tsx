@@ -1,9 +1,11 @@
 import { MapPin } from 'lucide-react';
 
-import { RwEyebrow } from '@/components/layout/rw-eyebrow';
 import { Section } from '@/components/layout/section';
+import { RwPointsList } from '@/components/map/rw-points-list';
+import { SiteMap } from '@/components/map/site-map';
 import { SectionLink } from '@/components/marketing/section-link';
-import { ACTIVITY_POINT_TYPE } from '@/config/status';
+import { mapCopy } from '@/lib/copy/map';
+import { PUBLIC_PATHS } from '@/lib/utils/paths';
 import type { ActivityPoint } from '@/types/activity-point';
 import type { RwUnitSummary } from '@/types/rw-unit';
 
@@ -16,46 +18,28 @@ export interface MapTeaserProps {
   units: readonly RwUnitSummary[];
 }
 
-function RwPoints({ unit, points }: { unit: RwUnitSummary; points: readonly ActivityPoint[] }) {
-  return (
-    <div className="space-y-3">
-      <RwEyebrow rw={unit} withName />
-      <ul className="space-y-2">
-        {points.map((point) => {
-          const Icon = ACTIVITY_POINT_TYPE[point.pointType].icon;
-          return (
-            <li key={point.id} className="flex items-center gap-2 text-body">
-              <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-              {point.name}
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-// docs/PRD.md FR-PUB-03 places the interactive site plan on the home page; until the plan exists (Task
-// P2.5.01) this teaser lists the activity points the CMS has, with the office address, and leads to
-// /peta-kontak.
+// docs/PRD.md FR-PUB-03: the interactive site plan on the home page (Task P2.5.01), with the list of its points
+// as the readable alternative, the office address, and the way to /peta-kontak. Without a published point the
+// section keeps the address alone (docs/StyleGuide.md §6.9); /peta-kontak is where the empty plan is explained.
 export function MapTeaser({ id, address, points, units }: MapTeaserProps) {
-  const pointsByRw = units
-    .map((unit) => ({ unit, points: points.filter((point) => point.rwId === unit.id) }))
-    .filter((group) => group.points.length > 0);
   return (
     <Section id={id} eyebrow="Peta" title="Titik kunjungan di Gisikdrono" tone="muted">
-      <div className="grid gap-8 md:grid-cols-3">
-        {pointsByRw.map((group) => (
-          <RwPoints key={group.unit.id} unit={group.unit} points={group.points} />
-        ))}
-        {address ? (
-          <p className="flex gap-2 text-body text-muted-foreground">
-            <MapPin aria-hidden className="mt-1 size-4 shrink-0" />
-            {address}
-          </p>
-        ) : null}
-      </div>
-      <SectionLink href="/peta-kontak" label="Lihat peta dan kontak" />
+      {points.length > 0 ? (
+        <>
+          <div className="space-y-2">
+            <SiteMap points={points} units={units} />
+            <p className="text-caption text-muted-foreground">{mapCopy.planProvisional}</p>
+          </div>
+          <RwPointsList points={points} units={units} />
+        </>
+      ) : null}
+      {address ? (
+        <p className="flex gap-2 text-body text-muted-foreground">
+          <MapPin aria-hidden className="mt-1 size-4 shrink-0" />
+          {address}
+        </p>
+      ) : null}
+      <SectionLink href={PUBLIC_PATHS.map} label="Lihat peta dan kontak" />
     </Section>
   );
 }

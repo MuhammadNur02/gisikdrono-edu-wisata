@@ -36,6 +36,8 @@ export interface RwAccentClasses {
   // Tinted background with its text colour: the RW tag on a card.
   soft: string;
   border: string;
+  // The palette class of the plan's RW layer and of the RW's map markers (.denah-rw-* in src/styles/globals.css).
+  plan: string;
 }
 
 export const RW_ACCENT_CLASSES: Record<RwAccent, RwAccentClasses> = {
@@ -44,30 +46,35 @@ export const RW_ACCENT_CLASSES: Record<RwAccent, RwAccentClasses> = {
     fill: 'bg-rw-leaf text-rw-leaf-foreground',
     soft: 'bg-rw-leaf-soft text-rw-leaf-soft-foreground',
     border: 'border-rw-leaf',
+    plan: 'denah-rw-leaf',
   },
   terracotta: {
     text: 'text-rw-terracotta',
     fill: 'bg-rw-terracotta text-rw-terracotta-foreground',
     soft: 'bg-rw-terracotta-soft text-rw-terracotta-soft-foreground',
     border: 'border-rw-terracotta',
+    plan: 'denah-rw-terracotta',
   },
   mulberry: {
     text: 'text-rw-mulberry',
     fill: 'bg-rw-mulberry text-rw-mulberry-foreground',
     soft: 'bg-rw-mulberry-soft text-rw-mulberry-soft-foreground',
     border: 'border-rw-mulberry',
+    plan: 'denah-rw-mulberry',
   },
   teal: {
     text: 'text-rw-teal',
     fill: 'bg-rw-teal text-rw-teal-foreground',
     soft: 'bg-rw-teal-soft text-rw-teal-soft-foreground',
     border: 'border-rw-teal',
+    plan: 'denah-rw-teal',
   },
   violet: {
     text: 'text-rw-violet',
     fill: 'bg-rw-violet text-rw-violet-foreground',
     soft: 'bg-rw-violet-soft text-rw-violet-soft-foreground',
     border: 'border-rw-violet',
+    plan: 'denah-rw-violet',
   },
 };
 
@@ -77,6 +84,7 @@ export const NEUTRAL_ACCENT_CLASSES: RwAccentClasses = {
   fill: 'bg-neutral text-neutral-foreground',
   soft: 'bg-neutral-soft text-neutral-soft-foreground',
   border: 'border-border',
+  plan: 'denah-rw-neutral',
 };
 
 export function rwAccentClasses(accentKey: RwAccent | null): RwAccentClasses {

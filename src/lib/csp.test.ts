@@ -48,7 +48,7 @@ describe('buildContentSecurityPolicy on public ISR pages', () => {
       'frame-src https://challenges.cloudflare.com https://www.google.com/maps/embed https://www.youtube-nocookie.com/embed/',
     );
     expect(directive(policy, 'img-src')).toBe(
-      "img-src 'self' blob: https://projectref.supabase.co https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://i.ytimg.com/vi/",
+      "img-src 'self' blob: https://projectref.supabase.co https://tile.openstreetmap.org https://i.ytimg.com/vi/",
     );
     expect(policy).not.toContain('https://www.youtube.com');
   });
