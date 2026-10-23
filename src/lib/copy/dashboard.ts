@@ -38,20 +38,12 @@ export const dashboardCopy = {
   quickScanner: {
     scan: 'Scan',
     manualCode: 'Kode pemesanan',
-    fullScanner: 'Buka scanner penuh',
   },
   idleLock: {
     title: 'Dasbor terkunci',
     description:
       'Tidak ada aktivitas selama 10 menit, jadi layar dikunci. Tulis kode autentikator Anda untuk melanjutkan.',
     unlock: 'Lanjutkan',
-  },
-  // A critical action asks for a code from the last five minutes (docs/Security.md AUTH-11).
-  stepUp: {
-    title: 'Konfirmasi dengan kode autentikator',
-    description: 'Langkah ini butuh kode autentikator yang baru, demi keamanan.',
-    submit: 'Konfirmasi',
-    verified: 'Kode diterima. Silakan lanjutkan.',
   },
   home: {
     title: 'Dasbor',

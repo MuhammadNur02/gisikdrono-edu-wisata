@@ -21,7 +21,7 @@ const buttonVariants = cva(
         success: 'bg-success text-success-foreground hover:bg-success/90',
       },
       size: {
-        sm: 'h-9 px-3 text-sm',
+        sm: 'h-9 px-3 text-sm max-md:min-h-11',
         default: 'h-10 px-4 text-sm max-md:min-h-11',
         lg: "h-12 px-6 text-base [&_svg:not([class*='size-'])]:size-5",
         xl: "h-14 px-8 text-base font-semibold [&_svg:not([class*='size-'])]:size-5",

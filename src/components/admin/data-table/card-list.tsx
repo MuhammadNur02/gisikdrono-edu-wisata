@@ -32,14 +32,16 @@ function RowCard<TData>({ row, selectable }: { row: Row<TData>; selectable: bool
   return (
     <li className="flex gap-3 rounded-xl border border-border bg-card p-4 shadow-card">
       {selectable ? (
-        <Checkbox
-          aria-label={text.selectRow}
-          checked={row.getIsSelected()}
-          onCheckedChange={(checked) => {
-            row.toggleSelected(checked === true);
-          }}
-          className="mt-1"
-        />
+        // A 44 px hit area around the 16 px box (docs/StyleGuide.md §9.1; review of PR #31, item 5).
+        <label className="-mt-3 -ml-3 flex size-11 shrink-0 items-center justify-center">
+          <Checkbox
+            aria-label={text.selectRow}
+            checked={row.getIsSelected()}
+            onCheckedChange={(checked) => {
+              row.toggleSelected(checked === true);
+            }}
+          />
+        </label>
       ) : null}
       <div className="min-w-0 flex-1 space-y-2">
         <div className="flex items-start justify-between gap-2">

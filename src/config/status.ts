@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   CircleDashed,
   CircleDot,
+  CircleHelp,
   Clock,
   Cookie,
   Copy,
@@ -119,11 +120,6 @@ export const GALLERY_CATEGORY_LABELS: Record<EnumValue<'gallery_category'>, stri
   umkm: 'UMKM',
   visit: 'Kunjungan',
   event: 'Acara',
-};
-
-export const PRICING_BASIS_LABELS: Record<EnumValue<'pricing_basis'>, string> = {
-  per_pax: 'Per orang',
-  flat_group: 'Per rombongan',
 };
 
 // docs/StyleGuide.md §6.5: the soft Badge variant and whether it is the outline (terminal) form.
@@ -307,3 +303,19 @@ export const STATUS_META = {
 } as const satisfies { [Name in StatusEnumName]: StatusMap<Name> };
 
 export type StatusKind = keyof typeof STATUS_META;
+
+// A value the map does not know (a row written by a newer migration than this build) reads as a neutral badge with
+// the raw value, never a crash (review of PR #31, item 9); status.test.ts proves every enum value is mapped, and the
+// Sentry capture of such a row lands with the monitoring of P5 (MON-*), since @sentry/nextjs is not wired yet.
+function fallbackStatusMeta(value: string): StatusMeta {
+  return { tone: 'neutral', outline: true, label: value, icon: CircleHelp };
+}
+
+// Every map is a Record over its enum; the index type only lets TypeScript see through the generic kind.
+export function statusMetaOf<Kind extends StatusKind>(
+  kind: Kind,
+  value: EnumValue<Kind>,
+): StatusMeta {
+  const map: Record<string, StatusMeta | undefined> = STATUS_META[kind];
+  return map[value] ?? fallbackStatusMeta(value);
+}

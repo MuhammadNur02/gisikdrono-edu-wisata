@@ -25,9 +25,6 @@ export const IDLE_LOCK_MS = 600_000;
 // How often the idle clock is checked, so a lock lands within a few seconds of the deadline.
 export const IDLE_CHECK_MS = 5_000;
 
-// docs/Security.md §5.3: a critical action needs a TOTP check from the last five minutes.
-export const FRESH_TOTP_MAX_AGE_SECONDS = 300;
-
 // docs/StyleGuide.md §6.4: the page sizes a DataTable offers, and how much of a search box reaches the database.
 export const LIST_PAGE_SIZES = [25, 50, 100] as const;
 export const DEFAULT_PAGE_SIZE = 25;
