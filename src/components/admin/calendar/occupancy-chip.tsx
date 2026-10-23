@@ -1,8 +1,8 @@
 import { Badge } from '@/components/ui/badge';
-import { copy } from '@/lib/copy/id';
+import { sessionsCopy } from '@/lib/copy/sessions';
 import { occupancyOf } from '@/lib/utils/sessions';
 
-const text = copy.sessions.occupancy;
+const text = sessionsCopy.occupancy;
 
 export interface OccupancyChipProps {
   reservedPax: number;

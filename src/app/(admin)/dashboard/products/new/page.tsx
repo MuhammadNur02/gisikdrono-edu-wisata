@@ -9,12 +9,13 @@ import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-hea
 import { FormAlert } from '@/components/forms/form-alert';
 import { PRODUCT_PATHS } from '@/config/products';
 import { copy } from '@/lib/copy/id';
+import { productsCopy } from '@/lib/copy/products';
 import { createProductAction } from '@/server/actions/products';
 import { ownerOfNewContent, readRwScope } from '@/server/auth/content-owner';
 import { requireDashboardStaff } from '@/server/auth/session';
 import { listVendorsForStaff } from '@/server/services/vendor-service';
 
-const text = copy.products;
+const text = productsCopy;
 
 export const metadata: Metadata = { title: text.newTitle };
 

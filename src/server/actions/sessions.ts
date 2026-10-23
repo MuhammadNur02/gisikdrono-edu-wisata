@@ -3,7 +3,7 @@
 import { revalidateTag } from 'next/cache';
 
 import type { RwId } from '@/config/rw';
-import { copy } from '@/lib/copy/id';
+import { sessionsCopy } from '@/lib/copy/sessions';
 import { fail, mapError, ok } from '@/lib/errors';
 import { TAGS } from '@/lib/queries/tags';
 import { jakartaMonthKey, todayInJakarta } from '@/lib/utils/dates';
@@ -36,7 +36,7 @@ import type { SessionTemplateAdmin, VisitSessionAdmin } from '@/types/session';
 // sessions, the superadmin those of the RW their RwSwitcher points at. An existing row is checked against the RW the
 // database holds for it, and RLS checks the same again.
 
-const text = copy.sessions.errors;
+const text = sessionsCopy.errors;
 const INVALID_PARAMETER = '22023';
 
 type RwResult = { ok: true; rwId: RwId } | ActionFailure;

@@ -18,10 +18,11 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { copy } from '@/lib/copy/id';
+import { sessionsCopy } from '@/lib/copy/sessions';
 import { monthLabel } from '@/lib/utils/sessions';
 import type { ActionResult } from '@/types/action-result';
 
-const text = copy.sessions.generate;
+const text = sessionsCopy.generate;
 
 export interface GenerateDialogProps {
   // `YYYY-MM`, the month on screen.

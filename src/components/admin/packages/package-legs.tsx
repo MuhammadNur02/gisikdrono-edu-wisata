@@ -16,10 +16,10 @@ import { FormField } from '@/components/forms/form-field';
 import { Input } from '@/components/ui/input';
 import { PACKAGE_LIMITS } from '@/config/packages';
 import { rwLabel, type RwId } from '@/config/rw';
-import { copy } from '@/lib/copy/id';
+import { packagesCopy } from '@/lib/copy/packages';
 import { rowFieldName } from '@/lib/utils/form-paths';
 
-const text = copy.packages;
+const text = packagesCopy;
 const legs = text.legs;
 const steps = text.itinerary;
 // `HH:MM`, as the browser's time picker writes it.

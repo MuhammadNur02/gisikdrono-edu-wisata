@@ -8,11 +8,11 @@ import { SessionCalendar } from '@/components/admin/calendar/session-calendar';
 import { SessionEditor, type SessionActions } from '@/components/admin/calendar/session-editor';
 import { Button } from '@/components/ui/button';
 import { MONTH_PARAM, SESSIONS_PATH } from '@/config/sessions';
-import { copy } from '@/lib/copy/id';
+import { sessionsCopy } from '@/lib/copy/sessions';
 import { monthLabel, shiftMonth } from '@/lib/utils/sessions';
 import type { VisitSessionAdmin } from '@/types/session';
 
-const text = copy.sessions;
+const text = sessionsCopy;
 
 export interface SessionsBoardProps {
   month: string;

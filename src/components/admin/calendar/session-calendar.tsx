@@ -4,13 +4,13 @@ import { useId } from 'react';
 
 import { CALENDAR_BARS_PER_DAY } from '@/config/sessions';
 import { SESSION_STATUS } from '@/config/status';
-import { copy } from '@/lib/copy/id';
+import { sessionsCopy } from '@/lib/copy/sessions';
 import { cn } from '@/lib/utils/cn';
 import { formatDateLong } from '@/lib/utils/dates';
 import { calendarWeeks, fillRatio, groupByDate, occupancyOf } from '@/lib/utils/sessions';
 import type { VisitSessionAdmin } from '@/types/session';
 
-const text = copy.sessions;
+const text = sessionsCopy;
 const PERCENT = 100;
 const DAY_OF_MONTH_START = 8;
 

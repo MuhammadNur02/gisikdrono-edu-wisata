@@ -3,7 +3,7 @@
 import { revalidateTag } from 'next/cache';
 
 import type { RwId } from '@/config/rw';
-import { copy } from '@/lib/copy/id';
+import { productsCopy } from '@/lib/copy/products';
 import { fail, mapError, ok, okUnlessFilesLeft } from '@/lib/errors';
 import { TAGS } from '@/lib/queries/tags';
 import { rowRefSchema } from '@/lib/validations/content';
@@ -26,7 +26,7 @@ import type { ProductAdmin } from '@/types/product';
 // them to is_superadmin() is a migration (Task P4.3.11). A new product belongs to the RW the RwSwitcher points at,
 // never to one a form names, and its vendor has to be of that RW, which products_umkm_vendor_rw_guard checks again.
 
-const text = copy.products;
+const text = productsCopy;
 
 async function requireSuperadmin(): Promise<GuardResult> {
   const guard = await requireAal2();

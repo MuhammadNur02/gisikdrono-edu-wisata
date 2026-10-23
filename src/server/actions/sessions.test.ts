@@ -1,7 +1,7 @@
 import { revalidateTag } from 'next/cache';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { copy } from '@/lib/copy/id';
+import { sessionsCopy } from '@/lib/copy/sessions';
 import { requireAal2, type StaffContext } from '@/server/auth/guards';
 import {
   createVisitSession,
@@ -119,7 +119,7 @@ describe('session actions', () => {
     const refusal = Object.assign(new Error('booked'), { code: 'P0001', hint: 'STATE_INVALID' });
     vi.mocked(updateVisitSession).mockRejectedValue(refusal);
     expect(await updateVisitSessionAction({ ...FORM, id: ROW_ID })).toMatchObject({
-      error: { code: 'STATE_INVALID', message: copy.sessions.errors.hasBookings },
+      error: { code: 'STATE_INVALID', message: sessionsCopy.errors.hasBookings },
     });
   });
 
@@ -136,7 +136,7 @@ describe('session actions', () => {
     expect(await generateVisitSessionsAction({ month: '2026-11' })).toEqual({ ok: true, data: 8 });
     for (const month of ['2026-09', '2027-11']) {
       expect(await generateVisitSessionsAction({ month })).toMatchObject({
-        error: { code: 'VALIDATION', message: copy.sessions.errors.generateRange },
+        error: { code: 'VALIDATION', message: sessionsCopy.errors.generateRange },
       });
     }
     expect(generateSessionsForMonth).toHaveBeenCalledTimes(1);
@@ -147,7 +147,7 @@ describe('session actions', () => {
       Object.assign(new Error('at most a year ahead'), { code: '22023' }),
     );
     expect(await generateVisitSessionsAction({ month: '2027-10' })).toMatchObject({
-      error: { code: 'VALIDATION', message: copy.sessions.errors.generateRange },
+      error: { code: 'VALIDATION', message: sessionsCopy.errors.generateRange },
     });
   });
 });

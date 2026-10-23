@@ -8,13 +8,13 @@ import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-hea
 import { PACKAGE_PATHS } from '@/config/packages';
 import type { RwId } from '@/config/rw';
 import { DB_ENUMS, type EnumValue } from '@/db/enums';
-import { copy } from '@/lib/copy/id';
+import { packagesCopy } from '@/lib/copy/packages';
 import { createPackageAction } from '@/server/actions/packages';
 import { ownerOfNewContent, readRwScope } from '@/server/auth/content-owner';
 import { requireDashboardStaff } from '@/server/auth/session';
 import { listRwUnitsForStaff } from '@/server/services/rw-unit-service';
 
-const text = copy.packages;
+const text = packagesCopy;
 
 export const metadata: Metadata = { title: text.newTitle };
 

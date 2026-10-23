@@ -2,7 +2,7 @@ import 'server-only';
 
 import type { RwId } from '@/config/rw';
 import type { Json } from '@/db/types';
-import { copy } from '@/lib/copy/id';
+import { packagesCopy } from '@/lib/copy/packages';
 import { AppError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { planTierWrites, tiersOverlap, type StoredTier } from '@/lib/utils/package-tiers';
@@ -85,7 +85,7 @@ async function syncTiers(
   tiers: PriceTierValues[],
   stored: readonly StoredTier[],
 ) {
-  if (tiersOverlap(tiers)) throw new AppError('CONFLICT', copy.packages.errors.tierOverlap);
+  if (tiersOverlap(tiers)) throw new AppError('CONFLICT', packagesCopy.errors.tierOverlap);
   const plan = planTierWrites(stored, tiers);
   const supabase = await createSupabaseServerClient();
   for (const id of plan.deletes) {
@@ -123,7 +123,7 @@ export async function createPackage(
   values: PackageValues,
 ): Promise<PackageAdmin> {
   if (tiersOverlap(values.priceTiers)) {
-    throw new AppError('CONFLICT', copy.packages.errors.tierOverlap);
+    throw new AppError('CONFLICT', packagesCopy.errors.tierOverlap);
   }
   const row = {
     rw_id: owner,

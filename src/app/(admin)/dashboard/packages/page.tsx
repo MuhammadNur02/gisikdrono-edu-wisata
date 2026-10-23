@@ -5,7 +5,7 @@ import { PackageTable } from '@/components/admin/packages/package-table';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { Button } from '@/components/ui/button';
 import { PACKAGE_PATHS } from '@/config/packages';
-import { copy } from '@/lib/copy/id';
+import { packagesCopy } from '@/lib/copy/packages';
 import { contentStatusFacet, listFacets, rwFacet } from '@/lib/utils/facets';
 import { loadListQuery } from '@/lib/utils/list-query';
 import { archivePackageAction } from '@/server/actions/packages';
@@ -14,7 +14,7 @@ import { requireDashboardStaff } from '@/server/auth/session';
 import { listPackagesForStaff } from '@/server/services/package-service';
 import { listRwUnitsForStaff } from '@/server/services/rw-unit-service';
 
-const text = copy.packages;
+const text = packagesCopy;
 
 export const metadata: Metadata = { title: text.title };
 

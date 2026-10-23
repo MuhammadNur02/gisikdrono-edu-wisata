@@ -20,10 +20,11 @@ import type { RwId } from '@/config/rw';
 import { CONTENT_STATUS, PRODUCT_CATEGORY } from '@/config/status';
 import { DB_ENUMS } from '@/db/enums';
 import { copy } from '@/lib/copy/id';
+import { productsCopy } from '@/lib/copy/products';
 import { createImageUpload } from '@/lib/uploads/upload-client';
 import { PRODUCT_STATUSES, type ProductInput } from '@/lib/validations/product';
 
-const text = copy.products;
+const text = productsCopy;
 const fields = text.fields;
 
 export type ProductControl = Control<ProductInput>;

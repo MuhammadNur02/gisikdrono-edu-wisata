@@ -1,7 +1,7 @@
 import { revalidateTag } from 'next/cache';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { copy } from '@/lib/copy/id';
+import { packagesCopy } from '@/lib/copy/packages';
 import { requireAal2, type StaffContext } from '@/server/auth/guards';
 import { readPackageForStaff } from '@/server/services/package-service';
 import {
@@ -127,7 +127,7 @@ describe('package actions', () => {
 
   it('leaves combos to the superadmin, who files them under the kelurahan', async () => {
     expect(await createPackageAction(COMBO_FORM)).toMatchObject({
-      error: { code: 'FORBIDDEN', message: copy.packages.comboOnlySuper },
+      error: { code: 'FORBIDDEN', message: packagesCopy.comboOnlySuper },
     });
     vi.mocked(requireAal2).mockResolvedValue({ ok: true, ctx: SUPERADMIN });
     await createPackageAction(COMBO_FORM);
@@ -151,7 +151,7 @@ describe('package actions', () => {
     });
     vi.mocked(readPackageForStaff).mockResolvedValue(COMBO);
     expect(await updatePackageAction({ ...COMBO_FORM, id: PACKAGE_ID })).toMatchObject({
-      error: { code: 'FORBIDDEN', message: copy.packages.comboReadOnly },
+      error: { code: 'FORBIDDEN', message: packagesCopy.comboReadOnly },
     });
     expect(await archivePackageAction({ id: PACKAGE_ID })).toMatchObject({
       error: { code: 'FORBIDDEN' },
@@ -163,7 +163,7 @@ describe('package actions', () => {
   it('never turns an RW package into a combo or back', async () => {
     vi.mocked(requireAal2).mockResolvedValue({ ok: true, ctx: SUPERADMIN });
     expect(await updatePackageAction({ ...COMBO_FORM, id: PACKAGE_ID })).toMatchObject({
-      error: { code: 'STATE_INVALID', message: copy.packages.errors.categoryLocked },
+      error: { code: 'STATE_INVALID', message: packagesCopy.errors.categoryLocked },
     });
     vi.mocked(readPackageForStaff).mockResolvedValue(COMBO);
     expect(await updatePackageAction({ ...FORM, id: PACKAGE_ID })).toMatchObject({
@@ -193,7 +193,7 @@ describe('package actions', () => {
     vi.mocked(requireAal2).mockResolvedValue({ ok: true, ctx: SUPERADMIN });
     const publish = { ...COMBO_FORM, status: 'published' };
     expect(await createPackageAction(publish)).toMatchObject({
-      error: { code: 'STATE_INVALID', message: copy.packages.errors.comboNeedsLegs },
+      error: { code: 'STATE_INVALID', message: packagesCopy.errors.comboNeedsLegs },
     });
     vi.mocked(readPackageForStaff).mockResolvedValue({ ...COMBO, rwIds: [5] });
     expect(await updatePackageAction({ ...publish, id: PACKAGE_ID })).toMatchObject({
@@ -214,7 +214,7 @@ describe('package actions', () => {
     });
     vi.mocked(updatePackage).mockRejectedValue(refusal);
     expect(await updatePackageAction({ ...COMBO_FORM, id: PACKAGE_ID })).toMatchObject({
-      error: { code: 'STATE_INVALID', message: copy.packages.errors.comboNeedsLegs },
+      error: { code: 'STATE_INVALID', message: packagesCopy.errors.comboNeedsLegs },
     });
   });
 });

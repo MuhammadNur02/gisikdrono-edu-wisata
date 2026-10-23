@@ -10,12 +10,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { copy } from '@/lib/copy/id';
+import { packagesCopy } from '@/lib/copy/packages';
 import { formatDateTimeShort } from '@/lib/utils/dates';
 import { describePriceChange } from '@/lib/utils/price-history';
 import type { PriceHistoryEntry } from '@/types/package';
 
-const text = copy.packages.history;
+const text = packagesCopy.history;
 
 // package_price_history, newest first (Task P4.3.05, REC-13): the database writes a row on every price change, so a
 // booking's snapshot can always be traced back to the price it was made at.
@@ -26,7 +26,7 @@ export function PriceHistory({ entries }: { entries: readonly PriceHistoryEntry[
   return (
     <div className="overflow-x-auto rounded-xl border border-border">
       <Table>
-        <TableCaption className="sr-only">{copy.packages.sections.history}</TableCaption>
+        <TableCaption className="sr-only">{packagesCopy.sections.history}</TableCaption>
         <TableHeader>
           <TableRow>
             <TableHead>{text.changedAt}</TableHead>

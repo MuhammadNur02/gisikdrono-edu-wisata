@@ -7,7 +7,7 @@ import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-hea
 import { FormAlert } from '@/components/forms/form-alert';
 import { rwLabel, type RwId } from '@/config/rw';
 import { MONTH_PARAM } from '@/config/sessions';
-import { copy } from '@/lib/copy/id';
+import { sessionsCopy } from '@/lib/copy/sessions';
 import { todayInJakarta } from '@/lib/utils/dates';
 import { monthKeyOf } from '@/lib/utils/sessions';
 import { singleSearchValue } from '@/lib/utils/staff-paths';
@@ -26,7 +26,7 @@ import { requireDashboardStaff } from '@/server/auth/session';
 import { listSessionsForMonth, listSessionTemplates } from '@/server/services/session-service';
 import type { SessionTemplateAdmin } from '@/types/session';
 
-const text = copy.sessions;
+const text = sessionsCopy;
 
 export const metadata: Metadata = { title: text.title };
 

@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { SESSION_LIMITS, WEEKDAYS, type Weekday } from '@/config/sessions';
 import { DB_ENUMS } from '@/db/enums';
-import { copy } from '@/lib/copy/id';
+import { sessionsCopy } from '@/lib/copy/sessions';
 import {
   contentText,
   isCalendarMoment,
@@ -14,7 +14,7 @@ import {
 // never part of a form: the action takes the admin's own, or the one the superadmin's RwSwitcher points at. Every
 // schema is .strict() and shared by the form and its Server Action.
 
-const messages = copy.sessions.validation;
+const messages = sessionsCopy.validation;
 const CLOCK_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const VISIT_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/;

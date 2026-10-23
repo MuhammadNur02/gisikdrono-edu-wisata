@@ -16,13 +16,14 @@ import { PRODUCT_PATHS } from '@/config/products';
 import { rwLabel } from '@/config/rw';
 import { PRODUCT_CATEGORY } from '@/config/status';
 import { copy } from '@/lib/copy/id';
+import { productsCopy } from '@/lib/copy/products';
 import { formatIDR } from '@/lib/utils/currency';
 import { formatDateShort } from '@/lib/utils/dates';
 import type { ActionResult } from '@/types/action-result';
 import type { ListFacet } from '@/types/data-table';
 import type { ProductListItem } from '@/types/product';
 
-const text = copy.products;
+const text = productsCopy;
 
 // The confirmation loads on the first archive, outside the list page's first load (admin budget, review of PR #35).
 const ConfirmActionDialog = dynamic(() =>

@@ -10,12 +10,12 @@ import { RemoveButton } from '@/components/admin/cms/remove-button';
 import { ResponsiveSheet } from '@/components/admin/shell/responsive-sheet';
 import { StatusBadge } from '@/components/admin/status/status-badge';
 import { Button } from '@/components/ui/button';
-import { copy } from '@/lib/copy/id';
+import { sessionsCopy } from '@/lib/copy/sessions';
 import { formatDateLong, formatTimeRange } from '@/lib/utils/dates';
 import type { ActionResult } from '@/types/action-result';
 import type { VisitSessionAdmin } from '@/types/session';
 
-const text = copy.sessions;
+const text = sessionsCopy;
 
 export interface SessionActions {
   create: SessionAction;

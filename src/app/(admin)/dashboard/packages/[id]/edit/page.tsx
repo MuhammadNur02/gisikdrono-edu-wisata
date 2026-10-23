@@ -10,7 +10,7 @@ import { ContentStatusBadge } from '@/components/admin/status/status-badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PACKAGE_PATHS } from '@/config/packages';
 import { DB_ENUMS } from '@/db/enums';
-import { copy } from '@/lib/copy/id';
+import { packagesCopy } from '@/lib/copy/packages';
 import { rowIdSchema } from '@/lib/validations/content';
 import { updatePackageAction } from '@/server/actions/packages';
 import { canWriteFor } from '@/server/auth/content-owner';
@@ -19,7 +19,7 @@ import { listPriceHistory } from '@/server/services/package-history-service';
 import { readPackageForStaff } from '@/server/services/package-service';
 import { listRwUnitsForStaff } from '@/server/services/rw-unit-service';
 
-const text = copy.packages;
+const text = packagesCopy;
 
 export const metadata: Metadata = { title: text.editTitle };
 

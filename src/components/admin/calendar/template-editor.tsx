@@ -10,11 +10,12 @@ import { ResponsiveSheet } from '@/components/admin/shell/responsive-sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { copy } from '@/lib/copy/id';
+import { sessionsCopy } from '@/lib/copy/sessions';
 import { formatTimeRange } from '@/lib/utils/dates';
 import type { ActionResult } from '@/types/action-result';
 import type { SessionTemplateAdmin } from '@/types/session';
 
-const text = copy.sessions.templates;
+const text = sessionsCopy.templates;
 
 export interface TemplateActions {
   create: TemplateAction;
@@ -28,7 +29,7 @@ export interface TemplateEditorProps {
 }
 
 function TemplateSummary({ template }: { template: SessionTemplateAdmin }) {
-  const weekday = copy.sessions.weekdayNames[template.weekday] ?? String(template.weekday);
+  const weekday = sessionsCopy.weekdayNames[template.weekday] ?? String(template.weekday);
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div>

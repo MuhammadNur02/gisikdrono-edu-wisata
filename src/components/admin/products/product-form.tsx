@@ -21,12 +21,12 @@ import { Form } from '@/components/ui/form';
 import { PRODUCT_PATHS } from '@/config/products';
 import type { RwId } from '@/config/rw';
 import { useActionForm } from '@/hooks/use-action-form';
-import { copy } from '@/lib/copy/id';
+import { productsCopy } from '@/lib/copy/products';
 import { createProductSchema, type ProductInput } from '@/lib/validations/product';
 import type { ActionResult } from '@/types/action-result';
 import type { ProductAdmin } from '@/types/product';
 
-const text = copy.products;
+const text = productsCopy;
 const FIELDS = [
   'vendorId',
   'name',

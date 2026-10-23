@@ -16,13 +16,14 @@ import { PACKAGE_PATHS } from '@/config/packages';
 import { rwLabel, type RwId } from '@/config/rw';
 import { PACKAGE_CATEGORY } from '@/config/status';
 import { copy } from '@/lib/copy/id';
+import { packagesCopy } from '@/lib/copy/packages';
 import { formatIDR } from '@/lib/utils/currency';
 import { formatDateShort } from '@/lib/utils/dates';
 import type { ActionResult } from '@/types/action-result';
 import type { ListFacet } from '@/types/data-table';
 import type { PackageListItem } from '@/types/package';
 
-const text = copy.packages;
+const text = packagesCopy;
 
 // The confirmation loads on the first archive, outside the list page's first load (admin budget, review of PR #35).
 const ConfirmActionDialog = dynamic(() =>

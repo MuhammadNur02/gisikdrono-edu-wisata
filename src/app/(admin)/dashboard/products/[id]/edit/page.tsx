@@ -7,14 +7,14 @@ import { BackLink } from '@/components/admin/shell/back-link';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { ContentStatusBadge } from '@/components/admin/status/status-badge';
 import { PRODUCT_PATHS } from '@/config/products';
-import { copy } from '@/lib/copy/id';
+import { productsCopy } from '@/lib/copy/products';
 import { rowIdSchema } from '@/lib/validations/content';
 import { updateProductAction } from '@/server/actions/products';
 import { requireDashboardStaff } from '@/server/auth/session';
 import { readProductForStaff } from '@/server/services/product-service';
 import { listVendorsForStaff } from '@/server/services/vendor-service';
 
-const text = copy.products;
+const text = productsCopy;
 
 export const metadata: Metadata = { title: text.editTitle };
 

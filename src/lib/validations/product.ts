@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { PRODUCT_LIMITS, VENDOR_LIMITS } from '@/config/products';
 import { DB_ENUMS } from '@/db/enums';
-import { copy } from '@/lib/copy/id';
+import { productsCopy } from '@/lib/copy/products';
 import {
   contentText,
   imagePathSchema,
@@ -17,7 +17,7 @@ import {
 // products share its RW, products_umkm_vendor_rw_guard); money is integer rupiah (CLAUDE.md §7.1). The vendor's bank
 // columns are granted to no API role and stay out of these schemas until their superadmin RPCs exist.
 
-const messages = copy.products;
+const messages = productsCopy;
 const PHONE_PATTERN = /^\+62[0-9]{8,13}$/;
 
 // pending_review is the articles' step; a product is a draft, on the site, or archived.

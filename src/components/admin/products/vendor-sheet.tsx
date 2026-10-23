@@ -6,7 +6,7 @@ import { useState } from 'react';
 
 import type { VendorAction } from '@/components/admin/products/vendor-form';
 import { Button } from '@/components/ui/button';
-import { copy } from '@/lib/copy/id';
+import { productsCopy } from '@/lib/copy/products';
 import type { VendorAdmin } from '@/types/vendor';
 
 // The sheet, its list and the vendor form load on the first open (docs/StyleGuide.md §6.8, admin first-load budget,
@@ -37,7 +37,7 @@ export function VendorSheet(props: VendorSheetProps) {
         }}
       >
         <Store aria-hidden />
-        {copy.products.vendors.open}
+        {productsCopy.vendors.open}
       </Button>
       {hasOpened ? <VendorPanel open={open} onOpenChange={setOpen} {...props} /> : null}
     </>

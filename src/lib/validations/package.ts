@@ -2,7 +2,8 @@ import { z } from 'zod';
 
 import { PACKAGE_LIMITS } from '@/config/packages';
 import { DB_ENUMS } from '@/db/enums';
-import { copy } from '@/lib/copy/id';
+import { packagesCopy } from '@/lib/copy/packages';
+import { sessionsCopy } from '@/lib/copy/sessions';
 import { tiersOverlap } from '@/lib/utils/package-tiers';
 import {
   contentText,
@@ -22,7 +23,7 @@ import { clockTimeSchema } from '@/lib/validations/session';
 // names no legs: an RW package's single leg is the database's, and a combo's legs wait for the save_package RPC
 // (Task P4.3.11), since 0005 grants no API role the columns an upsert of a leg writes.
 
-const messages = copy.packages.validation;
+const messages = packagesCopy.validation;
 const VISIT_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const rupiahSchema = z.int().min(0).max(PACKAGE_LIMITS.priceMax);
@@ -51,7 +52,7 @@ const optionalDateSchema = z
       .string()
       .refine(
         (value) => VISIT_DATE.test(value) && isCalendarMoment(value),
-        copy.sessions.validation.date,
+        sessionsCopy.validation.date,
       )
       .nullable(),
   );

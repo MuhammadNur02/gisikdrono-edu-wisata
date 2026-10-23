@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { PRODUCT_PATHS } from '@/config/products';
 import { PRODUCT_CATEGORY } from '@/config/status';
 import { DB_ENUMS } from '@/db/enums';
-import { copy } from '@/lib/copy/id';
+import { productsCopy } from '@/lib/copy/products';
 import { contentStatusFacet, listFacets, rwFacet } from '@/lib/utils/facets';
 import { loadListQuery } from '@/lib/utils/list-query';
 import { archiveProductAction } from '@/server/actions/products';
@@ -22,7 +22,7 @@ import { listVendorsForStaff } from '@/server/services/vendor-service';
 import type { ListFacet } from '@/types/data-table';
 import type { VendorAdmin } from '@/types/vendor';
 
-const text = copy.products;
+const text = productsCopy;
 
 export const metadata: Metadata = { title: text.title };
 

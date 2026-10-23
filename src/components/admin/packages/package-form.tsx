@@ -25,12 +25,13 @@ import type { RwId } from '@/config/rw';
 import type { EnumValue } from '@/db/enums';
 import { useActionForm } from '@/hooks/use-action-form';
 import { copy } from '@/lib/copy/id';
+import { packagesCopy } from '@/lib/copy/packages';
 import { comboMayPublish } from '@/lib/utils/package-tiers';
 import { createPackageSchema, type PackageInput } from '@/lib/validations/package';
 import type { ActionResult } from '@/types/action-result';
 import type { PackageAdmin } from '@/types/package';
 
-const text = copy.packages;
+const text = packagesCopy;
 const FIELDS = [
   'name',
   'slug',

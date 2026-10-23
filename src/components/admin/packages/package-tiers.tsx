@@ -24,11 +24,11 @@ import {
 } from '@/components/ui/select';
 import { PACKAGE_LIMITS } from '@/config/packages';
 import type { RwId } from '@/config/rw';
-import { copy } from '@/lib/copy/id';
+import { packagesCopy } from '@/lib/copy/packages';
 import { rowFieldName } from '@/lib/utils/form-paths';
 import type { PackageInput } from '@/lib/validations/package';
 
-const text = copy.packages;
+const text = packagesCopy;
 const tiers = text.tiers;
 const FIRST_TIER_SIZE = 20;
 const NO_RW = 'none';

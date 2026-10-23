@@ -2,7 +2,7 @@
 
 import { revalidateTag } from 'next/cache';
 
-import { copy } from '@/lib/copy/id';
+import { productsCopy } from '@/lib/copy/products';
 import { fail, mapError, ok } from '@/lib/errors';
 import { TAGS } from '@/lib/queries/tags';
 import { createVendorSchema, updateVendorSchema } from '@/lib/validations/product';
@@ -22,7 +22,7 @@ async function requireSuperadmin(): Promise<GuardResult> {
   if (!guard.ok) return guard;
   return guard.ctx.role === 'superadmin'
     ? guard
-    : fail('FORBIDDEN', undefined, copy.products.entryOnlySuper);
+    : fail('FORBIDDEN', undefined, productsCopy.entryOnlySuper);
 }
 
 export async function createVendorAction(input: unknown): Promise<ActionResult<VendorAdmin>> {

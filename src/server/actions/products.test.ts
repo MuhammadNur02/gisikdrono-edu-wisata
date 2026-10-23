@@ -1,7 +1,7 @@
 import { revalidateTag } from 'next/cache';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { copy } from '@/lib/copy/id';
+import { productsCopy } from '@/lib/copy/products';
 import { requireAal2, type StaffContext } from '@/server/auth/guards';
 import {
   archiveProduct,
@@ -140,7 +140,7 @@ describe('product and vendor actions', () => {
     ];
     for (const result of results) {
       expect(result).toMatchObject({
-        error: { code: 'FORBIDDEN', message: copy.products.entryOnlySuper },
+        error: { code: 'FORBIDDEN', message: productsCopy.entryOnlySuper },
       });
     }
     expect(createProduct).not.toHaveBeenCalled();
@@ -171,7 +171,7 @@ describe('product and vendor actions', () => {
   it("refuses a vendor of another RW than the product's, under the vendor field", async () => {
     vi.mocked(readVendorForStaff).mockResolvedValue(vendorOf(8));
     expect(await createProductAction(FORM)).toMatchObject({
-      error: { code: 'VALIDATION', fieldErrors: { vendorId: [copy.products.vendorWrongRw] } },
+      error: { code: 'VALIDATION', fieldErrors: { vendorId: [productsCopy.vendorWrongRw] } },
     });
     expect(await updateProductAction({ ...FORM, id: ROW_ID })).toMatchObject({
       error: { code: 'VALIDATION' },

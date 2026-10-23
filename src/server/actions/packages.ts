@@ -3,7 +3,7 @@
 import { revalidateTag } from 'next/cache';
 
 import type { RwId } from '@/config/rw';
-import { copy } from '@/lib/copy/id';
+import { packagesCopy } from '@/lib/copy/packages';
 import { fail, mapError, ok, okUnlessFilesLeft } from '@/lib/errors';
 import { TAGS } from '@/lib/queries/tags';
 import { comboMayPublish } from '@/lib/utils/package-tiers';
@@ -30,7 +30,7 @@ import type { PackageAdmin } from '@/types/package';
 // the same again. A combo's legs are not edited here yet (save_package RPC, Task P4.3.11), so a combo goes on sale
 // only once legs written elsewhere visit two RWs (tour_packages_legs_guard).
 
-const text = copy.packages;
+const text = packagesCopy;
 
 type OwnerResult = { ok: true; owner: RwId | null } | ActionFailure;
 

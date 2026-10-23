@@ -18,9 +18,10 @@ import { PACKAGE_LIMITS, PACKAGE_PATHS } from '@/config/packages';
 import { CONTENT_STATUS, PACKAGE_CATEGORY } from '@/config/status';
 import { DB_ENUMS, type EnumValue } from '@/db/enums';
 import { copy } from '@/lib/copy/id';
+import { packagesCopy } from '@/lib/copy/packages';
 import type { PackageInput } from '@/lib/validations/package';
 
-const text = copy.packages;
+const text = packagesCopy;
 const fields = text.fields;
 
 export type PackageControl = Control<PackageInput>;

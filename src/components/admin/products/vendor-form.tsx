@@ -15,11 +15,12 @@ import { Form } from '@/components/ui/form';
 import { VENDOR_LIMITS } from '@/config/products';
 import { useActionForm } from '@/hooks/use-action-form';
 import { copy } from '@/lib/copy/id';
+import { productsCopy } from '@/lib/copy/products';
 import { createVendorSchema, type VendorInput } from '@/lib/validations/product';
 import type { ActionResult } from '@/types/action-result';
 import type { VendorAdmin } from '@/types/vendor';
 
-const text = copy.products.vendors;
+const text = productsCopy.vendors;
 const FIELDS = ['name', 'slug', 'ownerName', 'phone', 'descriptionMd', 'isActive'] as const;
 // E.164: `+62` and up to 13 digits.
 const PHONE_MAX_LENGTH = 16;

@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { SESSION_LIMITS, WEEKDAYS } from '@/config/sessions';
 import { useActionForm } from '@/hooks/use-action-form';
-import { copy } from '@/lib/copy/id';
+import { sessionsCopy } from '@/lib/copy/sessions';
 import {
   createSessionTemplateSchema,
   weekdayKeyOf,
@@ -28,11 +28,11 @@ import {
 import type { ActionResult } from '@/types/action-result';
 import type { SessionTemplateAdmin } from '@/types/session';
 
-const text = copy.sessions.templates;
+const text = sessionsCopy.templates;
 const FIELDS = ['weekday', 'label', 'startTime', 'endTime', 'capacity', 'isActive'] as const;
 const WEEKDAY_OPTIONS = WEEKDAYS.map((weekday) => ({
   value: String(weekday),
-  label: copy.sessions.weekdayNames[weekday],
+  label: sessionsCopy.weekdayNames[weekday],
 }));
 const DEFAULT_CAPACITY = 40;
 const DEFAULT_START = '08:00';

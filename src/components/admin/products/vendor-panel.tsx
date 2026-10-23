@@ -12,9 +12,10 @@ import { ResponsiveSheet } from '@/components/admin/shell/responsive-sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { copy } from '@/lib/copy/id';
+import { productsCopy } from '@/lib/copy/products';
 import type { VendorAdmin } from '@/types/vendor';
 
-const text = copy.products.vendors;
+const text = productsCopy.vendors;
 
 type Editing = { vendor: VendorAdmin | null } | null;
 

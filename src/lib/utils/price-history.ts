@@ -1,8 +1,8 @@
-import { copy } from '@/lib/copy/id';
+import { packagesCopy } from '@/lib/copy/packages';
 import { formatIDR } from '@/lib/utils/currency';
 import type { PriceHistoryEntry } from '@/types/package';
 
-const text = copy.packages.history;
+const text = packagesCopy.history;
 const NONE = '—';
 
 function rupiahOrNone(amount: number | null): string {

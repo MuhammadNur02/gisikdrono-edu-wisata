@@ -15,12 +15,12 @@ import { SESSION_LIMITS } from '@/config/sessions';
 import { SESSION_STATUS } from '@/config/status';
 import { DB_ENUMS } from '@/db/enums';
 import { useActionForm } from '@/hooks/use-action-form';
-import { copy } from '@/lib/copy/id';
+import { sessionsCopy } from '@/lib/copy/sessions';
 import { createVisitSessionSchema, type VisitSessionInput } from '@/lib/validations/session';
 import type { ActionResult } from '@/types/action-result';
 import type { VisitSessionAdmin } from '@/types/session';
 
-const text = copy.sessions.editor;
+const text = sessionsCopy.editor;
 const FIELDS = ['label', 'startTime', 'endTime', 'capacity', 'status', 'notes'] as const;
 const STATUS_OPTIONS = DB_ENUMS.session_status.map((status) => ({
   value: status,

@@ -3,7 +3,7 @@ import 'server-only';
 import { PACKAGE_DEFAULT_SORT, PACKAGE_SORT_COLUMNS } from '@/config/packages';
 import { DB_ENUMS } from '@/db/enums';
 import type { Tables } from '@/db/types';
-import { copy } from '@/lib/copy/id';
+import { packagesCopy } from '@/lib/copy/packages';
 import { AppError } from '@/lib/errors';
 import { parseItinerary } from '@/lib/queries/packages';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
@@ -133,10 +133,10 @@ function toPackageAdmin(row: DetailRow): PackageAdmin {
 // The price floor and the tiers' exclusion index are business outcomes with their own words; a taken slug too.
 export function packageErrorOr<E extends Error & { code?: string }>(error: E): E | AppError {
   if (error.code === CHECK_VIOLATION && error.message.includes(PRICE_FLOOR_CONSTRAINT)) {
-    return new AppError('VALIDATION', copy.packages.errors.priceFloor);
+    return new AppError('VALIDATION', packagesCopy.errors.priceFloor);
   }
   if (error.code === EXCLUSION_VIOLATION) {
-    return new AppError('CONFLICT', copy.packages.errors.tierOverlap);
+    return new AppError('CONFLICT', packagesCopy.errors.tierOverlap);
   }
   return slugConflictOr(error);
 }

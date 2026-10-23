@@ -8,10 +8,10 @@ import { PhotoListField } from '@/components/admin/cms/photo-list-field';
 import { type PackageControl } from '@/components/admin/packages/package-fields';
 import { PACKAGE_LIMITS } from '@/config/packages';
 import type { RwId } from '@/config/rw';
-import { copy } from '@/lib/copy/id';
+import { packagesCopy } from '@/lib/copy/packages';
 import { createImageUpload } from '@/lib/uploads/upload-client';
 
-const text = copy.packages.photos;
+const text = packagesCopy.photos;
 
 export interface PhotosSectionProps {
   control: PackageControl;
@@ -30,7 +30,7 @@ export function PhotosSection({ control, owner, packageId, packageName }: Photos
     [owner, packageId],
   );
   return (
-    <FormSection title={copy.packages.sections.photos}>
+    <FormSection title={packagesCopy.sections.photos}>
       <p className="text-body-sm text-muted-foreground">{text.hint}</p>
       <PhotoListField
         paths={field.value}
