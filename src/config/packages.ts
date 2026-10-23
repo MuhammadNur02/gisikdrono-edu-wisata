@@ -20,7 +20,6 @@ export const PACKAGE_LIMITS = {
   itinerarySteps: 30,
   itineraryTitle: 120,
   itineraryDescription: 500,
-  legNotes: 300,
   durationMinutesMax: 1440,
   paxMax: 2000,
   // tour_package_price_tiers.max_pax NULL = open-ended; the exclusion index reads it as 100000.
