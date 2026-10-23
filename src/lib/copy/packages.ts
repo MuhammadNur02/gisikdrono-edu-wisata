@@ -23,11 +23,15 @@ export const packagesCopy = {
     pax: 'Rombongan',
     status: 'Status',
     updatedAt: 'Diubah',
+    perPax: (price: string) => `${price} / orang`,
+    perGroup: (price: string) => `${price} / rombongan`,
+    paxRange: (min: number, max: number) => `${String(min)}–${String(max)} orang`,
   },
   facets: { status: 'Status', rw: 'RW' },
   actions: {
     edit: 'Ubah',
     view: 'Lihat di situs',
+    detail: 'Lihat detail',
     archive: 'Arsipkan',
     archiveTitle: (name: string) => `Arsipkan paket "${name}"?`,
     archiveConsequence:
@@ -77,6 +81,7 @@ export const packagesCopy = {
     maxPaxHint: 'Kosongkan untuk tanpa batas atas.',
     pricePerPax: 'Harga per orang',
     remove: (row: number) => `Hapus tingkat harga ${String(row)}`,
+    rowTitle: (row: number) => `Tingkat ${String(row)}`,
   },
   legs: {
     hint: 'Paket kombinasi mengunjungi dua RW atau lebih, berurutan. Paket RW biasa otomatis mengunjungi RW-nya sendiri.',
@@ -85,6 +90,7 @@ export const packagesCopy = {
     durationMinutes: 'Durasi di RW ini (menit, opsional)',
     notes: 'Catatan (opsional)',
     remove: (row: number) => `Hapus kunjungan ${String(row)}`,
+    rowTitle: (row: number) => `Kunjungan ${String(row)}`,
     needTwo: 'Paket kombinasi butuh minimal dua RW yang berbeda.',
   },
   itinerary: {
@@ -96,6 +102,7 @@ export const packagesCopy = {
     rw: 'RW (opsional)',
     noRw: 'Tanpa RW',
     remove: (row: number) => `Hapus kegiatan ${String(row)}`,
+    rowTitle: (row: number) => `Kegiatan ${String(row)}`,
   },
   photos: {
     hint: 'Foto pertama menjadi sampul. Simpan paket dulu sebelum menambahkan foto.',
@@ -105,6 +112,7 @@ export const packagesCopy = {
   },
   history: {
     empty: 'Belum ada perubahan harga sejak paket dibuat.',
+    emptyHint: 'Setiap perubahan harga paket atau tingkat harganya tercatat di sini otomatis.',
     changedAt: 'Waktu',
     change: 'Perubahan',
     perPax: (before: string, after: string) => `Harga per orang ${before} → ${after}`,
