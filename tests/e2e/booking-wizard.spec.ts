@@ -15,6 +15,7 @@ import {
   proveWhatsApp,
   readySummary,
   removeSessions,
+  reservedOn,
   RUN,
   STEP,
   waitForOtpCode,
@@ -138,6 +139,8 @@ test('issues a quotation for a school without holding a seat', async ({ page }, 
   await page.getByRole('button', { name: 'Lanjut' }).click();
   await page.getByRole('button', { name: 'Lanjut' }).click();
   await readySummary(page);
+  // The other tests of this project hold seats on the same session, so the check is that this one adds none.
+  const seatsBefore = await reservedOn(sessions.booked.id);
   await page.getByRole('button', { name: 'Minta Surat Penawaran' }).click();
 
   await expect(page).toHaveURL(/\/reservasi\/GSK-[0-9A-HJKMNP-TV-Z]{8}$/, STEP);
@@ -153,14 +156,7 @@ test('issues a quotation for a school without holding a seat', async ({ page }, 
         from public.bookings b where b.pic_phone = ${sqlText(phone)}`),
     );
   expect(rows[0]).toEqual({ quotations: 1, messages: 2 });
-  const seats = z
-    .array(z.object({ reserved_pax: z.number() }))
-    .parse(
-      await runSql(
-        `select reserved_pax from public.visit_sessions where id = '${sessions.booked.id}'`,
-      ),
-    );
-  expect(seats[0]?.reserved_pax).toBe(PAX);
+  expect(await reservedOn(sessions.booked.id)).toBe(seatsBefore);
 });
 
 // docs/StyleGuide.md A13: every control of the wizard works without a pointer. Focus is moved to a control and the

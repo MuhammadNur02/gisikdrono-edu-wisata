@@ -175,6 +175,7 @@ afterAll(async () => {
   const bookings = `select id from public.bookings where package_id in ('${PACKAGE_ID}', '${COMBO_ID}')`;
   await runSql(`select set_config('app.purge', 'on', true), set_config('app.in_rpc', '1', true);
     delete from public.notifications where booking_id in (${bookings});
+    delete from public.quotations where booking_id in (${bookings});
     delete from public.booking_events where booking_id in (${bookings});
     delete from public.booking_legs where booking_id in (${bookings});
     delete from public.guest_otps where phone like '+62857${RUN}%';

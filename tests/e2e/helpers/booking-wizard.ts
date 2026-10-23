@@ -53,6 +53,7 @@ export async function removeSessions(label: string): Promise<void> {
     create temporary table gone_phones on commit drop as
       select pic_phone from public.bookings where id in (select booking_id from gone);
     delete from public.notifications where booking_id in (select booking_id from gone);
+    delete from public.quotations where booking_id in (select booking_id from gone);
     delete from public.booking_events where booking_id in (select booking_id from gone);
     delete from public.booking_addons where booking_id in (select booking_id from gone);
     delete from public.booking_participants where booking_id in (select booking_id from gone);
@@ -170,4 +171,14 @@ export async function bookingOf(phone: string) {
     await runSql(`select booking_code, status, phone_verified_at is not null as phone_verified, consent_version
       from public.bookings where pic_phone = ${sqlText(phone)}`),
   );
+}
+
+// The seats a session holds right now.
+export async function reservedOn(sessionId: string): Promise<number> {
+  const rows = z
+    .array(z.object({ reserved_pax: z.number() }))
+    .parse(
+      await runSql(`select reserved_pax from public.visit_sessions where id = '${sessionId}'`),
+    );
+  return rows[0]?.reserved_pax ?? -1;
 }
