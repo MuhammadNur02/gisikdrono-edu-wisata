@@ -1,4 +1,3 @@
-import { NuqsAdapter } from 'nuqs/adapters/next/app';
 import { Suspense } from 'react';
 
 import { CatalogueList, type CatalogueEntry } from '@/components/marketing/catalogue-list';
@@ -33,15 +32,13 @@ export function ReviewList({ reviews }: ReviewListProps) {
     card: <ReviewCard review={review} variant="card" />,
   }));
   return (
-    <NuqsAdapter>
-      <Suspense fallback={<CatalogueList entries={entries} listClassName={LIST_CLASS_NAME} />}>
-        <FilteredCatalogue
-          groups={[RATING_GROUP]}
-          entries={entries}
-          emptyMessage={copy.catalogue.reviewsFilterEmpty}
-          listClassName={LIST_CLASS_NAME}
-        />
-      </Suspense>
-    </NuqsAdapter>
+    <Suspense fallback={<CatalogueList entries={entries} listClassName={LIST_CLASS_NAME} />}>
+      <FilteredCatalogue
+        groups={[RATING_GROUP]}
+        entries={entries}
+        emptyMessage={copy.catalogue.reviewsFilterEmpty}
+        listClassName={LIST_CLASS_NAME}
+      />
+    </Suspense>
   );
 }

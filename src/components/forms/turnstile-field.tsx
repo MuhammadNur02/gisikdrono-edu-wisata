@@ -5,7 +5,8 @@ import { useState, type Ref } from 'react';
 
 import type { TurnstileAction } from '@/config/auth';
 import { copy } from '@/lib/copy/id';
-import { publicEnv } from '@/lib/public-env';
+// The inlined literal, not publicEnv, which would ship zod with the form's page (Task P5.6.01).
+import { PUBLIC_TURNSTILE_SITE_KEY } from '@/lib/public-literals';
 
 export interface TurnstileFieldProps {
   // Which form the token is for; siteverify reports it back and verifyTurnstile checks it.
@@ -28,7 +29,7 @@ export function TurnstileField({ action, onToken, error, ref }: TurnstileFieldPr
     <div className="space-y-2">
       <Turnstile
         ref={ref}
-        siteKey={publicEnv.NEXT_PUBLIC_TURNSTILE_SITE_KEY}
+        siteKey={PUBLIC_TURNSTILE_SITE_KEY}
         aria-label={copy.auth.turnstile.label}
         options={{ action, theme: 'light', language: 'id', size: 'flexible' }}
         onSuccess={(token) => {

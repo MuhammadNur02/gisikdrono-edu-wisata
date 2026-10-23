@@ -295,7 +295,9 @@ export default defineConfig([
   },
   {
     // next.config.ts runs at build time before src/lib/env.ts can load, and only reads build switches.
-    files: ['src/lib/env.ts', 'src/lib/public-env.ts', 'next.config.ts'],
+    // src/lib/public-literals.ts reads the NEXT_PUBLIC_* values by their literal names so Next.js inlines them
+    // for the browser, without the zod validation of public-env.ts (CLAUDE.md §7.7).
+    files: ['src/lib/env.ts', 'src/lib/public-env.ts', 'src/lib/public-literals.ts', 'next.config.ts'],
     rules: { 'no-restricted-syntax': 'off' },
   },
   {

@@ -1,11 +1,11 @@
 'use client';
 
-import { parseAsStringLiteral, useQueryStates } from 'nuqs';
 import { useMemo } from 'react';
 
 import { CatalogueList, type CatalogueListProps } from '@/components/marketing/catalogue-list';
 import { FilterChips, type FilterOption } from '@/components/marketing/filter-chips';
 import { FilterEmpty } from '@/components/marketing/filter-empty';
+import { useUrlFilters } from '@/hooks/use-url-filters';
 import { matchesFilters } from '@/lib/utils/catalogue-filters';
 
 export interface CatalogueFilterGroup {
@@ -21,17 +21,15 @@ export interface FilteredCatalogueProps extends CatalogueListProps {
 }
 
 function useCatalogueFilters(groups: readonly CatalogueFilterGroup[]) {
-  const parsers = useMemo(
+  const urlGroups = useMemo(
     () =>
-      Object.fromEntries(
-        groups.map((group) => [
-          group.param,
-          parseAsStringLiteral(group.options.map((option) => option.value)),
-        ]),
-      ),
+      groups.map((group) => ({
+        param: group.param,
+        values: group.options.map((option) => option.value),
+      })),
     [groups],
   );
-  return useQueryStates(parsers);
+  return useUrlFilters(urlGroups);
 }
 
 // The one client island of the public catalogues (docs/PRD.md FR-PUB-11/13/17). Shallow: the filter runs on the
@@ -44,8 +42,9 @@ export function FilteredCatalogue({
 }: FilteredCatalogueProps) {
   const [filters, setFilters] = useCatalogueFilters(groups);
   const shown = entries.filter((entry) => matchesFilters(entry.facets, filters));
-  const clearAll = () =>
-    void setFilters(Object.fromEntries(groups.map((group) => [group.param, null])));
+  const clearAll = () => {
+    setFilters(Object.fromEntries(groups.map((group) => [group.param, null])));
+  };
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-4 lg:flex-row lg:gap-10">
@@ -55,7 +54,9 @@ export function FilteredCatalogue({
             label={group.label}
             options={group.options}
             value={filters[group.param] ?? null}
-            onChange={(value) => void setFilters({ [group.param]: value })}
+            onChange={(value) => {
+              setFilters({ [group.param]: value });
+            }}
           />
         ))}
       </div>

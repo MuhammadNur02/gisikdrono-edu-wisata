@@ -120,9 +120,12 @@ jobs:
         run: |
           supabase start
           echo "anon_key=$(supabase status -o json | jq -r .ANON_KEY)" >> "$GITHUB_OUTPUT"
-      - run: pnpm build
+      # The route table of the build is the first-load JS gate of CLAUDE.md §8 (Task P5.6.01).
+      - run: pnpm build 2>&1 | tee build.log
         env:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.stack.outputs.anon_key }}
+      - name: First-load JS within budget
+        run: node scripts/check-first-load-budget.mjs build.log
       - run: pnpm check:secrets
 
   e2e:
@@ -149,7 +152,7 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: |
           if git diff --name-only "origin/$BASE_REF...HEAD" \
-            | grep -Eq 'booking|payment|qr|scanner|^supabase/migrations/|^src/server/services/|^src/lib/(pricing|qr|links|midtrans)/'; then
+            | grep -Eq 'booking|payment|qr|scanner|^supabase/migrations/|^src/server/services/|^src/lib/(pricing|qr|links|midtrans)/|^lighthouserc\.json$'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -205,4 +208,17 @@ jobs:
         with:
           name: playwright-report
           path: playwright-report/
+          retention-days: 7
+      # Lighthouse on the served build (lighthouserc.json, Task P5.6.01): the runner's own Chrome, reports kept
+      # as an artifact and never uploaded anywhere public. The first-load table is gated in the security job.
+      - if: steps.scope.outputs.changed == 'true'
+        name: Lighthouse budgets
+        env:
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.stack.outputs.anon_key }}
+        run: pnpm dlx @lhci/cli@0.15.1 autorun
+      - if: always() && steps.scope.outputs.changed == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lighthouse-report
+          path: .lighthouseci/
           retention-days: 7
