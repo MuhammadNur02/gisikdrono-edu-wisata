@@ -6,24 +6,27 @@ import { Container } from '@/components/layout/container';
 import { HeroProductCard } from '@/components/marketing/hero-product-card';
 import { PhotoFrame } from '@/components/marketing/photo';
 import { PhotoPlaceholder } from '@/components/marketing/photo-placeholder';
-import { RatingStars } from '@/components/reviews/rating-stars';
 import { Button } from '@/components/ui/button';
 import { IMAGE_SIZES } from '@/config/images';
 import { BOOKING_CTA } from '@/config/nav';
 import { siteConfig } from '@/config/site';
-import { copy } from '@/lib/copy/id';
 import { cn } from '@/lib/utils/cn';
-import { formatRating } from '@/lib/utils/ratings';
 import type { HeroBanner, HeroSlideData } from '@/types/banner';
 import type { ProductSummary } from '@/types/product';
-import type { RatingSummary } from '@/types/review';
 
-// docs/StyleGuide.md §5.7, docs/PRD.md FR-PUB-01. Below md the slide is portrait and loses the sides of a
-// landscape photo, from md it is 16:9 and loses the top and bottom; anchoring the crop at the top left keeps
-// the people and the place in view and leaves out what sits in the bottom-right corner (decision of
-// 2026-10-18, for the demo hero's fan).
-const SLIDE_ASPECT = 'aspect-4/5 md:aspect-video';
+// docs/StyleGuide.md §5.7, docs/PRD.md FR-PUB-01 (redesign of 2026-10-23). The photo runs edge to edge and fills
+// the screen under the header from md; below md the slide keeps a stable minimum and grows with its text. A
+// portrait phone loses the sides of a landscape photo, so the crop stays anchored at the top left, which keeps
+// the people and the place in view (decision of 2026-10-18, for the demo hero's fan).
+const SLIDE_HEIGHT = 'min-h-(--hero-min-h-mobile) md:min-h-(--hero-h)';
 const SLIDE_CROP = 'object-left-top';
+// §7.3: one banner is pinned like dusunbambu.id's fixed background. From md, unless the visitor asks for reduced
+// motion, the photo is fixed under the header and the slide's clip-path shows only its own part, so the page
+// scrolls over a still photo. The image itself never moves or transforms, so the LCP is untouched. A fixed
+// layer turns absolute under any transformed ancestor, so it is never wrapped in Reveal, and a carousel (embla
+// moves its slides by transform) keeps its photos in place without it.
+const PINNED_SLIDE = 'md:clip-inset';
+const PINNED_PHOTO = 'md:motion-safe:fixed md:motion-safe:top-16';
 const SECONDARY_CTA_LABEL = 'Lihat Paket';
 
 // The carousel and embla load only for a page that has more than one banner to rotate; the slides
@@ -34,7 +37,6 @@ const HeroCarousel = dynamic(() =>
 
 export interface HeroProps {
   slides: readonly HeroSlideData[];
-  ratingSummary: RatingSummary | null;
   // site_settings `seo.default_description`, for the hero shown before any banner exists.
   description: string;
   // Where `Lihat Paket` scrolls to; left out when the page has no featured packages.
@@ -46,8 +48,9 @@ function HeroActions({ banner, packagesAnchor }: { banner?: HeroBanner; packages
     banner?.ctaLabel && banner.ctaHref
       ? { label: banner.ctaLabel, href: banner.ctaHref }
       : { label: BOOKING_CTA.label, href: BOOKING_CTA.href };
+  // Below md the pair stacks at full width, the one place a button may (§5.1).
   return (
-    <div className="flex flex-wrap gap-3">
+    <div className="flex flex-col gap-3 md:flex-row md:flex-wrap">
       <Button size="xl" asChild>
         <Link href={primary.href}>{primary.label}</Link>
       </Button>
@@ -71,35 +74,39 @@ interface HeroSlideProps {
   banner: HeroBanner;
   // Only the first slide carries the page's h1 and the LCP image (§5.7, §8.2).
   isFirst: boolean;
+  isPinned: boolean;
   product: ProductSummary | null;
   packagesAnchor?: string;
 }
 
-function HeroSlide({ banner, isFirst, product, packagesAnchor }: HeroSlideProps) {
+// The overlay darkens the whole photo (§8.2) and the scrim behind the text deepens it further down, so the text
+// keeps AA on the lightest frame. The bottom padding clears the wave of the section below.
+function HeroSlide({ banner, isFirst, isPinned, product, packagesAnchor }: HeroSlideProps) {
   const Title = isFirst ? 'h1' : 'p';
-  // The photo fills the slide behind the text, and the text stays in the flow: a long title on a narrow
-  // phone makes the slide taller instead of running off the photo. aspect-ratio grows with its content only
-  // while the box itself does not clip, so the photo and the overlay round their own corners.
   return (
-    <div className={cn('relative flex rounded-2xl', SLIDE_ASPECT)}>
+    <div className={cn('relative flex', SLIDE_HEIGHT, isPinned && PINNED_SLIDE)}>
       <PhotoFrame
         image={banner.image}
-        sizes={IMAGE_SIZES.hero}
+        sizes={IMAGE_SIZES.bleed}
         aspectClassName=""
         objectPositionClassName={SLIDE_CROP}
         priority={isFirst}
-        className="absolute inset-0 rounded-2xl"
+        className={cn('absolute inset-0 rounded-none', isPinned && PINNED_PHOTO)}
       />
-      <div aria-hidden className="absolute inset-0 rounded-2xl bg-brand-deep/60" />
-      <div className="relative flex flex-col justify-end gap-4 self-end p-6 text-white md:p-10 lg:p-12">
+      <div aria-hidden className="absolute inset-0 bg-brand-deep/60" />
+      <div
+        aria-hidden
+        className="absolute inset-x-0 bottom-0 h-2/3 bg-linear-to-t from-brand-deep/80 to-transparent"
+      />
+      <Container className="relative flex flex-col justify-end gap-4 pt-24 pb-12 text-white md:pb-16 lg:pb-24">
         <p className="text-overline text-brand-ice">{siteConfig.name}</p>
         <Title className="max-w-3xl text-display-xl text-balance">{banner.title}</Title>
         {banner.subtitle ? (
           <p className="max-w-2xl text-body-lg text-pretty text-brand-ice">{banner.subtitle}</p>
         ) : null}
         <HeroActions banner={banner} packagesAnchor={packagesAnchor} />
-      </div>
-      {product ? <HeroProductCard product={product} /> : null}
+        {product ? <HeroProductCard product={product} /> : null}
+      </Container>
     </div>
   );
 }
@@ -110,7 +117,7 @@ function HeroWithoutBanner({
   packagesAnchor,
 }: Pick<HeroProps, 'description' | 'packagesAnchor'>) {
   return (
-    <div className="grid gap-8 lg:grid-cols-2 lg:items-center">
+    <Container className="grid gap-8 pt-6 pb-16 md:pt-10 md:pb-24 lg:grid-cols-2 lg:items-center">
       <div className="space-y-5">
         <p className="text-overline text-primary-text">{siteConfig.ownerName}</p>
         <h1 className="text-display-xl text-balance">{siteConfig.name}</h1>
@@ -123,27 +130,19 @@ function HeroWithoutBanner({
         rws={[]}
         className="aspect-video"
       />
-    </div>
+    </Container>
   );
 }
 
-function TrustRow({ summary }: { summary: RatingSummary }) {
-  const rating = formatRating(summary.averageRating);
-  return (
-    <p className="flex flex-wrap items-center gap-2 text-body-sm text-muted-foreground">
-      <RatingStars rating={summary.averageRating} />
-      <span>{copy.catalogue.ratingSummary(rating, summary.reviewCount)}</span>
-    </p>
-  );
-}
-
-// One banner renders as a still slide; the carousel island loads only when there is something to rotate.
-function HeroSlides({ slides, description, packagesAnchor }: Omit<HeroProps, 'ratingSummary'>) {
+// One banner renders as a still, pinned slide; the carousel island loads only when there is something to rotate.
+function HeroSlides({ slides, description, packagesAnchor }: HeroProps) {
+  const isPinned = slides.length === 1;
   const rendered = slides.map(({ banner, product }, index) => (
     <HeroSlide
       key={banner.id}
       banner={banner}
       isFirst={index === 0}
+      isPinned={isPinned}
       product={product}
       packagesAnchor={packagesAnchor}
     />
@@ -151,16 +150,14 @@ function HeroSlides({ slides, description, packagesAnchor }: Omit<HeroProps, 'ra
   const [onlySlide] = rendered;
   if (!onlySlide)
     return <HeroWithoutBanner description={description} packagesAnchor={packagesAnchor} />;
-  return rendered.length === 1 ? onlySlide : <HeroCarousel slides={rendered} />;
+  return isPinned ? onlySlide : <HeroCarousel slides={rendered} />;
 }
 
-export function Hero({ ratingSummary, ...slides }: HeroProps) {
+// Nothing in the hero animates: not the h1, not the first image, and no Reveal around it (§7.3).
+export function Hero(props: HeroProps) {
   return (
-    <section className="bg-linear-to-b from-brand-ice to-background pt-6 pb-10 md:pt-10 md:pb-16 dark:from-secondary">
-      <Container className="space-y-6">
-        <HeroSlides {...slides} />
-        {ratingSummary ? <TrustRow summary={ratingSummary} /> : null}
-      </Container>
+    <section className="bg-linear-to-b from-brand-ice to-background dark:from-secondary">
+      <HeroSlides {...props} />
     </section>
   );
 }

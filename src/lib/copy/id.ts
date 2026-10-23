@@ -98,8 +98,8 @@ export const copy = {
     featured: 'Unggulan',
     unavailable: 'Tidak Tersedia',
     rating: (rating: string, max: number) => `Rating ${rating} dari ${String(max)}`,
-    ratingSummary: (rating: string, count: number) =>
-      `Rating ${rating} dari ${String(count)} ulasan`,
+    // The label under the home page's average rating (docs/StyleGuide.md §5.7).
+    ratingFromReviews: (count: number) => `rating dari ${String(count)} ulasan`,
     // Filters: the answer to a visitor's own choice may say nothing matched (docs/StyleGuide.md §6.9).
     filterAll: 'Semua',
     filterRw: 'Kampung',

@@ -68,6 +68,36 @@ describe('--primary-text', () => {
   });
 });
 
+// The warm home sections and the footer carry body text, muted text, links and RW eyebrows (docs/StyleGuide.md §2.5).
+const TEXT_ON_SURFACE_WARM = [
+  'surface-warm-foreground',
+  'muted-foreground',
+  'primary-text',
+  'rw-leaf',
+  'rw-terracotta',
+  'rw-mulberry',
+] as const;
+
+describe('--surface-warm', () => {
+  it.each([
+    ['light', lightBlock],
+    ['dark', darkBlock],
+  ])('keeps every text colour used on it at AA in %s mode', (_mode, block) => {
+    for (const text of TEXT_ON_SURFACE_WARM) {
+      expect(
+        contrast(tokenValue(block, text), tokenValue(block, 'surface-warm')),
+      ).toBeGreaterThanOrEqual(AA_TEXT_CONTRAST);
+    }
+  });
+
+  it('is exposed to Tailwind and copied into docs/StyleGuide.md §2.3', () => {
+    expect(globalsCss).toContain('--color-surface-warm: hsl(var(--surface-warm));');
+    for (const block of [lightBlock, darkBlock]) {
+      expect(styleGuide).toContain(`--surface-warm: ${tokenValue(block, 'surface-warm')};`);
+    }
+  });
+});
+
 // "222.2 47.4% 11.2%" -> "#0F172A", rounding each channel as browsers do.
 function hexOf(hsl: string): string {
   const [hue = 0, saturation = 0, lightness = 0] = hsl.split(/\s+/).map((part) => parseFloat(part));

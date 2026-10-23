@@ -48,8 +48,10 @@ Domain terms used throughout: **RW** (Rukun Warga, the neighbourhood unit that o
 | Source | What we adopt | What we deliberately leave out |
 |---|---|---|
 | shadcn/ui (`new-york` style) | Component anatomy, `cva` variants, CSS-variable theming, Radix accessibility, Sidebar/Chart/Form primitives | Inverted light primary in dark mode (breaks brand recognition on CTAs) |
-| 21st.dev | Minimal marketing sections, `rounded-xl` surfaces, soft `border-border`, backdrop-blur cards, restrained micro-interactions | Decorative gradients, text shimmer, parallax, anything animating the LCP element |
-| UI8.net dashboards | Collapsible icon-rail sidebar, KPI cards with sparkline and trend chip, faceted data tables, high whitespace ratio, floating action bars | Glassmorphism on data surfaces, animated charts, more than three blurred layers |
+| 21st.dev | Minimal marketing sections, `rounded-xl` surfaces, soft `border-border`, backdrop-blur cards, restrained micro-interactions; layout patterns only (each component carries its author's licence, so no source is copied) | Decorative gradients, text shimmer, parallax beyond the two kinds of §7.3, anything animating the LCP element |
+| dusunbambu.id (home page redesign, decision of 2026-10-23, at the user's request of that day) | The pinned hero photo, the wave under the hero and between sections, slide-in section reveals, the full-bleed photo slideshow, scroll-linked photo bands | Autoplay of the slideshow (WCAG 2.2.2), background-attachment parallax (breaks on iOS), its fonts and colours |
+| reactbits.dev (MIT + Commons Clause v1.0: use inside this site is allowed, reselling the components is not) | The ideas of CountUp and SplitText, re-implemented with `motion` and our tokens; no source copied | GSAP-based components, blur animations, glow and spotlight cards, canvas or WebGL backgrounds, marquees |
+| UI8.net dashboards | Collapsible icon-rail sidebar, KPI cards with sparkline and trend chip, faceted data tables, high whitespace ratio, floating action bars (patterns only; no UI8 asset is ever copied) | Glassmorphism on data surfaces, animated charts, more than three blurred layers |
 
 ### 1.3 Anti-generic rules (no AI slop)
 
@@ -58,7 +60,7 @@ The site has to look like Gisikdrono, not like a template. These rules hold for 
 | # | Rule | In practice |
 |---|---|---|
 | G1 | No stock or AI-generated images of people or places | Only real Gisikdrono photos from `public-media`. Until a photo exists the slot shows a placeholder without words (`PhotoPlaceholder`, decision of 2026-10-18): the RW's soft accent as background (`softClassesFor` in `src/config/rw.ts`, from the RW's `accent_key`; a combo, a kelurahan item or anything without one RW uses the neutral soft pair) and the lucide icon of what the slot is about, at 40 px with 1.5 stroke (package category, product category, the RW's own icon, `Newspaper` for an article, `Images` for the hero), never a stand-in image. It is `role="img"` with an `aria-label` that says what the photo will show, so screen readers still hear it. |
-| G2 | No gradient text, no purple or indigo gradients, no decorative blobs or orbs, no glow effects | The only decorative backgrounds are the dot-grid SVG and the ice-to-background gradient of §8.5. |
+| G2 | No gradient text, no purple or indigo gradients, no decorative blobs or orbs, no glow effects | The only decorative backgrounds are the dot-grid SVG, the ice-to-background gradient, the wave divider SVG and a hand-drawn line-art motif at ≤ 8 % opacity (§8.5; the last two added on 2026-10-23 for the home page redesign the user asked for that day). Functional photo scrims behind text are not decoration. |
 | G3 | Glass cards only over the hero photo, at most one per screen | `Card variant="glass"` sits on the hero image and nowhere else (§5.2). Blurred sticky bars (§4.3) are not cards and keep their own budget. |
 | G4 | No emoji as UI icons | Icons are `lucide-react` only (§8.1). Emoji may appear inside content people wrote themselves, such as a review. |
 | G5 | Never invent facts | No made-up numbers, years, names, testimonials, statistics or partner logos. Every fact comes from the CMS. Demo content exists only in the development seed (`pnpm db:seed`, local and CI, CLAUDE.md §6.4), which never reaches staging or production. |
@@ -112,9 +114,13 @@ Tokens live in `src/styles/globals.css` as HSL triplets on `:root` and `.dark`, 
 | `--brand-deep` (custom) | #0F172A | `222.2 47.4% 11.2%` | #0F172A | `222.2 47.4% 11.2%` |
 | `--brand-royal` (custom) | #1E40AF | `226.2 70.7% 40.2%` | #1E40AF | `226.2 70.7% 40.2%` |
 | `--brand-ice` (custom) | #EFF6FF | `213.8 100% 96.9%` | #EFF6FF | `213.8 100% 96.9%` |
+| `--surface-warm` (custom) | #FAF7F2 | `37.5 44.4% 96.5%` | #161412 | `30 10% 8%` |
+| `--surface-warm-foreground` (custom) | #0F172A | `222.2 47.4% 11.2%` | #F8FAFC | `210 40% 98%` |
 | `--radius` | 0.75rem | — | 0.75rem | — |
 
 `--primary` is identical in both modes so that brand CTAs look the same everywhere (white on #2563EB = 5.17:1). Surfaces move instead: dark pages use #09090B, dark cards #0F172A.
+
+`--surface-warm` (decision of 2026-10-23, home page redesign at the user's request of that day) is the opaque warm tone the home page alternates with `--background` and the footer sits on: opaque, so a wave divider in the same colour joins its section without a seam (`bg-muted/40` is translucent and cannot). The warmth stays out of the CTA system, which remains blue. Its text is `--foreground`; `--muted-foreground` on it measures 4.52:1 in light mode, so muted text stays allowed at AA (re-checked against the real token values by `src/styles/globals.test.ts`; were it below 4.5:1, text on it would use the foreground token). The inner pages keep `muted` (§5.7).
 
 ### 2.2 Semantic status colours
 
@@ -232,7 +238,13 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
   --neutral-foreground: 0 0% 100%;
   --neutral-soft: 210 40% 96.1%;
   --neutral-soft-foreground: 240 5.3% 26.1%;
+  --surface-warm: 37.5 44.4% 96.5%;
+  --surface-warm-foreground: 222.2 47.4% 11.2%;
   --radius: 0.75rem;
+  /* Home page sizes (§4.4). */
+  --hero-h: calc(100svh - 4rem);
+  --hero-min-h-mobile: 32rem;
+  --parallax-overscan: 112%;
 }
 
 .dark {
@@ -310,6 +322,8 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
   --neutral-foreground: 222.2 47.4% 11.2%;
   --neutral-soft: 217.2 32.6% 17.5%;
   --neutral-soft-foreground: 212.7 26.8% 83.9%;
+  --surface-warm: 30 10% 8%;
+  --surface-warm-foreground: 210 40% 98%;
 }
 
 @theme inline {
@@ -390,6 +404,8 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
   --color-neutral-foreground: hsl(var(--neutral-foreground));
   --color-neutral-soft: hsl(var(--neutral-soft));
   --color-neutral-soft-foreground: hsl(var(--neutral-soft-foreground));
+  --color-surface-warm: hsl(var(--surface-warm));
+  --color-surface-warm-foreground: hsl(var(--surface-warm-foreground));
 
   --radius-sm: calc(var(--radius) - 0.5rem);    /* 0.25rem */
   --radius-md: calc(var(--radius) - 0.375rem);  /* 0.375rem */
@@ -426,6 +442,10 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
 @utility text-caption { font-size: 0.75rem; line-height: 1.4; letter-spacing: 0.01em; }
 @utility text-overline { font-size: 0.75rem; line-height: 1; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
 /* Tabular figures use the built-in `tabular-nums` utility; no custom alias. */
+
+/* Home page helpers (§7.3, §5.7). */
+@utility clip-inset { clip-path: inset(0); }
+@utility scrollbar-none { scrollbar-width: none; &::-webkit-scrollbar { display: none; } }
 ```
 
 ### 2.4 Tailwind and shadcn mapping
@@ -443,6 +463,7 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
 | `bg-sidebar text-sidebar-foreground` | `--sidebar-*` | shadcn `Sidebar` |
 | `fill-chart-1` … `stroke-chart-5` | `--chart-n` | Recharts via `ChartContainer` `config.color` |
 | `bg-brand-deep text-white` / `from-brand-ice` | brand customs | CTA band, hero gradient |
+| `bg-surface-warm` / `text-surface-warm` | `--surface-warm` | warm home sections and the footer; the wave divider of a warm section |
 | `text-rw-leaf` / `bg-rw-terracotta-soft text-rw-terracotta-soft-foreground` (through `RW_ACCENT_CLASSES` in `src/config/rw.ts`) | `--rw-<palette>*` (`leaf`, `terracotta`, `mulberry`, `teal`, `violet`) | RW eyebrow, RW tag, map hotspot (§2.7) |
 | `rounded-xl` / `rounded-2xl` / `rounded-full` | `--radius-xl` / `--radius-2xl` | surfaces / modals / badges |
 | `font-display` / `font-sans` | `--font-display` / `--font-sans` | headings / body |
@@ -461,6 +482,9 @@ shadcn `components.json`: `"style": "new-york"`, `"tailwind": { "css": "src/styl
 | `--primary-hover` #3B82F6 with white (dark) | 3.7:1 | transient hover state only |
 | `--muted-foreground` #71717A on #FFFFFF | 4.8:1 | AA; keep ≥ 12 px |
 | `--muted-foreground` #94A3B8 on #09090B (dark) | 7.8:1 | AA |
+| `--foreground` / `--muted-foreground` / `--primary-text` on `--surface-warm` (light: #FAF7F2) | 16.7 / 4.52 / 4.84 | AA; muted text stays allowed, keep ≥ 12 px (decision of 2026-10-23) |
+| `--foreground` / `--muted-foreground` / `--primary-text` on `--surface-warm` (dark: #161412) | 17.5 / 7.1 / 7.2 | AA |
+| RW accents as text on `--surface-warm` (light: leaf / terracotta / mulberry) | 5.8 / 6.3 / 7.3 | AA, eyebrow-safe |
 | `--secondary-foreground` #1E40AF on `--secondary` #EFF6FF | 8.0:1 | AA |
 | `--destructive` #DC2626 with white | 4.8:1 | AA (light); 3.8:1 in dark, so destructive buttons carry an icon and ≥ 14 px semibold text |
 | success / warning / info / danger / neutral soft pairs (light) | 4.6 / 4.5 / 5.2 / 5.3 / 9.6 | AA, badge-safe |
@@ -512,6 +536,7 @@ Use them only where the RW itself is the point:
 - the RW eyebrow or label (`RW 05 · Ecowastreme`) and the title accent on an RW page;
 - map hotspots of that RW (fill pair);
 - the RW tag on a package card (soft pair);
+- the 4 px rule along the top of the RW's tile in the home page's RW mosaic (fill pair; decision of 2026-10-23);
 - a combo package shows the accent of every RW it visits, in leg order.
 
 Never use them for call-to-action buttons (those stay `--primary`), for statuses (those use the semantic families of §2.2 through `src/config/status.ts`), or as paragraph text colour.
@@ -618,6 +643,16 @@ Narrow reading column `max-w-3xl`; forms `max-w-2xl`; booking wizard `max-w-3xl`
 | backdrop blur | `bg-white/70 dark:bg-slate-950/60 backdrop-blur-md supports-[backdrop-filter]:bg-white/60` | sticky header, hero floating card, scanner overlay, bulk-action bar |
 
 Blur budget: at most three blurred layers in any viewport. Dark mode replaces shadows with `dark:border-white/5`.
+
+### 4.4 Home page sizes (decision of 2026-10-23)
+
+Layout sizes the home page redesign needs, as variables on `:root` (theme-independent) and used through Tailwind's variable shorthand (`h-(--hero-h)`), so no component writes an arbitrary value.
+
+| Variable | Value | Used for |
+|---|---|---|
+| `--hero-h` | `calc(100svh - 4rem)` | the hero from md, the screen under the h-16 header (`md:min-h-(--hero-h)`) |
+| `--hero-min-h-mobile` | `32rem` | the hero's stable minimum below md; it grows with a long title, so nothing shifts (`min-h-(--hero-min-h-mobile)`) |
+| `--parallax-overscan` | `112%` | the height of a parallax photo layer inside its frame (§7.3), so the drift never shows an edge |
 
 ## 5. Public components
 
@@ -733,11 +768,15 @@ Base: h-10 (h-11 below `md`) `rounded-xl border border-input bg-background px-3`
 
 ### 5.7 Section, Hero and CTA band (`src/components/layout`, `src/components/marketing`)
 
-`<Section id eyebrow title description align="left|center" tone="default|muted|brand">` wraps every marketing block: `tone="default"` `bg-background`, `muted` `bg-muted/40`, `brand` renders the CTA band (`bg-brand-deep text-white rounded-2xl` inside the container, dot-grid SVG at 6 % opacity, primary `xl` button + outline-white secondary). Sections alternate default/muted.
+`<Section id eyebrow title description align="left|center" tone="default|muted|warm|brand" wave headerAction bleed>` wraps every marketing block: `tone="default"` `bg-background`, `muted` `bg-muted/40`, `warm` `bg-surface-warm`, `brand` renders the CTA band (`bg-brand-deep text-white rounded-2xl` inside the container, dot-grid SVG at 6 % opacity, primary `xl` button + outline-white secondary). Inner pages alternate default/muted. The home page alternates default/warm and never uses `muted`, so two near-identical greys never meet (decision of 2026-10-23). `wave` puts a `WaveDivider` (§8.5) on top of the section, painted in its own opaque tone over the bottom of the section above; it goes only where the tone changes, and `muted` takes none. `headerAction` sets the `Lihat semua …` link beside the heading from lg (under it below). `bleed` is content that runs edge to edge after the container (a photo band, a scroll strip). `SectionShell` is the same wrapper without the heading, for a block that lays out its own (Why visit).
 
-Hero (`src/components/marketing/hero.tsx`, `docs/PRD.md` FR-PUB-01): an embla carousel of `hero_banners` slides (`is_active`, within `starts_at`/`ends_at`, ordered by `sort_order`; autoplay 6 s, pauses on hover/focus, prev/next buttons and dots at 44 px). Each slide: 16:9 image (`image_path`; `mobile_image_path` below `md`) under a `bg-brand-deep/60` duotone overlay, overline `Edu Wisata Gisikdrono`, `title` in `text-display-xl` (the first slide renders it as the page `h1`; later slides use a `p` with the same class so the page keeps one `h1`), `subtitle` in `text-body-lg`, CTA pair `cta_label` → `cta_href` (`default xl`, internal paths only) + `Lihat Paket` (`outline xl`, white outline on the overlay), and, when `product_id` is set, that product as `ProductCard variant="compact"` inside a `glass` card on the right at `lg`. Below the carousel a trust row `Rating 4,9 dari 120 ulasan` computed from the `v_public_reviews` aggregate; the section background is `bg-linear-to-b from-brand-ice to-background` (Tailwind v4 gradient utility). The first slide's image is the LCP element (`priority`) and is never opacity-animated; slides move only through embla's own transform. The RW highlight that follows (`RwHighlight`, FR-PUB-02) reads `rw_units` (`name`, `theme_label`, tagline, hero image) and shows one RW to a row, photo and text alternating sides from `sm` (§1.3 G7: no row of identical cards), each linking to its RW page; its eyebrow counts the RWs online in words (`Tiga kampung, tiga program`).
+Home page order (redesign of 2026-10-23, at the user's request of that day, after dusunbambu.id): hero, RW mosaic, featured packages (warm), Why visit with its figures and a full-bleed photo band, gallery strip, reviews (warm), UMKM products, the three latest articles as a compact list, map & contact with the booklets (warm), CTA band, footer (warm, on every public page). Every section is left out while its data is empty (G5, §6.9).
 
-Variants: `Section` `tone` as above, `align="center"` only for the CTA band and testimonial blocks. States: none (static). Do: one `Section` per idea, eyebrow in `text-overline`, title in `text-h2`. Don't: nest sections, put two CTA bands on one page, place the slide's product card above its title on mobile.
+Hero (`src/components/marketing/hero.tsx`, `docs/PRD.md` FR-PUB-01): `hero_banners` slides (`is_active`, within `starts_at`/`ends_at`, ordered by `sort_order`); more than one banner loads the embla carousel (autoplay 6 s, pauses on hover/focus, prev/next buttons and dots at 44 px, under the photo below lg and on its overlay bottom right from lg, white on `brand-deep/40`). The photo runs edge to edge (`IMAGE_SIZES.bleed`), `md:min-h-(--hero-h)` from md and `min-h-(--hero-min-h-mobile)` below, growing with its text, under a `bg-brand-deep/60` duotone overlay and a bottom scrim `from-brand-deep/80` behind the text. Text bottom-left inside the container: overline `Edu Wisata Gisikdrono`, `title` in `text-display-xl` (the first slide renders it as the page `h1`; later slides use a `p` with the same class so the page keeps one `h1`), `subtitle` in `text-body-lg text-brand-ice`, CTA pair `cta_label` → `cta_href` (`default xl`, internal paths only) + `Lihat Paket` (`outline xl`, white outline on the overlay; both full width below md), and, when `product_id` is set, that product inside the one `glass` card, top right from `lg`. A single banner is pinned (§7.3). The rating no longer sits under the hero: it is one of the Why-visit figures, so it is not shown twice. Without a banner the hero keeps the `from-brand-ice to-background` gradient beside the photo placeholder. The first slide's image is the LCP element (`priority`) and never animates or transforms; slides move only through embla's own transform. The RW mosaic that follows (`RwBento`, FR-PUB-02 as amended on 2026-10-23) reads `rw_units` (`name`, `theme_label`, tagline, hero image) in `sort_order`: from lg the first RW is the large tile (`col-span-7`, 4:5 when there are three RWs, beside the other two at `col-span-5`, 16:10), one RW fills the row, two share it 7/5, four or more put the first over a three-column grid; below lg one 4:3 column. Each tile is a whole-card link to its RW page with its accent rule on top (§2.7), the RW eyebrow, `theme_label` in `text-h3` and the tagline; tiles differ in size, accent and photo, so G7 holds. Its eyebrow counts the RWs online in words (`Tiga kampung, tiga program`).
+
+Why visit (`why-visit.tsx`): eyebrow `Mengapa Gisikdrono`, a `text-h1` headline built from the RW count, three reasons (lucide icon in the 40 px tile of §8.1, `text-h4`, one line) and, beside them from lg, the figures from `buildHomeStats()` (`src/lib/utils/home-stats.ts`): RWs online, published packages, activity points, UMKM vendors with a published product, each counted from rows the page already reads, plus the average rating with its review count (static, never counted). A figure of zero is hidden, and with fewer than two the grid is. Below it, the first captioned gallery photo as a full-bleed band (21:9 from md, 4:3 below) with its caption on a scrim (G8). The gallery strip (`gallery-strip.tsx`) shows the next captioned photos in a full-bleed scroll-snap row (a third from lg, half from sm, 5/6 below), each linking to its tile on `/galeri`, with previous/next buttons from md and no autoplay. UMKM products keep the card grid from sm and become a scroll-snap row below it.
+
+Variants: `Section` `tone` as above, `align="center"` only for the CTA band. States: none (static). Do: one `Section` per idea, eyebrow in `text-overline`, title in `text-h2`. Don't: nest sections, put two CTA bands on one page, place the slide's product card above its title on mobile.
 
 ```tsx
 <Section id="paket" eyebrow="Paket wisata" title="Pilih paket sesuai rombongan Anda" tone="muted">
@@ -1043,7 +1082,10 @@ export function MotionProvider({ children }: { children: React.ReactNode }) {
 | `spring.soft` | `{ type: 'spring', stiffness: 300, damping: 30 }` | drawers, sheets, dialogs |
 | `spring.snappy` | `{ type: 'spring', stiffness: 400, damping: 25 }` | hover lift, hotspot scale |
 | stagger | `staggerChildren: 0.06`, `delayChildren: 0.1`, cap 8 items | card grids, feature lists |
-| distance | translate ≤ 24 px; blur never animated | all variants |
+| distance | translate ≤ 24 px; blur never animated | all variants and every UI element |
+| `revealViewport` | `{ once: true, margin: '-80px' }` | every `whileInView` reveal |
+| `parallax.shift` | `'5%'` of a layer 112 % of its frame (`--parallax-overscan`), about 5.6 % of the frame | scroll-linked decorative photos only (§7.3); the one movement exempt from the 24 px cap (decision of 2026-10-23: the cap stays for UI elements) |
+| count-up | `duration.max` eased with `ease.outExpo` | the home page's figures, as the admin KPI count-up |
 
 Motion's API takes seconds, so the millisecond values above are stored as fractions; no component writes a literal duration.
 
@@ -1089,11 +1131,16 @@ export const staggerContainer = (count: number): Variants => ({
 
 | Allowed | Banned |
 |---|---|
-| Section reveals (`whileInView`, once), card hover lift, dialog/drawer/sheet enter–exit through `AnimatePresence`, KPI count-up once on mount, `ScanResultSheet`, toasts (sonner built-in), WhatsAppFab entrance, hotspot focus scale, hero secondary elements | DataTable rows (no enter/exit/reorder; sorting is instant), form fields and validation messages (CSS `transition-colors` only), sidebar nav (CSS only), the tab indicator (a CSS fade, §5.5), Recharts in admin (`isAnimationActive={false}`), flipbook internals (library owns it), the LCP element (hero H1 and first image), height-auto animations above the fold, anything on `/dashboard/scanner` except the result sheet, skeletons (pulse only), carousels beyond embla's own transform |
+| Section reveals (`whileInView`, once; `Reveal` / `RevealList` in `src/components/marketing/reveal.tsx`, below the first screen only, since their hidden state is server-rendered), card hover lift, a CSS hover zoom of a product card's photo (`motion-safe:group-hover:scale-103`, 300 ms), dialog/drawer/sheet enter–exit through `AnimatePresence`, KPI count-up once on mount and the home figures' count-up once in view (`CountUp`, the final figure rendered on the server), the word-by-word fade of one home headline (`SplitWords`, opacity and ≤ 16 px, never blur), `ScanResultSheet`, toasts (sonner built-in), WhatsAppFab entrance, hotspot focus scale, hero secondary elements, and two kinds of parallax only (below) | DataTable rows (no enter/exit/reorder; sorting is instant), form fields and validation messages (CSS `transition-colors` only), sidebar nav (CSS only), the tab indicator (a CSS fade, §5.5), Recharts in admin (`isAnimationActive={false}`), flipbook internals (library owns it), the LCP element (hero H1 and first image), height-auto animations above the fold, anything on `/dashboard/scanner` except the result sheet, skeletons (pulse only), carousels beyond embla's own transform, any other parallax, scroll-jacking (wheel handlers, smooth-scroll libraries), auto-moving rows or marquees |
+
+Parallax (decision of 2026-10-23, at the user's request of that day for a dusunbambu.id-style home page; amends the 21st.dev row of §1.2). Two kinds, nothing else:
+
+- **The pinned hero photo**, CSS only. With exactly one banner, from md and only under `motion-safe`, the photo is `fixed` under the header and its slide carries `clip-inset` (`clip-path: inset(0)`), so the page scrolls over a still photo. The image never moves or transforms, so the LCP is untouched. It is off below md (a phone's toolbar resizes the viewport and makes fixed layers jump), for reduced motion, and for a multi-banner hero, whose embla transform would turn `fixed` into `absolute`. Nothing that holds the photo may carry `transform`, `filter`, `contain: paint` or `will-change: transform`.
+- **Scroll-linked decorative photos** (the RW mosaic tiles, the Why-visit band): `ParallaxPhoto` drifts the image by `parallax.shift` against the native scroll (`useScroll` + `useTransform`) inside a fixed frame. From md only, and gated by hand on `useReducedMotion()`, because a MotionValue bound to `style` is not covered by `MotionConfig`. Never the LCP image, never UI.
 
 ### 7.4 Reduced motion
 
-`MotionConfig reducedMotion="user"` collapses transforms to opacity automatically; variants keep `y`/`scale` small so the opacity fallback reads naturally. Tailwind transitions use `motion-safe:` / `motion-reduce:` prefixes; embla autoplay stops and the KPI count-up renders the final value when `prefers-reduced-motion: reduce`. `useReducedMotion()` gates the scanner vibration and sounds as well.
+`MotionConfig reducedMotion="user"` collapses transforms to opacity automatically; variants keep `y`/`scale` small so the opacity fallback reads naturally. Tailwind transitions use `motion-safe:` / `motion-reduce:` prefixes; embla autoplay stops, the hero photo is no longer pinned, decorative photos stop drifting, and the KPI and home count-ups render the final value when `prefers-reduced-motion: reduce`. `useReducedMotion()` gates the scanner vibration and sounds as well.
 
 ## 8. Iconography, imagery and assets
 
@@ -1157,7 +1204,10 @@ Icons are imported individually (`import { ScanLine } from 'lucide-react'`), nev
 
 ### 8.5 Illustration and empty-state style
 
-No character illustrations or 3D renders. Empty states use a single lucide icon in a muted tile; decorative backgrounds are limited to the dot-grid SVG (6 % opacity) and the ice-to-background gradient. Certificates and PDF documents share the same palette (deep slate header, royal accent rule) and the registered TTF fonts.
+No character illustrations or 3D renders. Empty states use a single lucide icon in a muted tile; decorative backgrounds are limited to the dot-grid SVG (6 % opacity), the ice-to-background gradient, the wave divider and one line-art motif (decision of 2026-10-23, home page redesign at the user's request of that day).
+
+- **Wave divider** (`src/components/layout/wave-divider.tsx`): a server-rendered SVG, no script, `aria-hidden`, drawn on a 1440 × 64 box and stretched to the width (h-6 below md, h-10 from md, h-16 from lg). Two paths: `gentle`, and the asymmetric `bambu` under the hero; `flip` mirrors one so two waves in a row differ. It belongs to the section below and is painted in that section's opaque tone (`background` or `surface-warm`, never a translucent one) over the section above, only where the tone changes. The footer carries one on every public page, standing in a top margin of its own height so it never covers content.
+- **Motif**: a local line-art motif drawn by a person (*asem arang*, the tamarind leaf in Semarang's name, the *blekok srondol* heron, or a kawung grid as a quiet second choice), as a single-colour SVG in `public/motifs/`, at ≤ 8 % opacity, in the CTA band and the footer only. Never Balinese or generic "tribal" patterns, never AI-generated. Until that drawing exists the CTA band keeps its dot grid and the footer has none. Certificates and PDF documents share the same palette (deep slate header, royal accent rule) and the registered TTF fonts.
 
 ## 9. Accessibility and content rules
 
@@ -1227,7 +1277,7 @@ Code-split with `next/dynamic` (`ssr: false` where DOM-only): Leaflet map, `page
 | Surface | Below `md` | `md` and above |
 |---|---|---|
 | Site header | below `xl`: logo + `Pesan` button (`Pesan Kunjungan` from `md`) + menu Sheet | from `xl`: full nav, sticky blur: five links (`Kampung Wisata` to the home page's RW section `/#kampung`, then `Paket wisata`, `Produk UMKM`, `Galeri`, `Peta & kontak`), the wordmark and `Pesan Kunjungan`. The RWs are not named one by one in the header: with three RWs the links needed 975 px of the 901 px the 1280 px container leaves, visitors do not know RWs by number, and a menu of them would add client script to every public page. `Kampung Wisata` is the current section (`aria-current="true"`) on every RW page; each RW keeps its direct link in the menu Sheet, the footer, the home section, the breadcrumbs and the sitemap (decision of 2026-10-22, replacing the six links of 2026-10-17; the planned home page redesign may revisit it) |
-| Hero | text stacked over the carousel, `text-display-xl` at 2.5 rem | two columns |
+| Hero | photo edge to edge at `min-h-(--hero-min-h-mobile)`, growing with its text; text stacked over it, CTAs full width; carousel controls under the photo; no pinned photo; `text-display-xl` at 2.5 rem | full screen under the header (`--hero-h`), text bottom-left; pinned photo for one banner; carousel controls on the overlay from lg (decision of 2026-10-23) |
 | Package detail | sticky bottom CTA bar (`Pesan Sekarang` + price) above `WhatsAppFab` | sidebar card with price and CTA |
 | Booking wizard | stepper collapsed to `Langkah 2/4`, full-width fields, inline DatePicker | horizontal stepper, Popover DatePicker |
 | Dialogs | Drawer with safe-area padding | Dialog `sm:max-w-lg` |
