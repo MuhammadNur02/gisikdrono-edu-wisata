@@ -52,8 +52,20 @@ const capacity = (min: number) =>
     .min(min, messages.capacity(min, SESSION_LIMITS.capacityMax))
     .max(SESSION_LIMITS.capacityMax, messages.capacity(min, SESSION_LIMITS.capacityMax));
 
+// The weekday select works in strings; the column is a smallint (0 = Sunday).
+export const WEEKDAY_KEYS = ['0', '1', '2', '3', '4', '5', '6'] as const;
+export type WeekdayKey = (typeof WEEKDAY_KEYS)[number];
+const SATURDAY_KEY: WeekdayKey = '6';
+
+// A stored weekday as the select shows it; an unknown number reads as Saturday, the usual visiting day.
+export function weekdayKeyOf(weekday: number): WeekdayKey {
+  return WEEKDAY_KEYS.find((key) => key === String(weekday)) ?? SATURDAY_KEY;
+}
+
 const templateFields = {
-  weekday: z.union(WEEKDAYS.map((day) => z.literal(day))),
+  weekday: z
+    .enum(WEEKDAY_KEYS)
+    .transform((key) => WEEKDAYS.find((day) => String(day) === key) ?? WEEKDAYS[0]),
   label: contentText(SESSION_LIMITS.label),
   startTime: clockTimeSchema,
   endTime: clockTimeSchema,
