@@ -152,7 +152,7 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: |
           if git diff --name-only "origin/$BASE_REF...HEAD" \
-            | grep -Eq 'booking|payment|qr|scanner|^supabase/migrations/|^src/server/services/|^src/lib/(pricing|qr|links|midtrans)/|^tests/e2e/|^lighthouserc.json$'; then
+            | grep -Eq 'booking|payment|qr|scanner|^supabase/migrations/|^src/server/services/|^src/lib/(pricing|qr|links|midtrans)/|^tests/e2e/|^lighthouserc\.json$'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
