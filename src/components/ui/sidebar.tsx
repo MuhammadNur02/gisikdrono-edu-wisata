@@ -18,7 +18,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { MEDIA_MD_UP, useMediaQuery } from '@/hooks/use-media-query';
-import { SidebarContext, useSidebar } from '@/hooks/use-sidebar';
+import { SidebarContext, useSidebar, type SidebarContextValue } from '@/hooks/use-sidebar';
 import { copy } from '@/lib/copy/id';
 import { cn } from '@/lib/utils/cn';
 
@@ -86,8 +86,8 @@ function SidebarProvider({
     };
   }, [toggleSidebar]);
 
-  const state = open ? 'expanded' : 'collapsed';
-  const contextValue = React.useMemo(
+  const state: SidebarContextValue['state'] = open ? 'expanded' : 'collapsed';
+  const contextValue = React.useMemo<SidebarContextValue>(
     () => ({
       state,
       open,
