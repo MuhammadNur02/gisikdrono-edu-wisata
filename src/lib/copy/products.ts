@@ -12,7 +12,8 @@ export const productsCopy = {
   search: 'Cari nama produk…',
   empty: 'Belum ada produk UMKM.',
   emptyHint: 'Daftarkan UMKM-nya dulu, lalu tambahkan produk pertamanya.',
-  readOnly: 'Produk dan UMKM didaftarkan dan diubah oleh superadmin. Anda bisa melihat data RW Anda.',
+  readOnly:
+    'Produk dan UMKM didaftarkan dan diubah oleh superadmin. Anda bisa melihat data RW Anda.',
   entryOnlySuper: 'Hanya superadmin yang mendaftarkan atau mengubah produk dan UMKM.',
   vendorWrongRw: 'Pilih UMKM dari RW yang sama dengan produknya.',
   noVendors: 'Belum ada UMKM di RW ini. Daftarkan UMKM-nya dulu lewat tombol Kelola UMKM.',
@@ -78,7 +79,8 @@ export const productsCopy = {
   vendors: {
     open: 'Kelola UMKM',
     title: 'UMKM',
-    description: (rw: string) => `Pelaku UMKM ${rw}. Rekening bank diatur terpisah oleh superadmin.`,
+    description: (rw: string) =>
+      `Pelaku UMKM ${rw}. Rekening bank diatur terpisah oleh superadmin.`,
     chooseRw: 'Pilih salah satu RW di pengalih RW untuk melihat UMKM-nya.',
     empty: 'Belum ada UMKM di RW ini.',
     add: 'Tambah UMKM',
