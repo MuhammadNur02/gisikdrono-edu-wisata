@@ -746,7 +746,9 @@ Notes: `'wasm-unsafe-eval'` is required by the ZXing WASM fallback of `barcode-d
 | `/forgot-password` | ip; ip+email; email | 10/h and 3/h, both fail-closed and counted before the answer; 10 a day per address, counted after the answer for the requests that passed Turnstile, against an email flood from many IPs; silent success throughout (F2 of the PR #17 review: a count by address alone let anyone use up a staff member's resets) |
 | `/reservasi/cari` | ip / code | 10 per 15 min; 5 per hour |
 | link verification `/reservasi/[bookingCode]?t=` | ip | 30/min, constant 404 |
-| signed-URL minting `/api/documents/[kind]/[id]` | booking / ip | 20 per 10 min; 60/min |
+| booking documents `/api/documents/{quotation,invoice,receipt}/[id]` | ip / booking | 30/min before the row is read (`document:ip`); 20 per 10 min per booking (`document:booking`); every refusal one 404 (Task P3.6.04) |
+| `/verifikasi/[code]` | ip | 30/min (`verify:code`), a plain notice past it |
+| `requestQuotationAction` | ip | 3/h (`quotation:create`) on top of the booking's own limits |
 | last-4 step-up | booking | 5 per 24 h then lock + alert |
 | `/api/webhooks/midtrans/[token]` | ip / global | 30/min; 600/min |
 | `/api/webhooks/whatsapp` | ip | 300/min, drop with 200 |
@@ -939,7 +941,7 @@ Resend + React Email in `src/lib/email/*`; sending subdomain `mail.<domain>` (A1
 | Document class | Where | Access path | TTL |
 |---|---|---|---|
 | Ticket PDF (QR, PIC-level data) | `documents/bookings/<id>/ticket-<code>.pdf` | `view`/`manage` link → `/api/documents/ticket/<id>` → 302 to a 600 s signed URL; WhatsApp document header 60 min | link 72 h |
-| Invoice / receipt / quotation / credit note | `documents/bookings/<id>/…` | `manage` link → 900 s signed URL; staff via RLS-scoped parent row | link 72 h |
+| Invoice / receipt / quotation / credit note | `documents/bookings/<id>/<kind>-<number>.pdf` | `view`/`manage` link, or a staff session whose RLS returns the row → `/api/documents/<kind>/<id>` streams the PDF inline, `private, no-store`, no signed URL handed to the browser (Task P3.6.04); a final document is rendered once and kept, any other state rendered as it stands | link 72 h |
 | Attendance / certificates (participant names) | `documents/certificates/<booking_id>/…` | `certificate` link **plus** last-4 step-up → 600 s signed URL; refused after `visit_date + 90 d` | link 90 d, 5 attempts/24 h |
 | Exports | `documents/exports/<profile_id>/…` | superadmin AAL2 → 300 s signed URL; deleted after 24 h | — |
 | Payment / payout proofs | `documents/bookings/<id>/payment-proof-*.jpg`, `documents/payouts/<batch>/…` | superadmin AAL2 only | — |
