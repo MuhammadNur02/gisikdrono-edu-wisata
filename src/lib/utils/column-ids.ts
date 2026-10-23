@@ -1,23 +1,30 @@
-import type { ColumnDef, RowData } from '@tanstack/react-table';
+import {
+  createTable,
+  getCoreRowModel,
+  type ColumnDef,
+  type RowData,
+} from '@tanstack/react-table';
 
-// TanStack names a column by its id, else by its accessorKey with the dots replaced (`pic.name` → `pic_name`), else
-// by a string header, the same rule its column instances follow; a column that opts out of sorting is left out
-// (review of PR #31, item 4). The sort the URL names is checked against this list before it reaches TanStack and
-// the server.
-export function columnIdOf<TData extends RowData>(column: ColumnDef<TData>): string | null {
-  if (column.id !== undefined) return column.id;
-  if ('accessorKey' in column && typeof column.accessorKey === 'string') {
-    return column.accessorKey.replaceAll('.', '_');
-  }
-  return typeof column.header === 'string' ? column.header : null;
+function ignoreStateChange(): void {
+  // The table below only answers which columns sort; it never holds state.
 }
 
-export function sortableColumnIds<TData extends RowData>(
-  columns: readonly ColumnDef<TData>[],
-): string[] {
-  return columns.flatMap((column) => {
-    if (column.enableSorting === false) return [];
-    const id = columnIdOf(column);
-    return id === null ? [] : [id];
+// The ids of the columns a header may sort by, as TanStack itself decides (review of PR #31, item 4): every leaf
+// column, grouped ones included, that has an accessor (an accessorKey or an accessorFn) and does not opt out with
+// enableSorting: false, under the id TanStack gives it (`pic.name` → `pic_name`). A table built from the same
+// definitions answers through getAllLeafColumns() and getCanSort(), so the sort the URL names is checked against
+// exactly what the headers offer before it reaches TanStack and the server.
+export function sortableColumnIds<TData extends RowData>(columns: ColumnDef<TData>[]): string[] {
+  const table = createTable<TData>({
+    data: [],
+    columns,
+    state: {},
+    onStateChange: ignoreStateChange,
+    renderFallbackValue: null,
+    getCoreRowModel: getCoreRowModel(),
   });
+  return table
+    .getAllLeafColumns()
+    .filter((column) => column.getCanSort())
+    .map((column) => column.id);
 }

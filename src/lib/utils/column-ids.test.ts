@@ -1,35 +1,52 @@
 import type { ColumnDef } from '@tanstack/react-table';
 import { describe, expect, it } from 'vitest';
 
-import { columnIdOf, sortableColumnIds } from './column-ids';
+import { sortableColumnIds } from './column-ids';
 
 interface Row {
   id: string;
   name: string;
+  status: string;
   pic: { name: string };
 }
 
-const columns: ColumnDef<Row>[] = [
-  { accessorKey: 'name', header: 'Nama' },
-  { accessorKey: 'pic.name', header: 'PIC' },
-  { id: 'updated_at', accessorFn: (row) => row.id, header: 'Diubah' },
-  { id: 'actions', cell: () => null, enableSorting: false },
-  { accessorFn: (row) => row.id, header: 'Kode' },
-];
-
-describe('columnIdOf', () => {
-  it('names a column by its id, its accessorKey as TanStack spells it, or its string header', () => {
-    const [name, picName, updatedAt, actions, code] = columns;
-    expect(columnIdOf(name as ColumnDef<Row>)).toBe('name');
-    expect(columnIdOf(picName as ColumnDef<Row>)).toBe('pic_name');
-    expect(columnIdOf(updatedAt as ColumnDef<Row>)).toBe('updated_at');
-    expect(columnIdOf(actions as ColumnDef<Row>)).toBe('actions');
-    expect(columnIdOf(code as ColumnDef<Row>)).toBe('Kode');
-  });
-});
-
 describe('sortableColumnIds', () => {
-  it('keeps every named column that may sort', () => {
-    expect(sortableColumnIds(columns)).toEqual(['name', 'pic_name', 'updated_at', 'Kode']);
+  it('lets accessorKey columns sort, under the id TanStack gives them', () => {
+    const columns: ColumnDef<Row>[] = [
+      { accessorKey: 'name', header: 'Nama' },
+      { accessorKey: 'pic.name', header: 'PIC' },
+    ];
+    expect(sortableColumnIds(columns)).toEqual(['name', 'pic_name']);
+  });
+
+  it('keeps accessorFn columns by their id or string header', () => {
+    const columns: ColumnDef<Row>[] = [
+      { id: 'updated_at', accessorFn: (row) => row.id, header: 'Diubah' },
+      { accessorFn: (row) => row.id, header: 'Kode' },
+    ];
+    expect(sortableColumnIds(columns)).toEqual(['updated_at', 'Kode']);
+  });
+
+  it('leaves out display columns and columns that opt out of sorting', () => {
+    const columns: ColumnDef<Row>[] = [
+      { accessorKey: 'name', header: 'Nama' },
+      { accessorKey: 'status', header: 'Status', enableSorting: false },
+      { id: 'actions', cell: () => null },
+    ];
+    expect(sortableColumnIds(columns)).toEqual(['name']);
+  });
+
+  it('walks the leaves of grouped columns', () => {
+    const columns: ColumnDef<Row>[] = [
+      {
+        id: 'booker',
+        header: 'Pemesan',
+        columns: [
+          { accessorKey: 'name', header: 'Nama' },
+          { accessorKey: 'pic.name', header: 'PIC' },
+        ],
+      },
+    ];
+    expect(sortableColumnIds(columns)).toEqual(['name', 'pic_name']);
   });
 });

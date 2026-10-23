@@ -101,6 +101,8 @@ export function IdleLock({ action }: IdleLockProps) {
       <DialogContent
         showCloseButton={false}
         className="z-60 sm:max-w-sm"
+        // Opaque and above every z-50 sheet, dialog and popover, so nothing of the page shows or takes a click.
+        overlayClassName="z-60 bg-background"
         onEscapeKeyDown={(event) => {
           event.preventDefault();
         }}

@@ -47,32 +47,24 @@ function isSidebarShortcut(event: KeyboardEvent): boolean {
 
 function SidebarProvider({
   defaultOpen = true,
-  open: openProp,
-  onOpenChange: setOpenProp,
   className,
   style,
   children,
   ...props
 }: React.ComponentProps<'div'> & {
   defaultOpen?: boolean;
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
 }) {
   const isDesktop = useMediaQuery(MEDIA_MD_UP);
   const [openMobile, setOpenMobile] = React.useState(false);
-
-  // Internal state of the sidebar, unless controlled by the parent.
-  const [internalOpen, setInternalOpen] = React.useState(defaultOpen);
-  const open = openProp ?? internalOpen;
+  const [open, setOpenState] = React.useState(defaultOpen);
   const setOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === 'function' ? value(open) : value;
-      if (setOpenProp) setOpenProp(openState);
-      else setInternalOpen(openState);
+      setOpenState(openState);
       // The layout reads the cookie, so the next page opens the sidebar as it was left.
       document.cookie = `${SIDEBAR_STATE_COOKIE}=${String(openState)}; path=/; max-age=${String(SIDEBAR_COOKIE_MAX_AGE)}; SameSite=Lax`;
     },
-    [setOpenProp, open],
+    [open],
   );
 
   // Below md the trigger opens the sheet; from md up it collapses the rail.
@@ -130,7 +122,7 @@ function SidebarProvider({
 }
 
 type SidebarSide = 'left' | 'right';
-type SidebarCollapsible = 'offcanvas' | 'icon' | 'none';
+type SidebarCollapsible = 'offcanvas' | 'icon';
 
 // Below md the sidebar is a sheet from the side; its content mounts only while it is open.
 function SidebarSheet({ side, children }: { side: SidebarSide; children: React.ReactNode }) {
@@ -142,7 +134,7 @@ function SidebarSheet({ side, children }: { side: SidebarSide; children: React.R
         data-sidebar="sidebar"
         data-slot="sidebar"
         data-mobile="true"
-        className="w-(--sidebar-width) gap-0 bg-sidebar p-0 text-sidebar-foreground md:hidden [&>button]:hidden"
+        className="w-(--sidebar-width) gap-0 bg-sidebar p-0 text-sidebar-foreground motion-reduce:animate-none! md:hidden [&>button]:hidden"
         style={{ '--sidebar-width': SIDEBAR_WIDTH_MOBILE } as React.CSSProperties}
         side={side}
       >
@@ -167,21 +159,6 @@ function Sidebar({
   collapsible?: SidebarCollapsible;
 }) {
   const { state } = useSidebar();
-
-  if (collapsible === 'none') {
-    return (
-      <div
-        data-slot="sidebar"
-        className={cn(
-          'flex h-full w-(--sidebar-width) flex-col bg-sidebar text-sidebar-foreground',
-          className,
-        )}
-        {...props}
-      >
-        {children}
-      </div>
-    );
-  }
 
   return (
     <>
@@ -382,8 +359,6 @@ const sidebarMenuButtonVariants = cva(
     variants: {
       size: {
         default: 'min-h-10 text-body-sm max-md:min-h-11',
-        sm: 'h-8 text-xs',
-        lg: 'h-12 text-body-sm group-data-[collapsible=icon]:p-0!',
       },
     },
     defaultVariants: { size: 'default' },
