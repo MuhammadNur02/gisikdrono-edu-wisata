@@ -26,14 +26,12 @@ const rupiahSchema = z.int().min(0).max(PACKAGE_LIMITS.priceMax);
 
 // A combo visits two RWs or more (docs/PRD.md FR-ADMIN-05).
 export const MIN_COMBO_LEGS = 2;
-// Blank lines a textarea may carry before they are dropped; a pasted essay is still refused.
-const RAW_LINES_MAX = PACKAGE_LIMITS.listItems * 4;
 
 // Highlights and inclusions, one item per line of a textarea (LinesField splits the text). The form holds the lines as
 // typed, so the schema reads and writes one type; blank lines are dropped and each line is capped here.
 const lineListSchema = z
   .array(z.string())
-  .max(RAW_LINES_MAX, messages.lines(PACKAGE_LIMITS.listItems))
+  .max(PACKAGE_LIMITS.rawLines, messages.lines(PACKAGE_LIMITS.listItems))
   .transform((lines) =>
     lines
       .map((line) => line.trim().slice(0, PACKAGE_LIMITS.listItem))

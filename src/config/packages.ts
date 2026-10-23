@@ -15,6 +15,8 @@ export const PACKAGE_LIMITS = {
   descriptionMd: 8000,
   listItem: 160,
   listItems: 20,
+  // Lines a list textarea may carry, blank ones included, before they are dropped.
+  rawLines: 80,
   itinerarySteps: 30,
   itineraryTitle: 120,
   itineraryDescription: 500,
