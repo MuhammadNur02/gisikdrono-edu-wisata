@@ -149,8 +149,9 @@ function describeFailure(error) {
 }
 
 function main() {
-  const { values } = parseArgs({ options: { out: { type: 'string' } } });
   try {
+    // Inside the try, so an unknown or malformed option ends with a clean message too.
+    const { values } = parseArgs({ options: { out: { type: 'string' } } });
     const target = resolveOutputPath(values.out);
     const generatedAt = new Date().toISOString();
     writeSecretsFile(target, renderSecretsFile(generateStagingSecrets(), generatedAt));

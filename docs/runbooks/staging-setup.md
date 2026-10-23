@@ -64,7 +64,7 @@ Free costs nothing and allows two active projects per organisation. **Production
 
 ### Steps
 
-1. Open https://supabase.com and sign up with the **institutional** email (Task P0.1.01). Then open your account (top right) > **Account preferences** > **Multi-factor authentication** and add your authenticator app. Save the recovery codes in Bitwarden (collection Supabase).
+1. Open https://supabase.com and sign up with the **dedicated staging account** you already use for staging (its own Gmail address), not the institutional one: then nothing that account can reach, including the access token of part D, can touch production. Production gets its own organisation under the institutional email (Task P0.1.01). Then open your account (top right) > **Account preferences** > **Multi-factor authentication** and add your authenticator app. Save the recovery codes in Bitwarden (collection Supabase).
 2. Create the organisation: name `Kelurahan Gisikdrono`, type of organisation **Government** or **Non-profit**, plan **Free**. No payment method is needed.
 3. **Production only:** organisation-wide **Require MFA** and the spend cap belong to the paid plan. On Free, make sure every member of the organisation has MFA on their own account (step 1); for now that is only you.
 4. Click **New project** and fill in:
@@ -105,7 +105,7 @@ Staging uses **Hobby**, a free personal account (decision of 2026-10-23). Everyt
 
 ### Steps
 
-1. Open https://vercel.com and sign up with the **institutional** email; add MFA under **Account Settings** > **Authentication**. Save the recovery codes in Bitwarden (collection Vercel). Choose **Hobby** when asked for a plan; the `Kelurahan Gisikdrono` team is **production only** (Pro).
+1. Open https://vercel.com and sign up with the same **dedicated staging account** (Hobby is a personal account; production gets a Pro team under the institutional email); add MFA under **Account Settings** > **Authentication**. Save the recovery codes in Bitwarden (collection Vercel). Choose **Hobby** when asked for a plan; the `Kelurahan Gisikdrono` team is **production only** (Pro).
 2. Click **Add New** > **Project** > **Import Git Repository**. Install the Vercel GitHub app when asked, giving it access to **only** `gisikdrono-edu-wisata`. Choose the repository.
 3. On the import screen: project name `gisikdrono-edu-wisata`, framework **Next.js** (detected), root directory `./`. Add **no** environment variables here (this screen would add them to every environment). Click **Deploy**.
    - This first deployment is a production build of `main` and **fails** with an environment error. That is expected: production has no variables, and part B step 5 stops production builds from now on.
@@ -113,10 +113,11 @@ Staging uses **Hobby**, a free personal account (decision of 2026-10-23). Everyt
 5. Same page, **Ignored Build Step**: choose **Custom** and enter exactly:
 
    ```bash
-   [ "$VERCEL_GIT_COMMIT_REF" != "staging" ]
+   [ "$VERCEL_GIT_COMMIT_REF" != "staging" ] || [ "$VERCEL_GIT_REPO_OWNER" != "MuhammadNur02" ] || [ -n "$VERCEL_GIT_PULL_REQUEST_ID" ]
    ```
 
-   Vercel skips a build when this command succeeds, so it now builds the `staging` branch only. Pushes to `main` and pull-request branches no longer start builds (no failing production builds, no previews against an unmigrated database). Remove it when production is set up (see "At go-live" at the end).
+   Vercel **skips** a build when this command exits 0 and **builds** when it exits 1. The command exits 0 as soon as one test is true, so it builds only when all three hold: the branch is `staging`, the repository belongs to `MuhammadNur02`, and the deployment is not for a pull request. Pushes to `main`, every pull-request branch and every fork (including a fork's branch that is also named `staging`) no longer start builds, so no failing production builds, no previews against an unmigrated database, and no fork code next to the staging variables. Remove it when production is set up (see "At go-live" at the end).
+5a. **Settings** > **Security** (in some versions **Settings** > **Git**): keep **Git Fork Protection** **on**. Then a pull request from a fork never deploys without your approval. **Never click Authorize** on a fork's deployment request: its code would run with the staging variables.
 6. **Settings** > **Domains** > **Add Domain**: type `gisikdrono-staging-<random>.vercel.app`, where `<random>` is 8 random lowercase letters and digits (for example from Bitwarden's generator). The repository is public, so a guessable name such as `gisikdrono-staging.vercel.app` would defeat the obscurity that protects staging. Add it, then open its **Edit** menu, choose **Connect to an environment: Preview** and type the Git branch `staging`. Save.
    - Whatever name you choose is `<staging-url>` from now on. Keep it in Bitwarden and share it with the kelurahan directly; never write it into the repository, an issue or a pull request.
    - If Vercel refuses a `*.vercel.app` name here, skip this step: after the first staging build (part D) the deployment page shows a fixed branch address such as `gisikdrono-edu-wisata-git-staging-<team>.vercel.app`. Use that as `<staging-url>`, update `NEXT_PUBLIC_SITE_URL`, the Vault value `jobs_base_url`, the Turnstile hostname and the Supabase URLs, then redeploy.
@@ -132,7 +133,7 @@ With the exception of step 7, kelurahan staff open `<staging-url>` in any browse
 
 This means staging is protected **only by obscurity** (an unguessable address that is never published) **and noindex**. Anyone who learns the link can open it, and the repository that describes it is public. That is acceptable only because staging carries sandbox keys only, demo content only, booking closed and no visitor data. The exception also lets the database's scheduled jobs (`pg_net`) and, later, Midtrans sandbox notifications reach the staging routes, which a protected address would answer with 401.
 
-**Record the decision.** Task P0.1.03 and `docs/Security.md` §8 ("Deployment Protection (Vercel Authentication) on previews") assume every preview is protected. The exception makes one preview address reachable by anyone who has the link, on purpose. Because it relaxes a written control, record the owner's decision in a later docs PR (a line under Task P0.1.03 and in `docs/Security.md` §8). **Production only:** if the decision is withdrawn once on Pro, Password Protection (about USD 20 a month per project) restores the control as written.
+**The recorded exception.** RL-06 and Task P0.1.03 want every preview behind Vercel Authentication. The owner decided on 2026-10-23 to except this one staging domain; the exception is written down in `docs/Security.md` §8.8 (and the RL-06 row) and under Task P0.1.03: every other preview answers 401, production is unaffected. **Production only:** if the decision is withdrawn once on Pro, Password Protection (about USD 20 a month per project) restores the control as written.
 
 ### Why it stays out of search engines
 
@@ -223,9 +224,9 @@ It must answer `… is a sandbox key (https://api.sandbox.midtrans.com: 404 Tran
 ### C.5 Put the values into Vercel
 
 1. Vercel > the project > **Settings** > **Environment Variables**.
-2. Click **Add Environment Variable** (or **Add New**). For **Environments**, tick **Preview** only; untick **Production** and **Development**. Switch **Sensitive** on where Vercel offers it.
+2. Click **Add Environment Variable** (or **Add New**). For **Environments**, tick **Preview** only and, in the Preview branch field, choose **Select a custom Preview branch** and type `staging`; untick **Production** and **Development**. No other branch then sees these values. Switch **Sensitive** on where Vercel offers it.
 3. Copy the whole content of the secrets file and paste it into the first **Key** field: Vercel splits a pasted `.env` block into one row per variable and skips the comment lines. If your Vercel version does not split it, add each line by hand: the name is left of the first `=`, the value is everything right of it.
-4. Check the list: 23 variables, every one scoped to Preview only, none to Production. Save.
+4. Check the list: 23 variables, every one scoped to **Preview (branch `staging`)**, none to all Preview branches, Production or Development. Save.
 
 ### C.6 Bitwarden, then delete the file
 
@@ -265,7 +266,8 @@ It must list `cron_secret`, `environment`, `jobs_base_url`, `otp_pepper`. Never 
 
 ### D.2 The GitHub environment `staging`
 
-1. Create a Supabase access token: https://supabase.com/dashboard/account/tokens > **Generate new token**, name `github-staging-release`, the shortest expiry offered that suits you. It acts as your account, so it can reach every project you can; the workflow's project-name check and the branch rule below keep it pointed at staging. Rotate it when it expires or when anyone with GitHub admin rights leaves.
+1. Create a Supabase access token **while signed in to the dedicated staging account** of part A, never the institutional one: https://supabase.com/dashboard/account/tokens > **Generate new token**, name `github-staging-release`, expiry **30 days** (or the shortest offered). A token acts as its whole account, so on the staging-only account it can reach the staging project and nothing else; the workflow's project-name check and the branch rule below keep it pointed at staging as well.
+   - **Rotation:** put the expiry date in your calendar. Before it, generate a new token, replace `SUPABASE_ACCESS_TOKEN` in the GitHub environment, then delete the old token on the same Supabase page. Rotate at once, too, if anyone with GitHub admin rights leaves or the token may have been seen.
 2. GitHub > the repository > **Settings** > **Environments** > **New environment** `staging`.
    - **Deployment branches and tags**: **Selected branches and tags** > add `main`.
    - **Required reviewers**: add yourself, so every run waits for your click.

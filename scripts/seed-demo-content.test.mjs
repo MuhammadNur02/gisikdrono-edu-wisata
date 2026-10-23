@@ -30,6 +30,11 @@ describe('scripts/seed-demo-content.sql', () => {
     for (const account of DEV_ACCOUNTS) expect(demoSql).not.toContain(account.email);
   });
 
+  it('only adds rows: the cleanup of the old local RW 08 layout stays in seed-dev.sql', () => {
+    expect(statements).not.toMatch(/\bdelete from\b/i);
+    expect(statements).not.toContain('app.purge');
+  });
+
   it('holds no phone number or email address', () => {
     expect(statements).not.toMatch(/\+62\d{6,}/);
     expect(statements).not.toMatch(/[\w.-]+@[\w-]+\.[\w.]+/);

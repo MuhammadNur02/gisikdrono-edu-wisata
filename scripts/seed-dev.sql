@@ -52,4 +52,25 @@ insert into public.profiles (id, email, full_name, role, rw_id, claims_version) 
 on conflict (id) do nothing;
 
 
+-- ===== Old local layout (local only) =====
+-- A local database seeded before Task P2.10.03 holds the arts demo under RW 08; staging and production never had that
+-- layout, so this stays here rather than in scripts/seed-demo-content.sql. Those rows go first, by their own ids and
+-- names, so the inserts of seed-demo-content.sql write them again for RW 13 and the combo ends up visiting RW 05 and
+-- RW 13 (independent review of PR #23, 3). None of them has a booking, since the seed never writes one; the combo is
+-- a draft while its RW 08 leg goes, and seed-demo-content.sql publishes it again.
+update public.tour_packages set status = 'draft'
+where id = '0de00000-0000-4000-8000-0000000000c9'
+  and exists (select 1 from public.tour_package_legs l
+              where l.package_id = '0de00000-0000-4000-8000-0000000000c9' and l.rw_id = 8);
+delete from public.tour_package_legs where package_id = '0de00000-0000-4000-8000-0000000000c9' and rw_id = 8;
+-- A package's price history is append-only; removing a demo package removes its history with it.
+select set_config('app.purge', 'on', true);
+delete from public.tour_packages where id = '0de00000-0000-4000-8000-0000000000c8' and rw_id = 8;
+delete from public.products_umkm where slug = 'gantungan-kunci-batik' and rw_id = 8;
+delete from public.umkm_vendors where id = '0de00000-0000-4000-8000-0000000000a8' and rw_id = 8;
+select set_config('app.purge', 'off', true);
+delete from public.visit_sessions s using public.session_templates t
+where s.template_id = t.id and t.rw_id = 8 and t.label in ('Sesi Pagi', 'Sesi Siang') and s.reserved_pax = 0;
+delete from public.session_templates where rw_id = 8 and label in ('Sesi Pagi', 'Sesi Siang');
+
 -- The demo content follows in scripts/seed-demo-content.sql, which seed-dev.ts runs next in the same transaction.
