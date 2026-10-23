@@ -23,7 +23,11 @@ const QUOTATION_ID = '0192f3a4-5b6c-7d8e-9f01-0000000000cc';
 const BOOKING_ID = '0192f3a4-5b6c-7d8e-9f01-0000000000bb';
 const RENDERED = Buffer.from('%PDF-1.7 rendered');
 const STORED = Buffer.from('%PDF-1.7 stored');
-const CONTEXT = { kelurahanAddress: null, siteUrl: 'https://eduwisata.example.test' };
+const CONTEXT = {
+  kelurahanAddress: null,
+  siteUrl: 'https://eduwisata.example.test',
+  readerId: null,
+};
 
 const quotationRow = {
   id: QUOTATION_ID,
@@ -119,7 +123,9 @@ describe('loadBookingDocument', () => {
 });
 
 describe('bookingDocumentPdf', () => {
-  it('renders an issued quotation once, keeps it under its booking and records the path', async () => {
+  // Review of PR #33, finding 1: the path is recorded through svc_record_document_pdf, which names the reader as the
+  // actor the audit trigger asks for (tests/integration/documents.test.ts runs it against the real stack).
+  it('renders an issued quotation once, keeps it under its booking and records the path through the RPC', async () => {
     vi.mocked(renderQuotationPdf).mockResolvedValue(RENDERED);
     const { client, calls } = fakeStack();
     await expect(bookingDocumentPdf(client, QUOTATION, CONTEXT)).resolves.toEqual(RENDERED);
@@ -128,7 +134,7 @@ describe('bookingDocumentPdf', () => {
         method: 'POST',
         path: `/storage/v1/object/documents/bookings/${BOOKING_ID}/quotation-SP-GSK-2026-10-0007.pdf`,
       },
-      { method: 'PATCH', path: '/rest/v1/quotations' },
+      { method: 'POST', path: '/rest/v1/rpc/svc_record_document_pdf' },
     ]);
   });
 

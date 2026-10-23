@@ -31,8 +31,6 @@ export interface BookingRequest {
 export type BookingOutcome =
   | {
       kind: 'created';
-      // True for a form sent again, which opens the booking it made rather than a new one.
-      replayed: boolean;
       bookingId: string;
       bookingCode: string;
       status: EnumValue<'booking_status'>;

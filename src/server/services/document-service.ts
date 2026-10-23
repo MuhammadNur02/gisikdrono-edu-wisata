@@ -144,12 +144,14 @@ export function readBookingDocument(
 // the site's own address for the verify URL.
 export async function bookingDocumentFile(
   document: BookingDocument,
+  readerId: string | null,
   adminClient: DatabaseClient = createSupabaseAdminClient(),
 ): Promise<Buffer> {
   const settings = await getPublicSiteSettings();
   return bookingDocumentPdf(adminClient, document, {
     kelurahanAddress: settings.kelurahanAddress,
     siteUrl: publicEnv.NEXT_PUBLIC_SITE_URL,
+    readerId,
   });
 }
 

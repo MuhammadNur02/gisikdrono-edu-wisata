@@ -61,7 +61,6 @@ const PROOF = freshProof(Math.floor(Date.now() / 1000));
 
 const CREATED = {
   kind: 'created' as const,
-  replayed: false,
   bookingId: '0192f3a4-5b6c-7d8e-9f01-0000000000bb',
   bookingCode: CODE,
   status: 'pending_payment' as const,
@@ -267,12 +266,14 @@ describe('requestQuotationAction', () => {
     expect(createQuotedBooking).not.toHaveBeenCalled();
   });
 
-  it('refuses an IP past three quotations an hour before the security check', async () => {
+  // Review of PR #33, finding 5: the limit is counted before the package is read.
+  it('refuses an IP past three quotations an hour before the package is read', async () => {
     vi.mocked(withinGuestLimits).mockResolvedValue(false);
     await expect(requestQuotationAction(REQUEST)).resolves.toMatchObject({
       ok: false,
       error: { code: 'RATE_LIMITED' },
     });
+    expect(loadBookingWizard).not.toHaveBeenCalled();
     expect(verifyTurnstile).not.toHaveBeenCalled();
   });
 });

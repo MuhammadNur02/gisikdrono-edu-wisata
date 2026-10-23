@@ -4,11 +4,14 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { requireGuestToken, requireUser } from '@/server/auth/guards';
 import type { ActionFailure } from '@/types/action-result';
 
-// Who may read a booking's document (Task P3.6.04; docs/Security.md §10.3, DOC-01): a staff member whose RLS lets
-// them see the row (the booking in their scope, at AAL2), or the visitor holding the booking's own link cookie with
-// at least the view scope. Everything else is one NOT_FOUND, like every guest refusal.
+// Who may read a booking's document (Task P3.6.04; docs/Security.md §10.3, DOC-01): the superadmin, at AAL2, whose
+// RLS lets them see the row, or the visitor holding the booking's own link cookie with at least the view scope.
+// Everything else is one NOT_FOUND, like every guest refusal. An RW admin is not a staff reader yet: the documents
+// print the whole snapshot (a combo's other RW, the add-ons, a discount), which 0005 withholds from them (STAFF-02),
+// so their redacted view comes with the booking detail of Task P4.3.02 (decision of 2026-10-23, review of PR #33).
 
-export type DocumentReader = { ok: true; reader: 'staff' | 'guest' } | ActionFailure;
+export type DocumentReader =
+  { ok: true; reader: 'staff'; userId: string } | { ok: true; reader: 'guest' } | ActionFailure;
 
 type DocumentTable = 'quotations' | 'invoices';
 
@@ -26,7 +29,10 @@ export async function requireDocumentReader(
   bookingCode: string,
 ): Promise<DocumentReader> {
   const staff = await requireUser();
-  if (staff.ok && (await staffSeesRow(table, rowId))) return { ok: true, reader: 'staff' };
+  const isSuperadmin = staff.ok && staff.ctx.role === 'superadmin' && staff.ctx.isAal2;
+  if (isSuperadmin && (await staffSeesRow(table, rowId))) {
+    return { ok: true, reader: 'staff', userId: staff.ctx.userId };
+  }
   const guest = await requireGuestToken(bookingCode, 'view');
   return guest.ok ? { ok: true, reader: 'guest' } : guest;
 }

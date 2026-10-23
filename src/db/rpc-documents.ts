@@ -4,7 +4,8 @@ import { z } from 'zod';
 
 import { resultOf, type DatabaseClient } from '@/db/rpc-result';
 
-// The typed wrappers over the document functions of the booking flow (Task P3.6): the quotation of a quoted booking.
+// The typed wrappers over the document functions of the booking flow (Task P3.6): the first quotation of a quoted
+// booking, and the file a rendered document was kept in.
 // The service-role client is handed in by the allow-listed services (CLAUDE.md §6.1).
 
 const QUOTATION_NUMBER = /^SP\/GSK\/\d{4}\/\d{2}\/\d{4,}$/;
@@ -27,22 +28,19 @@ export interface QuotationIssued {
   validUntil: string;
 }
 
-// The Surat Penawaran of a quoted booking (Task P3.6.01). A fourth version, a booking that is not quoted and a number
-// never verified come back as the Postgres error, which mapError reads by its hint. actorId is the officer re-issuing
-// it, or null for the visitor's own request.
-export async function svcCreateQuotation(
+// The first Surat Penawaran of a quoted booking (Task P3.6.01, P3.6.06), or null when it has one already or is no longer
+// quoted: the visitor's next try issues it when the first answer was lost (review of PR #33, finding 3). A number never
+// verified comes back as the Postgres error, which mapError reads by its hint.
+export async function svcIssueFirstQuotation(
   adminClient: DatabaseClient,
   bookingId: string,
-  actorId: string | null = null,
-): Promise<QuotationIssued> {
-  const reply = quotationReplySchema.parse(
-    await resultOf(
-      adminClient.rpc('svc_create_quotation', {
-        p_booking_id: bookingId,
-        p_actor_id: actorId ?? undefined,
-      }),
-    ),
-  );
+): Promise<QuotationIssued | null> {
+  const reply = quotationReplySchema
+    .nullable()
+    .parse(
+      await resultOf(adminClient.rpc('svc_issue_first_quotation', { p_booking_id: bookingId })),
+    );
+  if (reply === null) return null;
   return {
     quotationId: reply.quotation_id,
     quotationNumber: reply.quotation_number,
@@ -50,4 +48,22 @@ export async function svcCreateQuotation(
     version: reply.version,
     validUntil: reply.valid_until,
   };
+}
+
+export type KeptDocumentKind = 'quotation' | 'invoice' | 'receipt';
+
+// The file a rendered document was kept in, recorded on its row under the reader's name: readerId is the staff member
+// who opened it, or null for the visitor (review of PR #33, finding 1).
+export function svcRecordDocumentPdf(
+  adminClient: DatabaseClient,
+  kept: { kind: KeptDocumentKind; documentId: string; path: string; readerId: string | null },
+): Promise<void> {
+  return resultOf(
+    adminClient.rpc('svc_record_document_pdf', {
+      p_kind: kept.kind,
+      p_document_id: kept.documentId,
+      p_path: kept.path,
+      p_actor_id: kept.readerId ?? undefined,
+    }),
+  );
 }

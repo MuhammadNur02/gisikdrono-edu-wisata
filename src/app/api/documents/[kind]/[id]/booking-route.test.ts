@@ -65,6 +65,23 @@ describe('GET /api/documents/quotation/[id]', () => {
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(Buffer.from(await response.arrayBuffer())).toEqual(PDF);
     expect(requireDocumentReader).toHaveBeenCalledWith('quotations', QUOTATION_ID, 'GSK-7F3K9Q2M');
+    expect(bookingDocumentFile).toHaveBeenCalledWith(QUOTATION, null);
+  });
+
+  it('renders for the superadmin under their own id', async () => {
+    const userId = '0192f3a4-5b6c-7d8e-9f01-0000000000ee';
+    vi.mocked(requireDocumentReader).mockResolvedValue({ ok: true, reader: 'staff', userId });
+    await fetchDocument('quotation', QUOTATION_ID);
+    expect(bookingDocumentFile).toHaveBeenCalledWith(QUOTATION, userId);
+  });
+
+  // Review of PR #33, finding 6: past the booking's own limit a known id answers like an unknown one.
+  it("answers the same 404 past the booking's own limit, and renders nothing", async () => {
+    vi.mocked(withinDocumentLimits).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const response = await fetchDocument('quotation', QUOTATION_ID);
+    expect(response.status).toBe(404);
+    expect(requireDocumentReader).not.toHaveBeenCalled();
+    expect(bookingDocumentFile).not.toHaveBeenCalled();
   });
 
   it('counts the IP before the row is looked up, and the booking once it is known', async () => {

@@ -3,6 +3,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { EnumValue } from '@/db/enums';
+import { svcRecordDocumentPdf } from '@/db/rpc-documents';
 import type { Database } from '@/db/types';
 import { renderInvoicePdf } from '@/lib/pdf/invoice';
 import { renderQuotationPdf } from '@/lib/pdf/quotation';
@@ -51,6 +52,8 @@ export type BookingDocument =
 export interface DocumentContext {
   kelurahanAddress: string | null;
   siteUrl: string;
+  // Who reads it: the staff member's id, or null for the visitor; the kept file is recorded under their name.
+  readerId: string | null;
 }
 
 const QUOTATION_COLUMNS =
@@ -196,24 +199,25 @@ async function storedPdf(adminClient: DatabaseClient, path: string): Promise<Buf
   return Buffer.from(await data.arrayBuffer());
 }
 
+// The row's path column is written by internal.record_document_pdf, which names the reader as the actor the audit
+// trigger asks for (review of PR #33, finding 1).
 async function keepPdf(
   adminClient: DatabaseClient,
   document: BookingDocument,
   pdf: Buffer,
+  readerId: string | null,
 ): Promise<void> {
   const path = storagePathFor(document);
   const upload = await adminClient.storage
     .from(DOCUMENTS_BUCKET)
     .upload(path, pdf, { contentType: PDF_TYPE, upsert: true });
   if (upload.error) throw upload.error;
-  const { error } =
-    document.kind === 'quotation'
-      ? await adminClient.from('quotations').update({ pdf_path: path }).eq('id', document.id)
-      : await adminClient
-          .from('invoices')
-          .update(document.kind === 'invoice' ? { pdf_path: path } : { receipt_pdf_path: path })
-          .eq('id', document.id);
-  if (error) throw error;
+  await svcRecordDocumentPdf(adminClient, {
+    kind: document.kind,
+    documentId: document.id,
+    path,
+    readerId,
+  });
 }
 
 // The PDF bytes: the stored file of a final document, else a fresh render, kept when the document is final.
@@ -228,7 +232,7 @@ export async function bookingDocumentPdf(
     if (stored) return stored;
   }
   const pdf = await render(document, context);
-  if (isFinal) await keepPdf(adminClient, document, pdf);
+  if (isFinal) await keepPdf(adminClient, document, pdf, context.readerId);
   return pdf;
 }
 

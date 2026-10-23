@@ -107,8 +107,9 @@ function pdfResponse(document: BookingDocument, pdf: Buffer): Response {
   });
 }
 
-// The per-IP limit first, then the row, then the booking's own limit and the reader's right to it. Every refusal is
-// the same 404, so an id cannot be told apart from a document one may not read (docs/Security.md DOC-01).
+// The per-IP limit first, then the row, then the booking's own limit and the reader's right to it. Past the IP limit
+// the answer is 429, the same for every id; every refusal after the row is read is the same 404, the booking's limit
+// included, so a known id cannot be told apart from an unknown one (docs/Security.md DOC-01; review of PR #33, 6).
 async function bookingDocument(
   kind: BookingDocumentKind,
   id: string,
@@ -119,12 +120,14 @@ async function bookingDocument(
   const document = await readBookingDocument(kind, id);
   if (!document) return notFound();
   if (!(await withinDocumentLimits(clientIp, document.bookingId))) {
-    return tooManyRequests('document:booking', log);
+    log.info('rate_limited', { limit: 'document:booking' });
+    return notFound();
   }
   const table = kind === 'quotation' ? 'quotations' : 'invoices';
   const reader = await requireDocumentReader(table, document.id, document.bookingCode);
   if (!reader.ok) return notFound();
-  return pdfResponse(document, await bookingDocumentFile(document));
+  const readerId = reader.reader === 'staff' ? reader.userId : null;
+  return pdfResponse(document, await bookingDocumentFile(document, readerId));
 }
 
 export async function GET(request: Request, context: DocumentRouteContext): Promise<Response> {
