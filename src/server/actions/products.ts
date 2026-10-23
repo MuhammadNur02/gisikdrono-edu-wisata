@@ -21,9 +21,10 @@ import type { ActionFailure, ActionResult } from '@/types/action-result';
 import type { ProductAdmin } from '@/types/product';
 
 // /dashboard/products (Task P4.3.06, docs/PRD.md FR-ADMIN-06, REC-13). Entry is the superadmin's (decision of the
-// user, 2026-10-24): an RW admin reads their own RW's products and changes none. A new product belongs to the RW the
-// RwSwitcher points at, never to one a form names, and its vendor has to be of that RW; products_umkm_vendor_rw_guard
-// and RLS say the same again in the database.
+// user, 2026-10-24): an RW admin reads their own RW's products and changes none. Only this guard says so for now: the
+// products_umkm and umkm_vendors write policies of 0005 still let an RW admin write their own RW's rows, and narrowing
+// them to is_superadmin() is a migration (Task P4.3.11). A new product belongs to the RW the RwSwitcher points at,
+// never to one a form names, and its vendor has to be of that RW, which products_umkm_vendor_rw_guard checks again.
 
 const text = copy.products;
 

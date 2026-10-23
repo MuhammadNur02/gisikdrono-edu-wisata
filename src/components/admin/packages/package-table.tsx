@@ -2,16 +2,14 @@
 
 import type { ColumnDef } from '@tanstack/react-table';
 import { Archive, ExternalLink, Package, Pencil } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 import { ColumnHeader } from '@/components/admin/data-table/column-header';
 import { DataTable } from '@/components/admin/data-table/data-table';
 import { RowActions, type RowActionItem } from '@/components/admin/data-table/row-actions';
-import {
-  ConfirmActionDialog,
-  type ConfirmRequest,
-} from '@/components/admin/shell/confirm-action-dialog';
+import type { ConfirmRequest } from '@/components/admin/shell/confirm-action-dialog';
 import { EmptyState } from '@/components/admin/shell/empty-state';
 import { ContentStatusBadge } from '@/components/admin/status/status-badge';
 import { PACKAGE_PATHS } from '@/config/packages';
@@ -25,6 +23,13 @@ import type { ListFacet } from '@/types/data-table';
 import type { PackageListItem } from '@/types/package';
 
 const text = copy.packages;
+
+// The confirmation loads on the first archive, outside the list page's first load (admin budget, review of PR #35).
+const ConfirmActionDialog = dynamic(() =>
+  import('@/components/admin/shell/confirm-action-dialog').then(
+    (module) => module.ConfirmActionDialog,
+  ),
+);
 
 type ArchiveAction = (input: unknown) => Promise<ActionResult<null>>;
 
@@ -193,12 +198,14 @@ export function PackageTable({ rows, total, facets, archiveAction, ...scope }: P
         searchPlaceholder={text.search}
         emptyState={<EmptyState icon={Package} title={text.empty} description={text.emptyHint} />}
       />
-      <ConfirmActionDialog
-        request={request}
-        onClose={() => {
-          setRequest(null);
-        }}
-      />
+      {request ? (
+        <ConfirmActionDialog
+          request={request}
+          onClose={() => {
+            setRequest(null);
+          }}
+        />
+      ) : null}
     </>
   );
 }

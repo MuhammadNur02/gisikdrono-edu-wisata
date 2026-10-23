@@ -2,16 +2,14 @@
 
 import type { ColumnDef } from '@tanstack/react-table';
 import { Archive, ExternalLink, Pencil, ShoppingBag } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 import { ColumnHeader } from '@/components/admin/data-table/column-header';
 import { DataTable } from '@/components/admin/data-table/data-table';
 import { RowActions, type RowActionItem } from '@/components/admin/data-table/row-actions';
-import {
-  ConfirmActionDialog,
-  type ConfirmRequest,
-} from '@/components/admin/shell/confirm-action-dialog';
+import type { ConfirmRequest } from '@/components/admin/shell/confirm-action-dialog';
 import { EmptyState } from '@/components/admin/shell/empty-state';
 import { ContentStatusBadge } from '@/components/admin/status/status-badge';
 import { PRODUCT_PATHS } from '@/config/products';
@@ -25,6 +23,13 @@ import type { ListFacet } from '@/types/data-table';
 import type { ProductListItem } from '@/types/product';
 
 const text = copy.products;
+
+// The confirmation loads on the first archive, outside the list page's first load (admin budget, review of PR #35).
+const ConfirmActionDialog = dynamic(() =>
+  import('@/components/admin/shell/confirm-action-dialog').then(
+    (module) => module.ConfirmActionDialog,
+  ),
+);
 
 export interface ProductTableProps {
   rows: ProductListItem[];
@@ -168,12 +173,14 @@ export function ProductTable({ rows, total, facets, archiveAction }: ProductTabl
           <EmptyState icon={ShoppingBag} title={text.empty} description={text.emptyHint} />
         }
       />
-      <ConfirmActionDialog
-        request={request}
-        onClose={() => {
-          setRequest(null);
-        }}
-      />
+      {request ? (
+        <ConfirmActionDialog
+          request={request}
+          onClose={() => {
+            setRequest(null);
+          }}
+        />
+      ) : null}
     </>
   );
 }

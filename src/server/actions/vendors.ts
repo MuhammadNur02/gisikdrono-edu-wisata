@@ -13,8 +13,9 @@ import type { ActionResult } from '@/types/action-result';
 import type { VendorAdmin } from '@/types/vendor';
 
 // The vendors sheet of /dashboard/products (Task P4.3.06, docs/PRD.md FR-ADMIN-06). Entry is the superadmin's
-// (decision of the user, 2026-10-24); a new vendor belongs to the RW the RwSwitcher points at. The bank columns wait
-// for their superadmin RPCs (P4.3.06, a migration) and are part of no form here.
+// (decision of the user, 2026-10-24), which only this guard enforces until the RLS narrowing of Task P4.3.11; a new
+// vendor belongs to the RW the RwSwitcher points at. The bank and consent columns wait for their superadmin RPCs
+// (P4.3.06, a migration) and are part of no form here.
 
 async function requireSuperadmin(): Promise<GuardResult> {
   const guard = await requireAal2();
