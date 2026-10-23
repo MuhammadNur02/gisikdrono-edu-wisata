@@ -859,7 +859,7 @@ Values never appear in the repository. P = public bundle (`NEXT_PUBLIC_*` only),
 | `CRON_SECRET` | S | Vercel per environment **and** Supabase Vault `cron_secret` | `openssl rand -base64 32`; rotated in both places in one change | P0.3.02, P0.3.03, P1.6.02 |
 | `TURNSTILE_SECRET_KEY`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | S / P | Vercel per environment | Cloudflare Turnstile (managed mode); Cloudflare test keys only locally and in CI, refused on preview and production | P0.1.10, P3.2.02 |
 | `NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER` | P | Vercel per environment | Kelurahan contact number for the floating button | P2.2.02 |
-| `NEXT_PUBLIC_FLAG_*` | P | Vercel per environment | Build-time feature flags read in `src/config` | P1.1.08 |
+| `NEXT_PUBLIC_FLAG_*` | P | Vercel per environment | Build-time feature flags read in `src/config`; `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS` = `off` on the Free-plan staging project only (`docs/runbooks/staging-setup.md`), unset elsewhere | P1.1.08 |
 | `SECURITY_ALERT_EMAIL`, `SECURITY_ALERT_WA_PHONE` | S | Vercel per environment | `keamanan@<domain>` and a kelurahan-owned number | P0.4.03, P3.11.08 |
 | `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_AUTH_TOKEN` | P / CI | Vercel; GitHub Actions | Sentry project; auth token for source maps only | P0.1.11, P5.7.05 |
 | `VERCEL_AUTOMATION_BYPASS_SECRET` | CI | GitHub Actions secrets | Vercel project → Deployment Protection → Protection Bypass for Automation; regenerate on leak or when anyone with Vercel access leaves. Until the `e2e` job targets the preview, Playwright runs against a local production build | P1.1.16 |

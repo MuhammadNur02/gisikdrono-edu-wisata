@@ -59,6 +59,7 @@ export const FIXED = [
   ['MIDTRANS_IS_PRODUCTION', 'false', 'staging is a Preview deployment, held to the sandbox'],
   ['RESEND_API_KEY', 'email-off-on-staging', 'src/lib/env.ts needs a value; email stays off'],
   ['EMAIL_FROM', 'Edu Wisata Gisikdrono Staging <noreply@example.invalid>', 'until Resend'],
+  ['NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS', 'off', 'Supabase Free has no image transformer'],
 ];
 
 // Optional names that stay unset on staging; Vercel gets no row for them.

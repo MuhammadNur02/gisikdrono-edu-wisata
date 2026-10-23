@@ -2,7 +2,7 @@ import bundleAnalyzer from '@next/bundle-analyzer';
 import type { NextConfig } from 'next';
 import { PHASE_DEVELOPMENT_SERVER } from 'next/constants';
 
-import { IMAGE_DEVICE_WIDTHS } from './src/config/images';
+import { IMAGE_DEVICE_WIDTHS, imageLoaderFileFor } from './src/config/images';
 import { MOVED_PATHS } from './src/config/redirects';
 import { PRIVATE_ROUTE_PREFIXES } from './src/config/routes';
 import { publicEnv } from './src/lib/public-env';
@@ -43,7 +43,8 @@ const nextConfig: NextConfig = {
     // Supabase's transformer resizes public-media images (docs/StyleGuide.md §8.2), so Next.js' own
     // optimiser and its remotePatterns check never run; the pattern stays pinned all the same.
     loader: 'custom',
-    loaderFile: './src/lib/images/supabase-loader.ts',
+    // Without the transformer (a Free-plan staging project) the plain public-media files instead.
+    loaderFile: imageLoaderFileFor(publicEnv.NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS),
     deviceSizes: IMAGE_DEVICE_WIDTHS,
     remotePatterns: [
       {

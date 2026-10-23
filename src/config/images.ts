@@ -20,3 +20,17 @@ export const IMAGE_SIZES = {
   // A photo inside an article body, as wide as its 65ch text column (§3.3).
   prose: '(min-width: 768px) 680px, 100vw',
 } as const;
+
+// Which next/image loader the build uses (next.config.ts). Supabase's transformer is a Pro feature, so a project on the
+// Free plan, such as staging (docs/runbooks/staging-setup.md), builds with NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS=off and
+// serves each photo as its plain public-media file. Production stays on the transformer (src/lib/public-env.ts).
+export const IMAGE_LOADER_FILES = {
+  transformer: './src/lib/images/supabase-loader.ts',
+  plainObject: './src/lib/images/public-object-loader.ts',
+} as const;
+
+export function imageLoaderFileFor(transformsFlag: 'on' | 'off' | undefined): string {
+  return transformsFlag === 'off'
+    ? IMAGE_LOADER_FILES.plainObject
+    : IMAGE_LOADER_FILES.transformer;
+}

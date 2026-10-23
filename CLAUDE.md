@@ -183,7 +183,7 @@ supabase/
   migrations/                  0001_extensions ... 0008_seed, then <YYYYMMDDHHMMSS>_<slug>.sql
   config.toml tests/            pgTAP (rls_*.sql, triggers, append-only, concurrency, enumeration); no seed.sql (pnpm db:seed)
   templates/recovery.html      Supabase Auth's reset email: one token_hash link to auth/callback (the hosted projects carry the same text)
-scripts/                       seed-dev.ts + seed-dev.sql, dev-accounts.ts, local-stack.ts, midtrans-simulate.ts, midtrans-status.ts, midtrans-check.ts, wa-send-test.ts, check-client-bundle-secrets.mjs, check-table-tests.mjs, gen-db-types.mjs
+scripts/                       seed-dev.ts + seed-dev.sql + seed-demo-content.sql, dev-accounts.ts, generate-staging-secrets.mjs, local-stack.ts, midtrans-simulate.ts, midtrans-status.ts, midtrans-check.ts, wa-send-test.ts, check-client-bundle-secrets.mjs, check-table-tests.mjs, gen-db-types.mjs
 tests/                         integration/ (Vitest against supabase start), e2e/ (Playwright), fixtures/
 public/                        icons/, map/denah.svg, fonts/, og/
 ```
@@ -748,7 +748,7 @@ PRD requirement cited; migration + RLS + pgTAP merged; types regenerated; valida
 | `TURNSTILE_SECRET_KEY` | S | Turnstile siteverify |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | P | Turnstile widget |
 | `NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER` | P | Floating WhatsApp chat button |
-| `NEXT_PUBLIC_FLAG_*` | P | Build-time feature flags read in `src/config` |
+| `NEXT_PUBLIC_FLAG_*` | P | Build-time feature flags read in `src/config`; `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS=off` only on a Supabase Free staging project without image transformations (refused in production) |
 | `SECURITY_ALERT_EMAIL`, `SECURITY_ALERT_WA_PHONE` | S | Out-of-band critical alert recipients |
 | `NEXT_PUBLIC_SENTRY_DSN` | P | Sentry client/server DSN |
 | `SENTRY_AUTH_TOKEN` | CI | Source-map upload |
