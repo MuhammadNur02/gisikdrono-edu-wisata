@@ -12,6 +12,12 @@ const UNKNOWN_SLUG = 'tidak-ada-e2e';
 const UNKNOWN_RW_PATH = '/rw-99-tidak-ada';
 // RW 05 is online but has no performance schedule (rw_units.schedule_enabled), so its /jadwal is not a page.
 const ONLINE_RW_SLUG = 'rw-05-ecowastreme';
+// RW 13 is online with schedule_enabled (20261022080000), so its /jadwal is a page.
+const SCHEDULED_RW_SLUG = 'rw-13-kampung-budaya-seni';
+// The arts programme's old RW 08 address answers 308 to RW 13 (src/config/redirects.ts), before the middleware.
+const MOVED_RW_PATH = '/rw-08-kampung-seni-budaya';
+// A package pnpm db:seed publishes (scripts/seed-dev.sql), the one the booking wizard spec books.
+const SEEDED_PACKAGE_SLUG = 'paket-eduwisata-ecowastreme';
 // A well-formed RW filter (src/config/gallery.ts) for an RW the gallery does not know: only the page can refuse it.
 const OFFLINE_RW_FILTER = 'rw99';
 // The response itself is under test, so a redirect must come back as one.
@@ -60,5 +66,26 @@ test.describe('the checks that held already (Task P2.10.02)', () => {
   test('an RW page that exists still answers 200', async ({ request }) => {
     const response = await request.get(`/${ONLINE_RW_SLUG}`, NO_REDIRECTS);
     expect(response.status()).toBe(200);
+  });
+});
+
+// The pages that exist keep answering 200, and the moved RW address its 308, so the 404s above are not a route
+// that stopped matching (review of PR #30).
+test.describe('the pages beside them still answer as before', () => {
+  test('a seeded package page is a 200', async ({ request }) => {
+    const response = await request.get(`/paket-wisata/${SEEDED_PACKAGE_SLUG}`, NO_REDIRECTS);
+    expect(response.status()).toBe(200);
+  });
+
+  test('the /jadwal of an RW with a schedule is a 200', async ({ request }) => {
+    const response = await request.get(`/${SCHEDULED_RW_SLUG}/jadwal`, NO_REDIRECTS);
+    expect(response.status()).toBe(200);
+  });
+
+  test('the old RW 08 arts address is a 308 to RW 13', async ({ request }) => {
+    const response = await request.get(MOVED_RW_PATH, NO_REDIRECTS);
+    expect(response.status()).toBe(308);
+    const location = response.headers()['location'];
+    expect(new URL(location ?? '', response.url()).pathname).toBe(`/${SCHEDULED_RW_SLUG}`);
   });
 });
