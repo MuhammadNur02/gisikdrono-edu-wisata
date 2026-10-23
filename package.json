@@ -88,6 +88,7 @@
     "@commitlint/cli": "^21.2.3",
     "@commitlint/config-conventional": "^21.2.3",
     "@eslint/eslintrc": "^3.3.7",
+    "@lhci/cli": "0.15.1",
     "@next/bundle-analyzer": "^15.5.28",
     "@playwright/test": "^1.64.0",
     "@tailwindcss/postcss": "^4.3.3",

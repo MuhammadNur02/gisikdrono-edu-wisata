@@ -120,8 +120,10 @@ jobs:
         run: |
           supabase start
           echo "anon_key=$(supabase status -o json | jq -r .ANON_KEY)" >> "$GITHUB_OUTPUT"
-      # The route table of the build is the first-load JS gate of CLAUDE.md §8 (Task P5.6.01).
+      # The route table of the build is the first-load JS gate of CLAUDE.md §8 (Task P5.6.01). `shell: bash` is what
+      # turns pipefail on (the default `run` shell has none), so a failed build fails the step despite tee.
       - run: pnpm build 2>&1 | tee build.log
+        shell: bash
         env:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.stack.outputs.anon_key }}
       - name: First-load JS within budget
@@ -215,10 +217,12 @@ jobs:
         name: Lighthouse budgets
         env:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.stack.outputs.anon_key }}
-        run: pnpm dlx @lhci/cli@0.15.1 autorun
+        run: pnpm exec lhci autorun
+      # The reports live in a dot folder, which upload-artifact skips unless told otherwise.
       - if: always() && steps.scope.outputs.changed == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lighthouse-report
           path: .lighthouseci/
+          include-hidden-files: true
           retention-days: 7
