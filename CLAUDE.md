@@ -243,7 +243,7 @@ These rules are enforced in review and by lint. A PR that violates them is not m
 9. **Comments explain why, never what.** Reference the rule or requirement (`// docs/PRD.md §9: a quotation holds no quota, legs stay 'unreserved'`). Delete commented-out code.
 10. **No dead code.** Unused exports, parameters, flags and files are removed in the same PR that makes them unused.
 11. **Import order** (ESLint `import/order`): `server-only` / `'use client'` directive first, then node built-ins, external packages, `@/` aliases, relative imports; blank line between groups; type imports with `import type`.
-12. **File size.** Target <= 300 lines. Split by responsibility, not by line count.
+12. **File size.** Target <= 300 lines. Split by responsibility, not by line count. The files the shadcn CLI generates into `src/components/ui` (such as `sidebar.tsx`) keep their generated shape and are exempt from `max-lines` and `max-lines-per-function` (decision of 2026-10-20 on PR #17); every other rule still applies to them.
 13. **Pure functions for critical logic.** Pricing (`computeBookingQuote`), QR signing/verification, guest-link minting, Midtrans status mapping and the booking state map are pure, side-effect-free and unit-tested to 100 % lines.
 14. **One language per surface.** UI copy, WhatsApp templates, emails and PDFs in Indonesian; code and docs in English. The English summary on `/privasi` is the one recorded exception (§12.1 no. 18).
 

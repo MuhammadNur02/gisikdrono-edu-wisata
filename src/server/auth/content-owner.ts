@@ -6,7 +6,7 @@ import { RW_SCOPE_ALL, RW_SCOPE_COOKIE, type RwScope } from '@/config/dashboard'
 import type { RwId } from '@/config/rw';
 import { copy } from '@/lib/copy/id';
 import { fail } from '@/lib/errors';
-import { parseRwScope } from '@/lib/utils/rw-scope';
+import { effectiveRwFor, parseRwScope } from '@/lib/utils/rw-scope';
 import type { StaffContext } from '@/server/auth/guards';
 import { listRwUnitsForStaff } from '@/server/services/rw-unit-service';
 import type { ActionFailure } from '@/types/action-result';
@@ -21,6 +21,18 @@ export async function readRwScope(): Promise<RwScope> {
   if (scope === RW_SCOPE_ALL) return scope;
   const rwUnits = await listRwUnitsForStaff();
   return rwUnits.some((unit) => unit.id === scope) ? scope : RW_SCOPE_ALL;
+}
+
+// The RW a list is filtered by, from the `?rw=` of a DataTable (docs/StyleGuide.md §6.4) tied to who asks: an RW
+// admin's own RW whatever the URL says, the superadmin's only when rw_units has it (review of PR #31, item 1).
+export async function effectiveRw(ctx: StaffContext, requested: RwId | null): Promise<RwId | null> {
+  if (ctx.role === 'admin_rw') return ctx.rwId;
+  const rwUnits = await listRwUnitsForStaff();
+  return effectiveRwFor(
+    ctx,
+    requested,
+    rwUnits.map((unit) => unit.id),
+  );
 }
 
 // The owner of what a staff member creates. It never comes from a form: an RW admin writes for their own RW

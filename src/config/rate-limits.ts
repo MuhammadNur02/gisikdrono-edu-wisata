@@ -53,6 +53,10 @@ export const RATE_LIMITS = {
   // or a kampung behind one IP has several visitors choosing at once (review of PR #27, L7).
   'session_availability:ip': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   'quote_preview:ip': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
+  // Task P4.1.01 (docs/Security.md AUTH-11): the codes a signed-in staff member types to unlock the idle screen or to
+  // step up before a critical action, per account. A code has a million values and changes every 30 s, so ten tries
+  // in fifteen minutes leave a guesser nothing and a typo plenty of room.
+  'step_up:user': { limit: 10, windowSeconds: 900, whenUnavailable: 'fail-closed' },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitName = keyof typeof RATE_LIMITS;
