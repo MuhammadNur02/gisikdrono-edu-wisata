@@ -144,7 +144,7 @@ export function YoutubeThirdParty() {
 export function MapsThirdParty() {
   return (
     <NoticeSection id="pihak-ketiga-peta" title="Pihak ketiga: peta">
-      <p>Halaman Peta &amp; kontak dan beranda memuat peta dari dua pihak ketiga:</p>
+      <p>Halaman Peta &amp; kontak memuat peta dari dua pihak ketiga:</p>
       <ul className="list-disc space-y-1 pl-5">
         <li>
           saat halaman Peta &amp; kontak dibuka, gambar petanya dimuat dari {OSM_TILE_HOST} milik

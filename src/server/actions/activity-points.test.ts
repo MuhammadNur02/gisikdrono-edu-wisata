@@ -52,6 +52,7 @@ const INPUT = {
   imagePath: null,
   mapX: 40,
   mapY: 55.5,
+  svgHotspotId: null,
   lat: null,
   lng: null,
   sortOrder: 0,
@@ -84,13 +85,25 @@ describe('createActivityPointAction', () => {
   // Mass assignment: the RW and the columns no API role writes are not fields of the form.
   it.each([
     ['rwId', 8],
-    ['svgHotspotId', 'rw-08-sanggar'],
     ['createdAt', '2020-01-01'],
   ])('refuses an extra field %s', async (field, value) => {
     expect(await createActivityPointAction({ ...INPUT, [field]: value })).toMatchObject({
       error: { code: 'VALIDATION' },
     });
     expect(createActivityPoint).not.toHaveBeenCalled();
+  });
+
+  // svg_hotspot_id binds the point to one element of public/map/denah.svg (PLAN_HOTSPOT_IDS); any other id is refused.
+  it('binds a hotspot to a plan element the plan has, and refuses one it has not', async () => {
+    await createActivityPointAction({ ...INPUT, svgHotspotId: 'rw-13-sanggar' });
+    expect(createActivityPoint).toHaveBeenCalledWith(
+      ADMIN_05,
+      5,
+      expect.objectContaining({ svgHotspotId: 'rw-13-sanggar' }),
+    );
+    expect(
+      await createActivityPointAction({ ...INPUT, svgHotspotId: 'rw-08-sanggar' }),
+    ).toMatchObject({ error: { code: 'VALIDATION' } });
   });
 
   it('asks the superadmin to pick an RW under Semua', async () => {

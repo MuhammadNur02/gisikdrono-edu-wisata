@@ -17,7 +17,7 @@ import type { ActivityPointAdmin, CleanedUp } from '@/types/cms';
 // write names the RW as well as the id, so a row of another RW is not touched even if a policy were wider.
 
 const COLUMNS =
-  'id, rw_id, name, slug, point_type, short_description, body_md, image_path, map_x, map_y, lat, lng, sort_order, status';
+  'id, rw_id, name, slug, point_type, short_description, body_md, image_path, map_x, map_y, svg_hotspot_id, lat, lng, sort_order, status';
 
 type PointRow = Pick<
   Tables<'activity_points'>,
@@ -31,6 +31,7 @@ type PointRow = Pick<
   | 'image_path'
   | 'map_x'
   | 'map_y'
+  | 'svg_hotspot_id'
   | 'lat'
   | 'lng'
   | 'sort_order'
@@ -49,6 +50,7 @@ function toActivityPointAdmin(row: PointRow): ActivityPointAdmin {
     imagePath: row.image_path,
     mapX: row.map_x,
     mapY: row.map_y,
+    svgHotspotId: row.svg_hotspot_id,
     lat: row.lat,
     lng: row.lng,
     sortOrder: row.sort_order,
@@ -66,6 +68,7 @@ function columnsOf(values: SaveActivityPointValues) {
     image_path: values.imagePath,
     map_x: values.mapX,
     map_y: values.mapY,
+    svg_hotspot_id: values.svgHotspotId,
     lat: values.lat,
     lng: values.lng,
     sort_order: values.sortOrder,

@@ -12,6 +12,9 @@ import { buildWhatsAppChatUrl } from '@/lib/utils/whatsapp';
 import type { RwUnitSummary } from '@/types/rw-unit';
 
 export interface ContactBlockProps {
+  // site_settings `contact.whatsapp_number`, or the env number when the kelurahan has not set one, as /privasi
+  // reads it (review of PR #29); E.164.
+  whatsappNumber: string;
   // From site_settings; NULL while the value is missing or still the seeded sample (left out, §6.9).
   email: string | null;
   address: string | null;
@@ -42,12 +45,9 @@ function ContactRow({
   );
 }
 
-// The public WhatsApp number (NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER), with the greeting of the floating button.
-function WhatsAppRow() {
-  const chatUrl = buildWhatsAppChatUrl(
-    siteConfig.whatsappContactNumber,
-    copy.layout.whatsAppGreeting(siteConfig.name),
-  );
+// The kelurahan's WhatsApp number, with the greeting of the floating button.
+function WhatsAppRow({ number }: { number: string }) {
+  const chatUrl = buildWhatsAppChatUrl(number, copy.layout.whatsAppGreeting(siteConfig.name));
   return (
     <ContactRow icon={<MessageCircle aria-hidden className="size-5" />} label={mapCopy.contactWhatsApp}>
       <a
@@ -56,17 +56,22 @@ function WhatsAppRow() {
         rel="noopener noreferrer"
         className="inline-flex min-h-11 items-center tabular-nums underline-offset-4 hover:underline md:min-h-0"
       >
-        {formatPhone(siteConfig.whatsappContactNumber)}
+        {formatPhone(number)}
       </a>
     </ContactRow>
   );
 }
 
-function ContactDetails({ email, address, routeUrl }: Omit<ContactBlockProps, 'units'>) {
+function ContactDetails({
+  whatsappNumber,
+  email,
+  address,
+  routeUrl,
+}: Omit<ContactBlockProps, 'units'>) {
   return (
     <div className="space-y-6 rounded-xl border border-border bg-card p-5 shadow-card md:p-6">
       <ul className="space-y-4">
-        <WhatsAppRow />
+        <WhatsAppRow number={whatsappNumber} />
         {email ? (
           <ContactRow icon={<Mail aria-hidden className="size-5" />} label={mapCopy.contactEmail}>
             <a

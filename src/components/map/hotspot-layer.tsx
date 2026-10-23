@@ -6,7 +6,7 @@ import { useTransformEffect } from 'react-zoom-pan-pinch';
 
 import { HotspotPopover } from '@/components/map/hotspot-popover';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { HOTSPOT_ACTIVE_SCALE } from '@/config/map';
+import { HOTSPOT_ACTIVE_SCALE, PLAN_HOTSPOT_CLASS } from '@/config/map';
 import { rwAccentClasses } from '@/config/rw';
 import { ACTIVITY_POINT_TYPE } from '@/config/status';
 import { mapCopy } from '@/lib/copy/map';
@@ -70,7 +70,10 @@ function Hotspot({ point, units, isActive, zoomScale, onSelect }: HotspotProps) 
         <m.button
           type="button"
           aria-label={mapCopy.hotspot(point.name, rw.label)}
-          className="group absolute flex size-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className={cn(
+            PLAN_HOTSPOT_CLASS,
+            'group absolute flex size-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+          )}
           style={{ left: `${String(point.mapX)}%`, top: `${String(point.mapY)}%` }}
           initial={false}
           animate={{ scale: (isActive ? HOTSPOT_ACTIVE_SCALE : 1) / zoomScale }}

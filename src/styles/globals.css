@@ -330,6 +330,30 @@
     stroke: hsl(var(--background));
     stroke-width: 3;
   }
+  /* leaflet.css paints popups and tooltips white with #333 text and #0078A8 links outside any layer, which fails
+     AA in dark mode; these put them on the popover tokens in both themes (review of PR #29). */
+  .leaflet-container .leaflet-popup-content-wrapper,
+  .leaflet-container .leaflet-tooltip {
+    background: hsl(var(--popover));
+    color: hsl(var(--popover-foreground));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-card);
+  }
+  .leaflet-container .leaflet-popup-tip {
+    background: hsl(var(--popover));
+    border: 1px solid hsl(var(--border));
+    box-shadow: none;
+  }
+  .leaflet-container .leaflet-tooltip-top::before {
+    border-top-color: hsl(var(--border));
+  }
+  .leaflet-container a {
+    color: hsl(var(--primary-text));
+  }
+  .leaflet-container a.leaflet-popup-close-button {
+    color: hsl(var(--muted-foreground));
+  }
 }
 
 @layer base {

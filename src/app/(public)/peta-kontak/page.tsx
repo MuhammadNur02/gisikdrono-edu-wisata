@@ -73,6 +73,8 @@ export default async function MapContactPage() {
   const markers = buildGeoMarkers(points, units);
   const centre = mapCentreOf(markers);
   const routeDestination = settings.kelurahanAddress ?? centre;
+  // site_settings `contact.whatsapp_number` once the kelurahan has set it, as /privasi reads it; the env number before.
+  const whatsappNumber = settings.contactWhatsappNumber ?? siteConfig.whatsappContactNumber;
   return (
     <>
       <PageHeader title={TITLE} description={DESCRIPTION} breadcrumbs={[]} path={PUBLIC_PATHS.map} />
@@ -85,6 +87,7 @@ export default async function MapContactPage() {
       ) : null}
       <Section id={SECTION_IDS.contact} eyebrow="Kontak" title={mapCopy.contactTitle}>
         <ContactBlock
+          whatsappNumber={whatsappNumber}
           email={settings.contactEmail}
           address={settings.kelurahanAddress}
           routeUrl={routeDestination ? googleMapsDirectionsUrl(routeDestination) : null}
@@ -94,7 +97,7 @@ export default async function MapContactPage() {
       <JsonLd
         data={governmentOrganizationJsonLd({
           streetAddress: settings.kelurahanAddress ?? undefined,
-          telephone: siteConfig.whatsappContactNumber,
+          telephone: whatsappNumber,
           email: settings.contactEmail ?? undefined,
           mapUrl: centre ? googleMapsPlaceUrl(centre) : undefined,
         })}

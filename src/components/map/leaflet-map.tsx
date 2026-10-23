@@ -67,8 +67,9 @@ function MarkerPin({ marker }: { marker: GeoMarker }) {
   );
 }
 
-// Leaflet's own zoom buttons are 30 px; these are the 44 px of docs/StyleGuide.md §9.1 A4, and they sit outside
-// the map element, above its stacking context.
+// Leaflet's own zoom buttons are 30 px; these are the 44 px of docs/StyleGuide.md §9.1 A4. They sit beside the
+// map element, which carries `isolate`, so Leaflet's panes (z-index 400 and up) stay in the map's own stacking
+// context and never cover these buttons (review of PR #29).
 function GeoZoomControls({ map }: { map: LeafletMapInstance | null }) {
   return (
     <div className="absolute top-3 right-3 z-10 flex flex-col gap-2">
@@ -145,7 +146,7 @@ export function LeafletMap({ markers }: LeafletMapProps) {
           scrollWheelZoom={false}
           zoomAnimation={!prefersReducedMotion}
           fadeAnimation={!prefersReducedMotion}
-          className="aspect-video w-full bg-muted"
+          className="isolate aspect-video w-full bg-muted"
         >
           <TileLayer url={OSM_TILE_URL} maxZoom={GEO_MAX_ZOOM} />
           {markers.map((marker) => (

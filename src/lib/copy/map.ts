@@ -18,6 +18,8 @@ export const mapCopy = {
   pointsTitle: 'Daftar titik aktivitas',
   gallery: 'Lihat di galeri',
   route: 'Rute',
+  // The route link of a point in the list, named for a screen reader.
+  routeTo: (name: string) => `Rute ke ${name}`,
   routeToOffice: 'Rute di Google Maps',
   geoTitle: 'Lokasi di peta',
   geoLabel: 'Peta lokasi titik aktivitas',

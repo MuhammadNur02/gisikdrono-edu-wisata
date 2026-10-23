@@ -8,6 +8,33 @@ export const PLAN_MAX_SCALE = 4;
 export const HOTSPOT_ACTIVE_SCALE = 1.15;
 // The class the plan element bound to an open hotspot carries (src/styles/globals.css).
 export const PLAN_ACTIVE_CLASS = 'denah-active';
+// The class of every hotspot button: react-zoom-pan-pinch never starts a pan from an element that carries it,
+// so a press on a hotspot stays a click (review of PR #29).
+export const PLAN_HOTSPOT_CLASS = 'denah-hotspot';
+// The element ids of public/map/denah.svg a point may bind to (activity_points.svg_hotspot_id, docs/StyleGuide.md
+// §8.3); the commissioned plan keeps them (the file's own comment lists the same). The CMS offers exactly these.
+export const PLAN_HOTSPOT_IDS = [
+  'rw-05-area',
+  'rw-05-bank-sampah',
+  'rw-05-kebun-toga',
+  'rw-05-komposter',
+  'rw-05-maggot',
+  'rw-05-kerajinan-pkk',
+  'rw-13-area',
+  'rw-13-panggung',
+  'rw-13-sanggar',
+  'rw-13-dolanan',
+  'rw-13-mural',
+  'rw-08-area',
+  'rw-08-balai-warga',
+  'rw-08-semar-cakep',
+  'rw-08-kantor-layanan',
+] as const;
+export type PlanHotspotId = (typeof PLAN_HOTSPOT_IDS)[number];
+
+export function isPlanHotspotId(value: string | null): value is PlanHotspotId {
+  return value !== null && PLAN_HOTSPOT_IDS.some((id) => id === value);
+}
 
 // OpenStreetMap's standard tiles, the one tile host docs/Security.md §8.2 allows in img-src; the credit next to
 // the map is a condition of the OSM tile usage policy.
