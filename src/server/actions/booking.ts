@@ -63,7 +63,7 @@ async function openWizard(packageSlug: string): Promise<WizardRead> {
 }
 
 async function isWithinIpLimit(
-  name: 'session_availability:ip' | 'quote_preview:ip' | 'booking_create:ip',
+  name: 'session_availability:ip' | 'quote_preview:ip' | 'booking_create:ip' | 'quotation:create',
 ) {
   const clientIp = clientIpFrom(await headers());
   return withinGuestLimits([{ name, subject: rateLimitIpBucket(clientIp) }]);
@@ -124,6 +124,7 @@ const isInstitution = (bookerType: EnumValue<'booker_type'>) =>
 // institutions only (docs/PRD.md FR-BOOK-05; decision of 2026-10-22, Q5).
 async function checkBooking(
   input: unknown,
+  mode: BookingMode,
 ): Promise<{ ok: true; booking: CheckedBooking } | ReturnType<typeof fail>> {
   const request = bookingRequestSchema.safeParse(input);
   if (!request.success) return mapError(request.error);
@@ -132,10 +133,10 @@ async function checkBooking(
   const parsed = createBookingSchema(read.wizard.rules.maxPax).safeParse(request.data.booking);
   if (!parsed.success) return mapError(parsed.error);
   if (parsed.data.packageId !== read.wizard.package.id) return fail('VALIDATION');
-  if (request.data.mode === 'quote' && !isInstitution(parsed.data.bookerType)) {
+  if (mode === 'quote' && !isInstitution(parsed.data.bookerType)) {
     return fail('VALIDATION', undefined, text.quoteForInstitutions);
   }
-  const { mode, shownContact } = request.data;
+  const { shownContact } = request.data;
   return { ok: true, booking: { mode, wizard: read.wizard, values: parsed.data, shownContact } };
 }
 
@@ -203,28 +204,49 @@ async function submitFailure(error: unknown) {
     : failure;
 }
 
-// "Konfirmasi & Bayar" (mode pay) and "Minta Surat Penawaran" (mode quote). pay_to_confirm and resent are answers,
-// not errors (Task P3.5.04); a duplicate's code is never told (BOOK-15).
+// Steps 2 to 5 for a checked booking: the IP's attempts, Turnstile, the proof of the contact on screen, then the
+// service. pay_to_confirm, resent and reverify are answers, not errors (Task P3.5.04); a duplicate's code is never
+// told (BOOK-15).
+async function book(booking: CheckedBooking): Promise<ActionResult<BookingSubmitAnswer>> {
+  if (!(await isWithinIpLimit('booking_create:ip'))) return fail('RATE_LIMITED');
+  const clientIp = clientIpFrom(await headers());
+  const isHuman = await verifyTurnstile(
+    booking.values.turnstileToken,
+    clientIp,
+    TURNSTILE_ACTIONS.bookingCreate,
+  );
+  const captchaFailed = copy.booking.otp.captchaFailed;
+  if (!isHuman) return fail('VALIDATION', { turnstileToken: [captchaFailed] }, captchaFailed);
+  const proof = await readPhoneProofCookie();
+  if (!isFresh(proof) || !provesShownContact(proof, booking.shownContact)) {
+    return ok({ kind: 'reverify' });
+  }
+  return ok(await submit(booking, proof));
+}
+
+// "Konfirmasi & Bayar": a hold.
 export async function createBookingAction(
   input: unknown,
 ): Promise<ActionResult<BookingSubmitAnswer>> {
   try {
-    const checked = await checkBooking(input);
+    const checked = await checkBooking(input, 'pay');
     if (!checked.ok) return checked;
-    if (!(await isWithinIpLimit('booking_create:ip'))) return fail('RATE_LIMITED');
-    const clientIp = clientIpFrom(await headers());
-    const isHuman = await verifyTurnstile(
-      checked.booking.values.turnstileToken,
-      clientIp,
-      TURNSTILE_ACTIONS.bookingCreate,
-    );
-    const captchaFailed = copy.booking.otp.captchaFailed;
-    if (!isHuman) return fail('VALIDATION', { turnstileToken: [captchaFailed] }, captchaFailed);
-    const proof = await readPhoneProofCookie();
-    if (!isFresh(proof) || !provesShownContact(proof, checked.booking.shownContact)) {
-      return ok({ kind: 'reverify' });
-    }
-    return ok(await submit(checked.booking, proof));
+    return await book(checked.booking);
+  } catch (error) {
+    return submitFailure(error);
+  }
+}
+
+// "Minta Surat Penawaran" (Task P3.6.06; docs/PRD.md FR-B2B-01): a quoted booking and its Surat Penawaran, behind
+// its own limit of three an hour per IP on top of the booking's.
+export async function requestQuotationAction(
+  input: unknown,
+): Promise<ActionResult<BookingSubmitAnswer>> {
+  try {
+    const checked = await checkBooking(input, 'quote');
+    if (!checked.ok) return checked;
+    if (!(await isWithinIpLimit('quotation:create'))) return fail('RATE_LIMITED');
+    return await book(checked.booking);
   } catch (error) {
     return submitFailure(error);
   }

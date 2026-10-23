@@ -43,7 +43,7 @@ const CLOCK_TICK_MS = 15_000;
 const PRIVACY_PATH = '/privasi';
 
 export interface SummaryStepProps extends WizardStepProps {
-  actions: Pick<WizardActions, 'createBooking' | 'requestOtp' | 'verifyOtp'>;
+  actions: Pick<WizardActions, 'createBooking' | 'requestQuotation' | 'requestOtp' | 'verifyOtp'>;
   legs: readonly BookableLeg[];
   preview: QuotePreviewState;
   refreshPreview: () => void;
@@ -174,6 +174,7 @@ function useSummarySend(props: SummaryStepProps, form: SummaryForm, renewCaptcha
   const submit = useBookingSubmit({
     ...props,
     createBooking: props.actions.createBooking,
+    requestQuotation: props.actions.requestQuotation,
     renewCaptcha,
   });
   const sendAs = (mode: BookingMode) => form.handleSubmit((summary) => submit.send(mode, summary));

@@ -16,7 +16,7 @@ import {
 } from '@/server/services/booking-service';
 import { loadBookingWizard } from '@/server/services/booking-wizard-service';
 
-import { createBookingAction } from './booking';
+import { createBookingAction, requestQuotationAction } from './booking';
 import {
   bookingRequest as REQUEST,
   comboWizard as WIZARD,
@@ -61,6 +61,8 @@ const PROOF = freshProof(Math.floor(Date.now() / 1000));
 
 const CREATED = {
   kind: 'created' as const,
+  replayed: false,
+  bookingId: '0192f3a4-5b6c-7d8e-9f01-0000000000bb',
   bookingCode: CODE,
   status: 'pending_payment' as const,
   expiresAt: '2026-10-23T08:00:00+00:00',
@@ -135,23 +137,9 @@ describe('createBookingAction', () => {
     ]);
   });
 
-  it('asks for a quotation booking for an institution and answers its status page', async () => {
+  it('refuses a request that names a mode, since the action it reaches is the mode', async () => {
     const answer = await createBookingAction({ ...REQUEST, mode: 'quote' });
-    expect(answer).toEqual({
-      ok: true,
-      data: { kind: 'created', bookingCode: CODE, nextUrl: `/reservasi/${CODE}` },
-    });
-    expect(createQuotedBooking).toHaveBeenCalledTimes(1);
-    expect(createHold).not.toHaveBeenCalled();
-  });
-
-  it('refuses a quotation for an individual visitor, who pays at once', async () => {
-    const individual = { ...BOOKING, bookerType: 'individual', institutionName: null };
-    const answer = await createBookingAction({ ...REQUEST, mode: 'quote', booking: individual });
-    expect(answer).toMatchObject({
-      ok: false,
-      error: { code: 'VALIDATION', message: text.quoteForInstitutions },
-    });
+    expect(answer).toMatchObject({ ok: false, error: { code: 'VALIDATION' } });
     expect(createQuotedBooking).not.toHaveBeenCalled();
   });
 
@@ -250,5 +238,41 @@ describe('createBookingAction', () => {
       ok: false,
       error: { code: 'STATE_INVALID', message: text.unavailableChoice },
     });
+  });
+});
+
+// "Minta Surat Penawaran" (Task P3.6.06): the same checks as a hold, behind its own limit, for institutions only.
+describe('requestQuotationAction', () => {
+  it('asks for a quotation booking for an institution and answers its status page', async () => {
+    const answer = await requestQuotationAction(REQUEST);
+    expect(answer).toEqual({
+      ok: true,
+      data: { kind: 'created', bookingCode: CODE, nextUrl: `/reservasi/${CODE}` },
+    });
+    expect(createQuotedBooking).toHaveBeenCalledTimes(1);
+    expect(createHold).not.toHaveBeenCalled();
+    expect(vi.mocked(withinGuestLimits).mock.calls.map((call) => call[0][0]?.name)).toEqual([
+      'quotation:create',
+      'booking_create:ip',
+    ]);
+  });
+
+  it('refuses a quotation for an individual visitor, who pays at once', async () => {
+    const individual = { ...BOOKING, bookerType: 'individual', institutionName: null };
+    const answer = await requestQuotationAction({ ...REQUEST, booking: individual });
+    expect(answer).toMatchObject({
+      ok: false,
+      error: { code: 'VALIDATION', message: text.quoteForInstitutions },
+    });
+    expect(createQuotedBooking).not.toHaveBeenCalled();
+  });
+
+  it('refuses an IP past three quotations an hour before the security check', async () => {
+    vi.mocked(withinGuestLimits).mockResolvedValue(false);
+    await expect(requestQuotationAction(REQUEST)).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'RATE_LIMITED' },
+    });
+    expect(verifyTurnstile).not.toHaveBeenCalled();
   });
 });

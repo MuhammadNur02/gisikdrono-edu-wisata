@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
 
 import type { GuestLinkScope } from '@/config/guest';
+import { svcCreateQuotation } from '@/db/rpc-documents';
 import {
   svcIssuePhoneOtp,
   svcResendBookingLink,
@@ -214,6 +215,8 @@ async function submitBooking(
   }
   return {
     kind: 'created',
+    replayed: reply.result === 'existing',
+    bookingId: reply.bookingId,
     bookingCode: reply.bookingCode,
     status: reply.status,
     expiresAt: reply.expiresAt,
@@ -228,7 +231,13 @@ export function createHold(request: BookingRequest): Promise<BookingOutcome> {
   return submitBooking('pay', request);
 }
 
-// "Minta Surat Penawaran": a quotation booking, no seat held; the quotation itself comes from create_quotation.
-export function createQuotedBooking(request: BookingRequest): Promise<BookingOutcome> {
-  return submitBooking('quote', request);
+// "Minta Surat Penawaran" (Task P3.6.06): a quotation booking, no seat held, and its first Surat Penawaran from
+// create_quotation, which numbers it and queues quotation_ready. A repeat of the same form opens the booking it made
+// and issues nothing more.
+export async function createQuotedBooking(request: BookingRequest): Promise<BookingOutcome> {
+  const outcome = await submitBooking('quote', request);
+  if (outcome.kind === 'created' && !outcome.replayed) {
+    await svcCreateQuotation(createSupabaseAdminClient(), outcome.bookingId);
+  }
+  return outcome;
 }
