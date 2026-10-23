@@ -3,10 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { copy } from '@/lib/copy/id';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { readPhoneProofCookie } from '@/server/auth/guest-cookies';
-import { createHold, withinGuestLimits } from '@/server/services/booking-service';
+import {
+  createHold,
+  createQuotedBooking,
+  withinGuestLimits,
+} from '@/server/services/booking-service';
 import { loadBookingWizard } from '@/server/services/booking-wizard-service';
 
-import { createBookingAction } from './booking';
+import { createBookingAction, requestQuotationAction } from './booking';
 import {
   bookingRequest as REQUEST,
   comboWizard as WIZARD,
@@ -106,5 +110,36 @@ describe('createBookingAction and the proof of the contact', () => {
       data: { kind: 'reverify' },
     });
     expect(createHold).not.toHaveBeenCalled();
+  });
+});
+
+// Re-review of PR #33: while WhatsApp codes are degraded, an email proof cannot verify the number a Surat Penawaran
+// needs, so the quotation is refused before the booking is made or the code spent, and the school pays with a hold.
+describe('requestQuotationAction with an email proof', () => {
+  it('refuses the quotation in its own words and books nothing', async () => {
+    vi.mocked(readPhoneProofCookie).mockResolvedValue({
+      ...PROOF,
+      channel: 'email',
+      email: 'ani@sekolah.sch.id',
+    });
+    const shown = { channel: 'email', phone: '081234567890', email: 'ani@sekolah.sch.id' };
+    await expect(
+      requestQuotationAction({ ...REQUEST, shownContact: shown }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'STATE_INVALID', message: copy.booking.wizard.quoteNeedsWhatsApp },
+    });
+    expect(createQuotedBooking).not.toHaveBeenCalled();
+  });
+
+  it('still lets the same visitor hold with "Konfirmasi & Bayar"', async () => {
+    vi.mocked(readPhoneProofCookie).mockResolvedValue({
+      ...PROOF,
+      channel: 'email',
+      email: 'ani@sekolah.sch.id',
+    });
+    const shown = { channel: 'email', phone: '081234567890', email: 'ani@sekolah.sch.id' };
+    await createBookingAction({ ...REQUEST, shownContact: shown });
+    expect(createHold).toHaveBeenCalledTimes(1);
   });
 });

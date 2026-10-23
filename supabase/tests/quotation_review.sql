@@ -2,7 +2,7 @@
 -- (finding 4), the first quotation of a quoted booking is issued once even when its first try was lost (finding 3),
 -- and a rendered document's file is recorded under the reader's name (finding 1).
 begin;
-select plan(17);
+select plan(20);
 
 -- ===== Fixtures: a superadmin, an RW 05 package and session, and a school's quoted booking =====
 insert into auth.users (id, email) values
@@ -80,21 +80,35 @@ select ok(has_function_privilege('service_role', 'public.svc_issue_first_quotati
   'only the service role reaches the new wrappers');
 
 -- ===== Finding 1: a rendered file recorded under the reader's name =====
+-- Each version's own file, named after its own number (20261023120000).
 create temporary table issued on commit drop as
-  select q.id, q.booking_id, 'bookings/' || q.booking_id || '/quotation-SP-GSK-2026-10-0001.pdf' as path
-  from public.quotations q where q.booking_id = (select id from booking) and q.version = 2;
-select lives_ok($$select internal.record_document_pdf('quotation', (select id from issued), (select path from issued),
+  select q.id, q.version, q.booking_id,
+         'bookings/' || q.booking_id || '/quotation-' || replace(q.quotation_number, '/', '-') || '.pdf' as path
+  from public.quotations q where q.booking_id = (select id from booking);
+create temporary table version_two on commit drop as select * from issued where version = 2;
+create temporary table version_one on commit drop as select * from issued where version = 1;
+select lives_ok($$select internal.record_document_pdf('quotation', (select id from version_two), (select path from version_two),
   null)$$, 'a visitor''s first read records the file');
-select is((select pdf_path from public.quotations where id = (select id from issued)), (select path from issued),
+select is((select pdf_path from public.quotations where id = (select id from version_two)), (select path from version_two),
   'on the quotation''s row');
 select is((select a.actor_role from public.audit_logs a
-           where a.entity_type = 'quotations' and a.entity_id = (select id::text from issued) and a.action = 'quotations.update'
+           where a.entity_type = 'quotations' and a.entity_id = (select id::text from version_two) and a.action = 'quotations.update'
            order by a.id desc limit 1), 'visitor', 'and the audit log names the visitor');
-select throws_ok($$select internal.record_document_pdf('quotation', (select id from issued),
+select throws_ok($$select internal.record_document_pdf('quotation', (select id from version_two),
   'bookings/00000000-0000-4000-8000-000000000000/quotation-SP-GSK-2026-10-0001.pdf', null)$$, '22023', null,
   'a file of another booking''s folder is refused');
-select throws_ok($$select internal.record_document_pdf('certificate', (select id from issued), (select path from issued),
+select throws_ok($$select internal.record_document_pdf('certificate', (select id from version_two), (select path from version_two),
   null)$$, '22023', null, 'and so is a kind this does not keep');
+
+-- The re-review of PR #33, finding 3: the row's own file, set once.
+select lives_ok($$select internal.record_document_pdf('quotation', (select id from version_two),
+  (select path from version_two), null)$$, 'recording the same file again changes nothing');
+select throws_ok($$select internal.record_document_pdf('quotation', (select id from version_two),
+  (select path from version_one), null)$$, '22023', null, 'version 2 cannot name the file of version 1');
+update public.quotations set pdf_path = 'bookings/' || booking_id || '/quotation-OLD.pdf'
+where id = (select id from version_one);
+select throws_ok($$select internal.record_document_pdf('quotation', (select id from version_one),
+  (select path from version_one), null)$$, '23505', null, 'and a file already recorded is never replaced');
 
 select * from finish();
 rollback;

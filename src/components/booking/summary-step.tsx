@@ -132,7 +132,8 @@ function ReverifyPanel(
 }
 
 function SendButtons(props: {
-  isInstitution: boolean;
+  // An institution whose number a WhatsApp code verified; an email proof cannot ask for a quotation.
+  canAskQuotation: boolean;
   isBusy: boolean;
   isDisabled: boolean;
   onQuote: () => void;
@@ -151,7 +152,7 @@ function SendButtons(props: {
         </Button>
         <p className="text-caption text-muted-foreground">{text.payHint}</p>
       </div>
-      {props.isInstitution && (
+      {props.canAskQuotation && (
         <div className="space-y-2">
           <Button
             type="button"
@@ -279,7 +280,7 @@ export function SummaryStep(props: SummaryStepProps) {
           <CheckAndSend
             form={form}
             captcha={captcha}
-            isInstitution={isInstitution}
+            canAskQuotation={isInstitution && draft.contact?.channel !== 'email'}
             isBusy={send.isBusy}
             isDisabled={!hasQuote || needsReverify}
             onQuote={() => void send.sendAs('quote')()}

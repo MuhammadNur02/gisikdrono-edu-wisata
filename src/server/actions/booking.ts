@@ -224,6 +224,12 @@ async function book(booking: CheckedBooking): Promise<ActionResult<BookingSubmit
   if (!isFresh(proof) || !provesShownContact(proof, booking.shownContact)) {
     return ok({ kind: 'reverify' });
   }
+  // docs/Security.md §4.1 (4): a Surat Penawaran needs the number verified, which an email code does not do, so while
+  // WhatsApp codes are degraded the school pays with a hold instead. Refused before anything is booked or spent
+  // (re-review of PR #33).
+  if (booking.mode === 'quote' && proof.channel === 'email') {
+    return fail('STATE_INVALID', undefined, text.quoteNeedsWhatsApp);
+  }
   return ok(await submit(booking, proof));
 }
 

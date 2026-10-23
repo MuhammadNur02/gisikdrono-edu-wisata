@@ -330,9 +330,6 @@ export default defineConfig([
   {
     // A describe block grows with its cases, and test data is full of literal numbers on purpose.
     files: ['**/*.test.{ts,mjs}', 'tests/**'],
-    rules: {
-      'max-lines-per-function': 'off',
-      '@typescript-eslint/no-magic-numbers': 'off',
-    },
+    rules: { 'max-lines-per-function': 'off', '@typescript-eslint/no-magic-numbers': 'off' },
   },
 ]);
