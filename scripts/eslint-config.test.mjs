@@ -26,7 +26,7 @@ async function isRefused(filePath, importLine) {
   return messages.some((message) => message.ruleId === 'no-restricted-imports');
 }
 
-const publicPage = 'src/app/(public)/paket-wisata/[slug]/page.tsx';
+const publicPage = 'src/app/(public)/(rows)/paket-wisata/[slug]/page.tsx';
 const query = 'src/lib/queries/packages.ts';
 const CONFIG_LOAD_TIMEOUT_MS = 60_000;
 
@@ -90,7 +90,7 @@ describe('motion follows docs/StyleGuide.md §7', () => {
   it.each([
     'src/components/marketing/hero.tsx',
     'src/components/ui/tabs.tsx',
-    'src/app/(public)/page.tsx',
+    'src/app/(public)/(lists)/page.tsx',
     'src/app/(admin)/dashboard/page.tsx',
   ])('the full motion component is refused in %s', async (filePath) => {
     expect(await isRefused(filePath, fullMotion)).toBe(true);
