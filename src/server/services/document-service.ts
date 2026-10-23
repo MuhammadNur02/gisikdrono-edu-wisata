@@ -7,11 +7,19 @@ import { svcForgetPurgedFiles, svcIncrementBookletDownload, svcPurgeableFiles } 
 import type { PurgeableFile } from '@/db/rpc';
 import type { Database } from '@/db/types';
 import { AppError } from '@/lib/errors';
+import { publicEnv } from '@/lib/public-env';
+import { getPublicSiteSettings } from '@/lib/queries/settings';
 import { withinRateLimits } from '@/lib/rate-limit';
 // See withinBookletDownloadLimit for why this module creates a service-role client.
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { isMediaOwner } from '@/lib/uploads/paths';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
+import {
+  bookingDocumentPdf,
+  loadBookingDocument,
+  type BookingDocument,
+  type BookingDocumentKind,
+} from '@/server/services/booking-documents';
 
 type DatabaseClient = SupabaseClient<Database>;
 
@@ -105,6 +113,42 @@ export function countBookletDownload(
   adminClient: DatabaseClient = createSupabaseAdminClient(),
 ): Promise<void> {
   return svcIncrementBookletDownload(adminClient, bookletId);
+}
+
+// A booking's quotation, invoice or receipt (Task P3.6.04). The service role is needed because a visitor has no
+// session: the row is read by the id the route was given, and the route hands it to requireDocumentReader before
+// anything is rendered. The per-IP limit is counted first, so guessing ids costs the same as reading.
+export function withinDocumentLimits(
+  clientIp: string,
+  bookingId: string | null,
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<boolean> {
+  const checks = [{ name: 'document:ip', subject: rateLimitIpBucket(clientIp) } as const];
+  return withinRateLimits(
+    adminClient,
+    bookingId === null ? checks : [...checks, { name: 'document:booking', subject: bookingId }],
+  );
+}
+
+export function readBookingDocument(
+  kind: BookingDocumentKind,
+  id: string,
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<BookingDocument | null> {
+  return loadBookingDocument(adminClient, kind, id);
+}
+
+// The PDF of a document the reader was already authorised for, with the kelurahan's address of site_settings and
+// the site's own address for the verify URL.
+export async function bookingDocumentFile(
+  document: BookingDocument,
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<Buffer> {
+  const settings = await getPublicSiteSettings();
+  return bookingDocumentPdf(adminClient, document, {
+    kelurahanAddress: settings.kelurahanAddress,
+    siteUrl: publicEnv.NEXT_PUBLIC_SITE_URL,
+  });
 }
 
 // The api/jobs/purge-storage run (docs/Security.md §7.3). SQL cannot delete storage objects, so the

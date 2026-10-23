@@ -28,6 +28,14 @@ export const RATE_LIMITS = {
   upload_forbidden: { limit: 10, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
   // Task P2.4.08: the public "Unduh PDF" of a published booklet, per visitor IP.
   'booklet:download': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
+  // Task P3.6.04 (docs/Security.md §10.3, DOC-01): a booking's own documents (quotation, invoice, receipt), per
+  // visitor IP and per booking, counted before the row is looked up, so guessing ids costs the same as reading.
+  'document:ip': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
+  'document:booking': { limit: 20, windowSeconds: 600, whenUnavailable: 'fail-closed' },
+  // Task P3.6.05: the public verify page, per visitor IP.
+  'verify:code': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
+  // Task P3.6.06: "Minta Surat Penawaran", per visitor IP, on top of the booking limits.
+  'quotation:create': { limit: 3, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
   // Visitors (Task P3.2, P3.3), per IP. The daily caps on codes (5 per number or address, 20 per IP) are counted by
   // internal.issue_phone_otp itself; these stop a burst before it reaches Turnstile and the database. A code has five
   // tries of its own; the verify limit stops one IP from trying many codes at once.

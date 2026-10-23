@@ -9,9 +9,13 @@ import {
 import { GET } from './route';
 
 vi.mock('@/lib/queries/booklets', () => ({ getBookletDownload: vi.fn() }));
+vi.mock('@/server/auth/document-access', () => ({ requireDocumentReader: vi.fn() }));
 vi.mock('@/server/services/document-service', () => ({
   countBookletDownload: vi.fn(),
   withinBookletDownloadLimit: vi.fn(),
+  withinDocumentLimits: vi.fn(),
+  readBookingDocument: vi.fn(),
+  bookingDocumentFile: vi.fn(),
 }));
 
 const BOOKLET_ID = '6f1c2d3e-4a5b-4c6d-8e7f-0123456789ab';
@@ -50,7 +54,7 @@ describe('GET /api/documents/booklet/[id]', () => {
   });
 
   it.each([
-    ['another document kind', 'invoice', BOOKLET_ID],
+    ['a document kind the route does not serve', 'certificate', BOOKLET_ID],
     ['an id that is not a uuid', 'booklet', '..%2F..%2Fsecret'],
   ])('answers 404 for %s without touching the database', async (_case, kind, id) => {
     const response = await download(kind, id);
