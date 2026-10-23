@@ -59,8 +59,9 @@ function readParam(query: URLSearchParams, name: string): SearchValue {
 }
 
 // For src/middleware.ts: the address to send a malformed /galeri request to before anything renders, or NULL
-// when it is already one the page links to. (The page under (public)/loading.tsx has started streaming by
-// the time it could redirect, so only a request the middleware stops gets a real HTTP redirect.)
+// when it is already one the page links to. The page answers the rest (an RW that is not online, a page past the
+// last) with its own 307: it sits in (public)/(rows), under no loading boundary, so nothing has streamed by then
+// (Task P5.6.05).
 export function canonicalGalleryPathFor(query: URLSearchParams): string | null {
   const { search, isCanonical } = readGallerySearch({
     filter: readParam(query, 'filter'),

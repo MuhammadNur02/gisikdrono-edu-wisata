@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { Suspense } from 'react';
 
 import { GalleryFilter } from '@/components/gallery/gallery-filter';
+import { GallerySkeleton } from '@/components/gallery/gallery-skeleton';
 import { MasonryGrid } from '@/components/gallery/masonry-grid';
 import { Container } from '@/components/layout/container';
 import { PageHeader } from '@/components/layout/page-header';
@@ -90,11 +92,19 @@ function GalleryJsonLd({
 
 interface GalleryBodyProps {
   search: GallerySearch;
-  gallery: GalleryPages;
+  query: GalleryQueryFilter;
   rws: readonly RwBadge[];
 }
 
-function GalleryBody({ search, gallery, rws }: GalleryBodyProps) {
+// The items are fetched inside the Suspense boundary of the page, so a click on `Galeri` shows the header and
+// the skeleton at once while the page renders per request (review of Task P5.6.05). A page past the last one is
+// redirected from here, inside the stream: the count is known only with the items, and that address is one
+// only `Muat lagi` ever makes. With nothing published the page is its header alone (StyleGuide §6.9).
+async function GalleryBody({ search, query, rws }: GalleryBodyProps) {
+  const gallery = await listGalleryPages(query, search.page);
+  if (gallery.pageCount < search.page)
+    redirect(galleryPath({ ...search, page: gallery.pageCount }));
+  if (search.filter === null && gallery.items.length === 0) return null;
   return (
     <Container className="space-y-8 pb-16 md:pb-24">
       <GalleryFilter active={search.filter} rws={rws} />
@@ -119,8 +129,8 @@ function queryFor(search: GallerySearch, rws: readonly RwBadge[]): GalleryQueryF
 
 // docs/PRD.md FR-PUB-14, Tasks P2.4.07 and P2.6.01. The page follows `?filter=` and `?halaman=`, so it is
 // rendered per request, while every page of items it shows is a cached read (tags `galleries:*`). An address
-// the page would not link to itself, including a page past the last one, is redirected to the nearest valid
-// one (decision of 2026-10-18). With nothing published the page is its header alone (StyleGuide §6.9).
+// the page would not link to itself is redirected to the nearest valid one (decision of 2026-10-18), with a
+// real 307: the checks that need no items run before anything streams (Task P5.6.05).
 export default async function GalleryPage({ searchParams }: GalleryPageProps) {
   const { search, isCanonical } = readGallerySearch(await searchParams);
   if (!isCanonical) redirect(galleryPath(search));
@@ -128,10 +138,6 @@ export default async function GalleryPage({ searchParams }: GalleryPageProps) {
   const query = queryFor(search, rws);
   // The middleware knows no RW, so the filter of an RW that is not online gets this far; it goes to the whole gallery.
   if (query === null) redirect(PUBLIC_PATHS.gallery);
-  const gallery = await listGalleryPages(query, search.page);
-  if (gallery.pageCount < search.page)
-    redirect(galleryPath({ ...search, page: gallery.pageCount }));
-  const isGalleryEmpty = search.filter === null && gallery.items.length === 0;
   return (
     <>
       <PageHeader
@@ -140,7 +146,9 @@ export default async function GalleryPage({ searchParams }: GalleryPageProps) {
         breadcrumbs={[]}
         path={PUBLIC_PATHS.gallery}
       />
-      {isGalleryEmpty ? null : <GalleryBody search={search} gallery={gallery} rws={rws} />}
+      <Suspense key={galleryPath(search)} fallback={<GallerySkeleton />}>
+        <GalleryBody search={search} query={query} rws={rws} />
+      </Suspense>
     </>
   );
 }
