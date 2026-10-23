@@ -1,7 +1,6 @@
-import { readFileSync } from 'node:fs';
-
 import { mediaFoldersFromArgs, seedDemoMedia } from './demo-media';
 import { DEV_ACCOUNTS, DEV_ONLY_PASSWORD, DEV_ONLY_TOTP_SECRET, totpCode } from './dev-accounts';
+import { devSeedSql } from './dev-seed-sql';
 import { localStack, runSql, sqlText } from './local-stack';
 import { seedOfficialMedia } from './official-media';
 
@@ -13,10 +12,7 @@ import { seedOfficialMedia } from './official-media';
 // pnpm db:seed --media <folder> also uploads the development photos of scripts/demo-media.ts from that folder, and
 // --official-media <folder> the photos of the kelurahan's own site named in scripts/official-media.ts.
 
-// The accounts first, then the demo content, which the staging release also writes on its own (staging-db.yml).
-const seedSql = ['./seed-dev.sql', './seed-demo-content.sql']
-  .map((file) => readFileSync(new URL(file, import.meta.url), 'utf8'))
-  .join('\n');
+const seedSql = devSeedSql();
 // process.argv starts with the node binary and this script; the options follow.
 const [, , ...scriptArgs] = process.argv;
 const folders = mediaFoldersFromArgs(scriptArgs);
