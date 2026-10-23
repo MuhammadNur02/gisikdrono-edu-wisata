@@ -7,11 +7,12 @@ import { generateVisitSessions } from '@/db/rpc';
 import type { Tables } from '@/db/types';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { calendarDateToVisitDate, visitDateToCalendarDate } from '@/lib/utils/dates';
-import type {
-  SessionTemplateValues,
-  UpdateSessionTemplateValues,
-  UpdateVisitSessionValues,
-  VisitSessionValues,
+import {
+  weekdayOfKey,
+  type SessionTemplateValues,
+  type UpdateSessionTemplateValues,
+  type UpdateVisitSessionValues,
+  type VisitSessionValues,
 } from '@/lib/validations/session';
 import { rowOrNotFound } from '@/server/services/content-errors';
 import type { SessionTemplateAdmin, VisitSessionAdmin } from '@/types/session';
@@ -198,7 +199,7 @@ export async function removeVisitSession(rwId: RwId, id: string): Promise<void> 
 
 function templateColumnsOf(values: SessionTemplateValues) {
   return {
-    weekday: values.weekday,
+    weekday: weekdayOfKey(values.weekday),
     label: values.label,
     start_time: values.startTime,
     end_time: values.endTime,

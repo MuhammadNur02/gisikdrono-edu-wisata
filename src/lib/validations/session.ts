@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { SESSION_LIMITS, WEEKDAYS } from '@/config/sessions';
+import { SESSION_LIMITS, WEEKDAYS, type Weekday } from '@/config/sessions';
 import { DB_ENUMS } from '@/db/enums';
 import { copy } from '@/lib/copy/id';
 import {
@@ -62,10 +62,13 @@ export function weekdayKeyOf(weekday: number): WeekdayKey {
   return WEEKDAY_KEYS.find((key) => key === String(weekday)) ?? SATURDAY_KEY;
 }
 
+// The stored weekday of a select key. The schema keeps the key itself so the form reads and writes one type.
+export function weekdayOfKey(key: WeekdayKey): Weekday {
+  return WEEKDAYS.find((day) => String(day) === key) ?? WEEKDAYS[0];
+}
+
 const templateFields = {
-  weekday: z
-    .enum(WEEKDAY_KEYS)
-    .transform((key) => WEEKDAYS.find((day) => String(day) === key) ?? WEEKDAYS[0]),
+  weekday: z.enum(WEEKDAY_KEYS),
   label: contentText(SESSION_LIMITS.label),
   startTime: clockTimeSchema,
   endTime: clockTimeSchema,
