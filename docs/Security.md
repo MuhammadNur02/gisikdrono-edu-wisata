@@ -705,7 +705,7 @@ Production CSP on private routes (one line in practice):
 default-src 'self';
 script-src 'self' 'nonce-{NONCE}' 'strict-dynamic' 'wasm-unsafe-eval' https://challenges.cloudflare.com;
 style-src 'self' 'unsafe-inline';
-img-src 'self' blob: https://{SUPABASE_REF}.supabase.co https://tile.openstreetmap.org https://*.tile.openstreetmap.org;
+img-src 'self' blob: https://{SUPABASE_REF}.supabase.co https://tile.openstreetmap.org;
 font-src 'self';
 connect-src 'self' https://{SUPABASE_REF}.supabase.co wss://{SUPABASE_REF}.supabase.co https://challenges.cloudflare.com;
 frame-src https://challenges.cloudflare.com https://www.google.com/maps/embed;

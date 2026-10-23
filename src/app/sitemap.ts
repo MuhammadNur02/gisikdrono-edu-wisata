@@ -27,6 +27,7 @@ const STATIC_PATHS = [
   PUBLIC_PATHS.articles,
   PUBLIC_PATHS.booklets,
   PUBLIC_PATHS.reviews,
+  PUBLIC_PATHS.map,
   PUBLIC_PATHS.privacy,
 ];
 

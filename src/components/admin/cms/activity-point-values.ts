@@ -1,3 +1,4 @@
+import { isPlanHotspotId } from '@/config/map';
 import type { SaveActivityPointInput } from '@/lib/validations/activity-point';
 import type { ActivityPointAdmin } from '@/types/cms';
 
@@ -13,6 +14,7 @@ export function blankActivityPoint(): SaveActivityPointInput {
     imagePath: null,
     mapX: null,
     mapY: null,
+    svgHotspotId: null,
     lat: null,
     lng: null,
     sortOrder: 0,
@@ -32,6 +34,8 @@ export function activityPointValues(point: ActivityPointAdmin): SaveActivityPoin
     imagePath: point.imagePath,
     mapX: point.mapX,
     mapY: point.mapY,
+    // The column is text; a value the current plan does not know (an older drawing's id) reads as none.
+    svgHotspotId: isPlanHotspotId(point.svgHotspotId) ? point.svgHotspotId : null,
     lat: point.lat,
     lng: point.lng,
     sortOrder: point.sortOrder,

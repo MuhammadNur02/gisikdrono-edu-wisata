@@ -16,7 +16,8 @@ type CspOptions = {
 export const NONCE_HEADER = 'x-nonce';
 
 const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com';
-const OSM_TILE_ORIGINS = ['https://tile.openstreetmap.org', 'https://*.tile.openstreetmap.org'];
+// The one host src/config/map.ts loads tiles from (Task P2.5.02); OSM's a/b/c mirrors are not used, so not allowed.
+const OSM_TILE_ORIGIN = 'https://tile.openstreetmap.org';
 const GOOGLE_MAPS_EMBED = 'https://www.google.com/maps/embed';
 // @vercel/analytics loads from our own origin in production, but from this host in development.
 const VERCEL_ANALYTICS_DEV_ORIGIN = 'https://va.vercel-scripts.com';
@@ -47,7 +48,7 @@ function scriptSources({ nonce, isDevelopment }: CspOptions): string {
 }
 
 function imageSources({ nonce }: CspOptions, supabaseOrigin: string): string {
-  const sources = ["'self'", 'blob:', supabaseOrigin, ...OSM_TILE_ORIGINS];
+  const sources = ["'self'", 'blob:', supabaseOrigin, OSM_TILE_ORIGIN];
   if (nonce === null) sources.push(YOUTUBE_STILL_SOURCE);
   return sources.join(' ');
 }

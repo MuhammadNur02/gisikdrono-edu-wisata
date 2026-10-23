@@ -3,7 +3,11 @@
 import { MapPin } from 'lucide-react';
 
 import { MAP_PERCENT_MAX, MAP_PERCENT_ROUNDING } from '@/config/cms';
+import { PLAN_ASPECT_CLASS } from '@/config/map';
 import { copy } from '@/lib/copy/id';
+import { cn } from '@/lib/utils/cn';
+
+import Denah from '../../../../public/map/denah.svg';
 
 export interface MapPositionPickerProps {
   x: number | null;
@@ -19,15 +23,18 @@ function percentOf(offset: number, size: number): number {
   );
 }
 
-// docs/StyleGuide.md §8.3: map_x / map_y are percentages of the site plan's width and height. public/map/denah.svg does
-// not exist yet, so the plan is a blank area of the same 16:10 proportions; a click puts the point there, and the two
-// number fields beside it do the same from the keyboard.
+// docs/StyleGuide.md §8.3: map_x / map_y are percentages of the site plan's width and height. The plan itself lies
+// under the pin, so an officer places a point on the spot the visitor will see; a click puts the point there, and
+// the two number fields beside it do the same from the keyboard.
 export function MapPositionPicker({ x, y, onPick }: MapPositionPickerProps) {
   return (
     <button
       type="button"
       aria-label={copy.cms.points.positionPicker}
-      className="relative aspect-16/10 w-full rounded-xl border border-dashed border-input bg-muted/40 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className={cn(
+        'relative w-full overflow-hidden rounded-xl border border-input bg-muted/40 outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        PLAN_ASPECT_CLASS,
+      )}
       onClick={(event) => {
         const box = event.currentTarget.getBoundingClientRect();
         onPick(
@@ -36,6 +43,7 @@ export function MapPositionPicker({ x, y, onPick }: MapPositionPickerProps) {
         );
       }}
     >
+      <Denah aria-hidden className="pointer-events-none absolute inset-0 size-full" />
       {x !== null && y !== null ? (
         <MapPin
           aria-hidden

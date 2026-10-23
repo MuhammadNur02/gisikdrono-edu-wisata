@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 
 import {
   NumberInputField,
+  OptionalSelectField,
   SelectField,
   SortOrderField,
   StatusField,
@@ -22,6 +23,7 @@ import { SlugInput } from '@/components/forms/slug-input';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { CMS_LIMITS } from '@/config/cms';
+import { PLAN_HOTSPOT_IDS } from '@/config/map';
 import type { RwId } from '@/config/rw';
 import { ACTIVITY_POINT_TYPE } from '@/config/status';
 import { DB_ENUMS } from '@/db/enums';
@@ -172,6 +174,15 @@ function PositionFields({
         <NumberInputField control={control} name="lat" label={text.lat} />
         <NumberInputField control={control} name="lng" label={text.lng} />
       </div>
+      {/* The plan element lit while the hotspot is open (docs/StyleGuide.md §5.13); the ids are the plan's own. */}
+      <OptionalSelectField
+        control={control}
+        name="svgHotspotId"
+        label={text.hotspot}
+        description={text.hotspotHint}
+        noneLabel={text.hotspotNone}
+        options={PLAN_HOTSPOT_IDS.map((id) => ({ value: id, label: id }))}
+      />
     </fieldset>
   );
 }
