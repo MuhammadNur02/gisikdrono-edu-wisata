@@ -4,7 +4,7 @@ Owner: Dev on call. Source of truth: `CLAUDE.md` §6.4 and §10.1, `docs/Task.md
 
 ## The order of a release
 
-1. **Migrate first.** `pnpm db:push --linked` applies the new migrations to the target project. Only CI runs it (`.github/workflows/release.yml`, Task P5.7.02); nobody pushes production by hand (`CLAUDE.md` §12.1 no. 19).
+1. **Migrate first.** `pnpm db:push --linked` applies the new migrations to the target project. Only CI runs it (`.github/workflows/release.yml`, Task P5.7.02); nobody pushes production by hand (`CLAUDE.md` §12.1 no. 19). Until that job exists, staging is migrated and then deployed by the manual `.github/workflows/staging-db.yml` (`docs/runbooks/staging-setup.md`, part D).
 2. **Then deploy.** The Vercel deployment builds after the database has moved. The public pages are prerendered from the database: the RW pages are built from `rw_units` (`generateStaticParams`), and the redirects of `src/config/redirects.ts` point at RW pages that must exist. A build against an older database bakes in the old slugs.
 3. **Then check.** Open `/api/health` (200 on production) and the pages the change touched.
 

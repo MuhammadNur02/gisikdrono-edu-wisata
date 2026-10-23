@@ -7,7 +7,7 @@
 | Source | https://gisikdrono.semarangkota.go.id, pages `/zero-wastreme`, `/seni-budaya`, `/potensi` (tabs RW 05, RW 08 and RW 13) and `/umkm` |
 | Read | 21 October 2026 (first reading) and 22 October 2026 (photos, directory and this document) |
 | Permission | Received through the user on 21 October 2026: UMKM products may be taken from `/umkm` with their photos and addresses, and photos from the official site, since the kelurahan holds no originals (section 4 of the working notes the user keeps beside the photos) |
-| Used by | `pnpm db:seed` on the local stack only: the RW profiles and activity points in `scripts/seed-dev.sql`, the photos through `pnpm db:seed --official-media <folder>` (`scripts/official-media.ts`). Staging and production get their content through the CMS once the kelurahan has checked it |
+| Used by | `pnpm db:seed` on the local stack: the RW profiles and activity points in `scripts/seed-demo-content.sql`, the photos through `pnpm db:seed --official-media <folder>` (`scripts/official-media.ts`). The Free-plan staging project gets the same file, without photos, through the `seed_demo` input of `.github/workflows/staging-db.yml` (decision of 2026-10-23, so the kelurahan can follow progress on a site with content). Production gets its content through the CMS once the kelurahan has checked it |
 | Companion | `docs/Task.md` P2.10.04, `docs/StyleGuide.md` §1.3 and §6.9 |
 
 The Indonesian text below is what the site would say. Section 7 lists what the kelurahan still has to give, and section 6 lists the demo rows that are **not** the kelurahan's data.
@@ -308,7 +308,7 @@ The directory lists 442 businesses. Every entry gives its address as "Gisikdrono
 
 ## 6. Data contoh, bukan data kelurahan
 
-`scripts/seed-dev.sql` also writes rows that are **invented** so the booking flow can be built on the local stack. They are marked `DATA CONTOH` in the file, live only in the development seed (never in a migration), and `pnpm db:seed` refuses any database but the local one, so they cannot reach staging or production:
+`scripts/seed-demo-content.sql` also writes rows that are **invented** so the booking flow can be built on the local stack. They are marked `DATA CONTOH` in the file and live only in that seed (never in a migration). The file refuses any database whose Vault secret `environment` is not `local` or `staging`, so they can reach the local stack and, through the `seed_demo` input of the staging release, the demo-only staging site (decision of 2026-10-23), but never production:
 
 | Rows | Invented values |
 |---|---|
