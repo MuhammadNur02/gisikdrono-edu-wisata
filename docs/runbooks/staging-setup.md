@@ -14,9 +14,11 @@ This guide takes you, step by step on Windows, from no accounts to an online sta
 | F | Smoke checklist | E |
 | G | What not to do | always |
 
+**Cost: Rp0.** Staging runs on free plans: Supabase **Free**, Vercel **Hobby**, Cloudflare Turnstile (free) and the Midtrans sandbox (free). Production needs paid plans: Supabase **Pro** and Vercel **Pro** (Tasks P0.1.01, P0.1.03, OD-5), and they must be in place **before go-live**. Steps that only make sense on Pro are marked **production only** below; skip them for staging.
+
 What the staging site is, and is not:
 
-- It runs the code of `main` on the Midtrans **sandbox**, against its own Supabase project, with **demo content only**.
+- It runs the code of `main` on the Midtrans **sandbox**, against its own Supabase project, with **demo content only** (the invented packages, prices, sessions and products marked `DATA CONTOH` in `scripts/seed-demo-content.sql`, plus the RW texts retold from the kelurahan's own site). Tell the kelurahan that the packages and prices are examples, not offers.
 - Booking stays closed (`booking_enabled` off), WhatsApp is off (`whatsapp_enabled` off, no Meta token), email is off (`email_enabled` off) until Resend is set up.
 - Search engines are told to stay away on every page (part B, "Why it stays out of search engines").
 - It holds no real visitor data. Never type a real visitor's name, phone number or email into it.
@@ -45,26 +47,26 @@ Rule for the whole guide: secrets are typed or pasted only into the provider's o
 
 ### Which plan
 
-Use the **Pro** plan, as Task P0.1.01 and `docs/PRD.md` A3 decide. Staging needs these Pro features:
+Staging uses the **Free** plan (decision of 2026-10-23: staging free, production Pro). Production keeps **Pro**, as Task P0.1.01 and `docs/PRD.md` A3 decide. What Free lacks, and how staging copes:
 
-| Feature | Free | Pro | Why staging needs it |
+| Feature | Free | Pro | Staging on Free |
 |---|---|---|---|
-| Image transformations (`/storage/v1/render/image`) | no | yes | Every photo on the public pages is resized through it (`src/lib/images/supabase-loader.ts`); on Free the photos do not load |
-| Leaked-password protection | no | yes | Part of the Auth controls checked on staging (go-live check #4 (b)) |
-| Session time-box (12 h) and inactivity timeout (2 h) | no | yes | `supabase/config.toml` `[auth.sessions]`, Task P1.7.02 |
-| Daily backups | no | yes (7 days) | The quarterly restore drill restores into staging (`docs/Security.md` §11) |
-| Never paused | paused after a week without activity | always on | A paused project also stops pg_cron |
-| Custom access token hook | yes | yes | Needed on both; the app's roles come from it |
-| TOTP MFA | yes | yes | Needed on both |
-| Password and MFA Verification Attempt hooks | no | **no** (Team and Enterprise only) | Not used on staging or production on any plan we pay for (decision of 2026-10-20, `docs/Security.md` §5.5); they run locally and in CI only |
+| Image transformations (`/storage/v1/render/image`) | no | yes | Built with `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS=off`: photos are served as their plain `public-media` files (`src/lib/images/public-object-loader.ts`), already shrunk to 1600 px WebP on upload. Production refuses the flag and keeps the transformer |
+| Leaked-password protection | no | yes | **Production only**; staging relies on the 12-character password policy and TOTP |
+| Session time-box (12 h) and inactivity timeout (2 h) | no | yes | **Production only**; staging sessions are not time-boxed, so sign out of the dashboard after use |
+| Daily backups | no | yes (7 days) | None on staging; it holds demo content only, which the workflow can write again. The restore drill of `docs/Security.md` §11 waits for a Pro project |
+| Always on | **paused after 7 days without activity** | always on | See "When Supabase pauses the staging project" in part F |
+| Custom access token hook | yes | yes | Same as production; the app's roles come from it |
+| TOTP MFA, captcha, rate limits, custom SMTP | yes | yes | Same as production |
+| Password and MFA Verification Attempt hooks | no | **no** (Team and Enterprise only) | Not used on staging or production (decision of 2026-10-20, `docs/Security.md` §5.5); they run locally and in CI only |
 
-Pro costs USD 25 a month per organisation and includes compute credit that covers one small project, so the later production project adds roughly the price of a second small instance. Turn the **spend cap on** so the bill cannot grow by itself.
+Free costs nothing and allows two active projects per organisation. **Production only:** Pro costs USD 25 a month per organisation, includes compute credit for one small project, and is needed before go-live; turn its spend cap on.
 
 ### Steps
 
 1. Open https://supabase.com and sign up with the **institutional** email (Task P0.1.01). Then open your account (top right) > **Account preferences** > **Multi-factor authentication** and add your authenticator app. Save the recovery codes in Bitwarden (collection Supabase).
-2. Create the organisation: name `Kelurahan Gisikdrono`, type of organisation **Government** or **Non-profit**, plan **Pro**. Pay with the kelurahan's method.
-3. In the organisation, open **Settings** > **Security** (or **General**) and switch on **Require MFA** for every member. Under **Billing**, check the **spend cap** is on.
+2. Create the organisation: name `Kelurahan Gisikdrono`, type of organisation **Government** or **Non-profit**, plan **Free**. No payment method is needed.
+3. **Production only:** organisation-wide **Require MFA** and the spend cap belong to the paid plan. On Free, make sure every member of the organisation has MFA on their own account (step 1); for now that is only you.
 4. Click **New project** and fill in:
    - Name: `gisikdrono-staging` (exactly this; the migration workflow of part D refuses any other name).
    - Database password: click **Generate a password**, then copy it into a new Bitwarden login item `Supabase gisikdrono-staging database password`. You need it again in part D.
@@ -99,11 +101,11 @@ The `staging` branch is moved only by the workflow of part D, which migrates the
 
 ### Which plan
 
-Task P0.1.03 and OD-5 choose **Pro**. Everything below also works on Hobby, but Vercel limits Hobby to personal, non-commercial use, so use Hobby at most for a short trial and move to Pro before anything real.
+Staging uses **Hobby**, a free personal account (decision of 2026-10-23). Everything below works on Hobby: the Ignored Build Step, a domain tied to a branch, Preview-only variables, Standard Protection with Vercel Authentication, and Deployment Protection Exceptions. **Production only:** Task P0.1.03 and OD-5 choose a **Pro** team, which production needs before go-live; Vercel limits Hobby to personal, non-commercial use, and a site that takes payments for the kelurahan is not that.
 
 ### Steps
 
-1. Open https://vercel.com and sign up with the **institutional** email; add MFA under **Account Settings** > **Authentication**. Save the recovery codes in Bitwarden (collection Vercel). On Pro, create the team `Kelurahan Gisikdrono`.
+1. Open https://vercel.com and sign up with the **institutional** email; add MFA under **Account Settings** > **Authentication**. Save the recovery codes in Bitwarden (collection Vercel). Choose **Hobby** when asked for a plan; the `Kelurahan Gisikdrono` team is **production only** (Pro).
 2. Click **Add New** > **Project** > **Import Git Repository**. Install the Vercel GitHub app when asked, giving it access to **only** `gisikdrono-edu-wisata`. Choose the repository.
 3. On the import screen: project name `gisikdrono-edu-wisata`, framework **Next.js** (detected), root directory `./`. Add **no** environment variables here (this screen would add them to every environment). Click **Deploy**.
    - This first deployment is a production build of `main` and **fails** with an environment error. That is expected: production has no variables, and part B step 5 stops production builds from now on.
@@ -119,17 +121,18 @@ Task P0.1.03 and OD-5 choose **Pro**. Everything below also works on Hobby, but 
    - Whatever name you choose is `<staging-url>` from now on. Keep it in Bitwarden and share it with the kelurahan directly; never write it into the repository, an issue or a pull request.
    - If Vercel refuses a `*.vercel.app` name here, skip this step: after the first staging build (part D) the deployment page shows a fixed branch address such as `gisikdrono-edu-wisata-git-staging-<team>.vercel.app`. Use that as `<staging-url>`, update `NEXT_PUBLIC_SITE_URL`, the Vault value `jobs_base_url`, the Turnstile hostname and the Supabase URLs, then redeploy.
    - Later, with the kelurahan's own domain (A11), `staging.<domain>` replaces it the same way.
-7. **Settings** > **Deployment Protection**: keep **Standard Protection** with **Vercel Authentication** on, so every other preview stays behind a Vercel login (Task P0.1.03). Then make the staging address reachable for the kelurahan with one of the two options below.
+7. **Settings** > **Deployment Protection** (Hobby):
+   - **Vercel Authentication**: leave it **on**, scope **Standard Protection** (the Hobby default). Every preview address then asks for a Vercel login, which kelurahan staff do not have.
+   - **Deployment Protection Exceptions** > **Add Domain**: type `<staging-url>` without `https://`, then confirm by typing it again and `unprotect my domain`. Only this one address opens without a login; every other preview address stays behind Vercel Authentication (Task P0.1.03).
+   - **Password Protection** is not available on Hobby (**production only**, a Pro add-on). Do not switch Vercel Authentication off for the whole project instead of the exception.
 
 ### How the kelurahan opens the link without a Vercel account
 
-Vercel Authentication asks every visitor to sign in to Vercel, which kelurahan staff do not have. Choose one option and record your choice (see the note after the options).
+With the exception of step 7, kelurahan staff open `<staging-url>` in any browser, on a phone or a laptop, with no account and no password. Share the link with them directly (WhatsApp to the people concerned, in person); never post it.
 
-**Option 1 (the setup chosen for now): a protection exception for the staging address only.** With it, staging is protected only by obscurity (an unguessable address that is never published) and noindex, nothing else. **Deployment Protection** > **Deployment Protection Exceptions** > **Add Domain** > type `<staging-url>` without `https://` > confirm by typing it again and `unprotect my domain`. Available on every plan, free. Anyone with the link opens the site; every other preview stays protected. It also lets the database's scheduled jobs (`pg_net`) and, later, Midtrans sandbox notifications reach the staging routes, which a protected address would answer with 401.
+This means staging is protected **only by obscurity** (an unguessable address that is never published) **and noindex**. Anyone who learns the link can open it, and the repository that describes it is public. That is acceptable only because staging carries sandbox keys only, demo content only, booking closed and no visitor data. The exception also lets the database's scheduled jobs (`pg_net`) and, later, Midtrans sandbox notifications reach the staging routes, which a protected address would answer with 401.
 
-**Option 2: Password Protection.** **Deployment Protection** > **Password Protection** on, with a password you share with the kelurahan in person or by phone, and kept in Bitwarden. Pro only, about USD 20 a month for the project. Every visitor types the password once. Drawback: the database's scheduled jobs and Midtrans notifications are refused too, so `public.job_heartbeats` shows failures for the application jobs (harmless while booking is closed, but noisy).
-
-**Record the decision.** Task P0.1.03 and `docs/Security.md` §8 ("Deployment Protection (Vercel Authentication) on previews") assume every preview is protected. Option 1 makes one preview address reachable by anyone who has the link, on purpose: it carries sandbox keys only, demo content only, booking closed, no visitor data, and every page is noindex. Because it relaxes a written control, record the owner's decision in a later docs PR (a line under Task P0.1.03 and in `docs/Security.md` §8). If the decision is ever withdrawn, Option 2 restores the control as written.
+**Record the decision.** Task P0.1.03 and `docs/Security.md` §8 ("Deployment Protection (Vercel Authentication) on previews") assume every preview is protected. The exception makes one preview address reachable by anyone who has the link, on purpose. Because it relaxes a written control, record the owner's decision in a later docs PR (a line under Task P0.1.03 and in `docs/Security.md` §8). **Production only:** if the decision is withdrawn once on Pro, Password Protection (about USD 20 a month per project) restores the control as written.
 
 ### Why it stays out of search engines
 
@@ -188,6 +191,7 @@ Preview deployments refuse Cloudflare's test keys (`src/lib/public-env.ts`), so 
 | `WHATSAPP_VERIFY_TOKEN` | S | generated | required by `src/lib/env.ts` even with WhatsApp off |
 | `RESEND_API_KEY` | S | fixed placeholder `email-off-on-staging` | required by `src/lib/env.ts`; email stays off; replaced when Resend is set up (P0.1.09) |
 | `EMAIL_FROM` | S | fixed placeholder | replaced with the `mail.<domain>` sender later |
+| `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS` | P | fixed `off` | Supabase Free has no image transformer, so photos are served as plain files; production leaves it unset and refuses `off` |
 | `QR_SIGNING_KEYS`, `QR_SIGNING_ACTIVE_KID` | S | generated, kid `k1` | |
 | `BOOKING_LINK_SECRET` | S | generated | |
 | `OTP_PEPPER` | S | generated | also Vault `otp_pepper` (D.1) |
@@ -219,9 +223,9 @@ It must answer `… is a sandbox key (https://api.sandbox.midtrans.com: 404 Tran
 ### C.5 Put the values into Vercel
 
 1. Vercel > the project > **Settings** > **Environment Variables**.
-2. Click **Add Environment Variable** (or **Add New**). For **Environments**, tick **Preview** only; untick **Production** and **Development**. Switch **Sensitive** on.
+2. Click **Add Environment Variable** (or **Add New**). For **Environments**, tick **Preview** only; untick **Production** and **Development**. Switch **Sensitive** on where Vercel offers it.
 3. Copy the whole content of the secrets file and paste it into the first **Key** field: Vercel splits a pasted `.env` block into one row per variable and skips the comment lines. If your Vercel version does not split it, add each line by hand: the name is left of the first `=`, the value is everything right of it.
-4. Check the list: 22 variables, every one scoped to Preview only, none to Production. Save.
+4. Check the list: 23 variables, every one scoped to Preview only, none to Production. Save.
 
 ### C.6 Bitwarden, then delete the file
 
@@ -236,7 +240,7 @@ It must answer `… is a sandbox key (https://api.sandbox.midtrans.com: 404 Tran
 
 ## Part D: Database
 
-Path chosen: the manual GitHub workflow `.github/workflows/staging-db.yml` (**Actions** > **Staging release**). It runs from `main` only, checks that the ref really belongs to a project named `gisikdrono-staging`, lists the migrations, applies them with `supabase db push`, and then fast-forwards the `staging` branch to the same commit so Vercel builds it. It never seeds: the development accounts and demo data of `pnpm db:seed` stay local (`supabase/config.toml` `[db.seed]`, `scripts/seed-dev.ts`).
+Path chosen: the manual GitHub workflow `.github/workflows/staging-db.yml` (**Actions** > **Staging release**). It runs from `main` only, checks that the ref really belongs to a project named `gisikdrono-staging`, lists the migrations, applies them with `supabase db push`, and then fast-forwards the `staging` branch to the same commit so Vercel builds it. With the input **seed_demo** ticked it also writes the demo content of `scripts/seed-demo-content.sql` (the same file `pnpm db:seed` uses locally), between the migrations and the deploy. It never writes the development staff accounts of `scripts/seed-dev.sql` and never uses the CLI's own seed (`supabase/config.toml` `[db.seed]` stays off). The demo file refuses any database whose Vault secret `environment` is not `local` or `staging`, on top of the workflow's project-name check.
 
 ### D.1 Vault secrets, before the first migration
 
@@ -281,10 +285,10 @@ The workflow file reaches `main` with the pull request that added this runbook; 
 
 1. GitHub > **Actions** > **Staging release** > **Run workflow**. Branch `main`, **dry_run** ticked. Approve the run when GitHub asks (required reviewer).
 2. Open the run > **migrate the staging database** > step **Migrations that would run**. On a new project it lists every file of `supabase/migrations`, from `0001_extensions.sql` to the newest.
-3. Run it again with **dry_run** unticked and **deploy** ticked. The migrate job applies the migrations; the deploy job creates or fast-forwards the branch `staging`.
+3. Run it again with **dry_run** unticked, **seed_demo** ticked (the first time, and whenever the demo content changed) and **deploy** ticked. The migrate job applies the migrations and writes the demo content: the RW 05, RW 13 and RW 08 profiles and activity points, the demo packages, session templates and the sessions planned from them, UMKM vendors and products, and two articles. It writes no gallery photo, hero banner or e-booklet (those need real files), so those pages show their "Foto menyusul" placeholders. Running it again changes nothing. The deploy job then creates or fast-forwards the branch `staging`.
 4. Vercel > **Deployments**: a **Preview** deployment of `staging` starts. Wait for **Ready**. If it fails, open the build log: a missing or malformed variable is named there (`src/lib/env.ts`); fix it in Vercel and click **Redeploy**.
 
-If the migrate job cannot reach the database (a network error in **Link the staging project** or **Apply the migrations**), the same can be done from your PC with the Supabase CLI you use locally: `supabase login`, `supabase link --project-ref <ref>` (type the database password when asked), `supabase db push --linked --dry-run`, then `supabase db push --linked`, and finally `git push origin main:staging`. Never add `--include-seed`.
+If the migrate job cannot reach the database (a network error in **Link the staging project** or **Apply the migrations**), the same can be done from your PC with the Supabase CLI you use locally: `supabase login`, `supabase link --project-ref <ref>` (type the database password when asked), `supabase db push --linked --dry-run`, then `supabase db push --linked`, and finally `git push origin main:staging`. Never add `--include-seed`. If only the demo step fails (it reads the pooler address `supabase link` leaves behind), open `scripts/seed-demo-content.sql` on GitHub, copy it whole into the Supabase **SQL Editor** and run it there once; it refuses to run unless D.1 marked the database `staging`. Never paste `scripts/seed-dev.sql` anywhere but your local stack.
 
 ### D.4 Staging switches
 
@@ -325,12 +329,12 @@ Resume each one (`active := true`) in the staging release that ships its route.
 | | Email OTP | length 8, expiry 600 seconds |
 | | Phone, anonymous, every OAuth provider | off |
 | | Minimum password length / requirements | 12; lowercase, uppercase, digits and symbols |
-| Authentication > Attack Protection | Leaked password protection | **on** |
+| Authentication > Attack Protection | Leaked password protection | **production only** (Pro); not offered on Free |
 | | Captcha protection | **on**, provider Cloudflare Turnstile, secret = `TURNSTILE_SECRET_KEY` |
 | Authentication > URL Configuration | Site URL | `<staging-url>` |
 | | Redirect URLs | exactly one: `<staging-url>/auth/callback` |
 | Authentication > Sessions | Refresh token rotation | on, reuse interval 10 seconds |
-| | Time-box user sessions / inactivity timeout | 12 hours / 2 hours |
+| | Time-box user sessions / inactivity timeout | **production only** (Pro): 12 hours / 2 hours; not offered on Free |
 | Authentication > Sessions, or Project Settings > JWT Keys | Access token (JWT) expiry | 900 seconds |
 | Authentication > Multi-Factor | TOTP (app authenticator) | enroll and verify **on** |
 | | Phone MFA | off |
@@ -398,11 +402,18 @@ $u = "https://gisikdrono-staging-<random>.vercel.app"   # your <staging-url>, ty
 | 8 | Private pages not cached | `curl.exe -sI "$u/login"` | also `cache-control: private, no-store` and a `content-security-policy-report-only` with a `nonce-` |
 | 9 | Out of search engines | `curl.exe -s "$u/robots.txt"` | `Disallow: /` and no `Sitemap:` line |
 | 10 | Jobs refuse strangers | `curl.exe -s -o NUL -w "%{http_code}" -X POST "$u/api/jobs/process-notifications"` | `401` |
-| 11 | Booking closed | open any `$u/paket-wisata/...` link, if a package is published | the wizard says booking is closed; staging starts with no packages, so this may not apply yet |
+| 11 | Demo content and booking closed | open `$u/paket-wisata`, then `$u/paket-wisata/paket-eduwisata-ecowastreme` | the demo packages are listed (after a run with **seed_demo**); the package page's booking wizard says booking is closed |
 | 12 | Scheduled jobs | SQL editor: `select job, last_success_at, last_failure_at, last_error_code from public.job_heartbeats order by job;` | after 15 minutes `expire_stale_bookings`, `check_job_responses` and `process-notifications` show a recent `last_success_at`; no `secret_missing` or `insecure_base_url` (those mean D.1 is wrong) |
-| 13 | The kelurahan's view | open `$u/` on a phone, signed out of Vercel, in mobile data | the site opens without a Vercel login (Option 1) or after the shared password (Option 2) |
+| 13 | The kelurahan's view | open `$u/` on a phone, signed out of Vercel, in mobile data | the site opens without a Vercel login or password (the exception of part B step 7) |
+| 14 | Photos without the transformer | on a page with an uploaded photo, right-click it > **Copy image address** | the address contains `/storage/v1/object/public/public-media/`, never `/render/image/` (which Free answers with an error); until photos are uploaded, pages show "Foto menyusul" |
 
 `/api/health` does not exist yet (Task P3.11.07); add it to this list, and to the uptime monitor of P0.1.12, when it ships.
+
+### When Supabase pauses the staging project
+
+A Free project is **paused after 7 days without activity**. Visits to the public pages may not count, because Vercel serves them from its cache. Supabase emails the owner before and when it pauses. While paused, the dashboard login, the database reads of the pages and the scheduled jobs stop; cached public pages may still show.
+
+To resume: Supabase dashboard > the `gisikdrono-staging` project > **Restore project** (or **Resume**), and wait until it shows **Healthy** (a few minutes). Nothing needs to be set again: data, Vault secrets, Auth settings and the paused jobs of D.5 stay as they were. Then run check 12 above; the jobs catch up on their next schedule. Resume promptly: Supabase keeps a paused Free project restorable for a limited time only (90 days when this was written). To avoid pauses before a demo to the kelurahan, sign in to the staging dashboard once a few days ahead. A Pro project is never paused (**production only**).
 
 ---
 
@@ -411,7 +422,7 @@ $u = "https://gisikdrono-staging-<random>.vercel.app"   # your <staging-url>, ty
 1. Never put **live** Midtrans keys, a live merchant id or `MIDTRANS_IS_PRODUCTION=true` into staging. A live key ever saved in the Preview scope counts as leaked: remove it and rotate it at once (`docs/Security.md` §3.9, risk R23).
 2. Never scope a staging variable to **Production** or **Development** in Vercel, and never reuse a staging secret for production. Production gets its own Supabase project, its own generated set and its own Midtrans account (Task P5.7.01).
 3. Never paste a secret into a chat (an AI assistant included), an issue, a pull request, an email or a WhatsApp message, and never keep the secrets file inside the repository folder or commit it. Bitwarden is the only copy.
-4. Never run `supabase config push` against staging: it would overwrite the hosted Auth settings with the **local** ones (site URL `127.0.0.1`, hooks the Pro plan does not have). Set Auth by hand (D.6).
+4. Never run `supabase config push` against staging: it would overwrite the hosted Auth settings with the **local** ones (site URL `127.0.0.1`, attempt hooks no hosted plan of ours has). Set Auth by hand (D.6).
 5. Never run `supabase db reset --linked`, `supabase db push --include-seed` or `pnpm db:seed` against staging, never set the Vault secret `environment` to `local`, and never edit an applied migration to fix staging (`CLAUDE.md` §6.4). A fix is a new migration released through the workflow.
 6. Never enter real visitor data: no real bookings, names, phone numbers or emails of visitors or children. Demo content only, clearly invented.
 7. Never switch on `booking_enabled`, `whatsapp_enabled` or `email_enabled` on staging by hand, except a short booking trial with the superadmin's fresh TOTP that is closed again straight after.
@@ -421,7 +432,8 @@ $u = "https://gisikdrono-staging-<random>.vercel.app"   # your <staging-url>, ty
 11. Never share the superadmin login. Never disable the superadmin's TOTP.
 12. Never point `.github/workflows/backup.yml` or the repository-level `SUPABASE_DB_URL` secret at staging; that job backs up production.
 13. Never move the `staging` branch by hand around the workflow once it exists (a deploy before its migrations breaks the build), except in the fallback of D.3, which migrates first too.
-14. Never forget that the repository is public: no staging address, project ref, key, password, screenshot of a settings page with values, or log excerpt with values goes into a commit, issue, pull request or discussion. Staging's only protection is that its address stays unpublished, plus noindex.
+14. Never set `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS=off` for Production (the build refuses it), and never run the demo content step or paste `scripts/seed-demo-content.sql` into a production project (the file refuses one marked `production`).
+15. Never forget that the repository is public: no staging address, project ref, key, password, screenshot of a settings page with values, or log excerpt with values goes into a commit, issue, pull request or discussion. Staging's only protection is that its address stays unpublished, plus noindex.
 
 ---
 
@@ -436,6 +448,9 @@ $u = "https://gisikdrono-staging-<random>.vercel.app"   # your <staging-url>, ty
 
 When the production project is set up (Task P5.7), undo what is staging-only here:
 
+- **Paid plans first.** Production needs Supabase **Pro** (image transformations, leaked-password protection, session time-box, daily backups, never paused, organisation-wide MFA) and a Vercel **Pro** team (commercial use, Password Protection if wanted); none of that is optional for go-live. Create the production Supabase project `gisikdrono-prod` in the Pro organisation, and transfer this Vercel project from the Hobby account to the Pro team (**Settings** > **General** > **Transfer**), or import the repository there afresh.
+- Production leaves `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS` unset; the build refuses `off` there. Do the steps marked **production only** in this guide on the production project.
+- Staging may stay on Free and Hobby, or move to the paid plans as well; if it moves, drop the flag from its Preview variables and redeploy so photos use the transformer again.
 - Remove the **Ignored Build Step** of part B step 5 (or narrow it), so `main` builds as Production again with its own Production-scoped variables.
 - Keep the `staging` domain on Preview; production gets its own domain on Production.
 - Revisit the Deployment Protection choice of part B for the new team setup.
