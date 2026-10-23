@@ -38,10 +38,11 @@ const RW_SCHEDULE_SEGMENT = 'jadwal';
 const RW_SLUG_PATTERN = new RegExp(`^${RW_SLUG_SOURCE}$`);
 const RW_ADDRESS_PATTERN = new RegExp(`^/${RW_SLUG_SOURCE}(/${RW_SCHEDULE_SEGMENT})?$`);
 
-// The RW pages are built in one internal route folder, src/app/(public)/rw-page/[rwSlug]. src/middleware.ts serves
-// an address shaped like an RW page from it and leaves every other one alone, so an unknown address at the top
-// level matches no route and keeps its real 404 instead of the 200 of a page that streamed before notFound()
-// (review of Task P2.10.02).
+// The RW pages are built in one internal route folder, src/app/(public)/(rows)/rw-page/[rwSlug]. src/middleware.ts
+// serves an address shaped like an RW page from it and leaves every other one alone, so an unknown address at the
+// top level matches no route and keeps its real 404 (review of Task P2.10.02). The folder sits under no loading
+// boundary, so an unknown RW slug gets a real 404 too, not the 200 of a page that streamed before notFound()
+// (Task P5.6.05).
 export const RW_ROUTE_FOLDER = '/rw-page';
 
 export function isRwSlug(value: string): boolean {
