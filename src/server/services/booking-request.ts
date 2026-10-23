@@ -31,6 +31,7 @@ export interface BookingRequest {
 export type BookingOutcome =
   | {
       kind: 'created';
+      bookingId: string;
       bookingCode: string;
       status: EnumValue<'booking_status'>;
       expiresAt: string | null;

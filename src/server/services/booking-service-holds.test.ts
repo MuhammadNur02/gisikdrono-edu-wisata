@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PRIVACY_NOTICE_VERSION } from '@/config/site';
+import { svcIssueFirstQuotation } from '@/db/rpc-documents';
 import { svcCreateBooking, svcResendBookingLink, type BookingReply } from '@/db/rpc-guest';
 import { AppError } from '@/lib/errors';
 import { readGuestLink } from '@/lib/links/verify';
@@ -26,6 +27,7 @@ vi.mock('@/db/rpc-guest', () => ({
   svcResendBookingLink: vi.fn(() => Promise.resolve('queued')),
   svcRevokeGuestLinks: vi.fn(),
 }));
+vi.mock('@/db/rpc-documents', () => ({ svcIssueFirstQuotation: vi.fn() }));
 vi.mock('@/lib/rate-limit', () => ({
   withinRateLimits: vi.fn(() => Promise.resolve(true)),
   refundRateLimits: vi.fn(() => Promise.resolve()),
@@ -106,6 +108,7 @@ describe('createHold and createQuotedBooking', () => {
     vi.mocked(svcCreateBooking).mockResolvedValue(created);
     await expect(createHold(request)).resolves.toEqual({
       kind: 'created',
+      bookingId: BOOKING_ID,
       bookingCode: CODE,
       status: 'pending_payment',
       expiresAt: '2026-10-23T08:00:00+00:00',
@@ -241,7 +244,8 @@ describe('createHold and createQuotedBooking', () => {
     await expect(createHold(request)).resolves.toEqual({ kind: 'reverify' });
   });
 
-  it('asks for a quotation booking in quote mode', async () => {
+  // Task P3.6.06: the quoted booking gets its Surat Penawaran at once; a repeat of the form issues no second one.
+  it('asks for a quotation booking in quote mode and issues its quotation', async () => {
     vi.mocked(svcCreateBooking).mockResolvedValue({
       ...created,
       status: 'quoted',
@@ -252,6 +256,24 @@ describe('createHold and createQuotedBooking', () => {
       status: 'quoted',
     });
     expect(vi.mocked(svcCreateBooking).mock.calls[0]?.[1].mode).toBe('quote');
+    expect(vi.mocked(svcIssueFirstQuotation).mock.calls[0]?.[1]).toBe(BOOKING_ID);
+  });
+
+  // Review of PR #33, finding 3: the booking and its first quotation are two transactions, so a repeat of the form
+  // asks again, and the database issues it only when the first try lost it.
+  it('asks for the first quotation again on a repeat of the same form, and never for a hold', async () => {
+    vi.mocked(svcCreateBooking).mockResolvedValue({
+      ...created,
+      result: 'existing',
+      status: 'quoted',
+      expiresAt: null,
+    });
+    await createQuotedBooking(request);
+    expect(vi.mocked(svcIssueFirstQuotation).mock.calls).toEqual([[adminClient, BOOKING_ID]]);
+    vi.mocked(svcIssueFirstQuotation).mockClear();
+    vi.mocked(svcCreateBooking).mockResolvedValue(created);
+    await createHold(request);
+    expect(svcIssueFirstQuotation).not.toHaveBeenCalled();
   });
 
   // Review of PR #27, L2: a school retrying from one computer is not locked out for the day by refusals it could not

@@ -21,6 +21,8 @@ export const bookingWizardCopy = {
     'Pemesanan online sedang ditutup sementara. Coba lagi nanti, atau hubungi kelurahan lewat WhatsApp.',
   unavailableChoice:
     'Pilihan Anda sudah tidak tersedia lagi: sesinya, paketnya, atau pesanan tambahannya berubah. Periksa lagi pilihan Anda, ya.',
+  quoteNeedsWhatsApp:
+    'Surat penawaran membutuhkan nomor WhatsApp yang sudah terverifikasi. Untuk sekarang, Anda bisa langsung Konfirmasi & Bayar, atau hubungi kelurahan, ya.',
   quoteForInstitutions:
     'Surat penawaran disediakan untuk sekolah, kampus, instansi, dan perusahaan. Untuk kunjungan pribadi, langsung pilih Konfirmasi & Bayar.',
   schedule: {

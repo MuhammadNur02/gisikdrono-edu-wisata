@@ -4354,6 +4354,10 @@ export type Database = {
         }
         Returns: Json
       }
+      svc_create_quotation: {
+        Args: { p_actor_id?: string; p_booking_id: string }
+        Returns: Json
+      }
       svc_enqueue_notification: {
         Args: {
           p_booking_id: string
@@ -4377,6 +4381,10 @@ export type Database = {
       svc_increment_booklet_download: {
         Args: { p_booklet_id: string }
         Returns: undefined
+      }
+      svc_issue_first_quotation: {
+        Args: { p_booking_id: string }
+        Returns: Json
       }
       svc_issue_phone_otp: {
         Args: {
@@ -4428,6 +4436,15 @@ export type Database = {
       }
       svc_rate_limit_refund: {
         Args: { p_key: string; p_window_seconds: number }
+        Returns: undefined
+      }
+      svc_record_document_pdf: {
+        Args: {
+          p_actor_id?: string
+          p_document_id: string
+          p_kind: string
+          p_path: string
+        }
         Returns: undefined
       }
       svc_record_job_run: {

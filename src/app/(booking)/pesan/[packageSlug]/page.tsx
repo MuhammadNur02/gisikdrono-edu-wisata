@@ -11,6 +11,7 @@ import {
   createBookingAction,
   listBookableSessionsAction,
   previewQuoteAction,
+  requestQuotationAction,
 } from '@/server/actions/booking';
 import { requestPhoneOtpAction, verifyPhoneOtpAction } from '@/server/actions/otp';
 import {
@@ -72,6 +73,7 @@ export default async function BookingWizardPage({ params, searchParams }: Bookin
           listSessions: listBookableSessionsAction,
           previewQuote: previewQuoteAction,
           createBooking: createBookingAction,
+          requestQuotation: requestQuotationAction,
           requestOtp: requestPhoneOtpAction,
           verifyOtp: verifyPhoneOtpAction,
         }}

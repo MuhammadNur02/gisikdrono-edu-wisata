@@ -1,4 +1,3 @@
-import { createClient } from '@supabase/supabase-js';
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 
@@ -7,7 +6,6 @@ import {
   svcCompleteNotification,
   svcFailNotification,
 } from '@/db/rpc-outbox';
-import type { Database } from '@/db/types';
 
 import {
   svcCreateBooking,
@@ -16,24 +14,7 @@ import {
   svcRevokeGuestLinks,
   svcVerifyPhoneOtp,
 } from './rpc-guest';
-
-// A real typed client whose fetch records each request and answers with a canned PostgREST reply.
-function clientAnswering(status: number, reply: unknown) {
-  const requests: { url: string; body: unknown }[] = [];
-  const fakeFetch: typeof fetch = (input, init) => {
-    const url = input instanceof Request ? input.url : input.toString();
-    requests.push({ url, body: typeof init?.body === 'string' ? JSON.parse(init.body) : null });
-    const payload = status === 204 ? null : JSON.stringify(reply);
-    return Promise.resolve(
-      new Response(payload, { status, headers: { 'Content-Type': 'application/json' } }),
-    );
-  };
-  const client = createClient<Database>('http://supabase.test', 'test-key', {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: { fetch: fakeFetch },
-  });
-  return { client, requests };
-}
+import { clientAnswering } from '../../tests/fixtures/postgrest-client';
 
 const OTP_ID = '0192f3a4-5b6c-7d8e-9f01-0000000000aa';
 const OTP = {
