@@ -14,20 +14,22 @@ const columns: ColumnDef<Row>[] = [
   { accessorKey: 'pic.name', header: 'PIC' },
   { id: 'updated_at', accessorFn: (row) => row.id, header: 'Diubah' },
   { id: 'actions', cell: () => null, enableSorting: false },
-  { cell: () => null },
+  { accessorFn: (row) => row.id, header: 'Kode' },
 ];
 
 describe('columnIdOf', () => {
-  it('names a column by its id, or by its accessorKey as TanStack spells it', () => {
-    expect(columnIdOf(columns[0] as ColumnDef<Row>)).toBe('name');
-    expect(columnIdOf(columns[1] as ColumnDef<Row>)).toBe('pic_name');
-    expect(columnIdOf(columns[2] as ColumnDef<Row>)).toBe('updated_at');
-    expect(columnIdOf(columns[4] as ColumnDef<Row>)).toBeNull();
+  it('names a column by its id, its accessorKey as TanStack spells it, or its string header', () => {
+    const [name, picName, updatedAt, actions, code] = columns;
+    expect(columnIdOf(name as ColumnDef<Row>)).toBe('name');
+    expect(columnIdOf(picName as ColumnDef<Row>)).toBe('pic_name');
+    expect(columnIdOf(updatedAt as ColumnDef<Row>)).toBe('updated_at');
+    expect(columnIdOf(actions as ColumnDef<Row>)).toBe('actions');
+    expect(columnIdOf(code as ColumnDef<Row>)).toBe('Kode');
   });
 });
 
 describe('sortableColumnIds', () => {
   it('keeps every named column that may sort', () => {
-    expect(sortableColumnIds(columns)).toEqual(['name', 'pic_name', 'updated_at']);
+    expect(sortableColumnIds(columns)).toEqual(['name', 'pic_name', 'updated_at', 'Kode']);
   });
 });
