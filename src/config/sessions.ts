@@ -10,9 +10,11 @@ export const SESSION_LIMITS = {
   templateCapacityMin: 1,
   sessionCapacityMin: 0,
   capacityMax: 2000,
-  // generate_visit_sessions refuses more than a year ahead.
-  generateMaxDays: 366,
 } as const;
+
+// The furthest month `Buat sesi` fills, counted from the current one; generate_visit_sessions refuses more than a
+// year ahead (0004).
+export const GENERATE_MONTHS_AHEAD = 12;
 
 // Sunday is 0, as session_templates.weekday and JavaScript count it.
 export const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6] as const;

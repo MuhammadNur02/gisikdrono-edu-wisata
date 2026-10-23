@@ -13,6 +13,9 @@ export const sessionsCopy = {
   sessionCount: (count: number) => `${String(count)} sesi`,
   noSessions: 'Belum ada sesi',
   openDay: (date: string) => `Buka sesi tanggal ${date}`,
+  // What a day button says to a screen reader beyond its date: each session, its seats and its status.
+  sessionSummary: (label: string, reserved: number, capacity: number, status: string) =>
+    `${label}: ${String(reserved)} dari ${String(capacity)} kursi terisi, ${status}.`,
   // The derived occupancy chip (docs/StyleGuide.md §6.5): not an enum.
   occupancy: {
     label: (reserved: number, capacity: number) =>

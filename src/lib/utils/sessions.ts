@@ -1,7 +1,7 @@
 import { addMonths, format, getDay, getDaysInMonth } from 'date-fns';
 import { id as indonesian } from 'date-fns/locale';
 
-import { OCCUPANCY_WARNING_RATIO } from '@/config/sessions';
+import { GENERATE_MONTHS_AHEAD, OCCUPANCY_WARNING_RATIO } from '@/config/sessions';
 import { calendarDateToVisitDate, visitDateToCalendarDate } from '@/lib/utils/dates';
 
 // Pure helpers of /dashboard/sessions (Task P4.3.04): the month grid and the derived occupancy chip.
@@ -61,4 +61,11 @@ export function groupByDate<T extends { sessionDate: string }>(
   for (const row of rows)
     groups.set(row.sessionDate, [...(groups.get(row.sessionDate) ?? []), row]);
   return groups;
+}
+
+// `Buat sesi` fills the current month or one of the next GENERATE_MONTHS_AHEAD (review of PR #35, item 6);
+// generate_visit_sessions refuses more than a year ahead itself.
+export function isGeneratableMonth(month: string, today: string): boolean {
+  const current = monthKeyOf(today);
+  return month >= current && month <= shiftMonth(current, GENERATE_MONTHS_AHEAD);
 }

@@ -6,7 +6,8 @@ import type { RwId } from '@/config/rw';
 import { copy } from '@/lib/copy/id';
 import { fail, mapError, ok } from '@/lib/errors';
 import { TAGS } from '@/lib/queries/tags';
-import { jakartaMonthKey } from '@/lib/utils/dates';
+import { jakartaMonthKey, todayInJakarta } from '@/lib/utils/dates';
+import { isGeneratableMonth } from '@/lib/utils/sessions';
 import { rowRefSchema } from '@/lib/validations/content';
 import {
   createSessionTemplateSchema,
@@ -36,6 +37,7 @@ import type { SessionTemplateAdmin, VisitSessionAdmin } from '@/types/session';
 // database holds for it, and RLS checks the same again.
 
 const text = copy.sessions.errors;
+const INVALID_PARAMETER = '22023';
 
 type RwResult = { ok: true; rwId: RwId } | ActionFailure;
 
@@ -171,13 +173,30 @@ export async function generateVisitSessionsAction(input: unknown): Promise<Actio
   const guard = await requireAal2();
   if (!guard.ok) return guard;
 
+  const { month } = parsed.data;
+  if (!isGeneratableMonth(month, todayInJakarta())) return refusedMonth();
+
   try {
     const target = await requireRwContentOwner(guard.ctx);
     if (!target.ok) return target;
-    const created = await generateSessionsForMonth(target.rwId, parsed.data.month);
-    revalidateTag(TAGS.sessions(target.rwId, parsed.data.month));
+    const created = await generateSessionsForMonth(target.rwId, month);
+    revalidateTag(TAGS.sessions(target.rwId, month));
     return ok(created);
   } catch (error) {
-    return mapError(error);
+    return isInvalidParameter(error) ? refusedMonth() : mapError(error);
   }
+}
+
+function refusedMonth(): ActionFailure {
+  return fail('VALIDATION', { month: [text.generateRange] }, text.generateRange);
+}
+
+// generate_visit_sessions raises 22023 for a range past a year ahead; the check above says the same first.
+function isInvalidParameter(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === INVALID_PARAMETER
+  );
 }

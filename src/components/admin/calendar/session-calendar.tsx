@@ -1,6 +1,9 @@
 'use client';
 
+import { useId } from 'react';
+
 import { CALENDAR_BARS_PER_DAY } from '@/config/sessions';
+import { SESSION_STATUS } from '@/config/status';
 import { copy } from '@/lib/copy/id';
 import { cn } from '@/lib/utils/cn';
 import { formatDateLong } from '@/lib/utils/dates';
@@ -52,9 +55,10 @@ function QuotaBar({ session }: { session: VisitSessionAdmin }) {
   );
 }
 
+// The bars and the count are what a sighted officer scans; DayDescription says the same in words.
 function DaySummary({ sessions }: { sessions: readonly VisitSessionAdmin[] }) {
   return (
-    <span className="flex flex-1 flex-col justify-end gap-1">
+    <span aria-hidden className="flex flex-1 flex-col justify-end gap-1">
       {sessions.slice(0, CALENDAR_BARS_PER_DAY).map((session) => (
         <QuotaBar key={session.id} session={session} />
       ))}
@@ -63,6 +67,26 @@ function DaySummary({ sessions }: { sessions: readonly VisitSessionAdmin[] }) {
           {text.sessionCount(sessions.length)}
         </span>
       ) : null}
+    </span>
+  );
+}
+
+// Review of PR #35, item 8: every session of the day, its seats and its status as text, not only the dot's colour.
+function DayDescription({ id, sessions }: { id: string; sessions: readonly VisitSessionAdmin[] }) {
+  const lines =
+    sessions.length === 0
+      ? [text.noSessions]
+      : sessions.map((session) =>
+          text.sessionSummary(
+            session.label,
+            session.reservedPax,
+            session.capacity,
+            SESSION_STATUS[session.status].label,
+          ),
+        );
+  return (
+    <span id={id} className="sr-only">
+      {lines.join(' ')}
     </span>
   );
 }
@@ -76,11 +100,13 @@ interface DayCellProps {
 
 // A day is a button that opens the editor; today wears the primary ring.
 function DayCell({ date, sessions, isToday, onSelect }: DayCellProps) {
+  const descriptionId = useId();
   return (
     <button
       type="button"
       onClick={onSelect}
       aria-label={text.openDay(formatDateLong(date))}
+      aria-describedby={descriptionId}
       className={cn(
         'flex min-h-20 flex-col gap-1 rounded-lg border border-border bg-card p-2 text-left transition-colors outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring md:min-h-24',
         isToday && 'border-primary',
@@ -96,6 +122,7 @@ function DayCell({ date, sessions, isToday, onSelect }: DayCellProps) {
         {date.slice(DAY_OF_MONTH_START)}
       </span>
       <DaySummary sessions={sessions} />
+      <DayDescription id={descriptionId} sessions={sessions} />
     </button>
   );
 }

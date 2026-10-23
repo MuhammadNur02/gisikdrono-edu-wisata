@@ -4,6 +4,7 @@ import {
   calendarWeeks,
   fillRatio,
   groupByDate,
+  isGeneratableMonth,
   monthKeyOf,
   monthLabel,
   occupancyOf,
@@ -61,5 +62,14 @@ describe('groupByDate', () => {
     const groups = groupByDate(rows);
     expect(groups.get('2026-11-07')?.map((row) => row.label)).toEqual(['Pagi', 'Siang']);
     expect(groups.get('2026-11-09')).toBeUndefined();
+  });
+});
+
+describe('isGeneratableMonth', () => {
+  it('takes the current month through twelve months ahead', () => {
+    expect(isGeneratableMonth('2026-10', '2026-10-24')).toBe(true);
+    expect(isGeneratableMonth('2027-10', '2026-10-24')).toBe(true);
+    expect(isGeneratableMonth('2027-11', '2026-10-24')).toBe(false);
+    expect(isGeneratableMonth('2026-09', '2026-10-24')).toBe(false);
   });
 });
