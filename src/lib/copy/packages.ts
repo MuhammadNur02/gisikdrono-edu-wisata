@@ -84,14 +84,11 @@ export const packagesCopy = {
     rowTitle: (row: number) => `Tingkat ${String(row)}`,
   },
   legs: {
-    hint: 'Paket kombinasi mengunjungi dua RW atau lebih, berurutan. Paket RW biasa otomatis mengunjungi RW-nya sendiri.',
-    add: 'Tambah RW',
-    rw: 'RW',
-    durationMinutes: 'Durasi di RW ini (menit, opsional)',
-    notes: 'Catatan (opsional)',
-    remove: (row: number) => `Hapus kunjungan ${String(row)}`,
-    rowTitle: (row: number) => `Kunjungan ${String(row)}`,
-    needTwo: 'Paket kombinasi butuh minimal dua RW yang berbeda.',
+    // Decision on PR #35: a combo's route waits for the save_package RPC (Task P4.3.11).
+    deferred: 'Pengaturan rute paket gabungan menyusul.',
+    deferredHint:
+      'Paket gabungan bisa disimpan sebagai draf sekarang. Paket baru bisa ditayangkan setelah rutenya mengunjungi minimal dua RW.',
+    visits: (rws: string) => `Rute tersimpan: ${rws}.`,
   },
   itinerary: {
     hint: 'Urutan kegiatan yang tampil di halaman paket.',
@@ -127,7 +124,6 @@ export const packagesCopy = {
     validity: 'Tanggal berlaku sampai harus setelah tanggal mulai.',
     tierRange: 'Batas atas tingkat harga harus sama atau lebih besar dari batas bawahnya.',
     tierOverlap: 'Rentang tingkat harga saling tumpang tindih.',
-    legsDistinct: 'Setiap RW hanya bisa dikunjungi sekali dalam satu paket.',
     lines: (max: number) => `Paling banyak ${String(max)} baris.`,
   },
   errors: {
@@ -135,9 +131,10 @@ export const packagesCopy = {
       'Harga di bawah batas minimal yang ditetapkan kelurahan (pengaturan pricing.min_price_per_pax). Naikkan harganya, ya.',
     tierOverlap:
       'Rentang tingkat harga saling tumpang tindih dengan tingkat lain. Perbaiki rentangnya.',
+    comboNeedsLegs:
+      'Paket gabungan belum bisa ditayangkan: rutenya harus mengunjungi minimal dua RW berbeda. Simpan sebagai draf dulu.',
     categoryLocked:
       'Paket RW tidak bisa diubah menjadi paket kombinasi, atau sebaliknya. Buat paket baru untuk jenis itu.',
   },
   saved: 'Paket tersimpan.',
-  created: 'Paket dibuat.',
 } as const;

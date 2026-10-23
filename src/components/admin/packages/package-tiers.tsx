@@ -38,14 +38,8 @@ export interface RwOption {
   name: string;
 }
 
-// The message a list carries as a whole (overlapping tiers, a combo with one RW), under the list's own heading.
-export function ListError({
-  control,
-  name,
-}: {
-  control: PackageControl;
-  name: 'priceTiers' | 'legs';
-}) {
+// The message the tier list carries as a whole (overlapping tiers), under the list's own heading.
+export function ListError({ control, name }: { control: PackageControl; name: 'priceTiers' }) {
   const { errors } = useFormState({ control, name });
   const message = errors[name]?.message ?? errors[name]?.root?.message;
   if (!message) return null;

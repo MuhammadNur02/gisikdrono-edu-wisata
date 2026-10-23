@@ -13,7 +13,7 @@ import {
   VisitFields,
   type PackageControl,
 } from '@/components/admin/packages/package-fields';
-import { ItinerarySection, LegsSection } from '@/components/admin/packages/package-legs';
+import { ComboRouteNotice, ItinerarySection } from '@/components/admin/packages/package-legs';
 import { PhotosSection } from '@/components/admin/packages/package-photos';
 import { PricingSection, type RwOption } from '@/components/admin/packages/package-tiers';
 import { FormAlert } from '@/components/forms/form-alert';
@@ -25,6 +25,7 @@ import type { RwId } from '@/config/rw';
 import type { EnumValue } from '@/db/enums';
 import { useActionForm } from '@/hooks/use-action-form';
 import { copy } from '@/lib/copy/id';
+import { comboMayPublish } from '@/lib/utils/package-tiers';
 import { createPackageSchema, type PackageInput } from '@/lib/validations/package';
 import type { ActionResult } from '@/types/action-result';
 import type { PackageAdmin } from '@/types/package';
@@ -52,15 +53,16 @@ const FIELDS = [
   'validFrom',
   'validTo',
   'priceTiers',
-  'legs',
 ] as const;
 
 type PackageAction = (values: unknown) => Promise<ActionResult<PackageAdmin>>;
 
-// The row a saved package is, for its photos: its owner's folder and its id. None before the first save.
+// The row a saved package is: its owner's folder and its id for its photos, and the RWs its saved legs visit. None
+// before the first save.
 export interface StoredPackage {
   id: string;
   owner: RwId | null;
+  rwIds: readonly RwId[];
 }
 
 export interface PackageFormProps {
@@ -74,15 +76,20 @@ export interface PackageFormProps {
   readOnly: boolean;
 }
 
-function ComboSections({
+// A combo's route is not edited here yet (Task P4.3.11); it goes on sale once its saved legs visit two RWs.
+function ComboRoute({
   control,
+  stored,
   rwOptions,
-}: {
-  control: PackageControl;
-  rwOptions: readonly RwOption[];
-}) {
+}: Pick<PackageFormProps, 'stored' | 'rwOptions'> & { control: PackageControl }) {
   const category = useWatch({ control, name: 'category' });
-  return category === 'combo' ? <LegsSection control={control} rwOptions={rwOptions} /> : null;
+  if (category !== 'combo') return null;
+  return <ComboRouteNotice rwIds={stored?.rwIds ?? []} rwOptions={rwOptions} />;
+}
+
+function useCanPublish(control: PackageControl, stored: StoredPackage | null): boolean {
+  const category = useWatch({ control, name: 'category' });
+  return category !== 'combo' || comboMayPublish(stored?.rwIds ?? []);
 }
 
 function PackageSections({
@@ -92,10 +99,11 @@ function PackageSections({
   rwOptions,
 }: Pick<PackageFormProps, 'stored' | 'categories' | 'rwOptions'> & { control: PackageControl }) {
   const name = useWatch({ control, name: 'name' });
+  const canPublish = useCanPublish(control, stored);
   return (
     <>
       <BasicsFields control={control} categories={categories} />
-      <ComboSections control={control} rwOptions={rwOptions} />
+      <ComboRoute control={control} stored={stored} rwOptions={rwOptions} />
       <VisitFields control={control} />
       <PricingSection control={control} />
       <ItinerarySection control={control} rwOptions={rwOptions} />
@@ -109,7 +117,7 @@ function PackageSections({
       ) : (
         <FormAlert tone="info">{text.photos.hint}</FormAlert>
       )}
-      <PublishFields control={control} />
+      <PublishFields control={control} canPublish={canPublish} />
     </>
   );
 }

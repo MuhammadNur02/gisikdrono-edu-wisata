@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { PACKAGE_LIMITS } from '@/config/packages';
 import { DB_ENUMS } from '@/db/enums';
 import { copy } from '@/lib/copy/id';
+import { tiersOverlap } from '@/lib/utils/package-tiers';
 import {
   contentText,
   imagePathSchema,
@@ -17,15 +18,14 @@ import { clockTimeSchema } from '@/lib/validations/session';
 
 // /dashboard/packages (Task P4.3.05, docs/PRD.md FR-ADMIN-05): one schema for the form and its Server Actions. Money
 // is integer rupiah (CLAUDE.md §7.1); the owner RW of an RW package is never part of the form (the action takes the
-// admin's own, or the one the superadmin's RwSwitcher points at), and a combo belongs to the kelurahan.
+// admin's own, or the one the superadmin's RwSwitcher points at), and a combo belongs to the kelurahan. The form
+// names no legs: an RW package's single leg is the database's, and a combo's legs wait for the save_package RPC
+// (Task P4.3.11), since 0005 grants no API role the columns an upsert of a leg writes.
 
 const messages = copy.packages.validation;
 const VISIT_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const rupiahSchema = z.int().min(0).max(PACKAGE_LIMITS.priceMax);
-
-// A combo visits two RWs or more (docs/PRD.md FR-ADMIN-05).
-export const MIN_COMBO_LEGS = 2;
 
 // Highlights and inclusions, one item per line of a textarea (LinesField splits the text). The form holds the lines as
 // typed, so the schema reads and writes one type; blank lines are dropped and each line is capped here.
@@ -74,25 +74,6 @@ export const priceTierSchema = z
 
 export type PriceTierValues = z.output<typeof priceTierSchema>;
 
-// Two tiers overlap when neither ends before the other starts; an open-ended tier ends at infinity.
-export function tiersOverlap(tiers: readonly { minPax: number; maxPax: number | null }[]): boolean {
-  const sorted = tiers.toSorted((first, second) => first.minPax - second.minPax);
-  return sorted.some((tier, index) => {
-    const next = sorted[index + 1];
-    return next !== undefined && (tier.maxPax === null || tier.maxPax >= next.minPax);
-  });
-}
-
-export const packageLegSchema = z
-  .object({
-    rwId: rwIdSchema,
-    durationMinutes: optionalMinutesSchema,
-    notes: optionalContentText(PACKAGE_LIMITS.legNotes),
-  })
-  .strict();
-
-export type PackageLegValues = z.output<typeof packageLegSchema>;
-
 export const itineraryStepSchema = z
   .object({
     rwId: rwIdSchema.nullable(),
@@ -131,8 +112,6 @@ const packageFields = {
   validFrom: optionalDateSchema,
   validTo: optionalDateSchema,
   priceTiers: z.array(priceTierSchema).max(PACKAGE_LIMITS.tiers),
-  // Only a combo names its legs; an RW package visits its own RW, which the database writes for it.
-  legs: z.array(packageLegSchema).max(PACKAGE_LIMITS.listItems),
 };
 
 type PackageRules = {
@@ -144,15 +123,13 @@ type PackageRules = {
   validFrom: string | null;
   validTo: string | null;
   priceTiers: readonly { minPax: number; maxPax: number | null }[];
-  legs: readonly { rwId: number }[];
-  category: string;
 };
 
 function issue(context: z.RefinementCtx, path: string, message: string): void {
   context.addIssue({ code: 'custom', path: [path], message });
 }
 
-// tour_packages_price_ok: the price the basis asks for is there.
+// tour_packages_price_ok: the price the basis asks for is there; the tiers' exclusion index, before any write.
 function checkPricing(pkg: PackageRules, context: z.RefinementCtx): void {
   if (pkg.pricingBasis === 'per_pax' && pkg.pricePerPax === null)
     issue(context, 'pricePerPax', messages.pricePerPax);
@@ -161,16 +138,12 @@ function checkPricing(pkg: PackageRules, context: z.RefinementCtx): void {
   if (tiersOverlap(pkg.priceTiers)) issue(context, 'priceTiers', messages.tierOverlap);
 }
 
-// The group size, the validity window and the legs, checked here first so the form can point at the field.
+// The group size and the validity window, checked here first so the form can point at the field.
 function checkPackage(pkg: PackageRules, context: z.RefinementCtx): void {
   checkPricing(pkg, context);
   if (pkg.maxPax < pkg.minPax) issue(context, 'maxPax', messages.maxBelowMin);
   if (pkg.validFrom !== null && pkg.validTo !== null && pkg.validTo < pkg.validFrom)
     issue(context, 'validTo', messages.validity);
-  const rwIds = pkg.legs.map((leg) => leg.rwId);
-  if (new Set(rwIds).size !== rwIds.length) issue(context, 'legs', messages.legsDistinct);
-  else if (pkg.category === 'combo' && rwIds.length < MIN_COMBO_LEGS)
-    issue(context, 'legs', copy.packages.legs.needTwo);
 }
 
 export const createPackageSchema = z.object(packageFields).strict().superRefine(checkPackage);

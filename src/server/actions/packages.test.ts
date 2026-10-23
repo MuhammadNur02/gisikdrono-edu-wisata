@@ -3,12 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { copy } from '@/lib/copy/id';
 import { requireAal2, type StaffContext } from '@/server/auth/guards';
+import { readPackageForStaff } from '@/server/services/package-service';
 import {
   archivePackage,
   createPackage,
-  readPackageForStaff,
   updatePackage,
-} from '@/server/services/package-service';
+} from '@/server/services/package-write-service';
 import type { PackageAdmin } from '@/types/package';
 
 import { archivePackageAction, createPackageAction, updatePackageAction } from './packages';
@@ -24,10 +24,10 @@ vi.mock('next/headers', () => ({
 }));
 vi.mock('next/cache', () => ({ revalidateTag: vi.fn() }));
 vi.mock('@/server/auth/guards', () => ({ requireAal2: vi.fn() }));
-vi.mock('@/server/services/package-service', () => ({
+vi.mock('@/server/services/package-service', () => ({ readPackageForStaff: vi.fn() }));
+vi.mock('@/server/services/package-write-service', () => ({
   archivePackage: vi.fn(),
   createPackage: vi.fn(),
-  readPackageForStaff: vi.fn(),
   updatePackage: vi.fn(),
 }));
 vi.mock('@/lib/logger', () => ({
@@ -61,10 +61,8 @@ const FORM = {
   validFrom: null,
   validTo: null,
   priceTiers: [],
-  legs: [],
 };
-const leg = (rwId: number) => ({ rwId, durationMinutes: null, notes: '' });
-const COMBO_FORM = { ...FORM, category: 'combo', legs: [leg(5), leg(8)] };
+const COMBO_FORM = { ...FORM, category: 'combo' };
 
 function stored(change: Partial<PackageAdmin> = {}): PackageAdmin {
   return {
@@ -187,6 +185,36 @@ describe('package actions', () => {
     vi.mocked(readPackageForStaff).mockResolvedValue(null);
     expect(await archivePackageAction({ id: PACKAGE_ID })).toMatchObject({
       error: { code: 'NOT_FOUND' },
+    });
+  });
+
+  // tour_packages_legs_guard, the guard half: a combo goes on sale only once its saved legs visit two RWs.
+  it('keeps a combo without two RWs of saved legs off sale, new or edited, in package words', async () => {
+    vi.mocked(requireAal2).mockResolvedValue({ ok: true, ctx: SUPERADMIN });
+    const publish = { ...COMBO_FORM, status: 'published' };
+    expect(await createPackageAction(publish)).toMatchObject({
+      error: { code: 'STATE_INVALID', message: copy.packages.errors.comboNeedsLegs },
+    });
+    vi.mocked(readPackageForStaff).mockResolvedValue({ ...COMBO, rwIds: [5] });
+    expect(await updatePackageAction({ ...publish, id: PACKAGE_ID })).toMatchObject({
+      error: { code: 'STATE_INVALID' },
+    });
+    expect(createPackage).not.toHaveBeenCalled();
+    expect(updatePackage).not.toHaveBeenCalled();
+    vi.mocked(readPackageForStaff).mockResolvedValue(COMBO);
+    expect(await updatePackageAction({ ...publish, id: PACKAGE_ID })).toMatchObject({ ok: true });
+  });
+
+  it("maps the database's publish refusal to the package's own words", async () => {
+    vi.mocked(requireAal2).mockResolvedValue({ ok: true, ctx: SUPERADMIN });
+    vi.mocked(readPackageForStaff).mockResolvedValue(COMBO);
+    const refusal = Object.assign(new Error('a combo package needs legs'), {
+      code: 'P0001',
+      hint: 'STATE_INVALID',
+    });
+    vi.mocked(updatePackage).mockRejectedValue(refusal);
+    expect(await updatePackageAction({ ...COMBO_FORM, id: PACKAGE_ID })).toMatchObject({
+      error: { code: 'STATE_INVALID', message: copy.packages.errors.comboNeedsLegs },
     });
   });
 });

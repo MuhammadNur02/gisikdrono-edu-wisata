@@ -29,7 +29,6 @@ export const PACKAGE_LIMITS = {
   images: 8,
   // Integer rupiah; the database adds the floor of site_settings pricing.min_price_per_pax.
   priceMax: 1_000_000_000,
-  validityYears: 5,
 } as const;
 
 // The columns a list may sort by (docs/StyleGuide.md §6.4); anything else in the URL is ignored.

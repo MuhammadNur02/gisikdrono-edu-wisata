@@ -20,13 +20,15 @@ export const metadata: Metadata = { title: text.title };
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-// Task P4.3.05, docs/PRD.md FR-ADMIN-05: one page of packages from `?q=&sort=&page=&status=&rw=`. An RW admin's list is
-// their own RW's packages whatever the URL says (effectiveRw); RLS narrows the same read again.
+// Task P4.3.05, docs/PRD.md FR-ADMIN-05: one page of packages from `?q=&sort=&page=&status=&rw=`. An RW admin's list
+// takes no RW filter: tour_packages_staff_read shows them their own RW's packages and, read-only, the combos whose legs
+// visit it, which an rw_id filter would hide (review of PR #35, item 7). The superadmin's filter goes through
+// effectiveRw.
 export default async function PackagesPage({ searchParams }: { searchParams: SearchParams }) {
   const ctx = await requireDashboardStaff();
   if (!ctx) return null;
   const query = await loadListQuery(searchParams);
-  const rw = await effectiveRw(ctx, query.rw);
+  const rw = ctx.role === 'admin_rw' ? null : await effectiveRw(ctx, query.rw);
   const [result, rwUnits] = await Promise.all([
     listPackagesForStaff({ ...query, rw }),
     listRwUnitsForStaff(),

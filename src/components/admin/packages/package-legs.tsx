@@ -1,20 +1,21 @@
 'use client';
 
-import { useFieldArray, useWatch } from 'react-hook-form';
+import { useFieldArray } from 'react-hook-form';
 
-import { NumberInputField, TextField } from '@/components/admin/cms/fields';
+import { TextField } from '@/components/admin/cms/fields';
 import { FormSection } from '@/components/admin/cms/form-section';
 import { type PackageControl } from '@/components/admin/packages/package-fields';
 import {
   AddRowButton,
-  ListError,
   RowCard,
   RwSelectField,
   type RwOption,
 } from '@/components/admin/packages/package-tiers';
+import { FormAlert } from '@/components/forms/form-alert';
 import { FormField } from '@/components/forms/form-field';
 import { Input } from '@/components/ui/input';
 import { PACKAGE_LIMITS } from '@/config/packages';
+import { rwLabel, type RwId } from '@/config/rw';
 import { copy } from '@/lib/copy/id';
 import { rowFieldName } from '@/lib/utils/form-paths';
 
@@ -31,70 +32,24 @@ interface RowProps {
   onRemove: () => void;
 }
 
-function LegRow({ control, index, rwOptions, onRemove }: RowProps) {
-  return (
-    <RowCard
-      title={legs.rowTitle(index + 1)}
-      removeLabel={legs.remove(index + 1)}
-      onRemove={onRemove}
-    >
-      <RwSelectField
-        control={control}
-        name={rowFieldName('legs', index, 'rwId')}
-        label={legs.rw}
-        options={rwOptions}
-      />
-      <NumberInputField
-        control={control}
-        name={rowFieldName('legs', index, 'durationMinutes')}
-        label={legs.durationMinutes}
-      />
-      <TextField
-        control={control}
-        name={rowFieldName('legs', index, 'notes')}
-        label={legs.notes}
-        maxLength={PACKAGE_LIMITS.legNotes}
-      />
-    </RowCard>
-  );
-}
-
-// A combo's legs, in visiting order (docs/PRD.md FR-ADMIN-05): two RWs or more, each once. An RW package visits its
-// own RW, which the database writes as its single leg, so this section shows only for a combo.
-export function LegsSection({
-  control,
+// A combo's route (docs/PRD.md FR-ADMIN-05) is not edited from this form yet (decision on PR #35): its legs wait for
+// the save_package RPC (Task P4.3.11). The legs saved so far are shown, so the officer knows whether it may go on sale.
+export function ComboRouteNotice({
+  rwIds,
   rwOptions,
 }: {
-  control: PackageControl;
+  rwIds: readonly RwId[];
   rwOptions: readonly RwOption[];
 }) {
-  const { fields, append, remove } = useFieldArray({ control, name: 'legs' });
-  const chosen = useWatch({ control, name: 'legs' });
-  // The next RW the combo does not visit yet; none left, no button.
-  const unused = rwOptions.find((option) => !chosen.some((leg) => leg.rwId === option.id));
+  const names = rwIds.map(
+    (rwId) => rwOptions.find((option) => option.id === rwId)?.name ?? rwLabel(rwId),
+  );
   return (
     <FormSection title={text.sections.legs}>
-      <p className="text-body-sm text-muted-foreground">{legs.hint}</p>
-      <ListError control={control} name="legs" />
-      {fields.map((leg, index) => (
-        <LegRow
-          key={leg.id}
-          control={control}
-          index={index}
-          rwOptions={rwOptions}
-          onRemove={() => {
-            remove(index);
-          }}
-        />
-      ))}
-      {unused ? (
-        <AddRowButton
-          label={legs.add}
-          onAdd={() => {
-            append({ rwId: unused.id, durationMinutes: null, notes: '' });
-          }}
-        />
-      ) : null}
+      <FormAlert tone="info">
+        {legs.deferred} {legs.deferredHint}
+      </FormAlert>
+      {names.length > 0 ? <p className="text-body-sm">{legs.visits(names.join(' → '))}</p> : null}
     </FormSection>
   );
 }

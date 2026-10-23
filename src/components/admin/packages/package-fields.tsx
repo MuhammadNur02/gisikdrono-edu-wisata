@@ -192,34 +192,52 @@ export function PricingFields({ control }: { control: PackageControl }) {
   );
 }
 
-export function PublishFields({ control }: { control: PackageControl }) {
+// canPublish: false for a combo whose saved legs do not visit two RWs yet (tour_packages_legs_guard); the status then
+// offers no `Tayang` and says why.
+export function PublishFields({
+  control,
+  canPublish,
+}: {
+  control: PackageControl;
+  canPublish: boolean;
+}) {
+  const options = canPublish
+    ? STATUS_OPTIONS
+    : STATUS_OPTIONS.filter((option) => option.value !== 'published');
   return (
     <FormSection title={text.sections.publish}>
       <SelectField
         control={control}
         name="status"
         label={fields.status}
-        options={STATUS_OPTIONS}
+        description={canPublish ? undefined : text.errors.comboNeedsLegs}
+        options={options}
         required
       />
       <CheckboxField control={control} name="isFeatured" label={fields.isFeatured} />
-      <div className="grid gap-4 sm:grid-cols-2">
-        <TextField
-          control={control}
-          name="validFrom"
-          label={fields.validFrom}
-          type="date"
-          maxLength={DATE_LENGTH}
-        />
-        <TextField
-          control={control}
-          name="validTo"
-          label={fields.validTo}
-          type="date"
-          maxLength={DATE_LENGTH}
-        />
-      </div>
+      <ValidityFields control={control} />
       <SortOrderField control={control} name="sortOrder" />
     </FormSection>
+  );
+}
+
+function ValidityFields({ control }: { control: PackageControl }) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <TextField
+        control={control}
+        name="validFrom"
+        label={fields.validFrom}
+        type="date"
+        maxLength={DATE_LENGTH}
+      />
+      <TextField
+        control={control}
+        name="validTo"
+        label={fields.validTo}
+        type="date"
+        maxLength={DATE_LENGTH}
+      />
+    </div>
   );
 }
