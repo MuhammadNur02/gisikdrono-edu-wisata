@@ -23,6 +23,7 @@ export function CtaBand({ id }: CtaBandProps) {
     <Section
       id={id}
       tone="brand"
+      wave={{ variant: 'gentle' }}
       align="center"
       title="Pesan kunjungan untuk rombongan Anda"
       description="Pilih paket, tentukan tanggal dan sesi, lalu bayar lewat QRIS atau virtual account. Tiket QR dikirim ke WhatsApp dan email."

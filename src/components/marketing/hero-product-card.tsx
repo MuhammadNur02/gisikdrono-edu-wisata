@@ -15,13 +15,14 @@ export interface HeroProductCardProps {
   product: ProductSummary;
 }
 
-// The UMKM product a hero slide features, on the one glass card the screen may have (§1.3 G3). It sits on
-// the photo's right from lg only: on a phone it would cover the title (§5.7).
+// The UMKM product a hero slide features, on the one glass card the screen may have (§1.3 G3). It sits at the
+// top right of the slide's container from lg only, in line with the page content: on a phone it would cover the
+// title (§5.7).
 export function HeroProductCard({ product }: HeroProductCardProps) {
   return (
     <Card
       variant="glass"
-      className="absolute top-6 right-6 hidden w-72 flex-row items-center gap-4 p-4 text-foreground lg:flex"
+      className="absolute top-8 right-8 hidden w-72 flex-row items-center gap-4 p-4 text-foreground lg:flex"
     >
       {product.cover ? (
         <PhotoFrame
