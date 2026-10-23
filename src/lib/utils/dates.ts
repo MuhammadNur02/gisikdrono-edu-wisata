@@ -61,6 +61,11 @@ export function toJakartaDateTimeField(instant: string): string {
   return format(inJakarta(instant), "yyyy-MM-dd'T'HH:mm");
 }
 
+// An instant as Midtrans writes times, in Semarang time with its offset: '2026-10-24 09:30:00 +0700'.
+export function toMidtransTime(instant: Date): string {
+  return format(inJakarta(instant), 'yyyy-MM-dd HH:mm:ss xx');
+}
+
 // The Semarang month an instant falls in: '2026-11' as a key, 'November 2026' to read.
 export function jakartaMonthKey(instant: string): string {
   return format(inJakarta(instant), 'yyyy-MM');

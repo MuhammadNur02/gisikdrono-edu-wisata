@@ -4286,6 +4286,18 @@ export type Database = {
         Args: { p_is_active: boolean; p_reason: string; p_user_id: string }
         Returns: undefined
       }
+      svc_apply_payment_event: {
+        Args: { p_confirmed?: Json; p_event_id: number; p_source: string }
+        Returns: Json
+      }
+      svc_attach_snap_token: {
+        Args: {
+          p_payment_id: string
+          p_redirect_url: string
+          p_snap_token: string
+        }
+        Returns: undefined
+      }
       svc_claim_booklet_pages: {
         Args: {
           p_actor_id: string
@@ -4352,6 +4364,10 @@ export type Database = {
           p_quote_hash: string
           p_session_ids: string[]
         }
+        Returns: Json
+      }
+      svc_create_payment_attempt: {
+        Args: { p_actor_id?: string; p_booking_id: string; p_replaces?: string }
         Returns: Json
       }
       svc_create_quotation: {
@@ -4449,6 +4465,29 @@ export type Database = {
       }
       svc_record_job_run: {
         Args: { p_error_code?: string; p_job: string; p_succeeded: boolean }
+        Returns: undefined
+      }
+      svc_record_payment_event: {
+        Args: { p_event_hash: string; p_payload: Json; p_source: string }
+        Returns: Json
+      }
+      svc_record_payment_failure: {
+        Args: {
+          p_payload?: Json
+          p_payment_id: string
+          p_status: Database["public"]["Enums"]["payment_status"]
+        }
+        Returns: undefined
+      }
+      svc_record_webhook_rejection: {
+        Args: {
+          p_body_sha256?: string
+          p_ip?: unknown
+          p_order_id?: string
+          p_reason: string
+          p_status_code?: string
+          p_user_agent?: string
+        }
         Returns: undefined
       }
       svc_resend_booking_link: {

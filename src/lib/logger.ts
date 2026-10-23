@@ -30,7 +30,7 @@ export const REDACTED_PATHS = [
 ];
 
 // The only event names a log line may carry: the security_events types of docs/PRD.md §8.4.9 the app logs
-// itself, plus the two operational ones.
+// itself, plus the operational ones.
 export const LOG_EVENTS = [
   'webhook_signature_invalid',
   'webhook_amount_mismatch',
@@ -63,6 +63,7 @@ export const LOG_EVENTS = [
   'session_revoke_failed',
   'internal_error',
   'job_run',
+  'payment_webhook',
 ] as const;
 
 export type LogEvent = (typeof LOG_EVENTS)[number];

@@ -10,6 +10,7 @@ import {
   jakartaMonthKey,
   sessionStartsAt,
   toJakartaIsoString,
+  toMidtransTime,
   formatTimeRange,
   todayInJakarta,
   toVisitDate,
@@ -111,6 +112,10 @@ describe('formatInstantTimeRange', () => {
 describe('Semarang months and Event dates', () => {
   it('writes an instant with the +07:00 offset', () => {
     expect(toJakartaIsoString('2026-10-18T12:00:00Z')).toBe('2026-10-18T19:00:00+07:00');
+  });
+
+  it('writes an instant as Midtrans writes its times', () => {
+    expect(toMidtransTime(new Date('2026-10-24T02:30:00Z'))).toBe('2026-10-24 09:30:00 +0700');
   });
 
   it('puts a late-evening UTC instant in the next Semarang month', () => {

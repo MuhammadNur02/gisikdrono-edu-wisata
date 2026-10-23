@@ -3,7 +3,11 @@ import 'server-only';
 import { createEnv } from '@t3-oss/env-nextjs';
 import { z } from 'zod';
 
-import { findMidtransKeyProblems, MIDTRANS_MERCHANT_ID_PATTERN } from '@/lib/midtrans/environment';
+import {
+  findLocalStubProblems,
+  findMidtransKeyProblems,
+  MIDTRANS_MERCHANT_ID_PATTERN,
+} from '@/lib/midtrans/environment';
 import { isHostedDeployment, publicEnv, TURNSTILE_TEST_KEY_PATTERN } from '@/lib/public-env';
 import { MOBILE_PHONE_PATTERN } from '@/lib/utils/phone';
 
@@ -45,6 +49,7 @@ type EnvValues = {
   MIDTRANS_SERVER_KEY: string;
   MIDTRANS_SERVER_KEY_PREVIOUS?: string | undefined;
   MIDTRANS_CLIENT_KEY: string;
+  MIDTRANS_LOCAL_STUB_URL?: string | undefined;
   QR_SIGNING_KEYS: Record<string, string>;
   QR_SIGNING_ACTIVE_KID: string;
   PARTICIPANT_PII_KEYS?: Record<string, string> | undefined;
@@ -115,6 +120,7 @@ function findTurnstileTestSecret(values: EnvValues): string[] {
 export function findEnvProblems(values: EnvValues): string[] {
   return [
     ...findMidtransMismatches(values),
+    ...findLocalStubProblems(values.MIDTRANS_LOCAL_STUB_URL, values.VERCEL_ENV),
     ...findKeyRingProblems(values),
     ...findMissingProductionSecrets(values),
     ...findTurnstileTestSecret(values),
@@ -147,6 +153,7 @@ export const serverEnv = createEnv({
     MIDTRANS_IS_PRODUCTION: z.stringbool(),
     MIDTRANS_MERCHANT_ID: z.string().regex(MIDTRANS_MERCHANT_ID_PATTERN),
     MIDTRANS_WEBHOOK_PATH_TOKEN: secret,
+    MIDTRANS_LOCAL_STUB_URL: z.url().optional(),
     WHATSAPP_ACCESS_TOKEN: z.string().min(1).optional(),
     WHATSAPP_PHONE_NUMBER_ID: z.string().min(1).optional(),
     WHATSAPP_BUSINESS_ACCOUNT_ID: z.string().min(1).optional(),
