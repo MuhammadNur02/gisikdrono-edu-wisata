@@ -24,15 +24,20 @@ const VISIT_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const rupiahSchema = z.int().min(0).max(PACKAGE_LIMITS.priceMax);
 
-// A textarea with one item per line, as highlights and inclusions are typed.
+// A combo visits two RWs or more (docs/PRD.md FR-ADMIN-05).
+export const MIN_COMBO_LEGS = 2;
+// Blank lines a textarea may carry before they are dropped; a pasted essay is still refused.
+const RAW_LINES_MAX = PACKAGE_LIMITS.listItems * 4;
+
+// Highlights and inclusions, one item per line of a textarea (LinesField splits the text). The form holds the lines as
+// typed, so the schema reads and writes one type; blank lines are dropped and each line is capped here.
 const lineListSchema = z
-  .string()
-  .transform((text) =>
-    text
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line !== '')
-      .map((line) => line.slice(0, PACKAGE_LIMITS.listItem)),
+  .array(z.string())
+  .max(RAW_LINES_MAX, messages.lines(PACKAGE_LIMITS.listItems))
+  .transform((lines) =>
+    lines
+      .map((line) => line.trim().slice(0, PACKAGE_LIMITS.listItem))
+      .filter((line) => line !== ''),
   )
   .pipe(
     z.array(z.string()).max(PACKAGE_LIMITS.listItems, messages.lines(PACKAGE_LIMITS.listItems)),
@@ -166,6 +171,8 @@ function checkPackage(pkg: PackageRules, context: z.RefinementCtx): void {
     issue(context, 'validTo', messages.validity);
   const rwIds = pkg.legs.map((leg) => leg.rwId);
   if (new Set(rwIds).size !== rwIds.length) issue(context, 'legs', messages.legsDistinct);
+  else if (pkg.category === 'combo' && rwIds.length < MIN_COMBO_LEGS)
+    issue(context, 'legs', copy.packages.legs.needTwo);
 }
 
 export const createPackageSchema = z.object(packageFields).strict().superRefine(checkPackage);

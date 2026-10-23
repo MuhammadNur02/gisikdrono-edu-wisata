@@ -260,11 +260,10 @@ async function syncTiers(
   }
   for (const tier of tiers) {
     const columns = { min_pax: tier.minPax, max_pax: tier.maxPax, price_per_pax: tier.pricePerPax };
+    const newRow = { package_id: packageId, ...columns };
     const { error } =
       tier.id === null
-        ? await supabase
-            .from('tour_package_price_tiers')
-            .insert({ package_id: packageId, ...columns })
+        ? await supabase.from('tour_package_price_tiers').insert(newRow)
         : await supabase.from('tour_package_price_tiers').update(columns).eq('id', tier.id);
     if (error) throw packageErrorOr(error);
   }
