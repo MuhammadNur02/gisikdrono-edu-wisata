@@ -147,7 +147,7 @@ export interface SiteFooterProps {
 // its height and the wave never covers that section's content.
 export function SiteFooter({ contact, navGroups }: SiteFooterProps) {
   return (
-    <footer className="relative mt-6 bg-surface-warm md:mt-10 lg:mt-16">
+    <footer className="relative mt-6 bg-surface-warm text-surface-warm-foreground md:mt-10 lg:mt-16">
       <WaveDivider tone="warm" />
       {/* Below xl the contact block sits beside the intro and the links take a full row; from xl all three
           share one row, links in the middle. */}

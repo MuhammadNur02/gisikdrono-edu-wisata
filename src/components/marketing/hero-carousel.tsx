@@ -17,7 +17,8 @@ const REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
 
 type EmblaApi = UseEmblaCarouselType[1];
 
-// Below lg the controls sit under the photo; from lg they sit on its overlay, bottom right in line with the
+// Below lg the controls sit under the photo, with room under them for the wave of the section below (h-6, md:h-10),
+// so it never covers a button or its focus ring; from lg they sit on its overlay, bottom right in line with the
 // page content, white on the deep brand tint (redesign of 2026-10-23).
 const controlClassName =
   'flex size-11 items-center justify-center rounded-full border border-border bg-background transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none lg:border-white/40 lg:bg-brand-deep/40 lg:text-white lg:hover:bg-brand-deep/60';
@@ -58,7 +59,7 @@ interface ControlsProps {
 
 function SlideControls({ api, total, selected }: ControlsProps) {
   return (
-    <div className="flex items-center justify-center gap-1 py-2 lg:absolute lg:inset-x-0 lg:bottom-8 lg:mx-auto lg:max-w-7xl lg:justify-end lg:px-8 lg:py-0">
+    <div className="flex items-center justify-center gap-1 pt-2 pb-6 md:pb-10 lg:absolute lg:inset-x-0 lg:bottom-8 lg:mx-auto lg:max-w-7xl lg:justify-end lg:px-8 lg:py-0">
       <button type="button" onClick={() => api?.scrollPrev()} className={controlClassName}>
         <ArrowLeft aria-hidden className="size-4" />
         <span className="sr-only">{copy.ui.previousSlide}</span>

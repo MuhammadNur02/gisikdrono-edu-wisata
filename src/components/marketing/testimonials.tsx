@@ -17,13 +17,16 @@ export interface TestimonialsProps {
 const LEAD_ITEM = 'lg:col-span-7 lg:row-span-2';
 const SIDE_ITEM = 'lg:col-span-5';
 
+// The lead review's quote mark sits in the top-right corner beside the stars. At 32 px from 16 px down it ends
+// above the quote's first line (the card's padding, the 16 px stars row and their 16 px gap), so it never
+// overlaps the text (review of PR #36).
 function ReviewItem({ review, isLead }: { review: PublicReview; isLead: boolean }) {
   return (
     <div className="relative h-full">
       {isLead ? (
         <Quote
           aria-hidden
-          className="absolute top-5 right-5 size-12 text-muted-foreground/40"
+          className="absolute top-4 right-4 size-8 text-muted-foreground/40"
           strokeWidth={1.5}
         />
       ) : null}

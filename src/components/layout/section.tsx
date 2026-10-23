@@ -22,7 +22,7 @@ const sectionVariants = cva('relative scroll-mt-17 py-16 md:py-24', {
     tone: {
       default: 'bg-background',
       muted: 'bg-muted/40',
-      warm: 'bg-surface-warm',
+      warm: 'bg-surface-warm text-surface-warm-foreground',
       brand: 'bg-background',
     },
   },
