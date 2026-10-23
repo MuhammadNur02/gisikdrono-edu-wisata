@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Container } from '@/components/layout/container';
 import { NavLinkLabel } from '@/components/layout/nav-link-label';
 import { SiteWordmark } from '@/components/layout/site-wordmark';
+import { WaveDivider } from '@/components/layout/wave-divider';
 import { LEGAL_NAV_ITEMS, type PublicNavGroup, type PublicNavItem } from '@/config/nav';
 import { siteConfig } from '@/config/site';
 import { copy } from '@/lib/copy/id';
@@ -141,9 +142,13 @@ export interface SiteFooterProps {
   navGroups: readonly PublicNavGroup[];
 }
 
+// The footer of every public page sits on the warm tone under a gentle wave (decision of 2026-10-23). The wave
+// needs a band above the footer it can stand in, whatever the page's last section is, so the top margin matches
+// its height and the wave never covers that section's content.
 export function SiteFooter({ contact, navGroups }: SiteFooterProps) {
   return (
-    <footer className="border-t border-border bg-muted/40">
+    <footer className="relative mt-6 bg-surface-warm text-surface-warm-foreground md:mt-10 lg:mt-16">
+      <WaveDivider tone="warm" />
       {/* Below xl the contact block sits beside the intro and the links take a full row; from xl all three
           share one row, links in the middle. */}
       <Container className="grid gap-10 py-12 md:grid-cols-2 md:py-16 xl:grid-cols-12 xl:gap-x-8">

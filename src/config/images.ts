@@ -19,6 +19,12 @@ export const IMAGE_SIZES = {
   thumb: '(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw',
   // A photo inside an article body, as wide as its 65ch text column (§3.3).
   prose: '(min-width: 768px) 680px, 100vw',
+  // Edge to edge, past the container: the home hero and the photo band (decision of 2026-10-23).
+  bleed: '100vw',
+  // A photo of the home gallery strip: a third of the row from lg, half from sm, most of a phone's width below.
+  slide: '(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 85vw',
+  // The large first tile of the home RW mosaic, seven of the twelve columns from lg.
+  bento: '(min-width: 1024px) 58vw, 100vw',
 } as const;
 
 // Which next/image loader the build uses (next.config.ts). Supabase's transformer is a Pro feature, so a project on the

@@ -13,6 +13,8 @@ import { productPath } from '@/lib/utils/paths';
 import type { ProductSummary } from '@/types/product';
 
 const COVER_ASPECT = 'aspect-square';
+// docs/StyleGuide.md §7.3: the photo zooms a little while the card is pointed at, inside its own frame.
+const COVER_HOVER_ZOOM = 'transition-transform duration-300 motion-safe:group-hover:scale-103';
 
 export interface ProductCardProps {
   product: ProductSummary;
@@ -27,6 +29,7 @@ function ProductCover({ product }: ProductCardProps) {
       sizes={IMAGE_SIZES.card}
       aspectClassName={COVER_ASPECT}
       className={cn('rounded-none', fade)}
+      imageClassName={COVER_HOVER_ZOOM}
     />
   ) : (
     <PhotoPlaceholder
@@ -57,7 +60,7 @@ export function ProductCard({ product }: ProductCardProps) {
   return (
     <Card
       variant="interactive"
-      className="relative w-full gap-4 overflow-hidden pt-0 md:gap-4 md:pt-0"
+      className="group relative w-full gap-4 overflow-hidden pt-0 md:gap-4 md:pt-0"
     >
       <ProductCover product={product} />
       <div className="space-y-2 px-5 md:px-6">
