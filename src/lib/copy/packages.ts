@@ -127,7 +127,8 @@ export const packagesCopy = {
       'Harga di bawah batas minimal yang ditetapkan kelurahan (pengaturan pricing.min_price_per_pax). Naikkan harganya, ya.',
     tierOverlap:
       'Rentang tingkat harga saling tumpang tindih dengan tingkat lain. Perbaiki rentangnya.',
-    comboNeedsLegs: 'Paket kombinasi butuh minimal dua RW berbeda sebelum ditayangkan.',
+    categoryLocked:
+      'Paket RW tidak bisa diubah menjadi paket kombinasi, atau sebaliknya. Buat paket baru untuk jenis itu.',
   },
   saved: 'Paket tersimpan.',
   created: 'Paket dibuat.',
