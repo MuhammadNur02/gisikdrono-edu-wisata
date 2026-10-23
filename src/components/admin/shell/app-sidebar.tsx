@@ -2,6 +2,13 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { SiteWordmark } from '@/components/layout/site-wordmark';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeader,
+  SidebarRail,
+} from '@/components/ui/sidebar';
 import { DASHBOARD_PATH } from '@/config/auth';
 import { copy } from '@/lib/copy/id';
 
@@ -13,21 +20,35 @@ export interface AppSidebarProps {
   footer: ReactNode;
 }
 
-// docs/StyleGuide.md §6.1, the basic form of Task P2.8.03: a fixed 264 px column from md up. The collapsible 72 px
-// rail, its cookie and Ctrl+B come with the full shadcn Sidebar of Task P4.1.01. Nothing in it animates (§7.3).
+// docs/StyleGuide.md §6.1 (Task P4.1.01): the shadcn Sidebar, 264 px expanded and a 72 px icon rail collapsed, a sheet
+// from the left below md. The rail shows the initial of the wordmark and tooltips on the items; nothing in it
+// animates beyond the CSS width transition (§7.3).
 export function AppSidebar({ context, nav, footer }: AppSidebarProps) {
   return (
-    <aside className="sticky top-0 hidden h-dvh w-66 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
-      <div className="flex h-16 items-center justify-between gap-3 border-b border-sidebar-border px-5">
-        <Link href={DASHBOARD_PATH} aria-label={copy.dashboard.homeLink} className="rounded-lg">
-          <SiteWordmark />
+    <Sidebar collapsible="icon" className="border-sidebar-border">
+      <SidebarHeader className="h-16 flex-row items-center justify-between gap-3 border-b border-sidebar-border px-4 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+        <Link
+          href={DASHBOARD_PATH}
+          aria-label={copy.dashboard.homeLink}
+          className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+        >
+          <SiteWordmark className="group-data-[collapsible=icon]:hidden" />
+          <span
+            aria-hidden
+            className="hidden size-10 items-center justify-center rounded-xl bg-primary text-h4 font-extrabold text-primary-foreground group-data-[collapsible=icon]:flex"
+          >
+            G
+          </span>
         </Link>
-        {context}
-      </div>
-      <nav aria-label={copy.dashboard.navLabel} className="flex-1 overflow-y-auto px-3 py-4">
-        {nav}
-      </nav>
-      <div className="space-y-2 border-t border-sidebar-border p-3">{footer}</div>
-    </aside>
+        <span className="group-data-[collapsible=icon]:hidden">{context}</span>
+      </SidebarHeader>
+      <SidebarContent>
+        <nav aria-label={copy.dashboard.navLabel} className="flex flex-col gap-1 py-2">
+          {nav}
+        </nav>
+      </SidebarContent>
+      <SidebarFooter className="border-t border-sidebar-border">{footer}</SidebarFooter>
+      <SidebarRail />
+    </Sidebar>
   );
 }

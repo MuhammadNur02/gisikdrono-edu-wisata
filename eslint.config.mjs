@@ -304,6 +304,13 @@ export default defineConfig([
     rules: { '@typescript-eslint/no-magic-numbers': 'off' },
   },
   {
+    // Decision of 2026-10-20 on PR #17 (Task P4.1.01): the files the shadcn CLI generates into src/components/ui
+    // keep their generated shape, so a primitive such as Sidebar comes in whole (CLAUDE.md §4 rule 12). Every
+    // other rule still applies to them.
+    files: ['src/components/ui/**'],
+    rules: { 'max-lines': 'off', 'max-lines-per-function': 'off' },
+  },
+  {
     // A describe block grows with its cases, and test data is full of literal numbers on purpose.
     files: ['**/*.test.{ts,mjs}', 'tests/**'],
     rules: {

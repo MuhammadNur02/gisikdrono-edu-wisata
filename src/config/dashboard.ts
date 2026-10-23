@@ -7,7 +7,23 @@ export const RW_SCOPE_ALL = 'all';
 export type RwScope = typeof RW_SCOPE_ALL | RwId;
 export const RW_SCOPE_MAX_AGE_SECONDS = 2_592_000;
 
+// The shadcn Sidebar remembers whether it is expanded or the icon rail (docs/StyleGuide.md §6.1). The browser writes
+// it; the layout reads it so the next page opens as the last one was left.
+export const SIDEBAR_STATE_COOKIE = 'sidebar_state';
+
 export const PROFILE_PATH = '/dashboard/profile';
+export const SCANNER_PATH = '/dashboard/scanner';
+export const SESSIONS_PATH = '/dashboard/sessions';
+export const BOOKINGS_PATH = '/dashboard/bookings';
 
 // profiles.full_name as staff type it on /dashboard/profile.
 export const FULL_NAME_MAX_LENGTH = 100;
+
+// docs/Security.md AUTH-11: the dashboard locks its screen after this long without a pointer or a key, and the
+// staff member unlocks it with a code from their authenticator.
+export const IDLE_LOCK_MS = 600_000;
+// How often the idle clock is checked, so a lock lands within a few seconds of the deadline.
+export const IDLE_CHECK_MS = 5_000;
+
+// docs/Security.md §5.3: a critical action needs a TOTP check from the last five minutes.
+export const FRESH_TOTP_MAX_AGE_SECONDS = 300;

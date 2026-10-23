@@ -40,6 +40,12 @@ export function withinAuthCallbackLimit(clientIp: string): Promise<boolean> {
   ]);
 }
 
+// The codes a signed-in staff member types to unlock the idle screen or step up (Task P4.1.01, AUTH-11), counted
+// per verified session id, never per anything typed.
+export function withinStepUpLimit(userId: string): Promise<boolean> {
+  return withinRateLimits(createSupabaseAdminClient(), [{ name: 'step_up:user', subject: userId }]);
+}
+
 // docs/Security.md §5.1 (AUTH-09): a reset link only for an active account that finished onboarding, which is when
 // set_staff_role gave it a role. An invited mailbox alone never gets a password this way.
 export async function canResetPassword(email: string): Promise<boolean> {
