@@ -8,6 +8,7 @@ import { renderInvoicePdf } from '@/lib/pdf/invoice';
 import { renderQuotationPdf } from '@/lib/pdf/quotation';
 import { renderReceiptPdf } from '@/lib/pdf/receipt';
 import { documentSnapshotSchema, type DocumentSnapshot } from '@/lib/validations/document-snapshot';
+import type { VerifiedDocument } from '@/types/documents';
 
 // A booking's own documents (Task P3.6.04; docs/Security.md §10.3, §10.4): the rows the database wrote, rendered on
 // first request and kept in the private documents bucket. The service-role client is handed in by document-service.ts,
@@ -229,4 +230,48 @@ export async function bookingDocumentPdf(
   const pdf = await render(document, context);
   if (isFinal) await keepPdf(adminClient, document, pdf);
   return pdf;
+}
+
+const QUOTATION_VERIFY_COLUMNS =
+  'quotation_number, version, valid_until, status, bookings!inner(institution_name)';
+const CERTIFICATE_VERIFY_COLUMNS =
+  'certificate_number, recipient_name, institution_name, visit_date, status';
+
+// A document by its verify code (docs/PRD.md FR-PUB-20): the quotation or certificate the code names, or null. The
+// code is random and unique across both tables (internal.new_verify_code), so a quotation is tried first.
+export async function lookupVerifyCode(
+  adminClient: DatabaseClient,
+  code: string,
+): Promise<VerifiedDocument | null> {
+  const quotation = await adminClient
+    .from('quotations')
+    .select(QUOTATION_VERIFY_COLUMNS)
+    .eq('verify_code', code)
+    .maybeSingle();
+  if (quotation.error) throw quotation.error;
+  if (quotation.data) {
+    return {
+      kind: 'quotation',
+      number: quotation.data.quotation_number,
+      institutionName: quotation.data.bookings.institution_name,
+      version: quotation.data.version,
+      validUntil: quotation.data.valid_until,
+      status: quotation.data.status,
+    };
+  }
+  const certificate = await adminClient
+    .from('certificates')
+    .select(CERTIFICATE_VERIFY_COLUMNS)
+    .eq('verify_code', code)
+    .maybeSingle();
+  if (certificate.error) throw certificate.error;
+  if (!certificate.data) return null;
+  return {
+    kind: 'certificate',
+    number: certificate.data.certificate_number,
+    recipientName: certificate.data.recipient_name,
+    institutionName: certificate.data.institution_name,
+    visitDate: certificate.data.visit_date,
+    status: certificate.data.status,
+  };
 }

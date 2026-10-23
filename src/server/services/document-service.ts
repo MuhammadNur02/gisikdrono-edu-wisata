@@ -17,9 +17,11 @@ import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 import {
   bookingDocumentPdf,
   loadBookingDocument,
+  lookupVerifyCode,
   type BookingDocument,
   type BookingDocumentKind,
 } from '@/server/services/booking-documents';
+import type { VerifiedDocument } from '@/types/documents';
 
 type DatabaseClient = SupabaseClient<Database>;
 
@@ -149,6 +151,23 @@ export async function bookingDocumentFile(
     kelurahanAddress: settings.kelurahanAddress,
     siteUrl: publicEnv.NEXT_PUBLIC_SITE_URL,
   });
+}
+
+export type VerifyCodeAnswer =
+  { kind: 'rate_limited' } | { kind: 'looked_up'; document: VerifiedDocument | null };
+
+// /verifikasi/[code] (Task P3.6.05): the service role reads by the random code alone, after the visitor's IP has been
+// counted, so guessing codes costs the same as checking one; the code names no booking and no person by itself.
+export async function verifyDocumentCode(
+  code: string,
+  clientIp: string,
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<VerifyCodeAnswer> {
+  const isWithinLimit = await withinRateLimits(adminClient, [
+    { name: 'verify:code', subject: rateLimitIpBucket(clientIp) },
+  ]);
+  if (!isWithinLimit) return { kind: 'rate_limited' };
+  return { kind: 'looked_up', document: await lookupVerifyCode(adminClient, code) };
 }
 
 // The api/jobs/purge-storage run (docs/Security.md §7.3). SQL cannot delete storage objects, so the

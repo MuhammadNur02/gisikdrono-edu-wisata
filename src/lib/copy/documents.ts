@@ -65,6 +65,23 @@ export const documentsCopy = {
     forPayment: (invoiceNumber: string) => `Untuk pembayaran invoice ${invoiceNumber}`,
     paidAt: 'Tanggal pembayaran',
   },
+  // /verifikasi/[code] (docs/PRD.md FR-PUB-20): what a document says of itself, and nothing more.
+  verifyPage: {
+    title: 'Verifikasi dokumen',
+    description:
+      'Periksa keaslian surat penawaran atau sertifikat yang diterbitkan Edu Wisata Gisikdrono dengan kode verifikasinya.',
+    quotation: 'Surat Penawaran',
+    certificate: 'Sertifikat',
+    number: 'Nomor',
+    institution: 'Instansi',
+    recipient: 'Penerima',
+    validUntil: 'Berlaku sampai',
+    visitDate: 'Tanggal kunjungan',
+    version: (version: number) => `Versi ${String(version)}`,
+    genuine: 'Dokumen ini diterbitkan oleh sistem Edu Wisata Gisikdrono.',
+    rateLimited: 'Terlalu banyak pemeriksaan dari jaringan Anda. Coba lagi beberapa saat lagi, ya.',
+    noLongerValid: 'Dokumen ini tidak lagi berlaku; lihat statusnya di atas.',
+  },
   methods: {
     qris: 'QRIS',
     virtual_account: 'Virtual Account',

@@ -2,6 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   Archive,
   Baby,
+  Ban,
   Bug,
   Building2,
   CheckCircle2,
@@ -9,7 +10,9 @@ import {
   Cookie,
   Drama,
   FilePen,
+  FileCheck2,
   Flag,
+  History,
   Gamepad2,
   Gift,
   GraduationCap,
@@ -113,4 +116,18 @@ export const CONTENT_STATUS: Record<EnumValue<'content_status'>, StatusMeta> = {
   pending_review: { tone: 'warning', label: 'Menunggu Tinjauan', icon: Clock },
   published: { tone: 'success', label: 'Tayang', icon: CheckCircle2 },
   archived: { tone: 'neutral', outline: true, label: 'Arsip', icon: Archive },
+};
+
+// The documents a visitor checks at /verifikasi/[code] (docs/PRD.md FR-PUB-20, Task P3.6.05).
+export const QUOTATION_STATUS: Record<EnumValue<'quotation_status'>, StatusMeta> = {
+  issued: { tone: 'success', label: 'Berlaku', icon: FileCheck2 },
+  accepted: { tone: 'info', label: 'Disetujui', icon: CheckCircle2 },
+  expired: { tone: 'neutral', outline: true, label: 'Kedaluwarsa', icon: Clock },
+  superseded: { tone: 'neutral', outline: true, label: 'Diganti versi baru', icon: History },
+  void: { tone: 'danger', outline: true, label: 'Dibatalkan', icon: Ban },
+};
+
+export const CERTIFICATE_STATUS: Record<EnumValue<'certificate_status'>, StatusMeta> = {
+  issued: { tone: 'success', label: 'Sah', icon: FileCheck2 },
+  revoked: { tone: 'danger', outline: true, label: 'Dicabut', icon: Ban },
 };

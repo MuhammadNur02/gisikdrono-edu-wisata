@@ -8,6 +8,7 @@ import {
   documentFileName,
   isFinalState,
   loadBookingDocument,
+  lookupVerifyCode,
   type BookingDocument,
 } from '@/server/services/booking-documents';
 
@@ -161,5 +162,36 @@ describe('the document file name and state', () => {
     expect(documentFileName(QUOTATION)).toBe('quotation-SP-GSK-2026-10-0007.pdf');
     expect(isFinalState(QUOTATION)).toBe(true);
     expect(isFinalState({ ...QUOTATION, status: 'accepted' })).toBe(false);
+  });
+});
+
+describe('lookupVerifyCode', () => {
+  it('names a quotation by its code with the school, validity, version and status', async () => {
+    const { client } = fakeStack({
+      row: {
+        quotation_number: 'SP/GSK/2026/10/0007',
+        version: 2,
+        valid_until: '2026-11-06',
+        status: 'superseded',
+        bookings: { institution_name: 'SD Negeri Gisikdrono 01' },
+      },
+    });
+    await expect(lookupVerifyCode(client, '7F3K9Q2M4A')).resolves.toEqual({
+      kind: 'quotation',
+      number: 'SP/GSK/2026/10/0007',
+      institutionName: 'SD Negeri Gisikdrono 01',
+      version: 2,
+      validUntil: '2026-11-06',
+      status: 'superseded',
+    });
+  });
+
+  it('answers null for a code no document carries, after asking both tables', async () => {
+    const { client, calls } = fakeStack({ row: null });
+    await expect(lookupVerifyCode(client, 'ZZZZZZZZZZ')).resolves.toBeNull();
+    expect(calls.map((call) => call.path)).toEqual([
+      '/rest/v1/quotations',
+      '/rest/v1/certificates',
+    ]);
   });
 });
