@@ -9,8 +9,9 @@ import {
   SortOrderField,
   TextField,
 } from '@/components/admin/cms/fields';
+import { FormSection } from '@/components/admin/cms/form-section';
+import { MoneyField } from '@/components/admin/cms/money-field';
 import { FormField } from '@/components/forms/form-field';
-import { MoneyInput } from '@/components/forms/money-input';
 import { SlugInput } from '@/components/forms/slug-input';
 import { Textarea } from '@/components/ui/textarea';
 import { PACKAGE_LIMITS, PACKAGE_PATHS } from '@/config/packages';
@@ -37,15 +38,6 @@ const BASIS_OPTIONS = [
   { value: 'per_pax', label: fields.pricePerPax },
   { value: 'flat_group', label: fields.flatPrice },
 ];
-
-export function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <fieldset className="space-y-4 rounded-xl border border-border p-4 sm:p-6">
-      <legend className="px-1 text-h4">{title}</legend>
-      {children}
-    </fieldset>
-  );
-}
 
 // Highlights and inclusions: one item per line; the schema drops blank lines and trims the rest.
 function LinesField({
@@ -75,39 +67,6 @@ function LinesField({
           onChange={(event) => {
             field.onChange(event.target.value.split(/\r?\n/));
           }}
-        />
-      )}
-    />
-  );
-}
-
-export function MoneyField({
-  control,
-  name,
-  label,
-  description,
-  required = false,
-}: {
-  control: PackageControl;
-  name: FieldPathByValue<PackageInput, number | null>;
-  label: string;
-  description?: string;
-  required?: boolean;
-}) {
-  return (
-    <FormField
-      control={control}
-      name={name}
-      label={label}
-      description={description}
-      required={required}
-      render={(field) => (
-        <MoneyInput
-          name={field.name}
-          ref={field.ref}
-          onBlur={field.onBlur}
-          value={typeof field.value === 'number' ? field.value : null}
-          onChange={field.onChange}
         />
       )}
     />
@@ -162,7 +121,7 @@ export function BasicsFields({
     label: PACKAGE_CATEGORY[category].label,
   }));
   return (
-    <Section title={text.sections.basics}>
+    <FormSection title={text.sections.basics}>
       <TextField
         control={control}
         name="name"
@@ -179,13 +138,13 @@ export function BasicsFields({
         required
       />
       <IntroFields control={control} />
-    </Section>
+    </FormSection>
   );
 }
 
 export function VisitFields({ control }: { control: PackageControl }) {
   return (
-    <Section title={text.sections.visit}>
+    <FormSection title={text.sections.visit}>
       <LinesField
         control={control}
         name="highlights"
@@ -203,7 +162,7 @@ export function VisitFields({ control }: { control: PackageControl }) {
         <NumberInputField control={control} name="minPax" label={fields.minPax} required />
         <NumberInputField control={control} name="maxPax" label={fields.maxPax} required />
       </div>
-    </Section>
+    </FormSection>
   );
 }
 
@@ -235,7 +194,7 @@ export function PricingFields({ control }: { control: PackageControl }) {
 
 export function PublishFields({ control }: { control: PackageControl }) {
   return (
-    <Section title={text.sections.publish}>
+    <FormSection title={text.sections.publish}>
       <SelectField
         control={control}
         name="status"
@@ -261,6 +220,6 @@ export function PublishFields({ control }: { control: PackageControl }) {
         />
       </div>
       <SortOrderField control={control} name="sortOrder" />
-    </Section>
+    </FormSection>
   );
 }

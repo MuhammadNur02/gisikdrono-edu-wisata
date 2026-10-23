@@ -9,12 +9,9 @@ import {
 } from 'react-hook-form';
 
 import { NumberInputField } from '@/components/admin/cms/fields';
-import {
-  MoneyField,
-  PricingFields,
-  Section,
-  type PackageControl,
-} from '@/components/admin/packages/package-fields';
+import { FormSection } from '@/components/admin/cms/form-section';
+import { MoneyField } from '@/components/admin/cms/money-field';
+import { PricingFields, type PackageControl } from '@/components/admin/packages/package-fields';
 import { FormField } from '@/components/forms/form-field';
 import { Button } from '@/components/ui/button';
 import { FormControl } from '@/components/ui/form';
@@ -237,9 +234,9 @@ function TierRows({ control }: { control: PackageControl }) {
 // tour_package_price_tiers (REC-13): the exclusion index refuses overlapping ranges; the schema says so first.
 export function PricingSection({ control }: { control: PackageControl }) {
   return (
-    <Section title={text.sections.pricing}>
+    <FormSection title={text.sections.pricing}>
       <PricingFields control={control} />
       <TierRows control={control} />
-    </Section>
+    </FormSection>
   );
 }

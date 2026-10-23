@@ -3,7 +3,8 @@
 import { useFieldArray, useWatch } from 'react-hook-form';
 
 import { NumberInputField, TextField } from '@/components/admin/cms/fields';
-import { Section, type PackageControl } from '@/components/admin/packages/package-fields';
+import { FormSection } from '@/components/admin/cms/form-section';
+import { type PackageControl } from '@/components/admin/packages/package-fields';
 import {
   AddRowButton,
   ListError,
@@ -72,7 +73,7 @@ export function LegsSection({
   // The next RW the combo does not visit yet; none left, no button.
   const unused = rwOptions.find((option) => !chosen.some((leg) => leg.rwId === option.id));
   return (
-    <Section title={text.sections.legs}>
+    <FormSection title={text.sections.legs}>
       <p className="text-body-sm text-muted-foreground">{legs.hint}</p>
       <ListError control={control} name="legs" />
       {fields.map((leg, index) => (
@@ -94,7 +95,7 @@ export function LegsSection({
           }}
         />
       ) : null}
-    </Section>
+    </FormSection>
   );
 }
 
@@ -165,7 +166,7 @@ export function ItinerarySection({
 }) {
   const { fields, append, remove } = useFieldArray({ control, name: 'itinerary' });
   return (
-    <Section title={text.sections.itinerary}>
+    <FormSection title={text.sections.itinerary}>
       <p className="text-body-sm text-muted-foreground">{steps.hint}</p>
       {fields.map((step, index) => (
         <StepRow
@@ -186,6 +187,6 @@ export function ItinerarySection({
           }}
         />
       ) : null}
-    </Section>
+    </FormSection>
   );
 }

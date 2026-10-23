@@ -127,16 +127,17 @@ function useSavedNavigation(stored: StoredPackage | null) {
   };
 }
 
+export function SaveButton({ isSubmitting }: { isSubmitting: boolean }) {
+  return (
+    <Button type="submit" loading={isSubmitting} className="w-full sm:w-auto">
+      {copy.cms.common.save}
+    </Button>
+  );
+}
+
 // Task P4.3.05, docs/PRD.md FR-ADMIN-05: a package on its own page, section by section. Prices are integer rupiah
 // as typed; the database adds the price floor and records every price change.
-export function PackageForm({
-  initial,
-  action,
-  stored,
-  categories,
-  rwOptions,
-  readOnly,
-}: PackageFormProps) {
+export function PackageForm({ initial, action, stored, readOnly, ...options }: PackageFormProps) {
   const [defaults] = useState(initial);
   const form = useForm({ resolver: zodResolver(createPackageSchema), defaultValues: defaults });
   const send: PackageAction = stored ? (values) => action(withRowId(values, stored.id)) : action;
@@ -153,22 +154,9 @@ export function PackageForm({
           {readOnly ? <FormAlert tone="info">{text.comboReadOnly}</FormAlert> : null}
           {failure ? <FormAlert tone="danger">{failure}</FormAlert> : null}
           <fieldset disabled={readOnly} className="space-y-5">
-            <PackageSections
-              control={form.control}
-              stored={stored}
-              categories={categories}
-              rwOptions={rwOptions}
-            />
+            <PackageSections control={form.control} stored={stored} {...options} />
           </fieldset>
-          {readOnly ? null : (
-            <Button
-              type="submit"
-              loading={form.formState.isSubmitting}
-              className="w-full sm:w-auto"
-            >
-              {copy.cms.common.save}
-            </Button>
-          )}
+          {readOnly ? null : <SaveButton isSubmitting={form.formState.isSubmitting} />}
         </PostForm>
       </div>
     </Form>
