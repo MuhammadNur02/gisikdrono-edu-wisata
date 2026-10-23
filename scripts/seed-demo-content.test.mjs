@@ -1,0 +1,37 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+import { describe, expect, it } from 'vitest';
+
+import { DEV_ACCOUNTS } from './dev-accounts.ts';
+
+const demoSql = readFileSync(fileURLToPath(new URL('./seed-demo-content.sql', import.meta.url)), 'utf8');
+
+// The SQL of the file with its comments left out and whitespace folded.
+const statements = demoSql
+  .split('\n')
+  .filter((line) => !line.trim().startsWith('--'))
+  .join('\n')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+describe('scripts/seed-demo-content.sql', () => {
+  it('refuses every database but a local or a staging one before it writes anything', () => {
+    expect(statements.startsWith('do $$ begin if internal.environment() is distinct from')).toBe(true);
+    const guard = statements.slice(0, statements.indexOf('end; $$;'));
+    expect(guard).toContain("is distinct from 'local' and internal.environment() is distinct from 'staging'");
+    expect(guard).toContain('raise exception');
+  });
+
+  it('writes no staff account, Auth row, Vault secret or development credential', () => {
+    for (const forbidden of ['auth.', 'public.profiles', 'vault.', 'dev_seed.', 'staff_invites']) {
+      expect(statements).not.toContain(forbidden);
+    }
+    for (const account of DEV_ACCOUNTS) expect(demoSql).not.toContain(account.email);
+  });
+
+  it('holds no phone number or email address', () => {
+    expect(statements).not.toMatch(/\+62\d{6,}/);
+    expect(statements).not.toMatch(/[\w.-]+@[\w-]+\.[\w.]+/);
+  });
+});

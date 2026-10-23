@@ -5,14 +5,18 @@ import { DEV_ACCOUNTS, DEV_ONLY_PASSWORD, DEV_ONLY_TOTP_SECRET, totpCode } from 
 import { localStack, runSql, sqlText } from './local-stack';
 import { seedOfficialMedia } from './official-media';
 
-// pnpm db:seed (Task P1.8.02): writes the development staff accounts and the demo content of scripts/seed-dev.sql
-// into the local stack, then prints how to sign in with the TOTP code of this moment. localStack refuses anything
-// but 127.0.0.1, and the SQL refuses a database marked anything but local, so the DEV-ONLY credentials never reach
-// a hosted project. pnpm db:reset runs it after the migrations; running it again changes nothing.
+// pnpm db:seed (Task P1.8.02): writes the development staff accounts of scripts/seed-dev.sql and the demo content of
+// scripts/seed-demo-content.sql into the local stack, then prints how to sign in with the TOTP code of this moment.
+// localStack refuses anything but 127.0.0.1, and the SQL refuses a database marked anything but local, so the
+// DEV-ONLY credentials never reach a hosted project. pnpm db:reset runs it after the migrations; running it again
+// changes nothing.
 // pnpm db:seed --media <folder> also uploads the development photos of scripts/demo-media.ts from that folder, and
 // --official-media <folder> the photos of the kelurahan's own site named in scripts/official-media.ts.
 
-const seedSql = readFileSync(new URL('./seed-dev.sql', import.meta.url), 'utf8');
+// The accounts first, then the demo content, which the staging release also writes on its own (staging-db.yml).
+const seedSql = ['./seed-dev.sql', './seed-demo-content.sql']
+  .map((file) => readFileSync(new URL(file, import.meta.url), 'utf8'))
+  .join('\n');
 // process.argv starts with the node binary and this script; the options follow.
 const [, , ...scriptArgs] = process.argv;
 const folders = mediaFoldersFromArgs(scriptArgs);

@@ -11,6 +11,10 @@ on:
         description: 'Only list the migrations that would run; change nothing'
         type: boolean
         default: true
+      seed_demo:
+        description: 'Also write the demo content (DATA CONTOH) of scripts/seed-demo-content.sql'
+        type: boolean
+        default: false
       deploy:
         description: 'After migrating, move the staging branch to this commit so Vercel deploys it'
         type: boolean
@@ -69,6 +73,21 @@ jobs:
       - name: Apply the migrations
         if: ${{ !inputs.dry_run }}
         run: supabase db push --linked --yes
+      # The demo content only, never the development accounts of scripts/seed-dev.sql. The file itself refuses any
+      # database whose Vault secret environment is not local or staging, on top of the project-name check above.
+      - name: Write the demo content
+        if: ${{ !inputs.dry_run && inputs.seed_demo }}
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          PGSSLMODE: require
+        run: |
+          # supabase link leaves the project's pooler address, without the password, in supabase/.temp.
+          pooler_url="$(cat supabase/.temp/pooler-url 2>/dev/null || true)"
+          if [ -z "$pooler_url" ]; then
+            echo "::error::supabase link left no pooler address; write the demo content by hand (runbook part D)"
+            exit 1
+          fi
+          psql "$pooler_url" --quiet --single-transaction -v ON_ERROR_STOP=1 -f scripts/seed-demo-content.sql
 
   deploy:
     name: move the staging branch (Vercel deploys it)
