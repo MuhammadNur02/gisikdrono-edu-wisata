@@ -183,7 +183,7 @@ supabase/
   migrations/                  0001_extensions ... 0008_seed, then <YYYYMMDDHHMMSS>_<slug>.sql
   config.toml tests/            pgTAP (rls_*.sql, triggers, append-only, concurrency, enumeration); no seed.sql (pnpm db:seed)
   templates/recovery.html      Supabase Auth's reset email: one token_hash link to auth/callback (the hosted projects carry the same text)
-scripts/                       seed-dev.ts + seed-dev.sql, dev-accounts.ts, local-stack.ts, midtrans-simulate.ts, midtrans-status.ts, midtrans-check.ts, wa-send-test.ts, check-client-bundle-secrets.mjs, check-table-tests.mjs, gen-db-types.mjs
+scripts/                       seed-dev.ts + seed-dev.sql + seed-demo-content.sql, dev-accounts.ts, generate-staging-secrets.mjs, local-stack.ts, midtrans-simulate.ts, midtrans-status.ts, midtrans-check.ts, wa-send-test.ts, check-client-bundle-secrets.mjs, check-table-tests.mjs, gen-db-types.mjs
 tests/                         integration/ (Vitest against supabase start), e2e/ (Playwright), fixtures/
 public/                        icons/, map/denah.svg, fonts/, og/
 ```
@@ -243,7 +243,7 @@ These rules are enforced in review and by lint. A PR that violates them is not m
 9. **Comments explain why, never what.** Reference the rule or requirement (`// docs/PRD.md §9: a quotation holds no quota, legs stay 'unreserved'`). Delete commented-out code.
 10. **No dead code.** Unused exports, parameters, flags and files are removed in the same PR that makes them unused.
 11. **Import order** (ESLint `import/order`): `server-only` / `'use client'` directive first, then node built-ins, external packages, `@/` aliases, relative imports; blank line between groups; type imports with `import type`.
-12. **File size.** Target <= 300 lines. Split by responsibility, not by line count.
+12. **File size.** Target <= 300 lines. Split by responsibility, not by line count. The files the shadcn CLI generates into `src/components/ui` (such as `sidebar.tsx`) keep their generated shape and are exempt from `max-lines` and `max-lines-per-function` (decision of 2026-10-20 on PR #17); every other rule still applies to them.
 13. **Pure functions for critical logic.** Pricing (`computeBookingQuote`), QR signing/verification, guest-link minting, Midtrans status mapping and the booking state map are pure, side-effect-free and unit-tested to 100 % lines.
 14. **One language per surface.** UI copy, WhatsApp templates, emails and PDFs in Indonesian; code and docs in English. The English summary on `/privasi` is the one recorded exception (§12.1 no. 18).
 
@@ -590,7 +590,7 @@ Attempts (`internal.create_payment_attempt` + `attach_snap_token`): at most one 
 
 ### 7.7 Secrets & env — owner `src/lib/env.ts`
 
-- All env access goes through `src/lib/env.ts` (`serverEnv`, behind `import 'server-only'`) and `src/lib/public-env.ts` (`publicEnv`, `NEXT_PUBLIC_*` only, safe for client components because Next.js inlines those names). `process.env` elsewhere is an ESLint error; the one exception is `next.config.ts`, which runs at build time and reads only the `npm_lifecycle_event` build switch. `NODE_ENV` and `VERCEL_ENV` come from `publicEnv` as shared values.
+- All env access goes through `src/lib/env.ts` (`serverEnv`, behind `import 'server-only'`) and `src/lib/public-env.ts` (`publicEnv`, `NEXT_PUBLIC_*` only, safe for client components because Next.js inlines those names). `process.env` elsewhere is an ESLint error; the two exceptions are `next.config.ts`, which runs at build time and reads only the `npm_lifecycle_event` build switch, and `src/lib/public-literals.ts`, which reads the `NEXT_PUBLIC_*` values by their literal names as plain inlined constants (`PUBLIC_SITE_URL`, `PUBLIC_SUPABASE_URL`, ...) for the modules that reach the browser (`src/config/site.ts`, the image loader, `src/lib/supabase/client.ts`, the Turnstile field), so that `publicEnv`'s zod validation, which still runs at build time and on the server, ships with no public page (first-load budgets, §8); its own ESLint rule still refuses any other `process.env` name there, and a computed one. Client code takes a public value from `public-literals.ts`; server code takes it from `publicEnv`. `NODE_ENV` and `VERCEL_ENV` come from `publicEnv` as shared values.
 - Fail-fast matrix (`src/lib/env.ts`, rules in `src/lib/midtrans/environment.ts`): `VERCEL_ENV=production` <=> `MIDTRANS_IS_PRODUCTION=true`; production keys start with `Mid-server-` / `Mid-client-` and never with `SB-`; every other deployment takes sandbox keys in either format, the older `SB-Mid-server-` / `SB-Mid-client-` or the newer `Mid-server-` / `Mid-client-`; `MIDTRANS_MERCHANT_ID` is `G` or `M` followed by digits. Newer sandbox keys look exactly like live ones, so the prefix cannot prove which environment a key belongs to: `pnpm midtrans:check` asks the Status API of the environment `MIDTRANS_IS_PRODUCTION` names (404 `Transaction doesn't exist` = the key belongs there; 401 = that host does not know the key, because it comes from the other environment or is mistyped or revoked, exit 1) and must pass with an environment's keys before they are saved in Vercel for staging or production (`docs/Security.md` §3.9, go-live check #7). It never prints a key. A production build also refuses a sample `NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER` (six zeros in a row, `findPublicEnvProblems` in `src/lib/public-env.ts`), and preview and production refuse Cloudflare's Turnstile test keys, site and secret (`TURNSTILE_TEST_KEY_PATTERN`), which let every visitor through; only a local or CI server uses them (review of PR #20). Any `NEXT_PUBLIC_` name containing `SECRET|KEY|TOKEN` outside the known public keys fails CI.
 - `pnpm check:secrets` scans `.next/static` for `Mid-server-` (which matches live keys and both sandbox formats), `service_role`, `MIDTRANS_SERVER_KEY` after build. gitleaks runs pre-commit and in CI.
 - `experimental.taint` + `experimental_taintUniqueValue` on the service key and `CRON_SECRET`. Secrets are never pasted into issues, chats, docs or seed files.
@@ -619,7 +619,7 @@ Full detail lives in `docs/StyleGuide.md`; these are the non-negotiables.
 - **Anti-generic rules.** Follow `docs/StyleGuide.md` §1.3 (no AI slop): real Gisikdrono photos only (until one exists, a wordless placeholder: the RW soft accent or neutral plus the category icon, `role="img"` with an `aria-label`), no gradient text, blobs or glow, glass only over the hero photo, no emoji icons, no invented facts, concrete copy instead of marketing phrases, layouts that follow the content, a caption on every activity photo, and one primary CTA per screen.
 - **Empty states.** On public pages a section with no data is hidden whole, heading included, with no "belum diisi" or "menyusul" text; only the page header, the wordless photo placeholder and the answer to a visitor's own filter stay. Dashboard empty states explain and offer the next step. Content required for launch is a go-live check, not page copy (`docs/StyleGuide.md` §6.9, decision of 2026-10-18).
 - **Copy.** Indonesian UI text (for example the booking CTA "Konfirmasi & Bayar"); typography Plus Jakarta Sans (display) + Inter (body); `lucide-react` icons only.
-- **Budgets.** LCP <= 2.5 s, CLS <= 0.05, INP <= 200 ms; first-load JS public <= 170 KB, wizard <= 250 KB, admin <= 350 KB. Verify every screen at 360 px.
+- **Budgets.** LCP <= 2.5 s, CLS <= 0.05, INP <= 200 ms; first-load JS public <= 170 KB, wizard <= 250 KB, admin <= 350 KB (2026-10-23: the auth and MFA forms and the guest status hub share the 250 KB forms budget; they carry zod + react-hook-form + Turnstile). The `next build` route table is the gate (`scripts/check-first-load-budget.mjs`, `security` job). Verify every screen at 360 px.
 
 ---
 
@@ -748,7 +748,7 @@ PRD requirement cited; migration + RLS + pgTAP merged; types regenerated; valida
 | `TURNSTILE_SECRET_KEY` | S | Turnstile siteverify |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | P | Turnstile widget |
 | `NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER` | P | Floating WhatsApp chat button |
-| `NEXT_PUBLIC_FLAG_*` | P | Build-time feature flags read in `src/config` |
+| `NEXT_PUBLIC_FLAG_*` | P | Build-time feature flags read in `src/config`; `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS=off` only on a Supabase Free staging project without image transformations (refused in production) |
 | `SECURITY_ALERT_EMAIL`, `SECURITY_ALERT_WA_PHONE` | S | Out-of-band critical alert recipients |
 | `NEXT_PUBLIC_SENTRY_DSN` | P | Sentry client/server DSN |
 | `SENTRY_AUTH_TOKEN` | CI | Source-map upload |

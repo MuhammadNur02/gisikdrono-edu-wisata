@@ -1,6 +1,5 @@
-import { StatusMetaBadge } from '@/components/admin/status/status-badge';
+import { StatusBadge } from '@/components/admin/status/status-badge';
 import { AuthCard } from '@/components/auth/auth-card';
-import { CERTIFICATE_STATUS, QUOTATION_STATUS } from '@/config/status';
 import { copy } from '@/lib/copy/id';
 import { formatDateLong } from '@/lib/utils/dates';
 import type { VerifiedDocument } from '@/types/documents';
@@ -36,9 +35,6 @@ function rowsOf(document: VerifiedDocument): { label: string; value: string }[] 
 // docs/PRD.md FR-PUB-20 (Task P3.6.05): the document's own facts and its status, never the PDF.
 export function VerifiedDocumentCard({ document }: { document: VerifiedDocument }) {
   const isQuotation = document.kind === 'quotation';
-  const meta = isQuotation
-    ? QUOTATION_STATUS[document.status]
-    : CERTIFICATE_STATUS[document.status];
   const isCurrent = document.status === 'issued';
   return (
     <AuthCard title={text.title} description={text.description}>
@@ -47,7 +43,11 @@ export function VerifiedDocumentCard({ document }: { document: VerifiedDocument 
           {isQuotation ? text.quotation : text.certificate}
           {isQuotation ? ` · ${text.version(document.version)}` : ''}
         </p>
-        <StatusMetaBadge meta={meta} />
+        {document.kind === 'quotation' ? (
+          <StatusBadge kind="quotation_status" value={document.status} />
+        ) : (
+          <StatusBadge kind="certificate_status" value={document.status} />
+        )}
       </div>
       <dl className="space-y-3 border-t border-border pt-4">
         {rowsOf(document).map((row) => (

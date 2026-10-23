@@ -1215,7 +1215,7 @@ No character illustrations or 3D renders. Empty states use a single lucide icon 
 | CLS | ≤ 0.05 | 0 on ISR pages (explicit media dimensions, no late-loading fonts) |
 | INP | ≤ 200 ms | DataTable interactions, wizard step changes |
 | TTFB (ISR pages) | ≤ 600 ms | — |
-| First-load JS (gzipped) | public ≤ 170 KB · booking wizard ≤ 250 KB · admin ≤ 350 KB | checked by `pnpm analyze` in CI |
+| First-load JS (gzipped) | public ≤ 170 KB · booking wizard ≤ 250 KB · admin ≤ 350 KB. Decision of 2026-10-23 (review of PR #32): the auth and MFA forms (`/login`, `/forgot-password`, `/reset-password`, `/mfa/*`, `/onboarding`) and the guest status hub (`/reservasi/*`) share the 250 KB forms budget; they carry zod + react-hook-form + Turnstile like the wizard | the `next build` route table, gated by `scripts/check-first-load-budget.mjs` in the `security` job; `pnpm analyze` for the breakdown |
 | Fonts | 2 variable files, `display: swap`, preloaded | — |
 | Images above the fold | ≤ 12, hero `priority` | — |
 | Blurred layers | ≤ 3 per viewport | — |

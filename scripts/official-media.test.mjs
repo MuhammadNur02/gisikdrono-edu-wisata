@@ -10,7 +10,7 @@ import {
   officialPhoto,
 } from './official-media.ts';
 
-const seedSql = readFileSync(fileURLToPath(new URL('./seed-dev.sql', import.meta.url)), 'utf8');
+const seedSql = readFileSync(fileURLToPath(new URL('./seed-demo-content.sql', import.meta.url)), 'utf8');
 const RWS_IN_EDU_WISATA = [5, 13, 8];
 const GALLERY_CATEGORIES = ['activity', 'umkm', 'visit', 'event'];
 const OFFICIAL_PAGES =
@@ -48,7 +48,7 @@ describe('scripts/official-media.ts', () => {
     }
   });
 
-  it('gives a photo only to an activity point that seed-dev.sql writes for the same RW', () => {
+  it('gives a photo only to an activity point that seed-demo-content.sql writes for the same RW', () => {
     for (const [slug, photoId] of Object.entries(POINT_PHOTO_IDS)) {
       expect(seedSql).toContain(`(${String(officialPhoto(photoId).rwId)}, '${slug}',`);
     }

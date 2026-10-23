@@ -1,12 +1,14 @@
 import type { EnumValue } from '@/db/enums';
-import { publicEnv } from '@/lib/public-env';
+import { PUBLIC_SITE_URL, PUBLIC_WHATSAPP_CONTACT_NUMBER } from '@/lib/public-literals';
 
+// Client components read this (the WhatsApp button on every public page), so it takes the inlined literals,
+// not publicEnv, which would ship zod with every page (Task P5.6.01).
 export const siteConfig = {
   name: 'Edu Wisata Gisikdrono',
   // The kelurahan runs the platform; the name is what JSON-LD and the footer credit (docs/PRD.md §1).
   ownerName: 'Kelurahan Gisikdrono',
-  url: publicEnv.NEXT_PUBLIC_SITE_URL,
-  whatsappContactNumber: publicEnv.NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER,
+  url: PUBLIC_SITE_URL,
+  whatsappContactNumber: PUBLIC_WHATSAPP_CONTACT_NUMBER,
   // The office's locality, as written in site_settings `kelurahan.address` (0008_seed). The street address
   // and the other contact details come from site_settings once the public queries exist (Task P2.3.02).
   locality: {

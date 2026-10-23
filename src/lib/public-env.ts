@@ -26,6 +26,7 @@ interface PublicEnvValues {
   VERCEL_ENV?: VercelEnv;
   NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: string;
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: string;
+  NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS?: 'on' | 'off' | undefined;
 }
 
 export function findPublicEnvProblems(values: PublicEnvValues): string[] {
@@ -47,6 +48,12 @@ export function findPublicEnvProblems(values: PublicEnvValues): string[] {
       `NEXT_PUBLIC_TURNSTILE_SITE_KEY is one of Cloudflare's test keys, which let every visitor through; ${vercelEnv} needs the site's own key`,
     );
   }
+  // Only a Free-plan project such as staging goes without the transformer; production runs on Pro (docs/PRD.md A3).
+  if (vercelEnv === 'production' && values.NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS === 'off') {
+    problems.push(
+      'NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS=off is for a Free-plan staging project; production resizes images',
+    );
+  }
   return problems;
 }
 
@@ -60,6 +67,8 @@ export const publicEnv = createEnv({
     NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().check(z.minLength(1)),
     NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: z.string().check(z.regex(MOBILE_PHONE_PATTERN)),
     NEXT_PUBLIC_SENTRY_DSN: z.optional(z.url()),
+    // Build-time flag (src/config/images.ts): off serves photos without Supabase's transformer.
+    NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS: z.optional(z.enum(['on', 'off'])),
   },
   // Set by Node and Vercel, not by us. VERCEL_ENV is only defined on the server side.
   shared: {
@@ -75,6 +84,7 @@ export const publicEnv = createEnv({
     NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
     NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: process.env.NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER,
     NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
+    NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS: process.env.NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS,
   },
   emptyStringAsUndefined: true,
   // VERCEL_ENV is undefined in the browser, so the check only bites on the server and at build time.
