@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import type { CommandPaletteItem } from '@/components/admin/shell/command-palette';
 import { Button } from '@/components/ui/button';
 import { copy } from '@/lib/copy/id';
+import { isDashboardLocked } from '@/lib/utils/idle-lock';
 
 const text = copy.dashboard.commandMenu;
 const COMMAND_KEY = 'k';
@@ -32,6 +33,8 @@ export function CommandMenu({ items }: CommandMenuProps) {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // The idle lock owns the screen (review of PR #31, item 2).
+      if (isDashboardLocked()) return;
       if (event.key.toLowerCase() === COMMAND_KEY && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
         show();

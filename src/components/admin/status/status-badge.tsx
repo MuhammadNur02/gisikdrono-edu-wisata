@@ -1,5 +1,5 @@
 import { Badge } from '@/components/ui/badge';
-import { STATUS_META, type StatusKind, type StatusMeta } from '@/config/status';
+import { statusMetaOf, type StatusKind } from '@/config/status';
 import type { EnumValue } from '@/db/enums';
 
 export interface StatusBadgeProps<Kind extends StatusKind> {
@@ -8,17 +8,9 @@ export interface StatusBadgeProps<Kind extends StatusKind> {
   className?: string;
 }
 
-// Every map is a Record over its enum, so the value is always there; the index type only lets TypeScript see
-// through the generic kind.
-function statusMetaOf<Kind extends StatusKind>(kind: Kind, value: EnumValue<Kind>): StatusMeta {
-  const map: Record<string, StatusMeta> = STATUS_META[kind];
-  const meta = map[value];
-  if (!meta) throw new Error(`No status meta for ${kind}.${value}`);
-  return meta;
-}
-
 // docs/StyleGuide.md §6.5: a status is never coloured by hand; its tone, label and icon come from src/config/status.ts,
-// looked up by the enum's own name. A value the map does not know fails the build.
+// looked up by the enum's own name. A value the map does not know shows as a neutral badge, never a crash
+// (review of PR #31, item 9).
 export function StatusBadge<Kind extends StatusKind>({
   kind,
   value,

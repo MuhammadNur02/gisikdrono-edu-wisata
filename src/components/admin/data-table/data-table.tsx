@@ -13,7 +13,7 @@ import {
 } from '@tanstack/react-table';
 import { SearchX } from 'lucide-react';
 import { NuqsAdapter } from 'nuqs/adapters/next/app';
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 
 import { BulkActions, type BulkAction } from '@/components/admin/data-table/bulk-actions';
 import { CardList } from '@/components/admin/data-table/card-list';
@@ -34,6 +34,7 @@ import {
 import { useListQuery, type ListQueryState } from '@/hooks/use-list-query';
 import { copy } from '@/lib/copy/id';
 import { cn } from '@/lib/utils/cn';
+import { sortableColumnIds } from '@/lib/utils/column-ids';
 import { hasActiveFilters, parseSort, serializeSort } from '@/lib/utils/list-query';
 import type { ListFacet, ListRow } from '@/types/data-table';
 
@@ -167,7 +168,7 @@ function FilterEmpty({ onReset }: { onReset: () => void }) {
 
 // The sort the URL names, as TanStack keeps it; only a column of this table counts.
 function useSorting<TData extends ListRow>(list: ListQueryState, columns: ColumnDef<TData>[]) {
-  const sortable = columns.flatMap((column) => (column.id === undefined ? [] : [column.id]));
+  const sortable = useMemo(() => sortableColumnIds(columns), [columns]);
   const order = parseSort(list.query.sort, sortable);
   const sorting: SortingState =
     order === null ? [] : [{ id: order.column, desc: !order.ascending }];

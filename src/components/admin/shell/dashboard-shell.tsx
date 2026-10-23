@@ -6,6 +6,7 @@ import { QuickScannerBar } from '@/components/admin/shell/quick-scanner-bar';
 import { Topbar } from '@/components/admin/shell/topbar';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { copy } from '@/lib/copy/id';
+import { DASHBOARD_SHELL_ID } from '@/lib/utils/idle-lock';
 
 const MAIN_CONTENT_ID = 'konten';
 
@@ -52,7 +53,7 @@ export function DashboardShell({
   children,
 }: DashboardShellProps) {
   return (
-    <SidebarProvider defaultOpen={sidebarOpen} className="bg-background">
+    <SidebarProvider id={DASHBOARD_SHELL_ID} defaultOpen={sidebarOpen} className="bg-background">
       <SkipLink />
       <AppSidebar context={context} nav={nav} footer={footer} />
       <div className="flex min-h-svh min-w-0 flex-1 flex-col">

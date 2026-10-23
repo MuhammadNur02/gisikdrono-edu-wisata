@@ -10,21 +10,34 @@ import { TotpCodeField } from '@/components/auth/totp-code-field';
 import { FormAlert } from '@/components/forms/form-alert';
 import { PostForm } from '@/components/forms/post-form';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Form } from '@/components/ui/form';
 import { IDLE_CHECK_MS, IDLE_LOCK_MS } from '@/config/dashboard';
 import { useActionForm } from '@/hooks/use-action-form';
 import { copy } from '@/lib/copy/id';
+import { readPersistedLock, setDashboardLocked } from '@/lib/utils/idle-lock';
 import { stepUpSchema } from '@/lib/validations/step-up';
 import type { ActionResult } from '@/types/action-result';
 
 const text = copy.dashboard.idleLock;
 const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'touchstart', 'scroll'] as const;
 
-// Locks after IDLE_LOCK_MS without a pointer or a key; the clock restarts on unlock.
+// Locks after IDLE_LOCK_MS without a pointer or a key, or at once when the tab was locked before a reload; the clock
+// restarts on unlock. The document, the shell's inert attribute and sessionStorage follow the state.
 function useIdleLock(): { isLocked: boolean; unlock: () => void } {
   const [isLocked, setIsLocked] = useState(false);
   const lastActivity = useRef(Date.now());
   useEffect(() => {
+    if (readPersistedLock()) setIsLocked(true);
+  }, []);
+  useEffect(() => {
+    setDashboardLocked(isLocked);
     if (isLocked) return;
     const touch = () => {
       lastActivity.current = Date.now();
@@ -77,32 +90,36 @@ export interface IdleLockProps {
   action: (values: unknown) => Promise<ActionResult<null>>;
 }
 
-// docs/Security.md AUTH-11: after ten idle minutes the dashboard hides itself behind this overlay until the staff
-// member types a code from their authenticator (which also counts as a fresh step-up) or signs out. The server's own
-// idle timeout still ends the session underneath.
+// docs/Security.md AUTH-11: after ten idle minutes the dashboard hides itself behind a modal dialog on its own layer,
+// above any sheet or dialog that was open, until the staff member types a code from their authenticator (which also
+// counts as a fresh step-up) or signs out. The shell is inert meanwhile, Escape and clicks outside do nothing, and a
+// reload comes back locked. The server's own idle timeout still ends the session underneath.
 export function IdleLock({ action }: IdleLockProps) {
   const { isLocked, unlock } = useIdleLock();
-  if (!isLocked) return null;
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="idle-lock-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 p-4 backdrop-blur"
-    >
-      <div className="w-full max-w-sm space-y-5 rounded-2xl border border-border bg-card p-6 shadow-modal">
-        <div className="space-y-2 text-center">
-          <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted">
+    <Dialog open={isLocked}>
+      <DialogContent
+        showCloseButton={false}
+        className="z-60 sm:max-w-sm"
+        // Opaque and above every z-50 sheet, dialog and popover, so nothing of the page shows or takes a click.
+        overlayClassName="z-60 bg-background"
+        onEscapeKeyDown={(event) => {
+          event.preventDefault();
+        }}
+        onInteractOutside={(event) => {
+          event.preventDefault();
+        }}
+      >
+        <DialogHeader className="items-center text-center">
+          <span className="flex size-12 items-center justify-center rounded-full bg-muted">
             <Lock aria-hidden className="size-6 text-muted-foreground" />
           </span>
-          <h2 id="idle-lock-title" className="text-h3">
-            {text.title}
-          </h2>
-          <p className="text-body-sm text-pretty text-muted-foreground">{text.description}</p>
-        </div>
+          <DialogTitle>{text.title}</DialogTitle>
+          <DialogDescription>{text.description}</DialogDescription>
+        </DialogHeader>
         <UnlockForm action={action} onUnlocked={unlock} />
         <SignOutButton variant="ghost" />
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
