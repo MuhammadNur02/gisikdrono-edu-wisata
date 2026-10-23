@@ -17,6 +17,7 @@
 - [ ] Validation schema shared between client and server
 - [ ] No new env var without `.env.example` + CLAUDE.md §10.2 registry + `src/lib/env.ts` schema
 - [ ] Indonesian copy reviewed; 360 px layout verified; a11y checked
+- [ ] First-load JS inside budget (`pnpm analyze`, docs/StyleGuide.md §10.1): public ≤ 170 KB, wizard ≤ 250 KB, admin ≤ 350 KB; heavy admin islands (charts, Tiptap, scanner, calendar, cmdk) load through `next/dynamic`
 - [ ] Unit and integration tests green; `pnpm check` and `pnpm db:test` green
 - [ ] Screenshots attached for UI changes
 - [ ] `docs/Task.md` item ticked
