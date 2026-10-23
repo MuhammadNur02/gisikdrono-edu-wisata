@@ -81,6 +81,7 @@ export interface WizardActions {
   listSessions: (input: unknown) => Promise<ActionResult<BookableLeg[]>>;
   previewQuote: (input: unknown) => Promise<ActionResult<QuotePreviewAnswer>>;
   createBooking: (input: unknown) => Promise<ActionResult<BookingSubmitAnswer>>;
+  requestQuotation: (input: unknown) => Promise<ActionResult<BookingSubmitAnswer>>;
   requestOtp: (input: unknown) => Promise<ActionResult<OtpRequestAnswer>>;
   verifyOtp: (input: unknown) => Promise<ActionResult<OtpVerifyAnswer>>;
 }

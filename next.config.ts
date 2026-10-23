@@ -2,7 +2,7 @@ import bundleAnalyzer from '@next/bundle-analyzer';
 import type { NextConfig } from 'next';
 import { PHASE_DEVELOPMENT_SERVER } from 'next/constants';
 
-import { IMAGE_DEVICE_WIDTHS } from './src/config/images';
+import { IMAGE_DEVICE_WIDTHS, imageLoaderFileFor } from './src/config/images';
 import { MOVED_PATHS } from './src/config/redirects';
 import { PRIVATE_ROUTE_PREFIXES } from './src/config/routes';
 import { publicEnv } from './src/lib/public-env';
@@ -36,14 +36,41 @@ const privateRoutes = [...PRIVATE_ROUTE_PREFIXES, '/api'].map((prefix) => `${pre
 // Ticket and booking URLs carry a code or token, so they should not leak through the Referer header.
 const noReferrerRoutes = ['/reservasi/:path*', '/v/:path*'];
 
+// public/map/denah.svg is drawn inline so its hotspot paths can be highlighted (docs/StyleGuide.md §5.13).
+// SVGR turns an imported .svg into a React component; its SVGO pass stays off because the plan's ids are what
+// activity_points.svg_hotspot_id binds to, and SVGO's prefixIds would rename them.
+const svgrLoader = { loader: '@svgr/webpack', options: { svgo: false } };
+const SVG_FILE = /\.svg$/i;
+const SCRIPT_FILE = /\.[jt]sx?$/;
+
+interface WebpackRules {
+  module: { rules: unknown[] };
+}
+
+function hasModuleRules(config: unknown): config is WebpackRules {
+  if (typeof config !== 'object' || config === null || !('module' in config)) return false;
+  const { module } = config;
+  return typeof module === 'object' && module !== null && 'rules' in module;
+}
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
+  // No file in src imports a static image (photos come from public-media), so the .svg import is SVGR's alone.
+  webpack: (config: unknown) => {
+    if (!hasModuleRules(config)) throw new Error('webpack config without module rules');
+    config.module.rules.push({ test: SVG_FILE, issuer: SCRIPT_FILE, use: [svgrLoader] });
+    return config;
+  },
+  turbopack: { rules: { '*.svg': { loaders: [svgrLoader], as: '*.js' } } },
   images: {
+    // Keeps Next.js from claiming .svg imports and from typing them as images (src/types/svg.d.ts does).
+    disableStaticImages: true,
     // Supabase's transformer resizes public-media images (docs/StyleGuide.md §8.2), so Next.js' own
     // optimiser and its remotePatterns check never run; the pattern stays pinned all the same.
     loader: 'custom',
-    loaderFile: './src/lib/images/supabase-loader.ts',
+    // Without the transformer (a Free-plan staging project) the plain public-media files instead.
+    loaderFile: imageLoaderFileFor(publicEnv.NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS),
     deviceSizes: IMAGE_DEVICE_WIDTHS,
     remotePatterns: [
       {

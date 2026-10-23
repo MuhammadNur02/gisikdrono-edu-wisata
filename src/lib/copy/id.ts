@@ -2,6 +2,7 @@ import { authCopy } from '@/lib/copy/auth';
 import { bookingCopy } from '@/lib/copy/booking';
 import { cmsCopy } from '@/lib/copy/cms';
 import { dashboardCopy } from '@/lib/copy/dashboard';
+import { documentsCopy } from '@/lib/copy/documents';
 import { packagesCopy } from '@/lib/copy/packages';
 import { sessionsCopy } from '@/lib/copy/sessions';
 import type { ActionErrorCode } from '@/types/action-result';
@@ -33,6 +34,7 @@ export const copy = {
   auth: authCopy,
   booking: bookingCopy,
   dashboard: dashboardCopy,
+  documents: documentsCopy,
   cms: cmsCopy,
   sessions: sessionsCopy,
   packages: packagesCopy,

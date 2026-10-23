@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
 
 import type { GuestLinkScope } from '@/config/guest';
+import { svcIssueFirstQuotation } from '@/db/rpc-documents';
 import {
   svcIssuePhoneOtp,
   svcResendBookingLink,
@@ -214,6 +215,7 @@ async function submitBooking(
   }
   return {
     kind: 'created',
+    bookingId: reply.bookingId,
     bookingCode: reply.bookingCode,
     status: reply.status,
     expiresAt: reply.expiresAt,
@@ -228,7 +230,13 @@ export function createHold(request: BookingRequest): Promise<BookingOutcome> {
   return submitBooking('pay', request);
 }
 
-// "Minta Surat Penawaran": a quotation booking, no seat held; the quotation itself comes from create_quotation.
-export function createQuotedBooking(request: BookingRequest): Promise<BookingOutcome> {
-  return submitBooking('quote', request);
+// "Minta Surat Penawaran" (Task P3.6.06): a quotation booking, no seat held, and its first Surat Penawaran, numbered
+// with quotation_ready queued. The two are separate transactions, so a repeat of the same form issues the first
+// quotation when the first try lost it, and nothing when it is there (review of PR #33, finding 3).
+export async function createQuotedBooking(request: BookingRequest): Promise<BookingOutcome> {
+  const outcome = await submitBooking('quote', request);
+  if (outcome.kind === 'created') {
+    await svcIssueFirstQuotation(createSupabaseAdminClient(), outcome.bookingId);
+  }
+  return outcome;
 }

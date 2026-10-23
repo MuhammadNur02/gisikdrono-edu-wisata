@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-labelledby="denah-title">
+  <!--
+    PROVISIONAL site plan of Kelurahan Gisikdrono (Task P2.5.01, docs/StyleGuide.md §8.3, open decision D2).
+    No drawing from the kelurahan exists yet, so this is a schematic: three blocks, one per RW, with named
+    spots for the activities the CMS lists. Nothing here is to scale or in its real place. The commissioned plan
+    replaces this file and keeps the layer ids (#base, #rw-05, #rw-13, #rw-08, #paths, #labels) and the hotspot
+    ids below, which activity_points.svg_hotspot_id binds to:
+      rw-05-area, rw-05-bank-sampah, rw-05-kebun-toga, rw-05-komposter, rw-05-maggot, rw-05-kerajinan-pkk
+      rw-13-area, rw-13-panggung, rw-13-sanggar, rw-13-dolanan, rw-13-mural
+      rw-08-area, rw-08-balai-warga, rw-08-semar-cakep, rw-08-kantor-layanan
+    Every colour comes from a .denah-* class in src/styles/globals.css (tokens only); no raster, no script.
+  -->
+  <title id="denah-title">Denah skematis Kelurahan Gisikdrono</title>
+  <g id="base">
+    <rect class="denah-ground" x="0" y="0" width="1600" height="1000" rx="24" />
+  </g>
+  <g id="rw-05" class="denah-rw denah-rw-leaf">
+    <path id="rw-05-area" class="denah-area" d="M80 120h530v760H80z" />
+    <rect id="rw-05-bank-sampah" class="denah-building" x="130" y="180" width="200" height="130" rx="12" />
+    <rect id="rw-05-kebun-toga" class="denah-building" x="370" y="180" width="200" height="200" rx="12" />
+    <rect id="rw-05-komposter" class="denah-building" x="130" y="370" width="200" height="130" rx="12" />
+    <rect id="rw-05-maggot" class="denah-building" x="370" y="440" width="200" height="130" rx="12" />
+    <rect id="rw-05-kerajinan-pkk" class="denah-building" x="130" y="620" width="440" height="190" rx="12" />
+  </g>
+  <g id="rw-13" class="denah-rw denah-rw-terracotta">
+    <path id="rw-13-area" class="denah-area" d="M700 100h820v420H700z" />
+    <rect id="rw-13-panggung" class="denah-building" x="760" y="160" width="300" height="170" rx="12" />
+    <rect id="rw-13-sanggar" class="denah-building" x="1120" y="160" width="330" height="130" rx="12" />
+    <rect id="rw-13-dolanan" class="denah-building" x="760" y="380" width="300" height="90" rx="12" />
+    <rect id="rw-13-mural" class="denah-building" x="1120" y="350" width="330" height="120" rx="12" />
+  </g>
+  <g id="rw-08" class="denah-rw denah-rw-mulberry">
+    <path id="rw-08-area" class="denah-area" d="M700 580h820v320H700z" />
+    <rect id="rw-08-balai-warga" class="denah-building" x="760" y="640" width="300" height="200" rx="12" />
+    <rect id="rw-08-semar-cakep" class="denah-building" x="1120" y="640" width="160" height="200" rx="12" />
+    <rect id="rw-08-kantor-layanan" class="denah-building" x="1320" y="640" width="130" height="200" rx="12" />
+  </g>
+  <g id="paths">
+    <path class="denah-road" d="M655 60v880" />
+    <path class="denah-road" d="M655 550h900" />
+    <path class="denah-road" d="M40 940h1520" />
+  </g>
+  <g id="labels">
+    <text class="denah-label" x="130" y="866">RW 05 Ecowastreme</text>
+    <text class="denah-label" x="760" y="506">RW 13 Kampung Budaya &amp; Seni</text>
+    <text class="denah-label" x="760" y="886">RW 08 Kampung Inklusif &amp; Ramah Anak</text>
+    <text class="denah-label denah-label-road" x="672" y="100">Jalan kampung</text>
+    <text class="denah-label denah-label-road" x="1360" y="541">Jalan kampung</text>
+  </g>
+</svg>

@@ -25,6 +25,10 @@ export interface FormFieldProps<
   description?: string;
   required?: boolean;
   className?: string;
+  // FormControl hands its id and aria attributes to the one element it wraps. A Radix Select root renders no
+  // element, so a select field sets this and puts <FormControl> around its trigger itself, as the booking
+  // wizard's booker-type field does; the label then names the trigger (Task P2.9.12).
+  wrapsOwnControl?: boolean;
   render: (field: ControllerRenderProps<TValues, TName>) => ReactElement;
 }
 
@@ -53,6 +57,7 @@ export function FormField<
   description,
   required = false,
   className,
+  wrapsOwnControl = false,
   render,
 }: FormFieldProps<TValues, TName, TOutput>) {
   return (
@@ -64,7 +69,11 @@ export function FormField<
           <FormLabel>
             {label} {required && <RequiredMark />}
           </FormLabel>
-          <FormControl aria-required={required || undefined}>{render(field)}</FormControl>
+          {wrapsOwnControl ? (
+            render(field)
+          ) : (
+            <FormControl aria-required={required || undefined}>{render(field)}</FormControl>
+          )}
           {description && <FormDescription>{description}</FormDescription>}
           <FormMessage />
         </FormItem>

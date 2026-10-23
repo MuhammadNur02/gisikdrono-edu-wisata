@@ -788,7 +788,7 @@ CSS columns `columns-2 md:columns-3 lg:columns-4 gap-4`, items `break-inside-avo
 ```tsx
 // src/components/booklet/flipbook.tsx ('use client')
 export const Flipbook = dynamic(() => import('@/components/booklet/flipbook-viewer').then((module) => module.FlipbookViewer), { ssr: false, loading: () => <Skeleton className="aspect-3/2 w-full rounded-xl" /> });
-// src/app/(public)/e-booklet/[slug]/page.tsx
+// src/app/(public)/(rows)/e-booklet/[slug]/page.tsx
 <Flipbook title={booklet.title} pagePaths={booklet.pagePaths} />  // Unduh PDF: <a href={bookletDownloadPath(booklet.id)}> in the header
 ```
 
@@ -998,7 +998,7 @@ Month grid (react-day-picker custom day cell): each day shows up to three sessio
 |---|---|
 | Empty, public pages | A section, card group or contact line whose data is empty is left out whole, heading included; the public site never prints `belum diisi`, `belum ada … yang dicatat`, `menyusul` or anything that reads as unfinished (decision of 2026-10-18). Three things stay: the page's own header (an RW page keeps its title and photo slot), the wordless photo placeholder of §1.3 G1 for a photo slot that belongs to something shown, and the answer to a visitor's own filter or search (`Belum ada foto untuk filter ini`, §5.11), which reports on their choice rather than on the CMS. Content the site cannot launch without, such as each RW's profile, is a go-live check (`docs/Security.md` §13.1), not a note on the page. |
 | Empty, dashboard (`EmptyState`) | Staff see why a list is empty and what to do: 48 px icon in `bg-muted rounded-full p-3`, `text-h4` title, `text-body-sm text-muted-foreground` description, one primary action. Copy names the next step: `Belum ada reservasi. Bagikan tautan paket untuk mulai menerima pemesanan.` Filter-empty variant offers `Hapus filter`. |
-| Loading | `loading.tsx` per segment; skeletons `animate-pulse bg-muted rounded-md` with the final dimensions (KPI, table 8 rows, form, calendar variants). No spinners on page load; spinners only inside buttons. |
+| Loading | `loading.tsx` per segment; skeletons `animate-pulse bg-muted rounded-md` with the final dimensions (KPI, table 8 rows, form, calendar variants). No spinners on page load; spinners only inside buttons. Exception (Task P5.6.05): the public segments that look a row up, `(public)/(rows)` (every `[slug]` page, the RW pages, `/galeri`), carry no `loading.tsx`, because a Suspense boundary above a page streams a 200 shell before `notFound()` or `redirect()` can answer; `/galeri` instead fetches its items inside its own `<Suspense>` behind `GallerySkeleton` after its redirects, and every public nav link shows `LinkPending` (a pulsing `bg-primary` dot from `useLinkStatus`, still under reduced motion) while the next page is fetched. |
 | Error | `error.tsx` card with `AlertTriangle`, `Terjadi kesalahan`, the Sentry `requestId` in mono (`Kode: 8f3a…`) for support, `Coba lagi` (`reset()`) and `Kembali ke Dashboard`. Never shows stack traces or raw exception text. |
 | Inline action errors | `ActionResult` `error.message` (Indonesian, from `src/lib/copy/id.ts`) in a `danger-soft` callout above the form; field errors under their inputs. |
 | Toasts (sonner) | bottom-right at `md+`, top-centre below; success 4 s, error persistent until dismissed; always includes a noun (`Paket "Jelajah Ecowastreme" dipublikasikan`). |
@@ -1215,7 +1215,7 @@ No character illustrations or 3D renders. Empty states use a single lucide icon 
 | CLS | ≤ 0.05 | 0 on ISR pages (explicit media dimensions, no late-loading fonts) |
 | INP | ≤ 200 ms | DataTable interactions, wizard step changes |
 | TTFB (ISR pages) | ≤ 600 ms | — |
-| First-load JS (gzipped) | public ≤ 170 KB · booking wizard ≤ 250 KB · admin ≤ 350 KB | checked by `pnpm analyze` in CI |
+| First-load JS (gzipped) | public ≤ 170 KB · booking wizard ≤ 250 KB · admin ≤ 350 KB. Decision of 2026-10-23 (review of PR #32): the auth and MFA forms (`/login`, `/forgot-password`, `/reset-password`, `/mfa/*`, `/onboarding`) and the guest status hub (`/reservasi/*`) share the 250 KB forms budget; they carry zod + react-hook-form + Turnstile like the wizard | the `next build` route table, gated by `scripts/check-first-load-budget.mjs` in the `security` job; `pnpm analyze` for the breakdown |
 | Fonts | 2 variable files, `display: swap`, preloaded | — |
 | Images above the fold | ≤ 12, hero `priority` | — |
 | Blurred layers | ≤ 3 per viewport | — |

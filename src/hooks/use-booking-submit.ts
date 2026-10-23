@@ -44,6 +44,7 @@ export interface BookingSubmitOptions {
   wizardPackage: WizardPackage;
   preview: QuotePreviewState;
   createBooking: WizardActions['createBooking'];
+  requestQuotation: WizardActions['requestQuotation'];
   onBooked: (nextUrl: string) => void;
   // The visitor already holds an unpaid hold for this, whose link went to them again: the draft is done with too
   // (review of PR #27, L5).
@@ -85,8 +86,9 @@ export function useBookingSubmit(options: BookingSubmitOptions) {
     setIsBusy(true);
     setNotice(null);
     const booking = bookingToSend(draft, wizardPackage, summary, preview.answer.quoteHash);
-    const result = await options.createBooking({
-      mode,
+    // "Konfirmasi & Bayar" holds; "Minta Surat Penawaran" quotes (Task P3.6.06).
+    const sendTo = mode === 'pay' ? options.createBooking : options.requestQuotation;
+    const result = await sendTo({
       packageSlug: wizardPackage.slug,
       booking,
       shownContact: shownContactOf(draft),

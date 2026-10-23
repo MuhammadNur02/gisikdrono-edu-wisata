@@ -1,4 +1,3 @@
-import { NuqsAdapter } from 'nuqs/adapters/next/app';
 import { Suspense } from 'react';
 
 import {
@@ -52,15 +51,13 @@ export function ProductCatalogue({ products, rws }: ProductCatalogueProps) {
     card: <ProductCard product={product} />,
   }));
   return (
-    <NuqsAdapter>
-      <Suspense fallback={<CatalogueList entries={entries} {...CARD_GRID_CLASSES} />}>
-        <FilteredCatalogue
-          groups={[rwGroup(rws), categoryGroup(products)]}
-          entries={entries}
-          emptyMessage={copy.catalogue.productsFilterEmpty}
-          {...CARD_GRID_CLASSES}
-        />
-      </Suspense>
-    </NuqsAdapter>
+    <Suspense fallback={<CatalogueList entries={entries} {...CARD_GRID_CLASSES} />}>
+      <FilteredCatalogue
+        groups={[rwGroup(rws), categoryGroup(products)]}
+        entries={entries}
+        emptyMessage={copy.catalogue.productsFilterEmpty}
+        {...CARD_GRID_CLASSES}
+      />
+    </Suspense>
   );
 }

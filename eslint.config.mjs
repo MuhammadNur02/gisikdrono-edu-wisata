@@ -299,6 +299,23 @@ export default defineConfig([
     rules: { 'no-restricted-syntax': 'off' },
   },
   {
+    // src/lib/public-literals.ts reads the NEXT_PUBLIC_* values by their literal names so Next.js inlines them
+    // for the browser, without the zod validation of public-env.ts (CLAUDE.md §7.7). Only those names, and only
+    // spelled out: a server value or a computed name would leak a secret or inline nothing.
+    files: ['src/lib/public-literals.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "MemberExpression[object.object.name='process'][object.property.name='env']:matches([computed=true], [property.name!=/^NEXT_PUBLIC_/])",
+          message:
+            'Read only NEXT_PUBLIC_* values here, each by its literal name; server values come from src/lib/env.ts (CLAUDE.md §7.7).',
+        },
+      ],
+    },
+  },
+  {
     // Constants live in src/config and enums in src/db/enums.ts, so numbers are expected there.
     files: ['src/config/**', 'src/db/enums.ts'],
     rules: { '@typescript-eslint/no-magic-numbers': 'off' },
@@ -313,9 +330,6 @@ export default defineConfig([
   {
     // A describe block grows with its cases, and test data is full of literal numbers on purpose.
     files: ['**/*.test.{ts,mjs}', 'tests/**'],
-    rules: {
-      'max-lines-per-function': 'off',
-      '@typescript-eslint/no-magic-numbers': 'off',
-    },
+    rules: { 'max-lines-per-function': 'off', '@typescript-eslint/no-magic-numbers': 'off' },
   },
 ]);

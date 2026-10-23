@@ -26,14 +26,61 @@ async function isRefused(filePath, importLine) {
   return messages.some((message) => message.ruleId === 'no-restricted-imports');
 }
 
-const publicPage = 'src/app/(public)/paket-wisata/[slug]/page.tsx';
+const publicPage = 'src/app/(public)/(rows)/paket-wisata/[slug]/page.tsx';
 const query = 'src/lib/queries/packages.ts';
 const CONFIG_LOAD_TIMEOUT_MS = 60_000;
+
+// The same for no-restricted-syntax, applied to one statement.
+async function isSyntaxRefused(filePath, statement) {
+  const config = await eslint.calculateConfigForFile(filePath);
+  const messages = linter.verify(
+    statement,
+    [
+      {
+        files: ['**/*.{ts,tsx}'],
+        languageOptions: { parser: tseslint.parser },
+        rules: { 'no-restricted-syntax': config.rules['no-restricted-syntax'] },
+      },
+    ],
+    filePath,
+  );
+  return messages.some((message) => message.ruleId === 'no-restricted-syntax');
+}
 
 // The first look at eslint.config.mjs loads every plugin, which takes several seconds.
 beforeAll(async () => {
   await eslint.calculateConfigForFile(publicPage);
 }, CONFIG_LOAD_TIMEOUT_MS);
+
+// CLAUDE.md §7.7: process.env is read in src/lib/env.ts and src/lib/public-env.ts; src/lib/public-literals.ts
+// may inline NEXT_PUBLIC_* values by their literal names and nothing else (review of PR #32).
+describe('process.env stays behind the env modules', () => {
+  const literals = 'src/lib/public-literals.ts';
+
+  it('refuses process.env in a component', async () => {
+    expect(
+      await isSyntaxRefused(
+        'src/components/layout/site-header.tsx',
+        'const url = process.env.NEXT_PUBLIC_SITE_URL;',
+      ),
+    ).toBe(true);
+  });
+
+  it('lets public-literals.ts read a NEXT_PUBLIC_* value by its literal name', async () => {
+    expect(await isSyntaxRefused(literals, 'const url = process.env.NEXT_PUBLIC_SITE_URL;')).toBe(
+      false,
+    );
+  });
+
+  it('refuses a server value and a computed name in public-literals.ts', async () => {
+    expect(
+      await isSyntaxRefused(literals, 'const key = process.env.SUPABASE_SERVICE_ROLE_KEY;'),
+    ).toBe(true);
+    expect(
+      await isSyntaxRefused(literals, "const url = process.env['NEXT_PUBLIC_SITE_URL'];"),
+    ).toBe(true);
+  });
+});
 
 describe('public pages read like a visitor', () => {
   it.each([
@@ -90,7 +137,7 @@ describe('motion follows docs/StyleGuide.md §7', () => {
   it.each([
     'src/components/marketing/hero.tsx',
     'src/components/ui/tabs.tsx',
-    'src/app/(public)/page.tsx',
+    'src/app/(public)/(lists)/page.tsx',
     'src/app/(admin)/dashboard/page.tsx',
   ])('the full motion component is refused in %s', async (filePath) => {
     expect(await isRefused(filePath, fullMotion)).toBe(true);

@@ -236,9 +236,9 @@ const shownContactSchema = z
 
 export type ShownContact = z.output<typeof shownContactSchema>;
 
+// The same request reaches createBookingAction for a hold and requestQuotationAction for a quotation (Task P3.6.06).
 export const bookingRequestSchema = z
   .object({
-    mode: z.enum(BOOKING_MODES),
     packageSlug: slugSchema,
     booking: z.unknown(),
     shownContact: shownContactSchema,

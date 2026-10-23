@@ -37,6 +37,35 @@ describe('organisation and website', () => {
     });
   });
 
+  it('adds the contact point, street and map only when /peta-kontak gives them', () => {
+    const withContact = governmentOrganizationJsonLd({
+      streetAddress: 'Jl. Contoh No. 1',
+      telephone: '+6281200000000',
+      email: 'kelurahan@example.test',
+      mapUrl: 'https://www.google.com/maps/search/?api=1&query=-6.98%2C110.38',
+    });
+    expect(withContact).toMatchObject({
+      address: { '@type': 'PostalAddress', streetAddress: 'Jl. Contoh No. 1' },
+      // schema.org puts hasMap on a Place, so the map hangs off the organisation's location.
+      location: {
+        '@type': 'Place',
+        hasMap: 'https://www.google.com/maps/search/?api=1&query=-6.98%2C110.38',
+        address: { streetAddress: 'Jl. Contoh No. 1' },
+      },
+      contactPoint: {
+        '@type': 'ContactPoint',
+        contactType: 'customer service',
+        telephone: '+6281200000000',
+        email: 'kelurahan@example.test',
+        availableLanguage: 'id',
+      },
+    });
+    const emailOnly = governmentOrganizationJsonLd({ email: 'kelurahan@example.test' });
+    expect(emailOnly.contactPoint).toMatchObject({ email: 'kelurahan@example.test' });
+    expect(emailOnly.location).toBeUndefined();
+    expect(governmentOrganizationJsonLd().contactPoint).toBeUndefined();
+  });
+
   it('names the kelurahan as publisher of the website', () => {
     expect(webSiteJsonLd()).toMatchObject({
       '@type': 'WebSite',

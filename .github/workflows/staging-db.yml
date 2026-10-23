@@ -1,0 +1,109 @@
+name: Staging release
+
+# docs/runbooks/staging-setup.md, part D. Migrates the gisikdrono-staging database, then moves the staging branch to
+# the same commit so Vercel builds it as the staging Preview: migrate first, then deploy
+# (docs/runbooks/release-checklist.md). Manual only, from main only. The staging credentials live in the GitHub
+# environment "staging", never in the repository; production is migrated by its own release job (Task P5.7.02).
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only list the migrations that would run; change nothing'
+        type: boolean
+        default: true
+      seed_demo:
+        description: 'Also write the demo content (DATA CONTOH) of scripts/seed-demo-content.sql'
+        type: boolean
+        default: false
+      deploy:
+        description: 'After migrating, move the staging branch to this commit so Vercel deploys it'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-release
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: migrate the staging database
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: staging
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      STAGING_PROJECT_REF: ${{ secrets.STAGING_PROJECT_REF }}
+      # The name the runbook gives the project; any other project behind the ref is refused.
+      STAGING_PROJECT_NAME: gisikdrono-staging
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
+        with:
+          version: 2.117.0
+      - name: The ref belongs to the staging project
+        run: |
+          for name in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD STAGING_PROJECT_REF; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not set in the GitHub environment 'staging'"
+              exit 1
+            fi
+          done
+          if ! [[ "$STAGING_PROJECT_REF" =~ ^[a-z]{20}$ ]]; then
+            echo "::error::STAGING_PROJECT_REF must be the 20-letter project ref"
+            exit 1
+          fi
+          name="$(supabase projects list -o json \
+            | jq -r --arg ref "$STAGING_PROJECT_REF" '.[] | select(.id == $ref or .ref == $ref) | .name')"
+          if [ "$name" != "$STAGING_PROJECT_NAME" ]; then
+            echo "::error::That ref is not the project $STAGING_PROJECT_NAME; nothing was migrated"
+            exit 1
+          fi
+      - name: Link the staging project
+        run: supabase link --project-ref "$STAGING_PROJECT_REF"
+      - name: Migrations that would run
+        run: supabase db push --linked --dry-run
+      # Never --include-seed: the development seed is local only (supabase/config.toml [db.seed]).
+      - name: Apply the migrations
+        if: ${{ !inputs.dry_run }}
+        run: supabase db push --linked --yes
+      # The demo content only, never the development accounts of scripts/seed-dev.sql. The file itself refuses any
+      # database whose Vault secret environment is not local or staging, on top of the project-name check above.
+      - name: Write the demo content
+        if: ${{ !inputs.dry_run && inputs.seed_demo }}
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          # Encrypted but the server certificate is not verified (no CA bundle pinned here): accepted for staging
+          # only, which holds demo content; the production release job (Task P5.7.02) must verify it.
+          PGSSLMODE: require
+        run: |
+          # supabase link leaves the project's pooler address, without the password, in supabase/.temp.
+          pooler_url="$(cat supabase/.temp/pooler-url 2>/dev/null || true)"
+          if [ -z "$pooler_url" ]; then
+            echo "::error::supabase link left no pooler address; write the demo content by hand (runbook part D)"
+            exit 1
+          fi
+          psql "$pooler_url" --quiet --single-transaction -v ON_ERROR_STOP=1 -f scripts/seed-demo-content.sql
+
+  deploy:
+    name: move the staging branch (Vercel deploys it)
+    needs: migrate
+    if: ${{ !inputs.dry_run && inputs.deploy }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        # The credentials stay for the push below, the only step of this job; nothing else runs here.
+        with:
+          fetch-depth: 0
+      # A plain push only fast-forwards, so staging never jumps back or sideways to another history.
+      - name: Fast-forward staging to this commit
+        run: git push origin "HEAD:refs/heads/staging"

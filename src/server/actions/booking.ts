@@ -3,6 +3,7 @@
 import { revalidateTag } from 'next/cache';
 import { headers } from 'next/headers';
 import { after } from 'next/server';
+import type { z } from 'zod';
 
 import { TURNSTILE_ACTIONS } from '@/config/auth';
 import { INSTITUTION_BOOKER_TYPES, PHONE_PROOF_FRESH_SECONDS } from '@/config/booking';
@@ -63,7 +64,7 @@ async function openWizard(packageSlug: string): Promise<WizardRead> {
 }
 
 async function isWithinIpLimit(
-  name: 'session_availability:ip' | 'quote_preview:ip' | 'booking_create:ip',
+  name: 'session_availability:ip' | 'quote_preview:ip' | 'booking_create:ip' | 'quotation:create',
 ) {
   const clientIp = clientIpFrom(await headers());
   return withinGuestLimits([{ name, subject: rateLimitIpBucket(clientIp) }]);
@@ -122,21 +123,24 @@ const isInstitution = (bookerType: EnumValue<'booker_type'>) =>
 
 // Step 1: the request, then the booking against its package's own booking.max_pax. "Minta Surat Penawaran" is for
 // institutions only (docs/PRD.md FR-BOOK-05; decision of 2026-10-22, Q5).
+type BookingRequestValues = z.output<typeof bookingRequestSchema>;
+
 async function checkBooking(
-  input: unknown,
+  request: BookingRequestValues,
+  mode: BookingMode,
 ): Promise<{ ok: true; booking: CheckedBooking } | ReturnType<typeof fail>> {
-  const request = bookingRequestSchema.safeParse(input);
-  if (!request.success) return mapError(request.error);
-  const read = await openWizard(request.data.packageSlug);
+  const read = await openWizard(request.packageSlug);
   if (!read.ok) return read;
-  const parsed = createBookingSchema(read.wizard.rules.maxPax).safeParse(request.data.booking);
+  const parsed = createBookingSchema(read.wizard.rules.maxPax).safeParse(request.booking);
   if (!parsed.success) return mapError(parsed.error);
   if (parsed.data.packageId !== read.wizard.package.id) return fail('VALIDATION');
-  if (request.data.mode === 'quote' && !isInstitution(parsed.data.bookerType)) {
+  if (mode === 'quote' && !isInstitution(parsed.data.bookerType)) {
     return fail('VALIDATION', undefined, text.quoteForInstitutions);
   }
-  const { mode, shownContact } = request.data;
-  return { ok: true, booking: { mode, wizard: read.wizard, values: parsed.data, shownContact } };
+  return {
+    ok: true,
+    booking: { mode, wizard: read.wizard, values: parsed.data, shownContact: request.shownContact },
+  };
 }
 
 // internal.create_booking takes a code at most ten minutes old; past eight the wizard asks for a new one, so the
@@ -203,28 +207,60 @@ async function submitFailure(error: unknown) {
     : failure;
 }
 
-// "Konfirmasi & Bayar" (mode pay) and "Minta Surat Penawaran" (mode quote). pay_to_confirm and resent are answers,
-// not errors (Task P3.5.04); a duplicate's code is never told (BOOK-15).
+// Steps 2 to 5 for a checked booking: the IP's attempts, Turnstile, the proof of the contact on screen, then the
+// service. pay_to_confirm, resent and reverify are answers, not errors (Task P3.5.04); a duplicate's code is never
+// told (BOOK-15).
+async function book(booking: CheckedBooking): Promise<ActionResult<BookingSubmitAnswer>> {
+  if (!(await isWithinIpLimit('booking_create:ip'))) return fail('RATE_LIMITED');
+  const clientIp = clientIpFrom(await headers());
+  const isHuman = await verifyTurnstile(
+    booking.values.turnstileToken,
+    clientIp,
+    TURNSTILE_ACTIONS.bookingCreate,
+  );
+  const captchaFailed = copy.booking.otp.captchaFailed;
+  if (!isHuman) return fail('VALIDATION', { turnstileToken: [captchaFailed] }, captchaFailed);
+  const proof = await readPhoneProofCookie();
+  if (!isFresh(proof) || !provesShownContact(proof, booking.shownContact)) {
+    return ok({ kind: 'reverify' });
+  }
+  // docs/Security.md §4.1 (4): a Surat Penawaran needs the number verified, which an email code does not do, so while
+  // WhatsApp codes are degraded the school pays with a hold instead. Refused before anything is booked or spent
+  // (re-review of PR #33).
+  if (booking.mode === 'quote' && proof.channel === 'email') {
+    return fail('STATE_INVALID', undefined, text.quoteNeedsWhatsApp);
+  }
+  return ok(await submit(booking, proof));
+}
+
+// "Konfirmasi & Bayar": a hold.
 export async function createBookingAction(
   input: unknown,
 ): Promise<ActionResult<BookingSubmitAnswer>> {
+  const request = bookingRequestSchema.safeParse(input);
+  if (!request.success) return mapError(request.error);
   try {
-    const checked = await checkBooking(input);
+    const checked = await checkBooking(request.data, 'pay');
     if (!checked.ok) return checked;
-    if (!(await isWithinIpLimit('booking_create:ip'))) return fail('RATE_LIMITED');
-    const clientIp = clientIpFrom(await headers());
-    const isHuman = await verifyTurnstile(
-      checked.booking.values.turnstileToken,
-      clientIp,
-      TURNSTILE_ACTIONS.bookingCreate,
-    );
-    const captchaFailed = copy.booking.otp.captchaFailed;
-    if (!isHuman) return fail('VALIDATION', { turnstileToken: [captchaFailed] }, captchaFailed);
-    const proof = await readPhoneProofCookie();
-    if (!isFresh(proof) || !provesShownContact(proof, checked.booking.shownContact)) {
-      return ok({ kind: 'reverify' });
-    }
-    return ok(await submit(checked.booking, proof));
+    return await book(checked.booking);
+  } catch (error) {
+    return submitFailure(error);
+  }
+}
+
+// "Minta Surat Penawaran" (Task P3.6.06; docs/PRD.md FR-B2B-01): a quoted booking and its Surat Penawaran, behind
+// its own limit of three an hour per IP on top of the booking's, counted before the package is read (review of PR
+// #33, finding 5).
+export async function requestQuotationAction(
+  input: unknown,
+): Promise<ActionResult<BookingSubmitAnswer>> {
+  const request = bookingRequestSchema.safeParse(input);
+  if (!request.success) return mapError(request.error);
+  try {
+    if (!(await isWithinIpLimit('quotation:create'))) return fail('RATE_LIMITED');
+    const checked = await checkBooking(request.data, 'quote');
+    if (!checked.ok) return checked;
+    return await book(checked.booking);
   } catch (error) {
     return submitFailure(error);
   }

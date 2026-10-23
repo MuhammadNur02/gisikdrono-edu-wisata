@@ -120,9 +120,14 @@ jobs:
         run: |
           supabase start
           echo "anon_key=$(supabase status -o json | jq -r .ANON_KEY)" >> "$GITHUB_OUTPUT"
-      - run: pnpm build
+      # The route table of the build is the first-load JS gate of CLAUDE.md §8 (Task P5.6.01). `shell: bash` is what
+      # turns pipefail on (the default `run` shell has none), so a failed build fails the step despite tee.
+      - run: pnpm build 2>&1 | tee build.log
+        shell: bash
         env:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.stack.outputs.anon_key }}
+      - name: First-load JS within budget
+        run: node scripts/check-first-load-budget.mjs build.log
       - run: pnpm check:secrets
 
   e2e:
@@ -142,14 +147,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       # Migrations, services and the money, QR and link libraries change what the booking flow does even when
-      # no file name says booking, so they run the suite as well.
-      - name: Did booking, payment, QR, scanner, migration or service code change?
+      # no file name says booking, so they run the suite as well; so does a change to the suite itself.
+      - name: Did booking, payment, QR, scanner, migration, service or e2e code change?
         id: scope
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
           if git diff --name-only "origin/$BASE_REF...HEAD" \
-            | grep -Eq 'booking|payment|qr|scanner|^supabase/migrations/|^src/server/services/|^src/lib/(pricing|qr|links|midtrans)/'; then
+            | grep -Eq 'booking|payment|qr|scanner|^supabase/migrations/|^src/server/services/|^src/lib/(pricing|qr|links|midtrans)/|^tests/e2e/|^lighthouserc\.json$'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -205,4 +210,19 @@ jobs:
         with:
           name: playwright-report
           path: playwright-report/
+          retention-days: 7
+      # Lighthouse on the served build (lighthouserc.json, Task P5.6.01): the runner's own Chrome, reports kept
+      # as an artifact and never uploaded anywhere public. The first-load table is gated in the security job.
+      - if: steps.scope.outputs.changed == 'true'
+        name: Lighthouse budgets
+        env:
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.stack.outputs.anon_key }}
+        run: pnpm exec lhci autorun
+      # The reports live in a dot folder, which upload-artifact skips unless told otherwise.
+      - if: always() && steps.scope.outputs.changed == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lighthouse-report
+          path: .lighthouseci/
+          include-hidden-files: true
           retention-days: 7

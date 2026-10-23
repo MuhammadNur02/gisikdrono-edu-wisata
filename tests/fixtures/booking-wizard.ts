@@ -67,7 +67,6 @@ export const schoolBooking = {
 // The request around it, naming the contact the summary shows as verified, as the visitor typed it (review of PR #27,
 // M1).
 export const bookingRequest = {
-  mode: 'pay',
   packageSlug: 'paket-kombinasi',
   booking: schoolBooking,
   shownContact: { channel: 'whatsapp', phone: '0812-3456-7890', email: null },

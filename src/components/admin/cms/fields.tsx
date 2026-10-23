@@ -1,11 +1,11 @@
 'use client';
 
-import type { Control, FieldPathByValue, FieldValues } from 'react-hook-form';
+import type { Control, ControllerRenderProps, FieldPathByValue, FieldValues } from 'react-hook-form';
 
 import { NumberField } from '@/components/admin/cms/number-field';
-import { StatusSelect } from '@/components/admin/cms/status-select';
 import { FormField } from '@/components/forms/form-field';
 import { Checkbox } from '@/components/ui/checkbox';
+import { FormControl } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -115,33 +115,67 @@ export function NumberInputField<TValues extends FieldValues>({
   );
 }
 
-export interface SelectFieldProps<TValues extends FieldValues> extends FieldBase<TValues> {
-  name: FieldPathByValue<TValues, string>;
-  options: readonly { value: string; label: string }[];
+interface SelectOption {
+  value: string;
+  label: string;
 }
 
-export function SelectField<TValues extends FieldValues>({
+interface LabelledSelectProps {
+  value: string;
+  onValueChange: (value: string) => void;
+  options: readonly SelectOption[];
+  required: boolean;
+  // The trigger takes the field's ref and blur, so a validation error focuses it and touches the field.
+  trigger: Pick<ControllerRenderProps<FieldValues, string>, 'ref' | 'onBlur'>;
+}
+
+// FormControl is put around the trigger, not the Select root, which renders no element: that is how the label,
+// the helper text and the error reach the element a visitor operates (Task P2.9.12, as the booking wizard's
+// booker-type field does).
+function LabelledSelect({ value, onValueChange, options, required, trigger }: LabelledSelectProps) {
+  return (
+    <Select value={value} onValueChange={onValueChange}>
+      <FormControl aria-required={required || undefined}>
+        <SelectTrigger ref={trigger.ref} onBlur={trigger.onBlur} className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+      </FormControl>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+// TValue is the union the field holds when it is narrower than string, such as a status enum (StatusField).
+export interface SelectFieldProps<TValues extends FieldValues, TValue extends string = string>
+  extends FieldBase<TValues> {
+  name: FieldPathByValue<TValues, TValue>;
+  options: readonly SelectOption[];
+}
+
+export function SelectField<TValues extends FieldValues, TValue extends string = string>({
   name,
   options,
   ...base
-}: SelectFieldProps<TValues>) {
+}: SelectFieldProps<TValues, TValue>) {
   return (
     <FormField
       {...base}
       name={name}
+      wrapsOwnControl
       render={(field) => (
-        <Select value={String(field.value)} onValueChange={field.onChange}>
-          <SelectTrigger ref={field.ref} onBlur={field.onBlur} className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {options.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <LabelledSelect
+          value={String(field.value)}
+          onValueChange={field.onChange}
+          options={options}
+          required={base.required === true}
+          trigger={field}
+        />
       )}
     />
   );
@@ -152,7 +186,7 @@ const NO_OPTION = 'none';
 
 export interface OptionalSelectFieldProps<TValues extends FieldValues> extends FieldBase<TValues> {
   name: FieldPathByValue<TValues, string | null>;
-  options: readonly { value: string; label: string }[];
+  options: readonly SelectOption[];
   // What choosing none is called, such as `Tanpa paket`.
   noneLabel: string;
 }
@@ -167,25 +201,17 @@ export function OptionalSelectField<TValues extends FieldValues>({
     <FormField
       {...base}
       name={name}
+      wrapsOwnControl
       render={(field) => (
-        <Select
+        <LabelledSelect
           value={typeof field.value === 'string' ? field.value : NO_OPTION}
           onValueChange={(value) => {
             field.onChange(value === NO_OPTION ? null : value);
           }}
-        >
-          <SelectTrigger ref={field.ref} onBlur={field.onBlur} className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NO_OPTION}>{noneLabel}</SelectItem>
-            {options.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          options={[{ value: NO_OPTION, label: noneLabel }, ...options]}
+          required={base.required === true}
+          trigger={field}
+        />
       )}
     />
   );
@@ -218,30 +244,25 @@ export function CheckboxField<TValues extends FieldValues>({
   );
 }
 
-function isPublishableStatus(value: unknown): value is PublishableStatus {
-  return PUBLISHABLE_STATUSES.some((status) => status === value);
-}
-
 export interface StatusFieldProps<TValues extends FieldValues> {
   control: Control<TValues>;
   name: FieldPathByValue<TValues, PublishableStatus>;
 }
 
+// Draft or on the site, for content that needs no review (everything but articles).
 export function StatusField<TValues extends FieldValues>({
   control,
   name,
 }: StatusFieldProps<TValues>) {
   return (
-    <FormField
+    <SelectField
       control={control}
       name={name}
       label={copy.cms.common.status}
-      render={(field) => (
-        <StatusSelect
-          value={isPublishableStatus(field.value) ? field.value : 'draft'}
-          onChange={field.onChange}
-        />
-      )}
+      options={PUBLISHABLE_STATUSES.map((status) => ({
+        value: status,
+        label: copy.cms.common.statusLabels[status],
+      }))}
     />
   );
 }

@@ -1,8 +1,7 @@
-import { readFileSync } from 'node:fs';
-
 import { describe, expect, it } from 'vitest';
 
 import { DEV_ONLY_PASSWORD, DEV_ONLY_TOTP_SECRET } from '../../scripts/dev-accounts';
+import { devSeedSql } from '../../scripts/dev-seed-sql';
 import { runSql, sqlText } from '../../scripts/local-stack';
 
 // pnpm db:seed on a database seeded before Task P2.10.03, whose arts demo still belongs to RW 08, ends where a fresh
@@ -10,7 +9,7 @@ import { runSql, sqlText } from '../../scripts/local-stack';
 // local database into that older shape, runs the seed as scripts/seed-dev.ts does, and leaves it seeded again.
 
 const SLOW_TEST_MS = 120_000;
-const seedSql = readFileSync(new URL('../../scripts/seed-dev.sql', import.meta.url), 'utf8');
+const seedSql = devSeedSql();
 const COMBO = '0de00000-0000-4000-8000-0000000000c9';
 const ARTS_PACKAGE_BEFORE = '0de00000-0000-4000-8000-0000000000c8';
 const ARTS_VENDOR_BEFORE = '0de00000-0000-4000-8000-0000000000a8';

@@ -132,3 +132,34 @@ describe('publicEnv', () => {
     ).rejects.toThrow();
   });
 });
+
+describe('findPublicEnvProblems and NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS', () => {
+  const values = {
+    NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: OFFICIAL_LOOKING_NUMBER,
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY: SITE_KEY,
+  };
+
+  it('refuses images without the transformer on production', () => {
+    expect(
+      findPublicEnvProblems({ ...values, VERCEL_ENV: 'production', NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS: 'off' }),
+    ).toEqual([
+      'NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS=off is for a Free-plan staging project; production resizes images',
+    ]);
+  });
+
+  it('lets production keep the transformer, by default or explicitly', () => {
+    for (const NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS of [undefined, 'on'] as const) {
+      expect(
+        findPublicEnvProblems({ ...values, VERCEL_ENV: 'production', NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS }),
+      ).toEqual([]);
+    }
+  });
+
+  it('lets a preview, such as the Free-plan staging site, switch the transformer off', () => {
+    for (const VERCEL_ENV of [undefined, 'development', 'preview'] as const) {
+      expect(
+        findPublicEnvProblems({ ...values, VERCEL_ENV, NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS: 'off' }),
+      ).toEqual([]);
+    }
+  });
+});
