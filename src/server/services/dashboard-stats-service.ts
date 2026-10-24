@@ -30,7 +30,7 @@ import type {
 // The overview KPIs (Task P4.2.03, docs/StyleGuide.md §6.3), read through the session client so RLS and the AAL2
 // policies decide every row (DATA-04); no service role. Money comes from the ledger view only (REC-07). An RW admin's
 // figures stay inside what RLS shows them: today, the 30 days of check-ins on their own tickets, and the paid visits of
-// the coming 30 days, which the bookings period of 0005 covers. Figures over longer periods (products sold) wait for
+// the coming 30 days, which the bookings window of 0005 covers. Figures over longer periods (products sold) wait for
 // the security definer aggregates of P4.2.01.
 
 type ServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;

@@ -15,6 +15,10 @@ export const PROFILE_PATH = '/dashboard/profile';
 export const SCANNER_PATH = '/dashboard/scanner';
 export const SESSIONS_PATH = '/dashboard/sessions';
 export const BOOKINGS_PATH = '/dashboard/bookings';
+export const SECURITY_ALERTS_PATH = '/dashboard/security-alerts';
+
+// Task P4.2.02: how often the overview re-reads today's check-in count through a read-only Server Action.
+export const CHECKINS_REFRESH_MS = 15_000;
 
 // profiles.full_name as staff type it on /dashboard/profile.
 export const FULL_NAME_MAX_LENGTH = 100;

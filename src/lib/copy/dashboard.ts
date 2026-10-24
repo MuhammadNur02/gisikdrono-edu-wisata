@@ -48,9 +48,72 @@ export const dashboardCopy = {
   home: {
     title: 'Dasbor',
     signedInAs: (role: string) => `Anda masuk sebagai ${role}.`,
-    profileTitle: 'Profil Anda',
-    profileDescription: 'Periksa nama yang tampil di dasbor dan pada catatan aktivitas.',
-    profileLink: 'Buka profil',
+  },
+  // docs/StyleGuide.md §6.3, Task P4.2.03.
+  overview: {
+    kpiLabel: 'Ringkasan angka',
+    trendTitle: 'Dibanding hari yang sama bulan lalu',
+    trendNew: 'Baru',
+    trendFlat: 'Tetap',
+    unavailable: 'Belum tersedia',
+    superadmin: {
+      revenue: 'Pendapatan bulan ini',
+      revenueHint: 'Bersih dari buku besar bagi hasil.',
+      paidBookings: 'Reservasi lunas',
+      paidBookingsHint: 'Dibayar bulan ini.',
+      checkedIn: 'Pengunjung check-in',
+      checkedInHint: 'Orang yang masuk bulan ini.',
+      rating: 'Rating rata-rata',
+      ratingHint: (count: number) =>
+        count === 0 ? 'Belum ada ulasan terbit.' : `Dari ${String(count)} ulasan terbit.`,
+    },
+    rw: {
+      quota: 'Kuota hari ini terpakai',
+      quotaHint: (reserved: number, capacity: number) =>
+        capacity === 0
+          ? 'Tidak ada sesi hari ini.'
+          : `${String(reserved)} dari ${String(capacity)} kursi.`,
+      upcoming: 'Reservasi mendatang',
+      upcomingHint: 'Lunas, 30 hari ke depan.',
+      checkInsToday: 'Check-in hari ini',
+      checkInsTodayHint: 'Diperbarui tiap 15 detik.',
+      productsSold: 'Produk terjual',
+      productsSoldHint: 'Menunggu ringkasan statistik kunjungan.',
+    },
+    revenueChart: {
+      title: 'Pendapatan 30 hari terakhir',
+      description: 'Jumlah bersih per hari dari buku besar bagi hasil.',
+      empty: 'Belum ada pendapatan tercatat',
+      emptyDescription: 'Angka muncul setelah pembayaran pertama lunas dan dibagi di buku besar.',
+      series: 'Pendapatan',
+    },
+    checkinsChart: {
+      title: 'Check-in 30 hari terakhir',
+      description: 'Jumlah orang yang masuk per hari.',
+      empty: 'Belum ada check-in',
+      emptyDescription: 'Angka muncul setelah tiket pertama dipindai di gerbang.',
+      series: 'Pengunjung',
+    },
+    // A text version of each chart for screen readers.
+    chartSummary: (title: string, total: string) => `${title}: total ${total}.`,
+    security: {
+      title: 'Peringatan keamanan terbuka',
+      none: 'Tidak ada peringatan terbuka.',
+      more: (count: number) => `dan ${String(count)} lainnya`,
+      occurrences: (count: number) => `${String(count)}×`,
+      viewAll: 'Lihat semua peringatan',
+      piiReveals: 'Kontak dibuka hari ini',
+      piiRevealsHint: 'Setiap pembukaan kontak tercatat atas nama staf.',
+    },
+    sessions: {
+      title: 'Sesi hari ini',
+      none: 'Tidak ada sesi hari ini',
+      noneDescription: 'Sesi dibuat di halaman Sesi Kunjungan.',
+      seats: (reserved: number, capacity: number) =>
+        `${String(reserved)}/${String(capacity)} kursi`,
+      checkedIn: (count: number) => `${String(count)} check-in`,
+      manage: 'Kelola sesi',
+    },
   },
   profile: {
     title: 'Profil',
