@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- The scanner PWA icon (Task P4.4.03): lucide's scan-line (ISC licence) on the brand deep colour, inside the maskable safe zone. -->
+  <rect width="512" height="512" fill="#0F172A"/>
+  <g transform="translate(136 136) scale(10)" fill="none" stroke="#EFF6FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 7V5a2 2 0 0 1 2-2h2"/>
+    <path d="M17 3h2a2 2 0 0 1 2 2v2"/>
+    <path d="M21 17v2a2 2 0 0 1-2 2h-2"/>
+    <path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
+    <path d="M7 12h10"/>
+  </g>
+</svg>

@@ -11,6 +11,7 @@ const privateProduction = {
   nonce: 'abc123',
   supabaseUrl: 'https://projectref.supabase.co',
   isDevelopment: false,
+  pathname: '/dashboard',
 };
 const publicProduction = { ...privateProduction, nonce: null };
 
@@ -22,7 +23,7 @@ describe('buildContentSecurityPolicy on private routes', () => {
   it('locks scripts to the nonce, with no unsafe-inline or unsafe-eval', () => {
     const policy = buildContentSecurityPolicy(privateProduction);
     expect(directive(policy, 'script-src')).toBe(
-      "script-src 'self' 'nonce-abc123' 'strict-dynamic' 'wasm-unsafe-eval' https://challenges.cloudflare.com",
+      "script-src 'self' 'nonce-abc123' 'strict-dynamic' https://challenges.cloudflare.com",
     );
     expect(policy).toContain("frame-ancestors 'none'");
     expect(policy).toContain("object-src 'none'");
@@ -38,6 +39,21 @@ describe('buildContentSecurityPolicy on private routes', () => {
 
   it('never allows Midtrans, because payment runs in redirect mode', () => {
     expect(buildContentSecurityPolicy(privateProduction)).not.toContain('midtrans');
+  });
+});
+
+describe('buildContentSecurityPolicy on the gate scanner', () => {
+  it('allows WebAssembly for the ZXing reader there and nowhere else', () => {
+    const scanner = { ...privateProduction, pathname: '/dashboard/scanner' };
+    expect(directive(buildContentSecurityPolicy(scanner), 'script-src')).toContain(
+      "'wasm-unsafe-eval'",
+    );
+    for (const pathname of ['/dashboard', '/dashboard/scanners', '/reservasi/GSK-7F3K9Q2M']) {
+      const policy = buildContentSecurityPolicy({ ...privateProduction, pathname });
+      expect(policy).not.toContain('wasm-unsafe-eval');
+    }
+    const publicScanner = { ...publicProduction, pathname: '/dashboard/scanner' };
+    expect(buildContentSecurityPolicy(publicScanner)).not.toContain('wasm-unsafe-eval');
   });
 });
 

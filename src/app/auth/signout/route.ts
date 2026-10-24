@@ -11,6 +11,14 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 15;
 
 const FORBIDDEN = 403;
+// Task P4.4.03 (review of PR #49): signing out also removes the scanner's service worker and its caches from this
+// browser, so a shared gate phone keeps nothing of the last officer's session.
+const CLEAR_SITE_DATA = '"cache", "storage"';
+
+function clearingSiteData(response: Response): Response {
+  response.headers.set('Clear-Site-Data', CLEAR_SITE_DATA);
+  return response;
+}
 
 // docs/Security.md §5.4: `Keluar` posts here and ends every session of the account. POST only, from this site only,
 // so another page cannot sign a staff member out behind their back; the auth cookies leave with Max-Age=0. When
@@ -19,10 +27,10 @@ const FORBIDDEN = 403;
 export async function POST(request: Request): Promise<Response> {
   if (!isSameOriginRequest(request)) return new Response(null, { status: FORBIDDEN });
   const session = await readStaffSession();
-  if (await signOutEverywhere()) return seeOther(LOGIN_PATH);
+  if (await signOutEverywhere()) return clearingSiteData(seeOther(LOGIN_PATH));
 
   if (session) {
     await recordSessionRevokeFailure(session.ctx, 'sign_out', requestIdFrom(request.headers));
   }
-  return seeOther(`${LOGIN_PATH}?${LOGIN_NOTICE_PARAM}=signed-out-here-only`);
+  return clearingSiteData(seeOther(`${LOGIN_PATH}?${LOGIN_NOTICE_PARAM}=signed-out-here-only`));
 }

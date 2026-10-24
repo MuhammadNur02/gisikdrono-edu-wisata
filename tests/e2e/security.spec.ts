@@ -331,13 +331,14 @@ test.describe('signed in as the superadmin (HDR-01, UPL-01)', () => {
     await removeAccounts(superadmin ? [superadmin.id] : []);
   });
 
-  // /dashboard/scanner has no page until Task P4.4; the session calendar stands in for a heavy client page until then,
-  // and SCANNER_PATH joins this list when the scanner lands. An unknown dashboard address is checked as well.
+  // The scanner, with its own CSP (WebAssembly allowed there alone), and the session calendar as a heavy client page.
+  // An unknown dashboard address is checked as well.
   test('dashboard pages and a dashboard 404 load without a CSP violation', async ({ page }) => {
     await signInToDashboard(page, superadmin?.email ?? '');
     for (const path of [
       '/dashboard',
       '/dashboard/sessions',
+      SCANNER_PATH,
       '/dashboard/articles/new',
       '/dashboard/tidak-ada-e2e',
     ]) {

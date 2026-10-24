@@ -1,10 +1,14 @@
+import { randomUUID } from 'node:crypto';
+
 import bundleAnalyzer from '@next/bundle-analyzer';
+import withSerwistInit from '@serwist/next';
 import type { NextConfig } from 'next';
 import { PHASE_DEVELOPMENT_SERVER } from 'next/constants';
 
 import { IMAGE_DEVICE_WIDTHS, imageLoaderFileFor } from './src/config/images';
 import { MOVED_PATHS } from './src/config/redirects';
 import { PRIVATE_ROUTE_PREFIXES } from './src/config/routes';
+import { SCANNER_OFFLINE_PATH, SCANNER_SERVICE_WORKER } from './src/config/scanner';
 import { publicEnv } from './src/lib/public-env';
 
 // pnpm sets npm_lifecycle_event to the running script, so `pnpm analyze` needs no extra env var.
@@ -35,6 +39,11 @@ const privateRoutes = [...PRIVATE_ROUTE_PREFIXES, '/api'].map((prefix) => `${pre
 
 // Ticket and booking URLs carry a code or token, so they should not leak through the Referer header.
 const noReferrerRoutes = ['/reservasi/:path*', '/v/:path*'];
+
+// The scanner's service worker is checked for an update on every registration, never served from a cache.
+const serviceWorkerHeaders = [
+  { key: 'Cache-Control', value: 'no-cache, max-age=0, must-revalidate' },
+];
 
 // public/map/denah.svg is drawn inline so its hotspot paths can be highlighted (docs/StyleGuide.md §5.13).
 // SVGR turns an imported .svg into a React component; its SVGO pass stays off because the plan's ids are what
@@ -111,6 +120,7 @@ const nextConfig: NextConfig = {
       { source: '/:path*', headers: baselineHeaders },
       ...(isProductionDeployment ? [] : [{ source: '/:path*', headers: [noIndex] }]),
       ...privateRoutes.map((source) => ({ source, headers: privateNoIndexHeaders })),
+      { source: SCANNER_SERVICE_WORKER.url, headers: serviceWorkerHeaders },
       ...noReferrerRoutes.map((source) => ({
         source,
         headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
@@ -127,6 +137,27 @@ export function pageExtensionsFor(phase: string): string[] {
   return phase === PHASE_DEVELOPMENT_SERVER ? DEVELOPMENT_PAGE_EXTENSIONS : PAGE_EXTENSIONS;
 }
 
+// Task P4.4.03: the scanner PWA's service worker, src/sw.ts built into public/sw.js. The page registers it itself
+// (src/components/admin/scanner/service-worker-registration.tsx), scoped to /dashboard/scanner, so no public visitor
+// ever installs it. It precaches what the offline page /luring needs and nothing more (review of PR #49): the page
+// itself under a revision that changes with every build, and the build's stylesheets and fonts. The scanner's own
+// chunks are not precached, since the scanner needs the network anyway. A development server builds no worker.
+const PRECACHED_ASSETS = [/^static\/css\//, /^static\/media\/.+\.woff2$/];
+
+function withScannerServiceWorker(phase: string) {
+  return withSerwistInit({
+    swSrc: 'src/sw.ts',
+    swDest: 'public/sw.js',
+    register: false,
+    disable: phase === PHASE_DEVELOPMENT_SERVER,
+    include: PRECACHED_ASSETS,
+    additionalPrecacheEntries: [{ url: SCANNER_OFFLINE_PATH, revision: randomUUID() }],
+  });
+}
+
 export default function config(phase: string): NextConfig {
-  return withBundleAnalyzer({ ...nextConfig, pageExtensions: pageExtensionsFor(phase) });
+  const withScannerWorker = withScannerServiceWorker(phase);
+  return withBundleAnalyzer(
+    withScannerWorker({ ...nextConfig, pageExtensions: pageExtensionsFor(phase) }),
+  );
 }
