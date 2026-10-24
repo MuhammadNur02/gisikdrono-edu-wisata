@@ -7,9 +7,11 @@
 -- authenticator until the code is used, and every verification is an mfa_enrolled event (H1); nobody an alert names,
 -- as subject or actor, acknowledges it, for any rule, and what an alert names is merged, never overwritten (M1); the
 -- caller's own row is refused before anything else. An Auth user that never became staff is deleted with its profile;
--- one that ever held a role is not (20261029080300).
+-- one that ever held a role is not (20261029080300). Using the code opens a ten-minute window and keeps the wait; a
+-- factor is verified only inside it, the first one ends the wait, and an abandoned window needs a new code (N1 of the
+-- re-review, 20261029080400).
 begin;
-select plan(53);
+select plan(57);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: two accounts without a role =====
@@ -200,9 +202,28 @@ select is(public.svc_consume_mfa_reenrolment_code('00000000-0000-4000-8000-00000
   'its own account uses it');
 select is(public.svc_consume_mfa_reenrolment_code('00000000-0000-4000-8000-0000000e0002', repeat('a', 64)), false,
   'once');
-select is((select p.reenrolment_required from public.profiles p where p.id = '00000000-0000-4000-8000-0000000e0002'), false,
-  'using it lifts the wait');
-select lives_ok($$select pg_temp.enrol('00000000-0000-4000-8000-0000000e0002')$$, 'so the new authenticator is verified');
+select is((select (p.reenrolment_required, p.reenrolment_window_until > now(),
+                   p.reenrolment_window_until <= now() + interval '10 minutes')::text
+           from public.profiles p where p.id = '00000000-0000-4000-8000-0000000e0002'),
+  '(t,t,t)', 'using it keeps the wait and opens a ten-minute window');
+select lives_ok($$select pg_temp.enrol('00000000-0000-4000-8000-0000000e0002')$$, 'inside it the new authenticator is verified');
+select is((select (p.reenrolment_required, p.reenrolment_window_until is null)::text
+           from public.profiles p where p.id = '00000000-0000-4000-8000-0000000e0002'),
+  '(f,t)', 'and the first verified factor ends the wait and the window');
+-- An officer who uses the code and walks away: the window closes, and the password alone enrols nothing later.
+select pg_temp.act_as('superadmin_aal2');
+select public.issue_mfa_reenrolment_code('00000000-0000-4000-8000-0000000e0003', repeat('d', 64));
+reset role;
+select public.svc_consume_mfa_reenrolment_code('00000000-0000-4000-8000-0000000e0003', repeat('d', 64));
+update public.profiles set reenrolment_window_until = now() - interval '1 second' where id = '00000000-0000-4000-8000-0000000e0003';
+select throws_ok($$update auth.mfa_factors set status = 'verified' where id = '00000000-0000-4000-8000-0000000ec001'$$,
+  '42501', null, 'after an abandoned window a later enrolment through GoTrue is refused');
+select is((select p.reenrolment_required from public.profiles p where p.id = '00000000-0000-4000-8000-0000000e0003'), true,
+  'the account still waits');
+select pg_temp.act_as('superadmin_aal2');
+select lives_ok($$select public.issue_mfa_reenrolment_code('00000000-0000-4000-8000-0000000e0003', repeat('e', 64))$$,
+  'and needs a new code from the superadmin');
+reset role;
 select is((select count(*)::int from public.security_events e
            where e.event_type = 'mfa_enrolled' and e.entity_id = '00000000-0000-4000-8000-0000000e0002'),
   2, 'and every verified authenticator, the first one too, is an mfa_enrolled event');

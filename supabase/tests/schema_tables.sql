@@ -83,7 +83,9 @@ select columns_are('public', 'profiles', array[
   -- added by 20261029080000: the one-time re-enrolment code after an MFA reset (P4.8.05)
   'mfa_reenrol_code_hash', 'mfa_reenrol_expires_at',
   -- added by 20261029080200: set by a completed MFA reset, cleared by the re-enrolment code
-  'reenrolment_required'
+  'reenrolment_required',
+  -- added by 20261029080400: the ten minutes the used code opens for the new authenticator
+  'reenrolment_window_until'
 ]);
 select columns_are('public', 'staff_invites', array[
   'id', 'email', 'role', 'rw_id', 'invite_code_hash', 'expires_at', 'accepted_at',

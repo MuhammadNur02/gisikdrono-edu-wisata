@@ -2276,6 +2276,7 @@ export type Database = {
           promotion_requested_at: string | null
           promotion_requested_by: string | null
           reenrolment_required: boolean
+          reenrolment_window_until: string | null
           role: Database["public"]["Enums"]["app_role"]
           rw_id: number | null
           updated_at: string
@@ -2299,6 +2300,7 @@ export type Database = {
           promotion_requested_at?: string | null
           promotion_requested_by?: string | null
           reenrolment_required?: boolean
+          reenrolment_window_until?: string | null
           role?: Database["public"]["Enums"]["app_role"]
           rw_id?: number | null
           updated_at?: string
@@ -2322,6 +2324,7 @@ export type Database = {
           promotion_requested_at?: string | null
           promotion_requested_by?: string | null
           reenrolment_required?: boolean
+          reenrolment_window_until?: string | null
           role?: Database["public"]["Enums"]["app_role"]
           rw_id?: number | null
           updated_at?: string
@@ -4220,6 +4223,10 @@ export type Database = {
     }
     Functions: {
       aal2: { Args: never; Returns: boolean }
+      acknowledge_alert_as_sole_superadmin: {
+        Args: { p_alert_id: string; p_reason: string }
+        Returns: undefined
+      }
       app_role: { Args: never; Returns: string }
       app_rw_id: { Args: never; Returns: number }
       cancel_staff_mfa_reset: {
