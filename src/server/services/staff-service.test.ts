@@ -9,6 +9,7 @@ import {
   recordSessionRevokeFailure,
   sendPasswordResetEmail,
   withinAuthCallbackLimit,
+  withinInviteLimit,
   withinPasswordResetLimits,
   withinSignInLimits,
 } from './staff-service';
@@ -211,5 +212,19 @@ describe('recordSessionRevokeFailure', () => {
       source: 'session_revoke_failed',
       errorName: 'Error',
     });
+  });
+});
+
+describe('withinInviteLimit', () => {
+  it('counts ten invites an hour per superadmin id', async () => {
+    await withinInviteLimit('super-1');
+    expect(vi.mocked(svcRateLimitHit).mock.calls.map(([, hit]) => hit)).toEqual([
+      { key: rateLimitKey('invite:user', 'super-1'), limit: 10, windowSeconds: 3600 },
+    ]);
+  });
+
+  it('passes an outage on, so the action refuses (fail-closed)', async () => {
+    vi.mocked(svcRateLimitHit).mockRejectedValueOnce(new Error('connection refused'));
+    await expect(withinInviteLimit('super-1')).rejects.toThrow('connection refused');
   });
 });

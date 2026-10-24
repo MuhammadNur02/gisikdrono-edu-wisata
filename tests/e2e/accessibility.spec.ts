@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type TestInfo } from '@playwright/test';
+import { expect, test, type Page, type TestInfo } from '@playwright/test';
 
 // Task P5.6.04: automated WCAG 2.1 AA checks (docs/StyleGuide.md §9.1, A1) on the public pages, the start of the
 // booking wizard and the staff sign-in, against the production build CI serves from the pnpm db:seed stack. Both
@@ -50,24 +50,47 @@ async function attachReport(testInfo: TestInfo, results: AxeResults) {
   });
 }
 
+// /peta-kontak loads its RW area map in a lazy chunk; the audit waits for Leaflet's container so the map, its
+// labels and markers are part of what axe reads.
+const MAP_PAGE = '/peta-kontak';
+const MAP_CONTAINER = '#wilayah .leaflet-container';
+
+async function auditPage(
+  page: Page,
+  testInfo: TestInfo,
+  path: string,
+  colorScheme: 'light' | 'dark',
+) {
+  // The home reveals are scroll-driven; reduced motion shows every block in its final colours, so the
+  // contrast check reads what a visitor reads once the animation has ended.
+  await page.emulateMedia({ reducedMotion: 'reduce', colorScheme });
+  const response = await page.goto(path);
+  expect(response?.status()).toBe(200);
+  await expect(page.locator('main')).toBeVisible();
+  if (path === MAP_PAGE) await expect(page.locator(MAP_CONTAINER)).toBeVisible();
+
+  const results = await new AxeBuilder({ page })
+    .withTags(WCAG_21_AA_TAGS)
+    .exclude(TURNSTILE_IFRAME)
+    .analyze();
+  await attachReport(testInfo, results);
+
+  const blocking = results.violations.filter((violation) =>
+    BLOCKING_IMPACTS.includes(violation.impact ?? ''),
+  );
+  expect(blocking, blocking.map(describeViolation).join('\n')).toEqual([]);
+}
+
 for (const { name, path } of AUDITED_PAGES) {
   test(`${name} (${path}) has no serious or critical axe violation`, async ({ page }, testInfo) => {
-    // The home reveals are scroll-driven; reduced motion shows every block in its final colours, so the
-    // contrast check reads what a visitor reads once the animation has ended.
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    const response = await page.goto(path);
-    expect(response?.status()).toBe(200);
-    await expect(page.locator('main')).toBeVisible();
-
-    const results = await new AxeBuilder({ page })
-      .withTags(WCAG_21_AA_TAGS)
-      .exclude(TURNSTILE_IFRAME)
-      .analyze();
-    await attachReport(testInfo, results);
-
-    const blocking = results.violations.filter((violation) =>
-      BLOCKING_IMPACTS.includes(violation.impact ?? ''),
-    );
-    expect(blocking, blocking.map(describeViolation).join('\n')).toEqual([]);
+    await auditPage(page, testInfo, path, 'light');
   });
 }
+
+// The map draws light-theme tokens over the always-light tiles in either scheme (src/styles/globals.css), so a
+// visitor whose system asks for dark gets the same contrast.
+test('peta & kontak (/peta-kontak) in a dark colour scheme has no serious or critical axe violation', async ({
+  page,
+}, testInfo) => {
+  await auditPage(page, testInfo, MAP_PAGE, 'dark');
+});

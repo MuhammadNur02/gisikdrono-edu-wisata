@@ -73,6 +73,9 @@ export const RATE_LIMITS = {
   // step up before a critical action, per account. A code has a million values and changes every 30 s, so ten tries
   // in fifteen minutes leave a guesser nothing and a typo plenty of room.
   'step_up:user': { limit: 10, windowSeconds: 900, whenUnavailable: 'fail-closed' },
+  // Task P4.8.02 (L2 of the PR #43 review): invites a superadmin creates, per account. A kelurahan invites a handful
+  // of officers a year, so ten an hour leaves room for corrections and caps a stolen session minting codes.
+  'invite:user': { limit: 10, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitName = keyof typeof RATE_LIMITS;

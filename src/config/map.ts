@@ -44,12 +44,30 @@ export const OSM_COPYRIGHT_URL = 'https://www.openstreetmap.org/copyright';
 // The host the Google Maps frame loads from once the visitor asks for it (docs/Security.md §8.2).
 export const GOOGLE_MAPS_HOST = 'www.google.com';
 
-// Leaflet zoom levels: the tiles stop at 19; a view fitted to the markers never zooms past a neighbourhood.
+// Leaflet zoom levels: the tiles stop at 19.
 export const GEO_MAX_ZOOM = 19;
-export const GEO_FIT_MAX_ZOOM = 17;
-// The view around a single marker, or the one both maps open on.
-export const GEO_SINGLE_MARKER_ZOOM = 16;
-export const GEO_FIT_PADDING_PX = 32;
-// Circle markers, in pixels: an RW's centre a little larger than an activity point.
-export const GEO_RW_MARKER_RADIUS = 10;
+// An activity point's circle marker, in pixels.
 export const GEO_POINT_MARKER_RADIUS = 7;
+
+// The RW area map of /peta-kontak (src/components/map/rw-area-leaflet.tsx). The kelurahan is about twice as tall as
+// it is wide, so the frame stands upright on a phone and lies landscape from sm.
+export const RW_AREA_FRAME_CLASS = 'aspect-3/4 w-full sm:aspect-4/3';
+export const RW_AREA_FIT_PADDING_PX = 16;
+// An RW chosen in the list is framed, but never closer than a street.
+export const RW_AREA_SELECT_MAX_ZOOM = 17;
+// Quarter steps let the whole kelurahan fill the frame instead of falling back a whole zoom level.
+export const RW_AREA_ZOOM_SNAP = 0.25;
+// The long duration of docs/StyleGuide.md §7.2, in the seconds Leaflet takes; reduced motion jumps instead.
+export const RW_AREA_FLY_SECONDS = 0.5;
+export const RW_AREA_OFFICE_MARKER_RADIUS = 9;
+// The classes the shapes carry; src/styles/globals.css colours them from the RW palette tokens.
+export const RW_AREA_CLASS = {
+  area: 'rw-area',
+  edu: 'rw-area-edu',
+  hover: 'rw-area-hover',
+  selected: 'rw-area-selected',
+  boundary: 'rw-area-boundary',
+  office: 'rw-area-office',
+  label: 'rw-area-label',
+  labelEdu: 'rw-area-label-edu',
+} as const;

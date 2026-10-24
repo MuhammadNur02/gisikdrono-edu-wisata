@@ -42,6 +42,9 @@ const noReferrerRoutes = ['/reservasi/:path*', '/v/:path*'];
 const svgrLoader = { loader: '@svgr/webpack', options: { svgo: false } };
 const SVG_FILE = /\.svg$/i;
 const SCRIPT_FILE = /\.[jt]sx?$/;
+// public/map/gisikdrono-rw.geojson, the kelurahan's RW areas (scripts/convert-rw-kml.ts), is plain JSON under its
+// GeoJSON name; the page and the lazy map chunk import it, so it never needs a request of its own.
+const GEOJSON_FILE = /\.geojson$/i;
 
 interface WebpackRules {
   module: { rules: unknown[] };
@@ -60,9 +63,15 @@ const nextConfig: NextConfig = {
   webpack: (config: unknown) => {
     if (!hasModuleRules(config)) throw new Error('webpack config without module rules');
     config.module.rules.push({ test: SVG_FILE, issuer: SCRIPT_FILE, use: [svgrLoader] });
+    config.module.rules.push({ test: GEOJSON_FILE, type: 'json' });
     return config;
   },
-  turbopack: { rules: { '*.svg': { loaders: [svgrLoader], as: '*.js' } } },
+  turbopack: {
+    rules: {
+      '*.svg': { loaders: [svgrLoader], as: '*.js' },
+      '*.geojson': { loaders: [], as: '*.json' },
+    },
+  },
   images: {
     // Keeps Next.js from claiming .svg imports and from typing them as images (src/types/svg.d.ts does).
     disableStaticImages: true,

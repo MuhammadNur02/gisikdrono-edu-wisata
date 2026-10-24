@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { StatusBadge } from '@/components/admin/status/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { SECURITY_ALERTS_PATH } from '@/config/dashboard';
+import { SECURITY_ALERTS_PATH } from '@/config/staff';
 import { copy } from '@/lib/copy/id';
 import { formatDateTimeShort } from '@/lib/utils/dates';
 import type { OpenSecurityAlert } from '@/types/dashboard-stats';
