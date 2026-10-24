@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { PhotoFrame } from '@/components/marketing/photo';
 import { IMAGE_SIZES } from '@/config/images';
-import { copy } from '@/lib/copy/id';
+import { galleryUiCopy } from '@/lib/copy/catalogue-ui';
 import { cn } from '@/lib/utils/cn';
 import { youtubeEmbedUrl, youtubeStillUrl, type YoutubeVideoId } from '@/lib/utils/youtube';
 import type { PublicImage } from '@/types/media';
@@ -19,7 +19,7 @@ export interface VideoTileProps {
 }
 
 // The player shares the video's 16:9 frame, so pressing play swaps one for the other without a jump.
-const FRAME_CLASS = 'relative aspect-video overflow-hidden rounded-xl bg-brand-deep';
+const FRAME_CLASS = 'relative aspect-video overflow-hidden rounded-lg bg-night';
 // The YouTube player needs its scripts, its own origin (allow-same-origin keeps it on youtube-nocookie.com,
 // never ours), fullscreen and the link that opens the video on YouTube; nothing else, so the frame can neither
 // navigate this page nor submit forms.
@@ -77,7 +77,7 @@ export function VideoTile(props: VideoTileProps) {
       onClick={() => {
         setIsPlaying(true);
       }}
-      aria-label={copy.gallery.playVideo(props.alt)}
+      aria-label={galleryUiCopy.playVideo(props.alt)}
       className={cn(
         FRAME_CLASS,
         'group block w-full focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none',
@@ -90,7 +90,7 @@ export function VideoTile(props: VideoTileProps) {
         </span>
       </span>
       <span className="absolute top-2 left-2 rounded-full bg-background/90 px-2 py-0.5 text-caption font-medium text-foreground">
-        {copy.gallery.videoSource}
+        {galleryUiCopy.videoSource}
       </span>
     </button>
   );

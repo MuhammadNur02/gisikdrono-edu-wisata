@@ -1,50 +1,100 @@
 'use client';
 
-import Lightbox, { type SlideImage } from 'yet-another-react-lightbox';
-import Captions from 'yet-another-react-lightbox/plugins/captions';
+import Lightbox, { type Slide } from 'yet-another-react-lightbox';
+import Counter from 'yet-another-react-lightbox/plugins/counter';
+import Thumbnails from 'yet-another-react-lightbox/plugins/thumbnails';
 import 'yet-another-react-lightbox/styles.css';
-import 'yet-another-react-lightbox/plugins/captions.css';
+import 'yet-another-react-lightbox/plugins/counter.css';
+import 'yet-another-react-lightbox/plugins/thumbnails.css';
 
-import { copy } from '@/lib/copy/id';
+import type { LightboxPhoto } from '@/components/gallery/gallery-slides';
+import { Badge } from '@/components/ui/badge';
+import { rwAccentClasses } from '@/config/rw';
+import { galleryUiCopy } from '@/lib/copy/catalogue-ui';
 
 export interface GalleryLightboxProps {
-  slides: SlideImage[];
+  photos: readonly LightboxPhoto[];
   index: number;
-  // The slide on screen, so closing can hand the focus back to its tile.
+  // The photo on screen, so closing can hand the focus back to its tile.
   onView: (index: number) => void;
   onClose: () => void;
 }
 
+const text = galleryUiCopy.lightbox;
+
 const LABELS = {
-  Previous: copy.gallery.lightbox.previous,
-  Next: copy.gallery.lightbox.next,
-  Close: copy.gallery.lightbox.close,
-  Lightbox: copy.gallery.lightbox.viewer,
-  Carousel: copy.gallery.lightbox.carousel,
-  Slide: copy.gallery.lightbox.slide,
-  'Photo gallery': copy.gallery.lightbox.photos,
-  '{index} of {total}': copy.gallery.lightbox.position,
+  Previous: text.previous,
+  Next: text.next,
+  Close: text.close,
+  Lightbox: text.viewer,
+  Carousel: text.carousel,
+  Slide: text.slide,
+  'Photo gallery': text.photos,
+  Thumbnails: text.thumbnails,
+  '{index} of {total}': text.position,
 };
 
-// docs/StyleGuide.md §5.11: swipe and arrow keys, Esc closes, the caption under the photo. Loaded only when a
-// photo is opened (next/dynamic in masonry-grid.tsx), so the gallery page does not carry it up front. The
-// library follows prefers-reduced-motion on its own.
-export function GalleryLightbox({ slides, index, onView, onClose }: GalleryLightboxProps) {
+// DESIGN-SPEC §3.7: 64 x 48 thumbnails, 12 px apart, a 2 px white edge on the one shown (the rest at 45 %).
+const THUMBNAILS = {
+  width: 64,
+  height: 48,
+  border: 2,
+  borderRadius: 8,
+  padding: 0,
+  gap: 12,
+  imageFit: 'cover',
+  vignette: false,
+  showToggle: false,
+} as const;
+
+// The caption block under the photo, at most 1040 px: the RW badge on the dark, the caption, the alt text.
+function PhotoCaption({ photo }: { photo: LightboxPhoto }) {
+  return (
+    <div className="absolute inset-x-0 bottom-0 px-5 pb-4 md:px-10 md:pb-6">
+      <div className="mx-auto max-w-260 space-y-2.5 text-left">
+        {photo.badge ? (
+          <Badge variant="onPhoto" dot className={rwAccentClasses(photo.badge.rw.accentKey).scope}>
+            {photo.badge.text}
+          </Badge>
+        ) : null}
+        <p className="font-display text-lg leading-snug font-bold text-white md:text-2xl">
+          {photo.title}
+        </p>
+        {photo.description ? (
+          <p className="max-w-190 text-body-sm text-on-dark-2 max-md:line-clamp-2">
+            {photo.description}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// docs/StyleGuide.md §5.11, DESIGN-SPEC §3.7: the night lightbox with the counter, the circles of its controls, the
+// caption block and the thumbnail strip; swipe and the arrow keys move, Esc and the backdrop close. Loaded only when a
+// photo is opened (next/dynamic), so the pages do not carry it up front. The library follows prefers-reduced-motion.
+export function GalleryLightbox({ photos, index, onView, onClose }: GalleryLightboxProps) {
+  const footerFor = (slide: Slide) => {
+    const photo = photos.find((candidate) => candidate.slide === slide);
+    return photo ? <PhotoCaption photo={photo} /> : null;
+  };
   return (
     <Lightbox
       open
       index={index}
-      slides={slides}
+      slides={photos.map((photo) => photo.slide)}
       close={onClose}
       on={{
         view: ({ index: shown }) => {
           onView(shown);
         },
       }}
-      plugins={[Captions]}
-      captions={{ descriptionTextAlign: 'center' }}
+      plugins={[Counter, Thumbnails]}
+      thumbnails={THUMBNAILS}
+      render={{ slideFooter: ({ slide }) => footerFor(slide) }}
       labels={LABELS}
-      controller={{ closeOnBackdropClick: true }}
+      className="lightbox-theme"
+      controller={{ closeOnBackdropClick: true, closeOnPullDown: true }}
     />
   );
 }
