@@ -71,6 +71,9 @@ function useScheduleForm({ wizardPackage, draft, update }: SessionPickerStepProp
   return form;
 }
 
+// The hairline between the panel's three parts: the group size, the calendar and the sessions.
+const PANEL_DIVIDER = 'border-t border-border pt-6 md:pt-7';
+
 // DESIGN-SPEC §3.10: the label and its hint on the left, the stepper on the right, on every screen.
 const PAX_ROW =
   'grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-1 [&>*]:col-start-1 [&>*:nth-child(2)]:col-start-2 [&>*:nth-child(2)]:row-span-2 [&>*:nth-child(2)]:row-start-1';
@@ -263,10 +266,12 @@ export function SessionPickerStep(props: SessionPickerStepProps) {
           nextLabel={props.nextLabel}
           exitHref={packagePath(wizardPackage.slug)}
         >
-          <WizardPanel className="divide-y divide-border *:pt-6 *:first:pt-0 md:space-y-7 md:*:pt-7">
+          <WizardPanel className="md:space-y-7">
             <PaxField form={form} minPax={wizardPackage.minPax} maxPax={wizardPackage.maxPax} />
-            <DateField form={form} legs={legs} pax={pax} />
-            <div className="space-y-4">
+            <div className={PANEL_DIVIDER}>
+              <DateField form={form} legs={legs} pax={pax} />
+            </div>
+            <div className={cn(PANEL_DIVIDER, 'space-y-4')}>
               <SessionsHead form={form} isStale={props.isStale} />
               <SessionsField form={form} legs={legs} />
             </div>
