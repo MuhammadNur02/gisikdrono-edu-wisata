@@ -1,15 +1,22 @@
 import { revalidateTag } from 'next/cache';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { AppError } from '@/lib/errors';
 import { requireAal2, type StaffContext } from '@/server/auth/guards';
 import {
+  archiveBooklet,
   createBooklet,
   readBookletOwner,
   removeBooklet,
   updateBooklet,
 } from '@/server/services/booklet-service';
 
-import { createBookletAction, removeBookletAction, updateBookletAction } from './booklets';
+import {
+  archiveBookletAction,
+  createBookletAction,
+  removeBookletAction,
+  updateBookletAction,
+} from './booklets';
 
 const cookie = vi.hoisted(() => ({ value: undefined as string | undefined }));
 
@@ -24,6 +31,7 @@ vi.mock('next/headers', () => ({
 vi.mock('next/cache', () => ({ revalidateTag: vi.fn() }));
 vi.mock('@/server/auth/guards', () => ({ requireAal2: vi.fn() }));
 vi.mock('@/server/services/booklet-service', () => ({
+  archiveBooklet: vi.fn(),
   createBooklet: vi.fn(),
   readBookletOwner: vi.fn(),
   removeBooklet: vi.fn(),
@@ -55,6 +63,7 @@ beforeEach(() => {
   vi.mocked(readBookletOwner).mockReset().mockResolvedValue(5);
   // A removal whose files all went, unless a test says otherwise.
   vi.mocked(removeBooklet).mockResolvedValue(true);
+  vi.mocked(archiveBooklet).mockReset().mockResolvedValue(undefined);
   vi.mocked(revalidateTag).mockReset();
 });
 
@@ -114,5 +123,36 @@ describe('booklet actions', () => {
       });
     }
     expect(createBooklet).not.toHaveBeenCalled();
+  });
+});
+
+describe('archiveBookletAction', () => {
+  it('archives a booklet of their own RW by status', async () => {
+    const result = await archiveBookletAction({ id: BOOKLET_ID });
+    expect(result.ok).toBe(true);
+    expect(archiveBooklet).toHaveBeenCalledWith(5, BOOKLET_ID);
+    expect(revalidateTag).toHaveBeenCalledWith('booklets');
+  });
+
+  it('refuses an RW 05 admin a booklet the database holds for the kelurahan', async () => {
+    vi.mocked(readBookletOwner).mockResolvedValue(null);
+    const result = await archiveBookletAction({ id: BOOKLET_ID });
+    expect(result).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
+    expect(archiveBooklet).not.toHaveBeenCalled();
+  });
+});
+
+describe('removeBookletAction on a row that is not archived (review of PR #40)', () => {
+  it('answers STATE_INVALID with the archive-first copy and revalidates nothing', async () => {
+    vi.mocked(requireAal2).mockResolvedValue({ ok: true, ctx: SUPERADMIN });
+    vi.mocked(removeBooklet).mockRejectedValueOnce(
+      new AppError('STATE_INVALID', 'Arsipkan dulu sebelum menghapus permanen.'),
+    );
+    const result = await removeBookletAction({ id: BOOKLET_ID });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'STATE_INVALID', message: 'Arsipkan dulu sebelum menghapus permanen.' },
+    });
+    expect(revalidateTag).not.toHaveBeenCalled();
   });
 });

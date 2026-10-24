@@ -6,12 +6,14 @@ import { copy } from '@/lib/copy/id';
 import { AppError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isPublishedImagePathFor } from '@/lib/uploads/paths';
+import { pageRange, searchPattern, type ListQuery } from '@/lib/utils/list-query';
 import { rwPagePath } from '@/lib/utils/paths';
 import type { UpdateRwPageValues } from '@/lib/validations/rw-page';
 import type { StaffContext } from '@/server/auth/guards';
 import { removeFilesOrLog } from '@/server/services/content-files';
 import { removeGalleryFiles } from '@/server/services/upload-service';
-import type { CleanedUp, RwPageAdmin } from '@/types/cms';
+import type { CleanedUp, RwPageAdmin, RwPageListItem } from '@/types/cms';
+import type { ListResult } from '@/types/data-table';
 
 // The RW pages through the session client, so rw_units_staff_update, rw_units_guard and the AAL2 policy decide
 // (0004, 0005). Only the content columns are read or written; the treasury account is granted to no API role.
@@ -49,7 +51,7 @@ function toRwPageAdmin(rwId: RwId, row: RwPageRow): RwPageAdmin {
   };
 }
 
-export async function readRwPageForStaff(rwId: RwId): Promise<RwPageAdmin | null> {
+async function readRwPageForStaff(rwId: RwId): Promise<RwPageAdmin | null> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('rw_units')
@@ -58,6 +60,24 @@ export async function readRwPageForStaff(rwId: RwId): Promise<RwPageAdmin | null
     .maybeSingle();
   if (error) throw error;
   return data ? toRwPageAdmin(rwId, data) : null;
+}
+
+// The RW pages a staff member edits, one page of them from the URL's query (Task P4.3.03): an RW admin's own, the
+// superadmin's chosen RW or every RW (effectiveRw), searched by name, in the menu's order. The row id is the RW's.
+export async function listRwPagesForStaff(
+  query: ListQuery,
+  rw: RwId | null,
+): Promise<ListResult<RwPageListItem>> {
+  const { from, to } = pageRange(query.page, query.per);
+  const supabase = await createSupabaseServerClient();
+  let request = supabase.from('rw_units').select(COLUMNS, { count: 'exact' });
+  const pattern = searchPattern(query.q);
+  if (pattern !== null) request = request.ilike('name', pattern);
+  if (rw !== null) request = request.eq('id', rw);
+  const { data, error, count } = await request.order('sort_order').order('id').range(from, to);
+  if (error) throw error;
+  const rows = data.map((row) => ({ ...toRwPageAdmin(row.id, row), id: String(row.id) }));
+  return { rows, total: count ?? rows.length };
 }
 
 // The photo is a gallery photo of this RW (rw_units has no upload folder of its own; pnpm db:seed --media does the

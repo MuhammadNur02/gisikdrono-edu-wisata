@@ -10,6 +10,7 @@ import { createGalleryItemSchema, updateGalleryItemSchema } from '@/lib/validati
 import { canWriteFor, requireNewContentOwner } from '@/server/auth/content-owner';
 import { requireAal2 } from '@/server/auth/guards';
 import {
+  archiveGalleryItem,
   createGalleryItem,
   readGalleryOwner,
   removeGalleryItem,
@@ -77,6 +78,26 @@ export async function removeGalleryItemAction(input: unknown): Promise<ActionRes
     revalidateTag(TAGS.galleries(contentOwnerTagOf(owner)));
     revalidateTag(TAGS.allGalleries);
     return okUnlessFilesLeft({ value: null, filesRemoved });
+  } catch (error) {
+    return mapError(error);
+  }
+}
+
+// Archive by status instead of a delete (Task P4.3.03): the owner's admin or the superadmin.
+export async function archiveGalleryItemAction(input: unknown): Promise<ActionResult<null>> {
+  const parsed = rowRefSchema.safeParse(input);
+  if (!parsed.success) return mapError(parsed.error);
+  const guard = await requireAal2();
+  if (!guard.ok) return guard;
+
+  try {
+    const owner = await readGalleryOwner(parsed.data.id);
+    if (owner === undefined) return fail('NOT_FOUND');
+    if (!canWriteFor(guard.ctx, owner)) return fail('FORBIDDEN');
+    await archiveGalleryItem(owner, parsed.data.id);
+    revalidateTag(TAGS.galleries(contentOwnerTagOf(owner)));
+    revalidateTag(TAGS.allGalleries);
+    return ok(null);
   } catch (error) {
     return mapError(error);
   }

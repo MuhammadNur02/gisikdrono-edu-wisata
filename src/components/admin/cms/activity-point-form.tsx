@@ -187,7 +187,7 @@ function PositionFields({
   );
 }
 
-// Task P2.9.06, docs/PRD.md FR-ADMIN-14: one activity point, new or as it is, inside its FormDialog.
+// Task P2.9.06, docs/PRD.md FR-ADMIN-14: one activity point, new or as it is, inside its sheet (Task P4.3.03).
 export function ActivityPointForm({
   point,
   rwId,

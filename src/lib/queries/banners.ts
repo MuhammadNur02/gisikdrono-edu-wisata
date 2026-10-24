@@ -34,13 +34,15 @@ function toHeroBanner(row: BannerRow): HeroBanner | null {
 }
 
 // Active banners inside their window (hero_banners_public_read). The window is checked when the cache
-// fills, so a banner can start or end up to an hour late unless its edit revalidates `banners`.
+// fills, so a banner can start or end up to an hour late unless its edit revalidates `banners`. The order is the
+// dashboard's (sort_order, then newest first, readBannerOrder), so a move there is the move here.
 export const listHeroBanners = cachedPublicRead(
   async (): Promise<HeroBanner[]> => {
     const result = await createSupabaseAnonClient()
       .from('hero_banners')
       .select(BANNER_COLUMNS)
-      .order('sort_order');
+      .order('sort_order')
+      .order('created_at', { ascending: false });
     return rowsOf(result, 'hero_banners').flatMap((row) => toHeroBanner(row) ?? []);
   },
   ['banners', 'list'],

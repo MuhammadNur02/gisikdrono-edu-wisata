@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import {
   insertRw08Article,
@@ -40,6 +40,19 @@ test.afterAll(async () => {
 
 test.skip(({ isMobile }) => isMobile, 'one run of each flow is enough');
 
+// Task P4.3.03: a content row's actions sit in its `Aksi baris …` menu, and archive or removal is confirmed in a
+// ResponsiveDialog.
+async function chooseRowAction(page: Page, row: Locator, action: string) {
+  await row.getByRole('button', { name: /^Aksi baris/ }).click();
+  await page.getByRole('menuitem', { name: action, exact: true }).click();
+}
+
+async function confirmRowAction(page: Page, row: Locator, action: string, done: string) {
+  await chooseRowAction(page, row, action);
+  await page.getByRole('dialog').getByRole('button', { name: action, exact: true }).click();
+  await expect(page.getByText(done)).toBeVisible(AUTH_STEP);
+}
+
 async function saveAndWait(page: Page, saved: string) {
   await page.getByRole('button', { name: 'Simpan', exact: true }).click();
   await expect(page.getByText(saved)).toBeVisible(AUTH_STEP);
@@ -59,16 +72,32 @@ test('a booklet an RW 05 officer uploads is on /e-booklet at the next visit', as
   await expect(dialog.getByText('PDF dan 2 halamannya sudah terunggah.')).toBeVisible(UPLOAD_STEP);
   await dialog.getByLabel('Judul').fill(BOOKLET_TITLE);
   await saveAndWait(page, `Booklet "${BOOKLET_TITLE}" tersimpan.`);
-  // booklets_super_delete (0005): the RW officer is offered no way to remove it.
-  const row = page.getByRole('row', { name: new RegExp(BOOKLET_TITLE) });
-  await expect(row).toBeVisible();
-  await expect(row.getByRole('button', { name: 'Hapus' })).toHaveCount(0);
 
   await page.goto('/e-booklet');
   await expect(page.getByText(BOOKLET_TITLE)).toBeVisible();
 });
 
-test('the superadmin removes the booklet, which takes it and its PDF off the site', async ({
+// Task P4.3.03: the officer archives their booklet, which takes it off /e-booklet; once it is archived the step that
+// would remove it for good is still not theirs (booklets_super_delete, 0005).
+test('the RW 05 officer archives the booklet but is offered no permanent removal', async ({
+  page,
+}) => {
+  await signInToDashboard(page, ADMIN_RW05);
+  await page.goto('/dashboard/booklets');
+  const row = page.getByRole('row', { name: new RegExp(BOOKLET_TITLE) });
+  await confirmRowAction(page, row, 'Arsipkan', 'Konten diarsipkan.');
+  await page.goto('/e-booklet');
+  await expect(page.getByText(BOOKLET_TITLE)).toHaveCount(0);
+
+  await page.goto('/dashboard/booklets');
+  await row.getByRole('button', { name: /^Aksi baris/ }).click();
+  await expect(page.getByRole('menuitem', { name: 'Ubah' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Hapus permanen' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+});
+
+// The archived booklet kept its PDF; only the superadmin removes it for good, PDF and all.
+test('the superadmin removes the archived booklet, which takes it and its PDF off the site', async ({
   page,
 }) => {
   const pdfUrl = publicMediaUrl(await readBookletPdfPath(BOOKLET_TITLE));
@@ -77,10 +106,8 @@ test('the superadmin removes the booklet, which takes it and its PDF off the sit
   await signInToDashboard(page, SUPERADMIN);
   await page.goto('/dashboard/booklets');
   const row = page.getByRole('row', { name: new RegExp(BOOKLET_TITLE) });
-  await row.getByRole('button', { name: 'Hapus' }).click();
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Hapus' }).click();
-  await expect(page.getByText(`Booklet "${BOOKLET_TITLE}" dihapus.`)).toBeVisible(AUTH_STEP);
-
+  await confirmRowAction(page, row, 'Hapus permanen', 'Konten dihapus.');
+  await expect(row).toHaveCount(0);
   await page.goto('/e-booklet');
   await expect(page.getByText(BOOKLET_TITLE)).toHaveCount(0);
   expect((await page.request.get(pdfUrl)).status()).not.toBe(200);
@@ -90,7 +117,10 @@ test('an RW page tagline is on the public RW page at the next visit', async ({ p
   const tagline = `Tagline uji e2e ${Date.now().toString(36)}`;
   await signInToDashboard(page, ADMIN_RW05);
   await page.goto('/dashboard/pages');
-  const field = page.getByLabel('Tagline');
+  // Task P4.3.03: the officer's one RW page is a row of the list, edited in a sheet that closes on save.
+  const row = page.getByRole('row', { name: /RW 05/ });
+  await chooseRowAction(page, row, 'Ubah');
+  const field = page.getByRole('dialog').getByLabel('Tagline');
   const original = await field.inputValue();
 
   await field.fill(tagline);
@@ -100,7 +130,8 @@ test('an RW page tagline is on the public RW page at the next visit', async ({ p
 
   // Back through the form, so the cached page is refreshed too.
   await page.goto('/dashboard/pages');
-  await page.getByLabel('Tagline').fill(original);
+  await chooseRowAction(page, row, 'Ubah');
+  await page.getByRole('dialog').getByLabel('Tagline').fill(original);
   await saveAndWait(page, 'Halaman RW tersimpan.');
 });
 
@@ -125,7 +156,7 @@ test('the superadmin publishes it, and it is on /artikel at the next visit', asy
   await signInToDashboard(page, SUPERADMIN);
   await page.goto('/dashboard/articles');
   const row = page.getByRole('row', { name: new RegExp(ARTICLE_TITLE) });
-  await row.getByRole('link', { name: 'Ubah' }).click();
+  await row.getByRole('link', { name: ARTICLE_TITLE }).click();
   await page.getByRole('button', { name: 'Tayangkan' }).click();
   await expect(page.getByText(saved)).toBeVisible(AUTH_STEP);
   await page.goto('/artikel');

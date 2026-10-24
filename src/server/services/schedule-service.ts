@@ -2,19 +2,24 @@ import 'server-only';
 
 import { rrulestr } from 'rrule';
 
+import { SCHEDULE_DEFAULT_SORT, SCHEDULE_SORT_COLUMNS } from '@/config/cms';
 import type { RwId } from '@/config/rw';
+import { DB_ENUMS } from '@/db/enums';
 import type { Tables } from '@/db/types';
 import { copy } from '@/lib/copy/id';
 import { AppError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isPublishedImagePathFor } from '@/lib/uploads/paths';
+import { allowedValue, planContentList } from '@/lib/utils/content-list';
 import { toJakartaIsoString } from '@/lib/utils/dates';
+import type { ListQuery } from '@/lib/utils/list-query';
 import type { ScheduleValues, UpdateScheduleValues } from '@/lib/validations/schedule';
 import type { StaffContext } from '@/server/auth/guards';
-import { rowOrNotFound } from '@/server/services/content-errors';
+import { archivedRowOr, rowOrNotFound } from '@/server/services/content-errors';
 import { removeFilesOrLog } from '@/server/services/content-files';
 import { removeGalleryFiles } from '@/server/services/upload-service';
 import type { CleanedUp, ScheduleAdmin, SchedulePackageOption } from '@/types/cms';
+import type { ListResult } from '@/types/data-table';
 
 // The performance schedules of an RW that runs one (rw_units.schedule_enabled), through the session client, so the
 // performance_schedules policies, the package-RW trigger and the AAL2 policy decide (0005). Every write names the RW
@@ -87,15 +92,44 @@ function checkImage(rwId: RwId, path: string | null, current: string | null): vo
   }
 }
 
-export async function listSchedulesForStaff(rwId: RwId): Promise<ScheduleAdmin[]> {
+// One page of an RW's schedule from the URL's query (Task P4.3.03), searched by title, `?category=` naming the type.
+export async function listSchedulesForStaff(
+  query: ListQuery,
+  rwId: RwId,
+): Promise<ListResult<ScheduleAdmin>> {
+  const plan = planContentList(query, rwId, {
+    columns: SCHEDULE_SORT_COLUMNS,
+    fallback: SCHEDULE_DEFAULT_SORT,
+  });
+  const supabase = await createSupabaseServerClient();
+  let request = supabase
+    .from('performance_schedules')
+    .select(COLUMNS, { count: 'exact' })
+    .eq('rw_id', rwId);
+  if (plan.pattern !== null) request = request.ilike('title', plan.pattern);
+  if (plan.statuses.length > 0) request = request.in('status', plan.statuses);
+  const scheduleType = allowedValue(query.category, DB_ENUMS.schedule_type);
+  if (scheduleType !== null) request = request.eq('schedule_type', scheduleType);
+  if (plan.order !== null) {
+    request = request.order(plan.order.column, { ascending: plan.order.ascending });
+  }
+  const { data, error, count } = await request.order('id').range(plan.from, plan.to);
+  if (error) throw error;
+  return { rows: data.map(toScheduleAdmin), total: count ?? data.length };
+}
+
+// Archive by status (Task P4.3.03): off the schedule page, kept here with its photo.
+export async function archiveSchedule(rwId: RwId, id: string): Promise<void> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('performance_schedules')
-    .select(COLUMNS)
+    .update({ status: 'archived' })
+    .eq('id', id)
     .eq('rw_id', rwId)
-    .order('starts_at', { ascending: false });
+    .select('id')
+    .maybeSingle();
   if (error) throw error;
-  return data.map(toScheduleAdmin);
+  rowOrNotFound(data);
 }
 
 // The packages a schedule may link: the RW's own (performance_schedules_package_rw_guard, 0005).
@@ -188,9 +222,10 @@ export async function removeSchedule(ctx: StaffContext, rwId: RwId, id: string):
     .delete()
     .eq('id', id)
     .eq('rw_id', rwId)
-    .select('image_path')
+    .eq('status', 'archived')
+    .select('id, image_path')
     .maybeSingle();
   if (error) throw error;
-  const removed = rowOrNotFound(data);
+  const removed = archivedRowOr(data);
   return removed.image_path === null || removeSchedulePhoto(ctx, rwId, id, removed.image_path);
 }

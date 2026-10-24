@@ -1,57 +1,42 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { notFound } from 'next/navigation';
 
-import { OwnerNotice } from '@/components/admin/cms/owner-notice';
-import { RwPageForm } from '@/components/admin/cms/rw-page-form';
-import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { copy } from '@/lib/copy/id';
+import { RwPageBoard } from '@/components/admin/cms/rw-page-table';
+import { cmsCopy } from '@/lib/copy/cms';
+import { contentListsCopy } from '@/lib/copy/content-lists';
+import { listFacets, rwFacet } from '@/lib/utils/facets';
+import { loadListQuery } from '@/lib/utils/list-query';
 import { updateRwPageAction } from '@/server/actions/pages';
-import { ownerOfNewContent, readRwScope } from '@/server/auth/content-owner';
+import { effectiveRw } from '@/server/auth/content-owner';
 import { requireDashboardStaff } from '@/server/auth/session';
-import { readRwPageForStaff } from '@/server/services/rw-page-service';
+import { listRwPagesForStaff } from '@/server/services/rw-page-service';
+import { listRwUnitsForStaff } from '@/server/services/rw-unit-service';
 
-const text = copy.cms.pages;
+const text = cmsCopy.pages;
 
 export const metadata: Metadata = { title: text.title };
 
-// Task P2.9.06: the RW admin edits their own RW's page; the superadmin the one the RwSwitcher points at.
-export default async function RwPagesPage() {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+// Task P2.9.06 and P4.3.03, docs/PRD.md FR-ADMIN-15: the RW admin edits their own RW's page; the superadmin every RW's,
+// narrowed by `?rw=` (effectiveRw), each in a sheet.
+export default async function RwPagesPage({ searchParams }: { searchParams: SearchParams }) {
   const ctx = await requireDashboardStaff();
   if (!ctx) return null;
-  const rwId = ownerOfNewContent(ctx, await readRwScope());
+  const query = await loadListQuery(searchParams);
+  const [rw, rwUnits] = await Promise.all([effectiveRw(ctx, query.rw), listRwUnitsForStaff()]);
+  const result = await listRwPagesForStaff(query, rw);
   const isSuperadmin = ctx.role === 'superadmin';
-  const header = <DashboardPageHeader title={text.title} description={text.description} />;
-  if (rwId === null || rwId === undefined) {
-    return (
-      <>
-        {header}
-        <OwnerNotice owner={null} isSuperadmin={isSuperadmin} rwOnly />
-      </>
-    );
-  }
-  const page = await readRwPageForStaff(rwId);
-  if (!page) notFound();
+  const facets = listFacets(isSuperadmin, {
+    rw: rwFacet(contentListsCopy.facets.rw, rwUnits),
+  });
 
   return (
-    <>
-      <DashboardPageHeader
-        title={text.title}
-        description={text.description}
-        action={
-          <Button asChild variant="outline">
-            <Link href={page.path}>{text.view}</Link>
-          </Button>
-        }
-      />
-      <OwnerNotice owner={rwId} isSuperadmin={isSuperadmin} />
-      <Card className="max-w-2xl">
-        <CardContent>
-          <RwPageForm page={page} action={updateRwPageAction} />
-        </CardContent>
-      </Card>
-    </>
+    <RwPageBoard
+      rows={result.rows}
+      total={result.total}
+      facets={facets}
+      isSuperadmin={isSuperadmin}
+      updateAction={updateRwPageAction}
+    />
   );
 }

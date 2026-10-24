@@ -1,99 +1,160 @@
-import { ActivityPointDialog } from '@/components/admin/cms/activity-point-dialog';
-import { RemoveButton } from '@/components/admin/cms/remove-button';
-import { ContentStatusBadge } from '@/components/admin/status/status-badge';
+'use client';
+
+import type { ColumnDef } from '@tanstack/react-table';
+import { MapPin } from 'lucide-react';
+import dynamic from 'next/dynamic';
+import { useCallback, type ReactNode } from 'react';
+
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { rwLabel } from '@/config/rw';
+  ContentBoard,
+  type BoardControls,
+  type BoardEditor,
+} from '@/components/admin/cms/content-board';
+import {
+  actionsColumn,
+  editItem,
+  retireItems,
+  statusColumn,
+} from '@/components/admin/cms/content-columns';
+import { ColumnHeader } from '@/components/admin/data-table/column-header';
+import { EmptyState } from '@/components/admin/shell/empty-state';
+import { rwLabel, type RwId } from '@/config/rw';
 import { ACTIVITY_POINT_TYPE } from '@/config/status';
-import { copy } from '@/lib/copy/id';
+import { cmsCopy } from '@/lib/copy/cms';
+import { contentListsCopy } from '@/lib/copy/content-lists';
 import type { ActionResult } from '@/types/action-result';
 import type { ActivityPointAdmin } from '@/types/cms';
-import type { RwUnitSummary } from '@/types/rw-unit';
+import type { ListFacet } from '@/types/data-table';
 
-const text = copy.cms.points;
-const common = copy.cms.common;
+const text = cmsCopy.points;
+const lists = contentListsCopy;
 
-interface PointActions {
-  updateAction: (values: unknown) => Promise<ActionResult<ActivityPointAdmin>>;
-  removeAction: (input: unknown) => Promise<ActionResult<null>>;
+// The form and its map picker load on the sheet's first opening (admin first-load budget).
+const ActivityPointEditor = dynamic(() =>
+  import('@/components/admin/cms/activity-point-editor').then(
+    (module) => module.ActivityPointEditor,
+  ),
+);
+
+type RowAction = (input: unknown) => Promise<ActionResult<null>>;
+type SaveAction = (values: unknown) => Promise<ActionResult<ActivityPointAdmin>>;
+
+interface PointRowActions {
+  archive: RowAction;
+  remove: RowAction;
 }
 
-export interface ActivityPointTableProps extends PointActions {
-  points: ActivityPointAdmin[];
-  // Every RW, for the slug prefix each point's form shows (the RW page it is a section of).
-  rwUnits: readonly RwUnitSummary[];
+export interface ActivityPointBoardProps {
+  rows: ActivityPointAdmin[];
+  total: number;
+  facets: readonly ListFacet[];
+  notice?: ReactNode;
   showRw: boolean;
+  // The RW a new point belongs to, or null while the superadmin's RwSwitcher points at none (no add button then).
+  newRwId: RwId | null;
+  // Each RW's public page by id, for the anchor each point's slug is shown under.
+  pagePaths: Record<number, string>;
+  actions: PointRowActions & { create: SaveAction; update: SaveAction };
 }
 
-function PointRow({
-  point,
-  pagePath,
-  showRw,
-  updateAction,
-  removeAction,
-}: PointActions & { point: ActivityPointAdmin; pagePath: string; showRw: boolean }) {
-  return (
-    <TableRow>
-      <TableCell className="font-medium">{point.name}</TableCell>
-      <TableCell>{ACTIVITY_POINT_TYPE[point.pointType].label}</TableCell>
-      {showRw ? <TableCell>{rwLabel(point.rwId)}</TableCell> : null}
-      <TableCell>
-        <ContentStatusBadge status={point.status} />
-      </TableCell>
-      <TableCell>
-        <div className="flex justify-end gap-1">
-          <ActivityPointDialog
-            rwId={point.rwId}
-            pagePath={pagePath}
-            point={point}
-            action={updateAction}
-          />
-          <RemoveButton id={point.id} noun={text.noun} name={point.name} action={removeAction} />
-        </div>
-      </TableCell>
-    </TableRow>
+const RW_COLUMN: ColumnDef<ActivityPointAdmin> = {
+  id: 'rw',
+  header: lists.columns.owner,
+  cell: ({ row }) => rwLabel(row.original.rwId),
+  meta: { label: lists.columns.owner },
+};
+
+function describedColumns(showRw: boolean): ColumnDef<ActivityPointAdmin>[] {
+  return [
+    {
+      id: 'name',
+      accessorFn: (point) => point.name,
+      header: ({ column }) => <ColumnHeader column={column} title={text.name} />,
+      cell: ({ row }) => <span className="font-medium whitespace-normal">{row.original.name}</span>,
+      meta: { label: text.name, card: 'title' },
+    },
+    {
+      id: 'point_type',
+      header: text.pointType,
+      cell: ({ row }) => ACTIVITY_POINT_TYPE[row.original.pointType].label,
+      meta: { label: text.pointType },
+    },
+    ...(showRw ? [RW_COLUMN] : []),
+    {
+      id: 'sort_order',
+      accessorFn: (point) => point.sortOrder,
+      header: ({ column }) => <ColumnHeader column={column} title={lists.columns.sortOrder} />,
+      cell: ({ row }) => row.original.sortOrder,
+      meta: { label: lists.columns.sortOrder, align: 'right' },
+    },
+  ];
+}
+
+function pointColumns(
+  showRw: boolean,
+  actions: PointRowActions,
+  controls: BoardControls<ActivityPointAdmin>,
+): ColumnDef<ActivityPointAdmin>[] {
+  return [
+    ...describedColumns(showRw),
+    statusColumn<ActivityPointAdmin>(),
+    actionsColumn<ActivityPointAdmin>(
+      (point) => point.name,
+      (point) => [
+        editItem(() => {
+          controls.edit(point);
+        }),
+        ...retireItems(point, point.name, actions, controls.confirm),
+      ],
+    ),
+  ];
+}
+
+function pointEditor(
+  props: Pick<ActivityPointBoardProps, 'newRwId' | 'pagePaths' | 'actions'>,
+): BoardEditor<ActivityPointAdmin> {
+  return {
+    title: (point) => (point ? text.editTitle : text.addTitle),
+    render: (point, close) => {
+      const rwId = point ? point.rwId : props.newRwId;
+      if (rwId === null) return null;
+      return (
+        <ActivityPointEditor
+          rwId={rwId}
+          pagePath={props.pagePaths[rwId] ?? ''}
+          point={point}
+          actions={props.actions}
+          onSaved={close}
+        />
+      );
+    },
+  };
+}
+
+// Task P4.3.03, docs/PRD.md FR-ADMIN-14: one page of activity points from the URL's query; create and edit in a sheet,
+// archive by status, removal (with the photo) of an archived point only.
+export function ActivityPointBoard(props: ActivityPointBoardProps) {
+  const { showRw } = props;
+  const { archive, remove } = props.actions;
+  const columns = useCallback(
+    (controls: BoardControls<ActivityPointAdmin>) =>
+      pointColumns(showRw, { archive, remove }, controls),
+    [showRw, archive, remove],
   );
-}
-
-// A provisional list (Task P2.9.06); P4.3.03 moves it onto the DataTable of docs/StyleGuide.md §6.4. Below md the
-// table scrolls inside its own box, so the page itself never scrolls sideways.
-export function ActivityPointTable({
-  points,
-  rwUnits,
-  showRw,
-  ...actions
-}: ActivityPointTableProps) {
-  const pagePathOf = (rwId: number) => rwUnits.find((unit) => unit.id === rwId)?.path ?? '';
   return (
-    <div className="overflow-x-auto rounded-xl border border-border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{text.name}</TableHead>
-            <TableHead>{text.pointType}</TableHead>
-            {showRw ? <TableHead>{common.owner}</TableHead> : null}
-            <TableHead>{common.status}</TableHead>
-            <TableHead className="text-right">{common.actions}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {points.map((point) => (
-            <PointRow
-              key={point.id}
-              point={point}
-              pagePath={pagePathOf(point.rwId)}
-              showRw={showRw}
-              {...actions}
-            />
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+    <ContentBoard
+      title={text.title}
+      description={text.description}
+      add={props.newRwId === null ? null : { label: text.add }}
+      notice={props.notice}
+      columns={columns}
+      rows={props.rows}
+      total={props.total}
+      noun={lists.nouns.points}
+      facets={props.facets}
+      searchPlaceholder={lists.search.points}
+      emptyState={<EmptyState icon={MapPin} title={text.empty} description={text.emptyHint} />}
+      editor={pointEditor(props)}
+    />
   );
 }

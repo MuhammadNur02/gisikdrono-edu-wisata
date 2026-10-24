@@ -30,6 +30,7 @@
     "db:types": "node scripts/gen-db-types.mjs",
     "db:types:check": "pnpm db:types && git diff --exit-code -- src/db/types.ts",
     "db:seed": "tsx scripts/seed-dev.ts",
+    "db:seed:staging-media": "tsx scripts/seed-staging-media.ts",
     "db:test": "supabase test db",
     "midtrans:simulate": "tsx scripts/midtrans-simulate.ts",
     "midtrans:status": "tsx scripts/midtrans-status.ts",

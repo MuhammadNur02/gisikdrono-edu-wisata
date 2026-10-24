@@ -16,6 +16,7 @@ import {
 import { requireAal2, type StaffContext } from '@/server/auth/guards';
 import { listScheduleRwIds } from '@/server/services/rw-unit-service';
 import {
+  archiveSchedule,
   createSchedule,
   readScheduleOwner,
   removeSchedule,
@@ -94,6 +95,24 @@ export async function removeScheduleAction(input: unknown): Promise<ActionResult
     const filesRemoved = await removeSchedule(guard.ctx, target.rwId, parsed.data.id);
     revalidateTag(TAGS.schedules);
     return okUnlessFilesLeft({ value: null, filesRemoved });
+  } catch (error) {
+    return mapError(error);
+  }
+}
+
+// Archive by status instead of a delete (Task P4.3.03).
+export async function archiveScheduleAction(input: unknown): Promise<ActionResult<null>> {
+  const parsed = rowRefSchema.safeParse(input);
+  if (!parsed.success) return mapError(parsed.error);
+  const guard = await requireAal2();
+  if (!guard.ok) return guard;
+
+  try {
+    const target = await existingScheduleRw(guard.ctx, parsed.data.id);
+    if (!target.ok) return target;
+    await archiveSchedule(target.rwId, parsed.data.id);
+    revalidateTag(TAGS.schedules);
+    return ok(null);
   } catch (error) {
     return mapError(error);
   }

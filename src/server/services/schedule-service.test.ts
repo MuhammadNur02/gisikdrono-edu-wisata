@@ -84,4 +84,14 @@ describe('schedule photo', () => {
     expect(await removeSchedule(ADMIN_08, 8, SCHEDULE_ID)).toBe(true);
     expect(removeGalleryFiles).toHaveBeenCalledWith(ADMIN_08, 8, [OLD_PHOTO]);
   });
+
+  it('removes only an archived schedule (review of PR #40)', async () => {
+    const fake = fakeSessionClient(STORED);
+    session.client = fake.client;
+    await removeSchedule(ADMIN_08, 8, SCHEDULE_ID);
+    const [write] = fake.writes;
+    expect(fake.writes).toHaveLength(1);
+    expect(write?.method).toBe('DELETE');
+    expect(write?.url).toContain('status=eq.archived');
+  });
 });

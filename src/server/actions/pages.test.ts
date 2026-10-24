@@ -83,8 +83,8 @@ describe('updateRwPageAction', () => {
     expect(updateRwPage).not.toHaveBeenCalledWith(expect.anything(), 8, expect.anything());
   });
 
-  it('refuses a form that names an RW at all', async () => {
-    expect(await updateRwPageAction({ ...INPUT, rwId: 8 })).toMatchObject({
+  it('refuses a form that names a column the page does not edit', async () => {
+    expect(await updateRwPageAction({ ...INPUT, slug: 'rw-08-lain' })).toMatchObject({
       error: { code: 'VALIDATION' },
     });
     expect(updateRwPage).not.toHaveBeenCalled();
@@ -108,6 +108,33 @@ describe('updateRwPageAction', () => {
       error: { code: 'FORBIDDEN', message: 'x' },
     });
     expect(await updateRwPageAction(INPUT)).toMatchObject({ error: { code: 'FORBIDDEN' } });
+    expect(updateRwPage).not.toHaveBeenCalled();
+  });
+});
+
+describe('the RW the superadmin opened from the list', () => {
+  it("saves the page of the row's RW whatever the RwSwitcher says", async () => {
+    vi.mocked(requireAal2).mockResolvedValue({ ok: true, ctx: SUPERADMIN });
+    cookie.value = '5';
+    const result = await updateRwPageAction({ ...INPUT, rwId: 13 });
+    expect(result.ok).toBe(true);
+    expect(updateRwPage).toHaveBeenCalledWith(
+      SUPERADMIN,
+      13,
+      expect.not.objectContaining({ rwId: 13 }),
+    );
+  });
+
+  it('answers NOT_FOUND for an RW rw_units does not hold', async () => {
+    vi.mocked(requireAal2).mockResolvedValue({ ok: true, ctx: SUPERADMIN });
+    const result = await updateRwPageAction({ ...INPUT, rwId: 42 });
+    expect(result).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+    expect(updateRwPage).not.toHaveBeenCalled();
+  });
+
+  it('refuses an RW admin whose form names an RW, even their own', async () => {
+    const result = await updateRwPageAction({ ...INPUT, rwId: 5 });
+    expect(result).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
     expect(updateRwPage).not.toHaveBeenCalled();
   });
 });

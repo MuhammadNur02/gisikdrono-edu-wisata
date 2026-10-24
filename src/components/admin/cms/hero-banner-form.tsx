@@ -140,7 +140,7 @@ function DisplayFields({
   );
 }
 
-// Task P2.9.06, docs/PRD.md FR-ADMIN-23: one home page slide, new or as it is, inside its FormDialog.
+// Task P2.9.06, docs/PRD.md FR-ADMIN-23: one home page slide, new or as it is, inside its sheet (Task P4.3.03).
 export function HeroBannerForm({ banner, products, action, onSaved }: HeroBannerFormProps) {
   const router = useRouter();
   const form = useForm({ resolver: zodResolver(createHeroBannerSchema), defaultValues: banner });

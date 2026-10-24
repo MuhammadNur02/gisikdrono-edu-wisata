@@ -2,13 +2,14 @@
 
 import { revalidateTag } from 'next/cache';
 
-import { fail, mapError, okUnlessFilesLeft } from '@/lib/errors';
+import { fail, mapError, ok, okUnlessFilesLeft } from '@/lib/errors';
 import { TAGS } from '@/lib/queries/tags';
 import { saveActivityPointSchema } from '@/lib/validations/activity-point';
 import { rowRefSchema } from '@/lib/validations/content';
 import { canWriteFor, requireRwContentOwner } from '@/server/auth/content-owner';
 import { requireAal2 } from '@/server/auth/guards';
 import {
+  archiveActivityPoint,
   createActivityPoint,
   readActivityPointOwner,
   removeActivityPoint,
@@ -73,6 +74,25 @@ export async function removeActivityPointAction(input: unknown): Promise<ActionR
     const filesRemoved = await removeActivityPoint(guard.ctx, rwId, parsed.data.id);
     revalidateTag(TAGS.allActivityPoints);
     return okUnlessFilesLeft({ value: null, filesRemoved });
+  } catch (error) {
+    return mapError(error);
+  }
+}
+
+// Archive by status instead of a delete (Task P4.3.03): the RW's admin or the superadmin.
+export async function archiveActivityPointAction(input: unknown): Promise<ActionResult<null>> {
+  const parsed = rowRefSchema.safeParse(input);
+  if (!parsed.success) return mapError(parsed.error);
+  const guard = await requireAal2();
+  if (!guard.ok) return guard;
+
+  try {
+    const rwId = await readActivityPointOwner(parsed.data.id);
+    if (rwId === undefined) return fail('NOT_FOUND');
+    if (!canWriteFor(guard.ctx, rwId)) return fail('FORBIDDEN');
+    await archiveActivityPoint(rwId, parsed.data.id);
+    revalidateTag(TAGS.allActivityPoints);
+    return ok(null);
   } catch (error) {
     return mapError(error);
   }
