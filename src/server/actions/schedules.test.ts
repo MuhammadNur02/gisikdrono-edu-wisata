@@ -1,6 +1,7 @@
 import { revalidateTag } from 'next/cache';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { AppError } from '@/lib/errors';
 import { requireAal2, type StaffContext } from '@/server/auth/guards';
 import { listScheduleRwIds } from '@/server/services/rw-unit-service';
 import {
@@ -162,5 +163,19 @@ describe('archiveScheduleAction', () => {
     const result = await archiveScheduleAction({ id: SCHEDULE_ID });
     expect(result.ok).toBe(false);
     expect(archiveSchedule).not.toHaveBeenCalled();
+  });
+});
+
+describe('removeScheduleAction on a row that is not archived (review of PR #40)', () => {
+  it('answers STATE_INVALID with the archive-first copy and revalidates nothing', async () => {
+    vi.mocked(removeSchedule).mockRejectedValueOnce(
+      new AppError('STATE_INVALID', 'Arsipkan dulu sebelum menghapus permanen.'),
+    );
+    const result = await removeScheduleAction({ id: SCHEDULE_ID });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'STATE_INVALID', message: 'Arsipkan dulu sebelum menghapus permanen.' },
+    });
+    expect(revalidateTag).not.toHaveBeenCalled();
   });
 });

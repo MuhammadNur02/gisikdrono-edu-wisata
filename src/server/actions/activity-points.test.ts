@@ -1,6 +1,7 @@
 import { revalidateTag } from 'next/cache';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { AppError } from '@/lib/errors';
 import { requireAal2, type StaffContext } from '@/server/auth/guards';
 import {
   archiveActivityPoint,
@@ -173,5 +174,19 @@ describe('archiveActivityPointAction', () => {
     const result = await archiveActivityPointAction({ id: POINT_ID });
     expect(result).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
     expect(archiveActivityPoint).not.toHaveBeenCalled();
+  });
+});
+
+describe('removeActivityPointAction on a row that is not archived (review of PR #40)', () => {
+  it('answers STATE_INVALID with the archive-first copy and revalidates nothing', async () => {
+    vi.mocked(removeActivityPoint).mockRejectedValueOnce(
+      new AppError('STATE_INVALID', 'Arsipkan dulu sebelum menghapus permanen.'),
+    );
+    const result = await removeActivityPointAction({ id: POINT_ID });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'STATE_INVALID', message: 'Arsipkan dulu sebelum menghapus permanen.' },
+    });
+    expect(revalidateTag).not.toHaveBeenCalled();
   });
 });

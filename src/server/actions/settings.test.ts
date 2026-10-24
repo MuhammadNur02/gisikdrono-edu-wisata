@@ -79,3 +79,12 @@ describe('updateSiteSettingsAction', () => {
     expect(requireFreshTotp).not.toHaveBeenCalled();
   });
 });
+
+describe('a save that fails part-way', () => {
+  it('still revalidates the settings, since earlier keys may have saved', async () => {
+    vi.mocked(updateSiteSettings).mockRejectedValueOnce(new Error('connection reset'));
+    const result = await updateSiteSettingsAction(SETTINGS);
+    expect(result).toMatchObject({ ok: false, error: { code: 'INTERNAL' } });
+    expect(revalidateTag).toHaveBeenCalledWith('settings');
+  });
+});

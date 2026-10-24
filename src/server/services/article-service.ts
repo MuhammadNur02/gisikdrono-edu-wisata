@@ -14,7 +14,7 @@ import { allowedValue, planContentList } from '@/lib/utils/content-list';
 import type { ListQuery } from '@/lib/utils/list-query';
 import type { SaveArticleValues } from '@/lib/validations/article';
 import type { StaffContext } from '@/server/auth/guards';
-import { rowOrNotFound, slugConflictOr } from '@/server/services/content-errors';
+import { archivedRowOr, rowOrNotFound, slugConflictOr } from '@/server/services/content-errors';
 import { removeFilesOrLog } from '@/server/services/content-files';
 import { keepRowPhotos, removeRowPhotos } from '@/server/services/upload-service';
 import type { ArticleAdmin, ArticleListItem, CleanedUp } from '@/types/cms';
@@ -234,11 +234,11 @@ export async function removeArticle(
   id: string,
 ): Promise<boolean> {
   const supabase = await createSupabaseServerClient();
-  let query = supabase.from('articles').delete().eq('id', id);
+  let query = supabase.from('articles').delete().eq('id', id).eq('status', 'archived');
   query = owner === null ? query.is('rw_id', null) : query.eq('rw_id', owner);
   const { data, error } = await query.select('id').maybeSingle();
   if (error) throw error;
-  rowOrNotFound(data);
+  archivedRowOr(data);
   return removeFilesOrLog('article_files', id, () =>
     removeRowPhotos(ctx, photoFolderOf(owner, id)),
   );

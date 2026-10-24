@@ -116,6 +116,9 @@ export interface HeroBannerAdmin {
 export interface HeroBannerListItem extends HeroBannerAdmin {
   phase: BannerPhase;
   productName: string | null;
+  // Whether the row offers a move up or down: only in the home page's order, and not past either end.
+  canMoveUp: boolean;
+  canMoveDown: boolean;
 }
 
 export interface BannerProductOption {

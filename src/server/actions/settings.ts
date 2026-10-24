@@ -26,6 +26,9 @@ export async function updateSiteSettingsAction(input: unknown): Promise<ActionRe
     revalidateTag(TAGS.settings);
     return ok(changed);
   } catch (error) {
+    // The keys are written one row each, so a failure part-way may follow keys that did save; the public reads
+    // refresh either way (review of PR #40).
+    revalidateTag(TAGS.settings);
     return mapError(error);
   }
 }

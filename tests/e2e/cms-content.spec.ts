@@ -72,21 +72,32 @@ test('a booklet an RW 05 officer uploads is on /e-booklet at the next visit', as
   await expect(dialog.getByText('PDF dan 2 halamannya sudah terunggah.')).toBeVisible(UPLOAD_STEP);
   await dialog.getByLabel('Judul').fill(BOOKLET_TITLE);
   await saveAndWait(page, `Booklet "${BOOKLET_TITLE}" tersimpan.`);
-  // booklets_super_delete (0005): the RW officer is offered no way to remove it, only to archive it.
-  const row = page.getByRole('row', { name: new RegExp(BOOKLET_TITLE) });
-  await expect(row).toBeVisible();
-  await row.getByRole('button', { name: /^Aksi baris/ }).click();
-  await expect(page.getByRole('menuitem', { name: 'Arsipkan' })).toBeVisible();
-  await expect(page.getByRole('menuitem', { name: 'Hapus permanen' })).toHaveCount(0);
-  await page.keyboard.press('Escape');
 
   await page.goto('/e-booklet');
   await expect(page.getByText(BOOKLET_TITLE)).toBeVisible();
 });
 
-// Task P4.3.03: archive by status first, which takes the booklet off /e-booklet and keeps its PDF; only an archived
-// booklet is removed for good, PDF and all.
-test('the superadmin archives, then removes the booklet, which takes it and its PDF off the site', async ({
+// Task P4.3.03: the officer archives their booklet, which takes it off /e-booklet; once it is archived the step that
+// would remove it for good is still not theirs (booklets_super_delete, 0005).
+test('the RW 05 officer archives the booklet but is offered no permanent removal', async ({
+  page,
+}) => {
+  await signInToDashboard(page, ADMIN_RW05);
+  await page.goto('/dashboard/booklets');
+  const row = page.getByRole('row', { name: new RegExp(BOOKLET_TITLE) });
+  await confirmRowAction(page, row, 'Arsipkan', 'Konten diarsipkan.');
+  await page.goto('/e-booklet');
+  await expect(page.getByText(BOOKLET_TITLE)).toHaveCount(0);
+
+  await page.goto('/dashboard/booklets');
+  await row.getByRole('button', { name: /^Aksi baris/ }).click();
+  await expect(page.getByRole('menuitem', { name: 'Ubah' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Hapus permanen' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+});
+
+// The archived booklet kept its PDF; only the superadmin removes it for good, PDF and all.
+test('the superadmin removes the archived booklet, which takes it and its PDF off the site', async ({
   page,
 }) => {
   const pdfUrl = publicMediaUrl(await readBookletPdfPath(BOOKLET_TITLE));
@@ -95,11 +106,6 @@ test('the superadmin archives, then removes the booklet, which takes it and its 
   await signInToDashboard(page, SUPERADMIN);
   await page.goto('/dashboard/booklets');
   const row = page.getByRole('row', { name: new RegExp(BOOKLET_TITLE) });
-  await confirmRowAction(page, row, 'Arsipkan', 'Konten diarsipkan.');
-  await page.goto('/e-booklet');
-  await expect(page.getByText(BOOKLET_TITLE)).toHaveCount(0);
-
-  await page.goto('/dashboard/booklets');
   await confirmRowAction(page, row, 'Hapus permanen', 'Konten dihapus.');
   await expect(row).toHaveCount(0);
   await page.goto('/e-booklet');

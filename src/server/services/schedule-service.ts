@@ -15,7 +15,7 @@ import { toJakartaIsoString } from '@/lib/utils/dates';
 import type { ListQuery } from '@/lib/utils/list-query';
 import type { ScheduleValues, UpdateScheduleValues } from '@/lib/validations/schedule';
 import type { StaffContext } from '@/server/auth/guards';
-import { rowOrNotFound } from '@/server/services/content-errors';
+import { archivedRowOr, rowOrNotFound } from '@/server/services/content-errors';
 import { removeFilesOrLog } from '@/server/services/content-files';
 import { removeGalleryFiles } from '@/server/services/upload-service';
 import type { CleanedUp, ScheduleAdmin, SchedulePackageOption } from '@/types/cms';
@@ -222,9 +222,10 @@ export async function removeSchedule(ctx: StaffContext, rwId: RwId, id: string):
     .delete()
     .eq('id', id)
     .eq('rw_id', rwId)
-    .select('image_path')
+    .eq('status', 'archived')
+    .select('id, image_path')
     .maybeSingle();
   if (error) throw error;
-  const removed = rowOrNotFound(data);
+  const removed = archivedRowOr(data);
   return removed.image_path === null || removeSchedulePhoto(ctx, rwId, id, removed.image_path);
 }

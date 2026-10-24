@@ -48,7 +48,7 @@ describe('siteSettingsSchema', () => {
   it('refuses numbers that would switch a database rule off or stall it', () => {
     expect(issuePaths({ minPricePerPax: 0 })).toEqual(['minPricePerPax']);
     expect(issuePaths({ piiRetentionMonths: 0 })).toEqual(['piiRetentionMonths']);
-    expect(issuePaths({ maxAdvanceDays: 0 })).toEqual(['maxAdvanceDays']);
+    expect(issuePaths({ maxAdvanceDays: 0 })).toContain('maxAdvanceDays');
     expect(issuePaths({ holdMinutesIndividual: 5 })).toEqual(['holdMinutesIndividual']);
     expect(issuePaths({ holdHoursInstitution: 337 })).toEqual(['holdHoursInstitution']);
     expect(issuePaths({ maxPax: 12.5 })).toEqual(['maxPax']);
@@ -66,5 +66,12 @@ describe('siteSettingsSchema', () => {
   it('refuses an unknown rate-limit profile and an empty address', () => {
     expect(issuePaths({ rateLimitProfile: 'off' })).toEqual(['rateLimitProfile']);
     expect(issuePaths({ kelurahanAddress: '  ' })).toEqual(['kelurahanAddress']);
+  });
+});
+
+describe('siteSettingsSchema across fields', () => {
+  it('needs the minimum lead to be shorter than the furthest date ahead', () => {
+    expect(issuePaths({ minLeadHours: 48, maxAdvanceDays: 2 })).toEqual(['minLeadHours']);
+    expect(issuePaths({ minLeadHours: 47, maxAdvanceDays: 2 })).toEqual([]);
   });
 });

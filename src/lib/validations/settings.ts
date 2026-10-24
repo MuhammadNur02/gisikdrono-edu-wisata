@@ -12,6 +12,7 @@ import { contentText } from '@/lib/validations/content';
 const messages = cmsCopy.validation;
 const PHONE_PATTERN = /^\+62[0-9]{8,13}$/;
 // `BCA ****1234`: the bank and the last four digits only, never a whole account number (docs/PRD.md §8.6).
+const HOURS_PER_DAY = 24;
 const MASKED_ACCOUNT_PATTERN = /^[A-Za-z][A-Za-z ]{1,28} \*{4}\d{4}$/;
 
 function wholeNumber(min: number, max: number) {
@@ -60,7 +61,17 @@ export const siteSettingsSchema = z
     certificateTemplateVersion: wholeNumber(LIMITS.templateVersionMin, LIMITS.templateVersionMax),
     seoDefaultDescription: contentText(LIMITS.seoDescription),
   })
-  .strict();
+  .strict()
+  .superRefine((settings, context) => {
+    // The wizard offers dates from now + minLeadHours to now + maxAdvanceDays, so the first must come first.
+    if (settings.minLeadHours >= settings.maxAdvanceDays * HOURS_PER_DAY) {
+      context.addIssue({
+        code: 'custom',
+        path: ['minLeadHours'],
+        message: settingsCopy.invalid.leadBeforeAdvance,
+      });
+    }
+  });
 
 export type SiteSettingsInput = z.input<typeof siteSettingsSchema>;
 export type SiteSettingsValues = z.output<typeof siteSettingsSchema>;

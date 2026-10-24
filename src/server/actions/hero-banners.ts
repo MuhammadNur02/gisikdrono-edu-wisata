@@ -99,7 +99,8 @@ export async function deactivateHeroBannerAction(input: unknown): Promise<Action
 
 // One banner a place up or down the home page's order (Task P4.9.02); the order is read from the database, never
 // from the form, and renumbered by reorderBanners.
-export async function moveHeroBannerAction(input: unknown): Promise<ActionResult<null>> {
+// Answers whether anything moved: a banner already at that end changes nothing and is not reported as moved.
+export async function moveHeroBannerAction(input: unknown): Promise<ActionResult<boolean>> {
   const parsed = moveHeroBannerSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
   const guard = await requireBannerManager();
@@ -108,9 +109,11 @@ export async function moveHeroBannerAction(input: unknown): Promise<ActionResult
   try {
     const order = await readBannerOrder();
     if (!order.some((banner) => banner.id === parsed.data.id)) return fail('NOT_FOUND');
-    await applyBannerOrder(reorderBanners(order, parsed.data.id, parsed.data.direction));
+    const updates = reorderBanners(order, parsed.data.id, parsed.data.direction);
+    if (updates.length === 0) return ok(false);
+    await applyBannerOrder(updates);
     revalidateTag(TAGS.banners);
-    return ok(null);
+    return ok(true);
   } catch (error) {
     return mapError(error);
   }

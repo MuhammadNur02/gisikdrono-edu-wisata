@@ -2,6 +2,7 @@ import 'server-only';
 
 import { BANNER_ACTIVITY, BANNER_DEFAULT_SORT, BANNER_SORT_COLUMNS } from '@/config/cms';
 import type { Tables } from '@/db/types';
+import { contentListsCopy } from '@/lib/copy/content-lists';
 import { copy } from '@/lib/copy/id';
 import { AppError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
@@ -17,7 +18,7 @@ import {
 } from '@/lib/utils/list-query';
 import type { HeroBannerValues, UpdateHeroBannerValues } from '@/lib/validations/hero-banner';
 import type { StaffContext } from '@/server/auth/guards';
-import { rowOrNotFound } from '@/server/services/content-errors';
+import { archivedRowOr, rowOrNotFound } from '@/server/services/content-errors';
 import { removeFilesOrLog } from '@/server/services/content-files';
 import { removeUnusedHeroPhotos } from '@/server/services/upload-service';
 import type { BannerProductOption, CleanedUp, HeroBannerAdmin } from '@/types/cms';
@@ -176,10 +177,26 @@ async function readBanner(id: string): Promise<BannerRow | null> {
   return data;
 }
 
+// The featured product must be live (review of PR #40): the public slide reads it through the anon policy, which shows
+// published products only, so an unpublished one would leave the slide pointing at nothing.
+async function checkFeaturedProduct(productId: string | null): Promise<void> {
+  if (productId === null) return;
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('products_umkm')
+    .select('id')
+    .eq('id', productId)
+    .eq('status', 'published')
+    .maybeSingle();
+  if (error) throw error;
+  if (data === null) throw new AppError('VALIDATION', contentListsCopy.banners.productNotPublished);
+}
+
 export async function createHeroBanner(
   createdBy: string,
   values: HeroBannerValues,
 ): Promise<HeroBannerAdmin> {
+  await checkFeaturedProduct(values.productId);
   // Every column is named by columnsOf; the creator is the signed-in superadmin.
   const row = { created_by: createdBy, ...columnsOf(values, null) };
   const supabase = await createSupabaseServerClient();
@@ -201,6 +218,7 @@ export async function updateHeroBanner(
   values: UpdateHeroBannerValues,
 ): Promise<CleanedUp<HeroBannerAdmin>> {
   const current = rowOrNotFound(await readBanner(values.id));
+  await checkFeaturedProduct(values.productId);
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('hero_banners')
@@ -226,10 +244,11 @@ export async function removeHeroBanner(ctx: StaffContext, id: string): Promise<b
     .from('hero_banners')
     .delete()
     .eq('id', id)
-    .select('image_path, mobile_image_path')
+    .eq('is_active', false)
+    .select('id, image_path, mobile_image_path')
     .maybeSingle();
   if (error) throw error;
-  const removed = rowOrNotFound(data);
+  const removed = archivedRowOr(data, contentListsCopy.banners.notInactive);
   return removeFilesOrLog('hero_banner_files', id, () =>
     removeUnusedHeroPhotos(ctx, [removed.image_path, removed.mobile_image_path]),
   );

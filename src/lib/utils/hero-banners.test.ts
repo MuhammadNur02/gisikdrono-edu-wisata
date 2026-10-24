@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { bannerPhase, reorderBanners } from '@/lib/utils/hero-banners';
+import { bannerPhase, moveOptions, reorderBanners } from '@/lib/utils/hero-banners';
 
 const NOW = new Date('2026-10-24T03:00:00Z');
 
@@ -66,5 +66,24 @@ describe('reorderBanners', () => {
       { id: 'c', sortOrder: 1 },
       { id: 'b', sortOrder: 2 },
     ]);
+  });
+});
+
+describe('moveOptions', () => {
+  const ORDER = [
+    { id: 'a', sortOrder: 0 },
+    { id: 'b', sortOrder: 1 },
+    { id: 'c', sortOrder: 2 },
+  ];
+
+  it('offers no move up on the first banner and no move down on the last', () => {
+    expect(moveOptions(ORDER, 'a', true)).toEqual({ canMoveUp: false, canMoveDown: true });
+    expect(moveOptions(ORDER, 'b', true)).toEqual({ canMoveUp: true, canMoveDown: true });
+    expect(moveOptions(ORDER, 'c', true)).toEqual({ canMoveUp: true, canMoveDown: false });
+  });
+
+  it('offers no move on a filtered or re-sorted view, or for a banner the order lacks', () => {
+    expect(moveOptions(ORDER, 'b', false)).toEqual({ canMoveUp: false, canMoveDown: false });
+    expect(moveOptions(ORDER, 'z', true)).toEqual({ canMoveUp: false, canMoveDown: false });
   });
 });

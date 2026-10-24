@@ -34,6 +34,7 @@ export const contentListsCopy = {
     removeConsequence:
       'Konten dan file-filenya terhapus dari penyimpanan dan tidak bisa dikembalikan.',
     removed: 'Konten dihapus.',
+    notArchived: 'Arsipkan dulu sebelum menghapus permanen.',
   },
   search: {
     articles: 'Cari judul artikel…',
@@ -72,6 +73,8 @@ export const contentListsCopy = {
     deactivateConsequence:
       'Banner ini langsung hilang dari beranda, tetapi tetap tersimpan di sini. Ubah lalu centang "Tampilkan banner" untuk menayangkannya lagi.',
     deactivated: 'Banner dinonaktifkan.',
+    notInactive: 'Nonaktifkan dulu sebelum menghapus permanen.',
+    productNotPublished: 'Pilih produk UMKM yang sudah tayang, atau kosongkan pilihan produknya.',
     product: (name: string) => `Produk: ${name}`,
     phases: {
       live: 'Tayang',

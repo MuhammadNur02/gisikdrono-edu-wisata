@@ -34,10 +34,10 @@ export async function updateRwPageAction(input: unknown): Promise<ActionResult<R
   const guard = await requireAal2();
   if (!guard.ok) return guard;
   const { rwId: requested, ...values } = parsed.data;
-  const target = await rwPageTarget(guard.ctx, requested);
-  if (!target.ok) return target;
 
   try {
+    const target = await rwPageTarget(guard.ctx, requested);
+    if (!target.ok) return target;
     const saved = await updateRwPage(guard.ctx, target.rwId, values);
     revalidateTag(TAGS.rwUnits);
     return okUnlessFilesLeft(saved);

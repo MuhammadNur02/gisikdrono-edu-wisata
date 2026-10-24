@@ -3,11 +3,11 @@ import type { Metadata } from 'next';
 import { HeroBannerBoard } from '@/components/admin/cms/hero-banner-table';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { FormAlert } from '@/components/forms/form-alert';
-import { BANNER_ACTIVITY } from '@/config/cms';
+import { BANNER_ACTIVITY, BANNER_DEFAULT_SORT } from '@/config/cms';
 import { cmsCopy } from '@/lib/copy/cms';
 import { contentListsCopy } from '@/lib/copy/content-lists';
-import { bannerPhase } from '@/lib/utils/hero-banners';
-import { loadListQuery } from '@/lib/utils/list-query';
+import { bannerPhase, moveOptions } from '@/lib/utils/hero-banners';
+import { hasActiveFilters, loadListQuery } from '@/lib/utils/list-query';
 import {
   createHeroBannerAction,
   deactivateHeroBannerAction,
@@ -16,7 +16,11 @@ import {
   updateHeroBannerAction,
 } from '@/server/actions/hero-banners';
 import { requireDashboardStaff } from '@/server/auth/session';
-import { listBannerProducts, listHeroBannersForStaff } from '@/server/services/hero-banner-service';
+import {
+  listBannerProducts,
+  listHeroBannersForStaff,
+  readBannerOrder,
+} from '@/server/services/hero-banner-service';
 import type { ListFacet } from '@/types/data-table';
 
 const text = cmsCopy.banners;
@@ -58,15 +62,20 @@ export default async function HeroBannersPage({ searchParams }: { searchParams: 
     );
   }
   const query = await loadListQuery(searchParams);
-  const [result, products] = await Promise.all([
+  const [result, products, order] = await Promise.all([
     listHeroBannersForStaff(query),
     listBannerProducts(),
+    readBannerOrder(),
   ]);
   const now = new Date();
+  // A move is offered only where the neighbours on screen are the home page's (review of PR #40).
+  const isHomeOrder =
+    !hasActiveFilters(query) && (query.sort === '' || query.sort === BANNER_DEFAULT_SORT);
   const rows = result.rows.map((banner) => ({
     ...banner,
     phase: bannerPhase(banner, now),
     productName: products.find((product) => product.id === banner.productId)?.name ?? null,
+    ...moveOptions(order, banner.id, isHomeOrder),
   }));
 
   return (

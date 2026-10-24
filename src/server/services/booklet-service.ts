@@ -12,7 +12,7 @@ import { allowedValue, planContentList } from '@/lib/utils/content-list';
 import type { ListQuery } from '@/lib/utils/list-query';
 import type { SaveBookletValues } from '@/lib/validations/booklet';
 import type { StaffContext } from '@/server/auth/guards';
-import { rowOrNotFound, slugConflictOr } from '@/server/services/content-errors';
+import { archivedRowOr, rowOrNotFound, slugConflictOr } from '@/server/services/content-errors';
 import { removeFilesOrLog } from '@/server/services/content-files';
 import { readPublishedBookletFiles, removeBookletFiles } from '@/server/services/upload-service';
 import type { BookletAdmin } from '@/types/cms';
@@ -193,10 +193,10 @@ export async function removeBooklet(
   id: string,
 ): Promise<boolean> {
   const supabase = await createSupabaseServerClient();
-  let query = supabase.from('booklets').delete().eq('id', id);
+  let query = supabase.from('booklets').delete().eq('id', id).eq('status', 'archived');
   query = owner === null ? query.is('rw_id', null) : query.eq('rw_id', owner);
   const { data, error } = await query.select('id').maybeSingle();
   if (error) throw error;
-  rowOrNotFound(data);
+  archivedRowOr(data);
   return removeFilesOrLog('booklet_files', id, () => removeBookletFiles(ctx, owner, id));
 }

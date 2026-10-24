@@ -12,7 +12,7 @@ import { allowedValue, planContentList } from '@/lib/utils/content-list';
 import type { ListQuery } from '@/lib/utils/list-query';
 import type { SaveActivityPointValues } from '@/lib/validations/activity-point';
 import type { StaffContext } from '@/server/auth/guards';
-import { rowOrNotFound, slugConflictOr } from '@/server/services/content-errors';
+import { archivedRowOr, rowOrNotFound, slugConflictOr } from '@/server/services/content-errors';
 import { removeFilesOrLog } from '@/server/services/content-files';
 import { keepRowPhotos, removeRowPhotos } from '@/server/services/upload-service';
 import type { ActivityPointAdmin, CleanedUp } from '@/types/cms';
@@ -213,10 +213,11 @@ export async function removeActivityPoint(
     .delete()
     .eq('id', id)
     .eq('rw_id', rwId)
+    .eq('status', 'archived')
     .select('id')
     .maybeSingle();
   if (error) throw error;
-  rowOrNotFound(data);
+  archivedRowOr(data);
   return removeFilesOrLog('activity_point_files', id, () =>
     removeRowPhotos(ctx, { rwId, purpose: 'activity-point', entityId: id }),
   );

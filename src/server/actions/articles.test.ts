@@ -2,6 +2,7 @@ import { revalidateTag } from 'next/cache';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { copy } from '@/lib/copy/id';
+import { AppError } from '@/lib/errors';
 import { requireAal2, type StaffContext } from '@/server/auth/guards';
 import {
   archiveArticle,
@@ -221,5 +222,20 @@ describe('archiveArticleAction', () => {
     const result = await archiveArticleAction({ id: ARTICLE_ID });
     expect(result).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
     expect(archiveArticle).not.toHaveBeenCalled();
+  });
+});
+
+describe('removeArticleAction on a row that is not archived (review of PR #40)', () => {
+  it('answers STATE_INVALID with the archive-first copy and revalidates nothing', async () => {
+    vi.mocked(requireAal2).mockResolvedValue({ ok: true, ctx: SUPERADMIN });
+    vi.mocked(removeArticle).mockRejectedValueOnce(
+      new AppError('STATE_INVALID', 'Arsipkan dulu sebelum menghapus permanen.'),
+    );
+    const result = await removeArticleAction({ id: ARTICLE_ID });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'STATE_INVALID', message: 'Arsipkan dulu sebelum menghapus permanen.' },
+    });
+    expect(revalidateTag).not.toHaveBeenCalled();
   });
 });

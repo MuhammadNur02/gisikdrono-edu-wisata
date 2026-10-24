@@ -54,10 +54,12 @@ type HeroBannerRow = HeroBannerListItem;
 type RowAction = (input: unknown) => Promise<ActionResult<null>>;
 type SaveAction = (values: unknown) => Promise<ActionResult<HeroBannerAdmin>>;
 
+type MoveAction = (input: unknown) => Promise<ActionResult<boolean>>;
+
 interface BannerRowActions {
   deactivate: RowAction;
   remove: RowAction;
-  move: RowAction;
+  move: MoveAction;
 }
 
 export interface HeroBannerBoardProps {
@@ -101,6 +103,25 @@ function retireItem(banner: HeroBannerRow, actions: BannerRowActions, handlers: 
   } satisfies RowActionItem;
 }
 
+// Up and down only where the row has a home-page neighbour that way (canMoveUp / canMoveDown, set by the page).
+function moveItems(banner: HeroBannerRow, handlers: RowHandlers): RowActionItem[] {
+  const up = {
+    label: lists.banners.moveUp,
+    icon: ArrowUp,
+    onSelect: () => {
+      handlers.move(banner, 'up');
+    },
+  };
+  const down = {
+    label: lists.banners.moveDown,
+    icon: ArrowDown,
+    onSelect: () => {
+      handlers.move(banner, 'down');
+    },
+  };
+  return [...(banner.canMoveUp ? [up] : []), ...(banner.canMoveDown ? [down] : [])];
+}
+
 function itemsOf(banner: HeroBannerRow, actions: BannerRowActions, handlers: RowHandlers) {
   return [
     editItem(() => {
@@ -113,20 +134,7 @@ function itemsOf(banner: HeroBannerRow, actions: BannerRowActions, handlers: Row
         handlers.preview(banner);
       },
     },
-    {
-      label: lists.banners.moveUp,
-      icon: ArrowUp,
-      onSelect: () => {
-        handlers.move(banner, 'up');
-      },
-    },
-    {
-      label: lists.banners.moveDown,
-      icon: ArrowDown,
-      onSelect: () => {
-        handlers.move(banner, 'down');
-      },
-    },
+    ...moveItems(banner, handlers),
     retireItem(banner, actions, handlers),
   ] satisfies RowActionItem[];
 }
@@ -209,7 +217,7 @@ function bannerEditor(props: HeroBannerBoardProps): BoardEditor<HeroBannerRow> {
 }
 
 // A move runs at once, as a reorder is easy to take back; the list reloads in the new order.
-function useMove(move: RowAction) {
+function useMove(move: MoveAction) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   return useCallback(
@@ -220,6 +228,7 @@ function useMove(move: RowAction) {
           toast.error(result.error.message);
           return;
         }
+        if (!result.data) return;
         toast.success(lists.banners.moved);
         router.refresh();
       });

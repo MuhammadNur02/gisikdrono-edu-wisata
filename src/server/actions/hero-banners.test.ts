@@ -2,6 +2,7 @@ import { revalidateTag } from 'next/cache';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { copy } from '@/lib/copy/id';
+import { AppError } from '@/lib/errors';
 import { requireAal2, type StaffContext } from '@/server/auth/guards';
 import {
   applyBannerOrder,
@@ -148,6 +149,13 @@ describe('banner order and activity', () => {
     expect(revalidateTag).toHaveBeenCalledWith('banners');
   });
 
+  it('answers false and writes nothing when the banner is already at that end', async () => {
+    const result = await moveHeroBannerAction({ id: OTHER_ID, direction: 'up' });
+    expect(result).toEqual({ ok: true, data: false });
+    expect(applyBannerOrder).not.toHaveBeenCalled();
+    expect(revalidateTag).not.toHaveBeenCalled();
+  });
+
   it('answers NOT_FOUND for a banner the order does not hold', async () => {
     vi.mocked(readBannerOrder).mockResolvedValue([]);
     const result = await moveHeroBannerAction({ id: BANNER_ID, direction: 'down' });
@@ -162,5 +170,19 @@ describe('banner order and activity', () => {
     const refused = await deactivateHeroBannerAction({ id: BANNER_ID });
     expect(refused).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
     expect(deactivateHeroBanner).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('removeHeroBannerAction on a row that is not archived (review of PR #40)', () => {
+  it('answers STATE_INVALID with the archive-first copy and revalidates nothing', async () => {
+    vi.mocked(removeHeroBanner).mockRejectedValueOnce(
+      new AppError('STATE_INVALID', 'Nonaktifkan dulu sebelum menghapus permanen.'),
+    );
+    const result = await removeHeroBannerAction({ id: BANNER_ID });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'STATE_INVALID', message: 'Nonaktifkan dulu sebelum menghapus permanen.' },
+    });
+    expect(revalidateTag).not.toHaveBeenCalled();
   });
 });

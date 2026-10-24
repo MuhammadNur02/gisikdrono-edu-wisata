@@ -47,3 +47,15 @@ export function reorderBanners(
     .filter((banner) => banner.before !== banner.sortOrder)
     .map(({ id, sortOrder }) => ({ id, sortOrder }));
 }
+
+// Which moves a row of the dashboard list offers (review of PR #40): none on a filtered or re-sorted view, where the
+// rows above and below are not the home page's neighbours; otherwise up unless first, down unless last.
+export function moveOptions(
+  order: readonly BannerOrder[],
+  id: string,
+  isHomeOrder: boolean,
+): { canMoveUp: boolean; canMoveDown: boolean } {
+  const position = order.findIndex((banner) => banner.id === id);
+  if (!isHomeOrder || position === -1) return { canMoveUp: false, canMoveDown: false };
+  return { canMoveUp: position > 0, canMoveDown: position < order.length - 1 };
+}

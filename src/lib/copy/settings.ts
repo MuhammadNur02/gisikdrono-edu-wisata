@@ -28,6 +28,8 @@ export const settingsCopy = {
   rateLimitProfiles: { normal: 'Normal', strict: 'Ketat (saat ada serangan)' },
   invalid: {
     number: 'Isi angka bulat.',
+    leadBeforeAdvance:
+      'Jarak minimal pemesanan harus lebih pendek dari jarak maksimal pemesanan ke depan.',
     range: (min: number, max: number) => `Isi angka ${String(min)} sampai ${String(max)}.`,
     payoutAccount:
       'Tulis nama bank lalu empat bintang dan 4 digit terakhir, misalnya BCA ****1234.',

@@ -13,7 +13,7 @@ import type { ListQuery } from '@/lib/utils/list-query';
 import type { PublishedImage } from '@/lib/validations/content';
 import type { CreateGalleryItemValues, UpdateGalleryItemValues } from '@/lib/validations/gallery';
 import type { StaffContext } from '@/server/auth/guards';
-import { rowOrNotFound } from '@/server/services/content-errors';
+import { archivedRowOr, rowOrNotFound } from '@/server/services/content-errors';
 import { removeFilesOrLog } from '@/server/services/content-files';
 import { isThumbnailOf } from '@/server/services/media-library';
 import { removeGalleryFiles } from '@/server/services/upload-service';
@@ -212,11 +212,11 @@ export async function removeGalleryItem(
   id: string,
 ): Promise<boolean> {
   const supabase = await createSupabaseServerClient();
-  let query = supabase.from('galleries').delete().eq('id', id);
+  let query = supabase.from('galleries').delete().eq('id', id).eq('status', 'archived');
   query = owner === null ? query.is('rw_id', null) : query.eq('rw_id', owner);
-  const { data, error } = await query.select('storage_path, thumbnail_path').maybeSingle();
+  const { data, error } = await query.select('id, storage_path, thumbnail_path').maybeSingle();
   if (error) throw error;
-  const removed = rowOrNotFound(data);
+  const removed = archivedRowOr(data);
   return removeFilesOrLog('gallery_files', id, () =>
     removeGalleryFiles(ctx, owner, [removed.storage_path, removed.thumbnail_path]),
   );
