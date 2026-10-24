@@ -50,7 +50,7 @@ export interface ChartContainerProps {
   children: ReactElement;
 }
 
-export interface ChartTooltipProps extends TooltipContentProps<number, string> {
+export interface ChartTooltipProps extends TooltipContentProps {
   seriesName: string;
   formatValue: (value: number) => string;
 }
@@ -63,12 +63,12 @@ export function ChartTooltip({
   seriesName,
   formatValue,
 }: ChartTooltipProps) {
-  const point = payload[0];
-  if (!active || !point || typeof label !== 'string') return null;
+  const value = payload[0]?.value;
+  if (!active || typeof value !== 'number' || typeof label !== 'string') return null;
   return (
     <div className="rounded-md border bg-popover px-3 py-2 text-caption text-popover-foreground shadow-md">
       <p className="font-medium">{formatDateShort(label)}</p>
-      <p className="tabular-nums">{`${seriesName}: ${formatValue(point.value ?? 0)}`}</p>
+      <p className="tabular-nums">{`${seriesName}: ${formatValue(value)}`}</p>
     </div>
   );
 }

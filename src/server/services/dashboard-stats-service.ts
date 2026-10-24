@@ -86,7 +86,9 @@ async function readCheckIns(supabase: ServerClient, rw: RwId | null, since: stri
   const { data, error } = await query;
   if (error) throw error;
   return data.flatMap((row) =>
-    row.checked_in_at ? [{ day: jakartaDayOf(row.checked_in_at), value: row.checked_in_pax }] : [],
+    row.checked_in_at
+      ? [{ day: jakartaDayOf(row.checked_in_at), value: row.checked_in_pax ?? 0 }]
+      : [],
   );
 }
 
