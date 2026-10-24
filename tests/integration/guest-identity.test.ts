@@ -62,6 +62,23 @@ function recordingProviders() {
 }
 
 const nowSeconds = () => Math.floor(Date.now() / 1000);
+// Every template is sendable, so other suites' messages may wait in the outbox ahead of this suite's own; the worker
+// runs batch after batch until the one asked for has gone, or the outbox has nothing more to give.
+const MAX_BATCHES = 50;
+
+async function sendUntil(
+  providers: NotificationProviders,
+  sent: OutgoingMessage[],
+  recipient: string,
+) {
+  for (let batch = 0; batch < MAX_BATCHES; batch += 1) {
+    const found = sent.find((candidate) => candidate.recipient === recipient);
+    if (found) return found;
+    const run = await processNotifications(adminClient(), providers);
+    if (run.processed === 0) break;
+  }
+  return sent.find((candidate) => candidate.recipient === recipient);
+}
 
 // The audit log is a hash chain: only rows after the last one that existed before the suite are removed, so what is
 // left still verifies (internal.verify_audit_chain).
@@ -101,9 +118,8 @@ describe('a WhatsApp code, end to end', () => {
     if (issued.status !== 'sent') throw new Error(`expected a code, got ${issued.status}`);
 
     const { providers, sent } = recordingProviders();
-    await processNotifications(adminClient(), providers);
-    const message = sent.find((candidate) => candidate.recipient === OTP_PHONE);
-    const code = String(message?.bodyParams.code ?? '');
+    const message = await sendUntil(providers, sent, OTP_PHONE);
+    const code = message?.bodyParams.code ?? '';
     expect(code).toMatch(/^\d{6}$/);
 
     const { data: row } = await adminClient()
@@ -156,11 +172,10 @@ describe('a link sent again from /reservasi/cari', () => {
     );
 
     const { providers, sent } = recordingProviders();
-    await processNotifications(adminClient(), providers);
-    const message = sent.find((candidate) => candidate.recipient === BOOKING_PHONE);
+    const message = await sendUntil(providers, sent, BOOKING_PHONE);
     expect(message?.template).toBe('booking_link');
     expect(message?.bodyParams).toEqual({ name: 'Ani', booking_code: BOOKING_CODE });
-    token = message?.link?.buttonSuffix.split('?t=')[1] ?? '';
+    token = (message?.link?.buttonSuffix ?? '').split('?t=')[1] ?? '';
     expect(token).not.toBe('');
     expect(message?.link?.url).not.toContain(BOOKING_ID);
   });

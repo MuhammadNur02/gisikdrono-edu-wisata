@@ -46,6 +46,9 @@ export const RATE_LIMITS = {
   'webhook_rejection:ip': { limit: 20, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
   // Task P3.10.03: the public QR landing /v/[token], per visitor IP, so ticket ids cannot be guessed in bulk.
   'qr_landing:ip': { limit: 60, windowSeconds: 60, whenUnavailable: 'fail-closed' },
+  // Task P3.11.07: GET /api/health, per IP, so its reads cannot be used to load the database. The uptime monitor asks
+  // every few minutes; a database the limiter cannot reach answers as down.
+  'health:ip': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   // Visitors (Task P3.2, P3.3), per IP. The daily caps on codes (5 per number or address, 20 per IP) are counted by
   // internal.issue_phone_otp itself; these stop a burst before it reaches Turnstile and the database. A code has five
   // tries of its own; the verify limit stops one IP from trying many codes at once.

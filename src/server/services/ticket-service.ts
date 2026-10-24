@@ -22,10 +22,21 @@ const TICKET_COLUMNS =
 // which; a suspended, revoked or expired one is not valid.
 const VALID_STATUSES: ReadonlySet<string> = new Set(['issued', 'used']);
 
-// The QR of a ticket, signed with the kid its row names, so it stays the same on every visit to the page. A kid
-// QR_SIGNING_KEYS no longer holds has retired, and that ticket shows no QR.
-function qrOf(ticket: { id: string; rw_id: number; valid_on: string; key_id: string }) {
-  if (!Object.hasOwn(serverEnv.QR_SIGNING_KEYS, ticket.key_id)) return null;
+// The QR of a ticket, signed with the kid its row names, so it stays the same on every visit to the page. Only a
+// ticket the gate may still scan, or one used and kept for reference, has one: a suspended or revoked ticket shows a
+// notice instead (re-review of PR #42). A kid QR_SIGNING_KEYS no longer holds has retired, and that ticket shows none.
+function qrOf(ticket: {
+  id: string;
+  rw_id: number;
+  valid_on: string;
+  key_id: string;
+  status: string;
+}) {
+  if (
+    !VALID_STATUSES.has(ticket.status) ||
+    !Object.hasOwn(serverEnv.QR_SIGNING_KEYS, ticket.key_id)
+  )
+    return null;
   const token = signTicket(
     { ticketId: ticket.id, rwId: ticket.rw_id, validOn: ticket.valid_on },
     ticket.key_id,

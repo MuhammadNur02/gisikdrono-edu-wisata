@@ -52,7 +52,17 @@ export function splitToken(token: string): { payload: string; signature: string 
   return { payload: parts[1], signature: parts[2] };
 }
 
-// One cookie per booking, bk_<booking_code>, valid under /reservasi/<booking_code> only.
-export function guestLinkCookieName(bookingCode: string): string {
-  return `${GUEST_LINK_COOKIE_PREFIX}${bookingCode}`;
+// A booking's cookies live under /reservasi/<booking_code> only. A review or certificate link opens one page of its
+// own, so it keeps a cookie of its own, bk_<booking_code>_<scope>, and never pushes out the manage, pay or view link
+// the browser holds; those three share bk_<booking_code> (review of PR #47).
+const OWN_COOKIE_SCOPES: ReadonlySet<GuestLinkScope> = new Set(['review', 'certificate']);
+
+export function guestLinkCookieName(bookingCode: string, scope: GuestLinkScope): string {
+  const shared = `${GUEST_LINK_COOKIE_PREFIX}${bookingCode}`;
+  return OWN_COOKIE_SCOPES.has(scope) ? `${shared}_${scope}` : shared;
+}
+
+// Every cookie a booking's links may have left in this browser, for "Cabut tautan".
+export function guestLinkCookieNames(bookingCode: string): string[] {
+  return [...new Set(GUEST_LINK_SCOPES.map((scope) => guestLinkCookieName(bookingCode, scope)))];
 }

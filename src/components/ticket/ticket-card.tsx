@@ -5,7 +5,6 @@ import { formatDateLong, formatTimeRange } from '@/lib/utils/dates';
 import type { GuestTicket } from '@/types/ticket';
 
 const text = copy.booking.ticket;
-const DIMMED_STATUSES: ReadonlySet<GuestTicket['status']> = new Set(['suspended', 'revoked']);
 
 function Fact({ label, value }: { label: string; value: string }) {
   return (
@@ -17,19 +16,16 @@ function Fact({ label, value }: { label: string; value: string }) {
 }
 
 // What the ticket shows in its place of the QR: the QR itself while it can be scanned (a used one kept for reference),
-// dimmed when suspended or revoked, nothing once expired, and a word when its kid has retired.
+// and a word otherwise: suspended, revoked, past its day, or signed with a kid that has retired. A suspended or
+// revoked ticket never shows its QR, so it cannot be shown at a gate (re-review of PR #42).
 function TicketQr({ ticket }: { ticket: GuestTicket }) {
-  if (ticket.status === 'expired') {
-    return <p className="text-body-sm text-muted-foreground">{text.expired}</p>;
-  }
+  const notice =
+    ticket.status === 'suspended' || ticket.status === 'revoked' || ticket.status === 'expired'
+      ? text.notice[ticket.status]
+      : null;
+  if (notice !== null) return <p className="text-body-sm text-muted-foreground">{notice}</p>;
   if (ticket.qr === null) return <p className="text-body-sm text-muted-foreground">{text.noQr}</p>;
-  return (
-    <QrDisplay
-      qr={ticket.qr}
-      label={text.qrLabel(ticket.rwName)}
-      isDimmed={DIMMED_STATUSES.has(ticket.status)}
-    />
-  );
+  return <QrDisplay qr={ticket.qr} label={text.qrLabel(ticket.rwName)} />;
 }
 
 // docs/StyleGuide.md §5.15 TicketCard: one per leg, the QR encoding https://<site>/v/<token> only, the ticket code, the

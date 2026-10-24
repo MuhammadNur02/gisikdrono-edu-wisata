@@ -6,11 +6,12 @@ import type { EnumValue } from '@/db/enums';
 export type NotificationChannel = EnumValue<'notification_channel'>;
 export type NotificationTemplateName = EnumValue<'notification_template'>;
 
-// A guest link for a template with a URL button. WhatsApp's approved button is https://<site>/reservasi/{{1}}, so
-// only the suffix travels to Meta; email and Mailpit show the whole address.
+// The address a message points at. A guest link's WhatsApp button is https://<site>/reservasi/{{1}}, so only its
+// suffix travels to Meta; a button with a fixed address (the catalogue, the dashboard) takes no suffix, null. Email
+// and Mailpit show the whole address.
 export interface MessageLink {
   url: string;
-  buttonSuffix: string;
+  buttonSuffix: string | null;
 }
 
 export interface OutgoingMessage {
@@ -19,8 +20,8 @@ export interface OutgoingMessage {
   template: NotificationTemplateName;
   // E.164 phone or email address, as the outbox row holds it.
   recipient: string;
-  // The template's body parameters by name, in the order WhatsApp numbers them ({{1}}, {{2}}, ...).
-  bodyParams: Record<string, string | number>;
+  // The template's body parameters by name, as the message shows them, in the order WhatsApp numbers them.
+  bodyParams: Record<string, string>;
   link: MessageLink | null;
 }
 

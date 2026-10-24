@@ -4,12 +4,8 @@ import { z } from 'zod';
 
 import { LOCAL_MAILPIT_URL } from '@/config/guest';
 import { WHATSAPP_TEMPLATE_NAMES } from '@/config/site';
-import {
-  isSendableTemplate,
-  messageText,
-  type MessageText,
-} from '@/lib/notifications/message-text';
-import { sendFailure, TEMPLATE_NOT_READY } from '@/lib/notifications/send-result';
+import { messageText, type MessageText } from '@/lib/notifications/message-text';
+import { sendFailure } from '@/lib/notifications/send-result';
 import type {
   NotificationChannel,
   NotificationProvider,
@@ -58,8 +54,7 @@ export function createMailpitProvider(
 ): NotificationProvider {
   return {
     send(message) {
-      if (!isSendableTemplate(message.template)) return Promise.resolve(TEMPLATE_NOT_READY);
-      const words = messageText({ ...message, template: message.template });
+      const words = messageText(message);
       const label =
         channel === 'whatsapp' ? `[WhatsApp ${WHATSAPP_TEMPLATE_NAMES[message.template]}] ` : '';
       const to = addressFor(channel, message.recipient);

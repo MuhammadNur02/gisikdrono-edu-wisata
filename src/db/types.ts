@@ -3035,6 +3035,7 @@ export type Database = {
           acknowledged_at: string | null
           acknowledged_by: string | null
           created_at: string
+          delivery_claimed_at: string | null
           details: Json
           fingerprint: string
           first_seen_at: string
@@ -3050,6 +3051,7 @@ export type Database = {
           acknowledged_at?: string | null
           acknowledged_by?: string | null
           created_at?: string
+          delivery_claimed_at?: string | null
           details?: Json
           fingerprint: string
           first_seen_at?: string
@@ -3065,6 +3067,7 @@ export type Database = {
           acknowledged_at?: string | null
           acknowledged_by?: string | null
           created_at?: string
+          delivery_claimed_at?: string | null
           details?: Json
           fingerprint?: string
           first_seen_at?: string
@@ -4353,6 +4356,15 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      svc_claim_security_alerts: {
+        Args: { p_limit: number }
+        Returns: {
+          id: string
+          last_seen_at: string
+          rule: string
+          severity: Database["public"]["Enums"]["alert_severity"]
+        }[]
+      }
       svc_complete_notification: {
         Args: { p_id: string; p_provider_message_id: string }
         Returns: undefined
@@ -4450,6 +4462,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      svc_mark_security_alert_sent: {
+        Args: { p_id: string; p_last_seen_at: string }
+        Returns: undefined
+      }
       svc_payments_housekeeping: { Args: never; Returns: Json }
       svc_payments_to_poll: {
         Args: { p_limit: number }
@@ -4510,6 +4526,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      svc_release_security_alert: { Args: { p_id: string }; Returns: undefined }
       svc_resend_booking_link: {
         Args: { p_booking_code: string; p_email?: string; p_phone?: string }
         Returns: string

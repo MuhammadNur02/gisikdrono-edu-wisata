@@ -123,7 +123,12 @@ describe('revokeGuestLinksAction', () => {
       data: null,
     });
     expect(revokeGuestLinks).toHaveBeenCalledWith('b-1');
-    expect(jar.deleted).toEqual([{ name: 'bk_GSK-7F3K9Q2M', path: '/reservasi/GSK-7F3K9Q2M' }]);
+    expect(jar.deleted).toEqual(
+      ['bk_GSK-7F3K9Q2M', 'bk_GSK-7F3K9Q2M_review', 'bk_GSK-7F3K9Q2M_certificate'].map((name) => ({
+        name,
+        path: '/reservasi/GSK-7F3K9Q2M',
+      })),
+    );
   });
 
   it('limits revocations per booking', async () => {

@@ -47,3 +47,45 @@ export async function svcFailNotification(
     }),
   );
 }
+
+export type SecurityAlertToSend = {
+  id: string;
+  rule: string;
+  severity: Enums['alert_severity'];
+  lastSeenAt: string;
+};
+
+// High and critical alerts not yet sent out of band, leased for five minutes as they are claimed (Task P3.11.08).
+export async function svcClaimSecurityAlerts(
+  adminClient: DatabaseClient,
+  limit: number,
+): Promise<SecurityAlertToSend[]> {
+  const rows = await resultOf(adminClient.rpc('svc_claim_security_alerts', { p_limit: limit }));
+  return rows.map((row) => ({
+    id: row.id,
+    rule: row.rule,
+    severity: row.severity,
+    lastSeenAt: row.last_seen_at,
+  }));
+}
+
+// An alert whose email went out, as it stood when claimed: if it was raised again since, it stays to be sent again.
+export async function svcMarkSecurityAlertSent(
+  adminClient: DatabaseClient,
+  sent: { id: string; lastSeenAt: string },
+): Promise<void> {
+  await resultOf(
+    adminClient.rpc('svc_mark_security_alert_sent', {
+      p_id: sent.id,
+      p_last_seen_at: sent.lastSeenAt,
+    }),
+  );
+}
+
+// An alert whose email did not go out, tried again when a fresh five-minute lease ends.
+export async function svcReleaseSecurityAlert(
+  adminClient: DatabaseClient,
+  id: string,
+): Promise<void> {
+  await resultOf(adminClient.rpc('svc_release_security_alert', { p_id: id }));
+}

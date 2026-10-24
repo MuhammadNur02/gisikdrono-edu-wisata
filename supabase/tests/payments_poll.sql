@@ -2,7 +2,7 @@
 -- housekeeping: tickets left issued on a booking no longer paid are suspended with a critical alert, and an
 -- institution's hold six hours from its deadline gets one payment reminder per channel.
 begin;
-select plan(21);
+select plan(23);
 select set_config('app.qr_key_id', 'k1', true);
 
 -- ===== Fixtures =====
@@ -27,7 +27,7 @@ as $$
   select (internal.create_booking('00000000-0000-4000-8000-0000000f1001',
     array['00000000-0000-4000-8000-0000000f2001']::uuid[], 20,
     jsonb_build_object('booker_type', p_booker, 'institution_name', 'SD Negeri Poll', 'pic_name', 'Ani Poll',
-                       'pic_phone', p_phone, 'pic_email', 'poll@contoh.test', 'notes', null),
+                       'pic_phone', p_phone, 'pic_email', 'poll-' || right(p_phone, 4) || '@contoh.test', 'notes', null),
     '[]', '[]', 'pay', 'web', null, pg_temp.otp(p_phone), '{"version": "2026-10-18"}', null,
     '{"ip": null, "user_agent": "pgTAP"}',
     internal.booking_quote_hash(internal.booking_quote('00000000-0000-4000-8000-0000000f1001', 20, '[]',
@@ -87,6 +87,37 @@ select is(internal.complete_paid_order((select order_id from paid_order), 'k1') 
   'a second run writes nothing');
 select ok(not exists (select 1 from internal.payments_to_poll(50) where order_id = (select order_id from paid_order)),
   'and the booking is no longer asked about');
+
+-- Paid bookings that lack a ticket take turns as the open attempts do (re-review of PR #42): of two, the one never
+-- asked comes first, then the one asked longest ago, whatever else waits.
+create function pg_temp.settled_without_ticket(p_phone text) returns text
+  language plpgsql
+as $$
+declare
+  settled_order text := pg_temp.attempt(pg_temp.hold(p_phone, 'school'));
+  answer jsonb := jsonb_build_object('order_id', settled_order, 'status_code', '200', 'gross_amount', '600000.00',
+    'signature_key', repeat('a', 128), 'transaction_status', 'settlement', 'transaction_id', 'txn-' || settled_order,
+    'payment_type', 'qris', 'currency', 'IDR', 'fraud_status', 'accept',
+    'settlement_time', to_char((now() - interval '10 minutes') at time zone 'Asia/Jakarta', 'YYYY-MM-DD HH24:MI:SS'));
+begin
+  perform internal.apply_payment_event((internal.record_payment_event('webhook',
+    encode(extensions.digest(answer::text, 'sha256'), 'hex'), answer) ->> 'event_id')::bigint, 'webhook', answer);
+  delete from public.tickets_qr where booking_id = (select p.booking_id from public.payments p where p.order_id = settled_order);
+  return settled_order;
+end;
+$$;
+create temporary table paid_never_asked on commit drop as
+  select pg_temp.settled_without_ticket('+6281300001109') as order_id;
+create temporary table paid_asked_long_ago on commit drop as
+  select pg_temp.settled_without_ticket('+6281300001110') as order_id;
+update public.payments set last_polled_at = now() where status = 'settled';
+update public.payments set last_polled_at = null where order_id = (select order_id from paid_never_asked);
+update public.payments set last_polled_at = now() - interval '1 day'
+where order_id = (select order_id from paid_asked_long_ago);
+select is((select order_id from internal.payments_to_poll(1) where reason = 'paid_incomplete'),
+  (select order_id from paid_never_asked), 'a paid booking never asked about comes first');
+select is((select order_id from internal.payments_to_poll(1) where reason = 'paid_incomplete'),
+  (select order_id from paid_asked_long_ago), 'then the one asked longest ago, though its payment is settled');
 
 -- ===== The order and the window of the open attempts (review of PR #42, M4, M5) =====
 -- Every other attempt was just asked; of these two, one never was and one was asked a day ago.

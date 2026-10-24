@@ -1113,7 +1113,7 @@ select columns_are('public', 'security_events', array[
 ]);
 select columns_are('public', 'security_alerts', array[
   'id', 'rule', 'severity', 'fingerprint', 'title', 'details', 'first_seen_at', 'last_seen_at',
-  'occurrences', 'notified_at', 'acknowledged_by', 'acknowledged_at', 'created_at'
+  'occurrences', 'notified_at', 'acknowledged_by', 'acknowledged_at', 'created_at', 'delivery_claimed_at'
 ]);
 select columns_are('public', 'exports', array[
   'id', 'kind', 'format', 'requested_by', 'rw_id', 'filters', 'reason', 'row_count',

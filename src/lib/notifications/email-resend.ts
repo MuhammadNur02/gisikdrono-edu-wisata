@@ -2,21 +2,23 @@ import 'server-only';
 
 import { z } from 'zod';
 
-import { isSendableTemplate, messageText } from '@/lib/notifications/message-text';
-import { sendFailure, TEMPLATE_NOT_READY } from '@/lib/notifications/send-result';
+import { messageText } from '@/lib/notifications/message-text';
+import { sendFailure } from '@/lib/notifications/send-result';
 import type { NotificationProvider, SendResult } from '@/lib/notifications/types';
 
 // Resend for the email channel (Task P3.11.04, docs/Security.md EP-03): links only, never attachments. Plain text for
-// now; the React Email templates of P3.11.04 replace the body without changing this contract.
+// now; an HTML layout can replace the body later without changing this contract.
 
 const RESEND_URL = 'https://api.resend.com/emails';
-const REQUEST_TIMEOUT_MS = 10_000;
+const DEFAULT_TIMEOUT_MS = 10_000;
 const TOO_MANY_REQUESTS = 429;
 const SERVER_ERROR = 500;
 
 export interface ResendConfig {
   apiKey: string;
   from: string;
+  // How long to wait for Resend; a security alert waits 5 s at most (docs/Security.md §11.3).
+  timeoutMs?: number;
 }
 
 const acceptedSchema = z.object({ id: z.string().min(1) });
@@ -39,15 +41,14 @@ export function createResendProvider(
 ): NotificationProvider {
   return {
     async send(message) {
-      if (!isSendableTemplate(message.template)) return TEMPLATE_NOT_READY;
-      const { subject, text } = messageText({ ...message, template: message.template });
+      const { subject, text } = messageText(message);
       try {
         const response = await fetcher(RESEND_URL, {
           method: 'POST',
           headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ from: config.from, to: [message.recipient], subject, text }),
           cache: 'no-store',
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          signal: AbortSignal.timeout(config.timeoutMs ?? DEFAULT_TIMEOUT_MS),
         });
         return await resultOf(response);
       } catch {

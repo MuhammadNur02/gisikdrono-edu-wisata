@@ -12,7 +12,12 @@ export const bookingTicketCopy = {
   paxCount: (count: number) => `${String(count)} orang`,
   brightness: 'Naikkan kecerahan layar saat pemindaian.',
   noQr: 'Kode QR tiket ini tidak lagi bisa ditampilkan. Hubungi kelurahan lewat WhatsApp, ya.',
-  expired: 'Tanggal kunjungan tiket ini sudah lewat.',
+  notice: {
+    suspended:
+      'Tiket ini sedang ditangguhkan, jadi kode QR-nya tidak ditampilkan. Hubungi kelurahan lewat WhatsApp, ya.',
+    revoked: 'Tiket ini sudah dicabut dan tidak berlaku lagi.',
+    expired: 'Tanggal kunjungan tiket ini sudah lewat.',
+  },
   none: 'Tiket muncul di sini setelah pembayaran diterima.',
   landing: {
     title: 'Pemeriksaan tiket',

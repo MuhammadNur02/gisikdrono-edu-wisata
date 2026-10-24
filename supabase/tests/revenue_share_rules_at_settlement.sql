@@ -5,7 +5,7 @@
 -- legs, and the Jakarta day picks the rule. A split refused for want of a rule is written once one covers the
 -- settlement's day, when the payments poll completes the booking, and the review stays for staff to close (M3).
 begin;
-select plan(19);
+select plan(21);
 select set_config('app.qr_key_id', 'k1', true);
 
 -- ===== Fixtures =====
@@ -153,6 +153,10 @@ select is((select status::text from public.payments where booking_id = (select i
   'and the payment settled');
 select is((select count(*)::int from public.tickets_qr where booking_id = (select id from double_vendor)), 1,
   'with its ticket issued');
+select ok((select a.details ->> 'split_error' like 'P0001: revenue rule % pays one beneficiary twice in line addon:%'
+           from public.security_alerts a join public.payments p on p.booking_id = (select id from double_vendor)
+           where a.fingerprint = 'payment_review:REVENUE_RULE_REFUSED:' || p.order_id),
+  'and its alert says why, so a fault in the split is not taken for a missing rule');
 
 -- ===== No rule in force, and the poll's retry once one is (M3) =====
 update public.revenue_share_rules set is_active = false where scope = 'addon_default' and rw_id = 5 and is_active;
@@ -166,6 +170,10 @@ create temporary table no_rule_order on commit drop as
     to_char(now() at time zone 'Asia/Jakarta' - interval '10 minutes', 'YYYY-MM-DD HH24:MI:SS')) as order_id;
 select is(pg_temp.review_of((select id from no_rule)), 'paid/true/REVENUE_RULE_REFUSED/0',
   'an add-on whose RW has no add-on default in force is refused into the review');
+select ok((select e.payload ->> 'split_error' like 'P0001: product % has 0 revenue-share rules in force on %'
+           from public.booking_events e
+           where e.booking_id = (select id from no_rule) and e.reason = 'revenue_rule_refused'),
+  'with the refusal in the booking''s history too');
 select is((select reason from internal.payments_to_poll(50) where order_id = (select order_id from no_rule_order)),
   'paid_incomplete', 'the poll lists it, though it is under review, since only its split keeps it there');
 select is(internal.complete_paid_order((select order_id from no_rule_order), 'k1') ->> 'result', 'ignored',
