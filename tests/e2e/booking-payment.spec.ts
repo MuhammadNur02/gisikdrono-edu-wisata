@@ -38,7 +38,12 @@ test.beforeAll(async ({}, testInfo) => {
     where key like 'booking:%' or key like 'otp_%' or key like 'quote_preview:%' or key like 'session_availability:%'
        or key like 'payment_start:%' or key like 'webhook_%' or key like 'qr_landing:%'`);
   const projectIndex = testInfo.project.name === 'desktop' ? 2 : 3;
-  sessions = await createSessions(projectIndex, `Uji bayar e2e ${testInfo.project.name} ${RUN}`);
+  // A worker restarted after a failure runs this again; its own slot keeps it clear of the sessions left behind.
+  sessions = await createSessions(
+    projectIndex,
+    `Uji bayar e2e ${testInfo.project.name} ${RUN}`,
+    testInfo.workerIndex,
+  );
 });
 
 async function orderOf(bookingCode: string): Promise<string> {

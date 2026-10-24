@@ -25,27 +25,46 @@ export interface TestSessions {
   filled: { id: string; time: string };
 }
 
-// The desktop and phone projects may run side by side, each at its own hour of a day three days ahead.
-export async function createSessions(projectIndex: number, label: string): Promise<TestSessions> {
+// The desktop and phone projects may run side by side, each at its own hour of a day three days ahead. `slot` moves
+// the start minutes, so a worker that Playwright starts again after a failure (its beforeAll runs once more) does not
+// collide with the sessions its predecessor left (visit_sessions is unique on RW, date and start time).
+const MAX_SLOTS = 20;
+
+export async function createSessions(
+  projectIndex: number,
+  label: string,
+  slot = 0,
+): Promise<TestSessions> {
   const hour = String(5 + projectIndex).padStart(2, '0');
+  const minute = (base: number) => String(base + (slot % MAX_SLOTS)).padStart(2, '0');
+  const [bookedStart, filledStart] = [minute(5), minute(35)];
   const ids = [randomUUID(), randomUUID()];
   const rows = z.array(z.object({ visit_date: z.string() })).parse(
     await runSql(`insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity)
-      values ('${ids[0] ?? ''}', 5, public.today_jkt() + 3, '${hour}:05', '${hour}:30', ${sqlText(label)}, 40),
-             ('${ids[1] ?? ''}', 5, public.today_jkt() + 3, '${hour}:35', '${hour}:55', ${sqlText(label)}, 40)
+      values ('${ids[0] ?? ''}', 5, public.today_jkt() + 3, '${hour}:${bookedStart}', '${hour}:30', ${sqlText(label)}, 40),
+             ('${ids[1] ?? ''}', 5, public.today_jkt() + 3, '${hour}:${filledStart}', '${hour}:55', ${sqlText(label)}, 40)
       returning session_date::text as visit_date`),
   );
   return {
     label,
     visitDate: rows[0]?.visit_date ?? '',
-    booked: { id: ids[0] ?? '', time: `${hour}.05–${hour}.30 WIB` },
-    filled: { id: ids[1] ?? '', time: `${hour}.35–${hour}.55 WIB` },
+    booked: { id: ids[0] ?? '', time: `${hour}.${bookedStart}–${hour}.30 WIB` },
+    filled: { id: ids[1] ?? '', time: `${hour}.${filledStart}–${hour}.55 WIB` },
   };
+}
+
+// Every test phone of one project, from this run or an earlier one (phoneOf: RUN's four digits, the project, the flow).
+// The OTP purge below is held to it: purging every '+62850%' code also took the code, or the verified proof, of a
+// booking another worker was making at that moment, which then failed as "Kode ini sudah tidak berlaku" or never
+// left the summary (review of PR #45).
+function projectPhonePattern(projectIndex: number): string {
+  return `+62850____${String(projectIndex)}__`;
 }
 
 // Whatever the project's sessions hold, from this run or one that stopped halfway. One query string is one
 // transaction, so the purge and fence switches end with it.
-export async function removeSessions(label: string): Promise<void> {
+export async function removeSessions(label: string, projectIndex: number): Promise<void> {
+  const phones = sqlText(projectPhonePattern(projectIndex));
   const sessionIds = `select id from public.visit_sessions where label = ${sqlText(label)}`;
   const bookings = `select booking_id from public.booking_legs where visit_session_id in (${sessionIds})`;
   await runSql(`select set_config('app.purge', 'on', true), set_config('app.in_rpc', '1', true);
@@ -60,8 +79,8 @@ export async function removeSessions(label: string): Promise<void> {
     delete from public.booking_legs where booking_id in (select booking_id from gone);
     delete from public.guest_otps where booking_id in (select booking_id from gone);
     delete from public.bookings where id in (select booking_id from gone);
-    delete from public.notifications where template = 'phone_otp' and recipient like '+62850%';
-    delete from public.guest_otps where phone like '+62850%' and booking_id is null;
+    delete from public.notifications where template = 'phone_otp' and recipient like ${phones};
+    delete from public.guest_otps where phone like ${phones} and booking_id is null;
     update public.visit_sessions set reserved_pax = 0 where id in (${sessionIds});
     delete from public.visit_sessions where label = ${sqlText(label)};`);
 }

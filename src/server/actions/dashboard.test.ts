@@ -2,11 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { copy } from '@/lib/copy/id';
 import { requireRole, type StaffContext } from '@/server/auth/guards';
+import { countCheckInsToday } from '@/server/services/dashboard-stats-service';
 
-import { setRwScopeAction } from './dashboard';
+import { readCheckInsTodayAction, setRwScopeAction } from './dashboard';
 import { updateProfileAction } from './profile';
 
-const cookieJar = vi.hoisted(() => ({ set: vi.fn() }));
+const cookieJar = vi.hoisted(() => ({
+  set: vi.fn(),
+  get: vi.fn<(name: string) => { value: string } | undefined>(),
+}));
+vi.mock('@/server/services/dashboard-stats-service', () => ({ countCheckInsToday: vi.fn() }));
 
 vi.mock('next/headers', () => ({ cookies: () => Promise.resolve(cookieJar) }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
@@ -39,6 +44,8 @@ const FORBIDDEN = {
 
 beforeEach(() => {
   cookieJar.set.mockReset();
+  cookieJar.get.mockReset();
+  vi.mocked(countCheckInsToday).mockReset().mockResolvedValue(12);
   vi.mocked(requireRole).mockReset().mockResolvedValue({ ok: true, ctx: SUPERADMIN });
 });
 
@@ -74,6 +81,39 @@ describe('setRwScopeAction', () => {
   it('refuses a scope that is not an RW', async () => {
     expect(await setRwScopeAction({ scope: 0 })).toMatchObject({ error: { code: 'VALIDATION' } });
     expect(requireRole).not.toHaveBeenCalled();
+  });
+});
+
+describe('readCheckInsTodayAction', () => {
+  const RW_05: StaffContext = { ...SUPERADMIN, userId: 'rw05', role: 'admin_rw', rwId: 5 };
+
+  it('counts the superadmin’s switcher RW, or every RW under Semua', async () => {
+    cookieJar.get.mockReturnValueOnce({ value: '8' });
+    expect(await readCheckInsTodayAction()).toEqual({ ok: true, data: 12 });
+    expect(countCheckInsToday).toHaveBeenLastCalledWith(8);
+
+    expect(await readCheckInsTodayAction()).toEqual({ ok: true, data: 12 });
+    expect(countCheckInsToday).toHaveBeenLastCalledWith(null);
+  });
+
+  it('keeps an RW officer to their own RW whatever the cookie says', async () => {
+    vi.mocked(requireRole).mockResolvedValueOnce({ ok: true, ctx: RW_05 });
+    cookieJar.get.mockReturnValueOnce({ value: '8' });
+    await readCheckInsTodayAction();
+    expect(countCheckInsToday).toHaveBeenLastCalledWith(5);
+  });
+
+  it('refuses an AAL1 session and an RW officer without an RW, counting nothing', async () => {
+    vi.mocked(requireRole).mockResolvedValueOnce({ ok: true, ctx: { ...RW_05, isAal2: false } });
+    expect(await readCheckInsTodayAction()).toMatchObject({ error: { code: 'FORBIDDEN' } });
+    vi.mocked(requireRole).mockResolvedValueOnce({ ok: true, ctx: { ...RW_05, rwId: null } });
+    expect(await readCheckInsTodayAction()).toMatchObject({ error: { code: 'FORBIDDEN' } });
+    expect(countCheckInsToday).not.toHaveBeenCalled();
+  });
+
+  it('answers a failed read with the generic error', async () => {
+    vi.mocked(countCheckInsToday).mockRejectedValueOnce(new Error('connection reset'));
+    expect(await readCheckInsTodayAction()).toMatchObject({ error: { code: 'INTERNAL' } });
   });
 });
 
