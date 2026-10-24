@@ -11,6 +11,7 @@ import {
   type RichTextInline,
   type RichTextMark,
 } from '@/lib/rich-text/document';
+import { articleOutline } from '@/lib/rich-text/outline';
 import { cn } from '@/lib/utils/cn';
 
 // docs/StyleGuide.md §3.3 and CLAUDE.md §7.8: an article body drawn from the allowlisted shape of
@@ -64,7 +65,7 @@ function ArticleImage({ image }: { image: RichTextImage }) {
   );
 }
 
-function Block({ block }: { block: RichTextBlock }) {
+function Block({ block, anchor }: { block: RichTextBlock; anchor?: string | undefined }) {
   switch (block.type) {
     case 'paragraph':
       return (
@@ -75,7 +76,7 @@ function Block({ block }: { block: RichTextBlock }) {
     case 'heading': {
       const Heading = HEADING_TAGS[block.level];
       return (
-        <Heading>
+        <Heading id={anchor}>
           <Inlines content={block.content} />
         </Heading>
       );
@@ -103,20 +104,35 @@ function Block({ block }: { block: RichTextBlock }) {
   }
 }
 
-function Blocks({ blocks }: { blocks: RichTextBlock[] }) {
-  return blocks.map((block, index) => <Block key={index} block={block} />);
+// `anchors` maps a top-level block's index to the id its heading carries (src/lib/rich-text/outline.ts).
+function Blocks({
+  blocks,
+  anchors,
+}: {
+  blocks: RichTextBlock[];
+  anchors?: ReadonlyMap<number, string>;
+}) {
+  return blocks.map((block, index) => (
+    <Block key={index} block={block} anchor={anchors?.get(index)} />
+  ));
 }
 
 export interface RichTextProps {
   // articles.body_json as stored; anything off the allowlist is dropped before it is drawn.
   body: Json;
   className?: string;
+  // Gives each top-level h2 the anchor of the article's contents list (DESIGN-SPEC §3.8).
+  anchorHeadings?: boolean;
 }
 
-export function RichText({ body, className }: RichTextProps) {
+export function RichText({ body, className, anchorHeadings = false }: RichTextProps) {
+  const blocks = sanitiseRichText(body);
+  const anchors = anchorHeadings
+    ? new Map(articleOutline(blocks).map((entry) => [entry.blockIndex, entry.id]))
+    : undefined;
   return (
     <div className={cn('prose max-w-prose prose-slate dark:prose-invert', className)}>
-      <Blocks blocks={sanitiseRichText(body)} />
+      <Blocks blocks={blocks} anchors={anchors} />
     </div>
   );
 }

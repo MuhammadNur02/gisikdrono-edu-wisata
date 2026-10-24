@@ -73,27 +73,10 @@ export const copy = {
     rating: (rating: string, max: number) => `Rating ${rating} dari ${String(max)}`,
     // The label under the home page's average rating (docs/StyleGuide.md §5.7).
     ratingFromReviews: (count: number) => `rating dari ${String(count)} ulasan`,
-    // Filters: the answer to a visitor's own choice may say nothing matched (docs/StyleGuide.md §6.9).
+    // The `Semua` chip of a filter row; the catalogues' own filter words are src/lib/copy/catalogue*.ts.
     filterAll: 'Semua',
-    filterRw: 'Kampung',
-    filterPackageType: 'Jenis paket',
-    filterProductCategory: 'Kategori',
-    filterRating: 'Rating',
-    clearFilters: 'Hapus filter',
-    packagesFilterEmpty: 'Belum ada paket untuk filter ini.',
-    productsFilterEmpty: 'Belum ada produk untuk filter ini.',
-    reviewsFilterEmpty: 'Belum ada ulasan dengan rating ini.',
     stars: (rating: number) => `${String(rating)} bintang`,
     reviewCount: (count: number) => `dari ${String(count)} ulasan`,
-    availabilityTitle: 'Sesi terbuka 14 hari ke depan',
-    seatsLeft: (remaining: number) => `sisa ${String(remaining)} kursi`,
-    availabilityNone:
-      'Tidak ada sesi terbuka dalam 14 hari ke depan. Pilih tanggal lain saat memesan.',
-    availabilityFailed: 'Jadwal sesi tidak bisa dimuat. Muat ulang halaman untuk mencoba lagi.',
-    highlights: 'Yang dilakukan',
-    inclusions: 'Sudah termasuk',
-    itinerary: 'Rencana kegiatan',
-    priceTiers: 'Harga rombongan',
     tierRange: (min: number, max: number | null) =>
       max === null ? `${String(min)} orang atau lebih` : `${String(min)}–${String(max)} orang`,
     validity: (from: string | null, to: string | null) =>
@@ -112,22 +95,6 @@ export const copy = {
   // /galeri and the RW gallery sections (docs/StyleGuide.md §5.11).
   gallery: {
     filterLabel: 'Tampilkan',
-    filterEmpty: 'Belum ada foto untuk filter ini.',
-    loadMore: 'Muat lagi',
-    openPhoto: (alt: string) => `Perbesar foto: ${alt}`,
-    playVideo: (alt: string) => `Putar video: ${alt}`,
-    // Under the play button: pressing it loads YouTube's player, so the visitor knows whose it is.
-    videoSource: 'Video YouTube',
-    lightbox: {
-      previous: 'Foto sebelumnya',
-      next: 'Foto berikutnya',
-      close: 'Tutup',
-      viewer: 'Penampil foto',
-      carousel: 'Foto',
-      slide: 'Foto',
-      photos: 'Galeri foto',
-      position: '{index} dari {total}',
-    },
   },
   // /artikel and /artikel/[slug] (docs/PRD.md FR-PUB-16).
   article: {

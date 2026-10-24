@@ -3,6 +3,7 @@
 @import './type.css';
 @import './utilities.css';
 @import './motion.css';
+@import './catalogue.css';
 @plugin '@tailwindcss/typography';
 
 @custom-variant dark (&:is(.dark *));

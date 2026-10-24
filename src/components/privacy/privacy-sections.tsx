@@ -26,11 +26,16 @@ export function NoticeSection({
   children: ReactNode;
 }) {
   return (
-    <section id={id} lang={lang} aria-labelledby={`${id}-judul`} className="space-y-4">
+    <section
+      id={id}
+      lang={lang}
+      aria-labelledby={`${id}-judul`}
+      className="scroll-mt-header space-y-4 border-t border-border pt-8"
+    >
       <h2 id={`${id}-judul`} className="text-h3">
         {title}
       </h2>
-      <div className="space-y-4 text-body text-pretty">{children}</div>
+      <div className="space-y-4 text-body text-pretty text-ink-2">{children}</div>
     </section>
   );
 }
@@ -43,7 +48,7 @@ function DataRowCard({ row }: { row: PrivacyDataRow }) {
     ['Disimpan', row.retention],
   ];
   return (
-    <li className="space-y-3 rounded-xl border border-border bg-card p-4 md:p-5 dark:border-white/5">
+    <li className="space-y-3 rounded-lg border border-border bg-card p-4 md:p-5">
       <p className="font-medium">{row.data}</p>
       <dl className="space-y-1 text-body-sm">
         {facts.map(([label, value]) => (
@@ -151,8 +156,8 @@ export function MapsThirdParty() {
           OpenStreetMap Foundation, yang menerima alamat IP Anda;
         </li>
         <li>
-          saat Anda menekan tombol Tampilkan Google Maps: peta Google dimuat dari {GOOGLE_MAPS_HOST},
-          dan Google menerima alamat IP Anda. Sebelum tombol ditekan, peta Google tidak dimuat.
+          saat Anda menekan tombol Tampilkan Google Maps: peta Google dimuat dari {GOOGLE_MAPS_HOST}
+          , dan Google menerima alamat IP Anda. Sebelum tombol ditekan, peta Google tidak dimuat.
         </li>
       </ul>
       <p>Denah kampung di beranda digambar sendiri dan tidak memuat apa pun dari pihak ketiga.</p>
