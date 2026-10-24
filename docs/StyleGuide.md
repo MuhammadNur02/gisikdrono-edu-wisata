@@ -96,7 +96,7 @@ The design's own names are on the right; the CSS variable is the shadcn name whe
 | `--primary-ink` (`--primary-text` is its alias) | #A93814 | #F49D76 | the primary as text: links, eyebrows. Never `text-primary` for text |
 | `--secondary` / `--secondary-foreground` | #1D1813 / #F6EFE3 | #F4ECDF / #14110D | `inverse`: the secondary button, the selected chip |
 | `--secondary-hover` / `--secondary-pressed` | #352C23 / #15120E | #FFFFFF / #CFC2AE | its hover and pressed fills |
-| `--accent` / `--accent-foreground` | #EDE3D1 / #1D1813 | #2A241D / #F4ECDF | shadcn hover fill (menus, ghost rows) |
+| `--accent` / `--accent-foreground` | #EDE3D1 / #1D1813 | #0F0D0A / #F4ECDF | shadcn hover fill (menus, ghost rows) |
 | `--destructive` / `--destructive-foreground` | #A32015 / #FFFFFF | #F28B7E / #1A0E08 | `danger` |
 | `--gold` / `--gold-ink` / `--gold-tint` | #E0A63A / #8A5A0B / #F6E3B8 | #E9B85A / #E9B85A / #3A2C10 | stars, eyebrows on dark bands, footer titles; gold as text on paper; the award tile |
 | `--night` | #15120E | #0B0907 | the footer, typographic covers, info panels, overlays (`bg-night/70`) |
@@ -589,7 +589,7 @@ Between 768 and 1279 the desktop structure applies with one column fewer (packag
 | `shadow-bar` | `0 -8px 24px rgb(29 24 19 / .12)` | mobile bottom action bars |
 | backdrop blur | 16 px (solid header, filter bars), 12 px (`onPhoto` button, `backdrop-blur-md`), 4–10 px (badges on photos) | |
 
-Shadows are warm ink, never grey. Blur budget: at most three blurred layers in any viewport. Dark mode replaces shadows with `dark:border-white/5`. The focus ring is one rule in the base layer: `outline: 2px solid var(--ring); outline-offset: 2px` on every `:focus-visible`; fields replace it with their own 2 px ring-coloured edge.
+Shadows are warm ink, never grey. Blur budget: at most three blurred layers in any viewport. Dark mode replaces shadows with `dark:border-white/5`. The focus ring is one rule in the base layer: `outline: 2px solid var(--ring); outline-offset: 2px` on every `:focus-visible`; fields replace it with their own 2 px ring-coloured edge. On night, forest, an RW accent field or a photo the brick would fall under 3:1, so those surfaces carry `ring-on-dark` (gold, 8.6:1 on night; `Section` dark tones, the footer, the figures panel, RW tiles, hero slides) and the header over a hero photo turns it white; `globals.test.ts` checks both.
 
 ### 4.4 Page sizes (`:root`)
 
@@ -790,12 +790,12 @@ DESIGN-SPEC §2.2: from md a 52 px pill (padding 16 / 20) with `WhatsAppIcon` (2
 
 DESIGN-SPEC §2.7. One header, two states, decided by CSS (`.site-header` in `globals.css`):
 
-- **Solid** (every page, and a hero page after 24 px of scroll): sticky, 72 px from lg (64 below), the paper at 92 % with a 16 px blur and a `line` hairline; the wordmark in ink; the links 15/500 ink-2, the current one ink and underlined 2 px, 6 px under the words; the lookup pill (`Cari reservasi`, `Ticket`, from xl) with a line-strong edge; `Pesan Kunjungan` as the primary button.
+- **Solid** (every page, and a hero page after 24 px of scroll): sticky, 72 px from lg (64 below), the paper at 92 % with a 16 px blur and a `line` hairline; the wordmark in ink; the links 15/500 ink-2, the current one ink and underlined 2 px, 6 px under the words; the lookup pill (`Cari reservasi`, `Ticket`: an icon button at lg, labelled from xl) with a line-strong edge; `Pesan Kunjungan` as the primary button.
 - **Transparent** (over a hero that carries `data-header-overlay`, before 24 px of scroll): fixed over the photo, 88 px from lg, no background, white text, the pill edge white 35 %.
 
-The state is one attribute: `HeaderScrollObserver` (a client island of a dozen lines) watches a 24 px sentinel at the top of the document with an IntersectionObserver and toggles `data-scrolled` on the header; there is no scroll listener and nothing renders while scrolling. Colours, height and the backdrop transition over 220 ms on `ease-out-soft`. Without script a `<noscript>` style keeps the header solid. Everything inside reads the header tokens (`text-header-fg`, `-fg-2`, `-fg-3`, `border-header-line`), so no child knows the state. Link underlines draw from the left on hover. The desktop links appear from lg (`gap-6`, `gap-9` from xl); below lg: the wordmark (34 px mark), a primary `Pesan` and a 44 px round menu button.
+The state is one attribute: `HeaderScrollObserver` (a client island of a dozen lines) watches a 24 px sentinel at the top of the document with an IntersectionObserver and toggles `data-scrolled` on the header; there is no scroll listener and nothing renders while scrolling. Colours, height and the backdrop transition over 220 ms on `ease-out-soft`. Without script a `<noscript>` style keeps the header solid. Everything inside reads the header tokens (`text-header-fg`, `-fg-2`, `-fg-3`, `border-header-line`), so no child knows the state. Link underlines draw from the left on hover. The desktop links appear from lg (`gap-6`, `gap-9` from xl); below lg: the wordmark (34 px mark), a primary `Pesan` (44 px high) and a 44 px round menu button, which loads the drawer on first use (pointing at or focusing it starts the download), so Radix Dialog is not part of a page's first load.
 
-The menu drawer (`MobileMenu`, shadcn `Sheet side="right"`): 354 px (`w-drawer`, leaving at least 36 px of the page), radius 24 on the left, the paper, `shadow-drawer`, over `bg-night/70`. Top: the wordmark and a 44 px round close button. Then `Pesan Kunjungan` (lg, full width); the RWs as 54 px rows with a 6 × 30 accent bar, `RW 05 · Ecowastreme`, the theme (`rw_units.theme_label`) and a chevron, then the schedule links; `Kunjungan` and `Informasi` side by side in 44 px rows; at the foot a full-width WhatsApp button and the short payment promise with `ShieldCheck`. It opens on the sheet spring (`ease-spring-sheet`, 450 ms) and closes on the exit curve in 220 ms; its rows follow 30 ms apart (`enter-stagger`). Radix traps the focus, closes on Esc, locks the page and returns the focus to the menu button. Every link shows the pending dot while its page loads (`NavLinkLabel`).
+The menu drawer (`MobileMenu`, shadcn `Sheet side="right"`): 354 px (`w-drawer`, leaving at least 36 px of the page), radius 24 on the left, the paper, `shadow-drawer`, over `bg-night/70`. Top: the wordmark and a 44 px round close button. Then `Pesan Kunjungan` (lg, full width); the RWs as 54 px rows with a 6 × 30 accent bar, `RW 05 · Ecowastreme`, the theme (`rw_units.theme_label`) and a chevron, then the schedule links; `Kunjungan` and `Informasi` side by side in 44 px rows; at the foot a full-width WhatsApp button and the short payment promise with `ShieldCheck`. It opens on the sheet spring (`ease-spring-sheet`, 360 ms) and closes on the exit curve in 220 ms; its rows follow 30 ms apart (`enter-stagger`). Radix traps the focus, closes on Esc, locks the page and returns the focus to the menu button. Every link shows the pending dot while its page loads (`NavLinkLabel`).
 
 ### 5.18 SiteFooter (`src/components/layout/site-footer.tsx`)
 
@@ -995,7 +995,7 @@ Lists read the masked view `v_bookings_staff` (PIC phone `+62 812-••••-7
 
 ### 7.1 Setup
 
-Framer Motion is consumed through the `motion` package. The provider enables `LazyMotion` in strict mode, so components import `m` (not `motion`); the lint rule `no-restricted-imports` blocks `motion` from `motion/react` outside `src/lib/motion`.
+Framer Motion is consumed through the `motion` package, and only by islands that load lazily: `MotionProvider` wraps the plan's hotspots (`HotspotLayer`, inside the lazy `SiteMapSvg` chunk) and is not in the root layout, so no page ships motion in its first load (it took about 10 kB from every page; decision of 2026-10-24). The provider enables `LazyMotion` in strict mode, so components import `m` (not `motion`); the lint rule `no-restricted-imports` blocks `motion` from `motion/react` outside `src/lib/motion`.
 
 ```tsx
 // src/components/providers/motion-provider.tsx
@@ -1026,7 +1026,7 @@ The redesign moves the public site's motion into CSS (DESIGN-SPEC §4): transiti
 | `--ease-exit` (`ease-exit`) | `cubic-bezier(0.4, 0, 1, 1)` | closing sheets and drawers |
 | `--ease-spring-soft` + `--duration-spring-soft` | `linear()` of a 170 / 26 spring, 610 ms | card lift, the FAB entrance, reasons |
 | `--ease-spring-snappy` + `--duration-spring-snappy` | 300 / 24 (a 4.7 % overshoot), 470 ms | arrow circles, checks and radio dots |
-| `--ease-spring-sheet` + `--duration-spring-sheet` | 260 / 30, 440 ms | the drawer and bottom sheets |
+| `--ease-spring-sheet` + `--duration-spring-sheet` | 260 / 30, 360 ms (the design's timing; the curve is compressed to it) | the drawer and bottom sheets |
 | `--ease-spring-pin` + `--duration-spring-pin` | 320 / 20 (11.8 % overshoot), 590 ms | map pins |
 | `--duration-press` / `-micro` / `-short` / `-header` / `-base` / `-long` / `-reveal` / `-max` / `-count` | 100 / 150 / 200 / 220 / 300 / 500 / 600 / 700 / 1400 ms | press, colour, nav underline, header, … , the count-up |
 
@@ -1220,7 +1220,7 @@ Code-split with `next/dynamic` (`ssr: false` where DOM-only): Leaflet map, `page
 
 | Surface | Below `md` | `md` and above |
 |---|---|---|
-| Site header | below `lg`: the 64 px header, wordmark (34 px mark) + primary `Pesan` + 44 px round menu button opening the drawer (§5.17) | from `lg`: the five links (`Kampung Wisata` to the home page's RW section `/#kampung`, then `Paket wisata`, `Produk UMKM`, `Galeri`, `Peta & kontak`), `Pesan Kunjungan`; the `Cari reservasi` pill from `xl`. Transparent over a hero photo until 24 px of scroll. The RWs are not named one by one in the header (decision of 2026-10-22); `Kampung Wisata` is the current section (`aria-current="true"`) on every RW page, and each RW keeps its direct link in the drawer, the footer, the home section, the breadcrumbs and the sitemap |
+| Site header | below `lg`: the 64 px header, wordmark (34 px mark) + primary `Pesan` + 44 px round menu button opening the drawer (§5.17) | from `lg`: the five links (`Kampung Wisata` to the home page's RW section `/#kampung`, then `Paket wisata`, `Produk UMKM`, `Galeri`, `Peta & kontak`), `Pesan Kunjungan`; the `Cari reservasi` lookup (an icon at `lg`, the labelled pill from `xl`). Transparent over a hero photo until 24 px of scroll. The RWs are not named one by one in the header (decision of 2026-10-22); `Kampung Wisata` is the current section (`aria-current="true"`) on every RW page, and each RW keeps its direct link in the drawer, the footer, the home section, the breadcrumbs and the sitemap |
 | Hero | `h-svh` with a 32 rem minimum; the statement on two lines; the phone arc (390 × 40); carousel controls under the photo; no pinned photo | `h-svh` up to 900 px under the transparent header; pinned photo for one banner; the wide arc; carousel controls on the overlay from lg |
 | Package detail | sticky bottom CTA bar (`Pesan Sekarang` + price) above `WhatsAppFab` | sidebar card with price and CTA |
 | Booking wizard | stepper collapsed to `Langkah 2/4`, full-width fields, inline DatePicker | horizontal stepper, Popover DatePicker |

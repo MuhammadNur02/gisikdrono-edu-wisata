@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { Slot } from 'radix-ui';
 import * as React from 'react';
 
-import { copy } from '@/lib/copy/id';
+import { uiCopy } from '@/lib/copy/ui';
 import { cn } from '@/lib/utils/cn';
 
 // A filled button rises 1 px while pointed at (DESIGN-SPEC §2.1); outline and ghost only change their fill.
@@ -65,7 +65,7 @@ function LoadingSpinner() {
   return (
     <span className="absolute inset-0 flex items-center justify-center">
       <Loader2 aria-hidden className="motion-safe:animate-spin" />
-      <span className="sr-only">{copy.ui.loading}</span>
+      <span className="sr-only">{uiCopy.loading}</span>
     </span>
   );
 }

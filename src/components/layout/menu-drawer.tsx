@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, CalendarDays, ChevronRight, Menu, ShieldCheck, X } from 'lucide-react';
+import { ArrowRight, CalendarDays, ChevronRight, ShieldCheck, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
@@ -15,7 +15,6 @@ import {
   SheetContent,
   SheetDescription,
   SheetTitle,
-  SheetTrigger,
 } from '@/components/ui/sheet';
 import {
   BOOKING_CTA,
@@ -23,10 +22,10 @@ import {
   isCurrentNavItem,
   type PublicNavGroup,
   type PublicNavItem,
-} from '@/config/nav';
+} from '@/config/public-nav';
 import { rwAccentClasses } from '@/config/rw';
 import { siteConfig } from '@/config/site';
-import { copy } from '@/lib/copy/id';
+import { layoutCopy, uiCopy } from '@/lib/copy/ui';
 import { cn } from '@/lib/utils/cn';
 import { visitorPathFor } from '@/lib/utils/paths';
 import { buildWhatsAppChatUrl } from '@/lib/utils/whatsapp';
@@ -150,7 +149,7 @@ function DrawerTop() {
       </SheetClose>
       <SheetClose className="inline-flex size-11 press-scale items-center justify-center rounded-full bg-muted text-foreground hover:bg-border">
         <X aria-hidden className="size-5" />
-        <span className="sr-only">{copy.ui.close}</span>
+        <span className="sr-only">{uiCopy.close}</span>
       </SheetClose>
     </div>
   );
@@ -159,19 +158,19 @@ function DrawerTop() {
 function DrawerFoot() {
   const chatUrl = buildWhatsAppChatUrl(
     siteConfig.whatsappContactNumber,
-    copy.layout.whatsAppGreeting(siteConfig.name),
+    layoutCopy.whatsAppGreeting(siteConfig.name),
   );
   return (
     <div className="mt-auto space-y-4 border-t border-border pt-5">
       <Button asChild variant="whatsapp" size="lg" className="w-full rounded-full">
         <a href={chatUrl} target="_blank" rel="noopener noreferrer">
           <WhatsAppIcon />
-          {copy.layout.whatsAppChat}
+          {layoutCopy.whatsAppChat}
         </a>
       </Button>
       <p className="flex gap-2.5 text-caption text-muted-foreground">
         <ShieldCheck aria-hidden className="size-4.5 shrink-0 text-rw05" />
-        {copy.layout.paymentTrustShort}
+        {layoutCopy.paymentTrustShort}
       </p>
     </div>
   );
@@ -190,7 +189,7 @@ function DrawerBody({ groups, pathname }: { groups: readonly PublicNavGroup[]; p
           </Link>
         </Button>
       </SheetClose>
-      <nav aria-label={copy.layout.mainNav} className="space-y-6">
+      <nav aria-label={layoutCopy.mainNav} className="space-y-6">
         {kampungGroup ? <KampungGroup group={kampungGroup} pathname={pathname} /> : null}
         <div className="grid grid-cols-2 gap-x-4">
           {linkGroups.map((group) => (
@@ -206,32 +205,25 @@ function DrawerBody({ groups, pathname }: { groups: readonly PublicNavGroup[]; p
 // Below lg the links move into this drawer (docs/StyleGuide.md §10.2, DESIGN-SPEC §2.7): 354 px from the right over
 // the dimmed page, the booking button first, the RWs in their accents, then the visit and information links side by
 // side, WhatsApp and the payment promise at the foot. It slides in on the sheet spring and its rows follow 30 ms
-// apart (enter-stagger); Radix traps the focus, closes on Esc and gives the focus back to the menu button.
-export interface MobileMenuProps {
+// apart (enter-stagger); Radix traps the focus, closes on Esc and gives the focus back to the menu button. MobileMenu
+// loads it on first use, so Radix Dialog never reaches a page's first load.
+export interface MenuDrawerProps {
   groups: readonly PublicNavGroup[];
-  className?: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
-export function MobileMenu({ groups, className }: MobileMenuProps) {
+export function MenuDrawer({ groups, open, onOpenChange }: MenuDrawerProps) {
   const pathname = visitorPathFor(usePathname());
   return (
-    <Sheet>
-      <SheetTrigger
-        aria-label={copy.layout.openMenu}
-        className={cn(
-          'inline-flex size-11 press-scale items-center justify-center rounded-full border border-header-line text-header-fg hover:bg-header-fg/10',
-          className,
-        )}
-      >
-        <Menu aria-hidden className="size-5" />
-      </SheetTrigger>
+    <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
         showCloseButton={false}
-        className="w-drawer gap-5 overflow-y-auto rounded-l-3xl border-0 pt-3 pr-5 pb-5 pl-6 shadow-drawer data-[state=closed]:duration-220 data-[state=closed]:ease-exit data-[state=open]:duration-450 data-[state=open]:ease-spring-sheet sm:max-w-none"
+        className="w-drawer gap-5 overflow-y-auto rounded-l-3xl border-0 pt-3 pr-5 pb-5 pl-6 shadow-drawer data-[state=closed]:duration-220 data-[state=closed]:ease-exit data-[state=open]:duration-360 data-[state=open]:ease-spring-sheet sm:max-w-none"
       >
-        <SheetTitle className="sr-only">{copy.layout.menuTitle}</SheetTitle>
-        <SheetDescription className="sr-only">{copy.layout.menuDescription}</SheetDescription>
+        <SheetTitle className="sr-only">{layoutCopy.menuTitle}</SheetTitle>
+        <SheetDescription className="sr-only">{layoutCopy.menuDescription}</SheetDescription>
         <DrawerTop />
         <DrawerBody groups={groups} pathname={pathname} />
       </SheetContent>

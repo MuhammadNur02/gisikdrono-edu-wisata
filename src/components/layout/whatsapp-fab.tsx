@@ -5,7 +5,7 @@ import type { MouseEvent } from 'react';
 
 import { WhatsAppIcon } from '@/components/layout/whatsapp-icon';
 import { siteConfig } from '@/config/site';
-import { copy } from '@/lib/copy/id';
+import { layoutCopy } from '@/lib/copy/ui';
 import { cn } from '@/lib/utils/cn';
 import {
   buildWhatsAppChatUrl,
@@ -17,7 +17,7 @@ import {
 function chatUrlFor(pageTopic: string): string {
   return buildWhatsAppChatUrl(
     siteConfig.whatsappContactNumber,
-    copy.layout.whatsAppGreeting(pageTopic),
+    layoutCopy.whatsAppGreeting(pageTopic),
   );
 }
 
@@ -39,7 +39,7 @@ export function WhatsAppFab() {
       href={chatUrlFor(siteConfig.name)}
       target="_blank"
       rel="noopener noreferrer"
-      aria-label={copy.layout.whatsAppFab}
+      aria-label={layoutCopy.whatsAppFab}
       onClick={nameCurrentPage}
       className={cn(
         'fixed right-4 fab-offset z-40 inline-flex size-14 press-scale enter-late items-center justify-center gap-2.5 rounded-full bg-whatsapp text-whatsapp-foreground shadow-fab hover:bg-whatsapp-hover motion-safe:hover:-translate-y-0.5 md:right-6 md:bottom-6 md:h-13 md:w-auto md:pr-5 md:pl-4',
@@ -47,7 +47,7 @@ export function WhatsAppFab() {
       )}
     >
       <WhatsAppIcon className="size-7 md:size-6" />
-      <span className="text-label max-md:sr-only">{copy.layout.whatsAppChat}</span>
+      <span className="text-label max-md:sr-only">{layoutCopy.whatsAppChat}</span>
     </a>
   );
 }

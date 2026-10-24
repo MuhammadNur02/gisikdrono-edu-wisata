@@ -4,8 +4,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 import { NavLinkLabel } from '@/components/layout/nav-link-label';
-import { isCurrentNavItem, type PublicNavItem } from '@/config/nav';
-import { copy } from '@/lib/copy/id';
+import { isCurrentNavItem, type PublicNavItem } from '@/config/public-nav';
+import { layoutCopy } from '@/lib/copy/ui';
 import { cn } from '@/lib/utils/cn';
 import { visitorPathFor } from '@/lib/utils/paths';
 
@@ -20,7 +20,7 @@ export interface HeaderNavProps {
 export function HeaderNav({ items, className }: HeaderNavProps) {
   const pathname = visitorPathFor(usePathname());
   return (
-    <nav aria-label={copy.layout.mainNav} className={className}>
+    <nav aria-label={layoutCopy.mainNav} className={className}>
       <ul className="flex items-center gap-6 xl:gap-9">
         {items.map((item) => {
           const isCurrent = isCurrentNavItem(item, pathname);
