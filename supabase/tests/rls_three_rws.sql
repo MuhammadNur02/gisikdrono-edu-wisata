@@ -3,7 +3,7 @@
 -- bookings, which no public policy shows, so every row an admin sees came through the staff policies; RW 13's
 -- uploads live under rw-13/ like every RW's.
 begin;
-select plan(30);
+select plan(31);
 \ir helpers/rls_personas.psql
 
 -- One row of each kind per RW, every key ending in the RW's number so a list of them reads as the RWs it holds.
@@ -106,13 +106,14 @@ end;
 $$;
 grant execute on function pg_temp.insert_for(text, smallint) to authenticated;
 
+-- Vendors and products are the superadmin's to add since 20261028080100, so an RW admin adds the other kinds.
 create function pg_temp.insert_every_kind_for(p_rw smallint) returns void
   language plpgsql
 as $$
 declare
   kind text;
 begin
-  foreach kind in array array['vendor', 'produk', 'artikel', 'titik', 'galeri', 'jadwal'] loop
+  foreach kind in array array['artikel', 'titik', 'galeri', 'jadwal'] loop
     perform pg_temp.insert_for(kind, p_rw);
   end loop;
 end;
@@ -173,7 +174,7 @@ select throws_ok($$select pg_temp.insert_package_for(8::smallint)$$, '42501', nu
 select throws_ok($$select pg_temp.insert_package_for(13::smallint)$$, '42501', null, 'or for RW 13');
 update public.tour_packages set name = 'Diubah RW 05', updated_by = auth.uid() where slug like 'tiga-paket-%';
 select lives_ok($$select pg_temp.insert_every_kind_for(5::smallint)$$,
-  'RW 05''s admin adds a vendor, product, article, point, photo and schedule for RW 05');
+  'RW 05''s admin adds an article, point, photo and schedule for RW 05');
 select is(pg_temp.refused_kinds(8::smallint), 'vendor,produk,artikel,titik,galeri,jadwal', 'but none of them for RW 08');
 select is(pg_temp.refused_kinds(13::smallint), 'vendor,produk,artikel,titik,galeri,jadwal', 'nor for RW 13');
 select lives_ok($$select pg_temp.rename_every_fixture('Diubah RW 05')$$, 'and renames what the policies let it reach');
@@ -187,7 +188,7 @@ select throws_ok($$select pg_temp.insert_package_for(5::smallint)$$, '42501', nu
 select throws_ok($$select pg_temp.insert_package_for(13::smallint)$$, '42501', null, 'or for RW 13');
 update public.tour_packages set name = 'Diubah RW 08', updated_by = auth.uid() where slug like 'tiga-paket-%';
 select lives_ok($$select pg_temp.insert_every_kind_for(8::smallint)$$,
-  'RW 08''s admin adds a vendor, product, article, point, photo and schedule for RW 08');
+  'RW 08''s admin adds an article, point, photo and schedule for RW 08');
 select is(pg_temp.refused_kinds(5::smallint), 'vendor,produk,artikel,titik,galeri,jadwal', 'but none of them for RW 05');
 select is(pg_temp.refused_kinds(13::smallint), 'vendor,produk,artikel,titik,galeri,jadwal', 'nor for RW 13');
 select lives_ok($$select pg_temp.rename_every_fixture('Diubah RW 08')$$, 'and renames what the policies let it reach');
@@ -201,7 +202,7 @@ select throws_ok($$select pg_temp.insert_package_for(5::smallint)$$, '42501', nu
 select throws_ok($$select pg_temp.insert_package_for(8::smallint)$$, '42501', null, 'or for RW 08');
 update public.tour_packages set name = 'Diubah RW 13', updated_by = auth.uid() where slug like 'tiga-paket-%';
 select lives_ok($$select pg_temp.insert_every_kind_for(13::smallint)$$,
-  'RW 13''s admin adds a vendor, product, article, point, photo and schedule for RW 13');
+  'RW 13''s admin adds an article, point, photo and schedule for RW 13');
 select is(pg_temp.refused_kinds(5::smallint), 'vendor,produk,artikel,titik,galeri,jadwal', 'but none of them for RW 05');
 select is(pg_temp.refused_kinds(8::smallint), 'vendor,produk,artikel,titik,galeri,jadwal', 'nor for RW 08');
 select lives_ok($$select pg_temp.rename_every_fixture('Diubah RW 13')$$, 'and renames what the policies let it reach');
@@ -214,17 +215,21 @@ select is(
   'each admin''s update over all three drafts changed their own RW''s draft and nothing else'
 );
 select is(
+  (select count(*)::int from public.umkm_vendors where slug like 'tiga-%' and name like 'Diubah%')
+  + (select count(*)::int from public.products_umkm where slug like 'tiga-%' and name like 'Diubah%')
+  + (select count(*)::int from public.umkm_vendors where slug like 'tiga-baru-%')
+  + (select count(*)::int from public.products_umkm where slug like 'tiga-baru-%'),
+  0, 'no RW admin added or renamed a vendor or product, the superadmin''s since 20261028080100');
+select is(
   concat_ws(' | ',
-    (select string_agg(rw_id || '=' || name, ', ' order by rw_id) from public.umkm_vendors where slug like 'tiga-vendor-%'),
-    (select string_agg(rw_id || '=' || name, ', ' order by rw_id) from public.products_umkm where slug like 'tiga-produk-%'),
     (select string_agg(rw_id || '=' || title, ', ' order by rw_id) from public.articles where slug like 'tiga-artikel-%'),
     (select string_agg(rw_id || '=' || name, ', ' order by rw_id)
      from (select distinct rw_id, name from public.activity_points where slug like 'tiga-titik-%') as points),
     (select string_agg(rw_id || '=' || alt_text, ', ' order by rw_id) from public.galleries where caption like 'tiga-galeri-%'),
     (select string_agg(rw_id || '=' || description_md, ', ' order by rw_id) from public.performance_schedules
      where title like 'tiga-jadwal-%')),
-  concat_ws(' | ', variadic array_fill('5=Diubah RW 05, 8=Diubah RW 08, 13=Diubah RW 13'::text, array[6])),
-  'and so did their updates of vendors, products, articles, points, photos and schedules'
+  concat_ws(' | ', variadic array_fill('5=Diubah RW 05, 8=Diubah RW 08, 13=Diubah RW 13'::text, array[4])),
+  'and so did their updates of articles, points, photos and schedules'
 );
 
 -- ===== RW 13's file paths =====
