@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { KawungDivider } from '@/components/layout/kawung-divider';
 import { SectionShell } from '@/components/layout/section';
 import { Button } from '@/components/ui/button';
 import { BOOKING_CTA } from '@/config/nav';
@@ -73,6 +74,7 @@ export function HomeIntro({ id, banner, packagesAnchor, address }: HomeIntroProp
         </address>
         <IntroActions banner={banner} packagesAnchor={packagesAnchor} />
       </div>
+      <KawungDivider className="mt-14 md:mt-18" />
     </SectionShell>
   );
 }

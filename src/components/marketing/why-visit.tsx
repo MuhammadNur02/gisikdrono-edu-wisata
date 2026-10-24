@@ -3,6 +3,7 @@ import dynamic from 'next/dynamic';
 
 import { Container } from '@/components/layout/container';
 import { SectionShell } from '@/components/layout/section';
+import { FigureStat, FiguresPanel } from '@/components/marketing/figure-stat';
 import { ParallaxPhoto } from '@/components/marketing/parallax-photo';
 import { IMAGE_SIZES } from '@/config/images';
 import { copy } from '@/lib/copy/id';
@@ -56,7 +57,7 @@ function ReasonItem({ reason }: { reason: Reason }) {
   const Icon = reason.icon;
   return (
     <li className="flex gap-4">
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary text-secondary-foreground">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary-tint text-primary-ink">
         <Icon aria-hidden className="size-5" strokeWidth={1.75} />
       </span>
       <span className="space-y-1">
@@ -77,37 +78,39 @@ function ReasonList() {
   );
 }
 
-const statClassName = 'flex flex-col-reverse gap-1 border-t border-border pt-4';
-const statValueClassName = 'text-display-lg text-foreground';
+// A row of figures counts up 120 ms apart (DESIGN-SPEC §4, Home figures).
+const COUNT_STAGGER_MS = 120;
 
-// Counted figures and the rating, divided by rules rather than set in cards. The rating is shown as it is,
-// never counted up, and takes the full row when it would sit alone.
-function StatGrid({ stats }: { stats: HomeStats }) {
+// Counted figures and the rating in the forest figures band (DESIGN-SPEC §3.1). The rating is shown as it is, never
+// counted up.
+function Figures({ stats }: { stats: HomeStats }) {
   return (
-    <dl className="grid grid-cols-2 gap-x-6 gap-y-8">
-      {stats.counts.map((count) => (
-        <div key={count.key} className={statClassName}>
-          <dt className="text-body-sm text-muted-foreground">{COUNT_LABELS[count.key]}</dt>
-          <dd className={statValueClassName}>
-            <CountUp value={count.value} />
-          </dd>
-        </div>
+    <FiguresPanel
+      title="Gisikdrono dalam angka"
+      note="Dihitung dari data kampung di situs ini"
+      className="mt-14 lg:mt-18"
+    >
+      {stats.counts.map((count, index) => (
+        <FigureStat
+          key={count.key}
+          tone="forest"
+          label={COUNT_LABELS[count.key]}
+          value={<CountUp value={count.value} delayMs={index * COUNT_STAGGER_MS} />}
+        />
       ))}
       {stats.rating ? (
-        <div className={`${statClassName} odd:col-span-2`}>
-          <dt className="text-body-sm text-muted-foreground">
-            {copy.catalogue.ratingFromReviews(stats.rating.reviewCount)}
-          </dt>
-          <dd className={`${statValueClassName} tabular-nums`}>
-            {formatRating(stats.rating.averageRating)}
-          </dd>
-        </div>
+        <FigureStat
+          tone="forest"
+          label={copy.catalogue.ratingFromReviews(stats.rating.reviewCount)}
+          value={formatRating(stats.rating.averageRating)}
+        />
       ) : null}
-    </dl>
+    </FiguresPanel>
   );
 }
 
-// A captioned gallery photo across the whole width (G8), the caption on a scrim over its bottom edge.
+// A captioned gallery photo across the whole width (G8) under the parallax band grade (DESIGN-SPEC §1.7), the caption
+// over its darkened lower left.
 function PhotoBand({ photo }: { photo: HomeGalleryPhoto }) {
   return (
     <figure className="relative">
@@ -116,10 +119,7 @@ function PhotoBand({ photo }: { photo: HomeGalleryPhoto }) {
         sizes={IMAGE_SIZES.bleed}
         aspectClassName="aspect-4/3 md:aspect-21/9"
       />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-linear-to-t from-brand-deep/80 to-transparent"
-      />
+      <div aria-hidden className="photo-grade-band absolute inset-0" />
       <figcaption className="absolute inset-x-0 bottom-0">
         <Container className="pb-5 text-body-sm text-white md:pb-8 md:text-body">
           {photo.caption}
@@ -147,8 +147,8 @@ export function WhyVisit({ id, rwCount, stats, bandPhoto }: WhyVisitProps) {
       wave={{ variant: 'gentle', flip: true }}
       bleed={bandPhoto ? <PhotoBand photo={bandPhoto} /> : undefined}
     >
-      <div className="grid gap-12 lg:grid-cols-12 lg:items-center">
-        <div className="space-y-8 lg:col-span-6">
+      <div className="grid gap-12 lg:grid-cols-12 lg:items-start">
+        <div className="space-y-8 lg:col-span-7">
           <div className="space-y-3">
             <p className="text-overline text-primary-text">Mengapa Gisikdrono</p>
             <h2 id={titleId} className="text-h1 text-balance">
@@ -159,12 +159,8 @@ export function WhyVisit({ id, rwCount, stats, bandPhoto }: WhyVisitProps) {
             <ReasonList />
           </div>
         </div>
-        {hasHomeStats(stats) ? (
-          <div className="reveal lg:col-span-6">
-            <StatGrid stats={stats} />
-          </div>
-        ) : null}
       </div>
+      {hasHomeStats(stats) ? <Figures stats={stats} /> : null}
     </SectionShell>
   );
 }

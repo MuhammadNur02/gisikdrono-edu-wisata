@@ -1,105 +1,68 @@
-import { ArrowRight } from 'lucide-react';
-import Link from 'next/link';
-
-import { RwEyebrow } from '@/components/layout/rw-eyebrow';
 import { Section } from '@/components/layout/section';
-import { ParallaxPhoto } from '@/components/marketing/parallax-photo';
-import { PhotoPlaceholder } from '@/components/marketing/photo-placeholder';
-import { Card } from '@/components/ui/card';
+import { RwTile, type RwTileSize } from '@/components/marketing/rw-tile';
 import { IMAGE_SIZES } from '@/config/images';
-import { rwAccentClasses } from '@/config/rw';
-import { RW_ICONS } from '@/config/rw-icons';
 import { cn } from '@/lib/utils/cn';
 import { countWord, countWordAtStart } from '@/lib/utils/number-words';
 import type { RwUnitProfile } from '@/types/rw-unit';
 
 interface TileLayout {
   span: string;
-  photoAspect: string;
+  size: RwTileSize;
+  // The tile's height: 440 / 380 / 240 on phones, then the bento's 640 = 380 + 24 + 236 from lg (DESIGN-SPEC §3.1).
+  height: string;
   sizes: string;
 }
 
-// docs/PRD.md FR-PUB-02 (amended 2026-10-23): a mosaic, the first RW by sort_order large. Below lg every tile is
-// one 4:3 column; from lg one RW fills the row, two share it 7/5, three put the first beside the other two, and
-// from four the first takes the row over a three-column grid. The photo's proportions follow the tile's.
+// docs/PRD.md FR-PUB-02 (amended 2026-10-23): a mosaic, the first RW by sort_order large. Below lg the tiles stack;
+// from lg one RW fills the row, two share it 7/5, three put the first beside the other two (708 + 468 at 1200), and
+// from four the first takes the row over a three-column grid.
 const WIDE: TileLayout = {
   span: 'lg:col-span-12',
-  photoAspect: 'lg:aspect-21/9',
+  size: 'large',
+  height: 'min-h-110 lg:min-h-130',
   sizes: IMAGE_SIZES.bleed,
 };
-const LARGE: TileLayout = { span: 'lg:col-span-7', photoAspect: 'lg:aspect-16/10', sizes: IMAGE_SIZES.bento };
-const TALL: TileLayout = {
-  span: 'lg:col-span-7 lg:row-span-2',
-  photoAspect: 'lg:aspect-4/5',
+const LARGE: TileLayout = {
+  span: 'lg:col-span-7',
+  size: 'large',
+  height: 'min-h-110 lg:min-h-130',
   sizes: IMAGE_SIZES.bento,
 };
-const SIDE: TileLayout = { span: 'lg:col-span-5', photoAspect: 'lg:aspect-16/10', sizes: IMAGE_SIZES.split };
-const THIRD: TileLayout = { span: 'lg:col-span-4', photoAspect: 'lg:aspect-16/10', sizes: IMAGE_SIZES.card };
+const TALL: TileLayout = {
+  span: 'lg:col-span-7 lg:row-span-2',
+  size: 'large',
+  height: 'min-h-110 lg:min-h-160',
+  sizes: IMAGE_SIZES.bento,
+};
+const SIDE: TileLayout = {
+  span: 'lg:col-span-5',
+  size: 'medium',
+  height: 'min-h-95',
+  sizes: IMAGE_SIZES.split,
+};
+const SIDE_LOW: TileLayout = {
+  span: 'lg:col-span-5',
+  size: 'small',
+  height: 'min-h-60 lg:min-h-59',
+  sizes: IMAGE_SIZES.split,
+};
+const THIRD: TileLayout = {
+  span: 'lg:col-span-4',
+  size: 'medium',
+  height: 'min-h-95',
+  sizes: IMAGE_SIZES.card,
+};
 
 // Indexed by the number of RWs online; longer lists fall back to WIDE then THIRD.
 const MOSAIC_LAYOUTS: readonly (readonly TileLayout[])[] = [
   [],
   [WIDE],
   [LARGE, SIDE],
-  [TALL, SIDE, SIDE],
+  [TALL, SIDE, SIDE_LOW],
 ];
 
 function tileLayout(index: number, count: number): TileLayout {
   return MOSAIC_LAYOUTS[count]?.[index] ?? (index === 0 ? WIDE : THIRD);
-}
-
-function TilePhoto({ unit, layout }: { unit: RwUnitProfile; layout: TileLayout }) {
-  const aspectClassName = cn('aspect-4/3', layout.photoAspect);
-  if (!unit.heroImage) {
-    return (
-      <PhotoPlaceholder
-        label={unit.name}
-        icon={RW_ICONS[unit.iconKey]}
-        rws={[unit]}
-        className={cn('rounded-none', aspectClassName)}
-      />
-    );
-  }
-  return (
-    <ParallaxPhoto image={unit.heroImage} sizes={layout.sizes} aspectClassName={aspectClassName} />
-  );
-}
-
-// The whole tile opens the RW page: the title link stretches over it, and the closing line repeats where it goes
-// for sighted visitors only (§9.2). The 4 px top rule is the RW's accent fill (docs/StyleGuide.md §2.7).
-function RwTile({ unit, layout }: { unit: RwUnitProfile; layout: TileLayout }) {
-  return (
-    <li className={cn('flex', layout.span)}>
-      <Card
-        variant="interactive"
-        className="relative w-full gap-0 overflow-hidden py-0 md:gap-0 md:py-0"
-      >
-        <span aria-hidden className={cn('block h-1', rwAccentClasses(unit.accentKey).fill)} />
-        <TilePhoto unit={unit} layout={layout} />
-        <div className="flex flex-1 flex-col gap-3 p-5 md:p-6">
-          <RwEyebrow rw={unit} withName />
-          <h3 className="text-h3">
-            <Link
-              href={unit.path}
-              className="outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:after:ring-2 focus-visible:after:ring-ring"
-            >
-              {unit.themeLabel}
-            </Link>
-          </h3>
-          {unit.tagline ? (
-            <p className="line-clamp-2 text-body text-muted-foreground">{unit.tagline}</p>
-          ) : null}
-          <span
-            aria-hidden
-            className="mt-auto inline-flex min-h-11 items-center gap-2 text-body-sm font-medium text-primary-text"
-          >
-            {`Lihat halaman ${unit.label}`}
-            <ArrowRight className="size-4" />
-          </span>
-        </div>
-      </Card>
-    </li>
-  );
 }
 
 export interface RwBentoProps {
@@ -109,8 +72,7 @@ export interface RwBentoProps {
 
 // Every RW online (rw_units, sort_order). The eyebrow counts them, so it stays true as RWs go online or offline;
 // with none online the section is left out whole (docs/StyleGuide.md §6.9). The desktop header's Kampung Wisata link
-// points here. The tiles carry no reveal: the section starts close under the hero, near the first screen on a
-// phone. It needs no wave of its own: the introduction above it shares its tone.
+// points here. The tiles rise in one after another (05, 13, 08) as they come into view.
 export function RwBento({ id, units }: RwBentoProps) {
   if (units.length === 0) return null;
   return (
@@ -120,10 +82,20 @@ export function RwBento({ id, units }: RwBentoProps) {
       eyebrow={`${countWordAtStart(units.length)} kampung, ${countWord(units.length)} program`}
       title="Pilih kampung yang ingin Anda kunjungi"
     >
-      <ul className="grid gap-6 lg:grid-cols-12">
-        {units.map((unit, index) => (
-          <RwTile key={unit.id} unit={unit} layout={tileLayout(index, units.length)} />
-        ))}
+      <ul className="grid gap-4 reveal-stagger md:gap-6 lg:grid-cols-12">
+        {units.map((unit, index) => {
+          const layout = tileLayout(index, units.length);
+          return (
+            <li key={unit.id} className={cn('flex', layout.span)}>
+              <RwTile
+                unit={unit}
+                size={layout.size}
+                sizes={layout.sizes}
+                className={cn('w-full', layout.height)}
+              />
+            </li>
+          );
+        })}
       </ul>
     </Section>
   );

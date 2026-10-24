@@ -41,7 +41,7 @@ export function Testimonials({ id, reviews }: TestimonialsProps) {
   return (
     <Section
       id={id}
-      tone="warm"
+      tone="muted"
       wave={{ variant: 'gentle' }}
       eyebrow="Ulasan pengunjung"
       title="Kata rombongan yang sudah berkunjung"

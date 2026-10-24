@@ -1,17 +1,14 @@
-import { Clock, Users } from 'lucide-react';
+import { ArrowRight, Clock, Users } from 'lucide-react';
 import Link from 'next/link';
 
-import { RwTag } from '@/components/layout/rw-tag';
+import { RwComboTag, RwTag } from '@/components/layout/rw-tag';
 import { PhotoFrame } from '@/components/marketing/photo';
 import { PhotoPlaceholder } from '@/components/marketing/photo-placeholder';
 import { PackagePrice } from '@/components/packages/package-price';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { IMAGE_SIZES } from '@/config/images';
 import { PACKAGE_CATEGORY } from '@/config/status';
 import { copy } from '@/lib/copy/id';
-import { bookingPath, packagePath } from '@/lib/utils/paths';
+import { packagePath } from '@/lib/utils/paths';
 import type { PackageSummary } from '@/types/package';
 
 const COVER_ASPECT = 'aspect-4/3';
@@ -20,31 +17,27 @@ export interface PackageCardProps {
   pkg: PackageSummary;
 }
 
-// At most two badges on the cover (docs/StyleGuide.md §5.8): the RW and the category, or, for a combo, both
-// RWs in their accents, RW 05 first (§2.7), with the category in the meta row below.
-function CoverBadges({ pkg }: PackageCardProps) {
-  const isCombo = pkg.category === 'combo';
+// One badge on the cover (DESIGN-SPEC §2.5): the RW in its tint, or, for a package that visits several RWs, the combo
+// badge in the primary set naming them (`RW 05 + RW 13`).
+function CoverBadge({ pkg }: PackageCardProps) {
+  const [onlyRw] = pkg.rws;
   return (
-    <div className="absolute inset-x-3 top-3 flex justify-between gap-2">
-      <div className="flex gap-1.5">
-        {pkg.rws.map((rw) => (
-          <RwTag key={rw.id} rw={rw} />
-        ))}
-      </div>
-      {isCombo ? null : <Badge variant="secondary">{PACKAGE_CATEGORY[pkg.category].label}</Badge>}
+    <div className="absolute top-4 left-4">
+      {pkg.rws.length === 1 && onlyRw ? <RwTag rw={onlyRw} /> : <RwComboTag rws={pkg.rws} />}
     </div>
   );
 }
 
 function PackageCover({ pkg }: PackageCardProps) {
   return (
-    <div className="relative">
+    <div className="relative overflow-hidden rounded-lg">
       {pkg.cover ? (
         <PhotoFrame
           image={pkg.cover}
           sizes={IMAGE_SIZES.card}
           aspectClassName={COVER_ASPECT}
           className="rounded-none"
+          imageClassName="hover-zoom"
         />
       ) : (
         <PhotoPlaceholder
@@ -54,11 +47,19 @@ function PackageCover({ pkg }: PackageCardProps) {
           className={`${COVER_ASPECT} rounded-none`}
         />
       )}
-      <CoverBadges pkg={pkg} />
+      <CoverBadge pkg={pkg} />
     </div>
   );
 }
 
+// `PELAJAR · 120 MENIT`: who the package is for and how long it lasts (DESIGN-SPEC §2.5).
+function metaLine(pkg: PackageSummary): string {
+  const parts: string[] = [PACKAGE_CATEGORY[pkg.category].label];
+  if (pkg.durationMinutes) parts.push(copy.catalogue.minutes(pkg.durationMinutes));
+  return parts.join(' · ');
+}
+
+// The facts row of the package page's booking panel.
 export function PackageMeta({ pkg }: PackageCardProps) {
   const CategoryIcon = PACKAGE_CATEGORY[pkg.category].icon;
   return (
@@ -83,37 +84,36 @@ export function PackageMeta({ pkg }: PackageCardProps) {
   );
 }
 
-// The title link stretches over the whole card, so the card is one link; the two buttons sit above it. The
-// booking button is `secondary` because a grid shows several cards at once and a screen keeps one primary
-// call to action (§1.3 G9, which wins over the `default` button of §5.8).
+// Card/Package of DESIGN-SPEC §2.5: editorial, not a box. The photo (4:3, radius 14) with its badge, the meta line, the
+// title, a tagline held to two lines so the footers of a row align, and the footer with the price and `Lihat paket`.
+// The title link stretches over the card, so the whole card is one link. Hover: the card rises 4 px, the photo zooms
+// to 1.04, the title turns primary-ink and the arrow steps forward.
 export function PackageCard({ pkg }: PackageCardProps) {
-  const detailHref = packagePath(pkg.slug);
   return (
-    <Card
-      variant="interactive"
-      className="relative w-full gap-4 overflow-hidden pt-0 md:gap-4 md:pt-0"
-    >
+    <article className="group relative flex h-full w-full hover-rise flex-col">
       <PackageCover pkg={pkg} />
-      <div className="space-y-3 px-5 md:px-6">
-        <h3 className="line-clamp-2 text-h4">
+      <div className="flex flex-1 flex-col gap-2.5 pt-5">
+        <p className="text-meta-caps text-muted-foreground">{metaLine(pkg)}</p>
+        <h3 className="text-card-title transition-colors duration-200 group-hover:text-primary-ink">
           <Link
-            href={detailHref}
-            className="outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:after:ring-2 focus-visible:after:ring-ring"
+            href={packagePath(pkg.slug)}
+            className="outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:outline-2 focus-visible:after:outline-offset-4 focus-visible:after:outline-ring"
           >
             {pkg.name}
           </Link>
         </h3>
-        <PackageMeta pkg={pkg} />
-        <PackagePrice pkg={pkg} />
+        <p className="line-clamp-2 min-h-12.5 text-body text-ink-2">{pkg.tagline}</p>
+        <div className="mt-auto flex items-baseline justify-between gap-4 border-t border-border pt-4">
+          <PackagePrice pkg={pkg} />
+          <span
+            aria-hidden
+            className="inline-flex shrink-0 items-center gap-1.5 text-label font-semibold text-primary-ink"
+          >
+            {copy.catalogue.viewPackage}
+            <ArrowRight className="size-4.5 hover-nudge" />
+          </span>
+        </div>
       </div>
-      <div className="relative mt-auto flex flex-wrap gap-2 px-5 md:px-6">
-        <Button variant="secondary" asChild>
-          <Link href={bookingPath(pkg.slug)}>{copy.catalogue.bookNow}</Link>
-        </Button>
-        <Button variant="ghost" asChild>
-          <Link href={detailHref}>{copy.catalogue.packageDetail}</Link>
-        </Button>
-      </div>
-    </Card>
+    </article>
   );
 }
