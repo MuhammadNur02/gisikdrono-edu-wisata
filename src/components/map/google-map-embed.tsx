@@ -12,7 +12,7 @@ export interface GoogleMapEmbedProps {
 }
 
 // The frame shares the 16:9 box of the button that asks for it, so loading it moves nothing.
-const FRAME_CLASS = 'relative aspect-video overflow-hidden rounded-xl border border-border bg-muted';
+const FRAME_CLASS = 'relative aspect-video overflow-hidden rounded-xl border border-border';
 // Google's map needs its scripts, its own origin and the link that opens the map on Google; nothing else, so the
 // frame can neither navigate this page nor submit forms.
 const FRAME_SANDBOX = 'allow-scripts allow-same-origin allow-popups';
@@ -24,7 +24,7 @@ function GoogleFrame({ embedUrl }: GoogleMapEmbedProps) {
     frameRef.current?.focus();
   }, []);
   return (
-    <div className={FRAME_CLASS}>
+    <div className={`${FRAME_CLASS} bg-muted`}>
       <iframe
         ref={frameRef}
         src={embedUrl}
@@ -44,7 +44,10 @@ export function GoogleMapEmbed({ embedUrl }: GoogleMapEmbedProps) {
   const [isRequested, setIsRequested] = useState(false);
   if (isRequested) return <GoogleFrame embedUrl={embedUrl} />;
   return (
-    <div className={`${FRAME_CLASS} flex flex-col items-center justify-center gap-3 p-6 text-center`}>
+    // The card surface rather than the muted one: the 12 px hint in muted-foreground reaches AA only on it.
+    <div
+      className={`${FRAME_CLASS} flex flex-col items-center justify-center gap-3 bg-card p-6 text-center`}
+    >
       <span className="flex size-12 items-center justify-center rounded-full bg-background text-muted-foreground shadow-card">
         <MapPinned aria-hidden className="size-6" strokeWidth={1.5} />
       </span>
