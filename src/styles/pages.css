@@ -114,3 +114,9 @@
     filter: saturate(0.55) sepia(0.18) brightness(1.03);
   }
 }
+
+/* An anchored section of an RW page clears the sticky header and the 64 px anchor nav under it (DESIGN-SPEC §3.3).
+   Important, because Section already carries the header-only margin. */
+@utility scroll-mt-header-nav {
+  scroll-margin-top: calc(var(--header-h) + 4rem) !important;
+}
