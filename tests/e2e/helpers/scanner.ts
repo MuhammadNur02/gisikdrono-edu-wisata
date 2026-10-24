@@ -1,12 +1,10 @@
-import { writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
 import { test, type Page, type Route } from '@playwright/test';
 import QRCode from 'qrcode';
 import { z } from 'zod';
 
 import { createRwAdmin, removeAccounts, resetAuthLimits } from './staff';
+import { ZXING_WASM_PATH } from '../../../src/config/scanner';
+
 
 // The scanner specs (Task P4.4.05) answer POST /api/tickets/verify themselves until the route of Task P4.4.02 exists,
 // after the DB lane's validate_ticket and check_in_ticket; the page, the camera, the result sheet and the requests it
@@ -14,6 +12,7 @@ import { createRwAdmin, removeAccounts, resetAuthLimits } from './staff';
 
 export const SCANNER = '/dashboard/scanner';
 const VERIFY_ROUTE = '**/api/tickets/verify';
+const LINE_BREAK = '\n';
 
 // What the page posted, read the way the route will read it (src/lib/validations/scanner.ts).
 export const sentScanSchema = z.object({
@@ -76,29 +75,78 @@ export async function dropScans(page: Page): Promise<string[]> {
   return attempts;
 }
 
-// A 640×480 Y4M still of the ticket's QR, which Chromium plays as the camera.
-export function fakeCameraWith(text: string): string {
-  const width = 640;
-  const height = 480;
+interface QrMatrix {
+  size: number;
+  dark: boolean[];
+}
+
+function qrMatrixOf(text: string): QrMatrix {
   const { modules } = QRCode.create(`http://127.0.0.1:3000/v/${text}`, {
     errorCorrectionLevel: 'M',
   });
-  const scale = Math.floor(360 / (modules.size + 8));
-  const offsetX = Math.floor((width - modules.size * scale) / 2);
-  const offsetY = Math.floor((height - modules.size * scale) / 2);
-  const luma = Buffer.alloc(width * height, 235);
-  for (let y = 0; y < modules.size * scale; y += 1) {
-    for (let x = 0; x < modules.size * scale; x += 1) {
-      if (modules.get(Math.floor(y / scale), Math.floor(x / scale))) {
-        luma[(offsetY + y) * width + offsetX + x] = 16;
-      }
-    }
+  const dark: boolean[] = [];
+  for (let row = 0; row < modules.size; row += 1) {
+    for (let column = 0; column < modules.size; column += 1)
+      dark.push(modules.get(row, column) === 1);
   }
-  const chroma = Buffer.alloc((width / 2) * (height / 2) * 2, 128);
-  const header = Buffer.from(`YUV4MPEG2 W${String(width)} H${String(height)} F10:1 Ip A1:1 C420\n`);
-  const file = join(tmpdir(), 'gisikdrono-scanner-camera.y4m');
-  writeFileSync(file, Buffer.concat([header, Buffer.from('FRAME\n'), luma, chroma]));
-  return file;
+  return { size: modules.size, dark };
+}
+
+// The rear camera, replaced before any page script runs: getUserMedia answers with a canvas stream that shows the
+// ticket's QR, drawn module by module (no image, so the CSP's img-src is not involved). Headless Chromium in CI has
+// no camera, and its fake-device flags proved unreliable; the page, the reader and the ZXing fallback stay real.
+export async function showQrToCamera(page: Page, text: string): Promise<void> {
+  await page.addInitScript((matrix: QrMatrix) => {
+    const width = 640;
+    const height = 480;
+    const scale = Math.floor(360 / (matrix.size + 8));
+    const left = Math.floor((width - matrix.size * scale) / 2);
+    const top = Math.floor((height - matrix.size * scale) / 2);
+    navigator.mediaDevices.getUserMedia = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d');
+      if (!context) return Promise.reject(new Error('no 2d context'));
+      const draw = () => {
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, width, height);
+        context.fillStyle = '#000000';
+        matrix.dark.forEach((isDark, index) => {
+          if (!isDark) return;
+          const row = Math.floor(index / matrix.size);
+          const column = index % matrix.size;
+          context.fillRect(left + column * scale, top + row * scale, scale, scale);
+        });
+      };
+      draw();
+      // A canvas stream only sends a frame when the canvas changes, so it is redrawn as a camera would.
+      setInterval(draw, 100);
+      return Promise.resolve(canvas.captureStream(10));
+    };
+  }, qrMatrixOf(text));
+}
+
+// What a failed camera test leaves in the CI log: the page's console errors and whether the ZXing reader can be
+// fetched and compiled under the page's CSP.
+export async function cameraDiagnosticsOf(
+  page: Page,
+  problems: readonly string[],
+): Promise<string> {
+  const wasm = await page
+    .evaluate(async (path) => {
+      const response = await fetch(path);
+      const type = response.headers.get('content-type');
+      try {
+        await WebAssembly.compile(await response.arrayBuffer());
+        return `${String(response.status)} ${String(type)} compiled`;
+      } catch (error) {
+        return `${String(response.status)} ${String(type)} ${String(error)}`;
+      }
+    }, ZXING_WASM_PATH)
+    .catch((error: unknown) => String(error));
+  const lines = [`wasm: ${wasm}`, ...problems.map((problem) => `console: ${problem}`)];
+  return lines.join(LINE_BREAK);
 }
 
 // Each test signs in as an RW 05 officer of its own, removed afterwards: the seeded admin_rw 05 is shared with other
