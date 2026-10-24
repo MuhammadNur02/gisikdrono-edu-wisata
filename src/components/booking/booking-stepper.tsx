@@ -2,13 +2,11 @@
 
 import { AlertTriangle, Check } from 'lucide-react';
 
-import { Progress } from '@/components/ui/progress';
 import { BOOKING_STEPS, type BookingStep } from '@/config/site';
 import { copy } from '@/lib/copy/id';
 import { cn } from '@/lib/utils/cn';
 
 const text = copy.booking.wizard;
-const FULL_PERCENT = 100;
 
 export interface BookingStepperProps {
   current: BookingStep;
@@ -36,45 +34,78 @@ const STATE_LABEL: Record<StepState, string> = {
   error: text.stepNeedsFix,
 };
 
+const MARKER_CLASS: Record<StepState, string> = {
+  completed: 'bg-success text-success-foreground',
+  current: 'bg-primary text-primary-foreground',
+  upcoming: 'border-control border-border-strong bg-card text-muted-foreground',
+  error: 'bg-danger-soft text-danger-soft-foreground ring-2 ring-destructive',
+};
+
+const LABEL_CLASS: Record<StepState, string> = {
+  completed: 'text-ink-2',
+  current: 'font-semibold text-foreground',
+  upcoming: 'text-muted-foreground',
+  error: 'text-ink-2',
+};
+
+// DESIGN-SPEC §2.10: a 32 px circle, green with a check once done, brick with its number while current, an outlined
+// paper circle ahead. The number and the check cross-fade (§4 Wizard, Progress).
 function StepMarker({ number, state }: { number: number; state: StepState }) {
   return (
     <span
       aria-hidden
       className={cn(
-        'flex size-8 shrink-0 items-center justify-center rounded-full text-body-sm font-semibold tabular-nums',
-        state === 'completed' && 'bg-primary text-primary-foreground',
-        state === 'current' && 'bg-background text-primary-ink ring-2 ring-primary',
-        state === 'upcoming' && 'bg-muted text-muted-foreground',
-        state === 'error' && 'bg-danger-soft text-danger-soft-foreground ring-2 ring-destructive',
+        'flex size-8 shrink-0 items-center justify-center rounded-full text-label-sm tabular-nums transition-colors duration-200 ease-out-soft',
+        MARKER_CLASS[state],
       )}
     >
-      {state === 'completed' && <Check className="size-4" />}
+      {state === 'completed' && (
+        <Check className="size-4 motion-safe:animate-in motion-safe:fade-in" />
+      )}
       {state === 'error' && <AlertTriangle className="size-4" />}
       {(state === 'current' || state === 'upcoming') && number}
     </span>
   );
 }
 
+// The 2 px line after a step fills from the left in green once that step is done.
+function StepLine({ isDone }: { isDone: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className="relative mx-4 h-0.5 min-w-6 flex-1 overflow-hidden rounded-full bg-border-strong"
+    >
+      <span
+        className={cn(
+          'absolute inset-0 origin-left bg-success transition-transform duration-360 ease-out-soft',
+          isDone ? 'scale-x-100' : 'scale-x-0',
+        )}
+      />
+    </span>
+  );
+}
+
 function StepItem({ step, props }: { step: BookingStep; props: BookingStepperProps }) {
   const state = stateOf(step, props);
-  const number = BOOKING_STEPS.indexOf(step) + 1;
-  const isReachable = BOOKING_STEPS.indexOf(step) <= BOOKING_STEPS.indexOf(props.reachable);
+  const index = BOOKING_STEPS.indexOf(step);
+  const isReachable = index <= BOOKING_STEPS.indexOf(props.reachable);
+  const isLast = index === BOOKING_STEPS.length - 1;
   const label = (
     <>
-      <StepMarker number={number} state={state} />
-      <span className="text-body-sm font-medium">{text.steps[step]}</span>
+      <StepMarker number={index + 1} state={state} />
+      <span className={cn('text-label', LABEL_CLASS[state])}>{text.steps[step]}</span>
       {STATE_LABEL[state] && <span className="sr-only">({STATE_LABEL[state]})</span>}
     </>
   );
   return (
     <li
-      className="flex flex-1 items-center gap-3"
+      className={cn('flex items-center', !isLast && 'flex-1')}
       aria-current={state === 'current' ? 'step' : undefined}
     >
       {isReachable && state !== 'current' ? (
         <button
           type="button"
-          className="flex min-h-11 items-center gap-3 rounded-lg text-left hover:text-primary-text"
+          className="-mx-1.5 flex min-h-11 items-center gap-2.5 rounded-md px-1.5 text-left transition-colors duration-200 hover:bg-muted"
           onClick={() => {
             props.onOpen(step);
           }}
@@ -82,32 +113,51 @@ function StepItem({ step, props }: { step: BookingStep; props: BookingStepperPro
           {label}
         </button>
       ) : (
-        <span
-          className={cn(
-            'flex min-h-11 items-center gap-3',
-            state === 'upcoming' && 'text-muted-foreground',
-          )}
-        >
-          {label}
-        </span>
+        <span className="flex min-h-11 items-center gap-2.5">{label}</span>
       )}
+      {!isLast && <StepLine isDone={state === 'completed'} />}
     </li>
   );
 }
 
-// docs/StyleGuide.md §5.14: numbered steps from md up; below md, "Langkah 2/4 · Data Rombongan" over a progress bar.
-// The visitor may open any step before the furthest one that passed, never one after it.
-export function BookingStepper(props: BookingStepperProps) {
+const BAR_CLASS: Record<StepState, string> = {
+  completed: 'bg-success',
+  current: 'bg-primary',
+  upcoming: 'bg-border-strong',
+  error: 'bg-destructive',
+};
+
+// DESIGN-SPEC §2.10 mobile: "Langkah 1 dari 4" in brick, the step's name on the right, four 4 px bars below.
+function CompactProgress(props: BookingStepperProps) {
   const number = BOOKING_STEPS.indexOf(props.current) + 1;
   return (
+    <div className="space-y-2.5 md:hidden">
+      <p className="flex items-baseline justify-between gap-4 text-label-sm">
+        <span className="text-primary-ink">{text.stepOf(number, BOOKING_STEPS.length)}</span>
+        <span className="text-ink-2">{text.steps[props.current]}</span>
+      </p>
+      <span aria-hidden className="grid grid-cols-4 gap-1.5">
+        {BOOKING_STEPS.map((step) => (
+          <span
+            key={step}
+            className={cn(
+              'h-1 rounded-full transition-colors duration-360 ease-out-soft',
+              BAR_CLASS[stateOf(step, props)],
+            )}
+          />
+        ))}
+      </span>
+    </div>
+  );
+}
+
+// DESIGN-SPEC §2.10 Wizard Progress: four steps joined by lines from md; below md, the compact count over four bars.
+// The visitor may open any step before the furthest one that passed, never one after it.
+export function BookingStepper(props: BookingStepperProps) {
+  return (
     <nav aria-label={text.stepsLabel}>
-      <div className="space-y-2 md:hidden">
-        <p className="text-body-sm font-medium">
-          {text.stepOf(number, BOOKING_STEPS.length, text.steps[props.current])}
-        </p>
-        <Progress value={(number / BOOKING_STEPS.length) * FULL_PERCENT} aria-hidden />
-      </div>
-      <ol className="hidden gap-4 md:flex">
+      <CompactProgress {...props} />
+      <ol className="hidden max-w-180 items-center md:flex">
         {BOOKING_STEPS.map((step) => (
           <StepItem key={step} step={step} props={props} />
         ))}

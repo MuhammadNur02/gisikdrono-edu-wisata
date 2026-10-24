@@ -3,17 +3,22 @@
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { BookingStepper } from '@/components/booking/booking-stepper';
+import {
+  StepEntrance,
+  WIZARD_CONTAINER,
+  WizardColumns,
+  WizardSkeleton,
+} from '@/components/booking/wizard-layout';
 import { STEP_HEADING_ID, type WizardStepProps } from '@/components/booking/wizard-step-frame';
 import { FormAlert } from '@/components/forms/form-alert';
-import { Skeleton } from '@/components/ui/skeleton';
 import { SESSION_REFRESH_MS } from '@/config/booking';
 import { GUEST_LOOKUP_PATH } from '@/config/guest';
 import { BOOKING_STEPS, type BookingStep } from '@/config/site';
 import { useBookingDraft } from '@/hooks/use-booking-draft';
-import { useQuotePreview, type QuotePreviewState } from '@/hooks/use-quote-preview';
+import { useQuotePreview } from '@/hooks/use-quote-preview';
 import { copy } from '@/lib/copy/id';
 import {
   firstIncompleteStep,
@@ -21,7 +26,7 @@ import {
   stepIndex,
   type BookingDraft,
 } from '@/lib/utils/booking-wizard';
-import { formatIDR } from '@/lib/utils/currency';
+import { cn } from '@/lib/utils/cn';
 import type { WizardActions, WizardPackage } from '@/types/booking';
 import type { AddonProduct } from '@/types/product';
 import type { BookableLeg } from '@/types/session';
@@ -66,6 +71,8 @@ function usePreloadedSteps() {
 
 export interface WizardShellProps {
   wizardPackage: WizardPackage;
+  // The head of the summary beside the steps, drawn on the server (wizard-package-card.tsx).
+  packageCard: ReactNode;
   addons: AddonProduct[];
   initialLegs: BookableLeg[];
   actions: WizardActions;
@@ -130,17 +137,6 @@ function useStepFocus(step: BookingStep) {
   }, [step]);
 }
 
-function TotalBar({ preview }: { preview: QuotePreviewState }) {
-  if (preview.status !== 'ready' || preview.answer.kind !== 'quote') return null;
-  return (
-    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 px-4 py-3 backdrop-blur md:hidden">
-      <p className="text-body font-semibold tabular-nums">
-        {text.quote.totalShort(formatIDR(preview.answer.quote.total))}
-      </p>
-    </div>
-  );
-}
-
 // Review of PR #27, L5: the visitor already holds an unpaid hold for this, whose link just went to them again, so the
 // draft is gone and the wizard says so instead of a step.
 function ResentPanel() {
@@ -154,15 +150,6 @@ function ResentPanel() {
         </Link>
       </p>
     </FormAlert>
-  );
-}
-
-function WizardSkeleton() {
-  return (
-    <div className="space-y-4" aria-busy>
-      <Skeleton className="h-6 w-1/2" />
-      <Skeleton className="h-40 w-full" />
-    </div>
   );
 }
 
@@ -228,6 +215,8 @@ function stepPropsOf(
           flow.open(previous);
         }
       : null,
+    backLabel: previous ? text.steps[previous] : null,
+    nextLabel: next ? text.steps[next] : null,
   };
 }
 
@@ -261,30 +250,49 @@ function CurrentStep(props: WizardShellProps & { flow: WizardFlow; draft: Bookin
 }
 
 // docs/PRD.md FR-BOOK-01, docs/StyleGuide.md §5.14 (Task P3.5.01): the four steps over one draft. The visitor may go
-// back at any time; an address that skips a step whose check fails is sent back to it.
+// back at any time; an address that skips a step whose check fails is sent back to it. DESIGN-SPEC §3.10: the progress
+// on top, then the step beside the sticky summary (a bar under the progress below lg).
 export function WizardShell(props: WizardShellProps) {
   const flow = useWizardFlow(props);
-  if (flow.bookedUrl !== null) return <FormAlert tone="info">{text.summary.redirecting}</FormAlert>;
-  if (flow.isResent) return <ResentPanel />;
-  if (flow.draft === null) return <WizardSkeleton />;
   const index = stepIndex(flow.step);
   const invalid = BOOKING_STEPS.filter(
     (each) => stepIndex(each) >= stepIndex(flow.reachable) && stepIndex(each) < index,
   );
+  const summary = flow.draft && {
+    wizardPackage: props.wizardPackage,
+    packageCard: props.packageCard,
+    draft: flow.draft,
+    legs: flow.sessions.legs,
+    preview: flow.quote.state,
+  };
   return (
-    <div className="space-y-8 pb-20 md:pb-0">
-      <BookingStepper
-        current={flow.step}
-        reachable={flow.reachable}
-        invalid={invalid}
-        onOpen={(target) => {
-          flow.open(target);
-        }}
-      />
+    <>
+      <div className="border-b border-border py-3.5 md:border-0 md:py-0">
+        <div className={cn(WIZARD_CONTAINER, 'md:pt-9')}>
+          <BookingStepper
+            current={flow.step}
+            reachable={flow.reachable}
+            invalid={invalid}
+            onOpen={(target) => {
+              flow.open(target);
+            }}
+          />
+        </div>
+      </div>
+      <WizardColumns summary={summary}>
+        <WizardBody flow={flow} props={props} />
+      </WizardColumns>
+    </>
+  );
+}
+
+function WizardBody({ flow, props }: { flow: WizardFlow; props: WizardShellProps }) {
+  if (flow.bookedUrl !== null) return <FormAlert tone="info">{text.summary.redirecting}</FormAlert>;
+  if (flow.isResent) return <ResentPanel />;
+  if (flow.draft === null) return <WizardSkeleton />;
+  return (
+    <StepEntrance step={flow.step}>
       <CurrentStep {...props} flow={flow} draft={flow.draft} />
-      {(flow.step === 'tambahan' || flow.step === 'ringkasan') && (
-        <TotalBar preview={flow.quote.state} />
-      )}
-    </div>
+    </StepEntrance>
   );
 }

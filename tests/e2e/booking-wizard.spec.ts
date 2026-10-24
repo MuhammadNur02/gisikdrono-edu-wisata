@@ -51,7 +51,7 @@ test('books a hold through all four steps and lands on its pay page with its man
 }, testInfo) => {
   const isDesktop = testInfo.project.name === 'desktop';
   const phone = phoneOf(isDesktop ? 0 : 1, 1);
-  await chooseSchedule(page, sessions, sessions.booked.time, isDesktop);
+  await chooseSchedule(page, sessions, sessions.booked.time);
   await fillBooker(page, phone);
   if (!isDesktop) await expectNoSideScroll(page);
   await addOneAddon(page);
@@ -77,7 +77,7 @@ test('tells a session that filled meanwhile as full, and offers another', async 
 }, testInfo) => {
   const isDesktop = testInfo.project.name === 'desktop';
   const phone = phoneOf(isDesktop ? 0 : 1, 2);
-  await chooseSchedule(page, sessions, sessions.filled.time, isDesktop);
+  await chooseSchedule(page, sessions, sessions.filled.time);
   await fillBooker(page, phone);
   await page.getByRole('button', { name: 'Lanjut' }).click();
   await readySummary(page);
@@ -105,7 +105,7 @@ test('sends the link of a hold the visitor already has again, and lets the draft
   for (const attempt of ['hold', 'again']) {
     await context.clearCookies();
     await forgetOtpMessages(phone);
-    await chooseSchedule(page, sessions, sessions.booked.time, isDesktop);
+    await chooseSchedule(page, sessions, sessions.booked.time);
     await fillBooker(page, phone);
     await page.getByRole('button', { name: 'Lanjut' }).click();
     await readySummary(page);
@@ -128,7 +128,7 @@ test('sends the link of a hold the visitor already has again, and lets the draft
 test('issues a quotation for a school without holding a seat', async ({ page }, testInfo) => {
   const isDesktop = testInfo.project.name === 'desktop';
   const phone = phoneOf(isDesktop ? 0 : 1, 5);
-  await chooseSchedule(page, sessions, sessions.booked.time, isDesktop);
+  await chooseSchedule(page, sessions, sessions.booked.time);
   await expect(page.getByRole('heading', { name: 'Data penanggung jawab rombongan' })).toBeVisible(
     STEP,
   );
@@ -170,8 +170,8 @@ test('can be completed with the keyboard alone', async ({ page }, testInfo) => {
   await page.getByRole('spinbutton').focus();
   await page.keyboard.press('ControlOrMeta+A');
   await page.keyboard.type(String(PAX));
-  await page.getByRole('button', { name: /Tanggal kunjungan/ }).focus();
-  await page.keyboard.press('Enter');
+  // The calendar is inline (DESIGN-SPEC §3.10): its days are buttons the keyboard reaches directly.
+  await expect(page.getByRole('group', { name: /Tanggal kunjungan.*wajib/ })).toBeVisible();
   const day = page.locator(`[data-day="${sessions.visitDate}"]:not([data-outside]) button`);
   for (let month = 0; month < 3 && !(await day.isVisible()); month += 1) {
     await page.locator('.rdp-button_next').focus();

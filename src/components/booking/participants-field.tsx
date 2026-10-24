@@ -25,10 +25,10 @@ export function ParticipantsField({ rows, onChange, pax, error, consent }: Parti
   const headingId = useId();
   return (
     <div className="space-y-3">
-      <p id={headingId} className="text-body-sm font-medium">
+      <p id={headingId} className="text-h4 font-bold">
         {text.participantsTitle}
       </p>
-      <p className="text-caption text-muted-foreground">{text.participantsHint}</p>
+      <p className="text-body-sm text-ink-2">{text.participantsHint}</p>
       <ParticipantsEditor
         aria-labelledby={headingId}
         value={rows}

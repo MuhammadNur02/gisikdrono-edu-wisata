@@ -126,10 +126,10 @@ export async function expectNoSideScroll(page: Page) {
   expect(await hasHorizontalScroll(page)).toBe(false);
 }
 
-export async function pickDate(page: Page, visitDate: string, isDesktop: boolean) {
-  if (isDesktop) await page.getByRole('button', { name: /Tanggal kunjungan/ }).click();
-  // Below md the calendar is inline: a group named by the field's label, its "wajib" included (Task P5.6.04).
-  else await expect(page.getByRole('group', { name: /Tanggal kunjungan.*wajib/ })).toBeVisible();
+export async function pickDate(page: Page, visitDate: string) {
+  // The calendar is inline on every screen since the redesign (DESIGN-SPEC §3.10): a group named by the field's
+  // label, its "wajib" included (Task P5.6.04).
+  await expect(page.getByRole('group', { name: /Tanggal kunjungan.*wajib/ })).toBeVisible();
   const day = page.locator(`[data-day="${visitDate}"]:not([data-outside]) button`);
   for (let month = 0; month < 3 && !(await day.isVisible()); month += 1) {
     await page.locator('.rdp-button_next').click();
@@ -137,16 +137,11 @@ export async function pickDate(page: Page, visitDate: string, isDesktop: boolean
   await day.click();
 }
 
-export async function chooseSchedule(
-  page: Page,
-  sessions: TestSessions,
-  time: string,
-  isDesktop: boolean,
-) {
+export async function chooseSchedule(page: Page, sessions: TestSessions, time: string) {
   await page.goto(`/pesan/${PACKAGE_SLUG}?step=jadwal`);
   await expect(page.getByRole('heading', { name: 'Pilih tanggal dan sesi' })).toBeVisible(STEP);
   await page.getByRole('spinbutton').fill(String(PAX));
-  await pickDate(page, sessions.visitDate, isDesktop);
+  await pickDate(page, sessions.visitDate);
   await page.getByText(time).click();
   await page.getByRole('button', { name: 'Lanjut' }).click();
 }

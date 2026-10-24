@@ -2,20 +2,48 @@
 // copy.booking.wizard in src/lib/copy/id.ts.
 export const bookingWizardCopy = {
   title: (packageName: string) => `Pesan ${packageName}`,
+  // The wizard's own header (DESIGN-SPEC §2.7): no site navigation, a way to help and a way out.
+  header: {
+    title: 'Pesan kunjungan',
+    help: 'Butuh bantuan?',
+    helpLabel: 'Butuh bantuan? Chat WhatsApp kelurahan',
+    greeting: (packageName: string) =>
+      `Halo, saya butuh bantuan memesan kunjungan ${packageName} di Gisikdrono.`,
+    exit: 'Tutup pemesanan dan kembali ke halaman paket',
+    back: 'Kembali ke halaman paket',
+  },
   steps: {
     jadwal: 'Jadwal',
-    data: 'Data Rombongan',
+    data: 'Data',
     tambahan: 'Tambahan',
     ringkasan: 'Ringkasan',
   },
-  stepOf: (number: number, total: number, label: string) =>
-    `Langkah ${String(number)}/${String(total)} · ${label}`,
+  stepOf: (number: number, total: number) => `Langkah ${String(number)} dari ${String(total)}`,
   stepsLabel: 'Langkah pemesanan',
   stepDone: 'selesai',
   stepCurrent: 'langkah ini',
   stepNeedsFix: 'perlu diperbaiki',
   back: 'Kembali',
+  backTo: (stepLabel: string) => `Kembali ke ${stepLabel.toLowerCase()}`,
+  backToPackage: 'Kembali ke paket',
   next: 'Lanjut',
+  nextTo: (stepLabel: string) => `Lanjut ke ${stepLabel.toLowerCase()}`,
+  // The order as it stands, beside the steps (DESIGN-SPEC §2.10 Wizard Summary).
+  aside: {
+    label: 'Ringkasan pemesanan',
+    date: 'Tanggal',
+    session: 'Sesi',
+    pax: 'Peserta',
+    addons: 'Tambahan',
+    notChosen: 'Belum dipilih',
+    noAddons: 'Belum ada',
+    addonCount: (count: number) => `${String(count)} produk`,
+    estimate: 'Perkiraan total',
+    estimateLater: 'Dihitung di langkah Tambahan',
+    note: 'Total pasti dihitung sistem di langkah Ringkasan.',
+    trust:
+      'Kuota sesi belum dipegang sampai Anda menekan Konfirmasi & Bayar di langkah Ringkasan.',
+  },
   closedTitle: 'Pemesanan sedang ditutup',
   closed:
     'Pemesanan online sedang ditutup sementara. Coba lagi nanti, atau hubungi kelurahan lewat WhatsApp.',
@@ -27,10 +55,20 @@ export const bookingWizardCopy = {
     'Surat penawaran disediakan untuk sekolah, kampus, instansi, dan perusahaan. Untuk kunjungan pribadi, langsung pilih Konfirmasi & Bayar.',
   schedule: {
     title: 'Pilih tanggal dan sesi',
+    description:
+      'Sesi yang sisa kuotanya kurang dari jumlah peserta tidak bisa dipilih. Sisa kuota diperbarui otomatis.',
     paxLabel: 'Jumlah peserta',
     paxHint: (min: number, max: number) => `Paket ini untuk ${String(min)}–${String(max)} orang.`,
     dateLabel: 'Tanggal kunjungan',
     sessionLabel: (rwLabel: string) => `Sesi di ${rwLabel}`,
+    sessionsOn: (date: string) => `Sesi pada ${date}`,
+    legend: {
+      open: 'Tersedia',
+      busy: 'Hampir penuh',
+      full: 'Penuh',
+      closed: 'Tutup',
+    },
+    daySeats: (seats: number) => `${String(seats)} kursi`,
     pickDateFirst: 'Pilih tanggal dulu, lalu sesinya.',
     noSessions: 'Belum ada sesi yang bisa dipesan pada tanggal ini. Pilih tanggal lain, ya.',
     noDates:
@@ -40,6 +78,9 @@ export const bookingWizardCopy = {
   },
   booker: {
     title: 'Data penanggung jawab rombongan',
+    description:
+      'Kami hanya menyimpan kontak penanggung jawab rombongan, untuk mengirim kode verifikasi, tiket, dan kabar reservasi.',
+    identityTitle: 'Identitas rombongan',
     bookerTypeLabel: 'Jenis rombongan',
     bookerTypes: {
       individual: 'Pribadi atau keluarga',
@@ -80,7 +121,7 @@ export const bookingWizardCopy = {
     remove: (productName: string) => `Hapus ${productName}`,
   },
   quote: {
-    title: 'Ringkasan biaya',
+    title: 'Rincian biaya',
     perPax: (price: string, quantity: number) => `${price} × ${String(quantity)} orang`,
     flatGroup: 'Harga per rombongan',
     addonLine: (price: string, quantity: number, unitLabel: string) =>
@@ -98,10 +139,22 @@ export const bookingWizardCopy = {
   },
   summary: {
     title: 'Ringkasan pesanan',
-    visit: 'Kunjungan',
+    description:
+      'Pastikan semuanya benar. Kuota sesi baru dipegang setelah Anda menekan Konfirmasi & Bayar.',
+    visit: 'Jadwal',
     group: 'Rombongan',
     pax: (pax: number) => `${String(pax)} orang`,
-    contact: 'Kontak',
+    contact: 'Penanggung jawab',
+    visitDate: 'Tanggal',
+    paxLabel: 'Peserta',
+    picName: 'Nama',
+    phone: 'WhatsApp',
+    email: 'Email',
+    priceNote:
+      'Dihitung oleh sistem dari harga yang berlaku hari ini. Jika harga berubah sebelum Anda membayar, ringkasan ini diperbarui.',
+    payWith: 'Bayar dengan',
+    // The methods Snap offers (CLAUDE.md §7.2 enabled_payments), named as a visitor knows them.
+    payMethods: ['QRIS', 'VA BCA', 'VA BNI', 'VA BRI', 'VA Permata', 'VA CIMB', 'VA lainnya'],
     edit: 'Ubah',
     privacy: 'Saya telah membaca',
     privacyLink: 'Pemberitahuan Privasi',

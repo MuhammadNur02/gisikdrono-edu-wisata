@@ -4,7 +4,11 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useId } from 'react';
 import { useForm, useWatch, type UseFormReturn } from 'react-hook-form';
 
-import { WizardStepFrame, type WizardStepProps } from '@/components/booking/wizard-step-frame';
+import {
+  WizardPanel,
+  WizardStepFrame,
+  type WizardStepProps,
+} from '@/components/booking/wizard-step-frame';
 import { DatePicker } from '@/components/forms/date-picker';
 import { FormAlert } from '@/components/forms/form-alert';
 import { FormField } from '@/components/forms/form-field';
@@ -15,10 +19,13 @@ import { Form } from '@/components/ui/form';
 import { copy } from '@/lib/copy/id';
 import {
   bookableDates,
-  busyDates,
+  dayAvailability,
   sessionsOn,
   unbookableDatesBetween,
 } from '@/lib/utils/booking-wizard';
+import { cn } from '@/lib/utils/cn';
+import { formatDateLong } from '@/lib/utils/dates';
+import { packagePath } from '@/lib/utils/paths';
 import { scheduleStepSchema } from '@/lib/validations/booking';
 import type { BookableLeg } from '@/types/session';
 
@@ -64,6 +71,10 @@ function useScheduleForm({ wizardPackage, draft, update }: SessionPickerStepProp
   return form;
 }
 
+// DESIGN-SPEC §3.10: the label and its hint on the left, the stepper on the right, on every screen.
+const PAX_ROW =
+  'grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-1 [&>*]:col-start-1 [&>*:nth-child(2)]:col-start-2 [&>*:nth-child(2)]:row-span-2 [&>*:nth-child(2)]:row-start-1';
+
 function PaxField({
   form,
   minPax,
@@ -80,6 +91,7 @@ function PaxField({
       label={text.paxLabel}
       description={text.paxHint(minPax, maxPax)}
       required
+      className={PAX_ROW}
       render={(field) => (
         <NumberStepper
           value={field.value}
@@ -113,7 +125,7 @@ function DateField({ form, legs, pax }: { form: ScheduleForm; legs: BookableLeg[
           firstDate={first}
           lastDate={last}
           unavailableDates={unbookableDatesBetween(first, last, dates)}
-          busyDates={busyDates(legs)}
+          days={dayAvailability(legs, pax)}
           onChange={(visitDate) => {
             field.onChange(visitDate);
             // Sessions belong to their day.
@@ -134,15 +146,17 @@ function LegSessions(props: {
   index: number;
   visitDate: string;
   pax: number;
+  // A combo names each RW over its sessions; one RW needs no name.
+  showsRw: boolean;
 }) {
-  const { form, leg, index, visitDate, pax } = props;
+  const { form, leg, index, visitDate, pax, showsRw } = props;
   const labelId = useId();
   const chosenIds = useWatch({ control: form.control, name: 'visitSessionIds' });
   const chosen = chosenIds[index] ?? '';
   const sessions = sessionsOn(leg, visitDate);
   return (
     <div className="space-y-3">
-      <p id={labelId} className="text-body-sm font-medium">
+      <p id={labelId} className={cn('text-label text-foreground', !showsRw && 'sr-only')}>
         {text.sessionLabel(leg.rw.label)}
       </p>
       {sessions.length === 0 ? (
@@ -178,7 +192,7 @@ function SessionsField({ form, legs }: { form: ScheduleForm; legs: BookableLeg[]
   if (visitDate === '')
     return <p className="text-body-sm text-muted-foreground">{text.pickDateFirst}</p>;
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {legs.map((leg, index) => (
         <LegSessions
           key={leg.rw.id}
@@ -187,6 +201,7 @@ function SessionsField({ form, legs }: { form: ScheduleForm; legs: BookableLeg[]
           index={index}
           visitDate={visitDate}
           pax={pax}
+          showsRw={legs.length > 1}
         />
       ))}
       {sessionsError && (
@@ -200,9 +215,27 @@ function SessionsField({ form, legs }: { form: ScheduleForm; legs: BookableLeg[]
 
 function FreshnessNote({ isStale }: { isStale: boolean }) {
   return (
-    <p aria-live="polite" className="text-caption text-muted-foreground">
+    <p aria-live="polite" className="flex items-center gap-2 text-caption text-muted-foreground">
+      <span
+        aria-hidden
+        className={cn('size-1.5 shrink-0 rounded-full', isStale ? 'bg-warning' : 'bg-success')}
+      />
       {isStale ? text.stale : text.refreshed}
     </p>
+  );
+}
+
+// "Sesi pada Rabu, 28 Oktober 2026" over the sessions, with the seat refresh note beside it.
+function SessionsHead({ form, isStale }: { form: ScheduleForm; isStale: boolean }) {
+  const visitDate = useWatch({ control: form.control, name: 'visitDate' });
+  if (visitDate === '') return <FreshnessNote isStale={isStale} />;
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+      <h3 className="text-label-lg text-foreground">
+        {text.sessionsOn(formatDateLong(visitDate))}
+      </h3>
+      <FreshnessNote isStale={isStale} />
+    </div>
   );
 }
 
@@ -222,11 +255,22 @@ export function SessionPickerStep(props: SessionPickerStepProps) {
   return (
     <Form {...form}>
       <PostForm onSubmit={submit}>
-        <WizardStepFrame title={text.title} onBack={onBack}>
-          <PaxField form={form} minPax={wizardPackage.minPax} maxPax={wizardPackage.maxPax} />
-          <DateField form={form} legs={legs} pax={pax} />
-          <SessionsField form={form} legs={legs} />
-          <FreshnessNote isStale={props.isStale} />
+        <WizardStepFrame
+          title={text.title}
+          description={text.description}
+          onBack={onBack}
+          backLabel={props.backLabel}
+          nextLabel={props.nextLabel}
+          exitHref={packagePath(wizardPackage.slug)}
+        >
+          <WizardPanel className="divide-y divide-border *:pt-6 *:first:pt-0 md:space-y-7 md:*:pt-7">
+            <PaxField form={form} minPax={wizardPackage.minPax} maxPax={wizardPackage.maxPax} />
+            <DateField form={form} legs={legs} pax={pax} />
+            <div className="space-y-4">
+              <SessionsHead form={form} isStale={props.isStale} />
+              <SessionsField form={form} legs={legs} />
+            </div>
+          </WizardPanel>
         </WizardStepFrame>
       </PostForm>
     </Form>

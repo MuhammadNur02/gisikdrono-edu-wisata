@@ -7,7 +7,19 @@ import type { z } from 'zod';
 import { PhoneOtpField } from '@/components/booking/phone-otp-field';
 import { QuotePreviewPanel } from '@/components/booking/quote-preview-panel';
 import { SummaryDetails } from '@/components/booking/summary-details';
-import { WizardStepFrame, type WizardStepProps } from '@/components/booking/wizard-step-frame';
+import {
+  HoldNotice,
+  PaymentTrust,
+  PayButton,
+  PayMethods,
+  QuoteButton,
+  type SendState,
+} from '@/components/booking/summary-send';
+import {
+  WizardPanel,
+  WizardStepFrame,
+  type WizardStepProps,
+} from '@/components/booking/wizard-step-frame';
 import { FormAlert } from '@/components/forms/form-alert';
 import { PostForm } from '@/components/forms/post-form';
 import { TurnstileField } from '@/components/forms/turnstile-field';
@@ -116,7 +128,7 @@ function ReverifyPanel(
     request.setIsAskedToReverify(false);
   };
   return (
-    <div className="space-y-3 rounded-xl border border-warning bg-warning-soft/40 p-4">
+    <div className="space-y-3 rounded-2xl border border-warning bg-warning-soft/40 p-5 md:p-7">
       <p className="text-body-sm font-medium">{text.reverifyTitle}</p>
       <p className="text-caption">
         {request.isAskedToReverify ? text.reverifyAsked : text.reverify}
@@ -127,46 +139,6 @@ function ReverifyPanel(
         fixedContact={{ phone: contact.phone, email: contact.email }}
         onVerified={onVerified}
       />
-    </div>
-  );
-}
-
-function SendButtons(props: {
-  // An institution whose number a WhatsApp code verified; an email proof cannot ask for a quotation.
-  canAskQuotation: boolean;
-  isBusy: boolean;
-  isDisabled: boolean;
-  onQuote: () => void;
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <Button
-          type="submit"
-          size="lg"
-          className="w-full"
-          loading={props.isBusy}
-          disabled={props.isDisabled}
-        >
-          {text.pay}
-        </Button>
-        <p className="text-caption text-muted-foreground">{text.payHint}</p>
-      </div>
-      {props.canAskQuotation && (
-        <div className="space-y-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="lg"
-            className="w-full"
-            disabled={props.isBusy || props.isDisabled}
-            onClick={props.onQuote}
-          >
-            {text.quote}
-          </Button>
-          <p className="text-caption text-muted-foreground">{text.quoteHint}</p>
-        </div>
-      )}
     </div>
   );
 }
@@ -182,24 +154,30 @@ function useSummarySend(props: SummaryStepProps, form: SummaryForm, renewCaptcha
   return { ...submit, sendAs };
 }
 
-// The end of the summary: the privacy notice, the security check, then the buttons (docs/StyleGuide.md §5.6).
+// The end of the summary (DESIGN-SPEC §3.10 step 4): the privacy notice, the methods, the hold, the security check and,
+// for an institution, the quotation.
 function CheckAndSend(
-  props: { form: SummaryForm; captcha: ReturnType<typeof useSummaryForm>['captcha'] } & Parameters<
-    typeof SendButtons
-  >[0],
+  props: {
+    form: SummaryForm;
+    captcha: ReturnType<typeof useSummaryForm>['captcha'];
+    canAskQuotation: boolean;
+    onQuote: () => void;
+  } & SendState,
 ) {
-  const { form, captcha, ...buttons } = props;
+  const { form, captcha, canAskQuotation, onQuote, ...state } = props;
   return (
-    <>
+    <WizardPanel>
       <PrivacyField form={form} />
+      <PayMethods />
+      <HoldNotice />
       <TurnstileField
         ref={captcha.ref}
         action={TURNSTILE_ACTIONS.bookingCreate}
         onToken={captcha.onToken}
         error={form.formState.errors.turnstileToken?.message}
       />
-      <SendButtons {...buttons} />
-    </>
+      {canAskQuotation && <QuoteButton {...state} onQuote={onQuote} />}
+    </WizardPanel>
   );
 }
 
@@ -252,8 +230,8 @@ function SendNotice({
 
 // Step ringkasan (docs/PRD.md FR-BOOK-05, Task P3.5.04): the booking as it will be sent, the server's quote, the
 // privacy notice, the security check, and "Konfirmasi & Bayar", or for an institution "Minta Surat Penawaran" too.
-export function SummaryStep(props: SummaryStepProps) {
-  const { draft, wizardPackage, legs, preview, onOpen, onBack, update } = props;
+function useSummaryStep(props: SummaryStepProps) {
+  const { draft, preview } = props;
   const { form, captcha } = useSummaryForm();
   const send = useSummarySend(props, form, captcha.renew);
   const needsReverify = useNeedsReverify(draft, send.isAskedToReverify);
@@ -261,12 +239,26 @@ export function SummaryStep(props: SummaryStepProps) {
     draft.bookerType,
   );
   const hasQuote = preview.status === 'ready' && preview.answer.kind === 'quote';
+  const state: SendState = { isBusy: send.isBusy, isDisabled: !hasQuote || needsReverify };
+  const canAskQuotation = isInstitution && draft.contact?.channel !== 'email';
+  return { form, captcha, send, needsReverify, state, canAskQuotation };
+}
+
+export function SummaryStep(props: SummaryStepProps) {
+  const { draft, wizardPackage, legs, preview, onOpen, onBack, update } = props;
+  const { form, captcha, send, needsReverify, state, canAskQuotation } = useSummaryStep(props);
   return (
     <Form {...form}>
       <PostForm onSubmit={send.sendAs('pay')}>
-        <WizardStepFrame title={text.title} onBack={onBack} actions={<span aria-hidden />}>
+        <WizardStepFrame
+          title={text.title}
+          description={text.description}
+          onBack={onBack}
+          backLabel={props.backLabel}
+          actions={<PayButton {...state} />}
+        >
           <SummaryDetails draft={draft} legs={legs} onOpen={onOpen} />
-          <QuotePreviewPanel state={preview} wizardPackage={wizardPackage} />
+          <QuotePreviewPanel state={preview} wizardPackage={wizardPackage} note={text.priceNote} />
           {send.notice && <SendNotice notice={send.notice} onOpen={onOpen} />}
           {needsReverify && (
             <ReverifyPanel
@@ -280,11 +272,11 @@ export function SummaryStep(props: SummaryStepProps) {
           <CheckAndSend
             form={form}
             captcha={captcha}
-            canAskQuotation={isInstitution && draft.contact?.channel !== 'email'}
-            isBusy={send.isBusy}
-            isDisabled={!hasQuote || needsReverify}
+            canAskQuotation={canAskQuotation}
+            {...state}
             onQuote={() => void send.sendAs('quote')()}
           />
+          <PaymentTrust />
         </WizardStepFrame>
       </PostForm>
     </Form>
