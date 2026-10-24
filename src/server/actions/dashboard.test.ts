@@ -16,8 +16,12 @@ vi.mock('@/server/services/rw-unit-service', () => ({
   listRwUnitsForStaff: () => Promise.resolve([{ id: 5 }, { id: 8 }]),
 }));
 vi.mock('@/server/services/profile-service', () => ({
-  updateOwnFullName: (userId: string, fullName: string) =>
-    Promise.resolve({ fullName, email: `${userId}@dev.gisikdrono.test` }),
+  updateOwnProfile: (userId: string, values: { fullName: string; phone?: string | null }) =>
+    Promise.resolve({
+      fullName: values.fullName,
+      email: `${userId}@dev.gisikdrono.test`,
+      phone: values.phone ?? null,
+    }),
 }));
 
 const SUPERADMIN: StaffContext = {
@@ -77,7 +81,7 @@ describe('updateProfileAction', () => {
   it('saves the staff member’s own name', async () => {
     expect(await updateProfileAction({ fullName: ' Superadmin Baru ' })).toEqual({
       ok: true,
-      data: { fullName: 'Superadmin Baru', email: 'super@dev.gisikdrono.test' },
+      data: { fullName: 'Superadmin Baru', email: 'super@dev.gisikdrono.test', phone: null },
     });
     expect(requireRole).toHaveBeenCalledWith('superadmin', 'admin_rw');
   });
@@ -92,6 +96,15 @@ describe('updateProfileAction', () => {
     });
     expect(await updateProfileAction({ fullName: 'https://evil.test' })).toMatchObject({
       error: { code: 'VALIDATION' },
+    });
+  });
+});
+
+describe('updateProfileAction phone', () => {
+  it('saves the staff member’s own phone in E.164', async () => {
+    expect(await updateProfileAction({ fullName: 'Siti', phone: '0812 3456 7890' })).toMatchObject({
+      ok: true,
+      data: { phone: '+6281234567890' },
     });
   });
 });

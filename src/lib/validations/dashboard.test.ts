@@ -31,3 +31,25 @@ describe('updateProfileSchema', () => {
     );
   });
 });
+
+describe('updateProfileSchema phone', () => {
+  it('stores an Indonesian number in E.164 and a blank one as none', () => {
+    expect(updateProfileSchema.parse({ fullName: 'Siti', phone: '0812-3456-7890' })).toEqual({
+      fullName: 'Siti',
+      phone: '+6281234567890',
+    });
+    expect(updateProfileSchema.parse({ fullName: 'Siti', phone: '  ' }).phone).toBeNull();
+    expect(updateProfileSchema.parse({ fullName: 'Siti', phone: null }).phone).toBeNull();
+  });
+
+  it('leaves the phone out when the form does', () => {
+    expect('phone' in updateProfileSchema.parse({ fullName: 'Siti' })).toBe(false);
+  });
+
+  it('refuses a number that is not Indonesian', () => {
+    expect(
+      updateProfileSchema.safeParse({ fullName: 'Siti', phone: '+44 20 7946 0958' }).success,
+    ).toBe(false);
+    expect(updateProfileSchema.safeParse({ fullName: 'Siti', phone: '12345' }).success).toBe(false);
+  });
+});
