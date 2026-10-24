@@ -1,0 +1,301 @@
+/* The catalogue and content pages of the redesign (DESIGN-SPEC §3.4–§3.8, §3.14, §4): the result list after a filter
+   change, the article reading progress and body, and the lightbox theme. Imported by src/styles/globals.css; the tokens
+   it reads live there. Content is visible by default: every movement runs only without a reduced-motion preference. */
+
+/* A list that changed under a filter (DESIGN-SPEC §4, Paket list "Result grid"): its items fade in and rise 12 px,
+   40 ms apart (reveal-stagger numbers them). Put on the list only after the visitor's first change, never on load,
+   so the first photo of the page paints at once (LCP). The grid's height is not animated. */
+@keyframes results-in {
+  from {
+    opacity: 0;
+    translate: 0 0.75rem;
+  }
+}
+@utility results-enter {
+  @media (prefers-reduced-motion: no-preference) {
+    & > * {
+      animation: results-in 320ms var(--ease-out-soft) backwards;
+      animation-delay: calc(var(--i, 0) * 40ms);
+    }
+  }
+}
+
+/* An empty or error state arriving (DESIGN-SPEC §4, States): the emblem grows from .96 and the text fades in. */
+@keyframes state-in {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+@utility state-enter {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: state-in 320ms var(--ease-out-soft) backwards;
+  }
+}
+
+/* The 2 px reading bar under the header of an article (DESIGN-SPEC §4, Artikel detail): it fills with the page's
+   scroll, in browsers with scroll-driven animations; elsewhere it is not shown at all. */
+@keyframes reading-progress {
+  from {
+    scale: 0 1;
+  }
+  to {
+    scale: 1 1;
+  }
+}
+@utility reading-progress {
+  display: none;
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: scroll()) {
+      display: block;
+      transform-origin: left;
+      animation: reading-progress linear both;
+      animation-timeline: scroll(root block);
+    }
+  }
+}
+
+/* The article page's three columns from lg (DESIGN-SPEC §3.8): the 200 px contents, the 720 px text centred on the
+   page, and an empty column of the same 200 px that keeps it centred. */
+@utility article-columns {
+  display: grid;
+  gap: 2.5rem;
+  @media (width >= 64rem) {
+    grid-template-columns: 12.5rem minmax(0, 45rem) 12.5rem;
+    justify-content: center;
+  }
+}
+
+/* A FAQ row (DESIGN-SPEC §3.5): a native details whose marker is the Plus that turns into a Minus; the answer fades in
+   as the row opens. */
+@utility faq-row {
+  & > summary {
+    list-style: none;
+    cursor: pointer;
+  }
+  & > summary::-webkit-details-marker {
+    display: none;
+  }
+  & .faq-minus {
+    display: none;
+  }
+  &[open] .faq-minus {
+    display: block;
+  }
+  &[open] .faq-plus {
+    display: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    &[open] > :not(summary) {
+      animation: results-in 240ms var(--ease-out-soft);
+    }
+  }
+}
+
+/* ===== The article body (DESIGN-SPEC §3.8 RichText): the allowlisted renderer's output in the site's type, over the
+   typography plugin's defaults. ===== */
+@layer components {
+  .article-prose {
+    max-width: 45rem;
+    color: var(--foreground);
+    font-size: 1.0625rem;
+    line-height: 1.72;
+    @media (width >= 48rem) {
+      font-size: 1.1875rem;
+      line-height: 1.75;
+    }
+  }
+  .article-prose :is(p, li) {
+    color: var(--foreground);
+  }
+  .article-prose :is(p) {
+    margin-block: 0 1.25em;
+  }
+  .article-prose :is(strong) {
+    color: inherit;
+    font-weight: 600;
+  }
+  .article-prose :is(a) {
+    color: var(--primary-ink);
+    font-weight: 500;
+    text-underline-offset: 3px;
+  }
+  .article-prose :is(h2, h3, h4) {
+    color: var(--foreground);
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    scroll-margin-top: calc(var(--header-h) + 1.5rem);
+  }
+  .article-prose :is(h2) {
+    font-size: 1.5rem;
+    line-height: 1.2;
+    margin-block: 1.8em 0.6em;
+    @media (width >= 48rem) {
+      font-size: 1.875rem;
+    }
+  }
+  .article-prose :is(h3) {
+    font-size: 1.25rem;
+    line-height: 1.25;
+    margin-block: 1.6em 0.5em;
+    @media (width >= 48rem) {
+      font-size: 1.5rem;
+    }
+  }
+  .article-prose :is(blockquote) {
+    border-inline-start: 4px solid var(--primary);
+    padding-inline-start: 1.25rem;
+    color: var(--ink-2);
+    font-style: normal;
+    font-weight: 400;
+    line-height: 1.6;
+    quotes: none;
+  }
+  .article-prose :is(blockquote p)::before,
+  .article-prose :is(blockquote p)::after {
+    content: none;
+  }
+  .article-prose :is(ol > li)::marker {
+    color: var(--primary-ink);
+    font-family: var(--font-display);
+    font-weight: 700;
+  }
+  .article-prose :is(ul > li)::marker {
+    color: var(--muted-foreground);
+  }
+  .article-prose :is(figure) > :first-child {
+    border-radius: var(--radius-xl);
+  }
+  .article-prose :is(figcaption) {
+    color: var(--muted-foreground);
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: view()) {
+      .article-prose :is(figure) {
+        animation: results-in var(--ease-out-soft) both;
+        animation-timeline: view();
+        animation-range: entry 0% entry 40%;
+      }
+    }
+  }
+}
+
+/* ===== The gallery lightbox (DESIGN-SPEC §3.7): yet-another-react-lightbox in the night of the site, its controls as
+   the design's circles, the counter at the top left and the thumbnail strip with a white edge on the photo shown. ===== */
+@layer components {
+  .lightbox-theme {
+    --yarl__color_backdrop: rgb(14 12 9 / 0.96);
+    --yarl__color_button: rgb(255 255 255 / 0.92);
+    --yarl__color_button_active: #ffffff;
+    --yarl__button_filter: none;
+    --yarl__counter_filter: none;
+    --yarl__counter_color: rgb(255 255 255 / 0.8);
+    --yarl__counter_top: 1.25rem;
+    --yarl__counter_left: 0.75rem;
+    --yarl__thumbnails_container_background_color: transparent;
+    --yarl__thumbnails_container_padding: 0.75rem 1rem 1.25rem;
+    --yarl__thumbnails_thumbnail_background: transparent;
+    --yarl__thumbnails_thumbnail_border_color: transparent;
+    --yarl__thumbnails_thumbnail_active_border_color: #ffffff;
+    --yarl__thumbnails_thumbnail_border_radius: 0.5rem;
+    --yarl__thumbnails_thumbnail_focus_box_shadow: 0 0 0 2px var(--gold);
+    --yarl__thumbnails_vignette_size: 0px;
+    font-family: var(--font-sans);
+  }
+  .lightbox-theme .yarl__counter {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .lightbox-theme .yarl__toolbar {
+    gap: 0.75rem;
+    padding: 0.875rem 1rem;
+  }
+  .lightbox-theme .yarl__button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    margin: 0;
+    padding: 0;
+    border-radius: 9999px;
+    background-color: rgb(255 255 255 / 0.08);
+    transition: background-color var(--duration-micro) var(--ease-out-soft);
+  }
+  .lightbox-theme .yarl__button:hover {
+    background-color: rgb(255 255 255 / 0.16);
+  }
+  .lightbox-theme .yarl__button:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+  }
+  .lightbox-theme .yarl__toolbar .yarl__button:last-child {
+    background-color: #ffffff;
+    color: var(--night);
+    --yarl__color_button: var(--night);
+    --yarl__color_button_active: var(--night);
+  }
+  .lightbox-theme .yarl__icon {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+  .lightbox-theme .yarl__navigation_prev,
+  .lightbox-theme .yarl__navigation_next {
+    width: 3.5rem;
+    height: 3.5rem;
+    border: 1px solid rgb(255 255 255 / 0.2);
+    background-color: rgb(255 255 255 / 0.1);
+  }
+  .lightbox-theme .yarl__navigation_prev {
+    left: 2.5rem;
+  }
+  .lightbox-theme .yarl__navigation_next {
+    right: 2.5rem;
+  }
+  .lightbox-theme .yarl__slide_image {
+    border-radius: var(--radius-lg);
+  }
+  /* Room under the photo for its caption block (the badge, the caption, the alt text). */
+  .lightbox-theme .yarl__slide {
+    padding: 4.5rem 1.25rem 10rem;
+    @media (width >= 48rem) {
+      padding: 4.5rem 9rem 10.5rem;
+    }
+  }
+  .lightbox-theme .yarl__thumbnails_thumbnail {
+    opacity: 0.45;
+    transition: opacity var(--duration-short) var(--ease-out-soft);
+  }
+  .lightbox-theme .yarl__thumbnails_thumbnail_active,
+  .lightbox-theme .yarl__thumbnails_thumbnail:hover {
+    opacity: 1;
+  }
+  @media (width < 48rem) {
+    .lightbox-theme .yarl__navigation_prev,
+    .lightbox-theme .yarl__navigation_next,
+    .lightbox-theme .yarl__thumbnails_container {
+      display: none;
+    }
+  }
+}
+
+/* The phone's filter sheet (DESIGN-SPEC §3.4): at most 85 % of the screen, its foot clear of the home indicator. */
+@utility sheet-bottom {
+  max-height: 85dvh;
+  padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
+}
+
+/* DESIGN-SPEC §1.3 caption: 11 px only for the upper-case micro labels of a date cell and its seats. */
+@utility text-micro {
+  font-size: 0.6875rem;
+  line-height: 1;
+}
+
+/* A bar fixed to the bottom (the package page's booking bar) clears the phone's home indicator. */
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}

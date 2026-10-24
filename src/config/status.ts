@@ -104,7 +104,7 @@ export const SCHEDULE_TYPE_LABELS: Record<EnumValue<'schedule_type'>, string> = 
 };
 
 export const ARTICLE_CATEGORY_LABELS: Record<EnumValue<'article_category'>, string> = {
-  news: 'Kabar',
+  news: 'Berita',
   education: 'Edukasi',
   announcement: 'Pengumuman',
 };
