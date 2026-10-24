@@ -10,16 +10,14 @@ vi.mock('@/lib/request-nonce', () => ({ requestNonce: () => Promise.resolve(unde
 const globalsCss = readFileSync(new URL('../../styles/globals.css', import.meta.url), 'utf8');
 const [, darkBlock = ''] = globalsCss.split('.dark {');
 
-// Review of PR #20: under a forced .dark the backdrop's top stayed a light tint, so the muted hint text on
-// /reservasi/cari lost its contrast. Since the redesign brand-ice has a dark value of its own (the dark surface), so
-// one gradient serves both themes.
+// Review of PR #20: under a forced .dark the backdrop stayed a light tint, so the muted hint text on /reservasi/cari
+// lost its contrast. Since the redesign (DESIGN-SPEC §3.10–§3.13) the booking pages sit on the plain paper, whose
+// token has a dark value of its own.
 describe('the booking layout', () => {
-  it('starts its backdrop from brand-ice, which has a dark value', async () => {
+  it('paints the paper background, which has a dark value', async () => {
     const html = renderToStaticMarkup(await BookingLayout({ children: null }));
-    const backdrop = /<div class="([^"]*bg-linear-to-b[^"]*)"/.exec(html)?.[1] ?? '';
-    expect(backdrop.split(' ')).toEqual(
-      expect.arrayContaining(['from-brand-ice', 'to-background']),
-    );
-    expect(darkBlock).toMatch(/--brand-ice:\s*#1e1a15;/);
+    const backdrop = /<div class="([^"]*min-h-dvh[^"]*)"/.exec(html)?.[1] ?? '';
+    expect(backdrop.split(' ')).toContain('bg-background');
+    expect(darkBlock).toMatch(/--background:\s*#14110d;/);
   });
 });
