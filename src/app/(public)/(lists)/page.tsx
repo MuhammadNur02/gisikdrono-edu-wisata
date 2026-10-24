@@ -5,6 +5,7 @@ import { FeaturedPackages } from '@/components/marketing/featured-packages';
 import { FeaturedProducts } from '@/components/marketing/featured-products';
 import { GalleryStrip } from '@/components/marketing/gallery-strip';
 import { Hero } from '@/components/marketing/hero';
+import { HomeIntro } from '@/components/marketing/home-intro';
 import { LatestArticles } from '@/components/marketing/latest-articles';
 import { MapContact } from '@/components/marketing/map-contact';
 import { RwBento } from '@/components/marketing/rw-bento';
@@ -28,8 +29,9 @@ export async function generateMetadata(): Promise<Metadata> {
   return buildHomeMetadata(isWritten ? seoDefaultDescription : undefined);
 }
 
-// Anchors within the page; `Lihat Paket` in the hero scrolls to the featured packages.
+// Anchors within the page; `Lihat Paket` in the introduction scrolls to the featured packages.
 const SECTION_IDS = {
+  intro: 'tentang',
   rw: HOME_RW_SECTION_ID,
   packages: 'paket-unggulan',
   why: 'mengapa',
@@ -74,19 +76,21 @@ function CommunitySections({ data }: { data: HomePageData }) {
   );
 }
 
-// docs/PRD.md FR-PUB-01..07, in the order of the redesign of 2026-10-23: hero, RW mosaic, featured packages, why
-// visit, gallery, reviews, UMKM, articles, map and contact, CTA band. A section with nothing published is left out
-// rather than filled with a stand-in (docs/StyleGuide.md §1.3 G5). The map and contact block always has the
-// WhatsApp line, so it always shows.
+// docs/PRD.md FR-PUB-01..07, in the order of the redesigns of 2026-10-23 and 2026-10-24: hero, introduction, RW
+// mosaic, featured packages, why visit, gallery, reviews, UMKM, articles, map and contact, CTA band. A section with
+// nothing published is left out rather than filled with a stand-in (docs/StyleGuide.md §1.3 G5). The map and
+// contact block always has the WhatsApp line, so it always shows.
 export default async function HomePage() {
   const data = await getHomePageData();
   const hasPackages = data.featuredPackages.length > 0;
   return (
     <>
-      <Hero
-        slides={data.slides}
-        description={data.description}
+      <Hero slides={data.slides} description={data.description} />
+      <HomeIntro
+        id={SECTION_IDS.intro}
+        banner={data.slides[0]?.banner}
         packagesAnchor={hasPackages ? SECTION_IDS.packages : undefined}
+        address={data.address}
       />
       <RwBento id={SECTION_IDS.rw} units={data.rwUnits} />
       {hasPackages ? (

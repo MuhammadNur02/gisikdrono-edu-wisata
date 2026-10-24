@@ -185,7 +185,7 @@ export const OFFICIAL_PHOTOS: OfficialPhoto[] = [
     page: SENI_BUDAYA,
     showsChildren: false,
     altText:
-      'Jalan kampung berhias umbul-umbul merah putih, dengan mural bergambar wajah di dinding rumah dan warga berjalan di jalan',
+      'Seorang penampil berkain batik membawa nampan sesaji di tengah jalan kampung, dikelilingi penabuh dan warga berpakaian adat.',
     caption: 'Mural di sepanjang jalan kampung',
   },
   {
@@ -257,14 +257,16 @@ export const POINT_PHOTO_IDS: Record<string, string> = {
   'mural-dan-spot-foto': '0de00000-0000-4000-8001-000000000018',
 };
 
-// The home hero of staging (decision of 2026-10-24): a photo the kelurahan already publishes, with no children and
-// no faces at all, because the development photos of scripts/demo-media.ts stay in the gallery there. Its own
-// banner id and file, beside the gallery copy of the same photo.
-export const STAGING_HERO_PHOTO_ID = '0de00000-0000-4000-8001-000000000002';
+// The home hero of staging: a photo the kelurahan already publishes, with no children, because the development
+// photos of scripts/demo-media.ts stay in the gallery there. Since the hero redesign of 2026-10-24 (the user's
+// choice) it is the street performance of the Kampung Seni Budaya, which the kelurahan publishes on /seni-budaya.
+// Its own banner id and file, beside the gallery copy of the same photo.
+export const STAGING_HERO_PHOTO_ID = '0de00000-0000-4000-8001-000000000016';
 const STAGING_HERO: Omit<HeroBanner, 'file'> = {
   id: '0de00000-0000-4000-8001-0000000000e1',
   title: HOME_HERO_TITLE,
-  subtitle: 'Kolam ikan berbingkai hijau dengan pancuran kecil di antara tanaman sayur, RW 05.',
+  subtitle:
+    'Seorang penampil berkain batik membawa nampan sesaji di tengah jalan kampung, dikelilingi penabuh dan warga berpakaian adat.',
 };
 
 export function officialPhoto(photoId: string): OfficialPhoto {

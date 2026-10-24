@@ -2,10 +2,11 @@ import { cn } from '@/lib/utils/cn';
 
 // docs/StyleGuide.md §8.5 (decision of 2026-10-23): the wave between two home sections of different tones, after
 // the shape dusunbambu.id draws under its hero. The path is drawn on a 1440 x 64 box and stretched to the width, so
-// at 360 px it flattens to 360 x 24 and stays smooth; `bambu` is the asymmetric one under the hero.
+// at 360 px it flattens to 360 x 24 and stays smooth. `arc` is the one under the hero (redesign of 2026-10-24): the
+// photo dips to a point in the middle and the page rises over its two corners, as on dusunbambu.id.
 const WAVE_PATHS = {
   gentle: 'M0 32C240 0 480 0 720 24S1200 64 1440 28V64H0Z',
-  bambu: 'M0 48C360 64 620 8 980 20C1200 28 1340 44 1440 36V64H0Z',
+  arc: 'M0 0Q720 128 1440 0V64H0Z',
 } as const;
 
 // Opaque surfaces only: a wave in a translucent tone (bg-muted/40) would show a seam where it meets its section.

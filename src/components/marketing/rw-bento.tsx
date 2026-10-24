@@ -109,15 +109,14 @@ export interface RwBentoProps {
 
 // Every RW online (rw_units, sort_order). The eyebrow counts them, so it stays true as RWs go online or offline;
 // with none online the section is left out whole (docs/StyleGuide.md §6.9). The desktop header's Kampung Wisata link
-// points here. The tiles carry no reveal: the section starts right under the hero, inside the first screen on a
-// phone. Its wave is painted over the hero's bottom edge.
+// points here. The tiles carry no reveal: the section starts close under the hero, near the first screen on a
+// phone. It needs no wave of its own: the introduction above it shares its tone.
 export function RwBento({ id, units }: RwBentoProps) {
   if (units.length === 0) return null;
   return (
     <Section
       id={id}
       isLinkTarget
-      wave={{ variant: 'bambu' }}
       eyebrow={`${countWordAtStart(units.length)} kampung, ${countWord(units.length)} program`}
       title="Pilih kampung yang ingin Anda kunjungi"
     >
