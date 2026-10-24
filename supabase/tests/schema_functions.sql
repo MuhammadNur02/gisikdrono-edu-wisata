@@ -2040,6 +2040,10 @@ select is(
   'none true',
   'reactivation only reopens the account; the role does not come back with it (review L9)'
 );
+-- Deactivation removed the admin's factors; they enrol again before a role comes back (20261029080000).
+insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at)
+values ('00000000-0000-4000-8000-000000002a06', '00000000-0000-4000-8000-000000000002', 'HP Admin Baru', 'totp',
+        'verified', now(), now());
 set local role authenticated;
 select is(
   public.set_staff_role('00000000-0000-4000-8000-000000000002', 'admin_rw', 5::smallint) ->> 'stage',
@@ -2104,8 +2108,8 @@ select is(
 );
 select is(
   internal.staff_token_claims('00000000-0000-4000-8000-000000000004') ->> 'app_role',
-  'superadmin',
-  'and the account has its role back, ready to enrol one authenticator'
+  'none',
+  'and the account carries no role until the superadmin''s re-enrolment code is used (20261029080200)'
 );
 select is(
   (select string_agg(severity || ':' || (details ->> 'stage'), ' ' order by id) from public.security_events
@@ -2267,6 +2271,11 @@ select lives_ok(
   $$select public.set_staff_status('00000000-0000-4000-8000-000000000003', true, 'Kembali dari cuti')$$,
   'and reactivated'
 );
+reset role;
+insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at)
+values ('00000000-0000-4000-8000-000000002a07', '00000000-0000-4000-8000-000000000003', 'HP Calon Baru', 'totp',
+        'verified', now(), now());
+set local role authenticated;
 select is(
   public.set_staff_role('00000000-0000-4000-8000-000000000003', 'superadmin') ->> 'stage',
   'requested',

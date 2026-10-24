@@ -81,7 +81,9 @@ select columns_are('public', 'profiles', array[
   -- added by 0004 for the delayed staff changes (MFA reset, promotion to superadmin)
   'mfa_reset_requested_at', 'mfa_reset_requested_by', 'promotion_requested_at', 'promotion_requested_by',
   -- added by 20261029080000: the one-time re-enrolment code after an MFA reset (P4.8.05)
-  'mfa_reenrol_code_hash', 'mfa_reenrol_expires_at'
+  'mfa_reenrol_code_hash', 'mfa_reenrol_expires_at',
+  -- added by 20261029080200: set by a completed MFA reset, cleared by the re-enrolment code
+  'reenrolment_required'
 ]);
 select columns_are('public', 'staff_invites', array[
   'id', 'email', 'role', 'rw_id', 'invite_code_hash', 'expires_at', 'accepted_at',

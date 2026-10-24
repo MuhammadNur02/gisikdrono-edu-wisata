@@ -3,8 +3,12 @@
 -- invite or promotion it reports (M2, L1); every new Auth user gets a profile without a role; an invite is consumed
 -- once, for its own address, unexpired, after the account enrolled; and after an MFA reset only the superadmin's
 -- one-time code opens re-enrolment, for its own account, once, within 24 hours, wrong codes limited and recorded.
+-- Review of PR #58 (20261029080200): a completed reset leaves the account without a role and unable to verify a new
+-- authenticator until the code is used, and every verification is an mfa_enrolled event (H1); nobody an alert names,
+-- as subject or actor, acknowledges it, for any rule, and what an alert names is merged, never overwritten (M1); the
+-- caller's own row is refused before anything else.
 begin;
-select plan(35);
+select plan(51);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: two accounts without a role =====
@@ -35,6 +39,9 @@ select is(public.set_staff_role('00000000-0000-4000-8000-0000000e0001', 'admin_r
   '{"stage": "applied"}', 'once it has one, the role goes');
 select is(public.set_staff_role('00000000-0000-4000-8000-0000000e0001', 'none'), '{"stage": "applied"}',
   'and taking a role away needs none');
+select throws_ok($$select public.set_staff_role('00000000-0000-4000-8000-00000000f001', 'admin_rw', 5::smallint)$$,
+  '42501', 'a staff member cannot change their own role or status',
+  'the caller''s own row is refused first, whatever its factors');
 reset role;
 
 -- ===== M2, L1: acknowledging an alert =====
@@ -45,7 +52,19 @@ insert into public.security_alerts (id, rule, severity, fingerprint, title, deta
    jsonb_build_object('by', '00000000-0000-4000-8000-00000000f001', 'user_id', '00000000-0000-4000-8000-0000000e0002'),
    now()),
   ('00000000-0000-4000-8000-0000000ea004', 'superadmin_invite', 'critical', 'uji:undangan-lain', 'Uji',
-   jsonb_build_object('by', '00000000-0000-4000-8000-0000000e0002'), now());
+   jsonb_build_object('by', '00000000-0000-4000-8000-0000000e0002'), now()),
+  ('00000000-0000-4000-8000-0000000ea005', 'manual_checkin', 'medium', 'uji:manual-sendiri', 'Uji',
+   jsonb_build_object('actor_ids', jsonb_build_array('00000000-0000-4000-8000-00000000f001')), null),
+  ('00000000-0000-4000-8000-0000000ea006', 'mfa_reset', 'critical', 'uji:ditimpa', 'Uji',
+   jsonb_build_object('by', '00000000-0000-4000-8000-00000000f001', 'stage', 'requested'), now());
+-- A later step writes its own details; what the alert named before stays named.
+update public.security_alerts
+set details = jsonb_build_object('by', '00000000-0000-4000-8000-0000000e0002', 'stage', 'completed', 'user_id', null)
+where id = '00000000-0000-4000-8000-0000000ea006';
+select is((select (a.details ->> 'stage', a.details ->> 'by',
+                   a.details -> 'involved' @> jsonb_build_array('00000000-0000-4000-8000-00000000f001', '00000000-0000-4000-8000-0000000e0002'))::text
+           from public.security_alerts a where a.id = '00000000-0000-4000-8000-0000000ea006'),
+  '(completed,00000000-0000-4000-8000-0000000e0002,t)', 'a later write merges into the details and keeps everyone the alert named');
 create function pg_temp.acknowledge(p_alert uuid) returns integer
   language sql
 as $$
@@ -62,6 +81,10 @@ select is(pg_temp.acknowledge('00000000-0000-4000-8000-0000000ea003'), 0,
   'the superadmin does not acknowledge the alert of their own promotion request');
 select is(pg_temp.acknowledge('00000000-0000-4000-8000-0000000ea004'), 1,
   'but does acknowledge another''s invite once it went out');
+select is(pg_temp.acknowledge('00000000-0000-4000-8000-0000000ea005'), 0,
+  'nor a medium alert of any rule that names them as an actor');
+select is(pg_temp.acknowledge('00000000-0000-4000-8000-0000000ea006'), 0,
+  'nor one that named them before a later step rewrote its details');
 reset role;
 update public.security_alerts set notified_at = now() where id = '00000000-0000-4000-8000-0000000ea001';
 select pg_temp.act_as('superadmin_aal2');
@@ -106,6 +129,14 @@ where id = '00000000-0000-4000-8000-0000000eb002';
 select pg_temp.enrol('00000000-0000-4000-8000-0000000e0002');
 select is(public.svc_accept_staff_invite('00000000-0000-4000-8000-0000000e0002', repeat('2', 64)),
   '{"accepted": false}', 'an expired invite accepts nothing');
+-- A server-side step: no signed-in user, the actor it declared.
+select set_config('request.jwt.claims', '', true);
+select set_config('app.actor_id', '00000000-0000-4000-8000-00000000f005', true);
+select internal.record_superadmin_invite_step('00000000-0000-4000-8000-0000000eb001', 'requested');
+select set_config('app.actor_id', '', true);
+select ok((select a.details -> 'involved' @> jsonb_build_array('00000000-0000-4000-8000-00000000f001', '00000000-0000-4000-8000-00000000f005') from public.security_alerts a
+           where a.fingerprint = 'superadmin_invite:00000000-0000-4000-8000-0000000eb001'),
+  'an invite''s alert names its creator and the actor of the step');
 select ok(not has_function_privilege('authenticated', 'public.svc_accept_staff_invite(uuid, text)', 'execute')
           and has_function_privilege('service_role', 'public.svc_accept_staff_invite(uuid, text)', 'execute'),
   'invites are consumed by the server alone');
@@ -117,10 +148,38 @@ select throws_ok($$select public.issue_mfa_reenrolment_code('00000000-0000-4000-
 select throws_ok($$select public.issue_mfa_reenrolment_code('00000000-0000-4000-8000-00000000f001', repeat('a', 64))$$,
   '42501', null, 'nor for the superadmin''s own');
 reset role;
-delete from auth.mfa_factors where user_id = '00000000-0000-4000-8000-0000000e0002';
+delete from auth.mfa_factors where user_id = '00000000-0000-4000-8000-0000000e0001';
+select pg_temp.act_as('superadmin_aal2');
+select throws_ok($$select public.issue_mfa_reenrolment_code('00000000-0000-4000-8000-0000000e0001', repeat('a', 64))$$,
+  'P0001', null, 'nor for one without a factor whose MFA was never reset');
+
+-- H1: a completed reset leaves the account waiting for the code.
+select is(public.reset_staff_mfa('00000000-0000-4000-8000-0000000e0003') ->> 'stage', 'requested', 'an MFA reset is requested first');
+select public.reset_staff_mfa('00000000-0000-4000-8000-0000000e0002');
+reset role;
+select set_config('app.privileged_rpc', 'on', true);
+update public.profiles set mfa_reset_requested_at = now() - interval '25 hours' where id in ('00000000-0000-4000-8000-0000000e0002', '00000000-0000-4000-8000-0000000e0003');
+select set_config('app.privileged_rpc', '', true);
+select pg_temp.act_as('superadmin_aal2');
+select is(public.reset_staff_mfa('00000000-0000-4000-8000-0000000e0003') ->> 'stage', 'completed', 'and completed a day later');
+select public.reset_staff_mfa('00000000-0000-4000-8000-0000000e0002');
+reset role;
+select is((select (p.role::text, p.reenrolment_required)::text from public.profiles p where p.id = '00000000-0000-4000-8000-0000000e0003'),
+  '(admin_rw,t)', 'the account keeps its role but waits for its re-enrolment code');
+select is(internal.staff_token_claims('00000000-0000-4000-8000-0000000e0003') ->> 'app_role', 'none', 'and its token carries no role meanwhile');
+select throws_ok($$select pg_temp.enrol('00000000-0000-4000-8000-0000000e0003')$$, '42501', null,
+  'a new authenticator is not verified without the code');
+insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at)
+values ('00000000-0000-4000-8000-0000000ec001', '00000000-0000-4000-8000-0000000e0003', 'HP Baru', 'totp', 'unverified', now(), now());
+select throws_ok($$update auth.mfa_factors set status = 'verified' where id = '00000000-0000-4000-8000-0000000ec001'$$,
+  '42501', null, 'nor moved to verified, the way GoTrue verifies it');
+set local role service_role;
+select throws_ok($$update public.profiles set reenrolment_required = false where id = '00000000-0000-4000-8000-0000000e0003'$$,
+  '42501', null, 'and the wait is not lifted by a plain update, not even the server''s');
+reset role;
 select pg_temp.act_as('superadmin_aal2');
 select is(public.issue_mfa_reenrolment_code('00000000-0000-4000-8000-0000000e0002', repeat('a', 64)),
-  now() + interval '24 hours', 'the superadmin issues a code for 24 hours once the factors are gone');
+  now() + interval '24 hours', 'the superadmin issues a code for 24 hours once the reset completed');
 reset role;
 select pg_temp.act_as('admin_rw_05');
 select throws_ok($$select public.issue_mfa_reenrolment_code('00000000-0000-4000-8000-0000000e0002', repeat('a', 64))$$,
@@ -140,6 +199,12 @@ select is(public.svc_consume_mfa_reenrolment_code('00000000-0000-4000-8000-00000
   'its own account uses it');
 select is(public.svc_consume_mfa_reenrolment_code('00000000-0000-4000-8000-0000000e0002', repeat('a', 64)), false,
   'once');
+select is((select p.reenrolment_required from public.profiles p where p.id = '00000000-0000-4000-8000-0000000e0002'), false,
+  'using it lifts the wait');
+select lives_ok($$select pg_temp.enrol('00000000-0000-4000-8000-0000000e0002')$$, 'so the new authenticator is verified');
+select is((select count(*)::int from public.security_events e
+           where e.event_type = 'mfa_enrolled' and e.entity_id = '00000000-0000-4000-8000-0000000e0002'),
+  2, 'and every verified authenticator, the first one too, is an mfa_enrolled event');
 select is((select (count(*) filter (where e.event_type = 'mfa_failed'),
                    count(*) filter (where e.event_type = 'mfa_reset' and e.details ->> 'stage' = 'reenrolment_code_used'))::text
            from public.security_events e

@@ -1,7 +1,8 @@
--- Task P4.10.01 (20261029080100; docs/Security.md §11.2): each rule of the anomaly scan raises its alert from a
--- seeded case, a second run within the hour counts an occurrence instead of a second alert, and only the server runs it.
+-- Task P4.10.01 (20261029080100, 20261029080200; docs/Security.md §11.2): each rule of the anomaly scan raises its alert
+-- from a seeded case, one open alert per rule and subject however many runs see it, an order named by its short hash
+-- only, the actors kept in the alert, the chains checked by a call of their own, and only the server runs either.
 begin;
-select plan(17);
+select plan(20);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -87,21 +88,30 @@ insert into public.security_events (event_type, severity, entity_type, entity_id
   ('login_locked', 'medium', 'profiles', 'uji-kunci-1', '{}'),
   ('login_locked', 'medium', 'profiles', 'uji-kunci-2', '{}'),
   ('mfa_locked', 'medium', 'profiles', 'uji-kunci-3', '{}');
+insert into public.security_events (event_type, severity, actor_id, entity_type, entity_id, details) values
+  ('manual_checkin', 'medium', '00000000-0000-4000-8000-00000000f005', 'tickets_qr', 'uji-manual-petugas', '{}');
 
 create function pg_temp.alerted(p_rule text, p_subject text default null) returns integer
   language sql stable
 as $$
   select count(*)::int from public.security_alerts a
-  where a.rule = p_rule and (p_subject is null or a.fingerprint like p_rule || ':' || p_subject || ':%')
+  where a.rule = p_rule and (p_subject is null or a.fingerprint = p_rule || ':' || p_subject)
     and a.created_at = now();
 $$;
 
 -- ===== One run =====
-select ok((internal.run_anomaly_scan(true) ->> 'raised')::int >= 10, 'a run raises the seeded alerts');
-select is(pg_temp.alerted('signature_burst', (select early from orders)), 1,
+select ok((internal.run_anomaly_scan() ->> 'raised')::int >= 10, 'a run raises the seeded alerts');
+select is(pg_temp.alerted('signature_burst', internal.order_ref((select early from orders))), 1,
   'bad signatures for an order that exists');
+select is((select count(*)::int from public.security_alerts a
+           where a.rule = 'signature_burst' and a.created_at = now()
+             and (a.details::text like '%GSK-%' or a.fingerprint like '%GSK-%')),
+  0, 'named by a short hash of the order, never its order id or booking code');
 select is(pg_temp.alerted('webhook_amount_mismatch', 'uji-selisih'), 1, 'an amount mismatch');
 select is(pg_temp.alerted('manual_checkin', 'uji-manual'), 1, 'a manual check-in');
+select ok((select a.details -> 'involved' ? '00000000-0000-4000-8000-00000000f005' from public.security_alerts a
+           where a.fingerprint = 'manual_checkin:uji-manual-petugas'),
+  'the alert keeps who acted, so they cannot acknowledge it');
 select is(pg_temp.alerted('paid_without_tickets', (select refunded from cases)::text), 1,
   'a paid booking without tickets');
 select is(pg_temp.alerted('ticket_without_payment', (select t.id::text from public.tickets_qr t
@@ -120,15 +130,25 @@ select is((select a.severity::text from public.security_alerts a
            where a.rule = 'paid_without_tickets' and a.created_at = now()),
   'critical', 'money without tickets is critical');
 
--- ===== Again within the hour =====
+-- ===== Again =====
 select internal.run_anomaly_scan();
 select is((select (count(*), max(a.occurrences))::text from public.security_alerts a
            where a.rule = 'large_booking' and a.created_at = now()),
-  '(1,2)', 'a second run within the hour counts an occurrence, not a second alert');
-select is(internal.run_anomaly_scan() ->> 'chains_checked', 'false', 'the chains are checked only when asked');
-select ok(not has_function_privilege('authenticated', 'public.svc_run_anomaly_scan(boolean)', 'execute')
-          and has_function_privilege('service_role', 'public.svc_run_anomaly_scan(boolean)', 'execute'),
-  'only the server runs the scan');
+  '(1,2)', 'a second run counts an occurrence on the open alert, not a second alert');
+-- The fingerprint names no hour, so an alert left open for days still gathers its sightings; once acknowledged, the
+-- next sighting opens a new one.
+update public.security_alerts set acknowledged_at = now(), acknowledged_by = '00000000-0000-4000-8000-00000000f001'
+where rule = 'large_booking';
+select internal.run_anomaly_scan();
+select is((select count(*)::int from public.security_alerts a
+           where a.fingerprint = 'large_booking:' || (select large from cases) and a.acknowledged_at is null),
+  1, 'an acknowledged alert seen again opens a new one');
+select ok((public.svc_run_chain_check() ->> 'raised')::int >= 0, 'the chains are checked by a call of their own');
+select ok(not has_function_privilege('authenticated', 'public.svc_run_anomaly_scan()', 'execute')
+          and has_function_privilege('service_role', 'public.svc_run_anomaly_scan()', 'execute')
+          and not has_function_privilege('authenticated', 'public.svc_run_chain_check()', 'execute')
+          and has_function_privilege('service_role', 'public.svc_run_chain_check()', 'execute'),
+  'only the server runs the scan and the chain check');
 
 select * from finish();
 rollback;

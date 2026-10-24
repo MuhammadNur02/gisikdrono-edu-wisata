@@ -2275,6 +2275,7 @@ export type Database = {
           phone: string | null
           promotion_requested_at: string | null
           promotion_requested_by: string | null
+          reenrolment_required: boolean
           role: Database["public"]["Enums"]["app_role"]
           rw_id: number | null
           updated_at: string
@@ -2297,6 +2298,7 @@ export type Database = {
           phone?: string | null
           promotion_requested_at?: string | null
           promotion_requested_by?: string | null
+          reenrolment_required?: boolean
           role?: Database["public"]["Enums"]["app_role"]
           rw_id?: number | null
           updated_at?: string
@@ -2319,6 +2321,7 @@ export type Database = {
           phone?: string | null
           promotion_requested_at?: string | null
           promotion_requested_by?: string | null
+          reenrolment_required?: boolean
           role?: Database["public"]["Enums"]["app_role"]
           rw_id?: number | null
           updated_at?: string
@@ -4625,10 +4628,8 @@ export type Database = {
         Args: { p_booking_id: string }
         Returns: number
       }
-      svc_run_anomaly_scan: {
-        Args: { p_check_chains?: boolean }
-        Returns: Json
-      }
+      svc_run_anomaly_scan: { Args: never; Returns: Json }
+      svc_run_chain_check: { Args: never; Returns: Json }
       svc_submit_review: {
         Args: {
           p_body: string
