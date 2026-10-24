@@ -3,6 +3,7 @@ import Link from 'next/link';
 
 import { PhotoFrame } from '@/components/marketing/photo';
 import { IMAGE_SIZES } from '@/config/images';
+import { siteConfig } from '@/config/site';
 import { ARTICLE_CATEGORY_LABELS } from '@/config/status';
 import { copy } from '@/lib/copy/id';
 import { cn } from '@/lib/utils/cn';
@@ -25,7 +26,8 @@ export interface ArticleCardProps {
 }
 
 // The typographic cover of an article without a photo (DESIGN-SPEC §2.5): night with the light kawung at 10 % and
-// the category in gold. Decorative: the card's own title says what the article is.
+// the category in gold over the site's name. Decorative, and it never repeats the title: the card's own heading is
+// the one place the title is written.
 function TypographicCover({ article }: ArticleCardProps) {
   return (
     <div
@@ -39,7 +41,7 @@ function TypographicCover({ article }: ArticleCardProps) {
         <Newspaper className="size-5" />
         {ARTICLE_CATEGORY_LABELS[article.category]}
       </p>
-      <p className="line-clamp-2 font-display text-lg font-bold text-on-dark-2">{article.title}</p>
+      <p className="font-display text-lg font-bold text-on-dark-2">{siteConfig.name}</p>
     </div>
   );
 }
