@@ -15,7 +15,7 @@ import { SCANNER_OFFLINE_PATH } from './config/scanner';
 // The scanner PWA's service worker (Task P4.4.03, docs/PRD.md FR-SCAN-01), built by @serwist/next into public/sw.js and
 // registered from /dashboard/scanner only, with that scope. It precaches the build's static assets (the shell) and
 // the static offline page, never a dashboard page: those carry a staff member's name and a CSP nonce. /api/* and every
-// page go to the network alone, so no ticket, booking or scan result is ever stored on the phone (CLAUDE.md §7.4:
+// page of this site go to the network alone, so no ticket, booking or scan result is ever stored on the phone (CLAUDE.md §7.4:
 // online only, no queue, no cached whitelist).
 
 declare global {
@@ -30,8 +30,10 @@ const API_PREFIX = '/api/';
 const ICONS_PREFIX = '/icons/';
 const ICON_CACHE = { name: 'scanner-icons', maxEntries: 32 } as const;
 
+// Another origin's request gets no route at all, so the browser sends it itself and the worker never fetches anything
+// under its own CSP (review of PR #49).
 function isApiRequest({ url, sameOrigin }: RouteMatchCallbackOptions): boolean {
-  return !sameOrigin || url.pathname.startsWith(API_PREFIX);
+  return sameOrigin && url.pathname.startsWith(API_PREFIX);
 }
 
 function isAppIcon({ url, sameOrigin, request }: RouteMatchCallbackOptions): boolean {

@@ -1,7 +1,6 @@
 'use client';
 
 import { AlertTriangle, CheckCircle2, Loader2, WifiOff, XCircle } from 'lucide-react';
-import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { CommitForm, TicketCard } from '@/components/admin/scanner/scan-result-details';
@@ -89,7 +88,7 @@ function ProblemView({
       ) : null}
       {outcome.kind === 'signed_out' ? (
         <Button asChild size="lg" className="w-full">
-          <Link href={LOGIN_PATH}>{text.signInAgain}</Link>
+          <a href={LOGIN_PATH}>{text.signInAgain}</a>
         </Button>
       ) : null}
     </div>

@@ -1,7 +1,6 @@
 'use client';
 
 import { Maximize2, Search } from 'lucide-react';
-import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 import { ScannerModalButton } from '@/components/admin/scanner/scanner-modal-button';
@@ -56,12 +55,13 @@ export function QuickScannerBar({ canOverrideScans }: { canOverrideScans: boolea
           className="h-12 shrink-0"
         />
         <Button asChild variant="outline" size="icon" className="size-12 shrink-0">
-          <Link
+          {/* A document load: the scanner's camera policy comes with its own response (src/lib/utils/scanner-boundary.ts). */}
+          <a
             href={`${SCANNER_PATH}?return=${encodeURIComponent(pathname)}`}
             aria-label={scannerCopy.modal.openFullScanner}
           >
             <Maximize2 aria-hidden />
-          </Link>
+          </a>
         </Button>
       </div>
     </div>

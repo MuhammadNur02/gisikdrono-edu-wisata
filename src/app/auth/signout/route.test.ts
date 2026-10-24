@@ -44,6 +44,8 @@ describe('POST auth/signout', () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get('Location')).toBe('/login');
+    // The scanner's service worker and its caches leave with the session (Task P4.4.03).
+    expect(response.headers.get('Clear-Site-Data')).toBe('"cache", "storage"');
     expect(recordSessionRevokeFailure).not.toHaveBeenCalled();
   });
 
@@ -54,6 +56,7 @@ describe('POST auth/signout', () => {
     const response = await signOut();
 
     expect(response.headers.get('Location')).toBe('/login?info=signed-out-here-only');
+    expect(response.headers.get('Clear-Site-Data')).toBe('"cache", "storage"');
     expect(recordSessionRevokeFailure).toHaveBeenCalledWith(SESSION.ctx, 'sign_out', 'request-1');
   });
 

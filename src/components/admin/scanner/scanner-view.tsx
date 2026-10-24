@@ -3,7 +3,6 @@
 import type { IScannerError, ScannerErrorKind } from '@yudiel/react-qr-scanner';
 import { Camera, CameraOff, ScanLine } from 'lucide-react';
 import dynamic from 'next/dynamic';
-import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -14,6 +13,7 @@ import { ScanTabs } from '@/components/admin/scanner/scan-tabs';
 import { FormAlert } from '@/components/forms/form-alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useBoundaryNavigation } from '@/hooks/use-boundary-navigation';
 import { useScanner } from '@/hooks/use-scanner';
 import { scannerCopy } from '@/lib/copy/scanner';
 import type { ActionResult } from '@/types/action-result';
@@ -172,7 +172,7 @@ function useLiveScanner() {
 // docs/StyleGuide.md §6.6 ScannerView: the full-screen gate scanner, the PWA's start page and the only page with a live
 // camera. One tap on `Scan` reads one QR; the result sheet asks the officer to confirm before anything is checked in.
 export function ScannerView({ canOverride, returnTo, logOpenedAction }: ScannerViewProps) {
-  const router = useRouter();
+  const navigate = useBoundaryNavigation();
   const { scanner, camera } = useLiveScanner();
 
   // Every opening of the scanner is audited (rpc_log_ui_event 'scanner_opened', Task P4.4.05).
@@ -193,7 +193,7 @@ export function ScannerView({ canOverride, returnTo, logOpenedAction }: ScannerV
         onClosed={
           returnTo
             ? () => {
-                router.push(returnTo);
+                navigate(returnTo);
               }
             : undefined
         }

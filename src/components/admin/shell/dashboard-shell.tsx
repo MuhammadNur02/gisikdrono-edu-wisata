@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { AppSidebar } from '@/components/admin/shell/app-sidebar';
 import type { BreadcrumbItem } from '@/components/admin/shell/breadcrumbs';
 import { QuickScannerBar } from '@/components/admin/shell/quick-scanner-bar';
+import { ScannerBoundary } from '@/components/admin/shell/scanner-boundary';
 import { Topbar } from '@/components/admin/shell/topbar';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { copy } from '@/lib/copy/id';
@@ -54,6 +55,7 @@ function ShellColumn({ rwSwitcher, canOverrideScans, children, ...topbar }: Shel
         {children}
       </main>
       <QuickScannerBar canOverrideScans={canOverrideScans} />
+      <ScannerBoundary />
     </div>
   );
 }

@@ -33,3 +33,6 @@ export const VIBRATION_PATTERNS = {
 export const SCANNER_SERVICE_WORKER = { url: '/sw.js', scope: '/dashboard/scanner' } as const;
 // What the service worker serves for the scanner page while the network is down; static, without PII.
 export const SCANNER_OFFLINE_PATH = '/luring';
+// The installed scanner's own web manifest, linked from /dashboard/scanner alone; the site-wide src/app/manifest.ts
+// stays the public website's (review of PR #49). public/scanner.webmanifest, kept in step by scanner-manifest.test.ts.
+export const SCANNER_MANIFEST_PATH = '/scanner.webmanifest';

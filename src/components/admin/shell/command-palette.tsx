@@ -1,7 +1,6 @@
 'use client';
 
 import { CalendarClock, ClipboardList, ScanLine } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import {
@@ -13,6 +12,7 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { BOOKINGS_PATH, SCANNER_PATH, SESSIONS_PATH } from '@/config/dashboard';
+import { useBoundaryNavigation } from '@/hooks/use-boundary-navigation';
 import { copy } from '@/lib/copy/id';
 import { isBookingCode } from '@/lib/utils/codes';
 
@@ -99,11 +99,11 @@ function NavGroups({ items, go }: { items: readonly CommandPaletteItem[]; go: Go
 
 // docs/StyleGuide.md §6.1: the cmdk palette, grouped by nav group, with the quick actions. Loaded on first open.
 export function CommandPalette({ open, onOpenChange, items }: CommandPaletteProps) {
-  const router = useRouter();
+  const navigate = useBoundaryNavigation();
   const [query, setQuery] = useState('');
   const go: Go = (href) => {
     onOpenChange(false);
-    router.push(href);
+    navigate(href);
   };
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} className="rounded-2xl shadow-modal">

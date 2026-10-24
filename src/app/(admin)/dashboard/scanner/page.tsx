@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { ScannerView } from '@/components/admin/scanner/scanner-view';
 import { ServiceWorkerRegistration } from '@/components/admin/scanner/service-worker-registration';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
+import { SCANNER_MANIFEST_PATH } from '@/config/scanner';
 import { scannerCopy } from '@/lib/copy/scanner';
 import { safeRedirect } from '@/lib/utils/safe-redirect';
 import { logScannerOpenedAction } from '@/server/actions/scanner';
@@ -10,7 +11,8 @@ import { requireDashboardStaff } from '@/server/auth/session';
 
 const text = scannerCopy;
 
-export const metadata: Metadata = { title: text.title };
+// The scanner's own manifest replaces the site's for this page, so installing it installs the scanner.
+export const metadata: Metadata = { title: text.title, manifest: SCANNER_MANIFEST_PATH };
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 

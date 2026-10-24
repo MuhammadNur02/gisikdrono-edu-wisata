@@ -84,3 +84,57 @@ test('without a network the officer is told so, and Coba lagi sends the same att
   expect(attempts).toHaveLength(2);
   expect(attempts[1]).toBe(attempts[0]);
 });
+
+// The camera policy a document allows, read the way the browser enforces it (document.permissionsPolicy, or the
+// older featurePolicy Chromium still has).
+function cameraAllowed(page: Page): Promise<boolean | null> {
+  return page.evaluate(() => {
+    const policy: unknown =
+      Reflect.get(document, 'permissionsPolicy') ?? Reflect.get(document, 'featurePolicy');
+    if (typeof policy !== 'object' || policy === null) return null;
+    const allowsFeature: unknown = Reflect.get(policy, 'allowsFeature');
+    return typeof allowsFeature === 'function'
+      ? Boolean(allowsFeature.call(policy, 'camera'))
+      : null;
+  });
+}
+
+async function followSidebar(page: Page, label: string, isDesktop: boolean) {
+  if (!isDesktop) await page.getByRole('button', { name: 'Buka menu dasbor' }).click();
+  const nav = page.getByRole('navigation', { name: 'Menu dasbor' }).filter({ visible: true });
+  await nav.getByRole('link', { name: label, exact: true }).click();
+}
+
+// Review of PR #49 (CLAUDE.md §7.4, HDR-03): a browser keeps the policies of the document it loaded first, so the way
+// into the scanner and the way out of it are both document loads. No camera mock here: it would skip the very check.
+test('the sidebar loads the scanner as a document of its own, and leaves it the same way', async ({
+  page,
+}, testInfo) => {
+  const isDesktop = testInfo.project.name === 'desktop';
+  await signInToDashboard(page, officerEmail());
+  expect(await cameraAllowed(page)).toBe(false);
+
+  const scannerDocument = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === SCANNER &&
+      response.request().resourceType() === 'document',
+  );
+  await followSidebar(page, 'Scanner', isDesktop);
+  expect((await scannerDocument).headers()['permissions-policy']).toContain('camera=(self)');
+  await expect(page).toHaveURL(SCANNER);
+  expect(await cameraAllowed(page)).toBe(true);
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(
+    'href',
+    '/scanner.webmanifest',
+  );
+
+  const dashboardDocument = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/dashboard' &&
+      response.request().resourceType() === 'document',
+  );
+  await followSidebar(page, 'Dasbor', isDesktop);
+  expect((await dashboardDocument).headers()['permissions-policy']).toContain('camera=()');
+  await expect(page).toHaveURL('/dashboard');
+  expect(await cameraAllowed(page)).toBe(false);
+});

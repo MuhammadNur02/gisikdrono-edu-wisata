@@ -171,6 +171,6 @@ export async function middleware(request: NextRequest) {
 export const config = {
   // Webhooks, jobs and the health check authenticate themselves and never carry a staff session.
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|icons/|fonts/|og/|map/|api/webhooks|api/jobs|api/health|monitoring).*)',
+    '/((?!_next/static|_next/image|favicon.ico|icons/|fonts/|og/|map/|vendor/|sw.js|scanner.webmanifest|api/webhooks|api/jobs|api/health|monitoring).*)',
   ],
 };

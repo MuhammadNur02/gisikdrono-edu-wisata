@@ -1,7 +1,6 @@
 'use client';
 
 import { Camera, Maximize2 } from 'lucide-react';
-import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useId, useState, type ChangeEvent } from 'react';
 
@@ -127,10 +126,11 @@ export function ScannerModal({ canOverride, onClose }: ScannerModalProps) {
     >
       <div className="space-y-4 pb-4">
         <Button asChild variant="outline" className="min-h-11 w-full">
-          <Link href={fullScanner}>
+          {/* A document load: the scanner's camera policy comes with its own response (src/lib/utils/scanner-boundary.ts). */}
+          <a href={fullScanner}>
             <Maximize2 aria-hidden />
             {text.modal.openFullScanner}
-          </Link>
+          </a>
         </Button>
         {scanner.state.stage === 'idle' ? (
           <ScanTabs
