@@ -42,7 +42,8 @@ export async function generateMetadata({ params }: PackagePageProps): Promise<Me
   });
 }
 
-// A package without a price in the catalogue carries no Offer, never one priced at 0 (Task P5.6.02).
+// A package without a price in the catalogue carries no Offer, never one priced at 0, and a tiered "mulai dari"
+// price is the low end of an AggregateOffer (Task P5.6.02).
 function packageJsonLd(pkg: PackageDetail) {
   const price = describePackagePrice(pkg);
   const path = packagePath(pkg.slug);
@@ -51,7 +52,9 @@ function packageJsonLd(pkg: PackageDetail) {
     description: pkg.tagline ?? undefined,
     path,
     imageUrls: pkg.images.map((image) => publicMediaUrl(image.path)),
-    offer: price ? { priceIdr: price.amount, path, isAvailable: true } : undefined,
+    offer: price
+      ? { priceIdr: price.amount, path, isAvailable: true, isFromPrice: price.isFromPrice }
+      : undefined,
   });
 }
 

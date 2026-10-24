@@ -1,4 +1,5 @@
 import type {
+  AggregateOffer,
   AggregateRating,
   Article,
   BreadcrumbList,
@@ -153,16 +154,20 @@ export interface OfferInput {
   priceIdr: number;
   path: string;
   isAvailable: boolean;
+  // A "mulai dari" price, the lowest of a package's price tiers: the low end of a range, never one exact price.
+  isFromPrice?: boolean;
 }
 
-export function offerJsonLd(input: OfferInput): Node<Offer> {
-  return {
-    '@type': 'Offer',
-    price: String(input.priceIdr),
+export function offerJsonLd(input: OfferInput): Node<Offer> | Node<AggregateOffer> {
+  const terms = {
     priceCurrency: PRICE_CURRENCY,
     url: absoluteUrl(input.path),
     availability: input.isAvailable ? 'https://schema.org/InStock' : 'https://schema.org/SoldOut',
-  };
+  } as const;
+  const amount = String(input.priceIdr);
+  return input.isFromPrice
+    ? { '@type': 'AggregateOffer', lowPrice: amount, ...terms }
+    : { '@type': 'Offer', price: amount, ...terms };
 }
 
 export interface ProductInput {
