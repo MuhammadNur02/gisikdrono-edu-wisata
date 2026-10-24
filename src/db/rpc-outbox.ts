@@ -47,3 +47,32 @@ export async function svcFailNotification(
     }),
   );
 }
+
+export type SecurityAlertToSend = {
+  id: string;
+  rule: string;
+  severity: Enums['alert_severity'];
+  lastSeenAt: string;
+};
+
+// High and critical alerts not yet sent out of band, stamped as sent as they are claimed (Task P3.11.08).
+export async function svcClaimSecurityAlerts(
+  adminClient: DatabaseClient,
+  limit: number,
+): Promise<SecurityAlertToSend[]> {
+  const rows = await resultOf(adminClient.rpc('svc_claim_security_alerts', { p_limit: limit }));
+  return rows.map((row) => ({
+    id: row.id,
+    rule: row.rule,
+    severity: row.severity,
+    lastSeenAt: row.last_seen_at,
+  }));
+}
+
+// An alert whose email did not go out, given back to the next run.
+export async function svcReleaseSecurityAlert(
+  adminClient: DatabaseClient,
+  id: string,
+): Promise<void> {
+  await resultOf(adminClient.rpc('svc_release_security_alert', { p_id: id }));
+}

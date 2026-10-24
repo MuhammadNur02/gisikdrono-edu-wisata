@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { DB_ENUMS } from '@/db/enums';
 import { createResendProvider } from '@/lib/notifications/email-resend';
 import { createMailpitProvider } from '@/lib/notifications/mailpit';
 import { messageText } from '@/lib/notifications/message-text';
@@ -159,14 +160,7 @@ describe('Resend provider', () => {
     });
   });
 
-  it('refuses a template it has no words for yet, and survives a network failure', async () => {
-    const { fetcher } = answering(200, { id: 'x' });
-    expect(
-      await createResendProvider(config, fetcher).send({ ...email, template: 'review_invite' }),
-    ).toMatchObject({
-      errorCode: 'template_not_ready',
-      isPermanent: true,
-    });
+  it('survives a network failure', async () => {
     const broken = vi.fn<typeof fetch>(() => Promise.reject(new TypeError('fetch failed')));
     expect(await createResendProvider(config, broken).send(email)).toMatchObject({
       errorCode: 'network',
@@ -202,11 +196,6 @@ describe('local Mailpit provider', () => {
     expect(await createMailpitProvider('email', broken).send(email)).toMatchObject({
       errorCode: 'network',
     });
-    expect(
-      await createMailpitProvider('email', fetcher).send({ ...email, template: 'review_invite' }),
-    ).toMatchObject({
-      errorCode: 'template_not_ready',
-    });
   });
 });
 
@@ -221,5 +210,62 @@ describe('messageText', () => {
     expect(
       messageText({ ...LINK, template: 'booking_link', link: null, bodyParams: {} }).text,
     ).toContain('Halo ,');
+  });
+
+  it('has words for every template, a guest message signed and carrying its link', () => {
+    for (const template of DB_ENUMS.notification_template) {
+      expect(messageText({ ...LINK, template }).subject).not.toBe('');
+    }
+    const ticket = messageText({
+      ...LINK,
+      template: 'payment_received_ticket',
+      bodyParams: {
+        name: 'Ani',
+        booking_code: 'GSK-7F3K9Q2M',
+        package: 'Eduwisata',
+        date: 'Kamis, 12 November 2026',
+        session: '09.05–10.05 WIB',
+        pax: '20',
+      },
+    });
+    expect(ticket.text).toContain('Eduwisata, Kamis, 12 November 2026, 09.05–10.05 WIB, 20 orang');
+    expect(ticket.text).toContain(LINK.link?.url ?? 'missing');
+    expect(ticket.text.endsWith('Salam,\nEdu Wisata Gisikdrono')).toBe(true);
+  });
+
+  it('leaves out of a staff message what its copy does not carry, and signs it off as nobody', () => {
+    const forRw = messageText({
+      ...LINK,
+      template: 'admin_new_paid_booking',
+      bodyParams: {
+        booking_code: 'GSK-7F3K9Q2M',
+        rw_name: 'RW 05 Ecowastreme',
+        visit_date: 'Kamis',
+        pax: '20',
+      },
+      link: { url: 'http://127.0.0.1:3000/dashboard', buttonSuffix: null },
+    });
+    expect(forRw.text).toContain('Kunjungan ke RW 05 Ecowastreme.');
+    expect(forRw.text).not.toContain('Total');
+    expect(forRw.text).not.toContain('Salam');
+  });
+});
+
+describe('a button with a fixed address', () => {
+  it('carries no parameter to Meta', () => {
+    const expired: OutgoingMessage = {
+      ...LINK,
+      template: 'booking_expired',
+      link: { url: 'http://127.0.0.1:3000/paket-wisata', buttonSuffix: null },
+    };
+    expect(whatsAppPayload(expired).template.components).toEqual([
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: 'Ani' },
+          { type: 'text', text: 'GSK-7F3K9Q2M' },
+        ],
+      },
+    ]);
   });
 });

@@ -60,11 +60,35 @@ function row(overrides: Partial<OutboxRow>): OutboxRow {
   };
 }
 
-// The one read the worker makes besides the outbox: a booking's code and token_version for its link.
-function adminClientWith(booking: { booking_code: string; token_version: number } | null) {
+// The one read the worker makes besides the outbox: the booking a guest message names, as outbox-messages.ts selects
+// it. A test names only what it cares about.
+const BOOKING_ROW = {
+  booking_code: 'GSK-7F3K9Q2M',
+  token_version: 1,
+  email_verified_at: null,
+  package_snapshot: { name: 'Eduwisata Ecowastreme' },
+  visit_date: '2026-11-12',
+  pax_count: 20,
+  total_amount: 600000,
+  expires_at: '2026-10-25T03:00:00+00:00',
+  institution_name: 'SD Negeri 1',
+  booking_legs: [
+    {
+      leg_order: 1,
+      rw_units: { name: 'RW 05 Ecowastreme' },
+      visit_sessions: { start_time: '09:05:00', end_time: '10:05:00' },
+    },
+  ],
+  quotations: [],
+  payments: [{ refunded_amount: 0 }],
+};
+
+function adminClientWith(booking: Partial<typeof BOOKING_ROW> | null) {
   const single = () =>
     Promise.resolve(
-      booking ? { data: booking, error: null } : { data: null, error: { code: 'PGRST116' } },
+      booking
+        ? { data: { ...BOOKING_ROW, ...booking }, error: null }
+        : { data: null, error: { code: 'PGRST116' } },
     );
   const query = { select: () => query, eq: () => query, single };
   return { from: () => query } as unknown as DatabaseClient;
@@ -123,7 +147,7 @@ describe('processNotifications', () => {
     const message = sent[0];
     expect(message?.bodyParams).toEqual({ name: 'Ani', booking_code: 'GSK-7F3K9Q2M' });
     expect(message?.link?.url).toMatch(/^http:\/\/127\.0\.0\.1:3000\/reservasi\/GSK-7F3K9Q2M\?t=/);
-    const token = message?.link?.buttonSuffix.split('?t=')[1] ?? '';
+    const token = (message?.link?.buttonSuffix ?? '').split('?t=')[1] ?? '';
     await expect(
       readGuestLink(token, { bookingCode: 'GSK-7F3K9Q2M', nowSeconds: NOW }),
     ).resolves.toMatchObject({
@@ -168,34 +192,35 @@ describe('processNotifications', () => {
     ]);
   });
 
-  it('gives up at once on a message it cannot fill, and retries one whose booking could not be read', async () => {
+  it('gives up at once on a message it cannot fill', async () => {
     outbox.claimed = [
       row({ id: 'no-code', params: {} }),
       row({ id: 'no-scope', template: 'booking_link', booking_id: BOOKING_ID, params: {} }),
-      row({ id: 'not-ready', template: 'review_invite', booking_id: BOOKING_ID, params: {} }),
-      row({
-        id: 'db-down',
-        template: 'booking_link',
-        booking_id: BOOKING_ID,
-        params: { link_scope: 'view' },
-      }),
+      row({ id: 'no-booking', template: 'review_invite', params: { link_scope: 'review' } }),
+    ];
+    const { providers, sent } = recordingProviders();
+    await processNotifications(adminClientWith({}), providers, NOW);
+    expect(sent).toEqual([]);
+    // The batch is sent concurrently, so the failures arrive in any order.
+    expect(outbox.failed).toEqual(
+      expect.arrayContaining(
+        ['no-code', 'no-scope', 'no-booking'].map((id): unknown =>
+          expect.objectContaining({ id, errorCode: 'bad_params', isPermanent: true }),
+        ),
+      ),
+    );
+    expect(outbox.failed).toHaveLength(3);
+  });
+
+  it('retries a message whose booking could not be read', async () => {
+    outbox.claimed = [
+      row({ template: 'booking_link', booking_id: BOOKING_ID, params: { link_scope: 'view' } }),
     ];
     const { providers, sent } = recordingProviders();
     await processNotifications(adminClientWith(null), providers, NOW);
     expect(sent).toEqual([]);
-    // The batch is sent concurrently, so the failures arrive in any order.
-    expect(outbox.failed).toHaveLength(4);
-    expect(outbox.failed).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: 'no-code', errorCode: 'bad_params', isPermanent: true }),
-        expect.objectContaining({ id: 'no-scope', errorCode: 'bad_params', isPermanent: true }),
-        expect.objectContaining({
-          id: 'not-ready',
-          errorCode: 'template_not_ready',
-          isPermanent: true,
-        }),
-        expect.objectContaining({ id: 'db-down', errorCode: 'compose_failed', isPermanent: false }),
-      ]),
-    );
+    expect(outbox.failed).toEqual([
+      expect.objectContaining({ errorCode: 'compose_failed', isPermanent: false }),
+    ]);
   });
 });

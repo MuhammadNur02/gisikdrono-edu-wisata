@@ -4353,6 +4353,15 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      svc_claim_security_alerts: {
+        Args: { p_limit: number }
+        Returns: {
+          id: string
+          last_seen_at: string
+          rule: string
+          severity: Database["public"]["Enums"]["alert_severity"]
+        }[]
+      }
       svc_complete_notification: {
         Args: { p_id: string; p_provider_message_id: string }
         Returns: undefined
@@ -4510,6 +4519,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      svc_release_security_alert: { Args: { p_id: string }; Returns: undefined }
       svc_resend_booking_link: {
         Args: { p_booking_code: string; p_email?: string; p_phone?: string }
         Returns: string

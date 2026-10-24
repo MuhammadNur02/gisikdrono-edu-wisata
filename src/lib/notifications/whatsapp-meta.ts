@@ -36,12 +36,12 @@ type TemplateComponent =
 function buttonFor(message: OutgoingMessage): TemplateComponent | null {
   const text =
     message.template === 'phone_otp' ? message.bodyParams.code : message.link?.buttonSuffix;
-  if (text === undefined) return null;
+  if (text === undefined || text === null) return null;
   return {
     type: 'button',
     sub_type: 'url',
     index: '0',
-    parameters: [{ type: 'text', text: String(text) }],
+    parameters: [{ type: 'text', text }],
   };
 }
 
@@ -50,7 +50,7 @@ export function whatsAppPayload(message: OutgoingMessage) {
     type: 'body',
     parameters: Object.values(message.bodyParams).map((value) => ({
       type: 'text',
-      text: String(value),
+      text: value,
     })),
   };
   const button = buttonFor(message);

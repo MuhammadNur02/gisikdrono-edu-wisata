@@ -6,9 +6,3 @@ export type SendFailure = Extract<SendResult, { ok: false }>;
 export function sendFailure(errorCode: string, error: string, isPermanent: boolean): SendFailure {
   return { ok: false, errorCode, error, isPermanent };
 }
-
-export const TEMPLATE_NOT_READY = sendFailure(
-  'template_not_ready',
-  'The application cannot send this template yet',
-  true,
-);

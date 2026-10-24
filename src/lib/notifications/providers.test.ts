@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { notificationProviders } from '@/lib/notifications/providers';
+import { notificationProviders, securityAlertProvider } from '@/lib/notifications/providers';
 import type { OutgoingMessage } from '@/lib/notifications/types';
 
 const OTP_MESSAGE: OutgoingMessage = {
@@ -61,5 +61,28 @@ describe('notificationProviders', () => {
     const urls = capturedFetch();
     await notificationProviders().email.send({ ...OTP_MESSAGE, channel: 'email' });
     expect(urls).toEqual(['https://api.resend.com/emails']);
+  });
+});
+
+describe('securityAlertProvider', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('emails alerts through Resend directly, or the local Mailpit on a developer machine', async () => {
+    const urls = capturedFetch();
+    const alert = {
+      ...OTP_MESSAGE,
+      channel: 'email' as const,
+      template: 'security_alert' as const,
+    };
+    await securityAlertProvider(false).send(alert);
+    await securityAlertProvider(true).send(alert);
+    await securityAlertProvider().send(alert);
+    expect(urls).toEqual([
+      'https://api.resend.com/emails',
+      'http://127.0.0.1:54324/api/v1/send',
+      'https://api.resend.com/emails',
+    ]);
   });
 });
