@@ -89,7 +89,7 @@ describe('moderateReviewSchema', () => {
     expect(moderateReviewSchema.parse({ ...MODERATION, moderationNote: ' ' }).moderationNote).toBe(
       null,
     );
-    const { moderationNote: _omitted, ...withoutNote } = MODERATION;
+    const withoutNote = { id: MODERATION.id, status: MODERATION.status, isFeatured: false };
     expect(moderateReviewSchema.parse(withoutNote).moderationNote).toBeNull();
   });
 
@@ -100,7 +100,9 @@ describe('moderateReviewSchema', () => {
   });
 
   it('rejects a status the enum does not have and an id that is no uuid', () => {
-    expect(moderateReviewSchema.safeParse({ ...MODERATION, status: 'archived' }).success).toBe(false);
+    expect(moderateReviewSchema.safeParse({ ...MODERATION, status: 'archived' }).success).toBe(
+      false,
+    );
     expect(moderateReviewSchema.safeParse({ ...MODERATION, id: '42' }).success).toBe(false);
   });
 

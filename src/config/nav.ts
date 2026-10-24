@@ -213,7 +213,7 @@ export const DASHBOARD_NAV_GROUPS: readonly DashboardNavGroup[] = [
   {
     title: 'Moderasi',
     items: [
-      { label: 'Ulasan', href: '/dashboard/reviews', icon: MessageSquare, roles: SUPERADMIN_ONLY },
+      { label: 'Ulasan', href: '/dashboard/reviews', icon: MessageSquare, roles: BOTH_ROLES },
     ],
   },
   {
