@@ -42,6 +42,8 @@ export interface RwPageFormProps {
   page: RwPageAdmin;
   // updateRwPageAction, handed in by the page.
   action: (values: unknown) => Promise<ActionResult<RwPageAdmin>>;
+  // Closes the sheet the form sits in once it has saved.
+  onSaved: () => void;
 }
 
 function toFormValues(page: RwPageAdmin): UpdateRwPageInput {
@@ -147,7 +149,7 @@ function ContactFields({ control }: { control: FormControl }) {
 }
 
 // Task P2.9.06, docs/PRD.md FR-ADMIN-15: the content columns of the RW's public page.
-export function RwPageForm({ page, action }: RwPageFormProps) {
+export function RwPageForm({ page, action, onSaved }: RwPageFormProps) {
   const router = useRouter();
   const form = useForm({
     resolver: zodResolver(updateRwPageSchema),
@@ -160,6 +162,7 @@ export function RwPageForm({ page, action }: RwPageFormProps) {
     onSuccess: (saved) => {
       form.reset(toFormValues(saved));
       toast.success(common.saved(text.noun));
+      onSaved();
       router.refresh();
     },
   });

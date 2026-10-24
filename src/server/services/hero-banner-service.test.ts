@@ -6,7 +6,7 @@ import { updateHeroBannerSchema } from '@/lib/validations/hero-banner';
 import type { StaffContext } from '@/server/auth/guards';
 import { removeUnusedHeroPhotos } from '@/server/services/upload-service';
 
-import { removeHeroBanner, updateHeroBanner } from './hero-banner-service';
+import { createHeroBanner, removeHeroBanner, updateHeroBanner } from './hero-banner-service';
 import { fakeSessionClient } from '../../../tests/fixtures/fake-session-client';
 
 const session = vi.hoisted(() => ({ client: null as SupabaseClient<Database> | null }));
@@ -90,5 +90,27 @@ describe('hero banner photos', () => {
   it('says so when a photo could not be removed', async () => {
     vi.mocked(removeUnusedHeroPhotos).mockRejectedValue(new Error('storage down'));
     expect(await removeHeroBanner(SUPERADMIN, BANNER_ID)).toBe(false);
+  });
+
+  it('removes only a banner already switched off (review of PR #40)', async () => {
+    const fake = fakeSessionClient(STORED);
+    session.client = fake.client;
+    await removeHeroBanner(SUPERADMIN, BANNER_ID);
+    const [write] = fake.writes;
+    expect(fake.writes).toHaveLength(1);
+    expect(write?.method).toBe('DELETE');
+    expect(write?.url).toContain('is_active=eq.false');
+  });
+});
+
+describe('the featured product', () => {
+  it('refuses a product that is not published, before anything is written', async () => {
+    const fake = fakeSessionClient(null);
+    session.client = fake.client;
+    const values = bannerWith({ productId: '0192f3a4-5b6c-7d8e-9f01-000000000c01' });
+    await expect(createHeroBanner(SUPERADMIN.userId, values)).rejects.toMatchObject({
+      code: 'VALIDATION',
+    });
+    expect(fake.writes).toEqual([]);
   });
 });

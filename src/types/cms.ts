@@ -1,6 +1,7 @@
 import type { RwId } from '@/config/rw';
 import type { EnumValue } from '@/db/enums';
 import type { Json } from '@/db/types';
+import type { BannerPhase } from '@/lib/utils/hero-banners';
 import type { ContentOwner } from '@/types/content';
 
 // What the dashboard's content screens read and the CMS actions answer with (Task P2.9.05). Plain values only: they
@@ -19,6 +20,11 @@ export interface RwPageAdmin {
   contactEmail: string | null;
   mapLat: number | null;
   mapLng: number | null;
+}
+
+// An RW page as the dashboard list shows it (Task P4.3.03): the RW's id, as text, is the row's.
+export interface RwPageListItem extends RwPageAdmin {
+  id: string;
 }
 
 export interface ActivityPointAdmin {
@@ -103,6 +109,16 @@ export interface HeroBannerAdmin {
   // ISO in Asia/Jakarta, or null for no bound.
   startsAt: string | null;
   endsAt: string | null;
+}
+
+// A banner as the dashboard list shows it (Task P4.9.02): where it stands now, worked out on the server so the page and
+// its hydration agree, and the featured product's name.
+export interface HeroBannerListItem extends HeroBannerAdmin {
+  phase: BannerPhase;
+  productName: string | null;
+  // Whether the row offers a move up or down: only in the home page's order, and not past either end.
+  canMoveUp: boolean;
+  canMoveDown: boolean;
 }
 
 export interface BannerProductOption {

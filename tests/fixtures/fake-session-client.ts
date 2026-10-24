@@ -8,6 +8,8 @@ import type { Database } from '@/db/types';
 
 export interface RecordedWrite {
   method: string;
+  // The request's address, with the PostgREST filters a write named (`status=eq.archived`).
+  url: string;
   body: Record<string, unknown>;
 }
 
@@ -29,11 +31,12 @@ export function fakeSessionClient(stored: Record<string, unknown> | null): {
   writes: RecordedWrite[];
 } {
   const writes: RecordedWrite[] = [];
-  const fakeFetch: typeof fetch = (_input, init) => {
+  const fakeFetch: typeof fetch = (input, init) => {
     const method = init?.method ?? 'GET';
     if (method === 'GET') return Promise.resolve(jsonReply(stored));
     const body = recordOf(typeof init?.body === 'string' ? JSON.parse(init.body) : null);
-    writes.push({ method, body });
+    const url = decodeURIComponent(input instanceof Request ? input.url : String(input));
+    writes.push({ method, url, body });
     return Promise.resolve(jsonReply({ ...stored, ...body }));
   };
   const client = createClient<Database>('http://supabase.test', 'test-key', {

@@ -3,10 +3,12 @@ import { z } from 'zod';
 import { CMS_LIMITS } from '@/config/cms';
 import { copy } from '@/lib/copy/id';
 import { imagePathSchema, optionalContentText, optionalNumber } from '@/lib/validations/content';
+import { rwIdSchema } from '@/lib/validations/rw-unit';
 
 // /dashboard/pages (docs/PRD.md FR-ADMIN-15): the public profile of the staff member's RW, the content columns of
-// rw_units only. Which RW is never part of the form: it is the RW admin's own, or the one the superadmin's RwSwitcher
-// points at. Code, slug, status and the treasury account stay out of reach (rw_units_guard, 0004).
+// rw_units only. Which RW is never a field of the form: it is the RW admin's own, or for the superadmin the one whose
+// row of the list they opened (saveRwPageSchema). Code, slug, status and the treasury account stay out of reach
+// (rw_units_guard, 0004).
 
 const messages = copy.cms.validation;
 const PHONE_PATTERN = /^\+62[0-9]{8,13}$/;
@@ -41,3 +43,8 @@ export const updateRwPageSchema = z
 
 export type UpdateRwPageInput = z.input<typeof updateRwPageSchema>;
 export type UpdateRwPageValues = z.output<typeof updateRwPageSchema>;
+
+// What updateRwPageAction takes (Task P4.3.03): the form's fields and, from the superadmin only, the RW whose row of
+// the list they opened, which rw_units must hold. An RW admin never names an RW, and the action refuses a form that
+// does.
+export const saveRwPageSchema = updateRwPageSchema.extend({ rwId: rwIdSchema.optional() });

@@ -14,6 +14,24 @@ export const CMS_PATHS = {
   heroBanners: '/dashboard/settings/hero-banners',
 } as const;
 
+// The columns each content list may sort by, and its order when the URL names none (docs/StyleGuide.md §6.4, Task
+// P4.3.03); anything else in `?sort=` is ignored.
+export const ARTICLE_SORT_COLUMNS = ['title', 'updated_at'] as const;
+export const ARTICLE_DEFAULT_SORT = 'updated_at.desc';
+export const GALLERY_SORT_COLUMNS = ['sort_order', 'taken_at', 'updated_at'] as const;
+export const GALLERY_DEFAULT_SORT = 'sort_order.asc';
+export const BOOKLET_SORT_COLUMNS = ['title', 'download_count', 'updated_at'] as const;
+export const BOOKLET_DEFAULT_SORT = 'updated_at.desc';
+export const SCHEDULE_SORT_COLUMNS = ['title', 'starts_at'] as const;
+export const SCHEDULE_DEFAULT_SORT = 'starts_at.desc';
+export const POINT_SORT_COLUMNS = ['name', 'sort_order'] as const;
+export const POINT_DEFAULT_SORT = 'sort_order.asc';
+export const BANNER_SORT_COLUMNS = ['title', 'sort_order'] as const;
+export const BANNER_DEFAULT_SORT = 'sort_order.asc';
+// A banner has no content_status: `?status=` filters it by hero_banners.is_active instead (Task P4.9.02).
+export const BANNER_ACTIVITY = ['active', 'inactive'] as const;
+export type BannerActivity = (typeof BANNER_ACTIVITY)[number];
+
 // Length caps (docs/Security.md APP-09). Where the table has a CHECK the cap is the same number; the others keep a
 // pasted essay or a runaway form from reaching the database.
 export const CMS_LIMITS = {

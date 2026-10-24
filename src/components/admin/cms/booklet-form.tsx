@@ -136,7 +136,7 @@ function DetailFields({ control }: { control: BookletControl }) {
   );
 }
 
-// Task P2.9.06, docs/PRD.md FR-ADMIN-12: a booklet, new with its PDF or as it is, inside its FormDialog.
+// Task P2.9.06, docs/PRD.md FR-ADMIN-12: a booklet, new with its PDF or as it is, inside its sheet (Task P4.3.03).
 export function BookletForm({ booklet, savedPageCount, owner, action, onSaved }: BookletFormProps) {
   const router = useRouter();
   const [initial] = useState(booklet);

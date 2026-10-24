@@ -2,14 +2,16 @@
 
 import { revalidateTag } from 'next/cache';
 
+import { contentListsCopy } from '@/lib/copy/content-lists';
 import { copy } from '@/lib/copy/id';
-import { fail, mapError, okUnlessFilesLeft } from '@/lib/errors';
+import { fail, mapError, ok, okUnlessFilesLeft } from '@/lib/errors';
 import { TAGS } from '@/lib/queries/tags';
 import { saveArticleSchema, type SaveArticleValues } from '@/lib/validations/article';
 import { rowRefSchema } from '@/lib/validations/content';
 import { canWriteFor, requireNewContentOwner } from '@/server/auth/content-owner';
 import { requireAal2, type StaffContext } from '@/server/auth/guards';
 import {
+  archiveArticle,
   createArticle,
   readArticleForStaff,
   removeArticle,
@@ -100,6 +102,29 @@ export async function removeArticleAction(input: unknown): Promise<ActionResult<
     const filesRemoved = await removeArticle(guard.ctx, current.owner, parsed.data.id);
     revalidateTag(TAGS.articles);
     return okUnlessFilesLeft({ value: null, filesRemoved });
+  } catch (error) {
+    return mapError(error);
+  }
+}
+
+// Archive by status instead of a delete (Task P4.3.03). An RW admin archives their own drafts and articles under
+// review; a published article leaves the site only through the superadmin (articles_moderation_guard).
+export async function archiveArticleAction(input: unknown): Promise<ActionResult<null>> {
+  const parsed = rowRefSchema.safeParse(input);
+  if (!parsed.success) return mapError(parsed.error);
+  const guard = await requireAal2();
+  if (!guard.ok) return guard;
+
+  try {
+    const current = await readArticleForStaff(parsed.data.id);
+    if (!current) return fail('NOT_FOUND');
+    if (!canWriteFor(guard.ctx, current.owner)) return fail('FORBIDDEN');
+    if (current.status === 'published' && guard.ctx.role !== 'superadmin') {
+      return fail('FORBIDDEN', undefined, contentListsCopy.articleArchiveOnlySuper);
+    }
+    await archiveArticle(current.owner, current.id);
+    revalidateTag(TAGS.articles);
+    return ok(null);
   } catch (error) {
     return mapError(error);
   }

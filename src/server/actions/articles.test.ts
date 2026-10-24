@@ -2,8 +2,10 @@ import { revalidateTag } from 'next/cache';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { copy } from '@/lib/copy/id';
+import { AppError } from '@/lib/errors';
 import { requireAal2, type StaffContext } from '@/server/auth/guards';
 import {
+  archiveArticle,
   createArticle,
   readArticleForStaff,
   removeArticle,
@@ -11,7 +13,12 @@ import {
 } from '@/server/services/article-service';
 import type { ArticleAdmin } from '@/types/cms';
 
-import { createArticleAction, removeArticleAction, updateArticleAction } from './articles';
+import {
+  archiveArticleAction,
+  createArticleAction,
+  removeArticleAction,
+  updateArticleAction,
+} from './articles';
 
 const cookie = vi.hoisted(() => ({ value: undefined as string | undefined }));
 
@@ -26,6 +33,7 @@ vi.mock('next/headers', () => ({
 vi.mock('next/cache', () => ({ revalidateTag: vi.fn() }));
 vi.mock('@/server/auth/guards', () => ({ requireAal2: vi.fn() }));
 vi.mock('@/server/services/article-service', () => ({
+  archiveArticle: vi.fn(),
   createArticle: vi.fn(),
   readArticleForStaff: vi.fn(),
   removeArticle: vi.fn(),
@@ -81,6 +89,7 @@ beforeEach(() => {
   vi.mocked(updateArticle).mockReset().mockResolvedValue(SAVED);
   vi.mocked(removeArticle).mockReset().mockResolvedValue(true);
   vi.mocked(readArticleForStaff).mockReset().mockResolvedValue(stored());
+  vi.mocked(archiveArticle).mockReset().mockResolvedValue(undefined);
   vi.mocked(revalidateTag).mockReset();
 });
 
@@ -188,5 +197,45 @@ describe('article actions', () => {
       });
     }
     expect(createArticle).not.toHaveBeenCalled();
+  });
+});
+
+describe('archiveArticleAction', () => {
+  it("archives an RW admin's own draft by status and revalidates the articles", async () => {
+    const result = await archiveArticleAction({ id: ARTICLE_ID });
+    expect(result.ok).toBe(true);
+    expect(archiveArticle).toHaveBeenCalledWith(5, ARTICLE_ID);
+    expect(revalidateTag).toHaveBeenCalledWith('articles');
+  });
+
+  it('leaves taking a published article off the site to the superadmin', async () => {
+    vi.mocked(readArticleForStaff).mockResolvedValue(stored({ status: 'published' }));
+    const result = await archiveArticleAction({ id: ARTICLE_ID });
+    expect(result).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
+    expect(archiveArticle).not.toHaveBeenCalled();
+    vi.mocked(requireAal2).mockResolvedValue({ ok: true, ctx: SUPERADMIN });
+    expect((await archiveArticleAction({ id: ARTICLE_ID })).ok).toBe(true);
+  });
+
+  it("refuses an RW 05 admin another RW's article", async () => {
+    vi.mocked(readArticleForStaff).mockResolvedValue(stored({ owner: 8 }));
+    const result = await archiveArticleAction({ id: ARTICLE_ID });
+    expect(result).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
+    expect(archiveArticle).not.toHaveBeenCalled();
+  });
+});
+
+describe('removeArticleAction on a row that is not archived (review of PR #40)', () => {
+  it('answers STATE_INVALID with the archive-first copy and revalidates nothing', async () => {
+    vi.mocked(requireAal2).mockResolvedValue({ ok: true, ctx: SUPERADMIN });
+    vi.mocked(removeArticle).mockRejectedValueOnce(
+      new AppError('STATE_INVALID', 'Arsipkan dulu sebelum menghapus permanen.'),
+    );
+    const result = await removeArticleAction({ id: ARTICLE_ID });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'STATE_INVALID', message: 'Arsipkan dulu sebelum menghapus permanen.' },
+    });
+    expect(revalidateTag).not.toHaveBeenCalled();
   });
 });

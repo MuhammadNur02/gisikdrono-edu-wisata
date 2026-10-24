@@ -25,6 +25,8 @@ export const IMAGE_SIZES = {
   slide: '(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 85vw',
   // The large first tile of the home RW mosaic, seven of the twelve columns from lg.
   bento: '(min-width: 1024px) 58vw, 100vw',
+  // The small photo of a dashboard list row or card (Task P4.3.03), size-16 in the StyleGuide's scale.
+  listThumb: '64px',
 } as const;
 
 // Which next/image loader the build uses (next.config.ts). Supabase's transformer is a Pro feature, so a project on the
@@ -36,7 +38,5 @@ export const IMAGE_LOADER_FILES = {
 } as const;
 
 export function imageLoaderFileFor(transformsFlag: 'on' | 'off' | undefined): string {
-  return transformsFlag === 'off'
-    ? IMAGE_LOADER_FILES.plainObject
-    : IMAGE_LOADER_FILES.transformer;
+  return transformsFlag === 'off' ? IMAGE_LOADER_FILES.plainObject : IMAGE_LOADER_FILES.transformer;
 }

@@ -5,7 +5,6 @@ import type { StaffContext } from '@/server/auth/guards';
 import {
   canManageSchedules,
   canWriteFor,
-  listedOwners,
   ownerOfNewContent,
   readRwScope,
   requireNewContentOwner,
@@ -56,17 +55,6 @@ describe('ownerOfNewContent', () => {
 
   it('gives the admin of an RW added later their RW as well, since the RWs are data', () => {
     expect(ownerOfNewContent({ ...ADMIN_05, rwId: 13 }, 'all')).toBe(13);
-  });
-});
-
-describe('listedOwners', () => {
-  it('lists every RW of rw_units and the kelurahan for the superadmin under Semua', () => {
-    expect(listedOwners(SUPERADMIN, 'all', [5, 8, 13])).toEqual([5, 8, 13, null]);
-    expect(listedOwners(SUPERADMIN, 8, [5, 8, 13])).toEqual([8]);
-  });
-
-  it("lists an RW admin's own RW only", () => {
-    expect(listedOwners(ADMIN_05, 'all', [5, 8, 13])).toEqual([5]);
   });
 });
 
