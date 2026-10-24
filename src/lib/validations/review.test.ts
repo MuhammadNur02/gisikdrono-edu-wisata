@@ -85,12 +85,16 @@ describe('moderateReviewSchema', () => {
     expect(moderateReviewSchema.parse(parsed)).toEqual(parsed);
   });
 
-  it('turns a blank or missing note into null', () => {
+  it('turns a blank or null note into null and needs the field present', () => {
     expect(moderateReviewSchema.parse({ ...MODERATION, moderationNote: ' ' }).moderationNote).toBe(
       null,
     );
-    const withoutNote = { id: MODERATION.id, status: MODERATION.status, isFeatured: false };
+    const withoutNote = { ...MODERATION, isFeatured: false, moderationNote: null };
     expect(moderateReviewSchema.parse(withoutNote).moderationNote).toBeNull();
+    expect(
+      moderateReviewSchema.safeParse({ id: MODERATION.id, status: 'pending', isFeatured: false })
+        .success,
+    ).toBe(false);
   });
 
   it('rejects fields outside the column grant (strict)', () => {

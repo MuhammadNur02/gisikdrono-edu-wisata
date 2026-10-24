@@ -59,8 +59,8 @@ export const moderateReviewSchema = z
       .string()
       .trim()
       .max(REVIEW_LIMITS.moderationNote, moderationText.noteTooLong)
-      .nullish()
-      .transform((note) => (note === undefined || note === null || note === '' ? null : note)),
+      .nullable()
+      .transform((note) => (note === null || note === '' ? null : note)),
   })
   .strict()
   // The home band shows featured rows of v_public_reviews, so a featured review that is not published would sit
