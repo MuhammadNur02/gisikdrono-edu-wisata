@@ -1,11 +1,18 @@
 'use client';
 
 import { X } from 'lucide-react';
+import dynamic from 'next/dynamic';
 
-import { ImageUploader, type UploadImage } from '@/components/forms/image-uploader';
+import type { UploadImage } from '@/components/forms/image-uploader';
 import { PhotoFrame } from '@/components/marketing/photo';
 import { Button } from '@/components/ui/button';
 import { IMAGE_SIZES } from '@/config/images';
+
+// The uploader (file checks, the browser resize, the signed upload) loads with the field, outside the first load of
+// the package and product pages (admin budget, review of PR #35).
+const ImageUploader = dynamic(() =>
+  import('@/components/forms/image-uploader').then((module) => module.ImageUploader),
+);
 
 export interface PhotoListFieldProps {
   // The public-media paths the row keeps, the cover first.
