@@ -5,10 +5,9 @@ import { z } from 'zod';
 import { createRwAdmin, removeAccounts, resetAuthLimits } from './staff';
 import { ZXING_WASM_PATH } from '../../../src/config/scanner';
 
-
-// The scanner specs (Task P4.4.05) answer POST /api/tickets/verify themselves until the route of Task P4.4.02 exists,
-// after the DB lane's validate_ticket and check_in_ticket; the page, the camera, the result sheet and the requests it
-// sends are real.
+// The scanner specs (Task P4.4.05) that check what the page shows for each answer, or for no answer, answer
+// POST /api/tickets/verify themselves; scanner-gate.spec.ts goes through the real route. The page, the camera, the
+// result sheet and the requests it sends are real.
 
 export const SCANNER = '/dashboard/scanner';
 const VERIFY_ROUTE = '**/api/tickets/verify';

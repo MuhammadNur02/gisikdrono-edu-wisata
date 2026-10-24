@@ -63,6 +63,17 @@ export const manualCheckInRequestSchema = z
   })
   .strict() satisfies z.ZodType<ManualCheckInRequest, ManualCheckInRequest>;
 
+// What POST /api/tickets/verify accepts (Task P4.4.02): a decoded QR or the unreadable QR's code and digits. A commit
+// says how many came; check_in_ticket checks the count against the booking.
+export const scanRequestSchema = z
+  .union([verifyTicketRequestSchema, manualCheckInRequestSchema])
+  .refine((scan) => scan.mode === 'preview' || scan.attendeeCount !== undefined, {
+    path: ['attendeeCount'],
+    message: text.attendees,
+  });
+
+export type ScanRequest = z.output<typeof scanRequestSchema>;
+
 const ticketCardSchema = z.object({
   ticketCode: z.string(),
   institutionName: z.string().nullable(),
