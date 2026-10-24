@@ -8,6 +8,10 @@
 begin;
 select plan(38);
 \ir helpers/rls_personas.psql
+-- Since 20261026090000 validate_ticket and check_in_ticket are scan_ticket's alone (review of PR #54, M1); this suite
+-- calls them as the officers, so it lends them out inside its own transaction.
+grant execute on function public.validate_ticket(uuid, uuid, text, jsonb, text),
+  public.check_in_ticket(uuid, uuid, integer, text, jsonb, boolean, text, text, text) to authenticated;
 select set_config('app.qr_key_id', 'k1', true);
 
 -- ===== Fixtures =====

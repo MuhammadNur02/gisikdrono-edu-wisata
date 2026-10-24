@@ -12,6 +12,16 @@ select vault.create_secret('local', 'environment')
 where not exists (select 1 from vault.secrets where name = 'environment');
 select internal.require_local_database();
 
+-- The scanner's attestation key (20261026090000_scanner_attestation.sql) derives from CRON_SECRET, which a hosted
+-- project keeps in Vault as cron_secret. Locally it is the CRON_SECRET the Next.js server runs with
+-- (scripts/local-server-env.ts); without the setting nothing changes.
+select vault.update_secret(s.id, current_setting('dev_seed.cron_secret', true))
+from vault.secrets s
+where s.name = 'cron_secret' and nullif(current_setting('dev_seed.cron_secret', true), '') is not null;
+select vault.create_secret(current_setting('dev_seed.cron_secret', true), 'cron_secret')
+where nullif(current_setting('dev_seed.cron_secret', true), '') is not null
+  and not exists (select 1 from vault.secrets where name = 'cron_secret');
+
 
 -- ===== Development staff accounts =====
 -- Complete Auth users with a verified TOTP factor, so they reach AAL2.

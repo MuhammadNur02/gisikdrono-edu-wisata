@@ -7,23 +7,10 @@ import { resultOf, type DatabaseClient } from '@/db/rpc-result';
 import type { Json } from '@/db/types';
 import type { ScanMode, ScanTicketCard, VerifyTicketResponse } from '@/types/scanner';
 
-// The gate's staff RPCs (Task P4.4.02, 20261026080000_scanner_gate.sql). POST /api/tickets/verify calls them on the
-// officer's own session client, never the service role (CLAUDE.md §7.4), so auth.uid(), the AAL2 check and RLS apply.
-
-const turnSchema = z
-  .object({ allowed: z.boolean(), retry_after_seconds: z.number().int().positive().nullable() })
-  .strict();
-
-export interface ScannerTurn {
-  allowed: boolean;
-  retryAfterSeconds: number | null;
-}
-
-// FR-SCAN-10: 120 requests a minute per officer and the slow-down past 30 distinct bad payloads.
-export async function claimScannerTurn(client: DatabaseClient): Promise<ScannerTurn> {
-  const turn = turnSchema.parse(await resultOf(client.rpc('claim_scanner_turn')));
-  return { allowed: turn.allowed, retryAfterSeconds: turn.retry_after_seconds };
-}
+// The gate's staff RPCs (Task P4.4.02; 20261026080000_scanner_gate.sql, 20261026090000_scanner_attestation.sql).
+// POST /api/tickets/verify calls them on the officer's own session client, never the service role (CLAUDE.md §7.4),
+// so auth.uid(), the AAL2 check and RLS apply. scan_ticket is the gate's one entry point: it takes the scanner's turn
+// itself and lets a ticket be scanned only under the route's attestation.
 
 const manualLookupSchema = z
   .object({ ticket_id: z.uuid().nullable(), rate_limited: z.boolean() })
@@ -72,6 +59,10 @@ const scanAnswerSchema = z.object({
   unpaid_pax: z.number().int().nullable(),
 });
 
+const slowedSchema = z
+  .object({ slowed: z.literal(true), retry_after_seconds: z.number().int().positive().nullable() })
+  .strict();
+
 export interface ScanCall {
   mode: ScanMode;
   attemptId: string;
@@ -79,11 +70,16 @@ export interface ScanCall {
   // The scanned text, whose hash ticket_scans keeps; a QR scan needs it (review of PR #53, L4).
   raw: string | null;
   device: Json;
-  // null when the QR's signature failed or the manual lookup found nothing.
+  // null when the QR's signature failed or the manual lookup found nothing; then no attestation is needed.
   ticketId: string | null;
+  attestation: { value: string; expiresAt: number } | null;
   attendeeCount: number | null;
   overrideReason: string | null;
 }
+
+export type ScanReply =
+  | { kind: 'answered'; response: VerifyTicketResponse }
+  | { kind: 'slowed'; retryAfterSeconds: number | null };
 
 function cardOf(card: z.infer<typeof ticketCardSchema>): ScanTicketCard {
   return {
@@ -100,23 +96,7 @@ function cardOf(card: z.infer<typeof ticketCardSchema>): ScanTicketCard {
   };
 }
 
-// A preview goes to validate_ticket, a commit to check_in_ticket; the answer is the route's stable contract.
-export async function scanTicket(
-  client: DatabaseClient,
-  scan: ScanCall,
-): Promise<VerifyTicketResponse> {
-  const reply = await resultOf(
-    client.rpc('scan_ticket', {
-      p_mode: scan.mode,
-      p_attempt_id: scan.attemptId,
-      p_source: scan.source,
-      p_raw: scan.raw ?? undefined,
-      p_device: scan.device,
-      p_ticket_id: scan.ticketId ?? undefined,
-      p_attendee_count: scan.attendeeCount ?? undefined,
-      p_override_reason: scan.overrideReason ?? undefined,
-    }),
-  );
+function answerOf(scan: ScanCall, reply: unknown): VerifyTicketResponse {
   const answer = scanAnswerSchema.parse(reply);
   return {
     result: answer.result,
@@ -128,4 +108,26 @@ export async function scanTicket(
     checkedInPax: answer.checked_in_pax,
     unpaidPax: answer.unpaid_pax,
   };
+}
+
+// A preview goes to validate_ticket, a commit to check_in_ticket; the answer is the route's stable contract, or the
+// officer's wait when the turn was refused.
+export async function scanTicket(client: DatabaseClient, scan: ScanCall): Promise<ScanReply> {
+  const reply = await resultOf(
+    client.rpc('scan_ticket', {
+      p_mode: scan.mode,
+      p_attempt_id: scan.attemptId,
+      p_source: scan.source,
+      p_raw: scan.raw ?? undefined,
+      p_device: scan.device,
+      p_ticket_id: scan.ticketId ?? undefined,
+      p_attendee_count: scan.attendeeCount ?? undefined,
+      p_override_reason: scan.overrideReason ?? undefined,
+      p_attestation: scan.attestation?.value,
+      p_expires_at: scan.attestation?.expiresAt,
+    }),
+  );
+  const slowed = slowedSchema.safeParse(reply);
+  if (slowed.success) return { kind: 'slowed', retryAfterSeconds: slowed.data.retry_after_seconds };
+  return { kind: 'answered', response: answerOf(scan, reply) };
 }

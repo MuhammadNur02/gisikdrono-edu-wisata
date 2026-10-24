@@ -4245,7 +4245,6 @@ export type Database = {
         }
         Returns: Json
       }
-      claim_scanner_turn: { Args: never; Returns: Json }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       find_manual_ticket: {
         Args: { p_booking_code: string; p_phone_last_digits: string }
@@ -4310,7 +4309,9 @@ export type Database = {
         Args: {
           p_attempt_id: string
           p_attendee_count?: number
+          p_attestation?: string
           p_device?: Json
+          p_expires_at?: number
           p_mode: string
           p_override_reason?: string
           p_raw?: string

@@ -76,6 +76,7 @@ describe('POST /api/tickets/verify', () => {
     expect(verifyScan).toHaveBeenCalledWith(
       { token: TOKEN, attemptId: ATTEMPT_ID, mode: 'preview' },
       { userAgent: 'Pemindai Uji', ip: '203.0.113.5' },
+      OFFICER_05.userId,
     );
   });
 
@@ -97,6 +98,7 @@ describe('POST /api/tickets/verify', () => {
         attendeeCount: 31,
       },
       expect.anything(),
+      OFFICER_05.userId,
     );
   });
 
@@ -150,6 +152,24 @@ describe('POST /api/tickets/verify', () => {
 
     expect(response.status).toBe(status);
     expect(verifyScan).not.toHaveBeenCalled();
+  });
+
+  it('answers a signed-out scanner 401 before it reads the body (review of PR #54, L2)', async () => {
+    vi.mocked(requireAal2).mockResolvedValue(fail('UNAUTHENTICATED'));
+
+    const response = await scanRequest({ token: 'bukan tiket', extra: true });
+
+    expect(response.status).toBe(401);
+  });
+
+  it('answers an outage a retry may get past with 503, uncached (review of PR #54, L3)', async () => {
+    vi.mocked(verifyScan).mockResolvedValue({ kind: 'unavailable' });
+
+    const response = await scanRequest({ token: TOKEN, attemptId: ATTEMPT_ID, mode: 'preview' });
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(await response.json()).toEqual({ status: 'unavailable' });
   });
 
   it('slows an officer down with 429 and Retry-After', async () => {

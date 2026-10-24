@@ -3,18 +3,23 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { localCronSecret } from '../../scripts/local-server-env';
 import { runSql, sqlText } from '../../scripts/local-stack';
 
 // Task P4.4.02 and P4.4.05 against the real stack (CLAUDE.md §7.4; docs/Security.md §9.2, §9.3): two officers
 // committing one ticket at the same moment, each in a transaction and on a connection of its own, let the group in
 // once; and past 30 distinct bad QR payloads an officer is slowed down, not locked out. The officers are this run's
-// own RW 05 admins, acting through request.jwt.claims the way PostgREST sets them. Paid rows stay behind (payments are
+// own RW 05 admins, acting through request.jwt.claims the way PostgREST sets them, through scan_ticket, the gate's one
+// entry point, with the attestation the route would give (made here by internal.scanner_attestation). Paid rows stay behind (payments are
 // never deleted), so every id here is this run's own.
 
 const RUN = String(randomInt(100000, 999999));
 const PACKAGE_ID = randomUUID();
 const SESSION_ID = randomUUID();
 const OFFICERS = [randomUUID(), randomUUID(), randomUUID()] as const;
+// A session of its own: a session is unique per RW, day and start, and earlier runs' sessions stay with their bookings.
+const SESSION_DAY_OFFSET = randomInt(8, 29);
+const SESSION_START = `${String(randomInt(5, 20)).padStart(2, '0')}:${String(randomInt(0, 60)).padStart(2, '0')}`;
 const RACING_TICKETS = 3;
 const PAX = 5;
 const BAD_PAYLOADS = 31;
@@ -25,19 +30,18 @@ const WAIT_MARGIN_MS = 300;
 
 const idRowsSchema = z.array(z.object({ id: z.uuid() }));
 const answerRowsSchema = z.array(z.object({ answer: z.object({ result: z.string() }) }));
-const turnRowsSchema = z.array(
-  z.object({
-    turn: z.object({ allowed: z.boolean(), retry_after_seconds: z.number().nullable() }),
-  }),
-);
+const replyRowsSchema = z.array(z.object({ answer: z.record(z.string(), z.unknown()) }));
+const EXPIRES_AT_SQL = 'floor(extract(epoch from now()))::bigint + 60';
 
 function phoneOf(index: number): string {
   return `+62859${RUN}${String(index).padStart(2, '0')}`;
 }
 
 // One transaction as an RW 05 officer at AAL2, the claims the access-token hook would have given them.
-function asOfficer(officerId: string, statement: string): string {
-  return `select set_config('request.jwt.claims', (jsonb_build_object(
+// What comes before the role switch runs as postgres, as the route's own work does on the server.
+function asOfficer(officerId: string, statement: string, beforeRole = ''): string {
+  return `${beforeRole}
+    select set_config('request.jwt.claims', (jsonb_build_object(
       'sub', '${officerId}', 'role', 'authenticated', 'aal', 'aal2',
       'amr', jsonb_build_array(jsonb_build_object('method', 'totp',
                                                   'timestamp', extract(epoch from now())::bigint)))
@@ -99,35 +103,33 @@ async function paidTicket(index: number): Promise<string> {
 }
 
 async function commit(officerId: string, ticketId: string): Promise<string> {
-  const rows = answerRowsSchema.parse(
-    await runSql(
-      asOfficer(
-        officerId,
-        `select public.check_in_ticket('${ticketId}', '${randomUUID()}', ${String(PAX)},
-           p_raw => 'GSK.k1.race-${RUN}') as answer`,
-      ),
-    ),
-  );
+  const attemptId = randomUUID();
+  const attest = `select set_config('scan.expires_at', (${EXPIRES_AT_SQL})::text, true);
+    select set_config('scan.attestation', internal.scanner_attestation('${officerId}', '${ticketId}', '${attemptId}',
+      'commit', 'qr', current_setting('scan.expires_at')::bigint), true);`;
+  const scan = `select public.scan_ticket('commit', '${attemptId}', 'qr', 'GSK.k1.race-${RUN}', '{}', '${ticketId}',
+      ${String(PAX)}, null, current_setting('scan.attestation'), current_setting('scan.expires_at')::bigint) as answer`;
+  const rows = answerRowsSchema.parse(await runSql(asOfficer(officerId, scan, attest)));
   return rows[0]?.answer.result ?? 'none';
 }
 
-async function turnOf(
-  officerId: string,
-  before = '',
-): Promise<{ allowed: boolean; retryAfter: number | null }> {
-  const rows = turnRowsSchema.parse(
-    await runSql(asOfficer(officerId, `${before} select public.claim_scanner_turn() as turn`)),
-  );
-  const turn = rows[0]?.turn;
-  if (!turn) throw new Error('claim_scanner_turn answered nothing');
-  return { allowed: turn.allowed, retryAfter: turn.retry_after_seconds };
+// One QR preview whose signature failed, after whatever else the transaction does first.
+async function badScan(officerId: string, before = ''): Promise<Record<string, unknown>> {
+  const scan = `${before} select public.scan_ticket('preview', gen_random_uuid(), 'qr',
+      'GSK.k1.bad-${RUN}-' || gen_random_uuid()) as answer`;
+  const answer = replyRowsSchema.parse(await runSql(asOfficer(officerId, scan)))[0]?.answer;
+  if (!answer) throw new Error('scan_ticket answered nothing');
+  return answer;
 }
 
 beforeAll(async () => {
   const officers = OFFICERS.map(
     (id, index) => `('${id}', 'gerbang${RUN}${String(index)}@example.test')`,
   );
-  await runSql(`insert into auth.users (id, email) values ${officers.join(', ')};
+  // The key the attestations are made and checked with: the seed's cron_secret, or the same value it would write.
+  await runSql(`select vault.create_secret(${sqlText(localCronSecret())}, 'cron_secret')
+    where not exists (select 1 from vault.secrets where name = 'cron_secret');
+    insert into auth.users (id, email) values ${officers.join(', ')};
     insert into public.profiles (id, email, full_name, role, rw_id)
       select u.id, u.email, 'Petugas Uji ' || right(u.email, 20), 'admin_rw', 5 from auth.users u
       where u.id in (${OFFICERS.map((id) => `'${id}'`).join(', ')});
@@ -135,7 +137,8 @@ beforeAll(async () => {
       values ('${PACKAGE_ID}', 5, 'regular', 'uji-integrasi-gerbang-${RUN}', 'Paket Uji Gerbang', 'per_pax', 25000,
               'published');
     insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity)
-      values ('${SESSION_ID}', 5, public.today_jkt() + 11, '07:23', '08:23', 'Uji gerbang ${RUN}', 200);`);
+      values ('${SESSION_ID}', 5, public.today_jkt() + ${String(SESSION_DAY_OFFSET)}, '${SESSION_START}',
+              '${SESSION_START}'::time + interval '1 hour', 'Uji gerbang ${RUN}', 200);`);
 }, SLOW_MS);
 
 describe('the gate against the real stack', () => {
@@ -172,15 +175,14 @@ describe('the gate against the real stack', () => {
     'slows an officer down after 31 distinct bad payloads, and lets them on once the wait is over',
     async () => {
       const officer = OFFICERS[2];
-      expect(await turnOf(officer)).toEqual({ allowed: true, retryAfter: null });
-      const badScans = `select count(public.validate_ticket(null, gen_random_uuid(),
-          'GSK.k1.bad-${RUN}-' || g, '{}')) from generate_series(1, ${String(BAD_PAYLOADS)}) as g;`;
+      expect(await badScan(officer)).toMatchObject({ result: 'invalid_signature' });
+      const thirtyMore = `select count(public.scan_ticket('preview', gen_random_uuid(), 'qr',
+          'GSK.k1.bad-${RUN}-' || g)) from generate_series(2, ${String(BAD_PAYLOADS)}) as g;`;
 
-      const slowed = await turnOf(officer, badScans);
-      expect(slowed).toEqual({ allowed: false, retryAfter: 1 });
+      expect(await badScan(officer, thirtyMore)).toEqual({ slowed: true, retry_after_seconds: 1 });
 
       await new Promise((resolve) => setTimeout(resolve, MS_PER_SECOND + WAIT_MARGIN_MS));
-      expect(await turnOf(officer)).toEqual({ allowed: true, retryAfter: null });
+      expect(await badScan(officer)).toMatchObject({ result: 'invalid_signature' });
       const lockouts = z.array(z.object({ count: z.coerce.number() })).parse(
         await runSql(`select count(*) from public.security_events
             where event_type = 'scanner_lockout' and actor_id = '${officer}'`),

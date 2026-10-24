@@ -3,11 +3,16 @@
 -- minutes, never a lock, with one scanner_lockout event and the superadmin's unlock; the manual lookup's wrong-digits cap
 -- counting only officers of the booking's RW and never holding the superadmin (a); the payment behind a ticket checked
 -- again at the gate (b); a commit by an officer of another RW (c); and a manual revocation of a certificate an undone
--- check-in had revoked, which sticks (d); and scan_ticket, the route's one call for a preview or a commit.
+-- check-in had revoked, which sticks (d). scan_ticket and its attestation have scanner_attestation.sql.
 begin;
-select plan(38);
+select plan(33);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
+-- Since 20261026090000 the turn, validate_ticket and check_in_ticket are scan_ticket's alone; this suite calls them as
+-- the officers, so it lends them out inside its own transaction.
+grant usage on schema internal to authenticated;
+grant execute on function internal.claim_scanner_turn(), public.validate_ticket(uuid, uuid, text, jsonb, text),
+  public.check_in_ticket(uuid, uuid, integer, text, jsonb, boolean, text, text, text) to authenticated;
 
 -- ===== Fixtures: paid bookings of RW 05 whose gates open now =====
 insert into public.tour_packages (id, rw_id, category, slug, name, pricing_basis, price_per_pax, status) values
@@ -64,8 +69,7 @@ create temporary table gate on commit drop as select
   pg_temp.paid(5, '+6281300005002') as refunded,
   pg_temp.paid(5, '+6281300005003') as partly,
   pg_temp.paid(5, '+6281300005004') as other_rw,
-  pg_temp.paid(3, '+6281300005005') as undone,
-  pg_temp.paid(5, '+6281300005006') as scanned;
+  pg_temp.paid(3, '+6281300005005') as undone;
 grant select on gate to authenticated;
 
 create function pg_temp.ticket_of(p_booking uuid) returns uuid
@@ -88,19 +92,19 @@ grant execute on function pg_temp.bad_scans(integer, text, boolean) to authentic
 
 -- ===== The scanner's turn (FR-SCAN-10) =====
 select pg_temp.act_as('admin_rw_05');
-select is(public.claim_scanner_turn(), '{"allowed": true, "retry_after_seconds": null}', 'an officer gets a turn');
+select is(internal.claim_scanner_turn(), '{"allowed": true, "retry_after_seconds": null}', 'an officer gets a turn');
 select pg_temp.bad_scans(30, 'bad-');
 select pg_temp.bad_scans(5, 'bad-1', false);
 select count(public.validate_ticket(null, gen_random_uuid(), null, '{}', 'manual')) from generate_series(1, 5);
-select is(public.claim_scanner_turn() ->> 'allowed', 'true',
+select is(internal.claim_scanner_turn() ->> 'allowed', 'true',
   'thirty distinct bad payloads, a repeated one and manual lookups that found nothing slow nobody down');
 select pg_temp.bad_scans(1, 'bad-31-');
-select is(public.claim_scanner_turn(), '{"allowed": false, "retry_after_seconds": 1}',
+select is(internal.claim_scanner_turn(), '{"allowed": false, "retry_after_seconds": 1}',
   'the 31st distinct bad payload asks for one second');
 select pg_temp.bad_scans(1, 'bad-32-');
-select is(public.claim_scanner_turn() ->> 'retry_after_seconds', '2', 'the 32nd for two');
+select is(internal.claim_scanner_turn() ->> 'retry_after_seconds', '2', 'the 32nd for two');
 select pg_temp.bad_scans(3, 'bad-35-');
-select is(public.claim_scanner_turn() ->> 'retry_after_seconds', '5', 'and from the 33rd on five, never more');
+select is(internal.claim_scanner_turn() ->> 'retry_after_seconds', '5', 'and from the 33rd on five, never more');
 reset role;
 select is((select array_agg((e.severity::text, e.details ->> 'bad_payloads')::text order by e.id)
            from public.security_events e
@@ -118,7 +122,7 @@ select lives_ok($$select public.unlock_scanner_officer('00000000-0000-4000-8000-
   'the superadmin unlocks the officer');
 reset role;
 select pg_temp.act_as('admin_rw_05');
-select is(public.claim_scanner_turn() ->> 'allowed', 'true', 'whose earlier bad payloads no longer count');
+select is(internal.claim_scanner_turn() ->> 'allowed', 'true', 'whose earlier bad payloads no longer count');
 reset role;
 select is((select count(*)::int from public.audit_logs a
            where a.action = 'scanner.unlock' and a.entity_id = pg_temp.persona_id('admin_rw_05')::text
@@ -126,39 +130,21 @@ select is((select count(*)::int from public.audit_logs a
   1, 'the unlock is audited under the superadmin');
 
 select pg_temp.act_as('none');
-select throws_ok($$select public.claim_scanner_turn()$$, '42501', null, 'an account without a role gets no turn');
+select throws_ok($$select internal.claim_scanner_turn()$$, '42501', null, 'an account without a role gets no turn');
 reset role;
 select pg_temp.act_as('superadmin_aal1');
-select throws_ok($$select public.claim_scanner_turn()$$, '42501', null, 'nor does a session without its authenticator');
+select throws_ok($$select internal.claim_scanner_turn()$$, '42501', null, 'nor does a session without its authenticator');
 reset role;
 -- admin_rw_13 has used its 120 requests this minute.
 select count(*) from generate_series(1, 120)
 where internal.rate_limit_hit('scanner:user:' || pg_temp.persona_id('admin_rw_13'), 120, 60);
 select pg_temp.act_as('admin_rw_13');
 select ok((select (t ->> 'allowed') = 'false' and (t ->> 'retry_after_seconds')::int between 1 and 60
-           from (select public.claim_scanner_turn() as t) as turn),
+           from (select internal.claim_scanner_turn() as t) as turn),
   'past 120 requests a minute the officer waits for the next minute');
 reset role;
-select is((select p.provolatile::text from pg_proc p where p.oid = 'public.claim_scanner_turn()'::regprocedure), 'v',
+select is((select p.provolatile::text from pg_proc p where p.oid = 'internal.claim_scanner_turn()'::regprocedure), 'v',
   'claim_scanner_turn is volatile: it counts every request');
-
--- ===== scan_ticket, the route's one call =====
-select pg_temp.act_as('admin_rw_05');
-select is(public.scan_ticket('preview', '00000000-0000-4000-8000-0000000ce001', 'qr', 'GSK.k1.s', '{}',
-                             pg_temp.ticket_of((select scanned from gate))) ->> 'result',
-  'ok', 'a preview goes to validate_ticket');
-select is(public.scan_ticket('preview', '00000000-0000-4000-8000-0000000ce002', 'qr', 'GSK.k1.forged') ->> 'result',
-  'invalid_signature', 'a QR whose signature failed passes no ticket and reads invalid_signature');
-select is(public.scan_ticket('commit', '00000000-0000-4000-8000-0000000ce001', 'qr', 'GSK.k1.s', '{}',
-                             pg_temp.ticket_of((select scanned from gate)), 6) - 'ticket' - 'used_at' - 'used_by',
-  '{"result": "ok", "checked_in_pax": 6, "unpaid_pax": 1}', 'a commit goes to check_in_ticket with its count');
-select throws_ok($$select public.scan_ticket('peek', gen_random_uuid(), 'qr', 'GSK.k1.s')$$, '22023', null,
-  'a scan is a preview or a commit');
-reset role;
-select pg_temp.act_as('none');
-select throws_ok($$select public.scan_ticket('preview', gen_random_uuid(), 'qr', 'GSK.k1.s')$$, '42501', null,
-  'an account without a role scans nothing');
-reset role;
 
 -- ===== (a) the wrong-digits cap, the booking's own officers only =====
 select pg_temp.act_as('admin_rw_13');
