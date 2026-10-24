@@ -98,6 +98,8 @@ export async function expectNoSideScroll(page: Page) {
 
 export async function pickDate(page: Page, visitDate: string, isDesktop: boolean) {
   if (isDesktop) await page.getByRole('button', { name: /Tanggal kunjungan/ }).click();
+  // Below md the calendar is inline: a group named by the field's label, its "wajib" included (Task P5.6.04).
+  else await expect(page.getByRole('group', { name: /Tanggal kunjungan.*wajib/ })).toBeVisible();
   const day = page.locator(`[data-day="${visitDate}"]:not([data-outside]) button`);
   for (let month = 0; month < 3 && !(await day.isVisible()); month += 1) {
     await page.locator('.rdp-button_next').click();

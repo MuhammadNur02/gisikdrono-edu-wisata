@@ -48,7 +48,6 @@ export const copy = {
   },
   layout: {
     skipToContent: 'Lewati ke konten',
-    homeLink: 'Edu Wisata Gisikdrono, ke beranda',
     mainNav: 'Navigasi utama',
     openMenu: 'Buka menu',
     menuTitle: 'Menu',

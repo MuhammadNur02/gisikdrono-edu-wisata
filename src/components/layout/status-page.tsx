@@ -5,7 +5,6 @@ import type { ReactNode } from 'react';
 import { Container } from '@/components/layout/container';
 import { SiteWordmark } from '@/components/layout/site-wordmark';
 import { HOME_NAV_ITEM } from '@/config/nav';
-import { copy } from '@/lib/copy/id';
 
 // docs/StyleGuide.md §8.1: 48 px empty-state icons use a lighter stroke.
 const LARGE_ICON_STROKE = 1.5;
@@ -23,11 +22,8 @@ export interface StatusPageProps {
 function HomeLinkBar() {
   return (
     <Container className="py-6">
-      <Link
-        href={HOME_NAV_ITEM.href}
-        aria-label={copy.layout.homeLink}
-        className="inline-flex rounded-lg"
-      >
+      {/* Named by the wordmark itself: a label that differs from the visible text fails WCAG 2.5.3. */}
+      <Link href={HOME_NAV_ITEM.href} className="inline-flex rounded-lg">
         <SiteWordmark />
       </Link>
     </Container>
