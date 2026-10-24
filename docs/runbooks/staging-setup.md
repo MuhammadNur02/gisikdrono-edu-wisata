@@ -151,7 +151,7 @@ You do not need to do anything for this; part F checks it.
 
 1. Open https://dashboard.sandbox.midtrans.com and sign in to **your sandbox** account. Check the environment switch at the top says **Sandbox**, never Production.
 2. Open **Settings** > **Access Keys**. Keep the page open: you copy **Merchant ID**, **Client Key** and **Server Key** in C.3.
-3. The Payment Notification URL (Task P0.1.06) waits until the webhook route exists (`api/webhooks/midtrans/[token]`, Phase 3); booking is closed anyway. When it lands, it is `<staging-url>/api/webhooks/midtrans/<MIDTRANS_WEBHOOK_PATH_TOKEN>`.
+3. The Payment Notification URL (Task P0.1.06; the route came with Task P3.8.03): open **Settings** > **Configuration** and set **Payment Notification URL** to `<staging-url>/api/webhooks/midtrans/<MIDTRANS_WEBHOOK_PATH_TOKEN>`, with the staging address and the same path token you put into Vercel in C.3. Leave **Finish / Unfinish / Error Redirect URL** empty: each payment sends its own (`/reservasi/<code>`). The full address carries the token, so it goes into Bitwarden next to the token and **never** into the repository, an issue, a chat or a screenshot. A wrong token answers 404 and Midtrans retries for a while; a wrong server key answers 403 and lands in `webhook_rejections` (`docs/Security.md` §3.3). Booking stays closed until Task P3.12.01, so until then the URL only receives Midtrans' own **Test notification** button, which names an order we never issued and so changes nothing.
 
 ### C.2 Cloudflare Turnstile widget
 

@@ -165,7 +165,11 @@ export async function startMidtransStub(port = 0): Promise<MidtransStub> {
       },
     );
   });
-  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+  // A port already taken (another run's stand-in) fails here instead of leaving the caller waiting.
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', resolve);
+  });
   base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
   return {
     url: base,

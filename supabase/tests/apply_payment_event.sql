@@ -3,7 +3,7 @@
 -- and staff messages, never applies an event twice, records a second settlement as a duplicate, revives a late
 -- settlement's seats or puts it under review, and closes a denied attempt without moving the booking.
 begin;
-select plan(31);
+select plan(34);
 
 -- ===== Fixtures =====
 insert into auth.users (id, email) values
@@ -204,6 +204,20 @@ select is(pg_temp.confirmed((select order_id from orders where name = 'denied'),
   'a confirmed deny closes the attempt');
 select is((select status::text from public.bookings where id = (select id from denied)), 'pending_payment',
   'and the booking still waits, so the visitor may try again');
+
+-- ===== A greeting that names a host (notifications_guest_guard) =====
+-- The greeting is the first word of pic_name; a refused one holds the visitor's messages, never the settlement.
+create temporary table hosted on commit drop as select pg_temp.hold('+6281300000705', '00000000-0000-4000-8000-0000000c2001') as id;
+update public.bookings set pic_name = 'tamu.contoh.com Ani' where id = (select id from hosted);
+insert into orders select 'hosted', pg_temp.attempt((select id from hosted));
+select is(pg_temp.confirmed((select order_id from orders where name = 'hosted'), 'settlement') ->> 'booking_status', 'paid',
+  'a settlement whose greeting names a host still pays the booking');
+select is((select array_agg(distinct status::text) from public.notifications
+           where booking_id = (select id from hosted) and template = 'payment_received_ticket'),
+  array['cancelled'], 'only the visitor''s messages are held');
+select ok(exists (select 1 from public.notifications where template = 'admin_new_paid_booking' and status = 'queued'
+                  and params ->> 'booking_code' = (select booking_code from public.bookings where id = (select id from hosted))),
+  'and the staff still hear of it');
 
 -- ===== Callers =====
 set local role authenticated;
