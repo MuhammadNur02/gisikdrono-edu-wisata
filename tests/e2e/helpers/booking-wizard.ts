@@ -53,9 +53,18 @@ export async function createSessions(
   };
 }
 
+// Every test phone of one project, from this run or an earlier one (phoneOf: RUN's four digits, the project, the flow).
+// The OTP purge below is held to it: purging every '+62850%' code also took the code, or the verified proof, of a
+// booking another worker was making at that moment, which then failed as "Kode ini sudah tidak berlaku" or never
+// left the summary (review of PR #45).
+function projectPhonePattern(projectIndex: number): string {
+  return `+62850____${String(projectIndex)}__`;
+}
+
 // Whatever the project's sessions hold, from this run or one that stopped halfway. One query string is one
 // transaction, so the purge and fence switches end with it.
-export async function removeSessions(label: string): Promise<void> {
+export async function removeSessions(label: string, projectIndex: number): Promise<void> {
+  const phones = sqlText(projectPhonePattern(projectIndex));
   const sessionIds = `select id from public.visit_sessions where label = ${sqlText(label)}`;
   const bookings = `select booking_id from public.booking_legs where visit_session_id in (${sessionIds})`;
   await runSql(`select set_config('app.purge', 'on', true), set_config('app.in_rpc', '1', true);
@@ -70,8 +79,8 @@ export async function removeSessions(label: string): Promise<void> {
     delete from public.booking_legs where booking_id in (select booking_id from gone);
     delete from public.guest_otps where booking_id in (select booking_id from gone);
     delete from public.bookings where id in (select booking_id from gone);
-    delete from public.notifications where template = 'phone_otp' and recipient like '+62850%';
-    delete from public.guest_otps where phone like '+62850%' and booking_id is null;
+    delete from public.notifications where template = 'phone_otp' and recipient like ${phones};
+    delete from public.guest_otps where phone like ${phones} and booking_id is null;
     update public.visit_sessions set reserved_pax = 0 where id in (${sessionIds});
     delete from public.visit_sessions where label = ${sqlText(label)};`);
 }

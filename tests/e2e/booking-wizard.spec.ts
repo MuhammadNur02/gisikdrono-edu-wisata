@@ -30,17 +30,19 @@ import { runSql, sqlText } from '../../scripts/local-stack';
 test.describe.configure({ timeout: 180_000 });
 
 let sessions: TestSessions;
+let projectIndex = 0;
 
 test.beforeAll(async ({}, testInfo) => {
   await runSql(`delete from public.rate_limit_buckets
     where key like 'booking:%' or key like 'otp_%' or key like 'quote_preview:%' or key like 'session_availability:%'`);
   const label = `Uji e2e ${testInfo.project.name}`;
-  await removeSessions(label);
-  sessions = await createSessions(testInfo.project.name === 'desktop' ? 0 : 1, label);
+  projectIndex = testInfo.project.name === 'desktop' ? 0 : 1;
+  await removeSessions(label, projectIndex);
+  sessions = await createSessions(projectIndex, label);
 });
 
 test.afterAll(async () => {
-  await removeSessions(sessions.label);
+  await removeSessions(sessions.label, projectIndex);
 });
 
 test('books a hold through all four steps and lands on its pay page with its manage link', async ({
