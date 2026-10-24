@@ -5,16 +5,24 @@ const MINUTES_PER_HOUR = 60;
 
 export const bookingPaymentCopy = {
   title: 'Pembayaran',
-  description:
-    'Selesaikan pembayaran sebelum batas waktu, supaya tempat rombongan Anda tetap tersedia.',
-  bookingCode: 'Kode pesanan',
-  package: 'Paket',
-  schedule: 'Jadwal',
-  pax: 'Jumlah peserta',
+  bookingOf: (bookingCode: string) => `Reservasi ${bookingCode}`,
+  // The methods card of DESIGN-SPEC §3.12; the visitor picks one on Midtrans' page.
+  methods: {
+    title: 'Metode yang tersedia',
+    qris: 'QRIS',
+    qrisHint: 'Pindai dengan aplikasi m-banking atau dompet digital apa pun.',
+    virtualAccount: 'Virtual Account',
+    virtualAccountHint: 'Bayar dari ATM, m-banking, atau internet banking.',
+    banks: ['BCA', 'BNI', 'BRI', 'Permata', 'CIMB', 'Bank lain'],
+    secure:
+      'Anda memilih metode di halaman pembayaran Midtrans yang aman. Kami tidak menyimpan data akun bank Anda.',
+  },
+  amountDue: 'Jumlah yang harus dibayar',
+  copy: 'Salin',
+  copied: 'Disalin',
+  copyLabel: (what: string) => `Salin ${what.toLowerCase()}`,
   paxCount: (count: number) => `${String(count)} orang`,
   total: 'Total pembayaran',
-  onlyThroughSystem:
-    'Pembayaran hanya melalui sistem ini, dengan QRIS atau Virtual Account. Petugas kelurahan tidak pernah meminta transfer ke rekening pribadi.',
   countdown: {
     label: 'Sisa waktu pembayaran',
     // What a screen reader hears, once a minute rather than every second.

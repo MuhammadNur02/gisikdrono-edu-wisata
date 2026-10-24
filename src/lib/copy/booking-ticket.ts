@@ -2,7 +2,6 @@
 // through copy.booking.ticket. The landing says valid or not, and nothing about the booking or its check-in.
 export const bookingTicketCopy = {
   title: 'Tiket kunjungan',
-  description: 'Tunjukkan kode QR ini kepada petugas di gerbang RW pada hari kunjungan.',
   ticketOf: (rwName: string) => `Tiket ${rwName}`,
   qrLabel: (rwName: string) => `Kode QR tiket ${rwName}`,
   code: 'Kode tiket',
@@ -11,6 +10,20 @@ export const bookingTicketCopy = {
   pax: 'Jumlah peserta',
   paxCount: (count: number) => `${String(count)} orang`,
   brightness: 'Naikkan kecerahan layar saat pemindaian.',
+  // DESIGN-SPEC §3.13: the stub, the QR column, the banner above and the notes below the ticket.
+  stub: 'Tiket rombongan',
+  gate: 'Gerbang',
+  showQr: 'Tunjukkan QR ini kepada petugas',
+  ready: 'Pembayaran diterima. Tiket rombongan Anda siap.',
+  readySent: 'Tiket juga sudah dikirim ke WhatsApp dan email penanggung jawab.',
+  paid: 'Lunas',
+  dayOf: {
+    title: 'Saat hari kunjungan',
+    items: [
+      'Tunjukkan tiket QR kepada petugas di gerbang RW.',
+      'Satu tiket berlaku untuk seluruh rombongan pada sesi ini.',
+    ],
+  },
   noQr: 'Kode QR tiket ini tidak lagi bisa ditampilkan. Hubungi kelurahan lewat WhatsApp, ya.',
   notice: {
     suspended:

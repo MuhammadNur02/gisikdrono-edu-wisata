@@ -66,7 +66,7 @@ export function WizardHeader({ packageName, packageSlug }: WizardHeaderProps) {
         <Link href={HOME_NAV_ITEM.href} className="shrink-0 rounded-md max-md:hidden">
           <SiteWordmark showEyebrow={false} />
         </Link>
-        <h1 className="min-w-0 flex-1 truncate text-center text-label-lg text-foreground md:text-label md:text-ink-2">
+        <h1 className="min-w-0 flex-1 truncate py-1 text-center text-label-lg text-foreground md:text-label md:text-ink-2">
           {text.title}
           <span className="max-md:sr-only"> · {packageName}</span>
         </h1>

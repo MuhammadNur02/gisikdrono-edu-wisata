@@ -1,5 +1,6 @@
 'use client';
 
+import { ExternalLink } from 'lucide-react';
 import { useState, useTransition } from 'react';
 
 import { FormAlert } from '@/components/forms/form-alert';
@@ -38,14 +39,15 @@ export function PayButton(props: {
       {error && <FormAlert tone="danger">{error}</FormAlert>}
       <Button
         type="button"
-        size="lg"
+        size="xl"
         className="w-full"
         loading={isPending || isRedirecting}
         onClick={pay}
       >
         {isRedirecting ? text.redirecting : props.label}
+        <ExternalLink aria-hidden />
       </Button>
-      <p className="text-caption text-muted-foreground">{text.payHint}</p>
+      <p className="text-center text-caption text-muted-foreground">{text.payHint}</p>
     </div>
   );
 }

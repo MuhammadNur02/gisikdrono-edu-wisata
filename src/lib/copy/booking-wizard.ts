@@ -41,8 +41,7 @@ export const bookingWizardCopy = {
     estimate: 'Perkiraan total',
     estimateLater: 'Dihitung di langkah Tambahan',
     note: 'Total pasti dihitung sistem di langkah Ringkasan.',
-    trust:
-      'Kuota sesi belum dipegang sampai Anda menekan Konfirmasi & Bayar di langkah Ringkasan.',
+    trust: 'Kuota sesi belum dipegang sampai Anda menekan Konfirmasi & Bayar di langkah Ringkasan.',
   },
   closedTitle: 'Pemesanan sedang ditutup',
   closed:
