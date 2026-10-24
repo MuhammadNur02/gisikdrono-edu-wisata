@@ -9,8 +9,17 @@ import type { DatabaseClient } from '@/db/rpc-result';
 
 // A message waiting this long past its send time, 15 minutes, means the worker is not getting through.
 const OVERDUE_AFTER_MS = 900_000;
-// A message given up on within the last hour, 60 minutes, still says something is refusing delivery.
+// A message given up on within the last hour, 60 minutes, for a fault of the server's own, still says delivery is
+// broken. Only those count (independent review of PR #50): credentials a provider refuses, a message the worker could
+// not compose, one left sending by a worker that stopped. A recipient's fault (a number not on WhatsApp, an address a
+// template refuses) is one visitor's, and anyone could cause one at will.
 const RECENTLY_DEAD_MS = 3_600_000;
+export const SERVER_FAULT_ERRORS = [
+  'meta_190',
+  'http_401',
+  'compose_failed',
+  'stuck_sending',
+] as const;
 
 export interface HealthReport {
   status: 'ok' | 'degraded';
@@ -41,6 +50,7 @@ async function countRecentlyDeadMessages(adminClient: DatabaseClient, now: Date)
   const { count, error } = await adminClient
     .from('notifications')
     .select('id', { count: 'exact', head: true })
+    .in('last_error_code', [...SERVER_FAULT_ERRORS])
     .gt('dead_at', new Date(now.getTime() - RECENTLY_DEAD_MS).toISOString());
   if (error) throw error;
   return count ?? 0;

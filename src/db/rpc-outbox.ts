@@ -69,15 +69,20 @@ export async function svcClaimSecurityAlerts(
   }));
 }
 
-// An alert whose email went out.
+// An alert whose email went out, as it stood when claimed: if it was raised again since, it stays to be sent again.
 export async function svcMarkSecurityAlertSent(
   adminClient: DatabaseClient,
-  id: string,
+  sent: { id: string; lastSeenAt: string },
 ): Promise<void> {
-  await resultOf(adminClient.rpc('svc_mark_security_alert_sent', { p_id: id }));
+  await resultOf(
+    adminClient.rpc('svc_mark_security_alert_sent', {
+      p_id: sent.id,
+      p_last_seen_at: sent.lastSeenAt,
+    }),
+  );
 }
 
-// An alert whose email did not go out, given back to the next run.
+// An alert whose email did not go out, tried again when a fresh five-minute lease ends.
 export async function svcReleaseSecurityAlert(
   adminClient: DatabaseClient,
   id: string,

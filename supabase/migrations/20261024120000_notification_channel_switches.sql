@@ -68,7 +68,8 @@ $$;
 -- Replaces the 20261021100200 version. Before it claims, the worker cancels the waiting messages of a channel that is
 -- off, erasing an OTP's code as an expired one is, so nothing reaches that channel's provider. A message left sending
 -- by a worker that died has used its attempt: it is given back only while it has attempts left, and dead-lettered
--- once it has none, so a message that kills its worker every time cannot loop for ever. Everything else is unchanged.
+-- once it has none, with the notification_dead event and alert of any other dead message, so a message that kills
+-- its worker every time cannot loop for ever. Everything else is unchanged.
 create or replace function internal.claim_notifications(p_limit integer, p_templates public.notification_template[])
   returns setof public.notifications
   language plpgsql security definer
@@ -80,13 +81,29 @@ begin
     raise exception 'a claim takes 1 to 100 messages of at least one template' using errcode = '22023';
   end if;
 
-  update public.notifications n
-  set status = case when n.attempts >= n.max_attempts then 'failed'::public.notification_status else 'queued' end,
-      dead_at = case when n.attempts >= n.max_attempts then now() end,
-      last_error_code = case when n.attempts >= n.max_attempts then 'stuck_sending' else n.last_error_code end,
-      params = case when n.attempts >= n.max_attempts and n.template = 'phone_otp' then '{}'::jsonb else n.params end,
-      locked_at = null
-  where n.status = 'sending' and n.locked_at < now() - interval '10 minutes';
+  update public.notifications n set status = 'queued', locked_at = null
+  where n.status = 'sending' and n.locked_at < now() - interval '10 minutes' and n.attempts < n.max_attempts;
+  with stuck as (
+    update public.notifications n
+    set status = 'failed', dead_at = now(), locked_at = null, last_error_code = 'stuck_sending',
+        last_error = 'Left sending by a worker that stopped, with no attempt left',
+        params = case when n.template = 'phone_otp' then '{}'::jsonb else n.params end
+    where n.status = 'sending' and n.locked_at < now() - interval '10 minutes' and n.attempts >= n.max_attempts
+    returning n.id, n.template, n.channel, n.attempts),
+  events as (
+    insert into public.security_events (event_type, severity, entity_type, entity_id, details)
+    select 'notification_dead', 'medium', 'notifications', stuck.id::text,
+           jsonb_build_object('template', stuck.template, 'channel', stuck.channel, 'error_code', 'stuck_sending',
+                              'attempts', stuck.attempts)
+    from stuck)
+  insert into public.security_alerts (rule, severity, fingerprint, title, details)
+  select distinct on (stuck.template, stuck.channel) 'notification_dead', 'medium',
+         format('notification_dead:%s:%s', stuck.template, stuck.channel),
+         'Pesan outbox gagal terkirim dan berhenti dicoba',
+         jsonb_build_object('template', stuck.template, 'channel', stuck.channel, 'error_code', 'stuck_sending')
+  from stuck
+  on conflict (fingerprint) where acknowledged_at is null do update
+  set last_seen_at = now(), occurrences = public.security_alerts.occurrences + 1;
   update public.notifications n set status = 'cancelled', params = '{}', locked_at = null,
     last_error_code = 'otp_expired'
   where n.template = 'phone_otp' and n.status in ('queued', 'failed') and n.dead_at is null

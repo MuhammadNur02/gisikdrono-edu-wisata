@@ -67,16 +67,19 @@ describe('deliverSecurityAlerts', () => {
       link: { url: 'http://127.0.0.1:3000/dashboard/security-alerts', buttonSuffix: null },
     });
     expect(svcReleaseSecurityAlert).not.toHaveBeenCalled();
-    expect(vi.mocked(svcMarkSecurityAlertSent).mock.calls.map(([, id]) => id)).toEqual([
-      'a-1',
-      'a-2',
-    ]);
+    // Marked sent as each stood when claimed, so one raised again meanwhile is sent again.
+    expect(vi.mocked(svcMarkSecurityAlertSent).mock.calls.map(([, sent]) => sent)).toEqual(
+      ALERTS.map((alert) => ({ id: alert.id, lastSeenAt: alert.lastSeenAt })),
+    );
   });
 
-  it('gives an alert whose email failed back to the next run', async () => {
+  it('leaves an alert whose email failed to a later run', async () => {
     const { provider } = emailAnswering((message) => message.notificationId === 'a-1');
     await expect(deliverSecurityAlerts(adminClient, provider, RECIPIENT)).resolves.toBe(1);
     expect(svcReleaseSecurityAlert).toHaveBeenCalledWith(expect.anything(), 'a-2');
-    expect(svcMarkSecurityAlertSent).toHaveBeenCalledWith(expect.anything(), 'a-1');
+    expect(svcMarkSecurityAlertSent).toHaveBeenCalledWith(expect.anything(), {
+      id: 'a-1',
+      lastSeenAt: '2026-10-24T03:00:00+00:00',
+    });
   });
 });

@@ -4463,7 +4463,7 @@ export type Database = {
         Returns: undefined
       }
       svc_mark_security_alert_sent: {
-        Args: { p_id: string }
+        Args: { p_id: string; p_last_seen_at: string }
         Returns: undefined
       }
       svc_payments_housekeeping: { Args: never; Returns: Json }

@@ -3,12 +3,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { svcJobHealth, svcPlaceholderSiteSettings } from '@/db/rpc-health';
 import type { DatabaseClient } from '@/db/rpc-result';
 
-import { checkServiceHealth } from './service-health';
+import { checkServiceHealth, SERVER_FAULT_ERRORS } from './service-health';
 
 vi.mock('@/db/rpc-health', () => ({ svcJobHealth: vi.fn(), svcPlaceholderSiteSettings: vi.fn() }));
 
 // The table reads of the check: overdue messages (.lt on next_attempt_at), messages given up on recently (.gt on
 // dead_at), and the maintenance switch.
+const filters: [string, unknown][] = [];
+
 function clientWith({
   overdue = 0,
   dead = 0,
@@ -19,7 +21,10 @@ function clientWith({
   maintenance?: boolean;
 }) {
   const counted = {
-    in: () => counted,
+    in: (column: string, values: unknown) => {
+      filters.push([column, values]);
+      return counted;
+    },
     is: () => counted,
     lt: () => Promise.resolve({ count: overdue, error: null }),
     gt: () => Promise.resolve({ count: dead, error: null }),
@@ -65,12 +70,26 @@ describe('checkServiceHealth', () => {
   });
 
   // Independent review of PR #50, M3: a provider refusing every message is a fault the monitor must see.
-  it('is degraded by a message given up on within the hour', async () => {
+  it('is degraded by a message given up on within the hour for a fault of the server', async () => {
     vi.mocked(svcJobHealth).mockResolvedValue([]);
     await expect(checkServiceHealth(clientWith({ dead: 1 }), false)).resolves.toMatchObject({
       status: 'degraded',
       checks: { deadMessages: 1 },
     });
+  });
+
+  it('counts only the server’s faults among dead messages, never a recipient’s, which anyone could cause', async () => {
+    filters.length = 0;
+    vi.mocked(svcJobHealth).mockResolvedValue([]);
+    await checkServiceHealth(clientWith({}), false);
+    const asked = filters.find(([column]) => column === 'last_error_code')?.[1];
+    expect(asked).toEqual([...SERVER_FAULT_ERRORS]);
+    expect(asked).toEqual(
+      expect.arrayContaining(['meta_190', 'http_401', 'compose_failed', 'stuck_sending']),
+    );
+    for (const recipientFault of ['meta_131026', 'meta_131047', 'bad_params', 'http_422']) {
+      expect(asked).not.toContain(recipientFault);
+    }
   });
 
   it('in production also by a setting still holding its placeholder', async () => {

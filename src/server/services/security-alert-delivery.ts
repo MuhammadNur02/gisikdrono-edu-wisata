@@ -42,8 +42,14 @@ export async function deliverSecurityAlerts(
           buttonSuffix: null,
         },
       });
-      // Marked sent only once its email went out, so a run killed in between leaves the alert to the next one.
-      await (result.ok ? svcMarkSecurityAlertSent : svcReleaseSecurityAlert)(adminClient, alert.id);
+      // Marked sent only once its email went out, so a run killed in between leaves the alert to the next one. A
+      // failed email waits out a fresh lease: a provider refusing the server's key refuses every alert, and
+      // /api/health already answers 503 for that.
+      if (result.ok) {
+        await svcMarkSecurityAlertSent(adminClient, { id: alert.id, lastSeenAt: alert.lastSeenAt });
+      } else {
+        await svcReleaseSecurityAlert(adminClient, alert.id);
+      }
       return result.ok;
     }),
   );

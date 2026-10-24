@@ -3,7 +3,9 @@
 -- outbox, so a stalled or switched-off outbox cannot silence them. A claim leases an alert for five minutes
 -- (delivery_claimed_at), so two runs never send one at once; notified_at is set only once its email went out, so a
 -- run killed between the claim and the send leaves the alert to the next run when its lease ends (independent review
--- of PR #50, M2). An alert raised again clears notified_at (its upserts do), so it is sent again.
+-- of PR #50, M2). A failed send keeps its lease, so the next try waits five minutes: an email provider refusing the
+-- server's key refuses every alert, and /api/health already answers 503 for it. An alert raised again clears
+-- notified_at (its upserts do), so it is sent again, and one raised again during its own send is not taken as sent.
 
 alter table public.security_alerts add column delivery_claimed_at timestamptz;
 
@@ -32,25 +34,29 @@ begin
 end;
 $$;
 
--- The alert's email went out: it is sent, and its lease ends.
-create function internal.mark_security_alert_sent(p_id uuid) returns void
+-- The alert's email went out. It is sent, and its lease ends; but if it was raised again while the email was on its
+-- way (its last_seen_at moved past the one the run claimed), the email told of the older raise, so only the lease
+-- ends and the next run sends it again (independent review of PR #50).
+create function internal.mark_security_alert_sent(p_id uuid, p_last_seen_at timestamptz) returns void
   language plpgsql security definer
   set search_path = ''
 as $$
 begin
   perform internal.require_server_caller('mark_security_alert_sent');
-  update public.security_alerts set notified_at = now(), delivery_claimed_at = null where id = p_id;
+  update public.security_alerts a
+  set notified_at = case when a.last_seen_at = p_last_seen_at then now() end, delivery_claimed_at = null
+  where a.id = p_id;
 end;
 $$;
 
--- The alert's email did not go out: its lease ends now, so the next run tries again.
+-- The alert's email did not go out: its lease starts again, so the next try waits five minutes instead of one.
 create function internal.release_security_alert(p_id uuid) returns void
   language plpgsql security definer
   set search_path = ''
 as $$
 begin
   perform internal.require_server_caller('release_security_alert');
-  update public.security_alerts set delivery_claimed_at = null where id = p_id;
+  update public.security_alerts set delivery_claimed_at = now() where id = p_id and notified_at is null;
 end;
 $$;
 
@@ -60,19 +66,20 @@ create function public.svc_claim_security_alerts(p_limit integer)
   set search_path = ''
 as $$ select * from internal.claim_security_alerts(p_limit); $$;
 
-create function public.svc_mark_security_alert_sent(p_id uuid) returns void
+create function public.svc_mark_security_alert_sent(p_id uuid, p_last_seen_at timestamptz) returns void
   language sql security definer
   set search_path = ''
-as $$ select internal.mark_security_alert_sent(p_id); $$;
+as $$ select internal.mark_security_alert_sent(p_id, p_last_seen_at); $$;
 
 create function public.svc_release_security_alert(p_id uuid) returns void
   language sql security definer
   set search_path = ''
 as $$ select internal.release_security_alert(p_id); $$;
 
-revoke execute on function internal.claim_security_alerts(integer), internal.mark_security_alert_sent(uuid),
-  internal.release_security_alert(uuid), public.svc_claim_security_alerts(integer),
-  public.svc_mark_security_alert_sent(uuid), public.svc_release_security_alert(uuid)
+revoke execute on function internal.claim_security_alerts(integer),
+  internal.mark_security_alert_sent(uuid, timestamptz), internal.release_security_alert(uuid),
+  public.svc_claim_security_alerts(integer), public.svc_mark_security_alert_sent(uuid, timestamptz),
+  public.svc_release_security_alert(uuid)
   from public, anon, authenticated;
-grant execute on function public.svc_claim_security_alerts(integer), public.svc_mark_security_alert_sent(uuid),
-  public.svc_release_security_alert(uuid) to service_role;
+grant execute on function public.svc_claim_security_alerts(integer),
+  public.svc_mark_security_alert_sent(uuid, timestamptz), public.svc_release_security_alert(uuid) to service_role;

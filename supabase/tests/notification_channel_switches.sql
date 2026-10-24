@@ -4,7 +4,7 @@
 -- are never held back; a message left sending with no attempt left is dead-lettered; a provider refusing the server's
 -- credentials raises a high alert at once.
 begin;
-select plan(14);
+select plan(16);
 
 -- ===== Fixtures: an unpaid and a paid booking of one address =====
 insert into public.tour_packages (id, rw_id, category, slug, name, tagline, duration_minutes, price_per_pax, status)
@@ -86,6 +86,13 @@ select is((select array_agg(status::text || ' ' || coalesce(last_error_code, '-'
            where id in ('00000000-0000-4000-9000-00000007a004', '00000000-0000-4000-9000-00000007a005')),
   array['failed stuck_sending true', 'queued - false'],
   'a message left sending with no attempt left is dead-lettered, one with attempts left goes back to the queue');
+select ok(exists (select 1 from public.security_events
+                  where event_type = 'notification_dead' and entity_id = '00000000-0000-4000-9000-00000007a004'
+                    and details ->> 'error_code' = 'stuck_sending'),
+  'the stuck one leaves the notification_dead event of any dead message');
+select ok(exists (select 1 from public.security_alerts
+                  where fingerprint = 'notification_dead:booking_link:email' and details ->> 'error_code' = 'stuck_sending'),
+  'and its alert');
 
 insert into public.notifications (id, channel, template, recipient, params, dedupe_key, status, attempts)
 values ('00000000-0000-4000-9000-00000007a006', 'whatsapp', 'booking_link', '+6281234560724', '{}',
