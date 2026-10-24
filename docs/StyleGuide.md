@@ -4,13 +4,13 @@ Edu Center & Edu Wisata Kelurahan Gisikdrono (Semarang Barat)
 
 | Field | Value |
 |---|---|
-| Version | 1.0 |
-| Date | 2026-10-15 |
+| Version | 1.1 |
+| Date | 2026-10-24 (redesign foundation, pen.dev) |
 | Status | Draft for review |
 | Owner | Kelurahan Gisikdrono Edu Center project team |
 | Related documents | `CLAUDE.md` (root), `docs/PRD.md`, `docs/Task.md`, `docs/Security.md` |
 
-This document is the single reference for how the platform looks, moves and speaks. It covers the public site (Indonesian-language marketing and booking pages), the booking wizard and the role-based admin dashboard. Every value here is a token, not a suggestion: components consume CSS variables and Tailwind utilities defined in section 2, never raw hex values. Naming of tables, columns and enums follows `docs/PRD.md` §8.3 (enums) and §8.4 (DDL); routes and folders follow `CLAUDE.md` §3 and Appendix A.3; where this document and the database schema disagree, the schema wins and the conflict is raised, not silently resolved.
+This document is the single reference for how the platform looks, moves and speaks. It covers the public site (Indonesian-language marketing and booking pages), the booking wizard and the role-based admin dashboard. Every value here is a token, not a suggestion: components consume CSS variables and Tailwind utilities defined in section 2, never raw hex values. The visual design is the pen.dev redesign approved on 2026-10-24 (handoff `DESIGN-SPEC.md`, "Edu Wisata Gisikdrono, public site"); this document records how it is built. Naming of tables, columns and enums follows `docs/PRD.md` §8.3 (enums) and §8.4 (DDL); routes and folders follow `CLAUDE.md` §3 and Appendix A.3; where this document and the database schema disagree, the schema wins and the conflict is raised, not silently resolved.
 
 Domain terms used throughout: **RW** (Rukun Warga, the neighbourhood unit that owns a tourism programme), **kelurahan** (urban-village administration, the platform owner), **UMKM** (micro and small enterprises selling souvenirs and snacks), **PKK** (family-welfare movement whose members produce recycled crafts), **Bank Sampah** (community waste bank), **dolanan** (traditional Javanese children's games), **sanggar** (arts studio), **Ecowastreme** (RW 05's zero-waste eco-tourism brand), **PIC** (person in charge of a group booking).
 
@@ -34,7 +34,7 @@ Domain terms used throughout: **RW** (Rukun Warga, the neighbourhood unit that o
 
 | # | Principle | What it means in practice |
 |---|---|---|
-| P1 | Trust before delight | Government-grade clarity: blue palette, visible prices in integer rupiah, honest status states, no countdown tricks, no dark patterns. The quotation PDF and every payment screen repeat that payment is only through the system (QRIS/VA). |
+| P1 | Trust before delight | Government-grade clarity: warm paper and the batik brick (§2), visible prices in integer rupiah, honest status states, no countdown tricks, no dark patterns. The quotation PDF and every payment screen repeat that payment is only through the system (QRIS/VA). |
 | P2 | Calm density | Public pages breathe (`py-16 md:py-24`, one idea per section). Admin pages are dense but each row exposes one primary action; secondary actions live in a row menu. |
 | P3 | Designed for the gate | Officers scan tickets on mid-range Android phones in daylight with one hand: 44 px targets, full-screen colour results, large numerals, no hover-only affordances. Everything is verified at 360 px width. |
 | P4 | One truth per status | Every enum value maps to exactly one badge tone and one Indonesian label in `src/config/status.ts`. Colour never carries meaning alone: label plus icon always accompany it. |
@@ -50,7 +50,7 @@ Domain terms used throughout: **RW** (Rukun Warga, the neighbourhood unit that o
 | shadcn/ui (`new-york` style) | Component anatomy, `cva` variants, CSS-variable theming, Radix accessibility, Sidebar/Chart/Form primitives | Inverted light primary in dark mode (breaks brand recognition on CTAs) |
 | 21st.dev | Minimal marketing sections, `rounded-xl` surfaces, soft `border-border`, backdrop-blur cards, restrained micro-interactions; layout patterns only (each component carries its author's licence, so no source is copied) | Decorative gradients, text shimmer, parallax beyond the two kinds of §7.3, anything animating the LCP element |
 | dusunbambu.id (home page redesign, decision of 2026-10-23, at the user's request of that day) | The pinned hero photo, the wave under the hero and between sections, slide-in section reveals, the full-bleed photo slideshow, scroll-linked photo bands | Autoplay of the slideshow (WCAG 2.2.2), background-attachment parallax (breaks on iOS), its fonts and colours |
-| reactbits.dev (MIT + Commons Clause v1.0: use inside this site is allowed, reselling the components is not) | The idea of CountUp, re-implemented with our tokens and no library; no source copied (a SplitText-style headline was tried and dropped for the first-load budget, decision of 2026-10-24) | GSAP-based components, blur animations, glow and spotlight cards, canvas or WebGL backgrounds, marquees |
+| reactbits.dev (MIT + Commons Clause v1.0: use inside this site is allowed, reselling the components is not) | The idea of CountUp, re-implemented with our tokens and no library; no source copied (a SplitText-style headline was tried and dropped for the first-load budget, decision of 2026-10-24) | GSAP-based components, blur animations, glow and spotlight cards, canvas or WebGL backgrounds; a marquee only as the CSS one of §7.2, with its pause control |
 | UI8.net dashboards | Collapsible icon-rail sidebar, KPI cards with sparkline and trend chip, faceted data tables, high whitespace ratio, floating action bars (patterns only; no UI8 asset is ever copied) | Glassmorphism on data surfaces, animated charts, more than three blurred layers |
 
 ### 1.3 Anti-generic rules (no AI slop)
@@ -59,393 +59,338 @@ The site has to look like Gisikdrono, not like a template. These rules hold for 
 
 | # | Rule | In practice |
 |---|---|---|
-| G1 | No stock or AI-generated images of people or places | Only real Gisikdrono photos from `public-media`. Until a photo exists the slot shows a placeholder without words (`PhotoPlaceholder`, decision of 2026-10-18): the RW's soft accent as background (`softClassesFor` in `src/config/rw.ts`, from the RW's `accent_key`; a combo, a kelurahan item or anything without one RW uses the neutral soft pair) and the lucide icon of what the slot is about, at 40 px with 1.5 stroke (package category, product category, the RW's own icon, `Newspaper` for an article, `Images` for the hero), never a stand-in image. It is `role="img"` with an `aria-label` that says what the photo will show, so screen readers still hear it. |
-| G2 | No gradient text, no purple or indigo gradients, no decorative blobs or orbs, no glow effects | The only decorative backgrounds are the dot-grid SVG, the ice-to-background gradient, the wave divider SVG and a hand-drawn line-art motif at ≤ 8 % opacity (§8.5; the last two added on 2026-10-23 for the home page redesign the user asked for that day). Functional photo scrims behind text are not decoration. |
+| G1 | No stock or AI-generated images of people or places | Only real Gisikdrono photos from `public-media`. Until a photo exists the slot shows a placeholder (`PhotoPlaceholder`, decision of 2026-10-18, redrawn 2026-10-24): the RW's soft accent as background with the ink kawung at 8 % (`softClassesFor` in `src/config/rw.ts`, from the RW's `accent_key`; a combo, a kelurahan item or anything without one RW uses the neutral soft pair) and the lucide icon of what the slot is about, at 36 px in the accent, with an optional short note such as `Foto menyusul` on a product card (package category, product category, the RW's own icon, `Newspaper` for an article, `Images` for the hero), never a stand-in image. It is `role="img"` with an `aria-label` that says what the photo will show, so screen readers still hear it. |
+| G2 | No gradient text, no purple or indigo gradients, no decorative blobs or orbs, no glow effects | The only decorative elements are the kawung motif at 6–16 % opacity, the brand-ice page-head gradient, the arc and wave dividers (§8.5). The photo grades behind text (§8.2) are functional, not decoration. |
 | G3 | Glass cards only over the hero photo, at most one per screen | `Card variant="glass"` sits on the hero image and nowhere else (§5.2). Blurred sticky bars (§4.3) are not cards and keep their own budget. |
 | G4 | No emoji as UI icons | Icons are `lucide-react` only (§8.1). Emoji may appear inside content people wrote themselves, such as a review. |
 | G5 | Never invent facts | No made-up numbers, years, names, testimonials, statistics or partner logos. Every fact comes from the CMS. Demo content exists only in the development seed (`pnpm db:seed`, local and CI, CLAUDE.md §6.4), which never reaches staging or production. |
 | G6 | No generic marketing phrases | Avoid lines such as "temukan keajaiban", "pengalaman tak terlupakan", "solusi terbaik" or "jelajahi dunia". Copy names the place, the activity, the people and the numbers, with the numbers taken from the CMS: `Pilah sampah di Bank Sampah RW 05, {durasi} menit, untuk {min}–{maks} siswa`. |
 | G7 | No three identical cards as the default layout | Marketing sections follow their content: photo and text alternating, a mosaic, a timeline. Collections (package, product and article lists) keep the card grid of §4.2. |
 | G8 | Every activity photo says where or what | A caption (`galleries.caption`, or the activity or place name) sits under or over every photo of an activity; `alt_text` alone is not enough. |
-| G9 | At most one primary call to action per screen | One `Button variant="default"` in view at a time (§5.1); everything else is `secondary`, `outline` or a link. The header's `Pesan Kunjungan` is therefore `secondary`, so the page's own CTA stays the only primary (decision of 2026-10-17). |
+| G9 | At most one primary call to action per screen | One `Button variant="default"` in a page's own content at a time (§5.1); everything else is `secondary`, `outline`, `onPhoto` or a link. The header's `Pesan Kunjungan` is the one standing exception: the approved redesign makes it primary on every page (2026-10-24, replacing the `secondary` of 2026-10-17). |
 
 ## 2. Design tokens
 
-Tokens live in `src/styles/globals.css` as HSL triplets on `:root` and `.dark`, and are exposed to Tailwind CSS v4 through `@theme inline`. Components use utilities (`bg-primary`, `text-muted-foreground`, `shadow-card`) or `hsl(var(--token))`, never a literal colour.
+Tokens live in `src/styles/globals.css` as full colours (hex) on `:root` and `.dark`, with a third block of aliases that point at them, and are exposed to Tailwind CSS v4 through `@theme inline` (`--color-x: var(--x)`). Components use utilities (`bg-primary`, `text-ink-2`, `shadow-md`), or `var(--token)` inside `globals.css`, never a literal colour. The values are those of the pen.dev redesign approved on 2026-10-24 (handoff `DESIGN-SPEC.md` §1, "warm paper, batik brick"); `src/styles/globals.test.ts` re-checks every contrast pair of §2.5 against the real values.
 
 ### 2.1 Core palette (shadcn variables, sidebar, charts, brand)
 
-| CSS variable | Light HEX | Light HSL | Dark HEX | Dark HSL |
-|---|---|---|---|---|
-| `--background` | #FFFFFF | `0 0% 100%` | #09090B | `240 10% 3.9%` |
-| `--foreground` | #0F172A | `222.2 47.4% 11.2%` | #F8FAFC | `210 40% 98%` |
-| `--card` | #FFFFFF | `0 0% 100%` | #0F172A | `222.2 47.4% 11.2%` |
-| `--card-foreground` | #0F172A | `222.2 47.4% 11.2%` | #F8FAFC | `210 40% 98%` |
-| `--popover` | #FFFFFF | `0 0% 100%` | #0F172A | `222.2 47.4% 11.2%` |
-| `--popover-foreground` | #0F172A | `222.2 47.4% 11.2%` | #F8FAFC | `210 40% 98%` |
-| `--primary` | #2563EB | `221.2 83.2% 53.3%` | #2563EB | `221.2 83.2% 53.3%` |
-| `--primary-foreground` | #FFFFFF | `0 0% 100%` | #FFFFFF | `0 0% 100%` |
-| `--primary-hover` (custom) | #1D4ED8 | `224.3 76.3% 48%` | #3B82F6 | `217.2 91.2% 59.8%` |
-| `--primary-text` (custom) | #2563EB | `221.2 83.2% 53.3%` | #60A5FA | `213.1 93.9% 67.8%` |
-| `--secondary` | #EFF6FF | `213.8 100% 96.9%` | #1E293B | `217.2 32.6% 17.5%` |
-| `--secondary-foreground` | #1E40AF | `226.2 70.7% 40.2%` | #F8FAFC | `210 40% 98%` |
-| `--muted` | #F1F5F9 | `210 40% 96.1%` | #1E293B | `217.2 32.6% 17.5%` |
-| `--muted-foreground` | #71717A | `240 3.8% 46.1%` | #94A3B8 | `215 20.2% 65.1%` |
-| `--accent` | #EFF6FF | `213.8 100% 96.9%` | #1E293B | `217.2 32.6% 17.5%` |
-| `--accent-foreground` | #0F172A | `222.2 47.4% 11.2%` | #F8FAFC | `210 40% 98%` |
-| `--destructive` | #DC2626 | `0 72.2% 50.6%` | #EF4444 | `0 84.2% 60.2%` |
-| `--destructive-foreground` | #FFFFFF | `0 0% 100%` | #FFFFFF | `0 0% 100%` |
-| `--border` | #E2E8F0 | `214.3 31.8% 91.4%` | #1E293B | `217.2 32.6% 17.5%` |
-| `--input` | #E2E8F0 | `214.3 31.8% 91.4%` | #1E293B | `217.2 32.6% 17.5%` |
-| `--ring` | #2563EB | `221.2 83.2% 53.3%` | #3B82F6 | `217.2 91.2% 59.8%` |
-| `--chart-1` | #2563EB | `221.2 83.2% 53.3%` | #3B82F6 | `217.2 91.2% 59.8%` |
-| `--chart-2` | #1E40AF | `226.2 70.7% 40.2%` | #60A5FA | `213.1 93.9% 67.8%` |
-| `--chart-3` | #0EA5E9 | `198.6 88.7% 48.4%` | #38BDF8 | `198.4 93.2% 59.6%` |
-| `--chart-4` | #10B981 | `160.1 84.1% 39.4%` | #34D399 | `158.1 64.4% 51.6%` |
-| `--chart-5` | #F59E0B | `37.7 92.1% 50.2%` | #FBBF24 | `43.3 96.4% 56.3%` |
-| `--sidebar-background` | #FFFFFF | `0 0% 100%` | #09090B | `240 10% 3.9%` |
-| `--sidebar-foreground` | #334155 | `215.3 25% 26.7%` | #94A3B8 | `215 20.2% 65.1%` |
-| `--sidebar-primary` | #2563EB | `221.2 83.2% 53.3%` | #2563EB | `221.2 83.2% 53.3%` |
-| `--sidebar-primary-foreground` | #FFFFFF | `0 0% 100%` | #FFFFFF | `0 0% 100%` |
-| `--sidebar-accent` | #EFF6FF | `213.8 100% 96.9%` | #1E293B | `217.2 32.6% 17.5%` |
-| `--sidebar-accent-foreground` | #1E40AF | `226.2 70.7% 40.2%` | #F8FAFC | `210 40% 98%` |
-| `--sidebar-border` | #E2E8F0 | `214.3 31.8% 91.4%` | #1E293B | `217.2 32.6% 17.5%` |
-| `--sidebar-ring` | #2563EB | `221.2 83.2% 53.3%` | #3B82F6 | `217.2 91.2% 59.8%` |
-| `--brand-deep` (custom) | #0F172A | `222.2 47.4% 11.2%` | #0F172A | `222.2 47.4% 11.2%` |
-| `--brand-royal` (custom) | #1E40AF | `226.2 70.7% 40.2%` | #1E40AF | `226.2 70.7% 40.2%` |
-| `--brand-ice` (custom) | #EFF6FF | `213.8 100% 96.9%` | #EFF6FF | `213.8 100% 96.9%` |
-| `--surface-warm` (custom) | #FAF7F2 | `37.5 44.4% 96.5%` | #161412 | `30 10% 8%` |
-| `--surface-warm-foreground` (custom) | #0F172A | `222.2 47.4% 11.2%` | #F8FAFC | `210 40% 98%` |
-| `--radius` | 0.75rem | — | 0.75rem | — |
+The design's own names are on the right; the CSS variable is the shadcn name where one exists, so every shadcn primitive and every dashboard screen picks the palette up unchanged.
 
-`--primary` is identical in both modes so that brand CTAs look the same everywhere (white on #2563EB = 5.17:1). Surfaces move instead: dark pages use #09090B, dark cards #0F172A.
+| CSS variable (Tailwind) | Light | Dark | Design name and role |
+|---|---|---|---|
+| `--background` (`bg-background`) | #F6EFE3 | #14110D | `bg`, the warm paper of every page |
+| `--muted` (`bg-muted`, alias `bg-sunken`) | #EDE3D1 | #0F0D0A | `bg-sunken`: alternating sections, fills, skeletons |
+| `--card` / `--popover` (`bg-card`, alias `bg-surface`) | #FFFAF2 | #1E1A15 | `surface`: inputs, the review card, panels, menus |
+| `--foreground` | #1D1813 | #F4ECDF | `ink`, primary text |
+| `--ink-2` (`text-ink-2`) | #4A4036 | #CFC2AE | `ink-2`, secondary text and body copy |
+| `--muted-foreground` | #6E6152 | #A59680 | `ink-3`, meta, captions, placeholders |
+| `--border` | #E2D5C0 | #3A3229 | `line`, hairlines and card edges |
+| `--border-strong` | #CBB99C | #54493C | `line-strong`, chip edges, stronger dividers (decorative) |
+| `--input` | #8C7A62 | #7A6B57 | `border-input`, form control edges (≥ 3:1) |
+| `--ring` | #A93814 | #F49D76 | focus ring (`primary-ink`) |
+| `--primary` | #C4431B | #F0875A | `primary`, "Bata", the batik brick: the main action colour |
+| `--primary-foreground` | #FFFFFF | #1A0E08 | text on the primary |
+| `--primary-hover` / `--primary-pressed` | #A93814 / #8E2F10 | #F49D76 / #E06E40 | hover and pressed fills |
+| `--primary-tint` | #F8DCCD | #3A1E12 | selected states, the combo badge, icon tiles |
+| `--primary-ink` (`--primary-text` is its alias) | #A93814 | #F49D76 | the primary as text: links, eyebrows. Never `text-primary` for text |
+| `--secondary` / `--secondary-foreground` | #1D1813 / #F6EFE3 | #F4ECDF / #14110D | `inverse`: the secondary button, the selected chip |
+| `--secondary-hover` / `--secondary-pressed` | #352C23 / #15120E | #FFFFFF / #CFC2AE | its hover and pressed fills |
+| `--accent` / `--accent-foreground` | #EDE3D1 / #1D1813 | #2A241D / #F4ECDF | shadcn hover fill (menus, ghost rows) |
+| `--destructive` / `--destructive-foreground` | #A32015 / #FFFFFF | #F28B7E / #1A0E08 | `danger` |
+| `--gold` / `--gold-ink` / `--gold-tint` | #E0A63A / #8A5A0B / #F6E3B8 | #E9B85A / #E9B85A / #3A2C10 | stars, eyebrows on dark bands, footer titles; gold as text on paper; the award tile |
+| `--night` | #15120E | #0B0907 | the footer, typographic covers, info panels, overlays (`bg-night/70`) |
+| `--forest-night` | #0F2A1D | #0A1C13 | the figures band, CTA bands |
+| `--on-dark` / `--on-dark-2` / `--on-dark-3` | #FFFFFF / #D9CCB8 / #A59680 | same | text on night |
+| `--on-forest` / `--on-forest-2` | #C9D6CC / #A9BFB0 | same | text on forest-night |
+| `--on-indigo` | #E3E6F5 | same | text on the RW 08 field |
+| `--whatsapp` / `--whatsapp-hover` | #0F7A3F / #0B6532 | same | the WhatsApp button, darkened from the brand green to 5.42:1 with white |
+| `--brand-deep` / `--brand-royal` / `--brand-ice` | #15120E / #0F2A1D / #EDE3D1 | #0B0907 / #0A1C13 / #1E1A15 | the brand names of CLAUDE.md §8, now night, forest and the sunken paper; `from-brand-ice to-background` is the page-head gradient in both themes |
+| `--sidebar-*` | surface #FFFAF2, text #4A4036, accent #EDE3D1, primary #C4431B | surface #1E1A15, text #CFC2AE, accent #2A241D, primary #F0875A | shadcn `Sidebar` |
+| `--chart-1` … `--chart-5` | #C4431B, #1F5C3A, #33427F, #E0A63A, #8E4A1F | #F0875A, #6CC08E, #9CAAF0, #E9B85A, #E39E68 | Recharts: brick, the three RW accents, gold |
+| `--radius` | 0.625rem (10 px) | same | the control radius |
 
-`--surface-warm` (decision of 2026-10-23, home page redesign at the user's request of that day) is the opaque warm tone the home page alternates with `--background` and the footer sits on: opaque, so a wave divider in the same colour joins its section without a seam (`bg-muted/40` is translucent and cannot). The warmth stays out of the CTA system, which remains blue. Its text is `--foreground`; `--muted-foreground` on it measures 4.52:1 in light mode, so muted text stays allowed at AA (re-checked against the real token values by `src/styles/globals.test.ts`; were it below 4.5:1, text on it would use the foreground token). The inner pages keep `muted` (§5.7).
+The surface on paper (`bg-card` on `bg-background`) is a lighter sheet, not a white card: content cards are editorial (§5.8–5.9) and only the review card, inputs and panels are surfaces. The public site is always light (decision D3); the dark set serves the dashboard and keeps every pair at AA.
 
 ### 2.2 Semantic status colours
 
-Each family has a strong fill (`--x`), a text colour for that fill (`--x-foreground`), a tinted background (`--x-soft`) and a text colour for the tint (`--x-soft-foreground`). `danger` aliases `--destructive`.
+Each family has a strong fill (`--x`), a text colour for that fill (`--x-foreground`), a tint (`--x-soft`, the design's `-tint`) and a text colour for the tint (`--x-soft-foreground`, the design's strong colour). `danger` aliases `--destructive`.
 
-| Family | Variable | Light HEX | Light HSL | Dark HEX | Dark HSL |
-|---|---|---|---|---|---|
-| success | `--success` | #16A34A | `142.1 76.2% 36.3%` | #22C55E | `142.1 70.6% 45.3%` |
-| | `--success-foreground` | #FFFFFF | `0 0% 100%` | #0F172A | `222.2 47.4% 11.2%` |
-| | `--success-soft` | #DCFCE7 | `140.6 84.2% 92.5%` | #22C55E @ 15 % | `142 70% 45% / 0.15` |
-| | `--success-soft-foreground` | #15803D | `142.4 71.8% 29.2%` | #4ADE80 | `141.9 69.2% 58%` |
-| warning | `--warning` | #D97706 | `32.1 94.6% 43.7%` | #F59E0B | `37.7 92.1% 50.2%` |
-| | `--warning-foreground` | #0F172A | `222.2 47.4% 11.2%` | #0F172A | `222.2 47.4% 11.2%` |
-| | `--warning-soft` | #FEF3C7 | `48 96.5% 88.8%` | #F59E0B @ 15 % | `38 92% 50% / 0.15` |
-| | `--warning-soft-foreground` | #B45309 | `26 90.5% 37.1%` | #FBBF24 | `43.3 96.4% 56.3%` |
-| info | `--info` | #0284C7 | `200.4 98% 39.4%` | #38BDF8 | `198.4 93.2% 59.6%` |
-| | `--info-foreground` | #FFFFFF | `0 0% 100%` | #0F172A | `222.2 47.4% 11.2%` |
-| | `--info-soft` | #E0F2FE | `204 93.8% 93.7%` | #38BDF8 @ 15 % | `198 93% 60% / 0.15` |
-| | `--info-soft-foreground` | #0369A1 | `201.3 96.3% 32.2%` | #7DD3FC | `199.4 95.5% 73.9%` |
-| danger | `--danger` | = `--destructive` | `0 72.2% 50.6%` | = `--destructive` | `0 84.2% 60.2%` |
-| | `--danger-foreground` | #FFFFFF | `0 0% 100%` | #FFFFFF | `0 0% 100%` |
-| | `--danger-soft` | #FEE2E2 | `0 93.3% 94.1%` | #EF4444 @ 15 % | `0 84% 60% / 0.15` |
-| | `--danger-soft-foreground` | #B91C1C | `0 73.7% 41.8%` | #FCA5A5 | `0 93.5% 81.8%` |
-| neutral | `--neutral` | #71717A | `240 3.8% 46.1%` | #94A3B8 | `215 20.2% 65.1%` |
-| | `--neutral-foreground` | #FFFFFF | `0 0% 100%` | #0F172A | `222.2 47.4% 11.2%` |
-| | `--neutral-soft` | #F1F5F9 | `210 40% 96.1%` | #1E293B | `217.2 32.6% 17.5%` |
-| | `--neutral-soft-foreground` | #3F3F46 | `240 5.3% 26.1%` | #CBD5E1 | `212.7 26.8% 83.9%` |
+| Family | `--x` / `--x-foreground` light | `--x-soft` / `--x-soft-foreground` light | dark (fill / tint / tint text) | Booking states (DESIGN-SPEC §2.3) |
+|---|---|---|---|---|
+| success | #1E6B40 / #FFFFFF | #DCEFE2 / #1E6B40 | #5CC98A / #12291B / #5CC98A | Lunas, Sudah hadir, Selesai |
+| warning | #8A5200 / #FFFFFF | #FBEBC8 / #8A5200 | #F2BE5C / #2E220C / #F2BE5C | Menunggu pembayaran, Perlu ditinjau, sample tags |
+| info | #2C5AA0 / #FFFFFF | #DEE8F7 / #2C5AA0 | #8DB4F2 / #14213A / #8DB4F2 | Penawaran dikirim |
+| danger | #A32015 / #FFFFFF | #FBE0DC / #A32015 | #F28B7E / #331512 / #F28B7E | Dibatalkan, Penuh, errors |
+| neutral | #6E6152 / #FFFFFF | #EDE3D1 / #4A4036 | #A59680 / #2A241D / #CFC2AE | Kedaluwarsa |
 
-Rule: badges, chips and table status cells always use the **soft** pair (every soft pair is ≥ 4.5:1). Strong fills are reserved for large-text surfaces (scanner result headers, banners, toasts, `success` buttons) where the 3:1 large-text threshold applies.
+Rule: badges, chips and table status cells use the **soft** pair with a dot (§5.4). Every strong fill now carries its foreground at AA as well, so the strong fills may hold normal-size text.
 
-### 2.3 `src/styles/globals.css` (ready to paste)
+### 2.3 `src/styles/globals.css` token blocks (copied)
+
+These are the three custom-property blocks of `globals.css`, verbatim. `@theme inline` maps each to a Tailwind colour (`--color-ink-2: var(--ink-2)` and so on, plus `--color-rw`, `--color-header-fg` and the palette keys); the rest of the file holds the radii and shadows (§4.3), the easing curves (§7.2), the denah and Leaflet rules (§8.3) and the header (§5.17). It imports the utilities: `type.css` (§3.2), `utilities.css` (RW scopes, photo grades, kawung, layout helpers) and `motion.css` (§7).
 
 ```css
-@import "tailwindcss";
-@import "tw-animate-css";
-@plugin "@tailwindcss/typography";
-
-@custom-variant dark (&:is(.dark *));
-
 :root {
-  --background: 0 0% 100%;
-  --foreground: 222.2 47.4% 11.2%;
-  --card: 0 0% 100%;
-  --card-foreground: 222.2 47.4% 11.2%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 222.2 47.4% 11.2%;
-  --primary: 221.2 83.2% 53.3%;
-  --primary-foreground: 0 0% 100%;
-  --primary-hover: 224.3 76.3% 48%;
-  --primary-text: 221.2 83.2% 53.3%;
-  --secondary: 213.8 100% 96.9%;
-  --secondary-foreground: 226.2 70.7% 40.2%;
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 240 3.8% 46.1%;
-  --accent: 213.8 100% 96.9%;
-  --accent-foreground: 222.2 47.4% 11.2%;
-  --destructive: 0 72.2% 50.6%;
-  --destructive-foreground: 0 0% 100%;
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 221.2 83.2% 53.3%;
-  --chart-1: 221.2 83.2% 53.3%;
-  --chart-2: 226.2 70.7% 40.2%;
-  --chart-3: 198.6 88.7% 48.4%;
-  --chart-4: 160.1 84.1% 39.4%;
-  --chart-5: 37.7 92.1% 50.2%;
-  --sidebar-background: 0 0% 100%;
-  --sidebar-foreground: 215.3 25% 26.7%;
-  --sidebar-primary: 221.2 83.2% 53.3%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 213.8 100% 96.9%;
-  --sidebar-accent-foreground: 226.2 70.7% 40.2%;
-  --sidebar-border: 214.3 31.8% 91.4%;
-  --sidebar-ring: 221.2 83.2% 53.3%;
-  --brand-deep: 222.2 47.4% 11.2%;
-  --brand-royal: 226.2 70.7% 40.2%;
-  --brand-ice: 213.8 100% 96.9%;
-  --rw-leaf: 89.2 55.1% 27.1%;
-  --rw-leaf-foreground: 0 0% 100%;
-  --rw-leaf-soft: 88 42.9% 93.1%;
-  --rw-leaf-soft-foreground: 89.2 55.1% 27.1%;
-  --rw-terracotta: 22.9 58.6% 34.1%;
-  --rw-terracotta-foreground: 0 0% 100%;
-  --rw-terracotta-soft: 28.6 60% 93.1%;
-  --rw-terracotta-soft-foreground: 22.9 58.6% 34.1%;
-  --rw-mulberry: 321 32.6% 36.1%;
-  --rw-mulberry-foreground: 0 0% 100%;
-  --rw-mulberry-soft: 324 35.7% 94.5%;
-  --rw-mulberry-soft-foreground: 321 32.6% 36.1%;
-  --rw-teal: 160 30% 25%;
-  --rw-teal-foreground: 0 0% 100%;
-  --rw-teal-soft: 158 32% 93.5%;
-  --rw-teal-soft-foreground: 160 30% 25%;
-  --rw-violet: 270 40% 32%;
-  --rw-violet-foreground: 0 0% 100%;
-  --rw-violet-soft: 270 45% 95%;
-  --rw-violet-soft-foreground: 270 40% 32%;
-  --success: 142.1 76.2% 36.3%;
-  --success-foreground: 0 0% 100%;
-  --success-soft: 140.6 84.2% 92.5%;
-  --success-soft-foreground: 142.4 71.8% 29.2%;
-  --warning: 32.1 94.6% 43.7%;
-  --warning-foreground: 222.2 47.4% 11.2%;
-  --warning-soft: 48 96.5% 88.8%;
-  --warning-soft-foreground: 26 90.5% 37.1%;
-  --info: 200.4 98% 39.4%;
-  --info-foreground: 0 0% 100%;
-  --info-soft: 204 93.8% 93.7%;
-  --info-soft-foreground: 201.3 96.3% 32.2%;
-  --danger: var(--destructive);
-  --danger-foreground: var(--destructive-foreground);
-  --danger-soft: 0 93.3% 94.1%;
-  --danger-soft-foreground: 0 73.7% 41.8%;
-  --neutral: 240 3.8% 46.1%;
-  --neutral-foreground: 0 0% 100%;
-  --neutral-soft: 210 40% 96.1%;
-  --neutral-soft-foreground: 240 5.3% 26.1%;
-  --surface-warm: 37.5 44.4% 96.5%;
-  --surface-warm-foreground: 222.2 47.4% 11.2%;
-  --radius: 0.75rem;
-  /* Home page sizes (§4.4). */
-  --hero-h: calc(100svh - 4rem);
+  /* Paper, ink and lines */
+  --background: #f6efe3;
+  --foreground: #1d1813;
+  --card: #fffaf2;
+  --card-foreground: #1d1813;
+  --popover: #fffaf2;
+  --popover-foreground: #1d1813;
+  --muted: #ede3d1;
+  --muted-foreground: #6e6152;
+  --accent: #ede3d1;
+  --accent-foreground: #1d1813;
+  --ink-2: #4a4036;
+  --border: #e2d5c0;
+  --border-strong: #cbb99c;
+  --input: #8c7a62;
+  --ring: #a93814;
+  /* Bata, the batik brick: the main action colour. As text it is always primary-ink (§2.5). */
+  --primary: #c4431b;
+  --primary-foreground: #ffffff;
+  --primary-hover: #a93814;
+  --primary-pressed: #8e2f10;
+  --primary-tint: #f8dccd;
+  --primary-ink: #a93814;
+  /* Inverse: the secondary button and the selected chip. */
+  --secondary: #1d1813;
+  --secondary-foreground: #f6efe3;
+  --secondary-hover: #352c23;
+  --secondary-pressed: #15120e;
+  --destructive: #a32015;
+  --destructive-foreground: #ffffff;
+  /* Dark bands and their text: these stay dark in both themes. */
+  --gold: #e0a63a;
+  --gold-ink: #8a5a0b;
+  --gold-tint: #f6e3b8;
+  --night: #15120e;
+  --forest-night: #0f2a1d;
+  --on-dark: #ffffff;
+  --on-dark-2: #d9ccb8;
+  --on-dark-3: #a59680;
+  --on-forest: #c9d6cc;
+  --on-forest-2: #a9bfb0;
+  --on-indigo: #e3e6f5;
+  --whatsapp: #0f7a3f;
+  --whatsapp-hover: #0b6532;
+  --whatsapp-foreground: #ffffff;
+  /* The brand names of CLAUDE.md §8, now the night band, the forest band and the sunken paper. */
+  --brand-deep: #15120e;
+  --brand-royal: #0f2a1d;
+  --brand-ice: #ede3d1;
+  /* Status pairs: the solid fill with its text, and the tint (-soft) with its text. */
+  --success: #1e6b40;
+  --success-foreground: #ffffff;
+  --success-soft: #dcefe2;
+  --success-soft-foreground: #1e6b40;
+  --warning: #8a5200;
+  --warning-foreground: #ffffff;
+  --warning-soft: #fbebc8;
+  --warning-soft-foreground: #8a5200;
+  --info: #2c5aa0;
+  --info-foreground: #ffffff;
+  --info-soft: #dee8f7;
+  --info-soft-foreground: #2c5aa0;
+  --danger-soft: #fbe0dc;
+  --danger-soft-foreground: #a32015;
+  --neutral: #6e6152;
+  --neutral-foreground: #ffffff;
+  --neutral-soft: #ede3d1;
+  --neutral-soft-foreground: #4a4036;
+  /* RW accent sets (§2.7), named after the RW that wears them in rw_units: accent, strong, tint, and the highlight
+     used on photos and dark bands. */
+  --rw05: #1f5c3a;
+  --rw05-strong: #154229;
+  --rw05-tint: #ddebdc;
+  --rw05-hi: #8cbf4f;
+  --rw13: #8e4a1f;
+  --rw13-strong: #6b3412;
+  --rw13-tint: #f3e1cb;
+  --rw13-hi: #d39b3a;
+  --rw08: #33427f;
+  --rw08-strong: #243063;
+  --rw08-tint: #dfe3f3;
+  --rw08-hi: #9caaf0;
+  /* The two spare palettes an RW may still be given (rw_accent 'teal', 'violet'). */
+  --rw-spare-teal: #1d5c59;
+  --rw-spare-teal-strong: #13403e;
+  --rw-spare-teal-tint: #d6eae7;
+  --rw-spare-violet: #6b3462;
+  --rw-spare-violet-strong: #4d2346;
+  --rw-spare-violet-tint: #f0ddeb;
+  --on-accent: #ffffff;
+  /* Dashboard: sidebar and charts. */
+  --sidebar-background: #fffaf2;
+  --sidebar-foreground: #4a4036;
+  --sidebar-primary: #c4431b;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ede3d1;
+  --sidebar-accent-foreground: #1d1813;
+  --sidebar-border: #e2d5c0;
+  --sidebar-ring: #a93814;
+  --chart-1: #c4431b;
+  --chart-2: #1f5c3a;
+  --chart-3: #33427f;
+  --chart-4: #e0a63a;
+  --chart-5: #8e4a1f;
+  --radius: 0.625rem;
+  /* Header heights (DESIGN-SPEC §2.7): 64 on phones; 72 solid and 88 over the home photo from lg. */
+  --header-h: 4rem;
+  --header-h-overlay: 4rem;
+  /* Home page sizes (docs/StyleGuide.md §4.4). */
+  --hero-max-h: 56.25rem;
   --hero-min-h-mobile: 32rem;
-  --parallax-overscan: 112%;
+  --parallax-overscan: 116%;
+  /* Motion tokens (docs/StyleGuide.md §7.2). Springs are approximated by the linear() curves of @theme. */
+  --duration-press: 100ms;
+  --duration-micro: 150ms;
+  --duration-short: 200ms;
+  --duration-header: 220ms;
+  --duration-base: 300ms;
+  --duration-long: 500ms;
+  --duration-reveal: 600ms;
+  --duration-max: 700ms;
+  --duration-count: 1400ms;
+  --duration-spring-soft: 610ms;
+  --duration-spring-snappy: 470ms;
+  --duration-spring-sheet: 440ms;
+  --duration-spring-pin: 590ms;
+}
+
+@media (width >= 64rem) {
+  :root {
+    --header-h: 4.5rem;
+    --header-h-overlay: 5.5rem;
+  }
 }
 
 .dark {
-  --background: 240 10% 3.9%;
-  --foreground: 210 40% 98%;
-  --card: 222.2 47.4% 11.2%;
-  --card-foreground: 210 40% 98%;
-  --popover: 222.2 47.4% 11.2%;
-  --popover-foreground: 210 40% 98%;
-  --primary: 221.2 83.2% 53.3%;
-  --primary-foreground: 0 0% 100%;
-  --primary-hover: 217.2 91.2% 59.8%;
-  --primary-text: 213.1 93.9% 67.8%;
-  --secondary: 217.2 32.6% 17.5%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217.2 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 65.1%;
-  --accent: 217.2 32.6% 17.5%;
-  --accent-foreground: 210 40% 98%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 0 0% 100%;
-  --border: 217.2 32.6% 17.5%;
-  --input: 217.2 32.6% 17.5%;
-  --ring: 217.2 91.2% 59.8%;
+  --background: #14110d;
+  --foreground: #f4ecdf;
+  --card: #1e1a15;
+  --card-foreground: #f4ecdf;
+  --popover: #1e1a15;
+  --popover-foreground: #f4ecdf;
+  --muted: #0f0d0a;
+  --muted-foreground: #a59680;
+  --accent: #2a241d;
+  --accent-foreground: #f4ecdf;
+  --ink-2: #cfc2ae;
+  --border: #3a3229;
+  --border-strong: #54493c;
+  --input: #7a6b57;
+  --ring: #f49d76;
+  --primary: #f0875a;
+  --primary-foreground: #1a0e08;
+  --primary-hover: #f49d76;
+  --primary-pressed: #e06e40;
+  --primary-tint: #3a1e12;
+  --primary-ink: #f49d76;
+  --secondary: #f4ecdf;
+  --secondary-foreground: #14110d;
+  --secondary-hover: #ffffff;
+  --secondary-pressed: #cfc2ae;
+  --destructive: #f28b7e;
+  --destructive-foreground: #1a0e08;
+  --gold: #e9b85a;
+  --gold-ink: #e9b85a;
+  --gold-tint: #3a2c10;
+  --night: #0b0907;
+  --forest-night: #0a1c13;
+  --brand-deep: #0b0907;
+  --brand-royal: #0a1c13;
+  --brand-ice: #1e1a15;
+  --success: #5cc98a;
+  --success-foreground: #0b1f13;
+  --success-soft: #12291b;
+  --success-soft-foreground: #5cc98a;
+  --warning: #f2be5c;
+  --warning-foreground: #1f1405;
+  --warning-soft: #2e220c;
+  --warning-soft-foreground: #f2be5c;
+  --info: #8db4f2;
+  --info-foreground: #0c1628;
+  --info-soft: #14213a;
+  --info-soft-foreground: #8db4f2;
+  --danger-soft: #331512;
+  --danger-soft-foreground: #f28b7e;
+  --neutral: #a59680;
+  --neutral-foreground: #14110d;
+  --neutral-soft: #2a241d;
+  --neutral-soft-foreground: #cfc2ae;
+  --rw05: #6cc08e;
+  --rw05-strong: #8fd3aa;
+  --rw05-tint: #15291e;
+  --rw13: #e39e68;
+  --rw13-strong: #f0b88a;
+  --rw13-tint: #2e1d12;
+  --rw13-hi: #e2b05a;
+  --rw08: #9caaf0;
+  --rw08-strong: #b9c3f5;
+  --rw08-tint: #1b2140;
+  --rw-spare-teal: #6cc2ba;
+  --rw-spare-teal-strong: #95d6cf;
+  --rw-spare-teal-tint: #132a28;
+  --rw-spare-violet: #d9a6cf;
+  --rw-spare-violet-strong: #e8c3e0;
+  --rw-spare-violet-tint: #2c1729;
+  --on-accent: #14110d;
+  --sidebar-background: #1e1a15;
+  --sidebar-foreground: #cfc2ae;
+  --sidebar-primary: #f0875a;
+  --sidebar-primary-foreground: #1a0e08;
+  --sidebar-accent: #2a241d;
+  --sidebar-accent-foreground: #f4ecdf;
+  --sidebar-border: #3a3229;
+  --sidebar-ring: #f49d76;
+  --chart-1: #f0875a;
+  --chart-2: #6cc08e;
+  --chart-3: #9caaf0;
+  --chart-4: #e9b85a;
+  --chart-5: #e39e68;
+}
+
+/* Aliases that follow the blocks above in either theme. The rw_accent palette keys of rw_units (leaf, terracotta,
+   mulberry, teal, violet) point at the RW sets; src/config/rw.ts spells the classes. */
+:root {
   --danger: var(--destructive);
   --danger-foreground: var(--destructive-foreground);
-  --chart-1: 217.2 91.2% 59.8%;
-  --chart-2: 213.1 93.9% 67.8%;
-  --chart-3: 198.4 93.2% 59.6%;
-  --chart-4: 158.1 64.4% 51.6%;
-  --chart-5: 43.3 96.4% 56.3%;
-  --sidebar-background: 240 10% 3.9%;
-  --sidebar-foreground: 215 20.2% 65.1%;
-  --sidebar-primary: 221.2 83.2% 53.3%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 217.2 32.6% 17.5%;
-  --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-border: 217.2 32.6% 17.5%;
-  --sidebar-ring: 217.2 91.2% 59.8%;
-  --rw-leaf: 87.3 43.3% 59.2%;
-  --rw-leaf-foreground: 240 10% 3.9%;
-  --rw-leaf-soft: 97.5 28.6% 11%;
-  --rw-leaf-soft-foreground: 87.3 43.3% 59.2%;
-  --rw-terracotta: 27.3 64.4% 65.9%;
-  --rw-terracotta-foreground: 240 10% 3.9%;
-  --rw-terracotta-soft: 24.5 35.5% 12.2%;
-  --rw-terracotta-soft-foreground: 27.3 64.4% 65.9%;
-  --rw-mulberry: 322.6 43.3% 72.4%;
-  --rw-mulberry-foreground: 240 10% 3.9%;
-  --rw-mulberry-soft: 321.2 29.8% 11.2%;
-  --rw-mulberry-soft-foreground: 322.6 43.3% 72.4%;
-  --rw-teal: 160 40% 69%;
-  --rw-teal-foreground: 240 10% 3.9%;
-  --rw-teal-soft: 160 30% 11%;
-  --rw-teal-soft-foreground: 160 40% 69%;
-  --rw-violet: 270 60% 82%;
-  --rw-violet-foreground: 240 10% 3.9%;
-  --rw-violet-soft: 270 30% 13%;
-  --rw-violet-soft-foreground: 270 60% 82%;
-  --success: 142.1 70.6% 45.3%;
-  --success-foreground: 222.2 47.4% 11.2%;
-  --success-soft: 142 70% 45% / 0.15;
-  --success-soft-foreground: 141.9 69.2% 58%;
-  --warning: 37.7 92.1% 50.2%;
-  --warning-foreground: 222.2 47.4% 11.2%;
-  --warning-soft: 38 92% 50% / 0.15;
-  --warning-soft-foreground: 43.3 96.4% 56.3%;
-  --info: 198.4 93.2% 59.6%;
-  --info-foreground: 222.2 47.4% 11.2%;
-  --info-soft: 198 93% 60% / 0.15;
-  --info-soft-foreground: 199.4 95.5% 73.9%;
-  --danger-soft: 0 84% 60% / 0.15;
-  --danger-soft-foreground: 0 93.5% 81.8%;
-  --neutral: 215 20.2% 65.1%;
-  --neutral-foreground: 222.2 47.4% 11.2%;
-  --neutral-soft: 217.2 32.6% 17.5%;
-  --neutral-soft-foreground: 212.7 26.8% 83.9%;
-  --surface-warm: 30 10% 8%;
-  --surface-warm-foreground: 210 40% 98%;
+  --primary-text: var(--primary-ink);
+  --rw-leaf: var(--rw05);
+  --rw-leaf-strong: var(--rw05-strong);
+  --rw-leaf-soft: var(--rw05-tint);
+  --rw-leaf-hi: var(--rw05-hi);
+  --rw-terracotta: var(--rw13);
+  --rw-terracotta-strong: var(--rw13-strong);
+  --rw-terracotta-soft: var(--rw13-tint);
+  --rw-terracotta-hi: var(--rw13-hi);
+  --rw-mulberry: var(--rw08);
+  --rw-mulberry-strong: var(--rw08-strong);
+  --rw-mulberry-soft: var(--rw08-tint);
+  --rw-mulberry-hi: var(--rw08-hi);
+  --rw-teal: var(--rw-spare-teal);
+  --rw-teal-strong: var(--rw-spare-teal-strong);
+  --rw-teal-soft: var(--rw-spare-teal-tint);
+  --rw-teal-hi: var(--rw-spare-teal);
+  --rw-violet: var(--rw-spare-violet);
+  --rw-violet-strong: var(--rw-spare-violet-strong);
+  --rw-violet-soft: var(--rw-spare-violet-tint);
+  --rw-violet-hi: var(--rw-spare-violet);
+  /* The current RW of a subtree (rw-scope-* below); outside any RW it is the combo set, the primary. */
+  --rw: var(--primary-ink);
+  --rw-strong: var(--primary-ink);
+  --rw-soft: var(--primary-tint);
+  --rw-hi: var(--gold);
+  --rw-fill: var(--primary);
+  /* The header's colours, solid by default; the overlay state over a hero photo swaps them (.site-header). */
+  --header-fg: var(--foreground);
+  --header-fg-2: var(--ink-2);
+  --header-fg-3: var(--muted-foreground);
+  --header-line: var(--border-strong);
 }
-
-@theme inline {
-  --color-background: hsl(var(--background));
-  --color-foreground: hsl(var(--foreground));
-  --color-card: hsl(var(--card));
-  --color-card-foreground: hsl(var(--card-foreground));
-  --color-popover: hsl(var(--popover));
-  --color-popover-foreground: hsl(var(--popover-foreground));
-  --color-primary: hsl(var(--primary));
-  --color-primary-foreground: hsl(var(--primary-foreground));
-  --color-primary-hover: hsl(var(--primary-hover));
-  --color-primary-text: hsl(var(--primary-text));
-  --color-secondary: hsl(var(--secondary));
-  --color-secondary-foreground: hsl(var(--secondary-foreground));
-  --color-muted: hsl(var(--muted));
-  --color-muted-foreground: hsl(var(--muted-foreground));
-  --color-accent: hsl(var(--accent));
-  --color-accent-foreground: hsl(var(--accent-foreground));
-  --color-destructive: hsl(var(--destructive));
-  --color-destructive-foreground: hsl(var(--destructive-foreground));
-  --color-border: hsl(var(--border));
-  --color-input: hsl(var(--input));
-  --color-ring: hsl(var(--ring));
-  --color-chart-1: hsl(var(--chart-1));
-  --color-chart-2: hsl(var(--chart-2));
-  --color-chart-3: hsl(var(--chart-3));
-  --color-chart-4: hsl(var(--chart-4));
-  --color-chart-5: hsl(var(--chart-5));
-  --color-sidebar: hsl(var(--sidebar-background));
-  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
-  --color-sidebar-primary: hsl(var(--sidebar-primary));
-  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
-  --color-sidebar-accent: hsl(var(--sidebar-accent));
-  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
-  --color-sidebar-border: hsl(var(--sidebar-border));
-  --color-sidebar-ring: hsl(var(--sidebar-ring));
-  --color-brand-deep: hsl(var(--brand-deep));
-  --color-brand-royal: hsl(var(--brand-royal));
-  --color-brand-ice: hsl(var(--brand-ice));
-  --color-rw-leaf: hsl(var(--rw-leaf));
-  --color-rw-leaf-foreground: hsl(var(--rw-leaf-foreground));
-  --color-rw-leaf-soft: hsl(var(--rw-leaf-soft));
-  --color-rw-leaf-soft-foreground: hsl(var(--rw-leaf-soft-foreground));
-  --color-rw-terracotta: hsl(var(--rw-terracotta));
-  --color-rw-terracotta-foreground: hsl(var(--rw-terracotta-foreground));
-  --color-rw-terracotta-soft: hsl(var(--rw-terracotta-soft));
-  --color-rw-terracotta-soft-foreground: hsl(var(--rw-terracotta-soft-foreground));
-  --color-rw-mulberry: hsl(var(--rw-mulberry));
-  --color-rw-mulberry-foreground: hsl(var(--rw-mulberry-foreground));
-  --color-rw-mulberry-soft: hsl(var(--rw-mulberry-soft));
-  --color-rw-mulberry-soft-foreground: hsl(var(--rw-mulberry-soft-foreground));
-  --color-rw-teal: hsl(var(--rw-teal));
-  --color-rw-teal-foreground: hsl(var(--rw-teal-foreground));
-  --color-rw-teal-soft: hsl(var(--rw-teal-soft));
-  --color-rw-teal-soft-foreground: hsl(var(--rw-teal-soft-foreground));
-  --color-rw-violet: hsl(var(--rw-violet));
-  --color-rw-violet-foreground: hsl(var(--rw-violet-foreground));
-  --color-rw-violet-soft: hsl(var(--rw-violet-soft));
-  --color-rw-violet-soft-foreground: hsl(var(--rw-violet-soft-foreground));
-  --color-success: hsl(var(--success));
-  --color-success-foreground: hsl(var(--success-foreground));
-  --color-success-soft: hsl(var(--success-soft));
-  --color-success-soft-foreground: hsl(var(--success-soft-foreground));
-  --color-warning: hsl(var(--warning));
-  --color-warning-foreground: hsl(var(--warning-foreground));
-  --color-warning-soft: hsl(var(--warning-soft));
-  --color-warning-soft-foreground: hsl(var(--warning-soft-foreground));
-  --color-info: hsl(var(--info));
-  --color-info-foreground: hsl(var(--info-foreground));
-  --color-info-soft: hsl(var(--info-soft));
-  --color-info-soft-foreground: hsl(var(--info-soft-foreground));
-  --color-danger: hsl(var(--danger));
-  --color-danger-foreground: hsl(var(--danger-foreground));
-  --color-danger-soft: hsl(var(--danger-soft));
-  --color-danger-soft-foreground: hsl(var(--danger-soft-foreground));
-  --color-neutral: hsl(var(--neutral));
-  --color-neutral-foreground: hsl(var(--neutral-foreground));
-  --color-neutral-soft: hsl(var(--neutral-soft));
-  --color-neutral-soft-foreground: hsl(var(--neutral-soft-foreground));
-  --color-surface-warm: hsl(var(--surface-warm));
-  --color-surface-warm-foreground: hsl(var(--surface-warm-foreground));
-
-  --radius-sm: calc(var(--radius) - 0.5rem);    /* 0.25rem */
-  --radius-md: calc(var(--radius) - 0.375rem);  /* 0.375rem */
-  --radius-lg: calc(var(--radius) - 0.25rem);   /* 0.5rem  */
-  --radius-xl: var(--radius);                   /* 0.75rem */
-  --radius-2xl: calc(var(--radius) + 0.25rem);  /* 1rem    */
-
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-plus-jakarta), var(--font-inter), ui-sans-serif, sans-serif;
-
-  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
-  --shadow-card-hover: 0 8px 24px rgb(15 23 42 / 0.08);
-  --shadow-modal: 0 24px 48px rgb(15 23 42 / 0.18);
-}
-
-@layer base {
-  * { @apply border-border outline-ring/50; }
-  html { @apply scroll-smooth motion-reduce:scroll-auto; }
-  body { @apply bg-background font-sans text-foreground antialiased; font-feature-settings: "cv11", "ss01"; }
-  h1, h2, h3, h4 { @apply font-display; }
-  :focus-visible { @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background; }
-}
-
-/* Type scale: one class per step, mobile value first, desktop from md (48rem). */
-@utility text-display-xl { font-family: var(--font-display); font-weight: 800; font-size: 2.5rem; line-height: 1.1; letter-spacing: -0.025em; @media (width >= 48rem) { font-size: 3.75rem; line-height: 1.05; } }
-@utility text-display-lg { font-family: var(--font-display); font-weight: 700; font-size: 2.25rem; line-height: 1.15; letter-spacing: -0.02em; @media (width >= 48rem) { font-size: 3rem; line-height: 1.1; } }
-@utility text-h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.875rem; line-height: 1.2; letter-spacing: -0.02em; @media (width >= 48rem) { font-size: 2.25rem; } }
-@utility text-h2 { font-family: var(--font-display); font-weight: 700; font-size: 1.5rem; line-height: 1.25; letter-spacing: -0.015em; @media (width >= 48rem) { font-size: 1.875rem; } }
-@utility text-h3 { font-family: var(--font-display); font-weight: 600; font-size: 1.25rem; line-height: 1.33; letter-spacing: -0.01em; @media (width >= 48rem) { font-size: 1.5rem; } }
-@utility text-h4 { font-family: var(--font-display); font-weight: 600; font-size: 1.125rem; line-height: 1.4; @media (width >= 48rem) { font-size: 1.25rem; } }
-@utility text-body-lg { font-size: 1.0625rem; line-height: 1.65; @media (width >= 48rem) { font-size: 1.125rem; } }
-@utility text-body { font-size: 1rem; line-height: 1.6; }
-@utility text-body-sm { font-size: 0.875rem; line-height: 1.5; }
-@utility text-caption { font-size: 0.75rem; line-height: 1.4; letter-spacing: 0.01em; }
-@utility text-overline { font-size: 0.75rem; line-height: 1; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
-/* Tabular figures use the built-in `tabular-nums` utility; no custom alias. */
-
-/* Home page helpers (§7.3, §5.7). */
-@utility clip-inset { clip-path: inset(0); }
-@utility scrollbar-none { scrollbar-width: none; &::-webkit-scrollbar { display: none; } }
 ```
 
 ### 2.4 Tailwind and shadcn mapping
@@ -453,95 +398,74 @@ Rule: badges, chips and table status cells always use the **soft** pair (every s
 | Utility | Resolves to | Used for |
 |---|---|---|
 | `bg-background` / `text-foreground` | `--background` / `--foreground` | page canvas |
-| `bg-card border-border shadow-card` | `--card`, `--border`, `--shadow-card` | every card |
-| `bg-primary text-primary-foreground hover:bg-primary-hover` | `--primary*` | primary buttons, active nav |
-| `bg-secondary text-secondary-foreground` | `--secondary*` | secondary buttons, icon tiles |
-| `text-muted-foreground` | `--muted-foreground` | helper text, meta rows |
-| `text-primary-text` | `--primary-text` | blue text: overlines, eyebrows, inline links, the `link` button (never `text-primary`, which fails on dark surfaces) |
-| `ring-ring ring-offset-background` | `--ring` | focus ring |
+| `bg-muted` (`bg-sunken`) | `--muted` | alternating sections, icon wells, skeletons |
+| `bg-card` (`bg-surface`) `border-border` | `--card`, `--border` | inputs, panels, the review card |
+| `text-ink-2` / `text-muted-foreground` | `--ink-2` / `--muted-foreground` | body copy / meta |
+| `bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-pressed` | `--primary*` | the primary button |
+| `text-primary-ink` (or the older `text-primary-text`) | `--primary-ink` | links, eyebrows, the `link` button |
+| `bg-primary-tint text-primary-ink` | `--primary-tint` | selected states, icon tiles (dashboard KPI, contact rows) |
+| `bg-secondary text-secondary-foreground` | `--secondary*` (inverse) | the secondary button, selected chip, avatars |
+| `border-border-strong` / `border-input` | `--border-strong` / `--input` | chips / form controls |
+| `bg-night`, `bg-forest-night`, `text-on-dark-2`, `text-on-forest` | dark band tokens | footer, figures band, CTA band |
+| `text-gold` / `text-gold-ink` / `bg-gold-tint` | `--gold*` | stars, dark-band eyebrows / gold text on paper / award tile |
+| `bg-whatsapp text-whatsapp-foreground` | `--whatsapp*` | every WhatsApp button |
 | `bg-success-soft text-success-soft-foreground` (and warning/info/danger/neutral) | semantic soft pair | badges, status cells |
+| `text-rw`, `bg-rw-fill`, `bg-rw-soft`, `text-rw-strong`, `bg-rw-hi` | the current RW (`--rw*`, set by `rw-scope-*`) | every RW-coloured touch (§2.7) |
+| `text-rw05`, `bg-rw13-tint`, `bg-rw08`, … | the RW sets by number | where the design names one RW's colour on purpose (the kawung row in soga, the news category in forest) |
+| `text-header-fg`, `text-header-fg-2`, `text-header-fg-3`, `border-header-line` | `--header-*` | the site header's two states (§5.17) |
 | `bg-sidebar text-sidebar-foreground` | `--sidebar-*` | shadcn `Sidebar` |
 | `fill-chart-1` … `stroke-chart-5` | `--chart-n` | Recharts via `ChartContainer` `config.color` |
-| `bg-brand-deep text-white` / `from-brand-ice` | brand customs | CTA band, hero gradient |
-| `bg-surface-warm` / `text-surface-warm` | `--surface-warm` | warm home sections and the footer; the wave divider of a warm section |
-| `text-rw-leaf` / `bg-rw-terracotta-soft text-rw-terracotta-soft-foreground` (through `RW_ACCENT_CLASSES` in `src/config/rw.ts`) | `--rw-<palette>*` (`leaf`, `terracotta`, `mulberry`, `teal`, `violet`) | RW eyebrow, RW tag, map hotspot (§2.7) |
-| `rounded-xl` / `rounded-2xl` / `rounded-full` | `--radius-xl` / `--radius-2xl` | surfaces / modals / badges |
+| `rounded-md` / `rounded-lg` / `rounded-xl` / `rounded-2xl` / `rounded-3xl` / `rounded-full` | 10 / 14 / 16 / 20 / 24 px / pill | controls / photos and cards / tiles / form panels / large panels / badges and chips |
 | `font-display` / `font-sans` | `--font-display` / `--font-sans` | headings / body |
 
-shadcn `components.json`: `"style": "new-york"`, `"tailwind": { "css": "src/styles/globals.css", "baseColor": "slate", "cssVariables": true }`, aliases `@/components`, `@/components/ui`, `@/lib/utils/cn` (utils), `@/lib`, `@/hooks`. `cn()` lives in `src/lib/utils/cn.ts` and is imported from that path; there is no barrel `src/lib/utils/index.ts`. Generated primitives in `src/components/ui` receive theme-level edits only; thin compositions of them without domain logic, such as `ResponsiveDialog`, live there too (CLAUDE.md §3.2); product behaviour is composed in domain folders.
+shadcn `components.json`: `"style": "new-york"`, `"tailwind": { "css": "src/styles/globals.css", "baseColor": "slate", "cssVariables": true }`, aliases `@/components`, `@/components/ui`, `@/lib/utils/cn` (utils), `@/lib`, `@/hooks`. `cn()` lives in `src/lib/utils/cn.ts` and knows the custom type steps and `border-control`, so tailwind-merge never drops them next to a colour. Generated primitives in `src/components/ui` receive theme-level edits only; thin compositions of them without domain logic, such as `ResponsiveDialog`, live there too (CLAUDE.md §3.2); product behaviour is composed in domain folders.
 
-### 2.5 Contrast notes (WCAG 2.1)
+### 2.5 Contrast notes (WCAG 2.1 AA)
 
-| Pair | Ratio | Verdict |
-|---|---|---|
-| `--foreground` #0F172A on #FFFFFF | 16.9:1 | AAA body text |
-| `--primary-foreground` #FFFFFF on `--primary` #2563EB | 5.17:1 | AA text, both modes |
-| `--primary` #2563EB on `--background` #09090B (dark) | 3.85:1 | AA for UI components and large text only; never body text, so blue text uses `--primary-text` |
-| `--primary-text` on `--background` / `--card` / `--muted` (light: #2563EB) | 5.17 / 5.17 / 4.72 (4.75 on `--brand-ice`) | AA text; same blue as `--primary` |
-| `--primary-text` on `--background` / `--card` / `--muted` (dark: #60A5FA) | 7.83 / 7.02 / 5.75 | AA text (decision of 2026-10-17: overlines and links in dark mode) |
-| `--primary-hover` #3B82F6 with white (dark) | 3.7:1 | transient hover state only |
-| `--muted-foreground` #71717A on #FFFFFF | 4.8:1 | AA; keep ≥ 12 px |
-| `--muted-foreground` #94A3B8 on #09090B (dark) | 7.8:1 | AA |
-| `--foreground` / `--muted-foreground` / `--primary-text` on `--surface-warm` (light: #FAF7F2) | 16.7 / 4.52 / 4.84 | AA; muted text stays allowed, keep ≥ 12 px (decision of 2026-10-23) |
-| `--foreground` / `--muted-foreground` / `--primary-text` on `--surface-warm` (dark: #161412) | 17.5 / 7.1 / 7.2 | AA |
-| RW accents as text on `--surface-warm` (light: leaf / terracotta / mulberry) | 5.8 / 6.3 / 7.3 | AA, eyebrow-safe |
-| `--secondary-foreground` #1E40AF on `--secondary` #EFF6FF | 8.0:1 | AA |
-| `--destructive` #DC2626 with white | 4.8:1 | AA (light); 3.8:1 in dark, so destructive buttons carry an icon and ≥ 14 px semibold text |
-| success / warning / info / danger / neutral soft pairs (light) | 4.6 / 4.5 / 5.2 / 5.3 / 9.6 | AA, badge-safe |
-| success / warning / info / danger / neutral soft pairs (dark; 15 % tint composited over `--card` #0F172A, neutral over #1E293B) | 8.0 / 8.3 / 8.1 / 8.2 / 9.8 | AA, badge-safe |
-| `--warning-foreground` #0F172A on `--warning` #D97706 (light) | 5.6:1 | AA text; the only strong fill with dark text in light mode |
-| strong `--success` #16A34A / `--info` #0284C7 with white | 3.3 / 4.1 | large text (≥ 24 px, or ≥ 18.66 px bold) only |
-| RW fill pairs, white on the accent (light: leaf / terracotta / mulberry / teal / violet) | 6.2 / 6.8 / 7.8 / 8.6 / 10.3 | AA text |
-| RW soft pairs, accent on its soft tint (light) | 5.6 / 5.9 / 6.7 / 7.7 / 8.9 | AA, tag-safe |
-| RW accents as text on `--background` / `--card` / `--muted` (light) | leaf 6.2 / 6.2 / 5.7 · terracotta 6.8 / 6.8 / 6.2 · mulberry 7.8 / 7.8 / 7.1 · teal 8.6 / 8.6 / 7.9 · violet 10.3 / 10.3 / 9.4 | AA |
-| RW fill pairs, #09090B on the accent (dark) | 10.0 / 9.1 / 8.8 / 11.3 / 11.0 | AA text |
-| RW soft pairs, accent on its soft tint (dark) | 8.0 / 7.5 / 7.7 / 9.1 / 9.5 | AA, tag-safe |
-| RW accents as text on `--background` / `--card` / `--muted` (dark) | leaf 10.0 / 8.9 / 7.3 · terracotta 9.1 / 8.2 / 6.7 · mulberry 8.8 / 7.9 / 6.5 · teal 11.3 / 10.1 / 8.3 · violet 11.0 / 9.9 / 8.1 | AA |
+The pairs below are those DESIGN-SPEC §1.2 checked; `src/styles/globals.test.ts` recomputes them from `globals.css` in both themes and fails the build when one drops under 4.5:1 (3:1 for the edge of a form control).
+
+| Pair (light) | Ratio | | Pair (light) | Ratio |
+|---|---|---|---|---|
+| ink / paper | 15.41 | | white / primary | 5.04 |
+| ink-2 / paper | 8.84 | | white / primary-hover | 6.44 |
+| ink-3 / paper | 5.26 | | primary-ink / paper (links) | 5.63 |
+| ink-3 / sunken | 4.72 | | primary-ink / primary-tint | 4.94 |
+| ink-3 / surface | 5.78 | | white / whatsapp | 5.42 |
+| ink-2 / sunken | 7.95 | | inverse-fg / inverse | 15.41 |
+| rw05 / paper · / rw05-tint | 6.93 · 6.41 | | white / rw05 | 7.92 |
+| rw13 / paper · / rw13-tint | 5.83 · 5.22 | | white / rw13 | 6.67 |
+| rw08 / paper · / rw08-tint | 8.25 · 7.37 | | on-indigo / rw08 | 7.59 |
+| success / success-tint | 5.41 | | warning / warning-tint | 5.42 |
+| danger / danger-tint | 6.05 | | info / info-tint | 5.52 |
+| on-dark-2 / night | 11.81 | | on-dark-3 / night | 6.47 |
+| gold / night | 8.61 | | on-forest / forest-night | 10.21 |
+| on-forest-2 / forest-night | 7.86 | | rw05-hi / forest-night | 7.07 |
+| border-input / paper (UI, 3:1) | 3.62 | | gold-ink / paper | 5.18 |
+
+`--primary` on the paper is 4.41:1, so the brick is never text: links and eyebrows are `primary-ink`. Text on a photo always sits on one of the photo grades of §8.2, which keep the local background darker than #6E6B68 (≥ 5.3:1 for white). In dark mode ink on paper is 16.05:1, ink-3 6.52:1 and the primary's foreground on the primary 7.49:1; the test covers every dark pair too.
 
 ### 2.6 Theme behaviour
 
-`next-themes` with `attribute="class"`, provided once by `src/components/providers/theme-provider.tsx`; the `<html>` element carries `suppressHydrationWarning`. The `(public)`, `(booking)` and `(auth)` route groups render with `forcedTheme="light"` (open decision D3), so a staff member's dark preference never leaks into the public site through the shared `localStorage` key. The `(admin)` group uses `defaultTheme="system"`, `enableSystem` and `storageKey="gsk-admin-theme"`; the toggle lives only in the sidebar footer. Dark mode never uses drop shadows: cards get `dark:border-white/5` as a highlight instead.
+`next-themes` with `attribute="class"`, provided once by `src/components/providers/theme-provider.tsx`; the `<html>` element carries `suppressHydrationWarning`. The `(public)`, `(booking)` and `(auth)` route groups render with `forcedTheme="light"` (open decision D3), so a staff member's dark preference never leaks into the public site through the shared `localStorage` key. The `(admin)` group uses `defaultTheme="system"`, `enableSystem` and `storageKey="gsk-admin-theme"`; the toggle lives only in the sidebar footer. Dark mode never uses drop shadows: cards get `dark:border-white/5` as a highlight instead. The dark bands (night, forest) stay dark in both themes and only deepen a little.
 
 ### 2.7 RW accent colours
 
-Each RW has an accent so a visitor can tell the RWs apart at a glance: RW 05 Ecowastreme in green (`leaf`), RW 13 Kampung Budaya & Seni, the arts programme, in terracotta, and RW 08 Kampung Inklusif & Ramah Anak in mulberry (Task P2.10.03). The accents follow the same shape as the semantic families: a fill, the text on that fill, a tinted background and the text on that tint. The RWs are rows of `rw_units` (decision of 2026-10-21), and each names its accent by a palette key, `rw_units.accent_key` (enum `rw_accent`); the database never holds a colour, because the build only knows the palettes below. `leaf`, `terracotta` and `mulberry` are in use, and `teal` and `violet` are spares, so the next RW gets a colour of its own without a release.
+Each RW wears one accent set so a visitor can tell the RWs apart at a glance, and every card, badge, eyebrow, pill, icon tile and arrow circle that belongs to an RW uses that RW's set (DESIGN-SPEC §1.1). A set is an accent (text and fills), a strong shade, a tint, and a highlight for photos and dark bands:
 
-| Palette | Variable | Light HEX | Light HSL | Dark HEX | Dark HSL |
+| Set | Accent | Strong | Tint | Highlight | Dark accent / strong / tint |
 |---|---|---|---|---|---|
-| leaf | `--rw-leaf` | #466B1F | `89.2 55.1% 27.1%` | #9BC46A | `87.3 43.3% 59.2%` |
-| | `--rw-leaf-foreground` | #FFFFFF | `0 0% 100%` | #09090B | `240 10% 3.9%` |
-| | `--rw-leaf-soft` | #EEF5E6 | `88 42.9% 93.1%` | #1A2414 | `97.5 28.6% 11%` |
-| | `--rw-leaf-soft-foreground` | #466B1F | `89.2 55.1% 27.1%` | #9BC46A | `87.3 43.3% 59.2%` |
-| terracotta | `--rw-terracotta` | #8A4B24 | `22.9 58.6% 34.1%` | #E0A370 | `27.3 64.4% 65.9%` |
-| | `--rw-terracotta-foreground` | #FFFFFF | `0 0% 100%` | #09090B | `240 10% 3.9%` |
-| | `--rw-terracotta-soft` | #F8EDE3 | `28.6 60% 93.1%` | #2A1D14 | `24.5 35.5% 12.2%` |
-| | `--rw-terracotta-soft-foreground` | #8A4B24 | `22.9 58.6% 34.1%` | #E0A370 | `27.3 64.4% 65.9%` |
-| mulberry | `--rw-mulberry` | #7A3E65 | `321 32.6% 36.1%` | #D79AC0 | `322.6 43.3% 72.4%` |
-| | `--rw-mulberry-foreground` | #FFFFFF | `0 0% 100%` | #09090B | `240 10% 3.9%` |
-| | `--rw-mulberry-soft` | #F6ECF2 | `324 35.7% 94.5%` | #25141F | `321.2 29.8% 11.2%` |
-| | `--rw-mulberry-soft-foreground` | #7A3E65 | `321 32.6% 36.1%` | #D79AC0 | `322.6 43.3% 72.4%` |
-| teal (spare) | `--rw-teal` | #2D5346 | `160 30% 25%` | #90D0BA | `160 40% 69%` |
-| | `--rw-teal-foreground` | #FFFFFF | `0 0% 100%` | #09090B | `240 10% 3.9%` |
-| | `--rw-teal-soft` | #E9F4F0 | `158 32% 93.5%` | #14241F | `160 30% 11%` |
-| | `--rw-teal-soft-foreground` | #2D5346 | `160 30% 25%` | #90D0BA | `160 40% 69%` |
-| violet (spare) | `--rw-violet` | #523172 | `270 40% 32%` | #D1B6ED | `270 60% 82%` |
-| | `--rw-violet-foreground` | #FFFFFF | `0 0% 100%` | #09090B | `240 10% 3.9%` |
-| | `--rw-violet-soft` | #F2EDF8 | `270 45% 95%` | #21172B | `270 30% 13%` |
-| | `--rw-violet-soft-foreground` | #523172 | `270 40% 32%` | #D1B6ED | `270 60% 82%` |
+| `rw05`, "Hutan" (RW 05 Ecowastreme) | #1F5C3A | #154229 | #DDEBDC | #8CBF4F (design `rw05-leaf`) | #6CC08E / #8FD3AA / #15291E |
+| `rw13`, "Soga" (RW 13 Kampung Budaya & Seni) | #8E4A1F | #6B3412 | #F3E1CB | #D39B3A (design `rw13-gold`) | #E39E68 / #F0B88A / #2E1D12 |
+| `rw08`, "Nila" (RW 08 Inklusif & Ramah Anak) | #33427F | #243063 | #DFE3F3 | #9CAAF0 | #9CAAF0 / #B9C3F5 / #1B2140 |
+| spare `teal` | #1D5C59 | #13403E | #D6EAE7 | = accent | #6CC2BA / #95D6CF / #132A28 |
+| spare `violet` | #6B3462 | #4D2346 | #F0DDEB | = accent | #D9A6CF / #E8C3E0 / #2C1729 |
+| combination package | `primary` | `primary-ink` | `primary-tint` | gold | — |
 
-Every pair passes AA in both modes (§2.5). The spares were also chosen against colour blindness: simulated for protanopia, deuteranopia and tritanopia, each stays at least 5.3 OKLab units (×100) from every other palette, mulberry and teal under deuteranopia being the closest pair. The palettes already in use are closer than that: leaf and terracotta all but merge under deuteranopia (0.5), and terracotta and mulberry come to 3.5 under tritanopia. Colour is therefore never the only sign of an RW: its label (`RW 05`) is always written next to the accent, on map hotspots too.
+The RWs are rows of `rw_units` (decision of 2026-10-21), and each names its accent by a palette key, `rw_units.accent_key` (enum `rw_accent`: `leaf`, `terracotta`, `mulberry`, `teal`, `violet`); the database never holds a colour. The keys point at the sets: `leaf` → `rw05`, `terracotta` → `rw13`, `mulberry` → `rw08` (the indigo now worn by the key still called mulberry, which keeps the enum unchanged; renaming the key is a migration for later), `teal` and `violet` → the spares, so the next RW gets a colour without a release. The `--rw-<key>`, `--rw-<key>-strong`, `--rw-<key>-soft` and `--rw-<key>-hi` aliases follow the theme.
 
-Use them only where the RW itself is the point:
+**One component set for every RW.** A subtree takes its RW from one class, `rw-scope-<key>` (from `rwAccentClasses(accentKey).scope` in `src/config/rw.ts`; `rw-scope-neutral` for an RW that is offline, `rw-scope-combo` for a combination package), which sets `--rw`, `--rw-strong`, `--rw-soft`, `--rw-hi`, `--rw-fill` and the RW photo grade (§8.2). Inside it, components use `text-rw`, `bg-rw-fill`, `bg-rw-soft`, `text-rw-strong`, `bg-rw-hi`; outside any RW those resolve to the primary set, so a section heading's eyebrow is brick on the home page and forest on RW 05's page with the same code. The older per-palette classes (`text-rw-leaf`, `bg-rw-terracotta-soft text-rw-terracotta-soft-foreground`, …) stay in `RW_ACCENT_CLASSES` for the map and the dashboard.
 
-- the RW eyebrow or label (`RW 05 · Ecowastreme`) and the title accent on an RW page;
-- map hotspots of that RW (fill pair);
-- the RW tag on a package card (soft pair);
-- the 4 px rule along the top of the RW's tile in the home page's RW mosaic (fill pair; decision of 2026-10-23);
-- a combo package shows the accent of every RW it visits, in leg order.
-
-Never use them for call-to-action buttons (those stay `--primary`), for statuses (those use the semantic families of §2.2 through `src/config/status.ts`), or as paragraph text colour.
-
-Components never write these classes by hand. `RW_ACCENT_CLASSES` in `src/config/rw.ts` spells each palette's classes out in full (Tailwind only generates classes it finds written, so a class is never built from a key at runtime), and `rwAccentClasses(accentKey)` hands them out. An RW that is offline has no accent on the public site and is shown in the neutral pair. A new palette needs its four variables here and in `globals.css`, a value of the `rw_accent` enum, and its classes in `src/config/rw.ts`.
+Colour is never the only sign of an RW: its number (`RW 05`) is always written next to the accent, on badges, map hotspots and tiles. Never use an RW accent for a call to action (those stay `--primary`), for statuses (§2.2) or as paragraph text.
 
 ## 3. Typography
 
@@ -570,21 +494,46 @@ export const fontClassNames = `${fontSans.variable} ${fontDisplay.variable}`;
 
 ### 3.2 Type scale
 
-| Class | Desktop (rem / line-height / tracking) | Mobile (< md) | Weight | Family | Usage |
-|---|---|---|---|---|---|
-| `text-display-xl` | 3.75 / 1.05 / −0.025em | 2.5 / 1.1 | 800 | display | Home hero H1 |
-| `text-display-lg` | 3 / 1.1 / −0.02em | 2.25 / 1.15 | 700 | display | RW page hero |
-| `text-h1` | 2.25 / 1.2 / −0.02em | 1.875 | 700 | display | Page titles |
-| `text-h2` | 1.875 / 1.25 / −0.015em | 1.5 | 700 | display | Section titles, KPI values |
-| `text-h3` | 1.5 / 1.33 / −0.01em | 1.25 | 600 | display | Card-group titles |
-| `text-h4` | 1.25 / 1.4 | 1.125 | 600 | display | Card titles, dialog titles |
-| `text-body-lg` | 1.125 / 1.65 | 1.0625 | 400 | sans | Lead paragraphs |
-| `text-body` | 1 / 1.6 | 1 | 400 | sans | Default copy |
-| `text-body-sm` | 0.875 / 1.5 | same | 400 / 500 | sans | UI, tables, forms, buttons |
-| `text-caption` | 0.75 / 1.4 / +0.01em | same | 400 / 500 | sans | Meta, helper and error text |
-| `text-overline` | 0.75 / 1 / +0.08em, uppercase | same | 600 | sans | Eyebrows (`RW 05 · Ecowastreme`) |
+Every step is an `@utility` in `src/styles/globals.css` and is registered with `cn()` (`TYPE_SCALE_STEPS` in `src/lib/utils/cn.ts`). The large public steps grow fluidly between 390 and 1280 px (`clamp()`), so no breakpoint jumps; the UI steps change once at `md`. Sizes are px (desktop / phone).
 
-Only these eleven steps exist. A new size is a token change in `globals.css`, never an inline `text-[13px]`.
+**Public, editorial (DESIGN-SPEC §1.3)**
+
+| Class | Desktop / line-height / tracking | Phone | Weight | Family | Usage |
+|---|---|---|---|---|---|
+| `text-hero-statement` | 76 / 1.05 / +0.22em, uppercase | 40 / 1.15 / +0.16em | 300 | sans | the home hero h1, `KAMPUNG GISIKDRONO` (the one place weight 300 is used) |
+| `text-hero-lead` | 22 / 1.3 / +0.02em | 17 | 400 | sans | `Pengalaman belajar di` |
+| `text-display-rw` | 96 / 1.0 / −0.031em | 52 | 800 | display | RW page hero h1 |
+| `text-display` | 64 / 1.04 / −0.025em | 38 / 1.06 | 800 | display | list page h1 |
+| `text-intro` | 52 / 1.06 / −0.027em | 34 / 1.1 | 800 | display | the home introduction heading |
+| `text-section-title` | 46 / 1.08 / −0.02em | 30 / 1.12 | 700 | display | a public section's h2 (`SectionHeading`) |
+| `text-section-title-compact` | 40 / 1.1 | 30 | 700 | display | a compact section's h2 |
+| `text-card-title` | 24 / 1.2 / −0.0125em | 21 | 700 | display | package card title |
+| `text-figure` | 80 / 1.0 / −0.0275em, tabular | 52 | 800 | display | figures band (`FigureStat`) |
+| `text-price` | 22 / 1.1, tabular | 20 | 700 | display | prices, totals |
+| `text-eyebrow` | 13 / 1.2 / +0.16em, uppercase | 12 | 600 | sans | section eyebrows, drawer group titles |
+| `text-meta-caps` | 12 / 1.2 / +0.12em, uppercase | 12 | 600 | sans | `PELAJAR · 120 MENIT`, footer titles, table heads |
+| `text-body-lg` | 19 / 1.65 | 17 / 1.6 | 400 | sans | leads, section descriptions |
+| `text-article` | 19 / 1.75 | 17 / 1.72 | 400 | sans | RichText paragraphs, 720 px column |
+| `text-quote` | 17 / 1.6 | 16 | 400 | sans | the review quote |
+| `text-body-md` | 15 / 1.6 | same | 400 | sans | small-card copy, the footer, bylines |
+| `text-label-sm` / `text-label` / `text-label-lg` / `text-label-xl` | 14 / 15 / 16 / 17, line-height 1 | same | caller's (buttons 600, nav 500) | sans | button and link labels per size |
+| `text-wordmark-eyebrow` / `text-wordmark` | 10 / +0.24em, uppercase · 21 / −0.02em | 10 · 19 | 600 · 800 | sans · display | the wordmark |
+
+**Shared UI scale (dashboard, forms, booking)**
+
+| Class | Desktop | Phone | Weight | Usage |
+|---|---|---|---|---|
+| `text-display-lg` | 48 / 1.1 / −0.02em | 36 / 1.15 | 700 | large page heroes kept from before the redesign |
+| `text-h1` | 36 / 1.2 / −0.02em | 30 | 700 | page titles (dashboard, booking, status pages) |
+| `text-h2` | 30 / 1.25 / −0.015em | 24 | 700 | panel titles, KPI values, totals |
+| `text-h3` | 28 / 1.2 / −0.011em | 22 / 1.25 | 700 | sub-sections, card titles in a detail page |
+| `text-h4` | 20 / 1.35 | 18 | 600 | list item and dialog titles |
+| `text-body` | 16 / 1.6 | same | 400 | default copy |
+| `text-body-sm` | 14 / 1.55 | same | 400 / 500 | UI, tables, helper text |
+| `text-caption` | 13 / 1.4 | same | caller's (500 in the design) | captions, dates, meta; never below 12 px (11 only for uppercase micro labels) |
+| `text-overline` | 12 / 1 / +0.08em, uppercase | same | 600 | dashboard labels; public sections use `text-eyebrow` |
+
+The weights of the label and caption steps are left to the caller, so a `font-*` class never fights the size. A new size is a token change in `globals.css` (and `TYPE_SCALE_STEPS`), never an inline `text-[13px]`. Prices, countdowns, seats and figures are `tabular-nums` (built into `text-figure` and `text-price`).
 
 ### 3.3 Prose and formatting rules
 
@@ -599,60 +548,60 @@ Only these eleven steps exist. A new size is a token change in `globals.css`, ne
 
 ### 4.1 Breakpoints and containers
 
-| Name | Min width | Public container | Admin content | Notes |
+| Name | Min width | Public container (`Container`) | Admin content | Notes |
 |---|---|---|---|---|
-| base | 0 | `px-4` | `p-4` | design verified at 360 px |
-| `sm` | 640 px | `px-6` | `p-4` | 2-column card grids |
-| `md` | 768 px | `px-6` | `p-6` | Dialog replaces Drawer; sidebar replaces Sheet; tables replace card lists |
-| `lg` | 1024 px | `px-8` | `p-8` | 12-column grid, hero two columns |
-| `xl` | 1280 px | `max-w-7xl` (1280 px) | `max-w-(--breakpoint-2xl)` (Tailwind v4 syntax; `max-w-screen-*` no longer exists) | 4-column card grids, KPI grid 4-up |
-| `2xl` | 1536 px | still 1280 px | 1536 px | public never grows past 1280 |
+| base | 0 | `px-5` (20 px gutters) | `p-4` | the 390 px design; verified at 360 px |
+| `sm` | 640 px | `px-5` | `p-4` | 2-column card grids |
+| `md` | 768 px | `px-10` (40 px gutters) | `p-6` | desktop structure starts; Dialog replaces Drawer; tables replace card lists |
+| `lg` | 1024 px | `px-10` | `p-8` | desktop header and nav, 12-column grid |
+| `xl` | 1280 px | `max-w-7xl` (1280 incl. gutters = a 1200 px column; 120 px margins appear naturally at 1440) | `max-w-(--breakpoint-2xl)` | the 1440 frames |
+| `2xl` | 1536 px | still 1200 px of content | 1536 px | public never grows past it |
 
-Narrow reading column `max-w-3xl`; forms `max-w-2xl`; booking wizard `max-w-3xl`.
+Between 768 and 1279 the desktop structure applies with one column fewer (packages 2-up, products 3-up, masonry 3 columns; the RW bento stacks). The reading column (`Container width="reading"`) is 720 px of text; forms `max-w-2xl`; booking wizard `max-w-3xl`. The header spans 1440 px with 56 px padding from lg.
 
 ### 4.2 Grid and spacing
 
-- Base unit 4 px. Grid: 12 columns from `lg`, 4 columns below `md`; gaps `gap-6` public, `gap-4` admin.
-- Card grids: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`.
-- Vertical rhythm: sections `py-16 md:py-24`; sub-sections `space-y-10`; stacked form fields `space-y-5`; card padding `p-5 md:p-6`; admin page padding `p-4 md:p-6 lg:p-8`; dialog padding `p-6`.
-
-| Step | px | Typical use |
-|---|---|---|
-| 1 | 4 | icon–label gap in badges |
-| 2 | 8 | gap inside buttons, chip rows |
-| 3 | 12 | input horizontal padding (`sm`), table cell padding |
-| 4 | 16 | default gap, mobile gutter, card inner gap |
-| 5 | 20 | card padding mobile |
-| 6 | 24 | card padding desktop, dialog padding, grid gap |
-| 8 | 32 | between form groups |
-| 10 | 40 | sub-section spacing |
-| 16 / 24 | 64 / 96 | section padding mobile / desktop |
+- Base unit 4 px (4, 8, 12, 16, 20, 24, 32, 40, 48, 64, 80, 96, 128). Grid: 12 columns of 78 px with 24 px gutters at 1200; 4 columns with 16 px gutters on phones.
+- Card rows at 1200: 3 × 384 (packages, articles), 4 × 282 (products), bento 708 + 24 + 468.
+- Section rhythm (`Section`): `py-14 md:py-20 lg:py-28` (56 / 80 / 112 px), the CTA band 128 / 152 from lg; 48–56 px between a heading row and its content (`space-y-12 lg:space-y-14`).
+- Carousels on phones bleed off the right edge: the first card on the 20 px gutter, the next one peeking.
+- Sticky elements under the header use `top: var(--header-h)` (64 px, 72 from lg); anchored sections clear it with `scroll-mt-header`.
 
 ### 4.3 Radius, borders, shadows, blur
 
 | Token | Value | Applied to |
 |---|---|---|
-| `rounded-xl` | 0.75 rem | buttons, inputs, cards, images, popovers |
-| `rounded-2xl` | 1 rem | dialogs, drawers, hero cards, CTA band |
-| `rounded-lg` | 0.5 rem | elements inside table containers, icon tiles |
-| `rounded-full` | 9999 px | badges, avatars, chips, FAB |
-| `border border-border` | 1 px, #E2E8F0 / #1E293B | every surface edge; dividers use `divide-border` |
-| `shadow-card` | `0 1px 2px rgb(15 23 42 / .04), 0 1px 3px rgb(15 23 42 / .06)` | resting cards (light only) |
-| `shadow-card-hover` | `0 8px 24px rgb(15 23 42 / .08)` | interactive card hover |
-| `shadow-modal` | `0 24px 48px rgb(15 23 42 / .18)` | dialogs, drawers, command palette |
-| backdrop blur | `bg-white/70 dark:bg-slate-950/60 backdrop-blur-md supports-[backdrop-filter]:bg-white/60` | sticky header, hero floating card, scanner overlay, bulk-action bar |
+| `rounded-sm` | 6 px | checkboxes, small swatches |
+| `rounded-md` | 10 px | buttons, inputs, steppers, menu rows (`--radius`) |
+| `rounded-lg` | 14 px | photos, cards, product media, banners |
+| `rounded-xl` | 16 px | RW tiles, the review card, tooltips and menus in the dashboard |
+| `rounded-2xl` | 20 px | form panels, the wizard summary, sticky booking panel |
+| `rounded-3xl` | 24 px | large panels: the figures band, the ticket, the drawer sheet |
+| `rounded-full` | pill | badges, chips, the FAB, avatars, the lookup pill |
+| `border border-border` | 1 px `line` | card edges, dividers |
+| `border-control` | 1.5 px | outline buttons, checkboxes, an error or verified field |
+| `shadow-sm` | `0 1px 2px rgb(29 24 19 / .06)` | a segmented control's thumb (`shadow-card` is the same) |
+| `shadow-md` | `0 10px 24px -12px rgb(29 24 19 / .24)` | hover lift on boxed cards, map pins (`shadow-card-hover`) |
+| `shadow-lg` | `0 24px 48px -20px rgb(29 24 19 / .32)` | ticket, map popup, dialogs (`shadow-modal`) |
+| `shadow-panel` | `0 24px 48px rgb(29 24 19 / .15)` | the sticky booking panel |
+| `shadow-fab` | `0 12px 28px rgb(15 42 29 / .30)` | the WhatsApp FAB |
+| `shadow-drawer` | `-16px 0 48px rgb(21 18 14 / .4)` | the menu drawer |
+| `shadow-bar` | `0 -8px 24px rgb(29 24 19 / .12)` | mobile bottom action bars |
+| backdrop blur | 16 px (solid header, filter bars), 12 px (`onPhoto` button, `backdrop-blur-md`), 4–10 px (badges on photos) | |
 
-Blur budget: at most three blurred layers in any viewport. Dark mode replaces shadows with `dark:border-white/5`.
+Shadows are warm ink, never grey. Blur budget: at most three blurred layers in any viewport. Dark mode replaces shadows with `dark:border-white/5`. The focus ring is one rule in the base layer: `outline: 2px solid var(--ring); outline-offset: 2px` on every `:focus-visible`; fields replace it with their own 2 px ring-coloured edge.
 
-### 4.4 Home page sizes (decision of 2026-10-23)
+### 4.4 Page sizes (`:root`)
 
-Layout sizes the home page redesign needs, as variables on `:root` (theme-independent) and used through Tailwind's variable shorthand (`h-(--hero-h)`), so no component writes an arbitrary value.
+Layout sizes as variables (theme-independent), used through Tailwind's variable shorthand (`max-h-(--hero-max-h)`), so no component writes an arbitrary value.
 
 | Variable | Value | Used for |
 |---|---|---|
-| `--hero-h` | `calc(100svh - 4rem)` | the hero from md, the screen under the h-16 header (`md:min-h-(--hero-h)`) |
-| `--hero-min-h-mobile` | `32rem` | the hero's stable minimum below md; it grows with a long title, so nothing shifts (`min-h-(--hero-min-h-mobile)`) |
-| `--parallax-overscan` | `112%` | the height of a parallax photo layer inside its frame (§7.3), so the drift never shows an edge |
+| `--header-h` | 64 px, 72 px from lg | the solid header; `scroll-mt-header`; sticky offsets |
+| `--header-h-overlay` | 64 px, 88 px from lg | the transparent header over a hero photo; the hero's top padding |
+| `--hero-max-h` | 56.25rem (900 px) | the home hero is `h-svh`, never taller than this |
+| `--hero-min-h-mobile` | 32rem | the hero's stable minimum on short screens |
+| `--parallax-overscan` | 116 % | the height of a parallax photo layer inside its frame (§7.3) |
 
 ## 5. Public components
 
@@ -666,45 +615,49 @@ Layout sizes the home page redesign needs, as variables on `:root` (theme-indepe
 
 ### 5.1 Button (`src/components/ui/button.tsx`)
 
-| Variant | Style | Use |
-|---|---|---|
-| `default` | `bg-primary text-primary-foreground hover:bg-primary-hover` | one per view: Pesan Sekarang, Lanjut Bayar, Simpan |
-| `secondary` | `bg-secondary text-secondary-foreground hover:bg-secondary/80` | Detail, Lihat Paket (next to a primary) |
-| `outline` | `border border-border bg-background hover:bg-accent` | filters, Batal, secondary hero CTA |
-| `ghost` | `hover:bg-accent` | row actions, toolbar |
-| `link` | `text-primary-text underline-offset-4 hover:underline` | inline navigation |
-| `destructive` | `bg-destructive text-destructive-foreground` | Batalkan reservasi, Hapus (always behind AlertDialog) |
-| `success` | `bg-success text-success-foreground` | WhatsApp CTA (`Chat WhatsApp`), Konfirmasi Check-in |
+DESIGN-SPEC §2.1. Anatomy: the label, then an optional trailing icon (usually `ArrowRight` with `data-icon="trailing"`, which steps 3 px forward on hover); a back link puts `ArrowLeft` before the label. Gap 10, radius 10 (`rounded-md`), label 600.
 
-Sizes: `sm` h-9 px-3 text-sm · `default` h-10 px-4 (`min-h-11` below `md`) · `lg` h-12 px-6 text-base · `xl` h-14 px-8 text-base font-semibold (hero only) · `icon` h-10 w-10. Always `rounded-xl font-medium gap-2`; icons 16 px (20 px at `lg`/`xl`). States: hover, focus-visible ring, `disabled:opacity-50 disabled:pointer-events-none`, `loading` (renders `Loader2` spinning, sets `aria-busy`, keeps width).
+| Variant | Rest | Hover | Pressed | Use |
+|---|---|---|---|---|
+| `default` | `bg-primary text-primary-foreground` | `primary-hover`, rises 1 px | `primary-pressed`, scale .98 | `Pesan Kunjungan`, `Konfirmasi & Bayar`, `Simpan` |
+| `secondary` | inverse (`bg-secondary`) | `secondary-hover`, rises 1 px | `secondary-pressed` | `Coba lagi`, `Baca cara memesan`, a strong second action |
+| `outline` | transparent, 1.5 px ink edge (`border-control`) | `bg-muted` | `bg-border` | `Lihat Paket`, `Semua paket wisata` |
+| `ghost` | transparent, ink | `bg-muted` | `bg-border` | row actions, toolbars, `Bagikan` |
+| `link` | `text-primary-ink`, underline on hover | | | inline navigation |
+| `destructive` | `bg-destructive` | 90 % | | `Batalkan reservasi`, always behind AlertDialog |
+| `success` | `bg-success` | 90 % | | `Konfirmasi Check-in` |
+| `whatsapp` | `bg-whatsapp text-whatsapp-foreground` | `whatsapp-hover`, rises 1 px | | every `Chat WhatsApp` button (with `WhatsAppIcon`) |
+| `onPhoto` | white 8 %, 1.5 px white 70 % edge, 12 px blur, white text | white 16 % | white 24 % | the second action on a photo or a dark band (`Lihat Paket` on the CTA band) |
 
-Do: verb-first labels (`Unduh PDF`), one `default` per view. Don't: full-width buttons on desktop; icon-only without `aria-label`; `destructive` outside a confirmation.
+| Size | Height | Padding-x | Label | Icon |
+|---|---|---|---|---|
+| `sm` | 36 (44 below md) | 14 | 14 (`text-label-sm`) | 16 |
+| `default` | 44 | 20 | 15 (`text-label`) | 18 |
+| `lg` | 52 | 26 | 16 (`text-label-lg`) | 18 |
+| `xl` | 60 | 32 | 17 (`text-label-xl`) | 20 |
+| `icon` | 44 × 44 | | | 18 |
+
+States: hover and press as above (`press-scale`, 100 ms; the lift only under `motion-safe`), focus-visible the global 2 px ring 2 px off, disabled `opacity-40 cursor-not-allowed` with no hover, `loading` (a `Loader2` in place of the label, which keeps the width; `aria-busy`; screen readers hear `Sedang diproses`). Do: verb-first labels (`Unduh PDF`); full width only on phones. Don't: icon-only without `aria-label`; `destructive` outside a confirmation.
 
 ```tsx
-<Button size="lg" loading={isPending} type="submit">
-  <CalendarCheck aria-hidden /> Pesan Sekarang
+<Button size="lg" asChild>
+  <Link href="/paket-wisata">Pesan Kunjungan<ArrowRight aria-hidden data-icon="trailing" /></Link>
 </Button>
+<Button variant="onPhoto" size="xl" asChild><Link href="/paket-wisata">Lihat Paket</Link></Button>
 ```
 
 ### 5.2 Card (`src/components/ui/card.tsx`)
 
-Anatomy: `Card` (`rounded-xl border border-border bg-card shadow-card dark:border-white/5`) → `CardHeader` → `CardTitle` (`text-h4`) → `CardDescription` (`text-body-sm text-muted-foreground`) → `CardContent` → `CardFooter`.
+The shadcn `Card` is the dashboard and form panel: `rounded-xl border border-border bg-card shadow-card dark:border-white/5` → `CardHeader` → `CardTitle` (`text-h4`) → `CardDescription` → `CardContent` → `CardFooter`. Public content cards are **editorial, not boxes** (DESIGN-SPEC §2.5): the photo (radius 14) and the text sit straight on the paper, and only the review card is a surface (§5.8–5.10, §5.19).
 
 | Variant | Behaviour |
 |---|---|
 | `base` | static container |
-| `interactive` | whole card is a link; hover `-translate-y-0.5 shadow-card-hover` over 200 ms; focus ring on the card |
-| `glass` | `bg-white/70 backdrop-blur-md` over the hero photo only, at most one per screen (§1.3 G3) |
-| `feature` | 40 px icon tile `rounded-lg bg-secondary text-secondary-foreground` + title + description |
+| `interactive` | whole card is a link; `hover-lift` (rises 4 px on the soft spring, `shadow-md`) |
+| `glass` | `bg-card/70 backdrop-blur-md`, over the hero photo only, at most one per screen (§1.3 G3) |
+| `feature` | 40 px icon tile `rounded-lg bg-primary-tint text-primary-ink` + title + description |
 
-Don't nest cards; don't put more than one primary action in a card; don't use `glass` on data-bearing surfaces. States: resting, hover (`interactive` only), focus-visible (`interactive` only), disabled (`opacity-60`, used by `sold-out` package cards).
-
-```tsx
-<Card variant="feature">
-  <CardHeader><Recycle aria-hidden className="size-5" /><CardTitle>Bank Sampah</CardTitle></CardHeader>
-  <CardContent><CardDescription>Pilah, timbang, tabung: sampah jadi saldo warga.</CardDescription></CardContent>
-</Card>
-```
+Don't nest cards; don't put more than one primary action in a card; don't use `glass` on data-bearing surfaces.
 
 ### 5.3 ResponsiveDialog, Drawer, AlertDialog
 
@@ -716,13 +669,29 @@ Don't nest cards; don't put more than one primary action in a card; don't use `g
 </ResponsiveDialog>
 ```
 
-### 5.4 Badge (`src/components/ui/badge.tsx`)
+### 5.4 Badge, status chip and filter chip
 
-`rounded-full px-2.5 py-0.5 text-xs font-medium inline-flex items-center gap-1`; optional leading 6 px dot (`before:` pseudo) or 12 px icon. Variants: `default` (primary), `secondary`, `outline`, and the semantic soft set `success | warning | info | danger | neutral` (soft background + soft foreground, ≥ 4.5:1). Prop `appearance="outline"` renders the soft foreground colour with a 1 px border and transparent fill, used for terminal/historic states (`completed`, `expired`, `refunded`). One size only (`h-5`); a badge is never a button (use `Button size="sm" variant="secondary"` for clickable chips). States: static only, no hover. Do: keep labels to two words. Don't: truncate a badge label, rely on colour alone (label is always present), stack more than two badges in a table cell.
+`Badge` (`src/components/ui/badge.tsx`, DESIGN-SPEC §2.3): a 28 px pill (`size="default"`; `size="sm"` is the dense 22 px form for tables), padding 12, gap 8, 13/600, never a button. `dot` adds the 7 px leading dot. Variants:
+
+| Variant | Look | Use |
+|---|---|---|
+| `success` / `warning` / `info` / `danger` / `neutral` | the soft pair of §2.2 | status chips: always with `dot` or an icon, so a state never rests on colour |
+| `tag` | `bg-muted text-ink-2` | `Pelajar`, `120 menit`, `Kombinasi`, bank chips |
+| `rw` | the current RW's tint, dot and text (`rw-scope-*`) | Badge/RW: `RW 05 · Ecowastreme` |
+| `rwSurface` | the same on the surface | the RW badge on a product photo |
+| `onPhoto` | night 60 % with blur, white text, the RW highlight as dot | `RW 05 · 6 titik aktivitas` on a tile |
+| `default` / `secondary` / `outline` | primary / inverse / line-strong edge | counts, neutral labels |
+
+`appearance="outline"` renders the soft foreground with a border and no fill, for terminal states (`completed`, `expired`, `refunded`). Booking states map through `src/config/status.ts` and `StatusBadge` (§6.5): quoted info, pending_payment warning, paid / checked_in / completed success, expired neutral, cancelled danger, needs_review warning.
+
+`RwTag` (`src/components/layout/rw-tag.tsx`) is Badge/RW for one RW: `<RwTag rw={rw} detail="Ecowastreme" tone="tint|surface|onPhoto" />`, which sets the RW scope itself. `RwComboTag` names a combination package's RWs in the primary set (`RW 05 + RW 13`).
+
+Chip/Filter (`FilterChips`, `FilterChipLink` in `src/components/marketing/filter-chips.tsx`): 40 px (44 on phones), padding 16, `bg-card` with a `border-border-strong` edge, 14/500. Hover: `bg-muted` and an ink-3 edge; press .97; selected: the inverse fill with a leading `Check` that springs in (`aria-pressed` or `aria-current`). An RW option (`accentKey`) leads with a 10 px dot in its accent.
 
 ```tsx
-<Badge variant="warning"><Clock aria-hidden /> Menunggu Pembayaran</Badge>
-<Badge variant="neutral" appearance="outline">Selesai</Badge>
+<Badge variant="warning" dot>Menunggu pembayaran</Badge>
+<RwTag rw={rw} detail={rw.shortName} />
+<FilterChips label="Kampung" options={[{ value: '05', label: 'RW 05 · Ecowastreme', accentKey: 'leaf' }]} value={rw} onChange={setRw} />
 ```
 
 ### 5.5 Tabs
@@ -739,79 +708,35 @@ const [tab, setTab] = useQueryState('tab', parseAsStringLiteral(['deskripsi', 'j
 
 ### 5.6 Inputs (`src/components/forms/*`)
 
-Base: h-10 (h-11 below `md`) `rounded-xl border border-input bg-background px-3`, text `text-base` (16 px) below `md` and `text-body-sm` from `md`, because iOS Safari zooms the page into any field set below 16 px (decision of 2026-10-17); placeholder `text-muted-foreground`, focus ring, `aria-invalid` + `border-destructive` on error, helper `text-caption text-muted-foreground`, error `text-caption text-destructive` linked with `aria-describedby`. Labels `text-body-sm font-medium`, required marker `*` with sr-only `wajib`. All forms use shadcn `Form` + react-hook-form + zod schemas from `src/lib/validations`; every public form includes an invisible Turnstile widget before the submit button.
+Base (DESIGN-SPEC §2.4): 48 px high (textarea from 112), radius 10, `bg-card`, 1 px `border-input` (3.6:1 on paper), padding 14, value 16 px in ink (iOS Safari zooms into any smaller field), placeholder ink-3. Focus turns the edge into a 2 px ring-coloured edge in place of the outer ring; an error is a 1.5 px danger edge (`aria-invalid`) with the message under it in danger, linked by `aria-describedby`; disabled `bg-muted` with a `line` edge and ink-3 text; a verified value a 1.5 px success edge (`data-verified="true"`). Fields animate their colours only, over 120 ms. Labels 14/600 ink, 8 px above the box; helper 13 ink-3. `Select` trails `ChevronsUpDown` in ink-2; `Checkbox` is 22 px, radius 6, 1.5 px edge, checked primary with a 15 px check; `RadioGroupItem` 18 px, its dot springs in; `NumberStepper` is one 44 px box with 44 × 44 − / + buttons around a 48 px tabular value. All forms use shadcn `Form` + react-hook-form + zod schemas from `src/lib/validations`; every public form includes an invisible Turnstile widget before the submit button.
 
-| Component | Anatomy and rules |
-|---|---|
-| `Input` / `Textarea` | text; `Textarea` auto-grows to 6 rows, shows `n/2000` counter when `maxLength` set |
-| `Select` | shadcn Select; ≤ 8 options; above that use `Combobox` (cmdk) with search |
-| `PhoneInput` | `+62` fixed prefix chip, `inputMode="tel"`, normalises `08…`/`8…` to `+628…`, validates `^\+62[0-9]{8,13}$`; paired with `OtpDialog` (6-digit `InputOTP`, "Kirim kode" → "Kirim ulang" after 60 s, 5 attempts) which must succeed before the wizard leaves step `data` |
-| `MoneyInput` | `Rp` prefix, `inputMode="numeric"`, thousands dots while typing, emits integer rupiah; admin only |
-| `NumberStepper` | `−` / value / `+` with 44 px buttons, `min`/`max`/`step`, direct typing allowed, `aria-valuenow`; used for pax and add-on quantities |
-| `DatePicker` | shadcn Calendar in Popover at `md+`, inline full-width below `md`; locale `id`, `Asia/Jakarta`; disabled before `booking.min_lead_hours` and after `booking.max_advance_days`; days with no open session disabled; days ≥ 80 % reserved show an amber dot |
-| `SessionPicker` | radio cards from `v_session_availability` (`start_time`–`end_time`, `label`, `Sisa {remaining} dari {capacity}`, progress bar); re-read through the server every 15 s (`router.refresh()`, never the browser client, `docs/PRD.md` FR-BOOK-02); cards with `remaining < pax` are disabled with `aria-disabled`, `remaining = 0` reads `Penuh`; combo packages render one picker per RW leg (RW 05 first) with the same date |
-| `ParticipantsEditor` | editable rows `Nama` + `Kelas/Kelompok` (`group_label`); paste from spreadsheet (tab/CSV) fills rows; row count ≤ pax; rows > 100 virtualised; duplicates highlighted, never blocked; names only (no NIK, DOB or address fields exist) |
-| `ImageUploader` | dropzone + file picker, accepts `image/jpeg, image/png, image/webp` ≤ 10 MB (booklet PDFs ≤ 50 MB, admin only; both limits are re-enforced by the bucket and by `api/uploads/sign`, `docs/Security.md` §8.4), client resize to 1600 px, signed upload to `uploads-quarantine` (`api/uploads/sign`), then `api/uploads/finalize` returns the `public-media` path, `width`/`height`, the `blurhash` string and, for a gallery photo, the 480 px `thumbnailPath`; required `alt_text` field; SVG rejected with `Format SVG tidak didukung`. HEIC/HEIF (iPhone photos; sharp cannot decode them) is rejected with its own message, `Foto format HEIC (iPhone) belum didukung. Simpan sebagai JPG dulu, atau ubah iPhone: Pengaturan → Kamera → Format → Paling Kompatibel.`: first by the type or name the browser reports, then by the file's first bytes (`ftypheic`, `ftypmif1`, … via `checkImageBytes`) before the photo is shrunk, because Safari can decode HEIC and would otherwise turn it into a WebP unnoticed; `api/uploads/sign` and `finalize` refuse it again by its bytes with the same words. Any other refusal from the server is shown word for word (`UploadRejectedError`); `upload` is usually `createImageUpload({ rwId, purpose, entityId })` from `src/lib/uploads/upload-client.ts` (decision of 2026-10-18) |
-| `BookletUploader` | admin only; dashed picker zone like `ImageUploader` taking one PDF (`accept="application/pdf"`, at most 50 MB and 100 pages, checked again by the server); under it, tied to the input with `aria-describedby`, the GPS reminder *"Pastikan foto di booklet tidak memuat lokasi (GPS). Ekspor PDF dari Canva/Word biasanya sudah aman."* (embedded photos keep their EXIF, an accepted risk in `docs/Security.md` §8.4); progress `Halaman 3 dari 24 sudah terunggah` in an `aria-live="polite"` line; the server's own message on refusal; once published it shows `PDF dan 24 halamannya sudah terunggah.` and no second picker. `upload` is usually `uploadBooklet` from `src/lib/uploads/upload-client.ts` (decision of 2026-10-18) |
-| `RichTextEditor` | Tiptap (StarterKit + Image), admin only, loaded with `next/dynamic`; toolbar `role="toolbar"` of 44 px ghost icon buttons with `aria-label` and `aria-pressed` (bold, italic, headings 2–4, bulleted and numbered lists, quote, link, photo, undo, redo); the link panel accepts `https://`, `http://` or `mailto:` only; the photo panel is an `ImageUploader` (purpose `article`) plus a required caption, insert disabled until alt text (3–200) and caption are filled; content area uses the article `prose` styles; stores ProseMirror JSON, and the public `RichText` renderer re-checks it against the same allowlist (`src/lib/rich-text/document.ts`) |
+### 5.7 Section, Section Heading, Hero and CTA band (`src/components/layout`, `src/components/marketing`)
+
+`<Section id eyebrow title description align="left|center" size="default|compact" tone="default|muted|night|forest|brand" wave headerAction bleed isLinkTarget>` wraps every marketing block (DESIGN-SPEC §1.4, §2.6): `default` the paper, `muted` the sunken paper, `night` and `forest` the dark bands with the light kawung at 6 / 7 % and white text, `brand` the closing CTA band (forest, 128 / 152 px from lg). Rhythm `py-14 md:py-20 lg:py-28`. `wave` puts a `WaveDivider` on top, painted in the section's own tone over the section above, only where the tone changes. `headerAction` sets the `Semua …` button beside the heading from lg, aligned to its last line (under it below). `bleed` is content that runs edge to edge after the container. `SectionShell` is the same wrapper without the heading.
+
+`SectionHeading` (`src/components/layout/section-heading.tsx`), used by `Section` and available alone: at most 640 px wide; the eyebrow row (a 28 × 2 rule and the eyebrow in `text-eyebrow`), 16 px, the title (`text-section-title`, or `-compact`), the description (`text-body-lg text-ink-2`). The rule and the eyebrow read the current RW (`text-rw`, `bg-rw-fill`: the brick outside an RW, the RW's accent inside `rw-scope-*`), gold on a dark tone; `align="center"` centres everything. Its parts reveal 70 ms apart as they come into view.
+
+Hero (`src/components/marketing/hero.tsx`, DESIGN-SPEC §3.1): a photo hero carries `data-header-overlay`, so the header lies over it, transparent and white, until the visitor scrolls (§5.17). The photo fills `h-svh` up to 900 px, cropped at 45 % / 42 % (`object-hero`), toned with `photo-tone-hero` under the `photo-grade-hero` layer (§8.2), pinned from md (§7.3); centred, the lead (`text-hero-lead`, white 90 %) and the h1 (`text-hero-statement`), with the photo text shadows; the scroll cue (`GULIR`, a dot on a 44 px track) above the arc. Nothing in the hero animates on load: the photo and the h1 are the LCP. Without a banner the hero keeps the `from-brand-ice to-background` gradient beside the photo placeholder and the header stays solid. The page sections themselves (introduction, RW bento, packages, reasons, figures, parallax band, gallery marquee, reviews, products, articles, map, CTA) follow DESIGN-SPEC §3.1 and are built on these components.
 
 ```tsx
-<FormField control={form.control} name="pic_phone" render={({ field }) => (
-  <FormItem>
-    <FormLabel>Nomor WhatsApp PIC</FormLabel>
-    <FormControl><PhoneInput {...field} /></FormControl>
-    <FormDescription>Kode OTP dikirim ke nomor ini.</FormDescription>
-    <FormMessage />
-  </FormItem>
-)} />
-```
-
-### 5.7 Section, Hero and CTA band (`src/components/layout`, `src/components/marketing`)
-
-`<Section id eyebrow title description align="left|center" tone="default|muted|warm|brand" wave headerAction bleed>` wraps every marketing block: `tone="default"` `bg-background`, `muted` `bg-muted/40`, `warm` `bg-surface-warm`, `brand` renders the CTA band (`bg-brand-deep text-white rounded-2xl` inside the container, dot-grid SVG at 6 % opacity, primary `xl` button + outline-white secondary). Inner pages alternate default/muted. The home page alternates default/warm and never uses `muted`, so two near-identical greys never meet (decision of 2026-10-23). `wave` puts a `WaveDivider` (§8.5) on top of the section, painted in its own opaque tone over the bottom of the section above; it goes only where the tone changes, and `muted` takes none. `headerAction` sets the `Lihat semua …` link beside the heading from lg (under it below). `bleed` is content that runs edge to edge after the container (a photo band, a scroll strip). `SectionShell` is the same wrapper without the heading, for a block that lays out its own (Why visit).
-
-Home page order (redesign of 2026-10-23, at the user's request of that day, after dusunbambu.id; hero amended 2026-10-24): hero, introduction, RW mosaic, featured packages (warm), Why visit with its figures and a full-bleed photo band, gallery strip, reviews (warm), UMKM products, the three latest articles as a compact list, map & contact with the booklets (warm), CTA band, footer (warm, on every public page). Every section is left out while its data is empty (G5, §6.9).
-
-Hero (redesign of 2026-10-24, at the user's request, after dusunbambu.id): the pinned photo carries one statement only, centred: a short lead (`text-body-lg`, light) and the h1 in `text-hero-statement` (Inter 300, uppercase, the one place weight 300 is used; Inter is a variable font, so no extra file loads). The photo takes the `hero-photo-tone` grade (darker, calmer colours, slightly warm) under the neutral `hero-veil`, for any banner the kelurahan uploads. The introduction below it (`HomeIntro`) holds the banner title as its h2, two paragraphs about the kampung, the region and address lines and the two buttons; its `arc` wave is painted over the photo's lower edge.
-
-Hero (`src/components/marketing/hero.tsx`, `docs/PRD.md` FR-PUB-01): `hero_banners` slides (`is_active`, within `starts_at`/`ends_at`, ordered by `sort_order`); more than one banner loads the embla carousel (autoplay 6 s, pauses on hover/focus, prev/next buttons and dots at 44 px, under the photo below lg and on its overlay bottom right from lg, white on `brand-deep/40`). The photo runs edge to edge (`IMAGE_SIZES.bleed`), `md:min-h-(--hero-h)` from md and `min-h-(--hero-min-h-mobile)` below, growing with its text, under a `bg-brand-deep/60` duotone overlay and a bottom scrim `from-brand-deep/80` behind the text. Text bottom-left inside the container: overline `Edu Wisata Gisikdrono`, `title` in `text-display-xl` (the first slide renders it as the page `h1`; later slides use a `p` with the same class so the page keeps one `h1`), `subtitle` in `text-body-lg text-brand-ice`, CTA pair `cta_label` → `cta_href` (`default xl`, internal paths only) + `Lihat Paket` (`outline xl`, white outline on the overlay; both full width below md), and, when `product_id` is set, that product inside the one `glass` card, top right from `lg`. A single banner is pinned (§7.3). The rating no longer sits under the hero: it is one of the Why-visit figures, so it is not shown twice. Without a banner the hero keeps the `from-brand-ice to-background` gradient beside the photo placeholder. The first slide's image is the LCP element (`priority`) and never animates or transforms; slides move only through embla's own transform. The RW mosaic that follows (`RwBento`, FR-PUB-02 as amended on 2026-10-23) reads `rw_units` (`name`, `theme_label`, tagline, hero image) in `sort_order`: from lg the first RW is the large tile (`col-span-7`, 4:5 when there are three RWs, beside the other two at `col-span-5`, 16:10), one RW fills the row, two share it 7/5, four or more put the first over a three-column grid; below lg one 4:3 column. Each tile is a whole-card link to its RW page with its accent rule on top (§2.7), the RW eyebrow, `theme_label` in `text-h3` and the tagline; tiles differ in size, accent and photo, so G7 holds. Its eyebrow counts the RWs online in words (`Tiga kampung, tiga program`).
-
-Why visit (`why-visit.tsx`): eyebrow `Mengapa Gisikdrono`, a `text-h1` headline built from the RW count, three reasons (lucide icon in the 40 px tile of §8.1, `text-h4`, one line) and, beside them from lg, the figures from `buildHomeStats()` (`src/lib/utils/home-stats.ts`): RWs online, published packages, activity points, UMKM vendors with a published product, each counted from rows the page already reads, plus the average rating with its review count (static, never counted). A figure of zero is hidden, and with fewer than two the grid is. Below it, the first captioned gallery photo as a full-bleed band (21:9 from md, 4:3 below) with its caption on a scrim (G8). The gallery strip (`gallery-strip.tsx`) shows the next captioned photos in a full-bleed scroll-snap row (a third from lg, half from sm, 5/6 below), each linking to its tile on `/galeri`, with previous/next buttons from md and no autoplay. UMKM products keep the card grid from sm and become a scroll-snap row below it.
-
-Variants: `Section` `tone` as above, `align="center"` only for the CTA band. States: none (static). Do: one `Section` per idea, eyebrow in `text-overline`, title in `text-h2`. Don't: nest sections, put two CTA bands on one page, place the slide's product card above its title on mobile.
-
-```tsx
-<Section id="paket" eyebrow="Paket wisata" title="Pilih paket sesuai rombongan Anda" tone="muted">
+<Section id="paket-pilihan" tone="muted" eyebrow="Paket pilihan" title="Paket untuk rombongan yang ingin belajar"
+  description="Durasi, isi kegiatan, dan harga per orang jelas sejak awal."
+  headerAction={<Button variant="outline" asChild><Link href="/paket-wisata">Semua paket wisata<ArrowRight aria-hidden data-icon="trailing" /></Link></Button>}>
   <PackageGrid packages={packages} />
-</Section>
-<Section tone="brand" align="center" title="Siap berkunjung?" description="Kuota harian terbatas. Pesan sesi Anda sekarang.">
-  <Button size="xl" asChild><Link href="/paket-wisata">Pesan Kunjungan</Link></Button>
 </Section>
 ```
 
 ### 5.8 PackageCard (`src/components/packages/package-card.tsx`)
 
-Anatomy: 4:3 cover (`next/image`, `sizes="(min-width:1280px) 25vw, (min-width:640px) 50vw, 100vw"`), RW badge overlay top-left (`RW 05` / `RW 13`), `package_category` badge top-right (`Reguler | Pelajar | Institusi`); a combo shows both RW badges in their accents instead, RW 05 first, and names `Kombinasi` in the meta row, so the cover never carries more than two badges (decision of 2026-10-18), `text-h4` title, meta row (`Clock` `duration_minutes`, `Users` `{min_pax}–{max_pax} orang`), price line from `pricing_basis`: `price_per_pax` as `Rp 25.000 /orang` or `flat_price` as `Rp 1.500.000 /rombongan` (`flat_group`), prefixed `mulai` when `tour_package_price_tiers` rows exist and showing the lowest tier (`docs/PRD.md` FR-PUB-04), footer `Pesan Sekarang` (`secondary`, because a grid shows several cards and §1.3 G9 keeps one primary per screen; decision of 2026-10-18) + `Detail` (`ghost`). Variant `compact` (list view, 96 px thumbnail). Interactive whole-card link; the two buttons stop propagation. States: `interactive` hover lift, focus ring, `sold-out` (no open session in the next 30 days: neutral `Kuota penuh` badge, `Pesan Sekarang` replaced by `Lihat Jadwal`). Price is never computed on the client; it is rendered from server data. Do: show the lowest tier with its basis (`/orang`, `/rombongan`); keep titles to two lines (`line-clamp-2`). Don't: show more than two badges on the cover, render strike-through "discount" prices, fetch prices client-side.
-
-```tsx
-<PackageCard pkg={pkg} variant="compact" />  // pkg: PublicPackageCard from src/lib/queries/packages.ts
-```
+Card/Package of DESIGN-SPEC §2.5, about 384 × 480 at 1200: the 4:3 photo (radius 14, `IMAGE_SIZES.card`) with one badge at 16/16 (`RwTag`, or `RwComboTag` for a package that visits several RWs), then 20 px, the meta line in `text-meta-caps` ink-3 (`PELAJAR · 120 MENIT`), the title in `text-card-title`, the tagline (`tour_packages.tagline`, 16/1.55 ink-2) held to two lines at a fixed two-line height so the footers of a row align, and the footer under a hairline: `PackagePrice` (`text-price`, `mulai` when tiers exist, `/orang` or `/rombongan` in ink-3) and `Lihat paket` in primary-ink with an arrow. The whole card is one link to `/paket-wisata/[slug]` (the title link stretches over it). Hover: the card rises 4 px on the soft spring (`hover-rise`), the photo zooms to 1.04 over 700 ms (`hover-zoom`), the title turns primary-ink, the arrow steps 4 px. The price is never computed on the client. `PackageMeta` (duration, pax range) stays for the booking panel.
 
 ### 5.9 ProductCard (`src/components/products/product-card.tsx`)
 
-1:1 image (first of `image_paths`), `umkm_vendors.name` as overline, `text-h4` name, `product_category` chip (`Kompos | Bibit | Kerajinan Daur Ulang | Camilan | Suvenir | Lainnya`), `price` with `unit_label` (`Rp 15.000 /pcs`), `Bisa jadi tambahan` info badge when `is_addon_eligible`, `Unggulan` secondary badge when `is_featured`. CTA `Lihat Produk`; the detail page offers `Tambahkan saat pesan paket` (links to `/paket-wisata?rw=`) and `Tanya via WhatsApp` (`success`). States: default, hover lift, unavailable (`is_available = false`: image at 60 % opacity with a neutral `Tidak Tersedia` badge, CTA stays enabled so the visitor can still read the page; there is no stock count, products are made to order). Variants: `grid` (default) and `compact` (hero slide product card, 1:1 at 160 px). Do: name the vendor on every card; show `unit_label` (`/pcs`, `/bungkus`). Don't: add a cart or quantity control (products are ordered only as booking add-ons or via WhatsApp), show vendor contact or bank details anywhere.
-
-```tsx
-<ProductCard product={product} variant="compact" />  // product: PublicProductCard from src/lib/queries/products.ts
-```
+Card/Product of DESIGN-SPEC §2.5, 282 wide at 1200: the square photo (radius 14) with the RW badge at 14/14 on the surface; without a photo, `PhotoPlaceholder` in the RW's tint with the ink kawung at 8 %, the category icon (36 px) in the RW's accent and `Foto menyusul`, the icon growing to 1.08 on hover. Then 16 px: the vendor (13/500 ink-3), the name (Jakarta 18/600), the price (Jakarta 18/700, tabular) with its unit in ink-3, and, only when `is_addon_eligible`, the hint `PackagePlus` + `Bisa dipesan sebagai tambahan` (`Bisa jadi tambahan` on phones). An unavailable product fades to 60 % with a neutral `Tidak Tersedia` badge. No cart. Hover as the package card.
 
 ### 5.10 ReviewCard (`src/components/reviews/review-card.tsx`)
 
-Avatar initial in `bg-secondary text-secondary-foreground`, `reviewer_name` (the view returns `Pengunjung` when anonymous, otherwise the first name), `institution_name`, `RatingStars` (`Star` filled `fill-warning text-warning`, `aria-label="Rating 5 dari 5"`), review date (`created_at`, short form), optional `title`, `body` ≤ 2000 chars with `Baca selengkapnya` after 4 lines, one RW chip per `rw_ids` entry. Data comes only from `v_public_reviews` (`review_status = published`); the home `quote` variant takes rows where `is_featured`. The `ReviewForm` on `/reservasi/[bookingCode]/ulasan` (reached only through the signed `review` link) uses `RatingStars` as a radio group, a Textarea with counter, a `Tampilkan nama saya` switch and the Turnstile widget. Variants: `card` (grid on `/ulasan`), `quote` (home testimonial band, `text-body-lg`, max 3). States: default, expanded (`Baca selengkapnya`), skeleton. Do: show the RW chip so visitors know which programme is reviewed. Don't: show the booking code, the institution's phone or email, or any review that is not `published`; never allow the visitor to edit after submission.
-
-```tsx
-<ReviewCard review={review} variant="card" />  // review: PublicReview from src/lib/queries/reviews.ts
-```
+Card/Review of DESIGN-SPEC §2.5, the one content card on a surface: padding 32 (24 on phones), radius 16, `bg-card` with a `line` edge; `RatingStars` (18 px lucide stars filled in gold, an unearned one in line-strong, the number in `aria-label`); the quote (`text-quote`, ink; clamped to six lines in the `quote` variant); the byline under a hairline: a 40 px avatar in the first RW's accent (`bg-rw-fill`, the primary when it names none) with the initial, the first name or `Pengunjung` (15/600) and the institution with the date (13 ink-3). The `card` variant (`/ulasan`) adds the RW tags. Data comes only from `v_public_reviews` (FR-PUB-05).
 
 ### 5.11 MasonryGallery and lightbox (`src/components/gallery`)
 
@@ -859,11 +784,28 @@ One `TicketCard` per `tickets_qr` row: header `Tiket RW 05 · Ecowastreme`, `QrD
 
 ### 5.16 WhatsAppFab (`src/components/layout/whatsapp-fab.tsx`)
 
-Fixed `bottom-6 right-6` (`bottom-20` when a sticky mobile CTA is present), 56 px `rounded-full bg-success text-success-foreground shadow-card-hover`, `MessageCircle` icon, `aria-label="Chat WhatsApp kelurahan"`, link `https://wa.me/{NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER}?text=` with a prefilled Indonesian greeting that names the current page. Enters with `scaleIn` after 1 s; hidden on `(booking)` checkout pages and the whole admin area. States: hidden (first second, reduced-motion renders immediately), resting, hover (`shadow-modal`), focus ring. The footer ends with `pb-24` (96 px, more than the button's 56 px plus its 24 px offset), so at the bottom of every page the button floats over empty space instead of the legal links (decision of 2026-10-17). Do: keep it the only fixed element on public pages besides the header. Don't: open a chat widget or collect a phone number on the site itself; the link hands over to WhatsApp.
+DESIGN-SPEC §2.2: from md a 52 px pill (padding 16 / 20) with `WhatsAppIcon` (24 px) and `Chat WhatsApp`, fixed `right-6 bottom-6`; on phones a 56 px circle (icon 28, the label for screen readers only) at 16 px from the right and from the home indicator (`fab-offset`, or `fab-offset-bar` above an 80 px bottom bar). `bg-whatsapp` (#0F7A3F, 5.42:1 with white), `shadow-fab`; `aria-label="Chat WhatsApp kelurahan"`; it opens `wa.me/{NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER}` with a greeting naming the current page. It joins the page 1.5 s after load (`enter-late`: opacity, 16 px and scale .96 on the soft spring, CSS only; at once with reduced motion), lifts 2 px on hover and scales to .98 when pressed. Hidden in the booking wizard and on the reservation pages, which are task pages, and in the whole admin area. The WhatsApp number itself is never printed on the site. `WhatsAppIcon` (`src/components/layout/whatsapp-icon.tsx`) is the glyph for every WhatsApp button: lucide's speech bubble with a handset inside it, on the 24 px grid.
 
-```tsx
-<WhatsAppFab pageTitle={metadata.title} />  // builds wa.me/{NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER}?text=Halo, saya ingin bertanya tentang {pageTitle}
-```
+### 5.17 SiteHeader and the menu drawer (`src/components/layout/site-header.tsx`, `mobile-menu.tsx`)
+
+DESIGN-SPEC §2.7. One header, two states, decided by CSS (`.site-header` in `globals.css`):
+
+- **Solid** (every page, and a hero page after 24 px of scroll): sticky, 72 px from lg (64 below), the paper at 92 % with a 16 px blur and a `line` hairline; the wordmark in ink; the links 15/500 ink-2, the current one ink and underlined 2 px, 6 px under the words; the lookup pill (`Cari reservasi`, `Ticket`, from xl) with a line-strong edge; `Pesan Kunjungan` as the primary button.
+- **Transparent** (over a hero that carries `data-header-overlay`, before 24 px of scroll): fixed over the photo, 88 px from lg, no background, white text, the pill edge white 35 %.
+
+The state is one attribute: `HeaderScrollObserver` (a client island of a dozen lines) watches a 24 px sentinel at the top of the document with an IntersectionObserver and toggles `data-scrolled` on the header; there is no scroll listener and nothing renders while scrolling. Colours, height and the backdrop transition over 220 ms on `ease-out-soft`. Without script a `<noscript>` style keeps the header solid. Everything inside reads the header tokens (`text-header-fg`, `-fg-2`, `-fg-3`, `border-header-line`), so no child knows the state. Link underlines draw from the left on hover. The desktop links appear from lg (`gap-6`, `gap-9` from xl); below lg: the wordmark (34 px mark), a primary `Pesan` and a 44 px round menu button.
+
+The menu drawer (`MobileMenu`, shadcn `Sheet side="right"`): 354 px (`w-drawer`, leaving at least 36 px of the page), radius 24 on the left, the paper, `shadow-drawer`, over `bg-night/70`. Top: the wordmark and a 44 px round close button. Then `Pesan Kunjungan` (lg, full width); the RWs as 54 px rows with a 6 × 30 accent bar, `RW 05 · Ecowastreme`, the theme (`rw_units.theme_label`) and a chevron, then the schedule links; `Kunjungan` and `Informasi` side by side in 44 px rows; at the foot a full-width WhatsApp button and the short payment promise with `ShieldCheck`. It opens on the sheet spring (`ease-spring-sheet`, 450 ms) and closes on the exit curve in 220 ms; its rows follow 30 ms apart (`enter-stagger`). Radix traps the focus, closes on Esc, locks the page and returns the focus to the menu button. Every link shows the pending dot while its page loads (`NavLinkLabel`).
+
+### 5.18 SiteFooter (`src/components/layout/site-footer.tsx`)
+
+DESIGN-SPEC §2.8: the night band with the light kawung at 6 %, under a `night` wave. The brand column (the light wordmark, what the platform is, the address with a gold `MapPin`, and the email once the kelurahan has given one), then the link columns with gold `text-meta-caps` titles: Edu wisata (the RWs as `RW 05 · Ecowastreme`, their schedules), Kunjungan, Informasi; on phones Edu wisata takes the whole row and the other two share the next. The payment promise sits in a panel of white 5 % with a white 10 % edge and a `ShieldCheck` in the RW 05 highlight. The bottom row: `© {year} Kelurahan Gisikdrono · Situs resmi edu wisata kelurahan`, `Kebijakan privasi` (underlined) and `QRIS · Virtual Account · Midtrans`. The WhatsApp number is not printed; `pb-24` on phones keeps the FAB off the last line.
+
+### 5.19 RwTile, FigureStat, dividers (`src/components/marketing`, `src/components/layout`)
+
+- `RwTile` (Card/RW Tile, DESIGN-SPEC §2.5): radius 16, content at the foot; the RW's photo under `photo-grade-tile`, or, for an RW without a photo, its accent field with the light kawung at 16 %; `RwTag tone="onPhoto"`, the RW's short name (large 60 / base 48 / medium 36 / small 30 px, phones 36 / 36 / 30 / 24), the tagline in on-dark-2 (on-indigo on the field), and a 44–48 px circle in the RW's accent with `ArrowUpRight` beside `Jelajahi RW 05`. Props: `unit`, `size`, `detail` (the badge text after the number), `linkLabel` (`Kenali RW 08` for a profile-only RW), `sizes`. It rises 24 px into view; hover zooms the photo to 1.04 and moves the arrow (3, −3) px at 1.06 on the snappy spring; a press scales it to .99. `RwBento` lays three of them out 708 + 468 (640 / 380 / 236 px high).
+- `FigureStat` and `FiguresPanel` (`figure-stat.tsx`, DESIGN-SPEC §2.6): a `<dt>`/`<dd>` pair, the number in `text-figure` over its 15 px label, on the paper (`tone="paper"`, a hairline above) or in the forest band (`tone="forest"`, cells divided by white 14 % rules). `FiguresPanel` is the inset forest panel (radius 24, kawung 7 %) with the gold title and the source note; numbers are `CountUp`s with `delayMs={index * 120}`.
+- `WaveDivider` (`variant="gentle" | "arc"`, `tone="background" | "muted" | "night" | "forest"`), `KawungDivider` and `KawungRow` (§8.5).
 
 ## 6. Admin dashboard
 
@@ -1070,79 +1012,74 @@ export function MotionProvider({ children }: { children: React.ReactNode }) {
 }
 ```
 
-### 7.2 Tokens (`src/lib/motion/transitions.ts`)
+### 7.2 Tokens
+
+The redesign moves the public site's motion into CSS (DESIGN-SPEC §4): transitions, scroll-driven animations (`animation-timeline: view()`), `@starting-style`-free keyframes and `linear()` springs, so no animation library reaches a public page (first-load budget, §10.1). `motion` stays for the dashboard and the few JS-driven pieces (sheets through Radix, the lightbox).
+
+**CSS tokens** (`src/styles/globals.css`; `--ease-*` in `@theme`, so each is also an `ease-*` utility; durations on `:root`):
 
 | Token | Value | Use |
 |---|---|---|
-| `duration.micro` | 150 ms | hover, toggles, badge colour |
-| `duration.short` | 200 ms | tooltips, tab indicator, chips |
-| `duration.base` | 300 ms | cards, section reveal, hotspot focus |
-| `duration.long` | 500 ms | hero secondary elements, dialog enter |
-| `duration.max` | 700 ms | flipbook page, map zoom-to-hotspot; nothing exceeds this |
-| `ease.outExpo` | `[0.16, 1, 0.3, 1]` | entrances |
-| `ease.inOut` | `[0.65, 0, 0.35, 1]` | layout moves |
-| `spring.soft` | `{ type: 'spring', stiffness: 300, damping: 30 }` | drawers, sheets, dialogs |
-| `spring.snappy` | `{ type: 'spring', stiffness: 400, damping: 25 }` | hover lift, hotspot scale |
-| stagger | `staggerChildren: 0.06`, `delayChildren: 0.1`, cap 8 items | card grids, feature lists |
-| distance | translate ≤ 24 px; blur never animated | all variants and every UI element |
-| home reveal | `@keyframes reveal-up` (opacity and 16 px, fadeInUp's distance) on the `reveal` utility, `animation-range: entry 0% entry 80%`, in `src/styles/globals.css` | the home page's section reveals (§7.3) |
-| parallax drift | `@keyframes parallax-drift`, 5 % of a layer 112 % of its frame (`--parallax-overscan`), about 5.6 % of the frame, in `src/styles/globals.css` | scroll-linked decorative photos only (§7.3); the one movement exempt from the 24 px cap (decision of 2026-10-23: the cap stays for UI elements) |
-| count-up | `duration.max` eased with `ease.outExpo` | the home page's figures, as the admin KPI count-up |
+| `--ease-out-soft` (`ease-out-soft`) | `cubic-bezier(0.22, 1, 0.36, 1)` | the default for entrances, colour and hover |
+| `--ease-out-expo` (`ease-out-expo`) | `cubic-bezier(0.16, 1, 0.3, 1)` | the count-up |
+| `--ease-in-out` (`ease-in-out`) | `cubic-bezier(0.65, 0, 0.35, 1)` | moves that start and stop in view (the scroll cue) |
+| `--ease-exit` (`ease-exit`) | `cubic-bezier(0.4, 0, 1, 1)` | closing sheets and drawers |
+| `--ease-spring-soft` + `--duration-spring-soft` | `linear()` of a 170 / 26 spring, 610 ms | card lift, the FAB entrance, reasons |
+| `--ease-spring-snappy` + `--duration-spring-snappy` | 300 / 24 (a 4.7 % overshoot), 470 ms | arrow circles, checks and radio dots |
+| `--ease-spring-sheet` + `--duration-spring-sheet` | 260 / 30, 440 ms | the drawer and bottom sheets |
+| `--ease-spring-pin` + `--duration-spring-pin` | 320 / 20 (11.8 % overshoot), 590 ms | map pins |
+| `--duration-press` / `-micro` / `-short` / `-header` / `-base` / `-long` / `-reveal` / `-max` / `-count` | 100 / 150 / 200 / 220 / 300 / 500 / 600 / 700 / 1400 ms | press, colour, nav underline, header, … , the count-up |
 
-Motion's API takes seconds, so the millisecond values above are stored as fractions; no component writes a literal duration.
+Distances stay within 8–24 px, staggers 30–120 ms. **Motion tokens** for the `motion` package (`src/lib/motion/transitions.ts`) keep their names for the dashboard: `duration.{micro, short, base, long, max}`, `ease.outExpo`, `ease.inOut`, `spring.soft`, `spring.snappy`, `stagger`.
 
-```ts
-// src/lib/motion/transitions.ts
-import type { Transition } from 'motion/react';
+**Utilities** (`src/styles/motion.css`; all gated on `prefers-reduced-motion: no-preference`; the scroll-driven ones also on `@supports (animation-timeline: view())`; content is visible by default, so nothing is ever hidden from a browser without them):
 
-export const duration = { micro: 0.15, short: 0.2, base: 0.3, long: 0.5, max: 0.7 } as const;
-export const ease: Record<'outExpo' | 'inOut', [number, number, number, number]> = {
-  outExpo: [0.16, 1, 0.3, 1],
-  inOut: [0.65, 0, 0.35, 1],
-};
-export const spring = {
-  soft: { type: 'spring', stiffness: 300, damping: 30 },
-  snappy: { type: 'spring', stiffness: 400, damping: 25 },
-} as const satisfies Record<string, Transition>;
-export const stagger = { children: 0.06, delay: 0.1, cap: 8 } as const;
-```
+| Utility | What it does |
+|---|---|
+| `reveal` | fades up 16 px as the element enters (range `entry 0 % – 40 %`, `ease-out-soft`); `reveal-lg` makes it 24 px |
+| `reveal-scale` | opacity and scale .92 → 1 on the soft spring; `reveal-scale-subtle` from .96 |
+| `reveal-clip` | `clip-path: inset(8 % round 16px)` → `inset(0)` and opacity (gallery mosaics) |
+| `reveal-rule` | a rule draws itself (`scale-x` 0 → 1); pair with `origin-left`, `origin-right` or `origin-center` |
+| `stagger-1` … `stagger-n` | sets `--i`, which moves the item's reveal window 6 % later per step |
+| `reveal-stagger` | numbers its direct children (`--i` 0–7) for the reveals above and for `enter-stagger` |
+| `hover-lift` | a boxed card rises 4 px on the soft spring and takes `shadow-md` on hover and focus-within |
+| `hover-rise` | an editorial card rises 4 px (no shadow) |
+| `hover-zoom` | an image inside the nearest `.group` zooms to 1.04 over 700 ms |
+| `hover-nudge` / `hover-nudge-diagonal` | a trailing arrow steps 4 px forward / an arrow circle moves (3, −3) px at 1.06 on the snappy spring |
+| `nudge-trailing-icon` | (on `Button`) its `data-icon="trailing"` icon steps 3 px on hover |
+| `press-scale` | scales to .98 while pressed (100 ms) |
+| `marquee` + `marquee-track` | the gallery strip: the track (photos twice, the copy `aria-hidden`) slides by half its width, 60 s a lap (45 s on phones), paused on hover, on focus-within and while the `.marquee` has `data-paused` (the Jeda toggle); with reduced motion it is a row you scroll |
+| `scroll-cue` | the hero's dot runs down its track and fades, 1.6 s, from 1.2 s, looping |
+| `enter-late` | joins 1.5 s after load: opacity, 16 px, scale .96 on the soft spring (the FAB) |
+| `enter-stagger` | the children of an opening drawer slide 12 px in, 30 ms apart after 80 ms |
+| `skeleton-shimmer` | the sunken fill with a shimmer that starts only after 300 ms (`Skeleton`) |
+| `parallax-frame` + `parallax-drift` | the scroll-linked photo drift (§7.3) |
+| `clip-inset` | clips a fixed descendant (the pinned hero photo) |
 
-```ts
-// src/lib/motion/variants.ts
-import type { Variants } from 'motion/react';
-import { duration, ease, spring, stagger } from './transitions';
-
-export const fadeIn: Variants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { duration: duration.base, ease: ease.outExpo } }, exit: { opacity: 0, transition: { duration: duration.short } } };
-export const fadeInUp: Variants = { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: duration.base, ease: ease.outExpo } }, exit: { opacity: 0, y: 8 } };
-export const fadeInDown: Variants = { hidden: { opacity: 0, y: -16 }, visible: { opacity: 1, y: 0, transition: { duration: duration.base, ease: ease.outExpo } }, exit: { opacity: 0 } };
-export const scaleIn: Variants = { hidden: { opacity: 0, scale: 0.96 }, visible: { opacity: 1, scale: 1, transition: { duration: duration.short, ease: ease.outExpo } }, exit: { opacity: 0, scale: 0.98 } };
-export const slideInRight: Variants = { hidden: { x: 24, opacity: 0 }, visible: { x: 0, opacity: 1, transition: spring.soft }, exit: { x: 24, opacity: 0 } };
-export const staggerContainer = (count: number): Variants => ({
-  hidden: {},
-  visible: { transition: { staggerChildren: count <= stagger.cap ? stagger.children : 0, delayChildren: stagger.delay } },
-});
-```
+**JS islands** (each small, no library): `HeaderScrollObserver` (one IntersectionObserver, §5.17) and `CountUp` (`src/components/marketing/count-up.tsx`: once 40 % in view, 1400 ms on the expo ease-out, `delayMs` for a 120 ms stagger; it writes the digits straight into the text node, so counting renders nothing; the server renders the final figure and an invisible copy of it holds the width; `onMount` for the dashboard KPIs).
 
 ```tsx
-<m.ul variants={staggerContainer(packages.length)} initial="hidden" whileInView="visible" viewport={{ once: true, margin: '-80px' }}>
-  {packages.map((p) => <m.li key={p.id} variants={fadeInUp}><PackageCard pkg={p} /></m.li>)}
-</m.ul>
+<ul className="grid gap-6 lg:grid-cols-3 reveal-stagger">
+  {packages.map((pkg) => (
+    <li key={pkg.id} className="reveal"><PackageCard pkg={pkg} /></li>
+  ))}
+</ul>
 ```
 
 ### 7.3 Allowed and banned
 
 | Allowed | Banned |
 |---|---|
-| Section reveals (`whileInView`, once; on the home page the CSS `reveal` utility instead, a scroll-driven fade-up that ships no script and never hides content from a browser without scroll-driven animations, without JS or with reduced motion: decision of 2026-10-24, after the motion reveal islands put `/` 36 kB over its first-load budget), card hover lift, a CSS hover zoom of a product card's photo (`motion-safe:group-hover:scale-103`, 300 ms), dialog/drawer/sheet enter–exit through `AnimatePresence`, KPI count-up once on mount and the home figures' count-up once in view (`CountUp`, plain rAF and IntersectionObserver, the final figure rendered on the server), `ScanResultSheet`, toasts (sonner built-in), WhatsAppFab entrance, hotspot focus scale, hero secondary elements, and two kinds of parallax only (below) | DataTable rows (no enter/exit/reorder; sorting is instant), form fields and validation messages (CSS `transition-colors` only), sidebar nav (CSS only), the tab indicator (a CSS fade, §5.5), Recharts in admin (`isAnimationActive={false}`), flipbook internals (library owns it), the LCP element (hero H1 and first image), height-auto animations above the fold, anything on `/dashboard/scanner` except the result sheet, skeletons (pulse only), carousels beyond embla's own transform, any other parallax, scroll-jacking (wheel handlers, smooth-scroll libraries), auto-moving rows or marquees |
+| The entrances and hovers of §7.2 and of DESIGN-SPEC §4; the header's state change; the drawer and sheets (Radix); the count-up; the marquee with its pause control; the two kinds of parallax below; dialog and sheet enter–exit; toasts; the dashboard KPI count-up and `ScanResultSheet` | Anything on the LCP element on load (the home hero photo and h1, an RW hero, a package page's main photo, an article title); tables and forms (fields, the tier table, quote tables, timelines: colour transitions of 120 ms only, no shake on errors); the QR code; Recharts in admin (`isAnimationActive={false}`); scroll-jacking (wheel handlers, smooth-scroll libraries); blur animations; any animation library on a public page |
 
-Parallax (decision of 2026-10-23, at the user's request of that day for a dusunbambu.id-style home page; amends the 21st.dev row of §1.2). Two kinds, nothing else:
+Parallax, two kinds:
 
-- **The pinned hero photo**, CSS only. With exactly one banner, from md and only under `motion-safe`, the photo is `fixed` under the header and its slide carries `clip-inset` (`clip-path: inset(0)`), so the page scrolls over a still photo. The image never moves or transforms, so the LCP is untouched. It is off below md (a phone's toolbar resizes the viewport and makes fixed layers jump), for reduced motion, and for a multi-banner hero, whose embla transform would turn `fixed` into `absolute`. Nothing that holds the photo may carry `transform`, `filter`, `contain: paint` or `will-change: transform`.
-- **Scroll-linked decorative photos** (the RW mosaic tiles, the Why-visit band): `ParallaxPhoto` drifts the image against the native scroll inside a fixed frame, with CSS only: the frame names a view timeline (`parallax-frame`) and the layer runs `parallax-drift` on it (`animation-timeline`), so no script ships for it. From md only, under `prefers-reduced-motion: no-preference`, in browsers with scroll-driven animations; elsewhere the photo stays still. Never the LCP image, never UI.
+- **The pinned hero photo**, CSS only. With exactly one banner, from md and only under `motion-safe`, the photo is `fixed` at the top of the viewport and its slide carries `clip-inset`, so the page scrolls over a still photo. The image never moves or scales, so the LCP is untouched. Off below md, with reduced motion and for a multi-banner hero. Nothing that holds the photo may carry `transform`, `filter` (the tone filter sits on the image itself), `contain: paint` or `will-change: transform`.
+- **Scroll-linked decorative photos** (`ParallaxPhoto`: the parallax band, RW profile photos): the frame names a view timeline (`parallax-frame`) and a layer 116 % tall runs `parallax-drift` on it, 6.5 % of its height each way (4.5 % on phones), so the drift never shows an edge. Never the LCP image, never UI.
 
 ### 7.4 Reduced motion
 
-`MotionConfig reducedMotion="user"` collapses transforms to opacity automatically; variants keep `y`/`scale` small so the opacity fallback reads naturally. Tailwind transitions use `motion-safe:` / `motion-reduce:` prefixes; embla autoplay stops, the hero photo is no longer pinned, decorative photos stop drifting, and the KPI and home count-ups render the final value when `prefers-reduced-motion: reduce`. `useReducedMotion()` gates the scanner vibration and sounds as well.
+Every entrance, hover movement, marquee, parallax and scroll cue is wrapped in `prefers-reduced-motion: no-preference`; with `reduce`, content shows at once in its final state, colours still change (≤ 150 ms), the header changes state in 150 ms without moving its height, the count-ups render their final value, the marquee becomes a scrollable row and the hero photo is no longer pinned. `MotionConfig reducedMotion="user"` does the same for the dashboard's `motion` components; `useReducedMotion()` gates the scanner vibration and sounds.
 
 ## 8. Iconography, imagery and assets
 
@@ -1152,7 +1089,7 @@ Parallax (decision of 2026-10-23, at the user's request of that day for a dusunb
 |---|---|---|---|
 | Buttons, badges, table cells, inline text | 16 px | 2 | `aria-hidden` unless the icon is the only label |
 | Nav items, inputs, toolbar, topbar | 20 px | 1.75 | collapsed rail shows icon + tooltip |
-| Icon tiles (KPI, feature cards) | 20 px inside a 40 px tile | 1.75 | tile `rounded-lg bg-secondary` |
+| Icon tiles (KPI, feature cards) | 20 px inside a 40 px tile | 1.75 | tile `rounded-lg bg-primary-tint text-primary-ink` (or the RW tint inside an RW scope) |
 | Empty states, result sheets | 48 px | 1.5 | inside `bg-muted rounded-full p-3` |
 | Map hotspots | 16 px inside a 32 px circle | 2 | white on primary |
 
@@ -1173,7 +1110,7 @@ Icons are imported individually (`import { ScanLine } from 'lucide-react'`), nev
 | Pengguna | `Users` | Hero Banner | `Image` |
 | Pengaturan | `Settings` | Log Aktivitas | `ScrollText` |
 | Peringatan Keamanan | `ShieldAlert` | Profil / Keluar | `User` / `LogOut` |
-| WhatsApp | `MessageCircle` | Telepon / Email | `Phone` / `Mail` |
+| WhatsApp | `WhatsAppIcon` (lucide bubble + handset, §5.16) | Telepon / Email | `Phone` / `Mail` |
 | Search / Command | `Search` / `Command` | Theme | `Sun` / `Moon` |
 
 `activity_point_type` icons: `bank_sampah` `Recycle` · `composter` `Leaf` · `maggot` `Bug` · `urban_farming` `Sprout` · `pkk_craft` `Scissors` · `sanggar` `Music` · `culture_house` `Landmark` · `stage` `Drama` · `dolanan_area` `Gamepad2` · `inclusion_center` `HeartHandshake` · `child_friendly_space` `Baby` · `umkm_stall` `Store` · `meeting_point` `Flag` · `other` `MapPin`. `package_category`: `regular` `Ticket`, `student` `GraduationCap`, `institutional` `Building2`, `combo` `Layers`. `product_category`: `compost` `Leaf`, `seedling` `Sprout`, `recycled_craft` `Recycle`, `snack` `Cookie`, `souvenir` `Gift`, `other` `ShoppingBag`. RW photo slots: by `rw_units.icon_key` (`RW_ICONS` in `src/config/rw-icons.ts`): `recycle` `Recycle`, `drama` `Drama`, `heart_handshake` `HeartHandshake`, spares `landmark` `Landmark` and `users` `Users`; article `Newspaper`; home hero without a banner `Images`. Status icons: success `CheckCircle2`, warning `AlertTriangle`, info `Info`, danger `XCircle`, neutral `Circle`.
@@ -1194,7 +1131,8 @@ Icons are imported individually (`import { ScanLine } from 'lucide-react'`), nev
 - Every upload passes the quarantine pipeline: magic-byte check, EXIF stripped, re-encoded to WebP at ≤ 1600 px by `finalizeUpload`; SVG is never accepted from users. The `blurhash` string (4 × 3 components, `blurhash` package) is computed at the same step and stored on the row; `src/lib/images/blur.ts` reads its average colour (the DC component) on the server, and the photo slot shows that colour as its background while the photo loads. A blurred `blurDataURL` would need `data:` in the CSP's `img-src`, which `docs/Security.md` §8.2 does not allow, so the placeholder is a colour, not a picture (decision of 2026-10-18). No base64 image ever lives in the database.
 - `next/image` with the custom loader `src/lib/images/supabase-loader.ts` → `/storage/v1/render/image/public/public-media/<path>?width={w}&quality=75&resize=contain` (`contain` because the transformer's default `cover` keeps the original height when only a width is given, so the photo comes back cropped instead of scaled; found on the local stack, decision of 2026-10-18); `sizes` presets in `src/config/images.ts`; `images.remotePatterns` is pinned to the project host and bucket path; device widths `[320, 480, 640, 960, 1280, 1600]`.
 - `sizes` is mandatory on every image; `width`/`height` or `aspect-[4/3]` prevents CLS; `priority` + `fetchPriority="high"` only on the first hero image; ≤ 12 images above the fold.
-- Photography style: real people and places in Gisikdrono, daylight, candid; no stock imagery. Hero backgrounds use a `bg-brand-deep/60` duotone overlay for text contrast (≥ 4.5:1 verified on the darkest and lightest frame).
+- Photography style: real people and places in Gisikdrono, daylight, candid; no stock imagery; photos of children never as a hero, tile, card or large feature (DESIGN-SPEC §0).
+- Photo grades (DESIGN-SPEC §1.7), utilities in `src/styles/utilities.css`: the tone filter on the `<img>` and the grade as an absolutely placed layer over it (its `::before` multiplies a warm colour, its `::after` lays the scrims). Home hero: `photo-tone-hero` (saturate .6) + `photo-grade-hero` (multiply #A27C58, a vertical scrim, a central calm and a vignette). RW hero: `photo-tone-rw` (saturate .75) + `photo-grade-rw`, whose multiply and shade come from the RW scope (forest for leaf, #2A160B for terracotta). Parallax band: `photo-grade-band`. RW tile: `photo-grade-tile`. White text on any grade keeps a local background darker than #6E6B68 (≥ 5.3:1); text on photos also takes `text-shadow-photo` / `text-shadow-photo-lg`.
 
 ### 8.3 Site plan (denah) SVG rules
 
@@ -1202,14 +1140,18 @@ Icons are imported individually (`import { ScanLine } from 'lucide-react'`), nev
 
 ### 8.4 Open Graph images
 
-`src/app/opengraph-image.tsx` plus per-entity files for `paket-wisata/[slug]`, `produk/[slug]`, `artikel/[slug]`: `ImageResponse` 1200 × 630, `bg-brand-deep`, ice accent bar, eyebrow (RW or category), title in Plus Jakarta Sans 700 at 64 px (max two lines, ellipsis), cover image at the right third with a dark gradient, logo bottom-left, site URL bottom-right. Fonts are read from `public/fonts/*.ttf`.
+`src/app/opengraph-image.tsx` plus per-entity files for `paket-wisata/[slug]`, `produk/[slug]`, `artikel/[slug]`: `ImageResponse` 1200 × 630, `bg-brand-deep` (night), a sunken-paper accent bar, eyebrow (RW or category), title in Plus Jakarta Sans 700 at 64 px (max two lines, ellipsis), cover image at the right third with a dark gradient, logo bottom-left, site URL bottom-right. Fonts are read from `public/fonts/*.ttf`.
 
-### 8.5 Illustration and empty-state style
+### 8.5 Dividers, the kawung motif and empty states
 
-No character illustrations or 3D renders. Empty states use a single lucide icon in a muted tile; decorative backgrounds are limited to the dot-grid SVG (6 % opacity), the ice-to-background gradient, the wave divider and one line-art motif (decision of 2026-10-23, home page redesign at the user's request of that day).
+No character illustrations or 3D renders. Empty states use a single lucide icon in a round tinted emblem (DESIGN-SPEC §3.14). The decorative vocabulary is exactly this:
 
-- **Wave divider** (`src/components/layout/wave-divider.tsx`): a server-rendered SVG, no script, `aria-hidden`, drawn on a 1440 × 64 box and stretched to the width (h-6 below md, h-10 from md, h-16 from lg). Two paths: `gentle`, and the symmetric `arc` under the hero (the photo dips to a point in the middle, decision of 2026-10-24); `flip` mirrors one so two waves in a row differ. It belongs to the section below and is painted in that section's opaque tone (`background` or `surface-warm`, never a translucent one) over the section above, only where the tone changes. The footer carries one on every public page, standing in a top margin of its own height so it never covers content.
-- **Motif**: a local line-art motif drawn by a person (*asem arang*, the tamarind leaf in Semarang's name, the *blekok srondol* heron, or a kawung grid as a quiet second choice), as a single-colour SVG in `public/motifs/`, at ≤ 8 % opacity, in the CTA band and the footer only. Never Balinese or generic "tribal" patterns, never AI-generated. Until that drawing exists the CTA band keeps its dot grid and the footer has none. Certificates and PDF documents share the same palette (deep slate header, royal accent rule) and the registered TTF fonts.
+- **Divider/Arc and Divider/Wave** (`src/components/layout/wave-divider.tsx`, DESIGN-SPEC §2.9): server-rendered SVG, no script, `aria-hidden`, absolutely placed at the top of the section it belongs to and painted in that section's opaque tone over the section above. `arc` sits under the home hero: `M0 0 C360 128 1080 128 1440 0 V96 H0 Z` on 1440 × 96 (64 px at md, 96 from lg), and its own phone drawing `M0 0 C97.5 53.3 292.5 53.3 390 0 V40 H0 Z` on 390 × 40 below md, so the curve keeps its shape. `gentle` steps into another tone, into a dark band or the night of the footer: `M0 34 C240 4 480 4 720 30 C960 56 1200 60 1440 26 V64 H0 Z` (24 / 40 / 56 px). `flip` mirrors it. Tones: `background`, `muted`, `night`, `forest`.
+- **Kawung** (DESIGN-SPEC §1.8): generated in pen.dev, never hand-drawn, flattened into paths. The tile `public/motifs/kawung.svg` (240 × 240, a 3 × 3 lattice of 1 px strokes) is never shown as an image: the `kawung` utility paints it as a CSS mask on a `::before` behind the content, in `--kawung-colour` (white by default, ink with `kawung-ink`) at the opacity of `kawung-6` … `kawung-16` (per cent), so it costs no DOM node and follows the theme. Light on dark bands (footer 6 %, CTA and figures bands 7 %, typographic covers 10 %, the RW 08 field 16 %), ink on tints (product placeholders 8 %, banners 7 %). The utility makes its element a stacking context and keeps it positioned.
+- **Divider/Batik Kawung** (`KawungDivider` in `src/components/layout/kawung-divider.tsx`): a line-strong hairline, 24 px, `KawungRow` (one row of five flowers, 160 × 32, inline SVG in the soga accent), 24 px, a hairline. At most once per page (home, under the introduction; an RW page may reuse it at the end of its profile). As it comes into view the hairlines draw outward from the flowers and the flowers settle in.
+- **Photo grades** (§8.2) are functional scrims, not decoration.
+
+Never gradient text, glow, blobs or orbs; never Balinese or generic "tribal" patterns; never AI-generated motifs. Certificates and PDF documents (`src/lib/pdf/theme.ts`) still carry the slate and royal palette of the first design and the registered TTF fonts; moving them to the night header and brick accent rule is part of the document redesign, not of this foundation.
 
 ## 9. Accessibility and content rules
 
@@ -1278,8 +1220,8 @@ Code-split with `next/dynamic` (`ssr: false` where DOM-only): Leaflet map, `page
 
 | Surface | Below `md` | `md` and above |
 |---|---|---|
-| Site header | below `xl`: logo + `Pesan` button (`Pesan Kunjungan` from `md`) + menu Sheet | from `xl`: full nav, sticky blur: five links (`Kampung Wisata` to the home page's RW section `/#kampung`, then `Paket wisata`, `Produk UMKM`, `Galeri`, `Peta & kontak`), the wordmark and `Pesan Kunjungan`. The RWs are not named one by one in the header: with three RWs the links needed 975 px of the 901 px the 1280 px container leaves, visitors do not know RWs by number, and a menu of them would add client script to every public page. `Kampung Wisata` is the current section (`aria-current="true"`) on every RW page; each RW keeps its direct link in the menu Sheet, the footer, the home section, the breadcrumbs and the sitemap (decision of 2026-10-22, replacing the six links of 2026-10-17; the planned home page redesign may revisit it) |
-| Hero | photo edge to edge at `min-h-(--hero-min-h-mobile)`, growing with its text; text stacked over it, CTAs full width; carousel controls under the photo; no pinned photo; `text-display-xl` at 2.5 rem | full screen under the header (`--hero-h`), text bottom-left; pinned photo for one banner; carousel controls on the overlay from lg (decision of 2026-10-23) |
+| Site header | below `lg`: the 64 px header, wordmark (34 px mark) + primary `Pesan` + 44 px round menu button opening the drawer (§5.17) | from `lg`: the five links (`Kampung Wisata` to the home page's RW section `/#kampung`, then `Paket wisata`, `Produk UMKM`, `Galeri`, `Peta & kontak`), `Pesan Kunjungan`; the `Cari reservasi` pill from `xl`. Transparent over a hero photo until 24 px of scroll. The RWs are not named one by one in the header (decision of 2026-10-22); `Kampung Wisata` is the current section (`aria-current="true"`) on every RW page, and each RW keeps its direct link in the drawer, the footer, the home section, the breadcrumbs and the sitemap |
+| Hero | `h-svh` with a 32 rem minimum; the statement on two lines; the phone arc (390 × 40); carousel controls under the photo; no pinned photo | `h-svh` up to 900 px under the transparent header; pinned photo for one banner; the wide arc; carousel controls on the overlay from lg |
 | Package detail | sticky bottom CTA bar (`Pesan Sekarang` + price) above `WhatsAppFab` | sidebar card with price and CTA |
 | Booking wizard | stepper collapsed to `Langkah 2/4`, full-width fields, inline DatePicker | horizontal stepper, Popover DatePicker |
 | Dialogs | Drawer with safe-area padding | Dialog `sm:max-w-lg` |
