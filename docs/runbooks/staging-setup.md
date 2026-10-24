@@ -287,7 +287,7 @@ The workflow file reaches `main` with the pull request that added this runbook; 
 
 1. GitHub > **Actions** > **Staging release** > **Run workflow**. Branch `main`, **dry_run** ticked. Approve the run when GitHub asks (required reviewer).
 2. Open the run > **migrate the staging database** > step **Migrations that would run**. On a new project it lists every file of `supabase/migrations`, from `0001_extensions.sql` to the newest.
-3. Run it again with **dry_run** unticked, **seed_demo** ticked (the first time, and whenever the demo content changed) and **deploy** ticked. The migrate job applies the migrations and writes the demo content: the RW 05, RW 13 and RW 08 profiles and activity points, the demo packages, session templates and the sessions planned from them, UMKM vendors and products, and two articles. It writes no gallery photo, hero banner or e-booklet (those need real files), so those pages show their "Foto menyusul" placeholders. Running it again changes nothing. The deploy job then creates or fast-forwards the branch `staging`.
+3. Run it again with **dry_run** unticked, **seed_demo** ticked (the first time, and whenever the demo content changed) and **deploy** ticked. The migrate job applies the migrations and writes the demo content: the RW 05, RW 13 and RW 08 profiles and activity points, the demo packages, session templates and the sessions planned from them, UMKM vendors and products, and two articles. It writes no gallery photo, hero banner or e-booklet (those need real files), so those pages show their "Foto menyusul" placeholders until D.7 uploads the photos. Running it again changes nothing. The deploy job then creates or fast-forwards the branch `staging`.
 4. Vercel > **Deployments**: a **Preview** deployment of `staging` starts. Wait for **Ready**. If it fails, open the build log: a missing or malformed variable is named there (`src/lib/env.ts`); fix it in Vercel and click **Redeploy**.
 
 If the migrate job cannot reach the database (a network error in **Link the staging project** or **Apply the migrations**), the same can be done from your PC with the Supabase CLI you use locally: `supabase login`, `supabase link --project-ref <ref>` (type the database password when asked), `supabase db push --linked --dry-run`, then `supabase db push --linked`, and finally `git push origin main:staging`. Never add `--include-seed`. If only the demo step fails (it reads the pooler address `supabase link` leaves behind), open `scripts/seed-demo-content.sql` on GitHub, copy it whole into the Supabase **SQL Editor** and run it there once; it refuses to run unless D.1 marked the database `staging`. Never paste `scripts/seed-dev.sql` anywhere but your local stack.
@@ -353,6 +353,52 @@ Resume each one (`active := true`) in the staging release that ships its route.
 
 The custom access token hook must be on **before** part E: the superadmin's role reaches the app only through it.
 
+### D.7 Photos for the staging pages (`pnpm db:seed:staging-media`)
+
+After D.3 has written the demo content, this fills the photos so the pages stop showing "Foto menyusul". It uploads the same two photo sets as `pnpm db:seed --media` / `--official-media` locally (`scripts/demo-media.ts`, `scripts/official-media.ts`), through the same re-encoding (EXIF stripped, at most 1600 px, WebP) and the same SQL: existing rows are kept, an RW page or activity point that already has a photo keeps it, and a second run changes nothing. It writes no development account, no e-booklet and nothing else. No photo of children stands for an RW page or an activity point; those appear in the gallery only.
+
+| Set | Photos | Where they show |
+|---|---|---|
+| Visit photos (`--media`, folder `Foto-Gisikdrono\jpg`) | 1 hero banner + 6 RW 05 gallery photos (plus copies for 2 activity points and the RW 05 article) | home hero, `/galeri`, `/rw-05-ecowastreme` (RW hero, Taman TOGA and Bank Sampah points), the article `bank-sampah-dan-taman-toga-rw-05` (cover and body photo) |
+| Official-site photos (`--official-media`, folder `Foto-Gisikdrono\situs-kelurahan`) | 19 gallery photos: 6 RW 05, 10 RW 13, 3 RW 08 (plus copies for 3 activity points) | `/galeri`, `/rw-13-kampung-budaya-seni` (RW hero, mural point), the RW 05 recycled-craft point; RW 08 keeps "Foto menyusul" as its hero, because every photo of its programme shows children |
+
+Before the first write the command checks, and stops if either fails: the Management API names the project `gisikdrono-staging`, and the database's Vault secret `environment` (D.1) is `staging` (compared inside the database; the value is never shown). It prints only counts and file paths, never a key.
+
+1. **Credentials file**, outside the repository folder (the command refuses one inside it). In PowerShell:
+
+   ```powershell
+   notepad "$env:USERPROFILE\gisikdrono-staging-media.env"
+   ```
+
+   Let Notepad create the file and type three lines, the values pasted from Bitwarden (never into a chat or the terminal):
+
+   ```text
+   STAGING_PROJECT_REF=<ref>
+   SUPABASE_ACCESS_TOKEN=<a Supabase access token of the staging account>
+   SUPABASE_SERVICE_ROLE_KEY=<the staging service_role key>
+   ```
+
+   - `STAGING_PROJECT_REF`: the 20-letter ref (Bitwarden, part A).
+   - `SUPABASE_ACCESS_TOKEN`: signed in to the **staging account** only, https://supabase.com/dashboard/account/tokens > **Generate new token**, name `staging-media-seed`, the shortest expiry. Do not reuse the GitHub token of D.2.
+   - `SUPABASE_SERVICE_ROLE_KEY`: Supabase > the staging project > **Project Settings** > **API Keys** > `service_role` (or the secret key), the value kept in Bitwarden.
+
+   Save and close Notepad.
+2. **Run** from your clone, up to date with `main`, with the two photo folders (they stay outside the repository and are never committed):
+
+   ```powershell
+   pnpm db:seed:staging-media -- --media "$env:USERPROFILE\Foto-Gisikdrono\jpg" --official-media "$env:USERPROFILE\Foto-Gisikdrono\situs-kelurahan"
+   ```
+
+   It ends with `Demo photos: 7 placed`, `Official-site photos: 19 placed` and `Done`. A file elsewhere is passed with `--credentials <file>`. If it stops at a guard, nothing was written: fix the file or D.1, then run it again.
+3. **Delete the file and the token** straight after:
+
+   ```powershell
+   Remove-Item "$env:USERPROFILE\gisikdrono-staging-media.env"
+   ```
+
+   Then delete the `staging-media-seed` token on the same Supabase tokens page.
+4. **Check**: open `<staging-url>/`, `/galeri`, `/rw-05-ecowastreme` and `/rw-13-kampung-budaya-seni`; the photos show (cached public pages may need up to an hour, or a redeploy of the `staging` branch in Vercel). Then run check 14 of part F.
+
 ---
 
 ## Part E: First superadmin with TOTP
@@ -407,7 +453,7 @@ $u = "https://gisikdrono-staging-<random>.vercel.app"   # your <staging-url>, ty
 | 11 | Demo content and booking closed | open `$u/paket-wisata`, then `$u/paket-wisata/paket-eduwisata-ecowastreme` | the demo packages are listed (after a run with **seed_demo**); the package page's booking wizard says booking is closed |
 | 12 | Scheduled jobs | SQL editor: `select job, last_success_at, last_failure_at, last_error_code from public.job_heartbeats order by job;` | after 15 minutes `expire_stale_bookings`, `check_job_responses` and `process-notifications` show a recent `last_success_at`; no `secret_missing` or `insecure_base_url` (those mean D.1 is wrong) |
 | 13 | The kelurahan's view | open `$u/` on a phone, signed out of Vercel, in mobile data | the site opens without a Vercel login or password (the exception of part B step 7) |
-| 14 | Photos without the transformer | on a page with an uploaded photo, right-click it > **Copy image address** | the address contains `/storage/v1/object/public/public-media/`, never `/render/image/` (which Free answers with an error); until photos are uploaded, pages show "Foto menyusul" |
+| 14 | Photos without the transformer | on a page with an uploaded photo, right-click it > **Copy image address** | the address contains `/storage/v1/object/public/public-media/`, never `/render/image/` (which Free answers with an error); until photos are uploaded (D.7), pages show "Foto menyusul" |
 
 `/api/health` does not exist yet (Task P3.11.07); add it to this list, and to the uptime monitor of P0.1.12, when it ships.
 
@@ -425,7 +471,7 @@ To resume: Supabase dashboard > the `gisikdrono-staging` project > **Restore pro
 2. Never scope a staging variable to **Production** or **Development** in Vercel, and never reuse a staging secret for production. Production gets its own Supabase project, its own generated set and its own Midtrans account (Task P5.7.01).
 3. Never paste a secret into a chat (an AI assistant included), an issue, a pull request, an email or a WhatsApp message, and never keep the secrets file inside the repository folder or commit it. Bitwarden is the only copy.
 4. Never run `supabase config push` against staging: it would overwrite the hosted Auth settings with the **local** ones (site URL `127.0.0.1`, attempt hooks no hosted plan of ours has). Set Auth by hand (D.6).
-5. Never run `supabase db reset --linked`, `supabase db push --include-seed` or `pnpm db:seed` against staging, never set the Vault secret `environment` to `local`, and never edit an applied migration to fix staging (`CLAUDE.md` §6.4). A fix is a new migration released through the workflow.
+5. Never run `supabase db reset --linked`, `supabase db push --include-seed` or `pnpm db:seed` against staging (photos go only through the guarded `pnpm db:seed:staging-media` of D.7), never set the Vault secret `environment` to `local`, and never edit an applied migration to fix staging (`CLAUDE.md` §6.4). A fix is a new migration released through the workflow.
 6. Never enter real visitor data: no real bookings, names, phone numbers or emails of visitors or children. Demo content only, clearly invented.
 7. Never switch on `booking_enabled`, `whatsapp_enabled` or `email_enabled` on staging by hand, except a short booking trial with the superadmin's fresh TOTP that is closed again straight after.
 8. Never add a WhatsApp token or a real Resend key to staging before the decision to test them there; when that time comes, they are separate staging credentials.

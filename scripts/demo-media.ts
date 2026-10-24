@@ -1,7 +1,6 @@
 import { parseArgs } from 'node:util';
 
-import { seedDemoBooklet } from './demo-booklet';
-import { runSql, sqlText } from './local-stack';
+import { sqlText } from './local-stack';
 import {
   findPhotoFile,
   idOfSlug,
@@ -9,13 +8,15 @@ import {
   linkRwHero,
   seedGalleryPhoto,
   uploadPhoto,
+  type MediaTarget,
 } from './seed-photos';
 
-// pnpm db:seed --media <folder>: real Gisikdrono photos for the local demo content (decision of 2026-10-18).
+// pnpm db:seed --media <folder>: real Gisikdrono photos for the local demo content (decision of 2026-10-18), and
+// pnpm db:seed:staging-media the same set for the staging project (scripts/seed-staging-media.ts).
 // The photos themselves never enter the repository: faces are in them and the consent is still being
 // arranged. Only their file names and the descriptions below live here; scripts/seed-photos.ts uploads them.
 // Without --media the seed writes no hero banner, no gallery rows and no e-booklet, and the pages show
-// `Foto menyusul`.
+// `Foto menyusul`. The e-booklet built from these photos is local only (scripts/demo-booklet.ts).
 
 interface DemoPhoto {
   // The file name in the folder, without its extension.
@@ -98,14 +99,15 @@ export function mediaFoldersFromArgs(args: string[]): { media?: string; official
   return { media: values.media, officialMedia: values['official-media'] };
 }
 
-async function seedHeroBanner(folder: string): Promise<void> {
+async function seedHeroBanner(target: MediaTarget, folder: string): Promise<void> {
   const uploaded = await uploadPhoto(
+    target,
     folder,
     HERO_PHOTO.file,
     `kelurahan/hero/${HERO_PHOTO.id}.webp`,
   );
   // The texts follow this file, so a database seeded before they changed catches up on the next run.
-  await runSql(`insert into public.hero_banners (id, title, subtitle, cta_label, cta_href, image_path,
+  await target.runSql(`insert into public.hero_banners (id, title, subtitle, cta_label, cta_href, image_path,
       sort_order)
     values (${sqlText(HERO_PHOTO.id)}, ${sqlText(HERO_PHOTO.title)}, ${sqlText(HERO_PHOTO.subtitle)},
             'Pesan Kunjungan', '/paket-wisata', ${sqlText(uploaded.path)}, 0)
@@ -119,10 +121,10 @@ function galleryPhoto(photoId: string): DemoPhoto {
   return photo;
 }
 
-async function linkRw05Photos(folder: string): Promise<void> {
-  await linkRwHero(RW05, RW05_PROFILE_PHOTO_ID);
+async function linkRw05Photos(target: MediaTarget, folder: string): Promise<void> {
+  await linkRwHero(target, RW05, RW05_PROFILE_PHOTO_ID);
   for (const [slug, photoId] of Object.entries(POINT_PHOTO_IDS)) {
-    await linkPointPhoto(folder, slug, { ...galleryPhoto(photoId), rwId: RW05 });
+    await linkPointPhoto(target, folder, slug, { ...galleryPhoto(photoId), rwId: RW05 });
   }
 }
 
@@ -134,22 +136,24 @@ const ARTICLE_COVER_PHOTO_ID = '0de00000-0000-4000-8000-0000000000f1';
 const ARTICLE_BODY_PHOTO_ID = '0de00000-0000-4000-8000-0000000000f6';
 
 // Both photos are copies in the article's own folder, as the CMS and the database require.
-async function linkArticlePhotos(folder: string): Promise<void> {
-  const articleId = await idOfSlug('articles', ARTICLE_SLUG);
+async function linkArticlePhotos(target: MediaTarget, folder: string): Promise<void> {
+  const articleId = await idOfSlug(target, 'articles', ARTICLE_SLUG);
   if (!articleId) return;
   const articleFolder = `rw-05/articles/${articleId}`;
   const cover = await uploadPhoto(
+    target,
     folder,
     galleryPhoto(ARTICLE_COVER_PHOTO_ID).file,
     `${articleFolder}/${ARTICLE_COVER_PHOTO_ID}.webp`,
   );
   const bodyPhoto = galleryPhoto(ARTICLE_BODY_PHOTO_ID);
   const body = await uploadPhoto(
+    target,
     folder,
     bodyPhoto.file,
     `${articleFolder}/${ARTICLE_BODY_PHOTO_ID}.webp`,
   );
-  await runSql(`update public.articles set cover_path = ${sqlText(cover.path)}
+  await target.runSql(`update public.articles set cover_path = ${sqlText(cover.path)}
       where id = ${sqlText(articleId)} and cover_path is null;
     update public.articles
     set body_json = jsonb_set(body_json, '{content}', (body_json -> 'content') || jsonb_build_array(
@@ -159,12 +163,17 @@ async function linkArticlePhotos(folder: string): Promise<void> {
     where id = ${sqlText(articleId)} and not body_json @> '{"content": [{"type": "image"}]}';`);
 }
 
+// The pages of the local e-booklet (scripts/demo-booklet.ts), in gallery order.
+export function demoBookletPhotoFiles(folder: string): string[] {
+  return RW05_GALLERY.map((photo) => findPhotoFile(folder, photo.file));
+}
+
 // The file goes up before its row, so no row ever points at a missing file. Running it again uploads the
-// same files over themselves and keeps the rows as they are.
-export async function seedDemoMedia(folder: string): Promise<number> {
-  await seedHeroBanner(folder);
+// same files over themselves and keeps the rows as they are. Returns the number of photos it placed.
+export async function seedDemoMedia(target: MediaTarget, folder: string): Promise<number> {
+  await seedHeroBanner(target, folder);
   for (const [index, photo] of RW05_GALLERY.entries()) {
-    await seedGalleryPhoto(folder, photo.file, {
+    await seedGalleryPhoto(target, folder, photo.file, {
       id: photo.id,
       rwId: RW05,
       category: 'visit',
@@ -173,8 +182,7 @@ export async function seedDemoMedia(folder: string): Promise<number> {
       sortOrder: index + 1,
     });
   }
-  await linkRw05Photos(folder);
-  await linkArticlePhotos(folder);
-  await seedDemoBooklet(RW05_GALLERY.map((photo) => findPhotoFile(folder, photo.file)));
+  await linkRw05Photos(target, folder);
+  await linkArticlePhotos(target, folder);
   return RW05_GALLERY.length + 1;
 }
