@@ -11,6 +11,8 @@ const OTP_MESSAGE: OutgoingMessage = {
   bodyParams: { code: '482913' },
   link: null,
 };
+const MAILPIT = 'http://127.0.0.1:54324/api/v1/send';
+const RESEND = 'https://api.resend.com/emails';
 
 function capturedFetch() {
   const urls: string[] = [];
@@ -28,39 +30,49 @@ describe('notificationProviders', () => {
     vi.restoreAllMocks();
   });
 
-  it('sends nothing to the local Mailpit outside a local development server', async () => {
+  it('reaches Meta and Resend on a live deployment, never the local Mailpit', async () => {
     const urls = capturedFetch();
-    const providers = notificationProviders(false);
-    await providers.whatsapp.send(OTP_MESSAGE);
-    await providers.email.send({ ...OTP_MESSAGE, channel: 'email', recipient: 'ani@example.test' });
+    const providers = notificationProviders('live');
+    await providers?.whatsapp.send(OTP_MESSAGE);
+    await providers?.email.send({
+      ...OTP_MESSAGE,
+      channel: 'email',
+      recipient: 'ani@example.test',
+    });
     expect(urls.some((url) => url.includes('127.0.0.1'))).toBe(false);
-    expect(urls).toEqual(['https://api.resend.com/emails']);
+    expect(urls).toEqual([RESEND]);
   });
 
   it('refuses WhatsApp outright when the Meta credentials are missing, as on staging without a number', async () => {
     capturedFetch();
-    await expect(notificationProviders(false).whatsapp.send(OTP_MESSAGE)).resolves.toMatchObject({
+    await expect(notificationProviders('live')?.whatsapp.send(OTP_MESSAGE)).resolves.toMatchObject({
       ok: false,
       errorCode: 'whatsapp_not_configured',
       isPermanent: true,
     });
   });
 
-  it('delivers both channels to the local Mailpit on a developer machine', async () => {
+  it('delivers both channels to the local Mailpit for a stack on this machine', async () => {
     const urls = capturedFetch();
-    const providers = notificationProviders(true);
-    await providers.whatsapp.send(OTP_MESSAGE);
-    await providers.email.send({ ...OTP_MESSAGE, channel: 'email', recipient: 'ani@example.test' });
-    expect(urls).toEqual([
-      'http://127.0.0.1:54324/api/v1/send',
-      'http://127.0.0.1:54324/api/v1/send',
-    ]);
+    const providers = notificationProviders('mailpit');
+    await providers?.whatsapp.send(OTP_MESSAGE);
+    await providers?.email.send({
+      ...OTP_MESSAGE,
+      channel: 'email',
+      recipient: 'ani@example.test',
+    });
+    expect(urls).toEqual([MAILPIT, MAILPIT]);
   });
 
-  it('chooses by the deployment it runs in when asked nothing, and this test run is no laptop', async () => {
+  it('has no provider at all where nothing may be delivered', () => {
+    expect(notificationProviders('none')).toBeNull();
+  });
+
+  // Independent review of PR #50, M1: this test run, like CI's e2e server, is no Vercel deployment.
+  it('chooses by the deployment it runs in when asked nothing, and this test run reaches no real provider', async () => {
     const urls = capturedFetch();
-    await notificationProviders().email.send({ ...OTP_MESSAGE, channel: 'email' });
-    expect(urls).toEqual(['https://api.resend.com/emails']);
+    await notificationProviders()?.email.send({ ...OTP_MESSAGE, channel: 'email' });
+    expect(urls).toEqual([MAILPIT]);
   });
 });
 
@@ -69,20 +81,17 @@ describe('securityAlertProvider', () => {
     vi.restoreAllMocks();
   });
 
-  it('emails alerts through Resend directly, or the local Mailpit on a developer machine', async () => {
+  it('emails alerts through Resend on a live deployment, the local Mailpit for a local stack, nowhere else', async () => {
     const urls = capturedFetch();
     const alert = {
       ...OTP_MESSAGE,
       channel: 'email' as const,
       template: 'security_alert' as const,
     };
-    await securityAlertProvider(false).send(alert);
-    await securityAlertProvider(true).send(alert);
-    await securityAlertProvider().send(alert);
-    expect(urls).toEqual([
-      'https://api.resend.com/emails',
-      'http://127.0.0.1:54324/api/v1/send',
-      'https://api.resend.com/emails',
-    ]);
+    await securityAlertProvider('live')?.send(alert);
+    await securityAlertProvider('mailpit')?.send(alert);
+    await securityAlertProvider()?.send(alert);
+    expect(urls).toEqual([RESEND, MAILPIT, MAILPIT]);
+    expect(securityAlertProvider('none')).toBeNull();
   });
 });

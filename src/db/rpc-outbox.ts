@@ -55,7 +55,7 @@ export type SecurityAlertToSend = {
   lastSeenAt: string;
 };
 
-// High and critical alerts not yet sent out of band, stamped as sent as they are claimed (Task P3.11.08).
+// High and critical alerts not yet sent out of band, leased for five minutes as they are claimed (Task P3.11.08).
 export async function svcClaimSecurityAlerts(
   adminClient: DatabaseClient,
   limit: number,
@@ -67,6 +67,14 @@ export async function svcClaimSecurityAlerts(
     severity: row.severity,
     lastSeenAt: row.last_seen_at,
   }));
+}
+
+// An alert whose email went out.
+export async function svcMarkSecurityAlertSent(
+  adminClient: DatabaseClient,
+  id: string,
+): Promise<void> {
+  await resultOf(adminClient.rpc('svc_mark_security_alert_sent', { p_id: id }));
 }
 
 // An alert whose email did not go out, given back to the next run.

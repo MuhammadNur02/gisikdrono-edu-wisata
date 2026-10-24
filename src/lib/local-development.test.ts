@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isLocalDevelopment, type DeploymentFacts } from '@/lib/local-development';
+import { isLocalDevelopment, messageDelivery, type DeploymentFacts } from '@/lib/local-development';
 
 const LAPTOP: DeploymentFacts = {
   nodeEnv: 'development',
@@ -31,5 +31,38 @@ describe('isLocalDevelopment', () => {
 
   it('is false for the environment this test suite runs in', () => {
     expect(isLocalDevelopment()).toBe(false);
+  });
+});
+
+// Independent review of PR #50, M1: only a Vercel preview or production deployment reaches Meta and Resend.
+describe('messageDelivery', () => {
+  const HOSTED_SUPABASE = 'https://abcdefgh.supabase.co';
+
+  it.each<[string, Partial<DeploymentFacts>, ReturnType<typeof messageDelivery>]>([
+    ['CI: a production build on the local stack', { nodeEnv: 'production' }, 'mailpit'],
+    ['`pnpm start` on a laptop, real keys or not', { nodeEnv: 'production' }, 'mailpit'],
+    ['`next dev` on a laptop', {}, 'mailpit'],
+    [
+      'a laptop server on the hosted Supabase',
+      { nodeEnv: 'production', supabaseUrl: HOSTED_SUPABASE },
+      'none',
+    ],
+    [
+      'vercel dev with remote variables',
+      { vercelEnv: 'development', supabaseUrl: HOSTED_SUPABASE },
+      'none',
+    ],
+    [
+      'a Vercel preview (staging)',
+      { nodeEnv: 'production', vercelEnv: 'preview', supabaseUrl: HOSTED_SUPABASE },
+      'live',
+    ],
+    [
+      'Vercel production',
+      { nodeEnv: 'production', vercelEnv: 'production', supabaseUrl: HOSTED_SUPABASE },
+      'live',
+    ],
+  ])('%s', (_case, change, delivery) => {
+    expect(messageDelivery({ ...LAPTOP, ...change })).toBe(delivery);
   });
 });

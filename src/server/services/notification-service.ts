@@ -15,11 +15,13 @@ import { notificationProviders } from '@/lib/notifications/providers';
 import { sendFailure } from '@/lib/notifications/send-result';
 import type { NotificationProviders, SendResult } from '@/lib/notifications/types';
 import { publicEnv } from '@/lib/public-env';
+import { withinRateLimits } from '@/lib/rate-limit';
 // The outbox worker runs without a user: the outbox and the functions that move it are open to no API role, and a
 // guest link is minted from the booking's code and token_version, which only the service role reads for a visitor.
 // Every row it touches is one internal.claim_notifications handed it, and every booking it reads is the one that row
 // names (CLAUDE.md §6.1).
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 import { composeMessage } from '@/server/services/outbox-messages';
 import { checkServiceHealth, type HealthReport } from '@/server/services/service-health';
 
@@ -87,8 +89,13 @@ export async function processNotifications(
 // goes out now rather than at the next minute of pg_cron. A failure here is left for that next run.
 export async function kickNotificationWorker(): Promise<void> {
   const log = createLogger(randomUUID());
+  const providers = notificationProviders();
+  if (providers === null) {
+    log.info('job_run', { job: 'process-notifications', source: 'kick', delivery: 'none' });
+    return;
+  }
   try {
-    const run = await processNotifications(createSupabaseAdminClient(), notificationProviders());
+    const run = await processNotifications(createSupabaseAdminClient(), providers);
     log.info('job_run', { job: 'process-notifications', source: 'kick', ...run });
   } catch {
     log.error('cron_failed', { job: 'process-notifications', source: 'kick' });
@@ -96,7 +103,11 @@ export async function kickNotificationWorker(): Promise<void> {
 }
 
 // GET /api/health (Task P3.11.07), read with the service role since the heartbeats and the outbox are open to no API
-// role.
-export function readServiceHealth(): Promise<HealthReport> {
-  return checkServiceHealth(createSupabaseAdminClient(), publicEnv.VERCEL_ENV === 'production');
+// role, at most health:ip times a minute from one IP, so the endpoint cannot be used to load the database. null when
+// that IP has asked too often.
+export async function readServiceHealth(clientIp: string): Promise<HealthReport | null> {
+  const adminClient = createSupabaseAdminClient();
+  const subject = rateLimitIpBucket(clientIp);
+  if (!(await withinRateLimits(adminClient, [{ name: 'health:ip', subject }]))) return null;
+  return checkServiceHealth(adminClient, publicEnv.VERCEL_ENV === 'production');
 }

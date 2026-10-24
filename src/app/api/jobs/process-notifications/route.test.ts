@@ -50,14 +50,27 @@ describe('POST /api/jobs/process-notifications', () => {
     );
   });
 
-  it('answers 503 when the outbox cannot be worked, so pg_cron tries again, and records the failure', async () => {
+  // Independent review of PR #50, M2: an outbox that cannot be worked never holds the alerts back.
+  it('still sends the alerts when the outbox cannot be worked, and answers 503 so pg_cron tries again', async () => {
     vi.mocked(processNotifications).mockRejectedValue(new Error('database down'));
     expect((await callJob(`Bearer ${serverEnv.CRON_SECRET}`)).status).toBe(503);
+    expect(deliverSecurityAlerts).toHaveBeenCalledTimes(1);
     expect(svcRecordJobRun).toHaveBeenCalledWith(
       {},
       { job: 'process-notifications', succeeded: false, errorCode: 'run_failed' },
     );
     vi.mocked(svcRecordJobRun).mockRejectedValueOnce(new Error('still down'));
     expect((await callJob(`Bearer ${serverEnv.CRON_SECRET}`)).status).toBe(503);
+  });
+
+  it('works the outbox when the alerts cannot be sent, and records that run as failed', async () => {
+    vi.mocked(processNotifications).mockResolvedValue({ processed: 1, failed: 0 });
+    vi.mocked(deliverSecurityAlerts).mockRejectedValue(new Error('resend down'));
+    expect((await callJob(`Bearer ${serverEnv.CRON_SECRET}`)).status).toBe(503);
+    expect(processNotifications).toHaveBeenCalledTimes(1);
+    expect(svcRecordJobRun).toHaveBeenCalledWith(
+      {},
+      { job: 'process-notifications', succeeded: false, errorCode: 'run_failed' },
+    );
   });
 });

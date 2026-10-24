@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { svcClaimSecurityAlerts, svcReleaseSecurityAlert } from '@/db/rpc-outbox';
+import {
+  svcClaimSecurityAlerts,
+  svcMarkSecurityAlertSent,
+  svcReleaseSecurityAlert,
+} from '@/db/rpc-outbox';
 import type { DatabaseClient } from '@/db/rpc-result';
 import type { NotificationProvider, OutgoingMessage } from '@/lib/notifications/types';
 
@@ -8,6 +12,7 @@ import { deliverSecurityAlerts } from './security-alert-delivery';
 
 vi.mock('@/db/rpc-outbox', () => ({
   svcClaimSecurityAlerts: vi.fn(),
+  svcMarkSecurityAlertSent: vi.fn(),
   svcReleaseSecurityAlert: vi.fn(),
 }));
 
@@ -48,6 +53,7 @@ function emailAnswering(isAccepted: (message: OutgoingMessage) => boolean) {
 beforeEach(() => {
   vi.mocked(svcClaimSecurityAlerts).mockReset().mockResolvedValue(ALERTS);
   vi.mocked(svcReleaseSecurityAlert).mockReset().mockResolvedValue(undefined);
+  vi.mocked(svcMarkSecurityAlertSent).mockReset().mockResolvedValue(undefined);
 });
 
 describe('deliverSecurityAlerts', () => {
@@ -61,11 +67,16 @@ describe('deliverSecurityAlerts', () => {
       link: { url: 'http://127.0.0.1:3000/dashboard/security-alerts', buttonSuffix: null },
     });
     expect(svcReleaseSecurityAlert).not.toHaveBeenCalled();
+    expect(vi.mocked(svcMarkSecurityAlertSent).mock.calls.map(([, id]) => id)).toEqual([
+      'a-1',
+      'a-2',
+    ]);
   });
 
   it('gives an alert whose email failed back to the next run', async () => {
     const { provider } = emailAnswering((message) => message.notificationId === 'a-1');
     await expect(deliverSecurityAlerts(adminClient, provider, RECIPIENT)).resolves.toBe(1);
     expect(svcReleaseSecurityAlert).toHaveBeenCalledWith(expect.anything(), 'a-2');
+    expect(svcMarkSecurityAlertSent).toHaveBeenCalledWith(expect.anything(), 'a-1');
   });
 });

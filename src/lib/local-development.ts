@@ -41,3 +41,15 @@ export function isLocalDevelopment(facts: DeploymentFacts = currentDeployment())
     isLoopbackUrl(facts.supabaseUrl)
   );
 }
+
+// Where the outbox delivers (independent review of PR #50, M1). Only a Vercel preview or production deployment talks to
+// Meta and Resend, whatever NODE_ENV says, so `pnpm start` on a laptop or in CI with real keys in .env.local never
+// sends a real message. Elsewhere a stack on this machine has its Mailpit; anything else delivers nothing at all.
+export type MessageDelivery = 'live' | 'mailpit' | 'none';
+
+const LIVE_DEPLOYMENTS: ReadonlySet<string> = new Set(['preview', 'production']);
+
+export function messageDelivery(facts: DeploymentFacts = currentDeployment()): MessageDelivery {
+  if (facts.vercelEnv !== undefined && LIVE_DEPLOYMENTS.has(facts.vercelEnv)) return 'live';
+  return isLoopbackUrl(facts.supabaseUrl) ? 'mailpit' : 'none';
+}

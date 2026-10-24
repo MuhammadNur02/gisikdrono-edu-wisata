@@ -1,8 +1,10 @@
--- Task P3.11.02 to P3.11.04 (docs/Security.md EP-02, EP-03, GUEST-07): a channel switched off in site_settings queues
--- nothing, and what it had queued is cancelled before the worker claims, so its provider is never called; before a
--- booking is paid, an address gets at most three of the site's emails a day, and a paid booking's are never held back.
+-- Task P3.11.02 to P3.11.04 (docs/Security.md EP-02, EP-03, GUEST-07, OPS-06): a channel switched off in site_settings
+-- queues nothing, and what it had queued is cancelled before the worker claims, so its provider is never called;
+-- before a booking is paid, an address gets at most three of the site's pre-payment emails a day, and a paid booking's
+-- are never held back; a message left sending with no attempt left is dead-lettered; a provider refusing the server's
+-- credentials raises a high alert at once.
 begin;
-select plan(10);
+select plan(14);
 
 -- ===== Fixtures: an unpaid and a paid booking of one address =====
 insert into public.tour_packages (id, rw_id, category, slug, name, tagline, duration_minutes, price_per_pax, status)
@@ -56,13 +58,44 @@ select isnt(internal.enqueue_notification('00000000-0000-4000-9000-000000000721'
   '{"link_scope": "manage"}'), null, 'an unpaid booking''s first email is queued');
 select internal.enqueue_notification('00000000-0000-4000-9000-000000000721', 'quotation_ready', 'email',
   '{"link_scope": "manage"}');
+select internal.enqueue_notification('00000000-0000-4000-9000-000000000721', 'booking_link', 'email',
+  '{"link_scope": "view"}');
 select is(internal.enqueue_notification('00000000-0000-4000-9000-000000000721', 'payment_reminder', 'email',
   '{"link_scope": "pay"}'), null,
-  'the fourth within a day to the same address is not, the paid booking''s ticket email counting among the three');
+  'the fourth pre-payment email within a day to the same address is not, the paid booking''s ticket not counting');
+select ok(exists (select 1 from public.security_events
+                  where event_type = 'rate_limited' and entity_id = '00000000-0000-4000-9000-000000000721'
+                    and details ->> 'limit' = 'email_before_payment'),
+  'and the message held back leaves a rate_limited event');
 select isnt(internal.enqueue_notification('00000000-0000-4000-9000-000000000722', 'visit_reminder_d1', 'email',
   '{"link_scope": "view"}'), null, 'a paid booking''s email is never held back');
-select is((select count(*)::int from public.notifications where recipient = 'saluran@example.test'), 4,
-  'so the address holds the three it was allowed and the paid booking''s reminder');
+select is((select count(*)::int from public.notifications where recipient = 'saluran@example.test'), 5,
+  'so the address holds the paid ticket, the three it was allowed and the paid booking''s reminder');
+
+-- ===== A worker that died, and credentials a provider refuses =====
+insert into public.notifications (id, channel, template, recipient, params, dedupe_key, status, locked_at, attempts)
+values
+  ('00000000-0000-4000-9000-00000007a004', 'email', 'booking_link', 'mati@example.test', '{}', 'saluran:stuck-last',
+   'sending', now() - interval '11 minutes', 8),
+  ('00000000-0000-4000-9000-00000007a005', 'email', 'booking_link', 'hidup@example.test', '{}', 'saluran:stuck-again',
+   'sending', now() - interval '11 minutes', 2);
+select public.svc_claim_notifications(1, array['security_alert']::public.notification_template[]);
+select is((select array_agg(status::text || ' ' || coalesce(last_error_code, '-') || ' ' || (dead_at is not null)
+                            order by id)
+           from public.notifications
+           where id in ('00000000-0000-4000-9000-00000007a004', '00000000-0000-4000-9000-00000007a005')),
+  array['failed stuck_sending true', 'queued - false'],
+  'a message left sending with no attempt left is dead-lettered, one with attempts left goes back to the queue');
+
+insert into public.notifications (id, channel, template, recipient, params, dedupe_key, status, attempts)
+values ('00000000-0000-4000-9000-00000007a006', 'whatsapp', 'booking_link', '+6281234560724', '{}',
+        'saluran:meta-190', 'sending', 1);
+select public.svc_fail_notification('00000000-0000-4000-9000-00000007a006', 'meta_190', 'token expired', false);
+select is((select severity::text from public.security_alerts where fingerprint = 'notification_credentials:whatsapp'),
+  'high', 'a provider refusing the server''s credentials raises a high alert at its first refusal');
+select is((select dead_at is null and status = 'failed' from public.notifications
+           where id = '00000000-0000-4000-9000-00000007a006'), true,
+  'while the message waits to be tried again once the token is fixed');
 
 -- ===== Email switched off =====
 select pg_temp.switch('email_enabled', false);

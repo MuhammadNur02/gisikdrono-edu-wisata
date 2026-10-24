@@ -3035,6 +3035,7 @@ export type Database = {
           acknowledged_at: string | null
           acknowledged_by: string | null
           created_at: string
+          delivery_claimed_at: string | null
           details: Json
           fingerprint: string
           first_seen_at: string
@@ -3050,6 +3051,7 @@ export type Database = {
           acknowledged_at?: string | null
           acknowledged_by?: string | null
           created_at?: string
+          delivery_claimed_at?: string | null
           details?: Json
           fingerprint: string
           first_seen_at?: string
@@ -3065,6 +3067,7 @@ export type Database = {
           acknowledged_at?: string | null
           acknowledged_by?: string | null
           created_at?: string
+          delivery_claimed_at?: string | null
           details?: Json
           fingerprint?: string
           first_seen_at?: string
@@ -4457,6 +4460,10 @@ export type Database = {
           p_entity_type: string
           p_metadata?: Json
         }
+        Returns: undefined
+      }
+      svc_mark_security_alert_sent: {
+        Args: { p_id: string }
         Returns: undefined
       }
       svc_payments_housekeeping: { Args: never; Returns: Json }

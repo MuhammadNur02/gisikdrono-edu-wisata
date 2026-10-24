@@ -1,6 +1,10 @@
 import 'server-only';
 
-import { svcClaimSecurityAlerts, svcReleaseSecurityAlert } from '@/db/rpc-outbox';
+import {
+  svcClaimSecurityAlerts,
+  svcMarkSecurityAlertSent,
+  svcReleaseSecurityAlert,
+} from '@/db/rpc-outbox';
 import type { DatabaseClient } from '@/db/rpc-result';
 import { displayParams } from '@/lib/notifications/compose';
 import type { NotificationProvider } from '@/lib/notifications/types';
@@ -38,7 +42,8 @@ export async function deliverSecurityAlerts(
           buttonSuffix: null,
         },
       });
-      if (!result.ok) await svcReleaseSecurityAlert(adminClient, alert.id);
+      // Marked sent only once its email went out, so a run killed in between leaves the alert to the next one.
+      await (result.ok ? svcMarkSecurityAlertSent : svcReleaseSecurityAlert)(adminClient, alert.id);
       return result.ok;
     }),
   );
