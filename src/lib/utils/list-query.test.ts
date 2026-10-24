@@ -23,6 +23,7 @@ describe('loadListQuery', () => {
       status: [],
       rw: null,
       category: null,
+      date: null,
     });
   });
 
@@ -100,5 +101,6 @@ describe('allowedValues and hasActiveFilters', () => {
     expect(hasActiveFilters({ ...base, status: ['draft'] })).toBe(true);
     expect(hasActiveFilters({ ...base, rw: 5 })).toBe(true);
     expect(hasActiveFilters({ ...base, category: 'snack' })).toBe(true);
+    expect(hasActiveFilters({ ...base, date: '2026-10-23' })).toBe(true);
   });
 });

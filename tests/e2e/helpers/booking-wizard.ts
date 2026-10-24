@@ -3,6 +3,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { expect, type Page } from '@playwright/test';
 import { z } from 'zod';
 
+import { whatsAppCodeSince } from './mailbox';
 import { hasHorizontalScroll, waitForTurnstile } from './staff';
 import { runSql, sqlText } from '../../../scripts/local-stack';
 
@@ -15,6 +16,8 @@ export const PAX = 3;
 export const RUN = String(randomInt(1000, 9999));
 const OTP_POLL_MS = 100;
 const OTP_WAIT_MS = 10_000;
+// Mailpit stamps a message by its own clock; a second of slack keeps a code sent at once inside the window.
+const CLOCK_SLACK_MS = 1_000;
 export const STEP = { timeout: 30_000 };
 
 export interface TestSessions {
@@ -89,19 +92,27 @@ export function phoneOf(projectIndex: number, flow: number): string {
   return `+62850${RUN}${String(projectIndex)}${String(flow).padStart(2, '0')}`;
 }
 
-// While requestPhoneOtpAction waits out its 1.2 s, the code is in its outbox row.
+async function queuedOtpCode(phone: string): Promise<string | null> {
+  const rows = z.array(z.object({ code: z.string() })).parse(
+    await runSql(`select params ->> 'code' as code from public.notifications
+      where template = 'phone_otp' and recipient = ${sqlText(phone)} and params ? 'code'
+      order by created_at desc limit 1`),
+  );
+  return rows[0]?.code ?? null;
+}
+
+// Called just before the code is asked for. The code sits in its outbox row only until the worker, which
+// requestPhoneOtpAction kicks at once, sends it and empties the row's params; on a fast run that happens between two
+// polls, so a code already sent is read from Mailpit, the local WhatsApp (review of PR #48).
 export async function waitForOtpCode(phone: string): Promise<string> {
+  const since = new Date(Date.now() - CLOCK_SLACK_MS);
   const deadline = Date.now() + OTP_WAIT_MS;
   while (Date.now() < deadline) {
-    const rows = z.array(z.object({ code: z.string() })).parse(
-      await runSql(`select params ->> 'code' as code from public.notifications
-        where template = 'phone_otp' and recipient = ${sqlText(phone)} and params ? 'code'
-        order by created_at desc limit 1`),
-    );
-    if (rows[0]) return rows[0].code;
+    const code = (await queuedOtpCode(phone)) ?? (await whatsAppCodeSince(phone, since));
+    if (code !== null) return code;
     await new Promise((resolve) => setTimeout(resolve, OTP_POLL_MS));
   }
-  throw new Error(`no WhatsApp code was queued for ${phone}`);
+  throw new Error(`no WhatsApp code was queued or sent for ${phone}`);
 }
 
 // The worker may still be retrying an earlier code's message, whose row keeps that code, so a second code for the
