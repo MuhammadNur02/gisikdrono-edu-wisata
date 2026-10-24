@@ -60,7 +60,8 @@ begin
   answer := jsonb_build_object('order_id', order_id, 'status_code', '200',
     'gross_amount', (attempt ->> 'gross_amount') || '.00', 'signature_key', repeat('a', 128),
     'transaction_status', 'settlement', 'transaction_id', 'txn-' || order_id, 'payment_type', 'qris',
-    'currency', 'IDR', 'fraud_status', 'accept', 'settlement_time', '2026-10-24 09:05:00');
+    'currency', 'IDR', 'fraud_status', 'accept',
+    'settlement_time', to_char(now() at time zone 'Asia/Jakarta', 'YYYY-MM-DD HH24:MI:SS'));
   perform internal.apply_payment_event((internal.record_payment_event('webhook',
     encode(extensions.digest(answer::text, 'sha256'), 'hex'), answer) ->> 'event_id')::bigint, 'webhook', answer);
   return order_id;
@@ -133,7 +134,7 @@ select ok(exists (select 1 from public.security_alerts
   'with a high alert');
 
 -- ===== A refund's reversal mirrors the settlement (Task P4.7.03 writes it) =====
-select is(internal.reverse_revenue_share((select id from regular), 100001, 'pgTAP') ->> 'amount', '-100001',
+select is(internal.reverse_revenue_share((select id from regular), 100001, 'refund-1', 'pgTAP') ->> 'amount', '-100001',
   'a partial refund reverses its amount');
 select is((select sum(amount)::bigint from public.revenue_share_entries
            where booking_id = (select id from regular) and entry_type = 'reversal'), -100001::bigint,
@@ -145,7 +146,8 @@ select ok((select bool_and(r.amount <= 0 and r.beneficiary_key = s.beneficiary_k
            where r.booking_id = (select id from regular) and r.entry_type = 'reversal'),
   'each one against a settlement row of its own');
 select throws_ok($$select internal.reverse_revenue_share((select id from regular),
-  (select total_amount from public.bookings where id = (select id from regular)), 'pgTAP')$$, 'P0001', null,
+  (select total_amount from public.bookings where id = (select id from regular)), 'refund-2', 'pgTAP')$$,
+  'P0001', null,
   'more than is left to give back is refused');
 select is((internal.verify_ledger_chain() ->> 'ok')::boolean, true, 'and the chain still verifies');
 select throws_ok($$update public.revenue_share_entries set amount = 0 where booking_id = (select id from regular)$$,

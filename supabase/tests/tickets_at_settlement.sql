@@ -3,7 +3,7 @@
 -- booking whose ticket went missing issues it again, once; a chargeback suspends the tickets of a visit ahead, and a
 -- refund or cancellation revokes them all.
 begin;
-select plan(16);
+select plan(22);
 
 -- ===== Fixtures: a combo of RW 05 and RW 13 =====
 insert into public.tour_packages (id, category, slug, name, pricing_basis, price_per_pax, status) values
@@ -54,7 +54,8 @@ create function pg_temp.answer(p_order text, p_status text) returns jsonb
 as $$
   select jsonb_build_object('order_id', p_order, 'status_code', '200', 'gross_amount', '600000.00',
     'signature_key', repeat('a', 128), 'transaction_status', p_status, 'transaction_id', 'txn-' || p_order,
-    'payment_type', 'qris', 'currency', 'IDR', 'fraud_status', 'accept', 'settlement_time', '2026-10-24 09:05:00');
+    'payment_type', 'qris', 'currency', 'IDR', 'fraud_status', 'accept',
+    'settlement_time', to_char(now() at time zone 'Asia/Jakarta', 'YYYY-MM-DD HH24:MI:SS'));
 $$;
 
 -- An event of the given source, applied with the key the server passes.
@@ -65,6 +66,16 @@ as $$
     encode(extensions.digest(pg_temp.answer(p_order, p_status)::text || p_source || clock_timestamp()::text, 'sha256'),
            'hex'), pg_temp.answer(p_order, p_status)) ->> 'event_id')::bigint, p_source,
     case when p_source = 'webhook' then pg_temp.answer(p_order, p_status) end, p_key);
+$$;
+
+-- A refund Midtrans reports, of p_refunded rupiah so far, confirmed by the Status API.
+create function pg_temp.refund(p_order text, p_status text, p_refunded text) returns jsonb
+  language sql
+as $$
+  select internal.apply_payment_event((internal.record_payment_event('webhook',
+    encode(extensions.digest(p_order || p_status || clock_timestamp()::text, 'sha256'), 'hex'),
+    pg_temp.answer(p_order, p_status) || jsonb_build_object('refund_amount', p_refunded)) ->> 'event_id')::bigint,
+    'webhook', pg_temp.answer(p_order, p_status) || jsonb_build_object('refund_amount', p_refunded), 'k1');
 $$;
 
 -- ===== A settlement needs the kid its tickets are signed with =====
@@ -122,6 +133,32 @@ select is(internal.revoke_booking_tickets((select id from combo), 'pgTAP refund'
 select set_config('app.in_rpc', '', true);
 select is((select array_agg(distinct status::text) from public.tickets_qr where booking_id = (select id from combo)),
   array['revoked'], 'both gates of the combo');
+
+-- ===== A refund made at Midtrans before record_refund (review of PR #42, M6) =====
+create temporary table refunded on commit drop as select pg_temp.combo('+6281300001004') as id;
+create temporary table refunded_order on commit drop as select pg_temp.attempt((select id from refunded)) as order_id;
+select pg_temp.apply((select order_id from refunded_order), 'settlement', 'webhook', 'k1');
+select pg_temp.refund((select order_id from refunded_order), 'refund', '600000.00');
+select is((select status::text from public.payments where order_id = (select order_id from refunded_order)), 'settled',
+  'a refund of the whole amount keeps the payment settled until record_refund');
+select is((select array_agg(distinct status::text || ':' || suspend_reason) from public.tickets_qr
+           where booking_id = (select id from refunded)), array['suspended:refund_seen'],
+  'but suspends the tickets of a visit still ahead, so the refunded group cannot pass the gate');
+select is((select severity::text from public.security_alerts
+           where fingerprint = 'refund_seen:' || (select order_id from refunded_order)), 'high',
+  'with a high alert to record it');
+
+create temporary table partly on commit drop as select pg_temp.combo('+6281300001005') as id;
+create temporary table partly_order on commit drop as select pg_temp.attempt((select id from partly)) as order_id;
+select pg_temp.apply((select order_id from partly_order), 'settlement', 'webhook', 'k1');
+select pg_temp.refund((select order_id from partly_order), 'partial_refund', '100000.00');
+select is((select array_agg(distinct status::text) from public.tickets_qr where booking_id = (select id from partly)),
+  array['issued'], 'a partial refund keeps the tickets');
+select is((select severity::text from public.security_alerts
+           where fingerprint = 'refund_seen:' || (select order_id from partly_order)), 'high', 'and alerts as well');
+select pg_temp.refund((select order_id from partly_order), 'partial_refund', '600000.00');
+select is((select array_agg(distinct status::text) from public.tickets_qr where booking_id = (select id from partly)),
+  array['suspended'], 'until the partial refunds reach the whole amount');
 
 -- ===== Tickets need money behind them (0004) =====
 create temporary table unpaid on commit drop as select pg_temp.combo('+6281300001003') as id;

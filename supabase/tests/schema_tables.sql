@@ -588,7 +588,7 @@ select columns_are('public', 'payments', array[
   'gross_amount', 'snap_token', 'snap_redirect_url', 'payment_type_raw', 'va_bank', 'va_number',
   'transaction_time', 'settlement_time', 'expiry_time', 'fraud_status', 'status_code',
   'last_payload', 'manual_proof_path', 'manual_reference', 'recorded_by', 'refunded_amount',
-  'created_at', 'updated_at'
+  'created_at', 'updated_at', 'last_polled_at'
 ]);
 select columns_are('public', 'payment_events', array[
   'id', 'payment_id', 'order_id', 'source', 'event_hash', 'transaction_status', 'fraud_status',

@@ -52,7 +52,8 @@ create function pg_temp.answer(p_order text, p_status text, p_amount text defaul
 as $$
   select jsonb_build_object('order_id', p_order, 'status_code', '200', 'gross_amount', p_amount,
     'signature_key', repeat('a', 128), 'transaction_status', p_status, 'transaction_id', 'txn-' || p_order,
-    'payment_type', 'qris', 'currency', 'IDR', 'fraud_status', p_fraud, 'transaction_time', '2026-10-24 09:00:00');
+    'payment_type', 'qris', 'currency', 'IDR', 'fraud_status', p_fraud,
+    'transaction_time', to_char(now() at time zone 'Asia/Jakarta' - interval '5 minutes', 'YYYY-MM-DD HH24:MI:SS'));
 $$;
 
 create function pg_temp.event(p_answer jsonb) returns bigint

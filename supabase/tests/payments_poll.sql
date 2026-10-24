@@ -2,7 +2,7 @@
 -- housekeeping: tickets left issued on a booking no longer paid are suspended with a critical alert, and an
 -- institution's hold six hours from its deadline gets one payment reminder per channel.
 begin;
-select plan(15);
+select plan(21);
 select set_config('app.qr_key_id', 'k1', true);
 
 -- ===== Fixtures =====
@@ -10,7 +10,7 @@ insert into public.tour_packages (id, rw_id, category, slug, name, pricing_basis
   ('00000000-0000-4000-8000-0000000f1001', 5, 'regular', 'uji-poll-paket', 'Paket Uji Poll', 'per_pax', 30000,
    'published');
 insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
-  ('00000000-0000-4000-8000-0000000f2001', 5, public.today_jkt() + 5, '09:05', '10:05', 'Uji poll', 200);
+  ('00000000-0000-4000-8000-0000000f2001', 5, public.today_jkt() + 5, '09:05', '10:05', 'Uji poll', 1000);
 
 create function pg_temp.otp(p_phone text) returns uuid
   language sql
@@ -87,6 +87,53 @@ select is(internal.complete_paid_order((select order_id from paid_order), 'k1') 
   'a second run writes nothing');
 select ok(not exists (select 1 from internal.payments_to_poll(50) where order_id = (select order_id from paid_order)),
   'and the booking is no longer asked about');
+
+-- ===== The order and the window of the open attempts (review of PR #42, M4, M5) =====
+-- Every other attempt was just asked; of these two, one never was and one was asked a day ago.
+update public.payments set last_polled_at = now() where status = 'pending';
+create temporary table never_asked on commit drop as
+  select pg_temp.attempt(pg_temp.hold('+6281300001104', 'school')) as order_id;
+create temporary table asked_long_ago on commit drop as
+  select pg_temp.attempt(pg_temp.hold('+6281300001105', 'school')) as order_id;
+update public.payments set created_at = now() - interval '10 minutes'
+where order_id in ((select order_id from never_asked), (select order_id from asked_long_ago));
+update public.payments set last_polled_at = now() - interval '1 day'
+where order_id = (select order_id from asked_long_ago);
+create temporary table audit_before on commit drop as
+  select count(*) as n from public.audit_logs where entity_type = 'payments';
+select is((select order_id from internal.payments_to_poll(1) where reason = 'open'),
+  (select order_id from never_asked), 'an attempt never asked comes first');
+select is((select order_id from internal.payments_to_poll(1) where reason = 'open'),
+  (select order_id from asked_long_ago), 'then the one asked longest ago, so none waits behind the others');
+select is((select count(*) from public.audit_logs where entity_type = 'payments'), (select n from audit_before),
+  'stamping an attempt as asked writes no audit row');
+
+create temporary table in_review on commit drop as
+  select pg_temp.attempt(pg_temp.hold('+6281300001106', 'school')) as order_id;
+select set_config('app.in_rpc', '1', true);
+update public.payments set status = 'needs_review', created_at = now() - interval '10 minutes'
+where order_id = (select order_id from in_review);
+select set_config('app.in_rpc', '', true);
+select ok(not exists (select 1 from internal.payments_to_poll(50) where order_id = (select order_id from in_review)),
+  'an attempt under review waits for its superadmin');
+
+-- A hold extended by staff is asked about for as long as it runs, and a day past its deadline no more.
+create temporary table extended on commit drop as
+  select pg_temp.attempt(pg_temp.hold('+6281300001107', 'school')) as order_id;
+create temporary table lapsed on commit drop as
+  select pg_temp.attempt(pg_temp.hold('+6281300001108', 'school')) as order_id;
+update public.payments set created_at = now() - interval '3 days'
+where order_id in ((select order_id from extended), (select order_id from lapsed));
+select set_config('app.hold_extension', '1', true);
+update public.bookings set expires_at = now() + interval '5 days'
+where id = (select booking_id from public.payments where order_id = (select order_id from extended));
+update public.bookings set expires_at = now() - interval '25 hours'
+where id = (select booking_id from public.payments where order_id = (select order_id from lapsed));
+select set_config('app.hold_extension', '', true);
+select is((select reason from internal.payments_to_poll(50) where order_id = (select order_id from extended)), 'open',
+  'an attempt three days old on a hold extended to next week is still asked about');
+select ok(not exists (select 1 from internal.payments_to_poll(50) where order_id = (select order_id from lapsed)),
+  'one whose hold ended more than a day ago is not');
 
 -- ===== Housekeeping =====
 -- A payment reminder for an institution's hold within six hours of its deadline, once.

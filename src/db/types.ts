@@ -1914,6 +1914,7 @@ export type Database = {
           gross_amount: number
           id: string
           last_payload: Json | null
+          last_polled_at: string | null
           manual_proof_path: string | null
           manual_reference: string | null
           method: Database["public"]["Enums"]["payment_method"] | null
@@ -1942,6 +1943,7 @@ export type Database = {
           gross_amount: number
           id?: string
           last_payload?: Json | null
+          last_polled_at?: string | null
           manual_proof_path?: string | null
           manual_reference?: string | null
           method?: Database["public"]["Enums"]["payment_method"] | null
@@ -1970,6 +1972,7 @@ export type Database = {
           gross_amount?: number
           id?: string
           last_payload?: Json | null
+          last_polled_at?: string | null
           manual_proof_path?: string | null
           manual_reference?: string | null
           method?: Database["public"]["Enums"]["payment_method"] | null

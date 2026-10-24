@@ -94,6 +94,18 @@ function paidNotification(orderId: string, status: SimulatedStatus, grossAmount 
   });
 }
 
+function serviceClient() {
+  return createClient<Database>(localStack().apiUrl, localStack().serviceRoleKey, {
+    auth: { persistSession: false },
+  });
+}
+
+// Oldest first and past the two minutes a visitor is still paying in, so the next poll run asks about it.
+async function makePollable(orderId: string): Promise<void> {
+  await runSql(`update public.payments set created_at = now() - interval '47 hours'
+      where order_id = ${sqlText(orderId)}`);
+}
+
 async function stateOf(bookingId: string) {
   const rows = z
     .array(
@@ -210,15 +222,30 @@ describe('a hold paid through Snap and the webhook', () => {
       await startPayment(hold.id);
       const order = stub.orders.get(`${hold.code}-01`);
       if (order) order.transactionStatus = 'settlement';
-      // Oldest first, and past the two minutes a visitor is still paying in, so this run asks about it.
-      await runSql(`update public.payments set created_at = now() - interval '47 hours'
-          where order_id = ${sqlText(`${hold.code}-01`)}`);
-      const report = await pollPayments(
-        createClient<Database>(localStack().apiUrl, localStack().serviceRoleKey, {
-          auth: { persistSession: false },
-        }),
-      );
+      await makePollable(`${hold.code}-01`);
+      const report = await pollPayments(serviceClient());
       expect(report.applied).toBeGreaterThanOrEqual(1);
+      expect(await stateOf(hold.id)).toMatchObject({
+        booking: 'paid',
+        payment: 'settled',
+        tickets: 1,
+        ledger: 600000,
+      });
+    },
+    SLOW_MS,
+  );
+
+  it(
+    'writes one ledger and one ticket when the webhook and the poll settle the same order at once',
+    async () => {
+      const hold = await holdFor(5);
+      await startPayment(hold.id);
+      await makePollable(`${hold.code}-01`);
+      const [webhook] = await Promise.all([
+        webhookPost(paidNotification(`${hold.code}-01`, 'settlement')),
+        pollPayments(serviceClient()),
+      ]);
+      expect(webhook.status).toBe(200);
       expect(await stateOf(hold.id)).toMatchObject({
         booking: 'paid',
         payment: 'settled',
