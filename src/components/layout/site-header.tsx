@@ -7,7 +7,6 @@ import { MobileMenu } from '@/components/layout/mobile-menu';
 import { SiteWordmark } from '@/components/layout/site-wordmark';
 import { Button } from '@/components/ui/button';
 import { BOOKING_CTA, HOME_NAV_ITEM, type PublicNav } from '@/config/nav';
-import { copy } from '@/lib/copy/id';
 
 // docs/StyleGuide.md §4.3, §10.2: sticky with the blurred bar; below xl the links live in MobileMenu.
 // The booking button is `secondary` because a page's own primary action must stay the only one (§1.3 G9).
@@ -15,11 +14,8 @@ export function SiteHeader({ nav }: { nav: PublicNav }) {
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/70 backdrop-blur-md supports-[backdrop-filter]:bg-background/60">
       <Container className="flex h-16 items-center gap-6">
-        <Link
-          href={HOME_NAV_ITEM.href}
-          aria-label={copy.layout.homeLink}
-          className="shrink-0 rounded-lg"
-        >
+        {/* Named by the wordmark itself: a label that differs from the visible text fails WCAG 2.5.3. */}
+        <Link href={HOME_NAV_ITEM.href} className="shrink-0 rounded-lg">
           <SiteWordmark />
         </Link>
         <HeaderNav items={nav.headerItems} className="hidden xl:block" />

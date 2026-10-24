@@ -6,7 +6,6 @@ import { Container } from '@/components/layout/container';
 import { SiteWordmark } from '@/components/layout/site-wordmark';
 import { ThemeProvider } from '@/components/providers/theme-provider';
 import { HOME_NAV_ITEM } from '@/config/nav';
-import { copy } from '@/lib/copy/id';
 import { requestNonce } from '@/lib/request-nonce';
 
 // Booking and reservation pages hold a visitor's own booking, so none is cached or indexed (CLAUDE.md §5.1);
@@ -21,11 +20,8 @@ export default async function BookingLayout({ children }: Readonly<{ children: R
     <ThemeProvider scope="public" nonce={await requestNonce()}>
       <div className="flex min-h-dvh flex-col bg-linear-to-b from-brand-ice to-background dark:from-secondary">
         <Container className="py-6">
-          <Link
-            href={HOME_NAV_ITEM.href}
-            aria-label={copy.layout.homeLink}
-            className="inline-flex rounded-lg"
-          >
+          {/* Named by the wordmark itself: a label that differs from the visible text fails WCAG 2.5.3. */}
+          <Link href={HOME_NAV_ITEM.href} className="inline-flex rounded-lg">
             <SiteWordmark />
           </Link>
         </Container>
