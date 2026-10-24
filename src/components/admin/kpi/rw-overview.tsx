@@ -54,8 +54,14 @@ function KpiGrid({ overview, readCheckIns }: RwOverviewProps) {
       <KpiCard
         label={text.rw.upcoming}
         icon={CalendarCheck}
-        value={<CountUp value={overview.upcomingBookings} onMount />}
-        hint={text.rw.upcomingHint}
+        value={
+          overview.upcomingBookings === null ? (
+            <KpiUnavailable />
+          ) : (
+            <CountUp value={overview.upcomingBookings} onMount />
+          )
+        }
+        hint={overview.upcomingBookings === null ? text.unavailableHint : text.rw.upcomingHint}
       />
       <KpiCard
         label={text.rw.checkInsToday}

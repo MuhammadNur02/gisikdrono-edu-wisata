@@ -93,9 +93,15 @@ function KpiGrid({ overview }: { overview: Overview }) {
       <KpiCard
         label={text.superadmin.paidBookings}
         icon={BadgeCheck}
-        value={<CountUp value={overview.paidBookings.value} onMount />}
-        hint={text.superadmin.paidBookingsHint}
-        trend={overview.paidBookings.trend}
+        value={
+          overview.paidBookings ? (
+            <CountUp value={overview.paidBookings.value} onMount />
+          ) : (
+            <KpiUnavailable />
+          )
+        }
+        hint={overview.paidBookings ? text.superadmin.paidBookingsHint : text.unavailableHint}
+        trend={overview.paidBookings?.trend}
       />
       <CheckedInCard figure={overview.checkedInVisitors} />
       <RatingCard rating={overview.rating} />
@@ -136,11 +142,7 @@ export function SuperadminOverview({ overview }: { overview: Overview }) {
         <RevenueChart series={overview.revenue?.series ?? null} />
         <CheckInsCard series={overview.checkedInVisitors?.series ?? null} />
       </div>
-      <SecurityStrip
-        alerts={overview.openAlerts}
-        openCount={overview.openAlertCount}
-        piiRevealsToday={overview.piiRevealsToday}
-      />
+      <SecurityStrip openAlerts={overview.openAlerts} piiRevealsToday={overview.piiRevealsToday} />
     </div>
   );
 }

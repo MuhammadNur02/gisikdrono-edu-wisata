@@ -7,18 +7,24 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SECURITY_ALERTS_PATH } from '@/config/staff';
 import { copy } from '@/lib/copy/id';
 import { formatDateTimeShort } from '@/lib/utils/dates';
-import type { OpenSecurityAlert } from '@/types/dashboard-stats';
+import type { OpenSecurityAlerts } from '@/types/dashboard-stats';
 
 const text = copy.dashboard.overview.security;
 const numberFormat = new Intl.NumberFormat('id-ID');
 
 export interface SecurityStripProps {
-  alerts: OpenSecurityAlert[];
-  openCount: number;
-  piiRevealsToday: number;
+  // null: the alerts could not be read, said as "Belum tersedia".
+  openAlerts: OpenSecurityAlerts | null;
+  piiRevealsToday: number | null;
 }
 
-function AlertList({ alerts, openCount }: Pick<SecurityStripProps, 'alerts' | 'openCount'>) {
+function AlertList({ openAlerts }: Pick<SecurityStripProps, 'openAlerts'>) {
+  if (openAlerts === null) {
+    return (
+      <p className="text-body-sm text-muted-foreground">{copy.dashboard.overview.unavailable}</p>
+    );
+  }
+  const { alerts, total } = openAlerts;
   if (alerts.length === 0) {
     return (
       <p className="flex items-center gap-2 text-body-sm text-muted-foreground">
@@ -27,7 +33,7 @@ function AlertList({ alerts, openCount }: Pick<SecurityStripProps, 'alerts' | 'o
       </p>
     );
   }
-  const hidden = openCount - alerts.length;
+  const hidden = total - alerts.length;
   return (
     <ul className="flex flex-col divide-y">
       {alerts.map((alert) => (
@@ -47,7 +53,7 @@ function AlertList({ alerts, openCount }: Pick<SecurityStripProps, 'alerts' | 'o
 }
 
 // Task P4.2.03: the superadmin's open security_alerts and today's contact reveals (docs/Security.md DATA-04).
-export function SecurityStrip({ alerts, openCount, piiRevealsToday }: SecurityStripProps) {
+export function SecurityStrip({ openAlerts, piiRevealsToday }: SecurityStripProps) {
   return (
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
@@ -57,14 +63,18 @@ export function SecurityStrip({ alerts, openCount, piiRevealsToday }: SecuritySt
         </Button>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <AlertList alerts={alerts} openCount={openCount} />
+        <AlertList openAlerts={openAlerts} />
         <div className="flex items-center gap-3 rounded-lg bg-muted px-3 py-2">
           <Eye aria-hidden className="size-4 text-muted-foreground" />
           <p className="flex-1 text-body-sm">
             {text.piiReveals}
             <span className="sr-only">: </span>
           </p>
-          <span className="text-h4 tabular-nums">{numberFormat.format(piiRevealsToday)}</span>
+          <span className="text-h4 tabular-nums">
+            {piiRevealsToday === null
+              ? copy.dashboard.overview.unavailable
+              : numberFormat.format(piiRevealsToday)}
+          </span>
         </div>
         <p className="text-caption text-muted-foreground">{text.piiRevealsHint}</p>
       </CardContent>

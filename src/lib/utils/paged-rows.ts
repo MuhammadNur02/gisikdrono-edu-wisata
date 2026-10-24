@@ -2,6 +2,8 @@
 // response would quietly leave out the rest. A KPI that sums rows reads them page by page against the exact count
 // and is either complete or not shown at all (review of PR #45, H1). Pure apart from the fetch it is given.
 
+import type { PostgrestError } from '@supabase/supabase-js';
+
 // One request's worth, not above max_rows.
 export const ROW_PAGE_SIZE = 100;
 // Beyond this many rows a figure is "not available" until the aggregates of Task P4.2.01 serve it in Postgres.
@@ -21,6 +23,24 @@ export interface CollectOptions {
 }
 
 const INCOMPLETE = { complete: false } as const;
+
+// PostgREST answers a range that starts past the last row (rows that vanished between two pages) with 416 and this
+// code instead of an empty page (re-review of PR #45, L1).
+const RANGE_NOT_SATISFIABLE = 'PGRST103';
+
+export interface PageResponse<Row> {
+  data: Row[] | null;
+  error: PostgrestError | null;
+  count: number | null;
+}
+
+// One supabase-js response as a page. A range past the end becomes an empty page without a count, which
+// collectAllRows treats as incomplete; any other error is thrown for the caller to settle.
+export function rowPageOf<Row>({ data, error, count }: PageResponse<Row>): RowPage<Row> {
+  if (error?.code === RANGE_NOT_SATISFIABLE) return { rows: [], count: null };
+  if (error) throw error;
+  return { rows: data ?? [], count };
+}
 
 // Reads pages [0, size), [size, 2·size), … until every counted row is in. Rows that appear, vanish or a count that
 // moves between pages make the result incomplete rather than wrong.

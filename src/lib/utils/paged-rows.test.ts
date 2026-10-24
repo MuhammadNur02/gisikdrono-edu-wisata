@@ -1,6 +1,7 @@
+import { PostgrestError } from '@supabase/supabase-js';
 import { describe, expect, it } from 'vitest';
 
-import { collectAllRows, ROW_PAGE_SIZE, type RowPage } from './paged-rows';
+import { collectAllRows, ROW_PAGE_SIZE, rowPageOf, type RowPage } from './paged-rows';
 
 const MAX_ROWS = 100;
 
@@ -68,5 +69,44 @@ describe('collectAllRows', () => {
     const vanishing = (from: number): Promise<RowPage<{ pax: number }>> =>
       Promise.resolve({ rows: from === 0 ? [{ pax: 1 }] : [], count: 2 });
     expect(await collectAllRows(vanishing)).toEqual({ complete: false });
+  });
+});
+
+describe('rowPageOf', () => {
+  const pageError = (code: string) =>
+    new PostgrestError({ message: 'Requested range not satisfiable', details: '', hint: '', code });
+
+  it('passes rows and the count through', () => {
+    expect(rowPageOf({ data: [{ pax: 1 }], error: null, count: 1 })).toEqual({
+      rows: [{ pax: 1 }],
+      count: 1,
+    });
+    expect(rowPageOf({ data: null, error: null, count: 0 })).toEqual({ rows: [], count: 0 });
+  });
+
+  it('reads a 416 (PGRST103) as an empty page without a count', () => {
+    expect(rowPageOf({ data: null, error: pageError('PGRST103'), count: null })).toEqual({
+      rows: [],
+      count: null,
+    });
+  });
+
+  it('throws any other error', () => {
+    expect(() => rowPageOf({ data: null, error: pageError('42501'), count: null })).toThrow();
+  });
+
+  it('turns rows that shrink between pages into no figure instead of an error', async () => {
+    // 150 rows counted on the first page; by the second, 60 of them are gone and the range starts past the end.
+    const shrinking = (from: number): Promise<RowPage<{ pax: number }>> =>
+      Promise.resolve(
+        from === 0
+          ? rowPageOf({
+              data: Array.from({ length: 100 }, () => ({ pax: 1 })),
+              error: null,
+              count: 150,
+            })
+          : rowPageOf({ data: null, error: pageError('PGRST103'), count: null }),
+      );
+    expect(await collectAllRows(shrinking)).toEqual({ complete: false });
   });
 });

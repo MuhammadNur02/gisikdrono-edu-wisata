@@ -25,14 +25,19 @@ export interface OpenSecurityAlert {
   lastSeenAt: string;
 }
 
+// The newest open alerts and how many are open in all.
+export interface OpenSecurityAlerts {
+  alerts: OpenSecurityAlert[];
+  total: number;
+}
+
 export interface SuperadminOverview {
   revenue: MonthlyFigure | null;
-  paidBookings: { value: number; trend: Trend };
+  paidBookings: { value: number; trend: Trend } | null;
   checkedInVisitors: MonthlyFigure | null;
   rating: RatingFigure | null;
-  openAlerts: OpenSecurityAlert[];
-  openAlertCount: number;
-  piiRevealsToday: number;
+  openAlerts: OpenSecurityAlerts | null;
+  piiRevealsToday: number | null;
 }
 
 export interface TodaySession {
@@ -48,7 +53,7 @@ export interface TodaySession {
 
 export interface RwOverview {
   quota: { reservedPax: number; capacity: number; percent: number | null } | null;
-  upcomingBookings: number;
+  upcomingBookings: number | null;
   checkInsToday: number | null;
   checkIns: DailyValue[] | null;
   todaySessions: TodaySession[] | null;
