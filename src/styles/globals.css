@@ -271,7 +271,7 @@
 /* public/map/denah.svg (docs/StyleGuide.md §8.3): the plan carries no colour of its own. Each RW layer names its
    palette with a .denah-rw-<palette> class, which mirrors RW_ACCENT_CLASSES in src/config/rw.ts, and the shapes
    read the two variables it sets, so the plan follows the tokens of §2.7 in both themes. A hotspot's bound element
-   gets .denah-active while its hotspot is open (§5.13). The Leaflet markers of src/components/map/leaflet-map.tsx
+   gets .denah-active while its hotspot is open (§5.13). The Leaflet markers of src/components/map/rw-area-leaflet.tsx
    share the palette classes: Leaflet writes its colours as presentation attributes, which these rules outrank. */
 @layer components {
   .denah-rw-leaf {
@@ -340,6 +340,93 @@
     fill-opacity: 1;
     stroke: hsl(var(--background));
     stroke-width: 3;
+  }
+  /* The RW area map of /peta-kontak (src/components/map/rw-area-leaflet.tsx): every RW shape takes its palette
+     class (an edu-tourism RW its accent, the others .denah-rw-neutral) and is tinted from it, an edu-tourism RW more
+     strongly. Hover and the open RW are toggled on the path; the boundary is an outline only. */
+  /* The OSM tiles are always light, so the shapes and labels drawn over them keep the light-theme values of the
+     tokens they read (the same values as :root) in either theme; the dark tokens would fall under 3:1 on the tiles.
+     Only the panes over the tiles are scoped: popups and tooltips keep following the theme. */
+  .leaflet-container .leaflet-overlay-pane,
+  .leaflet-container .leaflet-marker-pane {
+    --rw-leaf: 89.2 55.1% 27.1%;
+    --rw-leaf-soft: 88 42.9% 93.1%;
+    --rw-terracotta: 22.9 58.6% 34.1%;
+    --rw-terracotta-soft: 28.6 60% 93.1%;
+    --rw-mulberry: 321 32.6% 36.1%;
+    --rw-mulberry-soft: 324 35.7% 94.5%;
+    --rw-teal: 160 30% 25%;
+    --rw-teal-soft: 158 32% 93.5%;
+    --rw-violet: 270 40% 32%;
+    --rw-violet-soft: 270 45% 95%;
+    --neutral: 240 3.8% 46.1%;
+    --neutral-soft: 210 40% 96.1%;
+    --foreground: 222.2 47.4% 11.2%;
+    --background: 0 0% 100%;
+    --primary: 221.2 83.2% 53.3%;
+  }
+  .rw-area {
+    fill: var(--denah-accent);
+    fill-opacity: 0.12;
+    stroke: var(--denah-accent);
+    stroke-opacity: 0.7;
+    stroke-width: 1.5;
+    transition:
+      fill-opacity 150ms ease,
+      stroke-width 150ms ease;
+  }
+  .rw-area.rw-area-edu {
+    fill-opacity: 0.38;
+    stroke-opacity: 1;
+    stroke-width: 2.5;
+  }
+  .rw-area.rw-area-hover {
+    fill-opacity: 0.5;
+    stroke-opacity: 1;
+    stroke-width: 3;
+  }
+  .rw-area.rw-area-selected {
+    fill-opacity: 0.6;
+    stroke-opacity: 1;
+    stroke-width: 4;
+  }
+  .rw-area-boundary {
+    fill: none;
+    stroke: hsl(var(--foreground));
+    stroke-opacity: 0.85;
+    stroke-width: 2.5;
+    stroke-dasharray: 8 6;
+  }
+  .rw-area-office {
+    fill: hsl(var(--primary));
+    fill-opacity: 1;
+    stroke: hsl(var(--background));
+    stroke-width: 3;
+  }
+  .rw-area-label > span {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    padding: 0 0.375rem;
+    border-radius: 9999px;
+    background: hsl(var(--background) / 0.9);
+    color: hsl(var(--foreground));
+    box-shadow: var(--shadow-card);
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1.125rem;
+    white-space: nowrap;
+  }
+  .rw-area-label.rw-area-label-edu > span {
+    border: 1px solid var(--denah-accent);
+    background: var(--denah-soft);
+    color: var(--denah-accent);
+    font-weight: 700;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .rw-area {
+      transition: none;
+    }
   }
   /* leaflet.css paints popups and tooltips white with #333 text and #0078A8 links outside any layer, which fails
      AA in dark mode; these put them on the popover tokens in both themes (review of PR #29). */
