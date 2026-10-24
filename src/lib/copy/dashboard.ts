@@ -115,6 +115,17 @@ export const dashboardCopy = {
       manage: 'Kelola sesi',
     },
   },
+  // docs/Security.md §7.5: the footer of every export sheet, and the export request's field messages (Task P4.6).
+  exports: {
+    watermark: (staffName: string, exportedAt: string) =>
+      `Diekspor oleh ${staffName} ${exportedAt} - Dokumen rahasia Kelurahan Gisikdrono`,
+    validation: {
+      purposeTooShort: 'Tulis tujuan ekspor minimal 10 karakter.',
+      purposeTooLong: 'Tujuan ekspor paling banyak 200 karakter.',
+      periodOrder: 'Tanggal akhir tidak boleh sebelum tanggal awal.',
+      periodTooLong: 'Periode ekspor paling lama 12 bulan.',
+    },
+  },
   profile: {
     title: 'Profil',
     description: 'Nama ini tampil di dasbor dan pada catatan aktivitas Anda.',
