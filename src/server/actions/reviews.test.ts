@@ -3,14 +3,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppError, fail } from '@/lib/errors';
 import { TAGS } from '@/lib/queries/tags';
-import { requireRole, type StaffContext } from '@/server/auth/guards';
+import { verifyTurnstile } from '@/lib/turnstile';
+import { requireGuestToken, requireRole, type StaffContext } from '@/server/auth/guards';
+import { submitReview, withinGuestLimits } from '@/server/services/booking-service';
 import { moderateReview } from '@/server/services/review-service';
 import type { ReviewAdmin } from '@/types/review';
 
-import { moderateReviewAction } from './reviews';
+import { moderateReviewAction, submitReviewAction } from './reviews';
 
 vi.mock('next/cache', () => ({ revalidateTag: vi.fn() }));
-vi.mock('@/server/auth/guards', () => ({ requireRole: vi.fn() }));
+vi.mock('next/headers', () => ({
+  headers: () => Promise.resolve(new Headers({ 'x-real-ip': '203.0.113.7' })),
+}));
+vi.mock('@/lib/turnstile', () => ({ verifyTurnstile: vi.fn() }));
+vi.mock('@/server/auth/guards', () => ({ requireGuestToken: vi.fn(), requireRole: vi.fn() }));
+vi.mock('@/server/services/booking-service', () => ({
+  submitReview: vi.fn(),
+  withinGuestLimits: vi.fn(),
+}));
 vi.mock('@/server/services/review-service', () => ({ moderateReview: vi.fn() }));
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
@@ -82,5 +92,77 @@ describe('moderateReviewAction', () => {
     const result = await moderateReviewAction(INPUT);
     expect(result.ok ? null : result.error.code).toBe('NOT_FOUND');
     expect(revalidateTag).not.toHaveBeenCalled();
+  });
+});
+
+describe('submitReviewAction', () => {
+  const BOOKING_ID = '0192f3a4-5b6c-7d8e-9f01-23456789abcd';
+  const REVIEW = {
+    bookingCode: 'GSK-7F3K9Q2M',
+    rating: 5,
+    title: '  ',
+    body: '  Anak-anak belajar memilah sampah.  ',
+    reviewerName: 'Bu Ani',
+    isAnonymous: false,
+    turnstileToken: 'turnstile-token',
+  };
+
+  beforeEach(() => {
+    vi.mocked(requireGuestToken)
+      .mockReset()
+      .mockResolvedValue({
+        ok: true,
+        guest: { bookingId: BOOKING_ID, bookingCode: REVIEW.bookingCode, scope: 'review' },
+      });
+    vi.mocked(withinGuestLimits).mockReset().mockResolvedValue(true);
+    vi.mocked(verifyTurnstile).mockReset().mockResolvedValue(true);
+    vi.mocked(submitReview).mockReset().mockResolvedValue(undefined);
+  });
+
+  it('sends the review of the booking the link names, after the IP limit and Turnstile', async () => {
+    await expect(submitReviewAction(REVIEW)).resolves.toEqual({ ok: true, data: null });
+    expect(requireGuestToken).toHaveBeenCalledWith(REVIEW.bookingCode, 'review');
+    expect(vi.mocked(withinGuestLimits).mock.calls[0]?.[0].map((check) => check.name)).toEqual([
+      'review:submit',
+    ]);
+    expect(verifyTurnstile).toHaveBeenCalledWith('turnstile-token', '203.0.113.7', 'review_submit');
+    expect(submitReview).toHaveBeenCalledWith(
+      BOOKING_ID,
+      expect.objectContaining({ title: null, body: 'Anak-anak belajar memilah sampah.' }),
+    );
+    expect(revalidateTag).not.toHaveBeenCalled();
+  });
+
+  it('answers a browser without the review link, or whose review was sent, with NOT_FOUND', async () => {
+    vi.mocked(requireGuestToken).mockResolvedValue(fail('NOT_FOUND'));
+    const result = await submitReviewAction(REVIEW);
+    expect(result.ok ? null : result.error.code).toBe('NOT_FOUND');
+    expect(withinGuestLimits).not.toHaveBeenCalled();
+    expect(submitReview).not.toHaveBeenCalled();
+  });
+
+  it('stops an IP over its daily reviews before Turnstile', async () => {
+    vi.mocked(withinGuestLimits).mockResolvedValue(false);
+    const result = await submitReviewAction(REVIEW);
+    expect(result.ok ? null : result.error.code).toBe('RATE_LIMITED');
+    expect(verifyTurnstile).not.toHaveBeenCalled();
+  });
+
+  it('refuses a failed Turnstile on its own field', async () => {
+    vi.mocked(verifyTurnstile).mockResolvedValue(false);
+    const result = await submitReviewAction(REVIEW);
+    expect(result.ok ? null : result.error.fieldErrors).toHaveProperty('turnstileToken');
+    expect(submitReview).not.toHaveBeenCalled();
+  });
+
+  it('thanks a double submit the database refused as a second review', async () => {
+    vi.mocked(submitReview).mockRejectedValue({ code: '23505', message: 'duplicate key' });
+    await expect(submitReviewAction(REVIEW)).resolves.toEqual({ ok: true, data: null });
+  });
+
+  it('passes any other refusal on, such as a visit nobody checked in', async () => {
+    vi.mocked(submitReview).mockRejectedValue({ code: 'P0001', hint: 'STATE_INVALID' });
+    const result = await submitReviewAction(REVIEW);
+    expect(result.ok ? null : result.error.code).toBe('STATE_INVALID');
   });
 });

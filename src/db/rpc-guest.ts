@@ -150,6 +150,33 @@ export function svcRevokeGuestLinks(
   return resultOf(adminClient.rpc('svc_revoke_guest_links', { p_booking_id: bookingId }));
 }
 
+export interface ReviewToSubmit {
+  bookingId: string;
+  rating: number;
+  title: string | null;
+  body: string;
+  reviewerName: string;
+  isAnonymous: boolean;
+}
+
+// docs/PRD.md FR-POST-06: returns the new review's id. A booking that has one already raises 23505, read as CONFLICT;
+// no title travels as '', which internal.submit_review stores as NULL.
+export function svcSubmitReview(
+  adminClient: DatabaseClient,
+  review: ReviewToSubmit,
+): Promise<string> {
+  return resultOf(
+    adminClient.rpc('svc_submit_review', {
+      p_booking_id: review.bookingId,
+      p_rating: review.rating,
+      p_title: review.title ?? '',
+      p_body: review.body,
+      p_reviewer_name: review.reviewerName,
+      p_is_anonymous: review.isAnonymous,
+    }),
+  );
+}
+
 const BOOKING_CODE = /^GSK-[0-9A-HJKMNP-TV-Z]{8}$/;
 
 // A form sent again answers with its booking as it stands by now, which may be paid, expired or cancelled already

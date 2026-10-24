@@ -59,6 +59,9 @@ export const RATE_LIMITS = {
   // Every guest page and action checks its link; the status page refreshing every 5 s stays well inside this.
   'link_verify:ip': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   'link_revoke:booking': { limit: 5, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  // Task P4.11.02 (docs/Security.md RL-04): reviews sent from one IP a day, counted before Turnstile. A booking takes one
+  // review only; this stops one IP filling the moderation queue through many links.
+  'review:submit': { limit: 3, windowSeconds: 86400, whenUnavailable: 'fail-closed' },
   // docs/Security.md §4.3 (BOOK-13): bookings a day per proven contact (the WhatsApp number, or while WhatsApp codes
   // are degraded the address, in its BOOK-11 spelling) and per IP and browser. These fail open, the only ones that
   // do, because Turnstile and the database's own caps (two unpaid holds per contact, half a session) still stand

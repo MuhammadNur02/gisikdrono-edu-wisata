@@ -45,9 +45,7 @@ export type SubmitReviewAction = (values: unknown) => Promise<ActionResult<null>
 
 export interface ReviewFormProps {
   bookingCode: string;
-  // submitReviewAction once internal.submit_review exists (Task P4.11.01, DB lane). Until then the form shows what it
-  // will ask for, says so, and sends nothing.
-  submitAction?: SubmitReviewAction;
+  submitAction: SubmitReviewAction;
 }
 
 function RatingField({ control }: { control: ReviewControl }) {
@@ -209,29 +207,11 @@ function OpenReviewForm({ bookingCode, action, onSent }: OpenReviewFormProps) {
   );
 }
 
-// Until internal.submit_review exists the visitor sees the form it will be, checked as they type, and a note instead
-// of a button that sends anything (Task P4.11.01, DB lane).
-function PendingReviewForm({ bookingCode }: { bookingCode: string }) {
-  const form = useReviewForm(bookingCode);
-  return (
-    <Form {...form}>
-      <PostForm onSubmit={form.handleSubmit(() => undefined)}>
-        <ReviewFields control={form.control} />
-        <FormAlert tone="info">{text.notOpenYet}</FormAlert>
-        <Button type="submit" size="lg" className="w-full" disabled>
-          {text.submit}
-        </Button>
-      </PostForm>
-    </Form>
-  );
-}
-
 // Task P4.11.02: /reservasi/[bookingCode]/ulasan, reached only through the signed review link. Turnstile sits right
 // before the submit button (docs/StyleGuide.md §5.6); the action checks the link, the limit and the token again.
 export function ReviewForm({ bookingCode, submitAction }: ReviewFormProps) {
   const [isSent, setIsSent] = useState(false);
   if (isSent) return <ReviewThanks />;
-  if (!submitAction) return <PendingReviewForm bookingCode={bookingCode} />;
   return (
     <OpenReviewForm
       bookingCode={bookingCode}

@@ -63,8 +63,6 @@ export const reviewsCopy = {
     showName: 'Tampilkan nama saya',
     showNameHint: 'Jika tidak dicentang, ulasan tampil atas nama "Pengunjung".',
     submit: 'Kirim ulasan',
-    notOpenYet:
-      'Pengiriman ulasan sedang kami siapkan. Tautan ulasan Anda tetap berlaku 14 hari, silakan kembali beberapa hari lagi.',
     validation: {
       rating: 'Pilih rating 1 sampai 5 bintang.',
       titleTooLong: `Judul paling panjang ${limit(REVIEW_LIMITS.title)} karakter.`,

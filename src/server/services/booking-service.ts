@@ -9,6 +9,7 @@ import {
   svcIssuePhoneOtp,
   svcResendBookingLink,
   svcRevokeGuestLinks,
+  svcSubmitReview,
   svcVerifyPhoneOtp,
   type BookingReply,
   type BookingToCreate,
@@ -28,6 +29,7 @@ import { refundRateLimits, withinRateLimits, type RateLimitCheck } from '@/lib/r
 // whose link signature has already passed. The limiter is an internal function no API role may call (P1.3.24).
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
+import type { SubmitReviewValues } from '@/lib/validations/review';
 import {
   bookingLimitsOf,
   bookingToCreate,
@@ -120,8 +122,20 @@ async function tokenVersionOf(adminClient: DatabaseClient, bookingCode: string) 
   return data;
 }
 
+// docs/PRD.md FR-POST-05: a review link dies with the review it was sent for, while the booking's other links live on.
+async function hasReview(adminClient: DatabaseClient, bookingId: string): Promise<boolean> {
+  const { data, error } = await adminClient
+    .from('reviews')
+    .select('id')
+    .eq('booking_id', bookingId)
+    .maybeSingle();
+  if (error) throw error;
+  return data !== null;
+}
+
 // docs/Security.md GUEST-02, APP-15: null for a link that is forged, expired, revoked, for another booking or too
-// narrow for the page, and for a visitor over the link limit. The signature is checked before the database is asked.
+// narrow for the page, for a review link whose review was sent, and for a visitor over the link limit. The signature
+// is checked before the database is asked.
 export async function verifyGuestAccess(request: {
   bookingCode: string;
   token: string;
@@ -136,19 +150,28 @@ export async function verifyGuestAccess(request: {
   const reading = await readGuestLink(request.token, request);
   if (!reading.ok) return null;
   const booking = await tokenVersionOf(adminClient, request.bookingCode);
-  const isCurrent =
-    booking !== null &&
-    isCurrentLink(reading.link, {
-      tokenVersion: booking.token_version,
-      required: request.required,
-    });
-  return isCurrent
-    ? { bookingId: booking.id, bookingCode: request.bookingCode, scope: reading.link.s }
-    : null;
+  if (booking === null) return null;
+  const link = { tokenVersion: booking.token_version, required: request.required };
+  if (!isCurrentLink(reading.link, link)) return null;
+  if (request.required === 'review' && (await hasReview(adminClient, booking.id))) return null;
+  return { bookingId: booking.id, bookingCode: request.bookingCode, scope: reading.link.s };
 }
 
 export async function revokeGuestLinks(bookingId: string): Promise<void> {
   await svcRevokeGuestLinks(createSupabaseAdminClient(), bookingId);
+}
+
+// docs/PRD.md FR-POST-06 (Task P4.11.01): the review of the booking whose review link the action checked. The database
+// checks the used ticket and the one review per booking itself.
+export async function submitReview(bookingId: string, review: SubmitReviewValues): Promise<void> {
+  await svcSubmitReview(createSupabaseAdminClient(), {
+    bookingId,
+    rating: review.rating,
+    title: review.title,
+    body: review.body,
+    reviewerName: review.reviewerName,
+    isAnonymous: review.isAnonymous,
+  });
 }
 
 const MS_PER_SECOND = 1000;
