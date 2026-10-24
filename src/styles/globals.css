@@ -4,6 +4,7 @@
 @import './utilities.css';
 @import './motion.css';
 @import './catalogue.css';
+@import './pages.css';
 @plugin '@tailwindcss/typography';
 
 @custom-variant dark (&:is(.dark *));
@@ -624,36 +625,39 @@
     --background: #f6efe3;
     --primary: #c4431b;
   }
+  /* DESIGN-SPEC §3.9: an edu-tourism RW is its tint at 75 % with a 1.5 px accent stroke; the kelurahan's other RWs
+     stay faint, so the three kampung read first. */
   .rw-area {
     fill: var(--denah-accent);
-    fill-opacity: 0.12;
+    fill-opacity: 0.05;
     stroke: var(--denah-accent);
-    stroke-opacity: 0.7;
-    stroke-width: 1.5;
+    stroke-opacity: 0.35;
+    stroke-width: 1;
     transition:
       fill-opacity 150ms ease,
       stroke-width 150ms ease;
   }
   .rw-area.rw-area-edu {
-    fill-opacity: 0.38;
+    fill: var(--denah-soft);
+    fill-opacity: 0.75;
+    stroke-opacity: 1;
+    stroke-width: 1.5;
+  }
+  .rw-area.rw-area-hover {
+    fill-opacity: 0.9;
     stroke-opacity: 1;
     stroke-width: 2.5;
   }
-  .rw-area.rw-area-hover {
-    fill-opacity: 0.5;
+  .rw-area.rw-area-selected {
+    fill-opacity: 0.95;
     stroke-opacity: 1;
     stroke-width: 3;
-  }
-  .rw-area.rw-area-selected {
-    fill-opacity: 0.6;
-    stroke-opacity: 1;
-    stroke-width: 4;
   }
   .rw-area-boundary {
     fill: none;
     stroke: var(--foreground);
-    stroke-opacity: 0.85;
-    stroke-width: 2.5;
+    stroke-opacity: 0.55;
+    stroke-width: 1.5;
     stroke-dasharray: 8 6;
   }
   .rw-area-office {
@@ -676,11 +680,14 @@
     line-height: 1.125rem;
     white-space: nowrap;
   }
+  /* The accent pill of DESIGN-SPEC §3.9: "RW 05" in white on the RW's accent. */
   .rw-area-label.rw-area-label-edu > span {
-    border: 1px solid var(--denah-accent);
-    background: var(--denah-soft);
-    color: var(--denah-accent);
+    padding: 0.125rem 0.625rem;
+    background: var(--denah-accent);
+    color: #ffffff;
+    font-size: 0.75rem;
     font-weight: 700;
+    line-height: 1.25rem;
   }
   @media (prefers-reduced-motion: reduce) {
     .rw-area {

@@ -63,7 +63,9 @@ function ScrollCue() {
 }
 
 // The tone and the veil darken the whole photo (§8.2), so the light statement keeps AA on the brightest frame. The
-// bottom padding clears the arc of the introduction below, which is painted over the photo's lower edge.
+// bottom padding clears the arc of the introduction below, which is painted over the photo's lower edge. As the page
+// scrolls over the pinned photo, a night layer deepens it to 35 % and the statement fades up and away (DESIGN-SPEC §4,
+// CSS scroll timeline only); at the top of the page both are at rest, so nothing moves on load.
 function HeroSlide({ banner, isFirst, isPinned, product }: HeroSlideProps) {
   const Statement = isFirst ? 'h1' : 'p';
   return (
@@ -78,7 +80,13 @@ function HeroSlide({ banner, isFirst, isPinned, product }: HeroSlideProps) {
         imageClassName="photo-tone-hero"
       />
       <div aria-hidden className="photo-grade-hero absolute inset-0" />
-      <Container className="relative flex flex-col items-center justify-center gap-4 pt-(--header-h-overlay) pb-24 text-center text-white md:gap-5.5 md:pb-32">
+      {isFirst ? <div aria-hidden className="absolute inset-0 hero-scroll-dim bg-night" /> : null}
+      <Container
+        className={cn(
+          'relative flex flex-col items-center justify-center gap-4 pt-(--header-h-overlay) pb-24 text-center text-white md:gap-5.5 md:pb-32',
+          isFirst && 'hero-scroll-fade',
+        )}
+      >
         <p className="text-hero-lead text-pretty text-white/90 text-shadow-photo">
           {HOME_HERO_STATEMENT.lead}
         </p>

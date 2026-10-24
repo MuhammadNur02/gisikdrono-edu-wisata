@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { GalleryItem } from '@/types/gallery';
 
-import { pickHomeGalleryPhotos } from './home-gallery';
+import { pickHomeGalleryPhotos, splitHomePhotos } from './home-gallery';
 
 const image = {
   path: 'rw-05/foto.webp',
@@ -30,8 +30,8 @@ function item(id: string, overrides: Partial<GalleryItem> = {}): GalleryItem {
 describe('pickHomeGalleryPhotos', () => {
   it('keeps captioned photos and links each to its tile on /galeri', () => {
     expect(pickHomeGalleryPhotos([item('a'), item('b')], 10)).toEqual([
-      { id: 'a', image, caption: 'Kegiatan a', href: '/galeri#foto-1' },
-      { id: 'b', image, caption: 'Kegiatan b', href: '/galeri#foto-2' },
+      { id: 'a', rwId: 5, image, caption: 'Kegiatan a', href: '/galeri#foto-1' },
+      { id: 'b', rwId: 5, image, caption: 'Kegiatan b', href: '/galeri#foto-2' },
     ]);
   });
 
@@ -49,5 +49,20 @@ describe('pickHomeGalleryPhotos', () => {
 
   it('stops at the limit', () => {
     expect(pickHomeGalleryPhotos([item('a'), item('b'), item('c')], 2)).toHaveLength(2);
+  });
+});
+
+describe('splitHomePhotos', () => {
+  const photos = pickHomeGalleryPhotos([item('a'), item('b', { rwId: 13 }), item('c')], 10);
+
+  it('puts the first photo of the culture RW in the band and the rest in the marquee', () => {
+    const split = splitHomePhotos(photos, 13);
+    expect(split.band?.id).toBe('b');
+    expect(split.strip.map((photo) => photo.id)).toEqual(['a', 'c']);
+  });
+
+  it('falls back to the first photo, and to no band without photos', () => {
+    expect(splitHomePhotos(photos, null).band?.id).toBe('a');
+    expect(splitHomePhotos([], 13)).toEqual({ band: null, strip: [] });
   });
 });

@@ -17,7 +17,8 @@ export type FigureStatTone = keyof typeof TONES;
 export interface FigureStatProps {
   // The figure, usually a CountUp; formatted by the caller.
   value: ReactNode;
-  label: string;
+  // Text, or a long and a short form shown at different widths.
+  label: ReactNode;
   tone?: FigureStatTone;
   className?: string;
 }

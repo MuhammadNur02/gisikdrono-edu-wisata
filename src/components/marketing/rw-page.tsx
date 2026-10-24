@@ -1,26 +1,23 @@
-import type { ReactNode } from 'react';
-
-import { MasonryGrid } from '@/components/gallery/masonry-grid';
-import { PageHeader } from '@/components/layout/page-header';
-import { RwEyebrow } from '@/components/layout/rw-eyebrow';
-import { Section, type SectionTone } from '@/components/layout/section';
-import { ActivityPointList } from '@/components/map/activity-point-list';
-import { Photo } from '@/components/marketing/photo';
-import { ScheduleList } from '@/components/marketing/schedule-list';
-import { SectionLink } from '@/components/marketing/section-link';
-import { TextBlock } from '@/components/marketing/text-block';
-import { PackageGrid } from '@/components/packages/package-grid';
-import { ProductGrid } from '@/components/products/product-grid';
-import { galleryFilterForRw } from '@/config/gallery';
-import { IMAGE_SIZES } from '@/config/images';
+import { RwAnchorNav, type RwAnchorLink } from '@/components/rw/rw-anchor-nav';
+import { RwPackages, RwProducts } from '@/components/rw/rw-catalogue';
+import { RwCta } from '@/components/rw/rw-cta';
+import { RwGallery } from '@/components/rw/rw-gallery';
+import { RwHero } from '@/components/rw/rw-hero';
+import { RwPoints } from '@/components/rw/rw-points';
+import { RwFacts, RwProfile } from '@/components/rw/rw-profile';
+import { RwSchedule } from '@/components/rw/rw-schedule';
+import { VISIT_CHAT_TOPIC } from '@/config/home';
+import { BOOKING_CTA } from '@/config/nav';
 import { rwAccentClasses } from '@/config/rw';
-import { RW_ICONS } from '@/config/rw-icons';
+import { siteConfig } from '@/config/site';
 import { copy } from '@/lib/copy/id';
-import { galleryPath } from '@/lib/utils/gallery-search';
+import { rwPageCopy, type RwSectionKey } from '@/lib/copy/rw-page';
+import { formatIDR } from '@/lib/utils/currency';
 import { rwSchedulePath } from '@/lib/utils/paths';
+import { planRwPhotos, rwGalleryPhotos, type RwPhotoPlan } from '@/lib/utils/rw-photos';
 import { upcomingOccurrences } from '@/lib/utils/schedules';
+import { buildWhatsAppChatUrl } from '@/lib/utils/whatsapp';
 import type { RwPageData } from '@/types/rw-page';
-import type { RwUnitProfile } from '@/types/rw-unit';
 
 // The section anchors docs/PRD.md FR-PUB-08 names, which other pages link to.
 export const RW_SECTION_IDS = {
@@ -30,147 +27,128 @@ export const RW_SECTION_IDS = {
   gallery: 'galeri',
   products: 'produk',
   packages: 'paket',
-} as const;
+} as const satisfies Record<string, RwSectionKey>;
 
-// An RW whose shop is mostly something else names it in rw_units.products_heading (the arts programme's souvenirs).
-const DEFAULT_PRODUCTS_HEADING = 'Produk UMKM';
-// Sections alternate default and muted (docs/StyleGuide.md §5.7), counted over the ones shown and from the last one,
-// so the page always ends on the plain background and the footer's warm wave meets it, not the muted tint
-// (review of PR #36).
-const SECTION_TONES: readonly SectionTone[] = ['default', 'muted'];
+// The id of the closing band.
+const CTA_ID = 'pesan';
 
-function toneFromEnd(index: number, count: number): SectionTone | undefined {
-  return SECTION_TONES[(count - 1 - index) % SECTION_TONES.length];
-}
-
-export interface RwSectionContent {
-  id: string;
-  title: string;
-  eyebrow?: string;
-  // NULL while the CMS has nothing for the section; the page then leaves it out whole, heading included
-  // (docs/StyleGuide.md §6.9).
-  content: ReactNode;
-}
-
-// The RW's header stays even without a photo: it is the page itself, and the slot shows the placeholder (G1).
-function RwHeader({ unit }: { unit: RwUnitProfile }) {
-  return (
-    <PageHeader
-      eyebrow={<RwEyebrow rw={unit} withName />}
-      title={unit.name}
-      titleAccent={{ text: unit.shortName, className: rwAccentClasses(unit.accentKey).text }}
-      titleSize="display"
-      description={unit.tagline ?? unit.themeLabel}
-      breadcrumbs={[]}
-      path={unit.path}
-    >
-      <Photo
-        image={unit.heroImage}
-        caption={unit.name}
-        placeholder={{ icon: RW_ICONS[unit.iconKey], rws: [unit] }}
-        sizes={IMAGE_SIZES.hero}
-        aspectClassName="aspect-4/3 md:aspect-video"
-        priority
-      />
-    </PageHeader>
-  );
-}
-
-function profileContent(unit: RwUnitProfile): ReactNode {
-  if (!unit.descriptionMd && !unit.visionMd) return null;
-  return (
-    <div className="grid gap-8 lg:grid-cols-3">
-      {unit.descriptionMd ? (
-        <TextBlock text={unit.descriptionMd} className="lg:col-span-2" />
-      ) : null}
-      {unit.visionMd ? (
-        <aside className="space-y-3 rounded-xl border border-border bg-card p-5 md:p-6 dark:border-white/5">
-          <h3 className="text-h4">{copy.rwPage.visionTitle}</h3>
-          <TextBlock text={unit.visionMd} className="text-body" />
-        </aside>
-      ) : null}
-    </div>
-  );
-}
-
-// docs/PRD.md FR-PUB-09: for an RW that runs a performance schedule, the next five performances, recurring ones
-// spelled out, checked when the page renders (hourly ISR). With none ahead the section is left out, like every empty
-// public section.
-function scheduleSection(data: RwPageData): RwSectionContent {
-  const upcoming = upcomingOccurrences(data.schedules, new Date());
+// The cheapest per-person price among the RW's packages, for `Mulai Rp35.000 / orang` in the anchor nav.
+function navPrice(packages: RwPageData['packages']) {
+  const prices = packages.flatMap((pkg) => {
+    const price = pkg.lowestTierPrice ?? pkg.pricePerPax;
+    return price === null ? [] : [price];
+  });
+  if (prices.length === 0) return undefined;
   return {
-    id: RW_SECTION_IDS.schedule,
-    eyebrow: 'Jadwal',
-    title: 'Pertunjukan dan kegiatan terdekat',
-    content:
-      upcoming.length > 0 ? (
-        <>
-          <ScheduleList occurrences={upcoming} />
-          <SectionLink href={rwSchedulePath(data.unit.slug)} label={copy.rwPage.schedulesAll} />
-        </>
-      ) : null,
+    text: rwPageCopy.navFrom(formatIDR(Math.min(...prices))),
+    bookLabel: rwPageCopy.navBook,
+    bookHref: BOOKING_CTA.href,
   };
 }
 
-function galleryContent(data: RwPageData): ReactNode {
-  if (data.gallery.length === 0) return null;
+// The sections this RW has rows for, in the page's order: a section without rows is left out whole, with its pill
+// (docs/StyleGuide.md §6.9, FR-PUB-24).
+function shownSections(data: RwPageData, photos: RwPhotoPlan): RwSectionKey[] {
+  const { unit } = data;
+  const sections: [RwSectionKey, boolean][] = [
+    [RW_SECTION_IDS.profile, Boolean(unit.descriptionMd ?? unit.visionMd)],
+    [RW_SECTION_IDS.schedule, unit.scheduleEnabled],
+    [RW_SECTION_IDS.points, data.points.length > 0],
+    [RW_SECTION_IDS.packages, data.packages.length > 0],
+    [RW_SECTION_IDS.products, data.products.length > 0],
+    [RW_SECTION_IDS.gallery, photos.mosaic.length > 0],
+  ];
+  return sections.flatMap(([key, isShown]) => (isShown ? [key] : []));
+}
+
+function anchorLinksOf(keys: readonly RwSectionKey[]): RwAnchorLink[] {
+  return keys.map((key) => ({ id: key, label: rwPageCopy.nav[key] }));
+}
+
+interface PageParts {
+  data: RwPageData;
+  photos: RwPhotoPlan;
+  has: (key: RwSectionKey) => boolean;
+  chatUrl: string;
+}
+
+// Profile, facts, the schedule and the points: what the RW is.
+function AboutSections({ data, photos, has, chatUrl }: PageParts) {
+  const { unit } = data;
   return (
     <>
-      <MasonryGrid items={data.gallery} />
-      <SectionLink
-        href={galleryPath({ filter: galleryFilterForRw(data.unit.id), page: 1 })}
-        label={copy.rwPage.galleryAll(data.unit.label)}
-      />
+      {has(RW_SECTION_IDS.profile) ? (
+        <RwProfile id={RW_SECTION_IDS.profile} unit={unit} photos={photos.profile} />
+      ) : null}
+      <RwFacts pointCount={data.points.length} packages={data.packages} sessions={data.sessions} />
+      {has(RW_SECTION_IDS.schedule) ? (
+        <RwSchedule
+          id={RW_SECTION_IDS.schedule}
+          occurrences={upcomingOccurrences(data.schedules, new Date())}
+          allHref={rwSchedulePath(unit.slug)}
+          chatUrl={chatUrl}
+        />
+      ) : null}
+      {has(RW_SECTION_IDS.points) ? (
+        <RwPoints id={RW_SECTION_IDS.points} points={data.points} photo={photos.points} />
+      ) : null}
     </>
   );
 }
 
-// The collections in the order of docs/PRD.md FR-PUB-08.
-function collectionSections(data: RwPageData): RwSectionContent[] {
-  const { label, productsHeading } = data.unit;
-  return [
-    {
-      id: RW_SECTION_IDS.points,
-      title: `Titik aktivitas ${label}`,
-      content: data.points.length > 0 ? <ActivityPointList points={data.points} /> : null,
-    },
-    { id: RW_SECTION_IDS.gallery, title: `Galeri ${label}`, content: galleryContent(data) },
-    {
-      id: RW_SECTION_IDS.products,
-      title: `${productsHeading ?? DEFAULT_PRODUCTS_HEADING} ${label}`,
-      content: data.products.length > 0 ? <ProductGrid products={data.products} /> : null,
-    },
-    {
-      id: RW_SECTION_IDS.packages,
-      title: `Paket kunjungan ${label}`,
-      content: data.packages.length > 0 ? <PackageGrid packages={data.packages} /> : null,
-    },
-  ];
-}
-
-// docs/PRD.md FR-PUB-08/09: the header, then profile, the schedule where the RW runs one, and the RW's points,
-// gallery, products and packages. A section the CMS has nothing for is left out entirely; whether every RW has its
-// profile before launch is a go-live check (docs/Security.md §13.1 #22), not a note on the page.
-export function RwPage({ data }: { data: RwPageData }) {
-  const sections: RwSectionContent[] = [
-    {
-      id: RW_SECTION_IDS.profile,
-      eyebrow: data.unit.themeLabel,
-      title: `Profil ${data.unit.label}`,
-      content: profileContent(data.unit),
-    },
-    ...(data.unit.scheduleEnabled ? [scheduleSection(data)] : []),
-    ...collectionSections(data),
-  ];
-  const shown = sections.filter((section) => section.content !== null);
+// Packages, products and the gallery: what a group books and sees.
+function VisitSections({ data, photos, has, chatUrl }: PageParts) {
+  const { unit } = data;
   return (
     <>
-      <RwHeader unit={data.unit} />
-      {shown.map(({ content, ...section }, index) => (
-        <Section key={section.id} tone={toneFromEnd(index, shown.length)} {...section}>
-          {content}
-        </Section>
-      ))}
+      {has(RW_SECTION_IDS.packages) ? (
+        <RwPackages
+          id={RW_SECTION_IDS.packages}
+          unit={unit}
+          packages={data.packages}
+          chatUrl={chatUrl}
+        />
+      ) : null}
+      {has(RW_SECTION_IDS.products) ? (
+        <RwProducts id={RW_SECTION_IDS.products} unit={unit} products={data.products} />
+      ) : null}
+      {has(RW_SECTION_IDS.gallery) ? (
+        <RwGallery id={RW_SECTION_IDS.gallery} unit={unit} photos={photos.mosaic} />
+      ) : null}
     </>
+  );
+}
+
+// docs/PRD.md FR-PUB-08/09/24 in the template of DESIGN-SPEC §3.3: the photo hero, the sticky anchor nav, profile,
+// facts, the schedule where the RW runs one, points, packages, products, the gallery mosaic and the closing band, all
+// in the RW's accent (rw-scope-*). RW 08 has no package, product or schedule yet, so it is a profile page.
+export function RwPage({ data }: { data: RwPageData }) {
+  const { unit } = data;
+  const photos = planRwPhotos(rwGalleryPhotos(data.gallery));
+  const sections = shownSections(data, photos);
+  const has = (key: RwSectionKey) => sections.includes(key);
+  const chatUrl = buildWhatsAppChatUrl(
+    data.whatsappNumber ?? siteConfig.whatsappContactNumber,
+    copy.layout.whatsAppGreeting(VISIT_CHAT_TOPIC),
+  );
+  const isBookable = has(RW_SECTION_IDS.packages);
+  const parts = { data, photos, has, chatUrl };
+  return (
+    <div className={rwAccentClasses(unit.accentKey).scope}>
+      <RwHero
+        unit={unit}
+        isBookable={isBookable}
+        packagesAnchor={RW_SECTION_IDS.packages}
+        chatUrl={chatUrl}
+      />
+      <RwAnchorNav
+        links={anchorLinksOf(sections)}
+        label={rwPageCopy.navLabel}
+        price={navPrice(data.packages)}
+      />
+      <AboutSections {...parts} />
+      <VisitSections {...parts} />
+      <RwCta id={CTA_ID} unit={unit} packagesAnchor={isBookable ? RW_SECTION_IDS.packages : null} />
+    </div>
   );
 }
