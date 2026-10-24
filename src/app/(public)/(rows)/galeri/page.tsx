@@ -1,3 +1,4 @@
+import { ArrowDown, Images } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -8,11 +9,11 @@ import { GallerySkeleton } from '@/components/gallery/gallery-skeleton';
 import { MasonryGrid } from '@/components/gallery/masonry-grid';
 import { Container } from '@/components/layout/container';
 import { PageHeader } from '@/components/layout/page-header';
-import { FilterEmpty } from '@/components/marketing/filter-empty';
+import { CatalogueState } from '@/components/marketing/catalogue-state';
 import { JsonLd } from '@/components/seo/json-ld';
 import { Button } from '@/components/ui/button';
 import { GALLERY_MAX_PAGES, galleryQueryFor } from '@/config/gallery';
-import { copy } from '@/lib/copy/id';
+import { galleryPageCopy as text } from '@/lib/copy/catalogue';
 import { publicMediaUrl } from '@/lib/images/public-media';
 import {
   listGalleryPages,
@@ -30,7 +31,7 @@ import {
 } from '@/lib/utils/gallery-search';
 import { PUBLIC_PATHS } from '@/lib/utils/paths';
 import type { GalleryItem, GalleryPages } from '@/types/gallery';
-import type { RwBadge } from '@/types/rw-unit';
+import type { RwUnitSummary } from '@/types/rw-unit';
 
 const TITLE = 'Galeri';
 const DESCRIPTION = 'Foto dan video kegiatan di kampung-kampung edukasi Kelurahan Gisikdrono.';
@@ -64,18 +65,46 @@ function galleryLd(search: GallerySearch, items: readonly GalleryItem[]) {
   });
 }
 
-// `Muat lagi` jumps to the first new tile, so the visitor carries on where the list grew (§5.11).
+function canLoadMore(search: GallerySearch, gallery: GalleryPages): boolean {
+  return gallery.hasMore && search.page < GALLERY_MAX_PAGES;
+}
+
+// `Muat lebih banyak` jumps to the first new tile, so the visitor carries on where the list grew (§5.11, DESIGN-SPEC
+// §3.7): the count shown so far above an outline button with its arrow down.
 function LoadMore({ search, gallery }: { search: GallerySearch; gallery: GalleryPages }) {
-  if (!gallery.hasMore || search.page >= GALLERY_MAX_PAGES) return null;
+  if (!canLoadMore(search, gallery)) return null;
   const next = galleryPath({ filter: search.filter, page: search.page + 1 });
   return (
-    <div className="flex justify-center">
+    <div className="flex flex-col items-center gap-4 pt-4 md:pt-8">
+      <p className="text-body-sm text-muted-foreground">{text.showing(gallery.items.length)}</p>
       <Button variant="outline" size="lg" asChild>
         <Link href={`${next}#${galleryItemAnchor(gallery.items.length + 1)}`}>
-          {copy.gallery.loadMore}
+          {text.loadMore}
+          <ArrowDown aria-hidden />
         </Link>
       </Button>
     </div>
+  );
+}
+
+// A filter that matched nothing offers the whole gallery; a gallery with nothing published says it is coming.
+function GalleryEmpty({ isFiltered }: { isFiltered: boolean }) {
+  return (
+    <CatalogueState
+      role={isFiltered ? 'status' : undefined}
+      icon={Images}
+      tone="rw"
+      className="rw-scope-combo"
+      title={isFiltered ? text.emptyFilteredTitle : text.emptyAllTitle}
+      description={isFiltered ? text.emptyFilteredBody : text.emptyAllBody}
+      actions={
+        isFiltered ? (
+          <Button asChild variant="outline" size="lg">
+            <Link href={PUBLIC_PATHS.gallery}>{text.emptyClear}</Link>
+          </Button>
+        ) : undefined
+      }
+    />
   );
 }
 
@@ -93,25 +122,31 @@ function GalleryJsonLd({
 interface GalleryBodyProps {
   search: GallerySearch;
   query: GalleryQueryFilter;
-  rws: readonly RwBadge[];
+  rws: readonly RwUnitSummary[];
 }
 
 // The items are fetched inside the Suspense boundary of the page, so a click on `Galeri` shows the header and
 // the skeleton at once while the page renders per request (review of Task P5.6.05). A page past the last one is
 // redirected from here, inside the stream: the count is known only with the items, and that address is one
-// only `Muat lagi` ever makes. With nothing published the page is its header alone (StyleGuide §6.9).
+// only `Muat lebih banyak` ever makes.
 async function GalleryBody({ search, query, rws }: GalleryBodyProps) {
   const gallery = await listGalleryPages(query, search.page);
   if (gallery.pageCount < search.page)
     redirect(galleryPath({ ...search, page: gallery.pageCount }));
-  if (search.filter === null && gallery.items.length === 0) return null;
+  const hasItems = gallery.items.length > 0;
   return (
-    <Container className="space-y-8 pb-16 md:pb-24">
-      <GalleryFilter active={search.filter} rws={rws} />
-      {gallery.items.length > 0 ? (
-        <MasonryGrid items={gallery.items} />
+    <Container className="space-y-8 pb-16 md:space-y-12 md:pb-28">
+      <GalleryFilter
+        active={search.filter}
+        rws={rws}
+        countLabel={
+          hasItems ? text.count(gallery.items.length, canLoadMore(search, gallery)) : undefined
+        }
+      />
+      {hasItems ? (
+        <MasonryGrid items={gallery.items} rws={rws} />
       ) : (
-        <FilterEmpty message={copy.gallery.filterEmpty} clearHref={PUBLIC_PATHS.gallery} />
+        <GalleryEmpty isFiltered={search.filter !== null} />
       )}
       <LoadMore search={search} gallery={gallery} />
       <GalleryJsonLd search={search} items={gallery.items} />
@@ -120,7 +155,7 @@ async function GalleryBody({ search, query, rws }: GalleryBodyProps) {
 }
 
 // The whole gallery, a category, or an RW that is online; NULL for the filter of an RW that is not.
-function queryFor(search: GallerySearch, rws: readonly RwBadge[]): GalleryQueryFilter | null {
+function queryFor(search: GallerySearch, rws: readonly RwUnitSummary[]): GalleryQueryFilter | null {
   if (search.filter === null) return {};
   const query = galleryQueryFor(search.filter);
   if (query === null || ('owner' in query && !rws.some((rw) => rw.id === query.owner))) return null;
@@ -141,10 +176,12 @@ export default async function GalleryPage({ searchParams }: GalleryPageProps) {
   return (
     <>
       <PageHeader
-        title={TITLE}
-        description={DESCRIPTION}
+        tone="paper"
+        title={text.title}
+        description={text.lead}
         breadcrumbs={[]}
         path={PUBLIC_PATHS.gallery}
+        crumb={TITLE}
       />
       <Suspense key={galleryPath(search)} fallback={<GallerySkeleton />}>
         <GalleryBody search={search} query={query} rws={rws} />

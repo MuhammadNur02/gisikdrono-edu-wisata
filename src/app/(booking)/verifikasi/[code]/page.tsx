@@ -37,7 +37,7 @@ export default async function VerifyDocumentPage({ params }: VerifyPageProps) {
   }
   if (verified.document === null) notFound();
   return (
-    <div className="w-full max-w-md sm:my-auto">
+    <div className="w-full max-w-xl sm:my-auto">
       <VerifiedDocumentCard document={verified.document} />
     </div>
   );
