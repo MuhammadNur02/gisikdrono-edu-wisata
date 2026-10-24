@@ -248,6 +248,16 @@ describe('requireGuestToken', () => {
     );
   });
 
+  it('reads a review page from the review link’s own cookie, never from the manage link’s', async () => {
+    guestCookies.set(`bk_${CODE}`, 'manage-token');
+    expect(await requireGuestToken(CODE, 'review')).toMatchObject({ ok: false });
+    guestCookies.set(`bk_${CODE}_review`, 'review-token');
+    await requireGuestToken(CODE, 'review');
+    expect(verifyGuestAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ token: 'review-token' }),
+    );
+  });
+
   it('answers the same NOT_FOUND for no cookie, a cookie of another booking, a bad code, a refusal or an outage', async () => {
     guestCookies.set('bk_GSK-7F3K9Q2N', 'token-2');
     const notFound = { ok: false, error: { code: 'NOT_FOUND' } };

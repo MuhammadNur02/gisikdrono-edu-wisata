@@ -56,7 +56,7 @@ export async function forgetPhoneProof(): Promise<void> {
 // Decision of 2026-10-22 on P3.5, Q1 (docs/Security.md §3.2): the browser that made a booking holds its manage link,
 // stored as src/lib/links/redirect.ts stores one that arrives by ?t=, under that booking's pages only.
 export async function rememberGuestLink(bookingCode: string, token: string): Promise<void> {
-  (await cookies()).set(guestLinkCookieName(bookingCode), token, {
+  (await cookies()).set(guestLinkCookieName(bookingCode, 'manage'), token, {
     ...GUEST_COOKIE_OPTIONS,
     path: `${GUEST_BOOKING_PATH}/${bookingCode}`,
     maxAge: GUEST_LINK_TTL_SECONDS.manage,

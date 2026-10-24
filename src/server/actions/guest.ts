@@ -8,7 +8,7 @@ import { TURNSTILE_ACTIONS } from '@/config/auth';
 import { GUEST_BOOKING_PATH, LOOKUP_MIN_RESPONSE_MS } from '@/config/guest';
 import { copy } from '@/lib/copy/id';
 import { fail, mapError, ok } from '@/lib/errors';
-import { guestLinkCookieName } from '@/lib/links/token';
+import { guestLinkCookieNames } from '@/lib/links/token';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { clientIpFrom, rateLimitIpBucket } from '@/lib/utils/client-ip';
 import { BOOKING_CODE_PATTERN } from '@/lib/utils/codes';
@@ -68,10 +68,10 @@ export async function revokeGuestLinksAction(input: unknown): Promise<ActionResu
       return fail('RATE_LIMITED');
     }
     await revokeGuestLinks(bookingId);
-    (await cookies()).delete({
-      name: guestLinkCookieName(bookingCode),
-      path: `${GUEST_BOOKING_PATH}/${bookingCode}`,
-    });
+    const jar = await cookies();
+    for (const name of guestLinkCookieNames(bookingCode)) {
+      jar.delete({ name, path: `${GUEST_BOOKING_PATH}/${bookingCode}` });
+    }
     return ok(null);
   } catch (error) {
     return mapError(error);

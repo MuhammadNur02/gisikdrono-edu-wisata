@@ -151,7 +151,7 @@ export async function requireGuestToken(
 ): Promise<GuestGuardResult> {
   const notFound = fail('NOT_FOUND');
   if (!isBookingCode(bookingCode)) return notFound;
-  const token = (await cookies()).get(guestLinkCookieName(bookingCode))?.value;
+  const token = (await cookies()).get(guestLinkCookieName(bookingCode, required))?.value;
   if (token === undefined) return notFound;
   try {
     const guest = await verifyGuestAccess({

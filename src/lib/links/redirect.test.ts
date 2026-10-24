@@ -83,6 +83,44 @@ describe('redirectGuestLink', () => {
     }
   });
 
+  // Review of PR #47: one browser may hold the manage link and receive a review or view link later.
+  describe('next to a link the browser already holds', () => {
+    const scoped = (scope: 'manage' | 'view' | 'review', tokenVersion = 1) =>
+      mintGuestLink({ bookingCode: CODE, scope, tokenVersion, nowSeconds: NOW });
+
+    async function arriving(scope: 'manage' | 'view' | 'review', held: string, tokenVersion = 1) {
+      return redirectGuestLink(
+        requestFor(`/reservasi/${CODE}?t=${await scoped(scope, tokenVersion)}`, held),
+        NOW,
+      );
+    }
+
+    it('keeps a review link in a cookie of its own, leaving the manage link alone', async () => {
+      const response = await arriving('review', `bk_${CODE}=${await scoped('manage')}`);
+      expect(response?.cookies.get(`bk_${CODE}_review`)?.value).toBe(await scoped('review'));
+      expect(response?.cookies.get(`bk_${CODE}`)).toBeUndefined();
+    });
+
+    it('keeps the held manage link when a view link of the same version arrives', async () => {
+      const response = await arriving('view', `bk_${CODE}=${await scoped('manage')}`);
+      expect(response?.headers.get('set-cookie')).toBeNull();
+    });
+
+    it('takes a wider link of the same version, and any link of a newer version', async () => {
+      const wider = await arriving('manage', `bk_${CODE}=${await scoped('view')}`);
+      expect(wider?.cookies.get(`bk_${CODE}`)?.value).toBe(await scoped('manage'));
+      const newer = await arriving('view', `bk_${CODE}=${await scoped('manage')}`, 2);
+      expect(newer?.cookies.get(`bk_${CODE}`)?.value).toBe(await scoped('view', 2));
+    });
+
+    it('keeps a newer held link over an older one arriving, and replaces a held value that is no link', async () => {
+      const older = await arriving('manage', `bk_${CODE}=${await scoped('view', 2)}`);
+      expect(older?.headers.get('set-cookie')).toBeNull();
+      const overGarbage = await arriving('view', `bk_${CODE}=garbage`);
+      expect(overGarbage?.cookies.get(`bk_${CODE}`)?.value).toBe(await scoped('view'));
+    });
+  });
+
   it.each([
     `/reservasi/${CODE}`,
     '/reservasi/cari?t=abc',

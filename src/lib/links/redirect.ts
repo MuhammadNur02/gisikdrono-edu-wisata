@@ -1,18 +1,33 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { GUEST_BOOKING_PATH, GUEST_LINK_PARAM } from '@/config/guest';
-import { guestLinkCookieName } from '@/lib/links/token';
-import { readGuestLink } from '@/lib/links/verify';
+import { guestLinkCookieName, type GuestLinkPayload } from '@/lib/links/token';
+import { grantsScope, readGuestLink } from '@/lib/links/verify';
 import { isBookingCode } from '@/lib/utils/codes';
 
 // docs/Security.md §6.7: a guest link /reservasi/<code>?t=<token> leaves its token in a cookie scoped to that booking
 // and goes on to the same address without it, so the token stays out of the address bar, the history and the
 // Referer. src/middleware.ts calls this. Only a token whose signature and expiry pass for this booking is stored; any
 // other value leaves the cookie the browser already holds as it is, so a crafted link cannot push out the visitor's
-// own (review of PR #20, L2). What the token opens is still decided by the page, through requireGuestToken.
+// own (review of PR #20, L2). Nor does a narrower link of the same version: a view link opened from an email leaves
+// the manage link the browser holds (review of PR #47). What the token opens is still decided by the page, through
+// requireGuestToken.
 
 const SEE_OTHER = 303;
 const GUEST_BOOKING_PATTERN = new RegExp(`^${GUEST_BOOKING_PATH}/([^/]+)(?:/|$)`);
+
+// The link the cookie already holds stays when it is newer, or of the same version and wider; any other is replaced.
+async function keepsHeldLink(
+  held: string | undefined,
+  arriving: GuestLinkPayload,
+  reading: { bookingCode: string; nowSeconds: number },
+): Promise<boolean> {
+  if (held === undefined) return false;
+  const current = await readGuestLink(held, reading);
+  if (!current.ok) return false;
+  if (current.link.v !== arriving.v) return current.link.v > arriving.v;
+  return grantsScope(current.link.s, arriving.s) && !grantsScope(arriving.s, current.link.s);
+}
 
 export async function redirectGuestLink(
   request: NextRequest,
@@ -25,8 +40,11 @@ export async function redirectGuestLink(
   destination.searchParams.delete(GUEST_LINK_PARAM);
   const redirect = NextResponse.redirect(destination, SEE_OTHER);
   const reading = await readGuestLink(token, { bookingCode, nowSeconds });
-  if (reading.ok) {
-    redirect.cookies.set(guestLinkCookieName(bookingCode), token, {
+  if (!reading.ok) return redirect;
+  const cookieName = guestLinkCookieName(bookingCode, reading.link.s);
+  const held = request.cookies.get(cookieName)?.value;
+  if (!(await keepsHeldLink(held, reading.link, { bookingCode, nowSeconds }))) {
+    redirect.cookies.set(cookieName, token, {
       httpOnly: true,
       secure: true,
       sameSite: 'lax',

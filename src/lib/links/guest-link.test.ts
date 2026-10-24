@@ -5,7 +5,13 @@ import { describe, expect, it } from 'vitest';
 import { GUEST_LINK_SCOPES, GUEST_LINK_TTL_SECONDS } from '@/config/guest';
 import { hasValidSignature, sign } from '@/lib/links/hmac';
 import { mintGuestLink, signedMessage } from '@/lib/links/mint';
-import { decodePayload, encodePayload, splitToken } from '@/lib/links/token';
+import {
+  decodePayload,
+  encodePayload,
+  guestLinkCookieName,
+  guestLinkCookieNames,
+  splitToken,
+} from '@/lib/links/token';
 import { grantsScope, isCurrentLink, readGuestLink } from '@/lib/links/verify';
 
 import { sandboxEnv } from '../../../tests/fixtures/env';
@@ -139,5 +145,19 @@ describe('token helpers', () => {
       .update('gsk-guest-link-v1\nmessage')
       .digest('base64url');
     await expect(sign('gsk-guest-link-v1', 'message')).resolves.toBe(expected);
+  });
+});
+
+describe('the cookies of a booking', () => {
+  it('shares one for the manage, pay and view links, and gives review and certificate their own', () => {
+    const shared = (['manage', 'pay', 'view'] as const).map((scope) =>
+      guestLinkCookieName('GSK-7F3K9Q2M', scope),
+    );
+    expect(shared).toEqual(['bk_GSK-7F3K9Q2M', 'bk_GSK-7F3K9Q2M', 'bk_GSK-7F3K9Q2M']);
+    expect(guestLinkCookieNames('GSK-7F3K9Q2M')).toEqual([
+      'bk_GSK-7F3K9Q2M',
+      'bk_GSK-7F3K9Q2M_review',
+      'bk_GSK-7F3K9Q2M_certificate',
+    ]);
   });
 });
