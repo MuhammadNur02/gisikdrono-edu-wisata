@@ -92,7 +92,7 @@ export function SearchField({
         onChange={(event) => {
           state.setQuery(event.target.value);
         }}
-        className="h-11 w-full rounded-md border border-input bg-card pr-3.5 pl-10 text-body placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none md:h-10"
+        className="h-11 w-full rounded-md border border-input bg-card pr-3.5 pl-10 text-body placeholder:text-muted-foreground focus-visible:border-ring md:h-10"
       />
     </div>
   );

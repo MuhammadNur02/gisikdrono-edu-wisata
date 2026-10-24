@@ -1,5 +1,6 @@
 'use client';
 
+import { MoveHorizontal } from 'lucide-react';
 import Lightbox, { type Slide } from 'yet-another-react-lightbox';
 import Counter from 'yet-another-react-lightbox/plugins/counter';
 import Thumbnails from 'yet-another-react-lightbox/plugins/thumbnails';
@@ -47,7 +48,8 @@ const THUMBNAILS = {
   showToggle: false,
 } as const;
 
-// The caption block under the photo, at most 1040 px: the RW badge on the dark, the caption, the alt text.
+// The caption block under the photo, at most 1040 px: the RW badge on the dark, the caption, the alt text, and on a
+// phone the swipe hint (DESIGN-SPEC §3.7).
 function PhotoCaption({ photo }: { photo: LightboxPhoto }) {
   return (
     <div className="absolute inset-x-0 bottom-0 px-5 pb-4 md:px-10 md:pb-6">
@@ -65,6 +67,10 @@ function PhotoCaption({ photo }: { photo: LightboxPhoto }) {
             {photo.description}
           </p>
         ) : null}
+        <p className="flex items-center gap-2 text-caption text-on-dark-3 md:hidden">
+          <MoveHorizontal aria-hidden className="size-4" />
+          {galleryUiCopy.swipeHint}
+        </p>
       </div>
     </div>
   );

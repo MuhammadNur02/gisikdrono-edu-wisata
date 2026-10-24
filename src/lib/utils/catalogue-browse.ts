@@ -15,8 +15,9 @@ export interface BrowseOption {
   // The words an empty-state sentence uses for this choice, written as the sentence needs them: `Kampung Budaya & Seni`
   // for `RW 13 · Kampung Budaya & Seni`, `institusi` for `Institusi`; the label when left out.
   name?: string;
-  // An RW option leads with a dot in the RW's accent (DESIGN-SPEC §2.3).
+  // An RW option leads with a dot in the RW's accent (DESIGN-SPEC §2.3); the combination option with one in the brick.
   accentKey?: RwAccent;
+  isCombo?: boolean;
 }
 
 export interface BrowseGroup {

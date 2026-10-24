@@ -187,19 +187,19 @@
    the design's circles, the counter at the top left and the thumbnail strip with a white edge on the photo shown. Not
    in a layer: the library's own stylesheet is unlayered, so these rules must be too to win over it. ===== */
 .lightbox-theme {
-  --yarl__color_backdrop: rgb(14 12 9 / 0.96);
-  --yarl__color_button: rgb(255 255 255 / 0.92);
-  --yarl__color_button_active: #ffffff;
+  --yarl__color_backdrop: color-mix(in srgb, var(--night) 96%, transparent);
+  --yarl__color_button: color-mix(in srgb, var(--on-dark) 92%, transparent);
+  --yarl__color_button_active: var(--on-dark);
   --yarl__button_filter: none;
   --yarl__counter_filter: none;
-  --yarl__counter_color: rgb(255 255 255 / 0.8);
+  --yarl__counter_color: color-mix(in srgb, var(--on-dark) 80%, transparent);
   --yarl__counter_top: 1.25rem;
   --yarl__counter_left: 0.75rem;
-  --yarl__thumbnails_container_background_color: rgb(14 12 9 / 0.96);
+  --yarl__thumbnails_container_background_color: color-mix(in srgb, var(--night) 96%, transparent);
   --yarl__thumbnails_container_padding: 0.75rem 1rem 1.25rem;
   --yarl__thumbnails_thumbnail_background: transparent;
   --yarl__thumbnails_thumbnail_border_color: transparent;
-  --yarl__thumbnails_thumbnail_active_border_color: #ffffff;
+  --yarl__thumbnails_thumbnail_active_border_color: var(--on-dark);
   --yarl__thumbnails_thumbnail_border_radius: 0.5rem;
   --yarl__thumbnails_thumbnail_focus_box_shadow: 0 0 0 2px var(--gold);
   --yarl__thumbnails_vignette_size: 0px;
@@ -223,18 +223,18 @@
   margin: 0;
   padding: 0;
   border-radius: 9999px;
-  background-color: rgb(255 255 255 / 0.08);
+  background-color: color-mix(in srgb, var(--on-dark) 8%, transparent);
   transition: background-color var(--duration-micro) var(--ease-out-soft);
 }
 .lightbox-theme .yarl__button:hover {
-  background-color: rgb(255 255 255 / 0.16);
+  background-color: color-mix(in srgb, var(--on-dark) 16%, transparent);
 }
 .lightbox-theme .yarl__button:focus-visible {
   outline: 2px solid var(--gold);
   outline-offset: 2px;
 }
 .lightbox-theme .yarl__toolbar .yarl__button:last-child {
-  background-color: #ffffff;
+  background-color: var(--on-dark);
   color: var(--night);
   --yarl__color_button: var(--night);
   --yarl__color_button_active: var(--night);
@@ -247,8 +247,8 @@
 .lightbox-theme .yarl__navigation_next {
   width: 3.5rem;
   height: 3.5rem;
-  border: 1px solid rgb(255 255 255 / 0.2);
-  background-color: rgb(255 255 255 / 0.1);
+  border: 1px solid color-mix(in srgb, var(--on-dark) 20%, transparent);
+  background-color: color-mix(in srgb, var(--on-dark) 10%, transparent);
 }
 .lightbox-theme .yarl__navigation_prev {
   left: 2.5rem;

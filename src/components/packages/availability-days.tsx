@@ -42,8 +42,15 @@ interface DayCellProps {
 }
 
 // text-micro is a size tailwind-merge does not know, so it stays outside cn() next to a colour.
-// Date cell of DESIGN-SPEC §3.5: the weekday in small caps, the day, the seats left. Chosen: the inverse fill. Full:
-// the seats line says Penuh and the cell fades to 60 %, still focusable so its sessions can be read.
+// Date cell of DESIGN-SPEC §3.5: the weekday in small caps, the day, the seats left. Chosen: the inverse fill. Full: the
+// sunken fill with muted ink, the day struck through and `Penuh`; still focusable so its sessions can be read. Its name
+// is its own text, the full date read first from a visually hidden line (WCAG 2.5.3: no aria-label to drift from it).
+function cellTone(isChosen: boolean, isFull: boolean): string {
+  if (isChosen) return 'border-secondary bg-secondary text-secondary-foreground';
+  if (isFull) return 'border-border bg-muted text-muted-foreground';
+  return 'border-border-strong bg-background hover:bg-muted';
+}
+
 function DayCell({ day, isChosen, onChoose }: DayCellProps) {
   const parts = dayParts(day.date);
   const tone = seatTone(day.remaining, day.capacity);
@@ -51,20 +58,25 @@ function DayCell({ day, isChosen, onChoose }: DayCellProps) {
     <button
       type="button"
       aria-pressed={isChosen}
-      aria-label={`${formatDateLong(day.date)}, ${tone === 'full' ? text.full : text.seatsShort(day.remaining)}`}
       onClick={() => {
         onChoose(day.date);
       }}
       className={cn(
         'flex h-18 press-scale flex-col items-center justify-center gap-0.5 rounded-md border transition-colors duration-180',
-        isChosen
-          ? 'border-secondary bg-secondary text-secondary-foreground'
-          : 'border-border-strong bg-background hover:bg-muted',
-        tone === 'full' && !isChosen && 'opacity-60',
+        cellTone(isChosen, tone === 'full'),
       )}
     >
-      <span className="text-micro font-semibold tracking-wider uppercase">{parts.weekday}</span>
-      <span className="font-display text-xl leading-tight font-bold tabular-nums">
+      <span className="sr-only">{formatDateLong(day.date)}</span>
+      <span aria-hidden className="text-micro font-semibold tracking-wider uppercase">
+        {parts.weekday}
+      </span>
+      <span
+        aria-hidden
+        className={cn(
+          'font-display text-xl leading-tight font-bold tabular-nums',
+          tone === 'full' && !isChosen && 'line-through',
+        )}
+      >
         {parts.dayOfMonth}
       </span>
       <span
@@ -110,8 +122,10 @@ function SessionOption({ session, rws }: { session: SessionRow; rws: readonly Rw
   return (
     <li
       className={cn(
-        'space-y-1 rounded-lg border border-border-strong bg-card px-4 py-3.5',
-        tone === 'full' && 'bg-muted opacity-55',
+        'space-y-1 rounded-lg border px-4 py-3.5',
+        tone === 'full'
+          ? 'border-border bg-muted text-muted-foreground'
+          : 'border-border-strong bg-card',
       )}
     >
       <p className="flex flex-wrap items-center gap-2 text-label font-semibold">

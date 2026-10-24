@@ -183,8 +183,39 @@ function OtherPackages({ packages }: { packages: readonly PackageSummary[] }) {
   );
 }
 
-// docs/PRD.md FR-PUB-12, Task P2.4.05, DESIGN-SPEC §3.5. The subtree takes the package's RW colours (the combination
-// the brick), so the checks, the itinerary and the tags speak its kampung.
+interface PackageBodyProps {
+  pkg: PackageDetail;
+  units: readonly RwUnitSummary[];
+  proposal: BookletSummary | null;
+}
+
+// The title block, the gallery, then the sections beside the sticky booking panel (on phones the panel comes first).
+// The subtree takes the package's RW colours (the combination the brick), so the checks, the itinerary and the tags
+// speak its kampung.
+function PackageBody({ pkg, units, proposal }: PackageBodyProps) {
+  const [onlyUnit] = units;
+  const scope =
+    units.length === 1 && onlyUnit ? rwAccentClasses(onlyUnit.accentKey).scope : 'rw-scope-combo';
+  return (
+    <div className={scope}>
+      <TitleBlock pkg={pkg} units={units} proposal={proposal} />
+      <Container>
+        <GalleryOrPlaceholder pkg={pkg} />
+      </Container>
+      {/* pb-28 leaves room under the content for the sticky bar below md (DESIGN-SPEC §3.5). */}
+      <Container className="flex flex-col gap-12 pt-8 pb-28 md:pb-24 lg:flex-row lg:items-start lg:gap-16 lg:pt-14">
+        <div className="min-w-0 flex-1">
+          <PackageDetails pkg={pkg} />
+        </div>
+        <div className="max-lg:order-first lg:sticky lg:top-24 lg:w-105 lg:shrink-0">
+          <PackageBookingCard pkg={pkg} rwNames={units.map((unit) => unit.name)} />
+        </div>
+      </Container>
+    </div>
+  );
+}
+
+// docs/PRD.md FR-PUB-12, Task P2.4.05, DESIGN-SPEC §3.5.
 export default async function PackagePage({ params }: PackagePageProps) {
   const { slug } = await params;
   const [pkg, rws, packages, booklets] = await Promise.all([
@@ -194,29 +225,11 @@ export default async function PackagePage({ params }: PackagePageProps) {
     listBooklets(),
   ]);
   if (!pkg) notFound();
-  const units = unitsOf(pkg, rws);
-  const scope =
-    units.length === 1 && units[0] ? rwAccentClasses(units[0].accentKey).scope : 'rw-scope-combo';
+  const others = packages.filter((other) => other.id !== pkg.id).slice(0, OTHER_PACKAGES);
   return (
     <>
-      <div className={scope}>
-        <TitleBlock pkg={pkg} units={units} proposal={proposalFor(pkg, booklets)} />
-        <Container>
-          <GalleryOrPlaceholder pkg={pkg} />
-        </Container>
-        {/* pb-28 leaves room under the content for the sticky bar below md (DESIGN-SPEC §3.5). */}
-        <Container className="flex flex-col gap-12 pt-8 pb-28 md:pb-24 lg:flex-row lg:items-start lg:gap-16 lg:pt-14">
-          <div className="min-w-0 flex-1">
-            <PackageDetails pkg={pkg} />
-          </div>
-          <div className="max-lg:order-first lg:sticky lg:top-24 lg:w-105 lg:shrink-0">
-            <PackageBookingCard pkg={pkg} rwNames={units.map((unit) => unit.name)} />
-          </div>
-        </Container>
-      </div>
-      <OtherPackages
-        packages={packages.filter((other) => other.id !== pkg.id).slice(0, OTHER_PACKAGES)}
-      />
+      <PackageBody pkg={pkg} units={unitsOf(pkg, rws)} proposal={proposalFor(pkg, booklets)} />
+      <OtherPackages packages={others} />
       <StickyBookingBar pkg={pkg} />
       <JsonLd data={packageJsonLd(pkg)} />
     </>

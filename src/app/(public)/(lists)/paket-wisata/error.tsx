@@ -2,9 +2,10 @@
 
 import { CatalogueError } from '@/components/marketing/catalogue-error';
 
-// DESIGN-SPEC §3.14: the list could not load. Only the page's title and noun come with it: an error boundary is a
+// DESIGN-SPEC §3.14: the list could not load. Only the page's title, trail name and noun come with it: an error boundary is a
 // client component, so it carries none of the page's data or copy module.
 const TITLE = 'Pilih paket kunjunganmu';
+const CRUMB = 'Paket wisata';
 const NOUN = 'Paket';
 
 export default function ListError({
@@ -13,5 +14,5 @@ export default function ListError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  return <CatalogueError title={TITLE} noun={NOUN} reset={reset} />;
+  return <CatalogueError title={TITLE} crumb={CRUMB} noun={NOUN} reset={reset} />;
 }

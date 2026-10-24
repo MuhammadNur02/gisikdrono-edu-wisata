@@ -56,15 +56,21 @@ export function CardGridSkeleton({ kind, count, listClassName }: CardGridSkeleto
 
 const CHIP_WIDTHS = ['w-36', 'w-21', 'w-21', 'w-28'] as const;
 
-// The filter bar while the list loads: its chips as pills and the count as a 64 x 14 bar.
-export function FilterBarSkeleton() {
+function StillPill({ className }: { className?: string }) {
+  return <span className={cn('block bg-muted', className)} />;
+}
+
+// The filter bar while the list loads: its chips as pills and the count as a 64 x 14 bar. `isStill` draws the same
+// shapes without the shimmer, for the error state, where nothing is loading.
+export function FilterBarSkeleton({ isStill = false }: { isStill?: boolean }) {
+  const Pill = isStill ? StillPill : Skeleton;
   return (
     <div aria-hidden className="border-y border-border">
-      <Container className="flex items-center gap-2 py-3 md:py-5">
+      <Container className="flex items-center gap-2 overflow-hidden py-3 md:py-5">
         {CHIP_WIDTHS.map((width, index) => (
-          <Skeleton key={index} className={cn('h-11 shrink-0 rounded-full md:h-10', width)} />
+          <Pill key={index} className={cn('h-11 shrink-0 rounded-full md:h-10', width)} />
         ))}
-        <Skeleton className="ml-auto h-3.5 w-16 max-md:hidden" />
+        <Pill className="ml-auto h-3.5 w-16 rounded-md max-md:hidden" />
       </Container>
     </div>
   );

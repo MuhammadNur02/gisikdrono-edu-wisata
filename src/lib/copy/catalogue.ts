@@ -46,7 +46,6 @@ export const packagesPageCopy = {
 };
 
 export const packageDetailCopy = {
-  share: 'Bagikan',
   downloadProposal: 'Unduh proposal',
   about: 'Tentang paket',
   highlights: 'Yang dilakukan',
@@ -63,7 +62,6 @@ export const packageDetailCopy = {
     orang: 'Harga / orang',
     rombongan: 'Harga / rombongan',
   },
-  paxFrom: (min: number) => `Mulai ${String(min)} orang`,
   faqTitle: 'Pertanyaan umum',
   faq: [
     {
@@ -91,7 +89,6 @@ export const packageDetailCopy = {
   requestQuotation: 'Minta surat penawaran',
   panelNote:
     'Belum ada pembayaran sampai kamu mengonfirmasi di langkah Ringkasan. Bayar hanya lewat QRIS atau Virtual Account.',
-  galleryLabel: 'Foto paket',
   otherEyebrow: 'Paket lain',
   otherTitle: 'Mungkin juga cocok',
 };
@@ -160,8 +157,6 @@ export const articlesPageCopy = {
   others: 'Artikel lainnya',
   allShown: 'Semua artikel sudah ditampilkan.',
   noun: 'artikel',
-  guideLabel: 'Panduan',
-  guideSteps: ['Paket', 'Sesi', 'Data & OTP', 'Bayar', 'Tiket QR'],
   emptyFilteredTitle: 'Belum ada artikel yang cocok',
   emptyFilteredBody: 'Coba kata lain, atau tampilkan semua kategori.',
   emptyAllTitle: 'Kabar kampung segera hadir',

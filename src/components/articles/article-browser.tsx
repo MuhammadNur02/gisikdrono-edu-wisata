@@ -85,7 +85,7 @@ function SearchField({
         onChange={(event) => {
           onValue(event.target.value);
         }}
-        className="h-12 w-full rounded-md border border-input bg-card pr-4 pl-11 text-body placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none"
+        className="h-12 w-full rounded-md border border-input bg-card pr-4 pl-11 text-body placeholder:text-muted-foreground focus-visible:border-ring"
       />
     </div>
   );

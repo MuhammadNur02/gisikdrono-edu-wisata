@@ -15,6 +15,8 @@ export interface BrowseChipProps {
   // A chosen filter in an empty result leads with an X: pressing it removes the filter (DESIGN-SPEC §3.14).
   isRemovable?: boolean;
   accentKey?: RwAccent | undefined;
+  // The combination option's dot, in the primary set (DESIGN-SPEC §1.1).
+  isCombo?: boolean | undefined;
   label: string;
   onClick: () => void;
 }
@@ -23,6 +25,7 @@ function ChipIcon({
   isPressed,
   isRemovable,
   accentKey,
+  isCombo,
 }: Omit<BrowseChipProps, 'label' | 'onClick'>) {
   if (isPressed && isRemovable) return <X aria-hidden className="size-4" />;
   if (isPressed) {
@@ -33,18 +36,28 @@ function ChipIcon({
       />
     );
   }
-  if (!accentKey) return null;
+  if (!accentKey && !isCombo) return null;
   return (
     <span
       aria-hidden
-      className={cn('size-2.5 rounded-full bg-rw-fill', rwAccentClasses(accentKey).scope)}
+      className={cn(
+        'size-2.5 rounded-full bg-rw-fill',
+        accentKey ? rwAccentClasses(accentKey).scope : 'rw-scope-combo',
+      )}
     />
   );
 }
 
 // Chip/Filter of DESIGN-SPEC §2.3 as a toggle button: the chosen one is pressed (inverse fill and a check), an RW option
 // leads with its dot.
-export function BrowseChip({ isPressed, isRemovable, accentKey, label, onClick }: BrowseChipProps) {
+export function BrowseChip({
+  isPressed,
+  isRemovable,
+  accentKey,
+  isCombo,
+  label,
+  onClick,
+}: BrowseChipProps) {
   return (
     <button
       type="button"
@@ -53,7 +66,12 @@ export function BrowseChip({ isPressed, isRemovable, accentKey, label, onClick }
       onClick={onClick}
       className={cn(chipClassName(isPressed), 'shrink-0')}
     >
-      <ChipIcon isPressed={isPressed} isRemovable={isRemovable} accentKey={accentKey} />
+      <ChipIcon
+        isPressed={isPressed}
+        isRemovable={isRemovable}
+        accentKey={accentKey}
+        isCombo={isCombo}
+      />
       {label}
     </button>
   );
@@ -94,6 +112,7 @@ export function GroupChips({
           isPressed={value === option.value}
           isRemovable={isEmpty}
           accentKey={option.accentKey}
+          isCombo={option.isCombo}
           label={option.label}
           onClick={() => {
             onChange(group.param, value === option.value ? null : option.value);

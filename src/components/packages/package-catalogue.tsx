@@ -37,7 +37,12 @@ function rwGroup(packages: readonly PackageSummary[], rws: readonly RwUnitSummar
     packages.some((pkg) => pkg.category !== 'combo' && pkg.rws.some((visit) => visit.id === rw.id)),
   );
   const hasCombo = packages.some((pkg) => pkg.category === 'combo');
-  const combo = { value: COMBO_FILTER, label: copy.catalogue.combo, name: copy.catalogue.combo };
+  const combo = {
+    value: COMBO_FILTER,
+    label: copy.catalogue.combo,
+    name: copy.catalogue.combo,
+    isCombo: true,
+  };
   return {
     param: 'rw',
     label: text.filterRw,
