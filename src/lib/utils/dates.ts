@@ -34,6 +34,11 @@ export function formatDateShort(value: Date | string): string {
   return format(inJakarta(value), 'd MMM yyyy', { locale: indonesian });
 }
 
+// '18 Okt 2026, 19.00 WIB': when something happened, for an audit trail or a price history.
+export function formatDateTimeShort(instant: string): string {
+  return `${format(inJakarta(instant), 'd MMM yyyy, HH.mm', { locale: indonesian })} WIB`;
+}
+
 function formatSessionTime(time: string): string {
   const match = SESSION_TIME_PATTERN.exec(time);
   if (!match) throw new RangeError(`Not a session time: ${time}`);

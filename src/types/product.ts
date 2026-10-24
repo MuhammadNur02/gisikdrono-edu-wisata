@@ -1,3 +1,4 @@
+import type { RwId } from '@/config/rw';
 import type { EnumValue } from '@/db/enums';
 import type { PublicImage } from '@/types/media';
 import type { RwBadge } from '@/types/rw-unit';
@@ -43,4 +44,32 @@ export interface ProductDetail extends ProductSummary {
   maxOrderQty: number | null;
   leadTimeDays: number;
   images: PublicImage[];
+}
+
+// What /dashboard/products reads and its actions answer with (Task P4.3.06). Plain values only: they cross into client
+// components. Prices are integer rupiah as stored.
+export interface ProductListItem {
+  id: string;
+  rwId: RwId;
+  vendorId: string;
+  vendorName: string;
+  slug: string;
+  name: string;
+  category: EnumValue<'product_category'>;
+  price: number;
+  unitLabel: string;
+  status: EnumValue<'content_status'>;
+  isAddonEligible: boolean;
+  isAvailable: boolean;
+  isFeatured: boolean;
+  updatedAt: string;
+}
+
+export interface ProductAdmin extends ProductListItem {
+  descriptionMd: string | null;
+  minOrderQty: number;
+  maxOrderQty: number | null;
+  leadTimeDays: number;
+  imagePaths: string[];
+  sortOrder: number;
 }

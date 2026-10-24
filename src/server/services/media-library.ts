@@ -167,13 +167,13 @@ export async function removeBookletFolder(
 
 export interface RowPhotos {
   rwId: RwId | null;
-  purpose: 'article' | 'activity-point';
+  purpose: 'article' | 'activity-point' | 'package' | 'product';
   entityId: string;
 }
 
 // A row's own photo folder keeps exactly the photos the row shows now (docs/Security.md R34): an article's cover and
-// body photos, an activity point's photo; none once the row is removed. The folder follows from the owner, the
-// purpose and the id alone, and only the photos finalize named in it go.
+// body photos, an activity point's photo, a package's or a product's photos; none once the row is removed. The
+// folder follows from the owner, the purpose and the id alone, and only the photos finalize named in it go.
 export async function keepOnlyRowPhotos(
   adminClient: DatabaseClient,
   target: RowPhotos,
