@@ -6,9 +6,10 @@
 -- Review of PR #58 (20261029080200): a completed reset leaves the account without a role and unable to verify a new
 -- authenticator until the code is used, and every verification is an mfa_enrolled event (H1); nobody an alert names,
 -- as subject or actor, acknowledges it, for any rule, and what an alert names is merged, never overwritten (M1); the
--- caller's own row is refused before anything else.
+-- caller's own row is refused before anything else. An Auth user that never became staff is deleted with its profile;
+-- one that ever held a role is not (20261029080300).
 begin;
-select plan(51);
+select plan(53);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: two accounts without a role =====
@@ -224,6 +225,14 @@ select is(public.svc_check_mfa_reenrolment_code('00000000-0000-4000-8000-0000000
 select ok(not has_function_privilege('authenticated', 'public.svc_consume_mfa_reenrolment_code(uuid, text)', 'execute')
           and not has_function_privilege('authenticated', 'public.svc_check_mfa_reenrolment_code(uuid, text)', 'execute'),
   'the code is checked and used by the server alone');
+
+-- ===== Deleting an Auth user =====
+insert into auth.users (id, email) values ('00000000-0000-4000-8000-0000000e0004', 'salah-ketik@example.test');
+delete from auth.users where id = '00000000-0000-4000-8000-0000000e0004';
+select is((select count(*)::int from public.profiles where id = '00000000-0000-4000-8000-0000000e0004'), 0,
+  'an Auth user that never became staff is deleted with its profile');
+select throws_ok($$delete from auth.users where id = '00000000-0000-4000-8000-0000000e0001'$$, '23503', null,
+  'one whose profile ever held a role is not: it is deactivated, and the audit trail keeps naming it');
 
 select * from finish();
 rollback;
