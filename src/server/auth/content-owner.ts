@@ -74,21 +74,6 @@ export async function requireRwContentOwner(
     : { ok: true, rwId: target.owner };
 }
 
-// The owners whose rows a list shows: an RW admin's own RW; for the superadmin the RW the RwSwitcher points at, or
-// every RW (`allRwIds`, from rw_units) and the kelurahan under Semua. RLS narrows the same reads again.
-export function listedOwners(
-  ctx: StaffContext,
-  scope: RwScope,
-  allRwIds: readonly RwId[],
-): ContentOwner[] {
-  if (ctx.role === 'admin_rw') {
-    const own = ownerOfNewContent(ctx, scope);
-    return own === undefined ? [] : [own];
-  }
-  if (ctx.role !== 'superadmin') return [];
-  return scope === RW_SCOPE_ALL ? [...allRwIds, null] : [scope];
-}
-
 // docs/PRD.md FR-ADMIN-13: the RWs with rw_units.schedule_enabled run a performance schedule, which their admin and
 // the superadmin manage.
 export function canManageSchedules(ctx: StaffContext, scheduleRwIds: readonly RwId[]): boolean {

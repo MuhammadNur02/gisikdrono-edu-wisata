@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { createHeroBannerSchema, updateHeroBannerSchema } from './hero-banner';
+import {
+  createHeroBannerSchema,
+  moveHeroBannerSchema,
+  updateHeroBannerSchema,
+} from './hero-banner';
 
 const BANNER = {
   title: 'Kunjungi Bank Sampah Sumber Rejeki',
@@ -71,5 +75,21 @@ describe('banner window dates', () => {
     ['endsAt', '2026-04-31T08:00'],
   ])('refuses %s %s', (field, value) => {
     expect(issuePaths({ ...BANNER, [field]: value })).toContain(field);
+  });
+});
+
+describe('moveHeroBannerSchema', () => {
+  const ID = '0192f3a4-5b6c-7d8e-9f01-23456789abcd';
+
+  it('takes a banner id and a direction', () => {
+    expect(moveHeroBannerSchema.safeParse({ id: ID, direction: 'up' }).success).toBe(true);
+    expect(moveHeroBannerSchema.safeParse({ id: ID, direction: 'down' }).success).toBe(true);
+  });
+
+  it('refuses another direction, a sort number or an extra field', () => {
+    expect(moveHeroBannerSchema.safeParse({ id: ID, direction: 'top' }).success).toBe(false);
+    expect(moveHeroBannerSchema.safeParse({ id: ID, direction: 'up', sortOrder: 0 }).success).toBe(
+      false,
+    );
   });
 });

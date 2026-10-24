@@ -1,8 +1,10 @@
 import { revalidateTag } from 'next/cache';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { AppError } from '@/lib/errors';
 import { requireAal2, type StaffContext } from '@/server/auth/guards';
 import {
+  archiveActivityPoint,
   createActivityPoint,
   readActivityPointOwner,
   removeActivityPoint,
@@ -10,6 +12,7 @@ import {
 } from '@/server/services/activity-point-service';
 
 import {
+  archiveActivityPointAction,
   createActivityPointAction,
   removeActivityPointAction,
   updateActivityPointAction,
@@ -28,6 +31,7 @@ vi.mock('next/headers', () => ({
 vi.mock('next/cache', () => ({ revalidateTag: vi.fn() }));
 vi.mock('@/server/auth/guards', () => ({ requireAal2: vi.fn() }));
 vi.mock('@/server/services/activity-point-service', () => ({
+  archiveActivityPoint: vi.fn(),
   createActivityPoint: vi.fn(),
   readActivityPointOwner: vi.fn(),
   removeActivityPoint: vi.fn(),
@@ -67,6 +71,7 @@ beforeEach(() => {
   vi.mocked(readActivityPointOwner).mockReset().mockResolvedValue(5);
   // A removal whose files all went, unless a test says otherwise.
   vi.mocked(removeActivityPoint).mockResolvedValue(true);
+  vi.mocked(archiveActivityPoint).mockReset().mockResolvedValue(undefined);
   vi.mocked(revalidateTag).mockReset();
 });
 
@@ -153,5 +158,35 @@ describe('updateActivityPointAction and removeActivityPointAction', () => {
       POINT_ID,
     );
     expect(revalidateTag).toHaveBeenCalledWith('activity-points:all');
+  });
+});
+
+describe('archiveActivityPointAction', () => {
+  it('archives a point of their own RW by status', async () => {
+    const result = await archiveActivityPointAction({ id: POINT_ID });
+    expect(result.ok).toBe(true);
+    expect(archiveActivityPoint).toHaveBeenCalledWith(5, POINT_ID);
+    expect(revalidateTag).toHaveBeenCalledWith('activity-points:all');
+  });
+
+  it("refuses an RW 05 admin another RW's point", async () => {
+    vi.mocked(readActivityPointOwner).mockResolvedValue(8);
+    const result = await archiveActivityPointAction({ id: POINT_ID });
+    expect(result).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
+    expect(archiveActivityPoint).not.toHaveBeenCalled();
+  });
+});
+
+describe('removeActivityPointAction on a row that is not archived (review of PR #40)', () => {
+  it('answers STATE_INVALID with the archive-first copy and revalidates nothing', async () => {
+    vi.mocked(removeActivityPoint).mockRejectedValueOnce(
+      new AppError('STATE_INVALID', 'Arsipkan dulu sebelum menghapus permanen.'),
+    );
+    const result = await removeActivityPointAction({ id: POINT_ID });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'STATE_INVALID', message: 'Arsipkan dulu sebelum menghapus permanen.' },
+    });
+    expect(revalidateTag).not.toHaveBeenCalled();
   });
 });

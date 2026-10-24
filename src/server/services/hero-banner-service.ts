@@ -1,17 +1,28 @@
 import 'server-only';
 
+import { BANNER_ACTIVITY, BANNER_DEFAULT_SORT, BANNER_SORT_COLUMNS } from '@/config/cms';
 import type { Tables } from '@/db/types';
+import { contentListsCopy } from '@/lib/copy/content-lists';
 import { copy } from '@/lib/copy/id';
 import { AppError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isPublishedImagePathFor } from '@/lib/uploads/paths';
 import { toJakartaIsoString } from '@/lib/utils/dates';
+import type { BannerOrder } from '@/lib/utils/hero-banners';
+import {
+  allowedValues,
+  pageRange,
+  parseSort,
+  searchPattern,
+  type ListQuery,
+} from '@/lib/utils/list-query';
 import type { HeroBannerValues, UpdateHeroBannerValues } from '@/lib/validations/hero-banner';
 import type { StaffContext } from '@/server/auth/guards';
-import { rowOrNotFound } from '@/server/services/content-errors';
+import { archivedRowOr, rowOrNotFound } from '@/server/services/content-errors';
 import { removeFilesOrLog } from '@/server/services/content-files';
 import { removeUnusedHeroPhotos } from '@/server/services/upload-service';
 import type { BannerProductOption, CleanedUp, HeroBannerAdmin } from '@/types/cms';
+import type { ListResult } from '@/types/data-table';
 
 // Hero banners through the session client, so the hero_banners policies (the superadmin's alone, created_by =
 // auth.uid() on insert) and the AAL2 policy decide (0005).
@@ -80,15 +91,66 @@ function columnsOf(values: HeroBannerValues, current: BannerRow | null) {
   };
 }
 
-export async function listHeroBannersForStaff(): Promise<HeroBannerAdmin[]> {
+// One page of banners from the URL's query (Task P4.9.02), in the home page's order unless the URL names another;
+// `?status=active|inactive` filters by is_active, as a banner has no content_status.
+export async function listHeroBannersForStaff(
+  query: ListQuery,
+): Promise<ListResult<HeroBannerAdmin>> {
+  const order =
+    parseSort(query.sort, BANNER_SORT_COLUMNS) ??
+    parseSort(BANNER_DEFAULT_SORT, BANNER_SORT_COLUMNS);
+  const { from, to } = pageRange(query.page, query.per);
+  const supabase = await createSupabaseServerClient();
+  let request = supabase.from('hero_banners').select(COLUMNS, { count: 'exact' });
+  const pattern = searchPattern(query.q);
+  if (pattern !== null) request = request.ilike('title', pattern);
+  const [activity, ...others] = allowedValues(query.status, BANNER_ACTIVITY);
+  if (activity !== undefined && others.length === 0) {
+    request = request.eq('is_active', activity === 'active');
+  }
+  if (order !== null) request = request.order(order.column, { ascending: order.ascending });
+  const { data, error, count } = await request
+    .order('created_at', { ascending: false })
+    .range(from, to);
+  if (error) throw error;
+  return { rows: data.map(toHeroBannerAdmin), total: count ?? data.length };
+}
+
+// Every banner in the home page's order (by sort_order, then newest first), for a move up or down.
+export async function readBannerOrder(): Promise<BannerOrder[]> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('hero_banners')
-    .select(COLUMNS)
+    .select('id, sort_order')
     .order('sort_order')
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return data.map(toHeroBannerAdmin);
+  return data.map((row) => ({ id: row.id, sortOrder: row.sort_order }));
+}
+
+// The new numbers of reorderBanners, one row each; a banner is a few rows, never a batch worth an RPC.
+export async function applyBannerOrder(updates: readonly BannerOrder[]): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  for (const update of updates) {
+    const { error } = await supabase
+      .from('hero_banners')
+      .update({ sort_order: update.sortOrder })
+      .eq('id', update.id);
+    if (error) throw error;
+  }
+}
+
+// Off the home page by is_active, kept here with its photos (the banner's archive by status, Task P4.9.02).
+export async function deactivateHeroBanner(id: string): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('hero_banners')
+    .update({ is_active: false })
+    .eq('id', id)
+    .select('id')
+    .maybeSingle();
+  if (error) throw error;
+  rowOrNotFound(data);
 }
 
 // The products a banner may feature: published ones, since the public slide reads its product through the anon
@@ -115,10 +177,26 @@ async function readBanner(id: string): Promise<BannerRow | null> {
   return data;
 }
 
+// The featured product must be live (review of PR #40): the public slide reads it through the anon policy, which shows
+// published products only, so an unpublished one would leave the slide pointing at nothing.
+async function checkFeaturedProduct(productId: string | null): Promise<void> {
+  if (productId === null) return;
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('products_umkm')
+    .select('id')
+    .eq('id', productId)
+    .eq('status', 'published')
+    .maybeSingle();
+  if (error) throw error;
+  if (data === null) throw new AppError('VALIDATION', contentListsCopy.banners.productNotPublished);
+}
+
 export async function createHeroBanner(
   createdBy: string,
   values: HeroBannerValues,
 ): Promise<HeroBannerAdmin> {
+  await checkFeaturedProduct(values.productId);
   // Every column is named by columnsOf; the creator is the signed-in superadmin.
   const row = { created_by: createdBy, ...columnsOf(values, null) };
   const supabase = await createSupabaseServerClient();
@@ -140,6 +218,7 @@ export async function updateHeroBanner(
   values: UpdateHeroBannerValues,
 ): Promise<CleanedUp<HeroBannerAdmin>> {
   const current = rowOrNotFound(await readBanner(values.id));
+  await checkFeaturedProduct(values.productId);
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('hero_banners')
@@ -165,10 +244,11 @@ export async function removeHeroBanner(ctx: StaffContext, id: string): Promise<b
     .from('hero_banners')
     .delete()
     .eq('id', id)
-    .select('image_path, mobile_image_path')
+    .eq('is_active', false)
+    .select('id, image_path, mobile_image_path')
     .maybeSingle();
   if (error) throw error;
-  const removed = rowOrNotFound(data);
+  const removed = archivedRowOr(data, contentListsCopy.banners.notInactive);
   return removeFilesOrLog('hero_banner_files', id, () =>
     removeUnusedHeroPhotos(ctx, [removed.image_path, removed.mobile_image_path]),
   );
