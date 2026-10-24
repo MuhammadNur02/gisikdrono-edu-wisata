@@ -5,6 +5,7 @@ import {
   calendarDateToVisitDate,
   formatDateLong,
   formatDateShort,
+  formatDateTimeShort,
   formatInstantTimeRange,
   formatMonthLong,
   jakartaMonthKey,
@@ -38,6 +39,12 @@ describe('formatDateShort', () => {
   it('uses the abbreviated Indonesian month', () => {
     expect(formatDateShort('2026-10-18')).toBe('18 Okt 2026');
     expect(formatDateShort('2026-08-17')).toBe('17 Agt 2026');
+  });
+});
+
+describe('formatDateTimeShort', () => {
+  it('writes an instant as Semarang date and time', () => {
+    expect(formatDateTimeShort('2026-10-17T17:30:00Z')).toBe('18 Okt 2026, 00.30 WIB');
   });
 });
 
