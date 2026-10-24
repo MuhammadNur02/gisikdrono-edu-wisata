@@ -15,9 +15,10 @@ import {
 import { E2E_MIDTRANS_STUB_URL, settleThroughWebhook } from './helpers/midtrans';
 import { runSql, sqlText } from '../../scripts/local-stack';
 
-// Task P3.7.04 and P3.8.03 (docs/PRD.md FR-BOOK-10, FR-BOOK-12): a hold from the wizard, its /bayar page, Snap's page
-// from the Midtrans stand-in, a signed settlement through the webhook, and the booking paid. A paid booking keeps its
-// payment rows for good (payments are never deleted), so each run books sessions of its own label and leaves them.
+// Task P3.7.04, P3.8.03, P3.10.02 and P3.10.03 (docs/PRD.md FR-BOOK-10, FR-BOOK-12, FR-BOOK-13): a hold from the wizard, its
+// /bayar page, Snap's page from the Midtrans stand-in, a signed settlement through the webhook, the booking paid and its
+// ticket's QR. A paid booking keeps its payment rows for good (payments are never deleted), so each run books sessions
+// of its own label and leaves them.
 
 test.describe.configure({ timeout: 180_000 });
 
@@ -35,7 +36,7 @@ const paidRowSchema = z.array(
 test.beforeAll(async ({}, testInfo) => {
   await runSql(`delete from public.rate_limit_buckets
     where key like 'booking:%' or key like 'otp_%' or key like 'quote_preview:%' or key like 'session_availability:%'
-       or key like 'payment_start:%' or key like 'webhook_%'`);
+       or key like 'payment_start:%' or key like 'webhook_%' or key like 'qr_landing:%'`);
   const projectIndex = testInfo.project.name === 'desktop' ? 2 : 3;
   sessions = await createSessions(projectIndex, `Uji bayar e2e ${testInfo.project.name} ${RUN}`);
 });
@@ -97,4 +98,22 @@ test('pays a hold through Snap and the webhook, and the pay page says so', async
     path: testInfo.outputPath(`bayar-paid-${testInfo.project.name}.png`),
     fullPage: true,
   });
+
+  // Task P3.10.02: the settlement issued the leg's ticket, and its page draws the QR beside the ticket code.
+  await page.getByRole('link', { name: 'Lihat tiket' }).click();
+  await expect(page).toHaveURL(new RegExp(`/reservasi/${bookingCode}/tiket$`), STEP);
+  await expect(page.getByRole('img', { name: /^Kode QR tiket RW 05/ })).toBeVisible(STEP);
+  await expect(page.getByText(`${bookingCode}-05`, { exact: true })).toBeVisible();
+  if (!isDesktop) await expectNoSideScroll(page);
+  await page.screenshot({
+    path: testInfo.outputPath(`tiket-${testInfo.project.name}.png`),
+    fullPage: true,
+  });
+});
+
+test('says a forged ticket is not valid, and nothing more', async ({ page }) => {
+  // Task P3.10.03: a token of the right shape whose signature no key made.
+  await page.goto(`/v/GSK.k1.${'A'.repeat(22)}.${'B'.repeat(22)}`);
+  await expect(page.getByText('Tiket tidak valid', { exact: true })).toBeVisible(STEP);
+  await expect(page.getByText('Tiket valid', { exact: true })).toHaveCount(0);
 });
