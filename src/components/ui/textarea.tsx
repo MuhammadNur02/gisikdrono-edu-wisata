@@ -29,7 +29,7 @@ function Textarea({
     <div className="flex flex-col gap-1">
       <textarea
         data-slot="textarea"
-        className={cn(fieldBaseClassName, 'field-sizing-content max-h-40 min-h-20 py-2', className)}
+        className={cn(fieldBaseClassName, 'field-sizing-content max-h-60 min-h-28 py-3', className)}
         maxLength={maxLength}
         value={value}
         defaultValue={defaultValue}

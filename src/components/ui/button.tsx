@@ -6,26 +6,48 @@ import * as React from 'react';
 import { copy } from '@/lib/copy/id';
 import { cn } from '@/lib/utils/cn';
 
-// docs/StyleGuide.md §5.1: variants, sizes and the 16 px icon (20 px at lg and xl).
+// A filled button rises 1 px while pointed at (DESIGN-SPEC §2.1); outline and ghost only change their fill.
+const LIFT = 'motion-safe:hover:not-disabled:-translate-y-px';
+
+// docs/StyleGuide.md §5.1 (DESIGN-SPEC §2.1): radius 10, label 600, a trailing ArrowRight marked data-icon="trailing"
+// nudges forward on hover, a press scales to .98, the focus ring is the global 2 px one. Disabled: 40 % and
+// not-allowed, with no hover.
 const buttonVariants = cva(
-  "relative inline-flex shrink-0 items-center justify-center gap-2 rounded-xl font-medium whitespace-nowrap transition-colors outline-none disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "relative inline-flex shrink-0 items-center justify-center gap-2.5 rounded-md font-semibold whitespace-nowrap select-none press-scale nudge-trailing-icon disabled:cursor-not-allowed disabled:opacity-40 aria-disabled:pointer-events-none aria-disabled:opacity-40 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4.5",
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary-hover',
-        secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        outline: 'border border-border bg-background hover:bg-accent hover:text-accent-foreground',
-        ghost: 'hover:bg-accent hover:text-accent-foreground',
-        link: 'text-primary-text underline-offset-4 hover:underline',
-        destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
-        success: 'bg-success text-success-foreground hover:bg-success/90',
+        default: cn(
+          'bg-primary text-primary-foreground hover:not-disabled:bg-primary-hover active:not-disabled:bg-primary-pressed',
+          LIFT,
+        ),
+        secondary: cn(
+          'bg-secondary text-secondary-foreground hover:not-disabled:bg-secondary-hover active:not-disabled:bg-secondary-pressed',
+          LIFT,
+        ),
+        outline:
+          'border-control border-foreground bg-transparent text-foreground hover:not-disabled:bg-muted active:not-disabled:bg-border',
+        ghost: 'text-foreground hover:not-disabled:bg-muted active:not-disabled:bg-border',
+        link: 'text-primary-ink underline-offset-4 hover:underline',
+        destructive: cn(
+          'bg-destructive text-destructive-foreground hover:not-disabled:bg-destructive/90',
+          LIFT,
+        ),
+        success: cn('bg-success text-success-foreground hover:not-disabled:bg-success/90', LIFT),
+        whatsapp: cn(
+          'bg-whatsapp text-whatsapp-foreground hover:not-disabled:bg-whatsapp-hover',
+          LIFT,
+        ),
+        // On a photo or a dark band: a glassy white edge (DESIGN-SPEC §2.1 onPhoto).
+        onPhoto:
+          'border-control border-white/70 bg-white/8 text-white backdrop-blur-md hover:not-disabled:bg-white/16 active:not-disabled:bg-white/24',
       },
       size: {
-        sm: 'h-9 px-3 text-sm max-md:h-11',
-        default: 'h-10 px-4 text-sm max-md:min-h-11',
-        lg: "h-12 px-6 text-base [&_svg:not([class*='size-'])]:size-5",
-        xl: "h-14 px-8 text-base font-semibold [&_svg:not([class*='size-'])]:size-5",
-        icon: 'size-10 max-md:size-11',
+        sm: "h-9 px-3.5 text-label-sm max-md:min-h-11 [&_svg:not([class*='size-'])]:size-4",
+        default: 'h-11 px-5 text-label',
+        lg: 'h-13 px-6.5 text-label-lg',
+        xl: "h-15 px-8 text-label-xl [&_svg:not([class*='size-'])]:size-5",
+        icon: 'size-11',
       },
     },
     defaultVariants: { variant: 'default', size: 'default' },
@@ -62,6 +84,8 @@ function Button({
     return (
       <Slot.Root
         data-slot="button"
+        data-variant={variant}
+        data-size={size}
         className={cn(buttonVariants({ variant, size, className }))}
         {...props}
       >

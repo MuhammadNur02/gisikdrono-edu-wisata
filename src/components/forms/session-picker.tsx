@@ -40,7 +40,7 @@ function SessionCard({ session, pax }: { session: SessionOption; pax: number }) 
     <label
       htmlFor={itemId}
       className={cn(
-        'flex cursor-pointer gap-3 rounded-xl border border-border bg-card p-4 transition-colors has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-secondary',
+        'flex cursor-pointer gap-3 rounded-lg border border-border-strong bg-card px-4 py-3.5 transition-colors duration-200 ease-out-soft has-[[data-state=checked]]:border-2 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary-tint',
         isUnavailable && 'cursor-not-allowed opacity-60',
       )}
     >

@@ -35,7 +35,7 @@ export function KpiCard({ label, icon, value, hint, trend, chart }: KpiCardProps
           <p className="text-caption text-muted-foreground">{label}</p>
           <p className="text-h2 tabular-nums">{value}</p>
         </div>
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary text-secondary-foreground">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary-tint text-primary-ink">
           <Icon aria-hidden className="size-5" />
         </span>
       </div>
