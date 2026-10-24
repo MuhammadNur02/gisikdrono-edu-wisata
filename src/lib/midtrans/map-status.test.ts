@@ -30,11 +30,11 @@ describe('mapMidtransStatus', () => {
 });
 
 describe('needsStatusConfirmation', () => {
-  it('asks the Status API about everything but pending (docs/Security.md §3.3 step 10)', () => {
+  it('asks the Status API about every status, pending included (review of PR #39, L1)', () => {
     expect(needsStatusConfirmation('settled')).toBe(true);
     expect(needsStatusConfirmation('expired')).toBe(true);
     expect(needsStatusConfirmation('denied')).toBe(true);
-    expect(needsStatusConfirmation('pending')).toBe(false);
+    expect(needsStatusConfirmation('pending')).toBe(true);
     expect(needsStatusConfirmation(null)).toBe(false);
   });
 });

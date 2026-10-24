@@ -130,12 +130,27 @@ describe('getTransactionStatus', () => {
   it('takes a refused key or a server error as no answer', async () => {
     fetchMock.mockResolvedValue(answer(401, { status_code: '401' }));
     await expect(getTransactionStatus('GSK-7F3K9Q2M-01')).rejects.toMatchObject({
+      reason: 'unreachable',
+    });
+    fetchMock.mockResolvedValue(answer(403, { status_code: '403' }));
+    await expect(getTransactionStatus('GSK-7F3K9Q2M-01')).rejects.toMatchObject({
       reason: 'refused',
     });
     fetchMock.mockResolvedValue(new Response('<html>busy</html>', { status: 502 }));
     await expect(getTransactionStatus('GSK-7F3K9Q2M-01')).rejects.toMatchObject({
       reason: 'malformed',
     });
+  });
+});
+
+describe('getTransactionStatus on HTTP 200', () => {
+  it('takes Midtrans’ own failure in the body as no answer, so the webhook answers 503 (review of PR #39, L2)', async () => {
+    for (const statusCode of ['500', '503', '401']) {
+      fetchMock.mockResolvedValue(answer(200, { status_code: statusCode }));
+      await expect(getTransactionStatus('GSK-7F3K9Q2M-01')).rejects.toMatchObject({
+        reason: 'unreachable',
+      });
+    }
   });
 });
 

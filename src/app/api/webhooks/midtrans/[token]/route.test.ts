@@ -135,6 +135,13 @@ describe('POST /api/webhooks/midtrans/[token]', () => {
     expect(processMidtransNotification).not.toHaveBeenCalled();
   });
 
+  it('refuses a notification that names no merchant (review of PR #39, L3)', async () => {
+    const unnamed = Object.fromEntries(
+      Object.entries(NOTIFICATION).filter(([key]) => key !== 'merchant_id'),
+    );
+    expect((await post(JSON.stringify(unnamed))).status).toBe(400);
+  });
+
   it('refuses another merchant with 403 (step 6, docs/PRD.md §10.1)', async () => {
     const response = await post(JSON.stringify({ ...NOTIFICATION, merchant_id: 'G999' }));
     expect(response.status).toBe(403);

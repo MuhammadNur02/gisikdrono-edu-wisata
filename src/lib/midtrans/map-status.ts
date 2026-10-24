@@ -35,8 +35,9 @@ export function mapMidtransStatus(
   return STATUS_BY_TRANSACTION[transactionStatus] ?? null;
 }
 
-// docs/Security.md §3.3 step 10: every status that moves money or closes an attempt is asked of the Status API
-// before it is applied; only pending, which changes nothing but the instructions shown, is taken as it came.
+// docs/Security.md §3.3 step 10: every status is asked of the Status API before it is applied, pending included,
+// since a signature covers the order, status code and amount only, and the Virtual Account a pay page shows must be
+// Midtrans' own (review of PR #39, L1). A status this site never asks for is stored and ignored without asking.
 export function needsStatusConfirmation(status: PaymentStatus | null): boolean {
-  return status !== null && status !== 'pending';
+  return status !== null;
 }

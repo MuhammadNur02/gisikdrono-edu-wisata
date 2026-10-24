@@ -22,6 +22,13 @@ export const REDACTED_PATHS = [
   '*.signature_key',
   'snap_token',
   '*.snap_token',
+  // A Snap page's address opens the payment itself (review of PR #39, L4).
+  'redirect_url',
+  '*.redirect_url',
+  'snap_redirect_url',
+  '*.snap_redirect_url',
+  'redirectUrl',
+  '*.redirectUrl',
   // An outbox row's params hold the OTP code until it is sent (Task P3.2.01), and names besides.
   'params',
   '*.params',

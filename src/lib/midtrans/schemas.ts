@@ -21,7 +21,8 @@ export const midtransNotificationSchema = z.looseObject({
   payment_type: shortText,
   currency: shortText,
   fraud_status: shortText.optional(),
-  merchant_id: shortText.optional(),
+  // Every Midtrans notification names its merchant; one that names none is refused (review of PR #39, L3).
+  merchant_id: shortText,
 });
 
 export type MidtransNotification = z.infer<typeof midtransNotificationSchema>;

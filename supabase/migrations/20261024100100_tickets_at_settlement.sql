@@ -82,7 +82,7 @@ $$;
 
 -- ===== The ledger at settlement, refused into a review =====
 
--- Replaces the 20261024090100 version: the same reasons, and the ledger's own.
+-- Replaces the 20261024095000 version: the same reasons, and the ledger's own.
 create or replace function internal.flag_payment_review(p_booking public.bookings, p_payment public.payments,
   p_reason text, p_severity public.alert_severity, p_actor_type text) returns void
   language plpgsql
@@ -108,7 +108,7 @@ begin
   insert into public.booking_events (booking_id, from_status, to_status, actor_type, reason, payload)
   values (p_booking.id, p_booking.status, p_booking.status, p_actor_type, lower(p_reason),
           jsonb_build_object('order_id', p_payment.order_id));
-  perform internal.notify_staff(p_booking, 'admin_booking_needs_review', p_reason);
+  perform internal.notify_staff(p_booking, 'admin_booking_needs_review', p_reason, p_payment.order_id);
 end;
 $$;
 
@@ -129,7 +129,7 @@ $$;
 
 -- ===== internal.settle_payment, with its ledger and tickets =====
 
--- Replaces the 20261024090100 version: the call points of Tasks P3.9.01 and P3.10.02 are filled. Everything else is
+-- Replaces the 20261024095000 version: the call points of Tasks P3.9.01 and P3.10.02 are filled. Everything else is
 -- unchanged.
 create or replace function internal.settle_payment(p_booking public.bookings, p_payment public.payments,
   p_answer jsonb, p_actor_type text) returns jsonb
@@ -142,6 +142,10 @@ declare
   closed_orders text[];
   has_seats boolean := true;
 begin
+  if p_payment.gross_amount <> p_booking.total_amount then
+    return internal.hold_for_review(p_booking, p_payment, 'AMOUNT_MISMATCH', 'webhook_amount_mismatch', 'high',
+                                    p_actor_type);
+  end if;
   if exists (select 1 from public.payments p
              where p.booking_id = p_booking.id and p.status = 'settled' and p.id <> p_payment.id) then
     return internal.record_duplicate_settlement(p_booking, p_payment, p_answer, p_actor_type);
@@ -220,7 +224,7 @@ begin
 end;
 $$;
 
--- Replaces the 20261024090100 version: a settled payment seen settled again completes its booking, and a chargeback
+-- Replaces the 20261024095000 version: a settled payment seen settled again completes its booking, and a chargeback
 -- suspends the tickets of a visit still ahead. Everything else is unchanged.
 create or replace function internal.apply_payment_status(p_booking public.bookings, p_payment public.payments,
   p_target public.payment_status, p_answer jsonb, p_actor_type text) returns jsonb
@@ -245,6 +249,11 @@ begin
   elsif p_target in ('refunded', 'partially_refunded') then
     return internal.note_refund_seen(p_payment, p_target);
   elsif p_target = 'disputed' then
+    if p_payment.status in ('duplicate', 'refunded') then
+      perform internal.flag_payment_review(p_booking, p_payment, 'CHARGEBACK', 'critical', p_actor_type);
+      return jsonb_build_object('result', 'needs_review', 'processing_result', 'chargeback_on_' || p_payment.status,
+                                'payment_status', p_payment.status, 'booking_status', p_booking.status);
+    end if;
     if p_payment.status not in ('settled', 'partially_refunded') then
       return ignored;
     end if;

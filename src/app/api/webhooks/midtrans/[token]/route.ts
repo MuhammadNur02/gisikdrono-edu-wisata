@@ -109,10 +109,7 @@ async function refusalOf(
     return { refusal: await refuse(request, rejection, log) };
   }
   // docs/PRD.md §10.1 answers a foreign merchant 403; docs/Security.md §3.3 said 200, and the PRD decides (§1.2).
-  if (
-    notification.merchant_id !== undefined &&
-    notification.merchant_id !== serverEnv.MIDTRANS_MERCHANT_ID
-  ) {
+  if (notification.merchant_id !== serverEnv.MIDTRANS_MERCHANT_ID) {
     log.warn('webhook_signature_invalid', {
       orderId: notification.order_id,
       reason: 'merchant_mismatch',
