@@ -16,7 +16,7 @@ import type { ActionResult } from '@/types/action-result';
 // browser client (CLAUDE.md §5.1). Read-only, so there is no input to validate and nothing to revalidate. An RW
 // officer counts their own RW whatever the cookie says; the superadmin, the RW of their switcher; RLS on
 // v_attendance_today holds the same line.
-export async function readCheckInsTodayAction(): Promise<ActionResult<number>> {
+export async function readCheckInsTodayAction(): Promise<ActionResult<number | null>> {
   const guard = await requireRole('superadmin', 'admin_rw');
   if (!guard.ok) return guard;
   if (!guard.ctx.isAal2) return fail('FORBIDDEN');

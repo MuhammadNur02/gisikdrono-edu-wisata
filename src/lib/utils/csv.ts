@@ -1,7 +1,8 @@
-// docs/Security.md §7.5 (Task P4.6.02): the CSV of a data export. UTF-8 with a byte-order mark, so Excel reads
-// Indonesian text in the right encoding; RFC 4180 quoting; CRLF line ends; the watermark as the last line. Pure.
+// docs/Security.md §7.5: the CSV of a data export (Task P4.6.02, partial: the export route that calls it waits for
+// rpc_create_export). UTF-8 with a byte-order mark, so Excel reads Indonesian text in the right encoding; RFC 4180
+// quoting; CRLF line ends; the watermark as the last line. Pure.
 
-export const UTF8_BOM = '﻿';
+export const UTF8_BOM = '\uFEFF';
 const LINE_END = '\r\n';
 const SEPARATOR = ',';
 const QUOTE = '"';
@@ -17,7 +18,7 @@ export interface CsvColumn<Row> {
   value: (row: Row) => CsvCell;
 }
 
-// Text that a spreadsheet would read as a formula, made inert. The XLSX writer uses it for its string cells too.
+// Text that a spreadsheet would read as a formula, made inert.
 export function neutralizeFormula(text: string): string {
   return FORMULA_START.test(text) ? `'${text}` : text;
 }

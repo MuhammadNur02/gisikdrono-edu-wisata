@@ -2,6 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { TrendChip } from '@/components/admin/kpi/trend-chip';
+import { copy } from '@/lib/copy/id';
 import type { Trend } from '@/lib/utils/kpi';
 
 export interface KpiCardProps {
@@ -13,6 +14,15 @@ export interface KpiCardProps {
   trend?: Trend;
   // A Sparkline of the last 30 days, when the figure has one.
   chart?: ReactNode;
+}
+
+// A figure the overview could not read whole: said in words, never a partial number (review of PR #45, H1).
+export function KpiUnavailable() {
+  return (
+    <span className="text-body font-medium text-muted-foreground">
+      {copy.dashboard.overview.unavailable}
+    </span>
+  );
 }
 
 // docs/StyleGuide.md §6.3: label, figure, trend chip and an icon tile top-right; a sparkline under the figure.

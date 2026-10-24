@@ -13,6 +13,7 @@ import {
   sumOf,
   sumWithin,
   trendBetween,
+  visitDateAfter,
 } from './kpi';
 
 // 2026-11-01 00:30 in Semarang is still 31 October in UTC.
@@ -139,5 +140,12 @@ describe('Semarang days of instants', () => {
   it('steps to the next day across a month and a year', () => {
     expect(dayAfter('2026-10-31')).toBe('2026-11-01');
     expect(dayAfter('2026-12-31')).toBe('2027-01-01');
+  });
+});
+
+describe('visitDateAfter', () => {
+  it('counts Semarang calendar days across a month', () => {
+    expect(visitDateAfter('2026-10-24', 30)).toBe('2026-11-23');
+    expect(visitDateAfter('2026-10-24', 0)).toBe('2026-10-24');
   });
 });

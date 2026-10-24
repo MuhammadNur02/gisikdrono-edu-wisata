@@ -1,23 +1,23 @@
 import { BadgeCheck, Banknote, Star, Users } from 'lucide-react';
 
 import { ChartCard } from '@/components/admin/charts/chart-card';
-import {
-  LazyCheckinsBar,
-  LazyRevenueArea,
-  LazySparkline,
-} from '@/components/admin/charts/lazy-charts';
-import { KpiCard } from '@/components/admin/kpi/kpi-card';
+import { CheckInsCard } from '@/components/admin/charts/checkins-card';
+import { LazyRevenueArea, LazySparkline } from '@/components/admin/charts/lazy-charts';
+import { KpiCard, KpiUnavailable } from '@/components/admin/kpi/kpi-card';
 import { SecurityStrip } from '@/components/admin/kpi/security-strip';
 import { CountUp } from '@/components/marketing/count-up';
 import { copy } from '@/lib/copy/id';
 import { formatIDR } from '@/lib/utils/currency';
 import { hasAnyValue, sumOf, type DailyValue } from '@/lib/utils/kpi';
 import { formatRating } from '@/lib/utils/ratings';
-import type { SuperadminOverview as Overview } from '@/types/dashboard-stats';
+import type {
+  MonthlyFigure,
+  SuperadminOverview as Overview,
+  RatingFigure,
+} from '@/types/dashboard-stats';
 
 const text = copy.dashboard.overview;
 const EMPTY_FIGURE = '—';
-const numberFormat = new Intl.NumberFormat('id-ID');
 const RUPIAH_PREFIX = 'Rp ';
 
 // The amount counts up as digits; a screen reader hears the whole rupiah amount once.
@@ -38,81 +38,92 @@ function sparklineOf(series: DailyValue[]) {
   return hasAnyValue(series) ? <LazySparkline series={series} /> : null;
 }
 
+function RevenueCard({ revenue }: { revenue: MonthlyFigure | null }) {
+  return (
+    <KpiCard
+      label={text.superadmin.revenue}
+      icon={Banknote}
+      value={revenue ? <RupiahFigure amount={revenue.value} /> : <KpiUnavailable />}
+      hint={revenue ? text.superadmin.revenueHint : text.unavailableHint}
+      trend={revenue?.trend}
+      chart={revenue ? sparklineOf(revenue.series) : null}
+    />
+  );
+}
+
+function CheckedInCard({ figure }: { figure: MonthlyFigure | null }) {
+  return (
+    <KpiCard
+      label={text.superadmin.checkedIn}
+      icon={Users}
+      value={figure ? <CountUp value={figure.value} onMount /> : <KpiUnavailable />}
+      hint={figure ? text.superadmin.checkedInHint : text.unavailableHint}
+      trend={figure?.trend}
+      chart={figure ? sparklineOf(figure.series) : null}
+    />
+  );
+}
+
+function RatingCard({ rating }: { rating: RatingFigure | null }) {
+  const figure =
+    rating === null ? (
+      <KpiUnavailable />
+    ) : rating.average === null ? (
+      EMPTY_FIGURE
+    ) : (
+      formatRating(rating.average)
+    );
+  return (
+    <KpiCard
+      label={text.superadmin.rating}
+      icon={Star}
+      value={figure}
+      hint={rating ? text.superadmin.ratingHint(rating.count) : text.unavailableHint}
+    />
+  );
+}
+
 function KpiGrid({ overview }: { overview: Overview }) {
-  const { revenue, paidBookings, checkedInVisitors, rating } = overview;
   return (
     <section
       aria-label={text.kpiLabel}
       className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
     >
-      <KpiCard
-        label={text.superadmin.revenue}
-        icon={Banknote}
-        value={<RupiahFigure amount={revenue.value} />}
-        hint={text.superadmin.revenueHint}
-        trend={revenue.trend}
-        chart={sparklineOf(revenue.series)}
-      />
+      <RevenueCard revenue={overview.revenue} />
       <KpiCard
         label={text.superadmin.paidBookings}
         icon={BadgeCheck}
-        value={<CountUp value={paidBookings.value} onMount />}
+        value={<CountUp value={overview.paidBookings.value} onMount />}
         hint={text.superadmin.paidBookingsHint}
-        trend={paidBookings.trend}
+        trend={overview.paidBookings.trend}
       />
-      <KpiCard
-        label={text.superadmin.checkedIn}
-        icon={Users}
-        value={<CountUp value={checkedInVisitors.value} onMount />}
-        hint={text.superadmin.checkedInHint}
-        trend={checkedInVisitors.trend}
-        chart={sparklineOf(checkedInVisitors.series)}
-      />
-      <KpiCard
-        label={text.superadmin.rating}
-        icon={Star}
-        value={rating.average === null ? EMPTY_FIGURE : formatRating(rating.average)}
-        hint={text.superadmin.ratingHint(rating.count)}
-      />
+      <CheckedInCard figure={overview.checkedInVisitors} />
+      <RatingCard rating={overview.rating} />
     </section>
   );
 }
 
-function Charts({ overview }: { overview: Overview }) {
-  const revenue = overview.revenue.series;
-  const checkIns = overview.checkedInVisitors.series;
-  const revenueTotal = formatIDR(sumOf(revenue, (point) => point.value));
-  const checkInTotal = numberFormat.format(sumOf(checkIns, (point) => point.value));
+function RevenueChart({ series }: { series: DailyValue[] | null }) {
+  const chart = text.revenueChart;
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      <ChartCard
-        title={text.revenueChart.title}
-        description={text.revenueChart.description}
-        hasData={hasAnyValue(revenue)}
-        empty={{ title: text.revenueChart.empty, description: text.revenueChart.emptyDescription }}
-      >
+    <ChartCard
+      title={chart.title}
+      description={chart.description}
+      hasData={series !== null && hasAnyValue(series)}
+      empty={
+        series === null
+          ? text.chartUnavailable
+          : { title: chart.empty, description: chart.emptyDescription }
+      }
+    >
+      {series ? (
         <LazyRevenueArea
-          series={revenue}
-          seriesName={text.revenueChart.series}
-          summary={text.chartSummary(text.revenueChart.title, revenueTotal)}
+          series={series}
+          seriesName={chart.series}
+          summary={text.chartSummary(chart.title, formatIDR(sumOf(series, (point) => point.value)))}
         />
-      </ChartCard>
-      <ChartCard
-        title={text.checkinsChart.title}
-        description={text.checkinsChart.description}
-        hasData={hasAnyValue(checkIns)}
-        empty={{
-          title: text.checkinsChart.empty,
-          description: text.checkinsChart.emptyDescription,
-        }}
-      >
-        <LazyCheckinsBar
-          series={checkIns}
-          seriesName={text.checkinsChart.series}
-          summary={text.chartSummary(text.checkinsChart.title, checkInTotal)}
-        />
-      </ChartCard>
-    </div>
+      ) : null}
+    </ChartCard>
   );
 }
 
@@ -121,7 +132,10 @@ export function SuperadminOverview({ overview }: { overview: Overview }) {
   return (
     <div className="flex flex-col gap-6">
       <KpiGrid overview={overview} />
-      <Charts overview={overview} />
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <RevenueChart series={overview.revenue?.series ?? null} />
+        <CheckInsCard series={overview.checkedInVisitors?.series ?? null} />
+      </div>
       <SecurityStrip
         alerts={overview.openAlerts}
         openCount={overview.openAlertCount}

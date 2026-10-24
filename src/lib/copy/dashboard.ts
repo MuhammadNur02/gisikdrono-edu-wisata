@@ -56,6 +56,11 @@ export const dashboardCopy = {
     trendNew: 'Baru',
     trendFlat: 'Tetap',
     unavailable: 'Belum tersedia',
+    unavailableHint: 'Datanya terlalu banyak untuk dihitung di sini; menunggu ringkasan statistik.',
+    chartUnavailable: {
+      title: 'Belum tersedia',
+      description: 'Datanya terlalu banyak untuk digambar di sini; menunggu ringkasan statistik.',
+    },
     superadmin: {
       revenue: 'Pendapatan bulan ini',
       revenueHint: 'Bersih dari buku besar bagi hasil.',

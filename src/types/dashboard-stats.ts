@@ -1,7 +1,8 @@
 import type { EnumValue } from '@/db/enums';
 import type { DailyValue, Trend } from '@/lib/utils/kpi';
 
-// The figures of /dashboard (Task P4.2.03). Counts and ledger sums only: no name, contact or booking code.
+// The figures of /dashboard (Task P4.2.03). Counts and ledger sums only: no name, contact or booking code. A null
+// figure could not be read whole (collectAllRows) and shows as "Belum tersedia", never as a partial number.
 
 // A figure of this month with its trend against the same days of last month, and its last 30 days.
 export interface MonthlyFigure {
@@ -25,10 +26,10 @@ export interface OpenSecurityAlert {
 }
 
 export interface SuperadminOverview {
-  revenue: MonthlyFigure;
+  revenue: MonthlyFigure | null;
   paidBookings: { value: number; trend: Trend };
-  checkedInVisitors: MonthlyFigure;
-  rating: RatingFigure;
+  checkedInVisitors: MonthlyFigure | null;
+  rating: RatingFigure | null;
   openAlerts: OpenSecurityAlert[];
   openAlertCount: number;
   piiRevealsToday: number;
@@ -46,9 +47,9 @@ export interface TodaySession {
 }
 
 export interface RwOverview {
-  quota: { reservedPax: number; capacity: number; percent: number | null };
+  quota: { reservedPax: number; capacity: number; percent: number | null } | null;
   upcomingBookings: number;
-  checkInsToday: number;
-  checkIns: DailyValue[];
-  todaySessions: TodaySession[];
+  checkInsToday: number | null;
+  checkIns: DailyValue[] | null;
+  todaySessions: TodaySession[] | null;
 }

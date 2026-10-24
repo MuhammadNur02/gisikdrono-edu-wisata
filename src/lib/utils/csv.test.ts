@@ -51,7 +51,9 @@ describe('toCsv', () => {
   it('starts with the BOM, ends every line with CRLF and closes with the watermark', () => {
     const watermark = copy.dashboard.exports.watermark('Siti', '24 Okt 2026, 09.30 WIB');
     const csv = toCsv(columns, [{ code: 'GSK-7F3K9Q2M', pax: 40 }], watermark);
-    expect(csv.startsWith(UTF8_BOM)).toBe(true);
+    // U+FEFF, written as an escape in the source.
+    expect(csv.charCodeAt(0)).toBe(0xfeff);
+    expect(UTF8_BOM).toHaveLength(1);
     expect(csv.slice(UTF8_BOM.length).split('\r\n')).toEqual([
       'Kode,Pax',
       'GSK-7F3K9Q2M,40',

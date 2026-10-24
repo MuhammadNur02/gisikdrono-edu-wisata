@@ -13,7 +13,7 @@ import { visitDateSchema } from '@/lib/validations/session';
 
 // docs/Security.md §7.5 (Task P4.6.02/03): what a staff member asks to export. Kind and format, a period of at most
 // 12 months and a mandatory purpose; who may export which kind is decided by the guards and rpc_create_export, never
-// by this schema. Shared by the export form and GET /api/export/[kind].
+// by this schema. Partial P4.6 (Task.md): the form and route that will share it wait for rpc_create_export.
 
 const messages = copy.dashboard.exports.validation;
 

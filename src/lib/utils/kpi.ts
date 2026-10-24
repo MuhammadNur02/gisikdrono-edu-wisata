@@ -124,6 +124,11 @@ export function startOfJakartaDay(visitDate: string): string {
   return new Date(midnightInJakarta(visitDate).getTime()).toISOString();
 }
 
+// The visit date `days` Semarang days after another.
+export function visitDateAfter(visitDate: string, days: number): string {
+  return format(addDays(midnightInJakarta(visitDate), days), VISIT_DATE_FORMAT);
+}
+
 export function dayAfter(visitDate: string): string {
-  return format(addDays(midnightInJakarta(visitDate), 1), VISIT_DATE_FORMAT);
+  return visitDateAfter(visitDate, 1);
 }
