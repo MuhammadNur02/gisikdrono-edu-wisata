@@ -46,6 +46,7 @@ export const bookingPaymentCopy = {
   } as Record<string, string>,
   otherBank: 'bank pilihan Anda',
   paid: 'Pembayaran sudah kami terima. Tiket dan bukti pembayaran dikirim ke WhatsApp dan email Anda.',
+  seeTickets: 'Lihat tiket',
   underReview:
     'Pembayaran pesanan ini sedang diperiksa petugas kelurahan. Kami akan menghubungi Anda lewat WhatsApp.',
   expired:

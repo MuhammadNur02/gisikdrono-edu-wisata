@@ -4287,7 +4287,12 @@ export type Database = {
         Returns: undefined
       }
       svc_apply_payment_event: {
-        Args: { p_confirmed?: Json; p_event_id: number; p_source: string }
+        Args: {
+          p_confirmed?: Json
+          p_event_id: number
+          p_key_id: string
+          p_source: string
+        }
         Returns: Json
       }
       svc_attach_snap_token: {
@@ -4437,6 +4442,14 @@ export type Database = {
           p_metadata?: Json
         }
         Returns: undefined
+      }
+      svc_payments_housekeeping: { Args: never; Returns: Json }
+      svc_payments_to_poll: {
+        Args: { p_limit: number }
+        Returns: {
+          order_id: string
+          reason: string
+        }[]
       }
       svc_placeholder_site_settings: { Args: never; Returns: string[] }
       svc_purgeable_files: {
