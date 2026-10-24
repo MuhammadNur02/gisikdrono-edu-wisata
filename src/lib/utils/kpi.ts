@@ -1,5 +1,5 @@
 import { TZDate } from '@date-fns/tz';
-import { addDays, format, startOfMonth, subMonths } from 'date-fns';
+import { addDays, format, min, startOfMonth, subMonths } from 'date-fns';
 
 import { APP_TZ } from '@/config/site';
 
@@ -58,18 +58,29 @@ function jakartaNow(now: Date): TZDate {
   return new TZDate(now.getTime(), APP_TZ);
 }
 
-// This Semarang month up to today, and the whole month before it.
+// This Semarang month up to today, and the same days of the month before (1–15 October against 1–15
+// November), so a trend early in the month is not measured against a whole month. A day the shorter month
+// lacks ends the previous period at its last day (31 March against 1–28 February).
 export function monthRanges(now: Date = new Date()): { current: DateRange; previous: DateRange } {
   const today = jakartaNow(now);
   const monthStart = startOfMonth(today);
   const previousStart = subMonths(monthStart, 1);
+  const previousEnd = min([addDays(previousStart, today.getDate() - 1), addDays(monthStart, -1)]);
   return {
     current: { from: format(monthStart, VISIT_DATE_FORMAT), to: format(today, VISIT_DATE_FORMAT) },
     previous: {
       from: format(previousStart, VISIT_DATE_FORMAT),
-      to: format(addDays(monthStart, -1), VISIT_DATE_FORMAT),
+      to: format(previousEnd, VISIT_DATE_FORMAT),
     },
   };
+}
+
+// The total of the days of a range, both ends included.
+export function sumWithin(rows: readonly DailyValue[], range: DateRange): number {
+  return sumOf(
+    rows.filter((row) => row.day >= range.from && row.day <= range.to),
+    (row) => row.value,
+  );
 }
 
 // The last `days` Semarang days, today included, oldest first.
@@ -99,10 +110,20 @@ export function jakartaDayOf(instant: string): string {
   return format(jakartaNow(new Date(instant)), VISIT_DATE_FORMAT);
 }
 
+function midnightInJakarta(visitDate: string): TZDate {
+  const [year = Number.NaN, month = Number.NaN, day = Number.NaN] = visitDate
+    .split('-')
+    .map(Number);
+  const midnight = new TZDate(year, month - 1, day, APP_TZ);
+  if (Number.isNaN(midnight.getTime())) throw new RangeError(`Not a visit date: ${visitDate}`);
+  return midnight;
+}
+
 // The UTC instant a Semarang day starts, for filtering timestamptz columns by a visit date.
 export function startOfJakartaDay(visitDate: string): string {
-  const [year, month, day] = visitDate.split('-').map(Number);
-  return new Date(
-    new TZDate(year ?? 0, (month ?? 1) - 1, day ?? 1, APP_TZ).getTime(),
-  ).toISOString();
+  return new Date(midnightInJakarta(visitDate).getTime()).toISOString();
+}
+
+export function dayAfter(visitDate: string): string {
+  return format(addDays(midnightInJakarta(visitDate), 1), VISIT_DATE_FORMAT);
 }

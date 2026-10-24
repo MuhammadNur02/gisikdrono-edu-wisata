@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   averageOf,
+  dayAfter,
   fillDailySeries,
   hasAnyValue,
   jakartaDayOf,
@@ -10,6 +11,7 @@ import {
   quotaUsagePercent,
   startOfJakartaDay,
   sumOf,
+  sumWithin,
   trendBetween,
 } from './kpi';
 
@@ -66,18 +68,37 @@ describe('averageOf', () => {
 });
 
 describe('monthRanges', () => {
-  it('reads the month in Semarang time', () => {
+  it('reads the month in Semarang time and compares the same days', () => {
     expect(monthRanges(EARLY_NOVEMBER)).toEqual({
       current: { from: '2026-11-01', to: '2026-11-01' },
-      previous: { from: '2026-10-01', to: '2026-10-31' },
+      previous: { from: '2026-10-01', to: '2026-10-01' },
     });
   });
 
   it('crosses a year', () => {
     expect(monthRanges(new Date('2027-01-15T03:00:00Z')).previous).toEqual({
       from: '2026-12-01',
-      to: '2026-12-31',
+      to: '2026-12-15',
     });
+  });
+
+  it('ends the previous period at the last day of a shorter month', () => {
+    expect(monthRanges(new Date('2027-03-31T03:00:00Z')).previous).toEqual({
+      from: '2027-02-01',
+      to: '2027-02-28',
+    });
+  });
+});
+
+describe('sumWithin', () => {
+  it('adds the days of the range, both ends included', () => {
+    const rows = [
+      { day: '2026-10-31', value: 1 },
+      { day: '2026-11-01', value: 2 },
+      { day: '2026-11-15', value: 4 },
+      { day: '2026-11-16', value: 8 },
+    ];
+    expect(sumWithin(rows, { from: '2026-11-01', to: '2026-11-15' })).toBe(6);
   });
 });
 
@@ -109,5 +130,14 @@ describe('Semarang days of instants', () => {
 
   it('starts a Semarang day at 17:00 UTC the evening before', () => {
     expect(startOfJakartaDay('2026-11-01')).toBe('2026-10-31T17:00:00.000Z');
+  });
+
+  it('refuses what is not a visit date', () => {
+    expect(() => startOfJakartaDay('besok')).toThrow(RangeError);
+  });
+
+  it('steps to the next day across a month and a year', () => {
+    expect(dayAfter('2026-10-31')).toBe('2026-11-01');
+    expect(dayAfter('2026-12-31')).toBe('2027-01-01');
   });
 });
