@@ -1,10 +1,15 @@
 import 'server-only';
 
+import { BOOKLET_DEFAULT_SORT, BOOKLET_SORT_COLUMNS } from '@/config/cms';
+import type { RwId } from '@/config/rw';
+import { DB_ENUMS } from '@/db/enums';
 import type { Tables } from '@/db/types';
 import { copy } from '@/lib/copy/id';
 import { AppError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { bookletCoverPath, bookletPagesFolder, bookletPdfPath } from '@/lib/uploads/paths';
+import { allowedValue, planContentList } from '@/lib/utils/content-list';
+import type { ListQuery } from '@/lib/utils/list-query';
 import type { SaveBookletValues } from '@/lib/validations/booklet';
 import type { StaffContext } from '@/server/auth/guards';
 import { rowOrNotFound, slugConflictOr } from '@/server/services/content-errors';
@@ -12,6 +17,7 @@ import { removeFilesOrLog } from '@/server/services/content-files';
 import { readPublishedBookletFiles, removeBookletFiles } from '@/server/services/upload-service';
 import type { BookletAdmin } from '@/types/cms';
 import type { ContentOwner } from '@/types/content';
+import type { ListResult } from '@/types/data-table';
 
 // Booklets through the session client, so the booklets policies (created_by = auth.uid() on insert, delete for the
 // superadmin alone) and the AAL2 policy decide (0005). Every write names the owner as well as the id. Storage is read
@@ -71,14 +77,39 @@ function publishedAtFor(
   return new Date().toISOString();
 }
 
-export async function listBookletsForStaff(owner: ContentOwner | 'all'): Promise<BookletAdmin[]> {
+// One page of booklets from the URL's query (Task P4.3.03): an RW admin's own RW, the superadmin's chosen one or every
+// row RLS shows them (effectiveRw), searched by title, `?category=` naming the booklet kind.
+export async function listBookletsForStaff(
+  query: ListQuery,
+  rw: RwId | null,
+): Promise<ListResult<BookletAdmin>> {
+  const plan = planContentList(query, rw, {
+    columns: BOOKLET_SORT_COLUMNS,
+    fallback: BOOKLET_DEFAULT_SORT,
+  });
   const supabase = await createSupabaseServerClient();
-  let query = supabase.from('booklets').select(COLUMNS);
-  if (owner === null) query = query.is('rw_id', null);
-  else if (owner !== 'all') query = query.eq('rw_id', owner);
-  const { data, error } = await query.order('created_at', { ascending: false });
+  let request = supabase.from('booklets').select(COLUMNS, { count: 'exact' });
+  if (plan.pattern !== null) request = request.ilike('title', plan.pattern);
+  if (plan.statuses.length > 0) request = request.in('status', plan.statuses);
+  const kind = allowedValue(query.category, DB_ENUMS.booklet_kind);
+  if (kind !== null) request = request.eq('kind', kind);
+  if (plan.rw !== null) request = request.eq('rw_id', plan.rw);
+  if (plan.order !== null) {
+    request = request.order(plan.order.column, { ascending: plan.order.ascending });
+  }
+  const { data, error, count } = await request.order('id').range(plan.from, plan.to);
   if (error) throw error;
-  return data.map(toBookletAdmin);
+  return { rows: data.map(toBookletAdmin), total: count ?? data.length };
+}
+
+// Archive by status (Task P4.3.03): off /e-booklet, kept here with its PDF and pages.
+export async function archiveBooklet(owner: ContentOwner, id: string): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  let query = supabase.from('booklets').update({ status: 'archived' }).eq('id', id);
+  query = owner === null ? query.is('rw_id', null) : query.eq('rw_id', owner);
+  const { data, error } = await query.select('id').maybeSingle();
+  if (error) throw error;
+  rowOrNotFound(data);
 }
 
 async function readBookletRow(id: string): Promise<BookletRow | null> {

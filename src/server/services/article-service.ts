@@ -1,7 +1,8 @@
 import 'server-only';
 
-import type { ArticleIntent } from '@/config/cms';
-import type { EnumValue } from '@/db/enums';
+import { ARTICLE_DEFAULT_SORT, ARTICLE_SORT_COLUMNS, type ArticleIntent } from '@/config/cms';
+import type { RwId } from '@/config/rw';
+import { DB_ENUMS, type EnumValue } from '@/db/enums';
 import type { Tables } from '@/db/types';
 import { copy } from '@/lib/copy/id';
 import { AppError } from '@/lib/errors';
@@ -9,6 +10,8 @@ import { sanitiseRichText, type RichTextBlock } from '@/lib/rich-text/document';
 import { estimateReadingMinutes } from '@/lib/rich-text/reading-time';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isPublishedImagePathFor } from '@/lib/uploads/paths';
+import { allowedValue, planContentList } from '@/lib/utils/content-list';
+import type { ListQuery } from '@/lib/utils/list-query';
 import type { SaveArticleValues } from '@/lib/validations/article';
 import type { StaffContext } from '@/server/auth/guards';
 import { rowOrNotFound, slugConflictOr } from '@/server/services/content-errors';
@@ -16,6 +19,7 @@ import { removeFilesOrLog } from '@/server/services/content-files';
 import { keepRowPhotos, removeRowPhotos } from '@/server/services/upload-service';
 import type { ArticleAdmin, ArticleListItem, CleanedUp } from '@/types/cms';
 import type { ContentOwner } from '@/types/content';
+import type { ListResult } from '@/types/data-table';
 
 // Articles through the session client, so the articles policies (author_id = auth.uid() on insert, delete for the
 // superadmin alone), articles_moderation_guard (only the superadmin publishes; an RW admin's edit of a live article
@@ -127,16 +131,29 @@ function contentColumnsOf(values: SaveArticleValues) {
   };
 }
 
+// One page of articles from the URL's query (Task P4.3.03): an RW admin's own RW, the superadmin's chosen one or
+// every row RLS shows them (effectiveRw), searched by title.
 export async function listArticlesForStaff(
-  owner: ContentOwner | 'all',
-): Promise<ArticleListItem[]> {
+  query: ListQuery,
+  rw: RwId | null,
+): Promise<ListResult<ArticleListItem>> {
+  const plan = planContentList(query, rw, {
+    columns: ARTICLE_SORT_COLUMNS,
+    fallback: ARTICLE_DEFAULT_SORT,
+  });
   const supabase = await createSupabaseServerClient();
-  let query = supabase.from('articles').select(LIST_COLUMNS);
-  if (owner === null) query = query.is('rw_id', null);
-  else if (owner !== 'all') query = query.eq('rw_id', owner);
-  const { data, error } = await query.order('updated_at', { ascending: false });
+  let request = supabase.from('articles').select(LIST_COLUMNS, { count: 'exact' });
+  if (plan.pattern !== null) request = request.ilike('title', plan.pattern);
+  if (plan.statuses.length > 0) request = request.in('status', plan.statuses);
+  const category = allowedValue(query.category, DB_ENUMS.article_category);
+  if (category !== null) request = request.eq('category', category);
+  if (plan.rw !== null) request = request.eq('rw_id', plan.rw);
+  if (plan.order !== null) {
+    request = request.order(plan.order.column, { ascending: plan.order.ascending });
+  }
+  const { data, error, count } = await request.order('id').range(plan.from, plan.to);
   if (error) throw error;
-  return data.map((row) => ({
+  const rows = data.map((row) => ({
     id: row.id,
     owner: row.rw_id,
     slug: row.slug,
@@ -145,6 +162,18 @@ export async function listArticlesForStaff(
     status: row.status,
     updatedAt: row.updated_at,
   }));
+  return { rows, total: count ?? rows.length };
+}
+
+// Archive by status (Task P4.3.03): off the site, kept here with its photos. articles_moderation_guard still refuses an
+// RW admin who takes a published article off the site.
+export async function archiveArticle(owner: ContentOwner, id: string): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  let query = supabase.from('articles').update({ status: 'archived' }).eq('id', id);
+  query = owner === null ? query.is('rw_id', null) : query.eq('rw_id', owner);
+  const { data, error } = await query.select('id').maybeSingle();
+  if (error) throw error;
+  rowOrNotFound(data);
 }
 
 // An article this staff member may see (articles_staff_read), or null: another RW's reads as unknown.
