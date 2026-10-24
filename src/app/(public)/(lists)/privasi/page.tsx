@@ -74,23 +74,26 @@ export default async function PrivacyPage() {
   return (
     <>
       <PageHeader
+        tone="paper"
         title={TITLE}
         description={DESCRIPTION}
         breadcrumbs={[]}
         path={PUBLIC_PATHS.privacy}
       />
-      <Container width="reading" className="space-y-12 pb-16 md:pb-24">
-        <Controller address={settings.kelurahanAddress} />
-        <DataProtectionOfficer settings={settings} />
-        <DataInventory />
-        <NotCollected />
-        <ChildrenData />
-        <Processors />
-        <YoutubeThirdParty />
-        <MapsThirdParty />
-        <Rights dpoEmail={settings.dpoEmail} />
-        <Breach />
-        <EnglishSummary dpoEmail={settings.dpoEmail} />
+      <Container className="pb-16 md:pb-28">
+        <div className="max-w-180 space-y-12">
+          <Controller address={settings.kelurahanAddress} />
+          <DataProtectionOfficer settings={settings} />
+          <DataInventory />
+          <NotCollected />
+          <ChildrenData />
+          <Processors />
+          <YoutubeThirdParty />
+          <MapsThirdParty />
+          <Rights dpoEmail={settings.dpoEmail} />
+          <Breach />
+          <EnglishSummary dpoEmail={settings.dpoEmail} />
+        </div>
       </Container>
     </>
   );
