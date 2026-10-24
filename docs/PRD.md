@@ -1628,6 +1628,7 @@ create table public.security_alerts (
   last_seen_at    timestamptz not null default now(),
   occurrences     integer not null default 1,
   notified_at     timestamptz,                             -- out-of-band delivery timestamp for high/critical
+  delivery_claimed_at timestamptz,                         -- the five-minute lease of a delivery run (20261024120200)
   acknowledged_by uuid references public.profiles(id),
   acknowledged_at timestamptz,
   created_at      timestamptz not null default now()

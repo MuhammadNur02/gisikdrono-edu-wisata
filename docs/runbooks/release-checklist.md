@@ -38,6 +38,7 @@ A migration that stops is a release that stops: fix its cause, never edit an app
 
 ### Task P3.11, first PR: every message, the channel switches, alerts and health (`20261024120000` to `20261024120200`)
 
+- **Only Vercel previews and production send for real.** A server run anywhere else, `pnpm start` with real keys in `.env.local` included, delivers to the local Mailpit or to nothing (`messageDelivery`).
 - **The worker now sends every template.** Messages queued before this release for templates it could not send yet (`booking_created`, `payment_received_ticket`, the staff emails) go out on its first runs, unless their channel is switched off, which cancels them.
 - **WhatsApp stays silent while `whatsapp_enabled` is off.** Keep it off until the kelurahan's number and templates are approved (P0.1.08); nothing reaches Meta.
 - **Security alerts are emailed to `SECURITY_ALERT_EMAIL` even while `email_enabled` is off**, so check that address is the operator's before deploying to staging.
