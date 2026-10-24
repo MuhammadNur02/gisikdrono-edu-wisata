@@ -592,12 +592,7 @@
 /* A neutral veil, deeper at the top and bottom where the header and the arc meet the photo. The middle stays at 0.4,
    so a white wall graded by hero-photo-tone still gives the light lead text 4.5:1 (review of PR #51). */
 @utility hero-veil {
-  background: linear-gradient(
-    to bottom,
-    rgb(0 0 0 / 0.5),
-    rgb(0 0 0 / 0.4) 45%,
-    rgb(0 0 0 / 0.5)
-  );
+  background: linear-gradient(to bottom, rgb(0 0 0 / 0.5), rgb(0 0 0 / 0.4) 45%, rgb(0 0 0 / 0.5));
 }
 
 /* The pinned hero photo (docs/StyleGuide.md §7.3): clip-path, unlike overflow, also clips a fixed descendant, so the
