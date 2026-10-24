@@ -5,6 +5,9 @@
 -- chargeback disputes it; an unknown order alerts only in our own grammar; refused notifications keep metadata only.
 begin;
 select plan(25);
+-- The kid the server signs tickets with, which svc_apply_payment_event passes and these direct calls do not
+-- (20261024100100).
+select set_config('app.qr_key_id', 'k1', true);
 
 -- ===== Fixtures =====
 insert into public.tour_packages (id, rw_id, category, slug, name, pricing_basis, price_per_pax, status) values

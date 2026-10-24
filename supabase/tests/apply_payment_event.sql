@@ -4,6 +4,9 @@
 -- settlement's seats or puts it under review, and closes a denied attempt without moving the booking.
 begin;
 select plan(34);
+-- The kid the server signs tickets with, which svc_apply_payment_event passes and these direct calls do not
+-- (20261024100100).
+select set_config('app.qr_key_id', 'k1', true);
 
 -- ===== Fixtures =====
 insert into auth.users (id, email) values
