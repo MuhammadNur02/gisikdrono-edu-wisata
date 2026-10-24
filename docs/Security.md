@@ -547,7 +547,7 @@ Every table `authenticated` holds a right on carries the restrictive `aal2()` po
 | `certificates` | — | S `owns_any_rw(rw_ids)` without the participant's name or the verify code whose public page shows it; `issue_certificates` RPC | all but the same two columns; `revoke_certificate` | yes |
 | `reviews` | S via `v_public_reviews` | S own RW under `public_reviewer_name`, never the full `reviewer_name` | moderation via column grant `status, is_featured, moderation_note`; same columns | yes |
 | `notifications`, `guest_otps`, `login_attempts`, `rate_limit_buckets`, `staff_invites`, `document_sequences` | — | `notifications` of bookings they see, status columns only (never `recipient`, `recipient_name`, `params`, `last_error`); `request_notification_resend` | S `notifications` (same columns), `staff_invites` (without the code hash; at most 72 h; written with a fresh TOTP), `login_attempts` (to unlock an account) | yes, but for `guest_otps`, `rate_limit_buckets` and `document_sequences` |
-| `audit_logs`, `security_events`, `security_alerts`, `exports`, `dsr_requests` | — | Their own `exports` only | S; alerts acknowledged with a fresh TOTP, at the moment the database stamps; `rpc_create_export` | yes |
+| `audit_logs`, `security_events`, `security_alerts`, `exports`, `dsr_requests` | — | Their own `exports` only | S; alerts acknowledged with a fresh TOTP, at the moment the database stamps, once, never a high or critical one before the alert sender set `notified_at`, and never by the superadmin whose invite or promotion it reports (20261029080000); `rpc_create_export` | yes |
 
 ### 6.4 Self-escalation prevention and privileged RPCs (AZ-04, AZ-10)
 

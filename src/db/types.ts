@@ -2267,6 +2267,8 @@ export type Database = {
           id: string
           is_active: boolean
           last_login_at: string | null
+          mfa_reenrol_code_hash: string | null
+          mfa_reenrol_expires_at: string | null
           mfa_required: boolean
           mfa_reset_requested_at: string | null
           mfa_reset_requested_by: string | null
@@ -2287,6 +2289,8 @@ export type Database = {
           id: string
           is_active?: boolean
           last_login_at?: string | null
+          mfa_reenrol_code_hash?: string | null
+          mfa_reenrol_expires_at?: string | null
           mfa_required?: boolean
           mfa_reset_requested_at?: string | null
           mfa_reset_requested_by?: string | null
@@ -2307,6 +2311,8 @@ export type Database = {
           id?: string
           is_active?: boolean
           last_login_at?: string | null
+          mfa_reenrol_code_hash?: string | null
+          mfa_reenrol_expires_at?: string | null
           mfa_required?: boolean
           mfa_reset_requested_at?: string | null
           mfa_reset_requested_by?: string | null
@@ -4261,6 +4267,10 @@ export type Database = {
         Args: { p_booking_id: string; p_waiver_reason?: string }
         Returns: number
       }
+      issue_mfa_reenrolment_code: {
+        Args: { p_code_hash: string; p_user_id: string }
+        Returns: string
+      }
       owns_any_rw: { Args: { p_rw_ids: number[] }; Returns: boolean }
       owns_rw: { Args: { p_rw_id: number }; Returns: boolean }
       reset_staff_mfa: { Args: { p_user_id: string }; Returns: Json }
@@ -4360,6 +4370,10 @@ export type Database = {
         Args: { p_is_active: boolean; p_reason: string; p_user_id: string }
         Returns: undefined
       }
+      svc_accept_staff_invite: {
+        Args: { p_invite_code_hash: string; p_user_id: string }
+        Returns: Json
+      }
       svc_apply_payment_event: {
         Args: {
           p_confirmed?: Json
@@ -4376,6 +4390,10 @@ export type Database = {
           p_snap_token: string
         }
         Returns: undefined
+      }
+      svc_check_mfa_reenrolment_code: {
+        Args: { p_code_hash: string; p_user_id: string }
+        Returns: boolean
       }
       svc_claim_booklet_pages: {
         Args: {
@@ -4440,6 +4458,10 @@ export type Database = {
       svc_complete_paid_order: {
         Args: { p_key_id: string; p_order_id: string }
         Returns: Json
+      }
+      svc_consume_mfa_reenrolment_code: {
+        Args: { p_code_hash: string; p_user_id: string }
+        Returns: boolean
       }
       svc_create_booking: {
         Args: {
@@ -4602,6 +4624,10 @@ export type Database = {
       svc_revoke_guest_links: {
         Args: { p_booking_id: string }
         Returns: number
+      }
+      svc_run_anomaly_scan: {
+        Args: { p_check_chains?: boolean }
+        Returns: Json
       }
       svc_submit_review: {
         Args: {

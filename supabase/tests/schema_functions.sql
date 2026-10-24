@@ -2187,6 +2187,10 @@ select is(
   'every step, the cancellations included, is a critical event'
 );
 
+-- A role goes only to an account with its own verified authenticator (20261029080000), as the promoted one has.
+insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at)
+values ('00000000-0000-4000-8000-000000002a05', '00000000-0000-4000-8000-000000000003', 'HP Calon', 'totp', 'verified',
+        now(), now());
 -- Making someone superadmin waits the same way (review L9).
 select set_config('request.jwt.claims', (select claims from step_up_claims where method = 'totp' and seconds_ago = 60), true);
 set local role authenticated;
