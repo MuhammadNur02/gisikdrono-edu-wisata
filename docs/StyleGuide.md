@@ -883,7 +883,7 @@ Fixed `bottom-6 right-6` (`bottom-20` when a sticky mobile CTA is present), 56 p
 | Operasional | Reservasi → `/dashboard/bookings`; Sesi Kunjungan → `/dashboard/sessions`; Scanner → `/dashboard/scanner`; Kehadiran → `/dashboard/attendance`; Sertifikat → `/dashboard/certificates` | yes | yes (own RW) |
 | Konten | Halaman RW → `/dashboard/pages`; Artikel → `/dashboard/articles`; Galeri → `/dashboard/galleries`; E-Booklet → `/dashboard/booklets`; Jadwal Pertunjukan → `/dashboard/schedules` (superadmin, and the admin of an RW with `rw_units.schedule_enabled`); Titik Aktivitas → `/dashboard/activity-points` | yes | yes (own RW) |
 | Katalog | Paket Wisata → `/dashboard/packages`; Produk UMKM → `/dashboard/products` | yes | yes (own RW; combos read-only) |
-| Moderasi | Ulasan → `/dashboard/reviews` | yes | no |
+| Moderasi | Ulasan → `/dashboard/reviews` | yes | read-only (own RW; docs/PRD.md §5, FR-ADMIN-19) |
 | Keuangan | Rekap → `/dashboard/finance`; Bagi Hasil → `/dashboard/finance/revenue-share`; Rekonsiliasi → `/dashboard/finance/reconciliation`; Penyesuaian → `/dashboard/finance/adjustments`; Ekspor → `/dashboard/exports` | yes | no |
 | Administrasi | Pengguna → `/dashboard/users`; Hero Banner → `/dashboard/settings/hero-banners`; Pengaturan → `/dashboard/settings`; Log Aktivitas → `/dashboard/audit-logs`; Peringatan Keamanan → `/dashboard/security-alerts` | yes | no |
 
