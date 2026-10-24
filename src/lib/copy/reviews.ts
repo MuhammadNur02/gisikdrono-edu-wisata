@@ -14,6 +14,8 @@ export const reviewsCopy = {
     empty: 'Belum ada ulasan.',
     emptyHint: 'Ulasan masuk setelah rombongan selesai berkunjung dan mengisi formulir ulasan.',
     noun: 'ulasan',
+    // What v_public_reviews calls an anonymous author (0004_functions.sql, public_reviewer_name).
+    anonymousName: 'Pengunjung',
     search: 'Cari isi ulasan...',
     facets: { status: 'Status', rating: 'Rating', rw: 'RW' },
     ratingOption: (rating: number) => `${String(rating)} bintang`,
