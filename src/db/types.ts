@@ -2267,12 +2267,16 @@ export type Database = {
           id: string
           is_active: boolean
           last_login_at: string | null
+          mfa_reenrol_code_hash: string | null
+          mfa_reenrol_expires_at: string | null
           mfa_required: boolean
           mfa_reset_requested_at: string | null
           mfa_reset_requested_by: string | null
           phone: string | null
           promotion_requested_at: string | null
           promotion_requested_by: string | null
+          reenrolment_required: boolean
+          reenrolment_window_until: string | null
           role: Database["public"]["Enums"]["app_role"]
           rw_id: number | null
           updated_at: string
@@ -2287,12 +2291,16 @@ export type Database = {
           id: string
           is_active?: boolean
           last_login_at?: string | null
+          mfa_reenrol_code_hash?: string | null
+          mfa_reenrol_expires_at?: string | null
           mfa_required?: boolean
           mfa_reset_requested_at?: string | null
           mfa_reset_requested_by?: string | null
           phone?: string | null
           promotion_requested_at?: string | null
           promotion_requested_by?: string | null
+          reenrolment_required?: boolean
+          reenrolment_window_until?: string | null
           role?: Database["public"]["Enums"]["app_role"]
           rw_id?: number | null
           updated_at?: string
@@ -2307,12 +2315,16 @@ export type Database = {
           id?: string
           is_active?: boolean
           last_login_at?: string | null
+          mfa_reenrol_code_hash?: string | null
+          mfa_reenrol_expires_at?: string | null
           mfa_required?: boolean
           mfa_reset_requested_at?: string | null
           mfa_reset_requested_by?: string | null
           phone?: string | null
           promotion_requested_at?: string | null
           promotion_requested_by?: string | null
+          reenrolment_required?: boolean
+          reenrolment_window_until?: string | null
           role?: Database["public"]["Enums"]["app_role"]
           rw_id?: number | null
           updated_at?: string
@@ -4211,6 +4223,10 @@ export type Database = {
     }
     Functions: {
       aal2: { Args: never; Returns: boolean }
+      acknowledge_alert_as_sole_superadmin: {
+        Args: { p_alert_id: string; p_reason: string }
+        Returns: undefined
+      }
       app_role: { Args: never; Returns: string }
       app_rw_id: { Args: never; Returns: number }
       cancel_staff_mfa_reset: {
@@ -4260,6 +4276,10 @@ export type Database = {
       issue_certificates: {
         Args: { p_booking_id: string; p_waiver_reason?: string }
         Returns: number
+      }
+      issue_mfa_reenrolment_code: {
+        Args: { p_code_hash: string; p_user_id: string }
+        Returns: string
       }
       owns_any_rw: { Args: { p_rw_ids: number[] }; Returns: boolean }
       owns_rw: { Args: { p_rw_id: number }; Returns: boolean }
@@ -4360,6 +4380,10 @@ export type Database = {
         Args: { p_is_active: boolean; p_reason: string; p_user_id: string }
         Returns: undefined
       }
+      svc_accept_staff_invite: {
+        Args: { p_invite_code_hash: string; p_user_id: string }
+        Returns: Json
+      }
       svc_apply_payment_event: {
         Args: {
           p_confirmed?: Json
@@ -4376,6 +4400,10 @@ export type Database = {
           p_snap_token: string
         }
         Returns: undefined
+      }
+      svc_check_mfa_reenrolment_code: {
+        Args: { p_code_hash: string; p_user_id: string }
+        Returns: boolean
       }
       svc_claim_booklet_pages: {
         Args: {
@@ -4440,6 +4468,10 @@ export type Database = {
       svc_complete_paid_order: {
         Args: { p_key_id: string; p_order_id: string }
         Returns: Json
+      }
+      svc_consume_mfa_reenrolment_code: {
+        Args: { p_code_hash: string; p_user_id: string }
+        Returns: boolean
       }
       svc_create_booking: {
         Args: {
@@ -4603,6 +4635,8 @@ export type Database = {
         Args: { p_booking_id: string }
         Returns: number
       }
+      svc_run_anomaly_scan: { Args: never; Returns: Json }
+      svc_run_chain_check: { Args: never; Returns: Json }
       svc_submit_review: {
         Args: {
           p_body: string
