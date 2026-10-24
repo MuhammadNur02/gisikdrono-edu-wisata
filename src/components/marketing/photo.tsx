@@ -57,7 +57,7 @@ export function PhotoFrame({
   return (
     <div
       className={cn(
-        'relative overflow-hidden rounded-xl bg-muted',
+        'relative overflow-hidden rounded-lg bg-muted',
         aspectClassName ?? nativeAspectClass(image),
         className,
       )}

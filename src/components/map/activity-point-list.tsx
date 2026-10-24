@@ -23,7 +23,7 @@ function ActivityPointItem({ point }: { point: ActivityPoint }) {
       <div className="flex items-start gap-3">
         <Icon
           aria-hidden
-          className="size-10 shrink-0 rounded-lg bg-secondary p-2.5 text-secondary-foreground"
+          className="size-10 shrink-0 rounded-lg bg-primary-tint p-2.5 text-primary-ink"
         />
         <div className="space-y-1">
           <p className="text-caption text-muted-foreground">{type.label}</p>

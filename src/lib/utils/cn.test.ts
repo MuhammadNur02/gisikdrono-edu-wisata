@@ -27,3 +27,10 @@ describe('cn', () => {
     );
   });
 });
+
+describe('cn and the 1.5 px control border', () => {
+  it('keeps border-control next to a border colour, and lets a later width replace it', () => {
+    expect(cn('border-control', 'border-foreground')).toBe('border-control border-foreground');
+    expect(cn('border-control', 'border-2')).toBe('border-2');
+  });
+});

@@ -126,7 +126,7 @@ function DropZone({ inputId, isUploading, onFile, inputProps }: DropZoneProps) {
       {...handlers}
       className={cn(
         'flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-input bg-muted/40 p-6 text-center transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2',
-        isDragging && 'border-primary bg-secondary',
+        isDragging && 'border-primary bg-primary-tint',
       )}
     >
       <DropZonePrompt isUploading={isUploading} />

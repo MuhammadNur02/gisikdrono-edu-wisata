@@ -2,7 +2,7 @@
 
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 
-import { copy } from '@/lib/copy/id';
+import { uiCopy } from '@/lib/copy/ui';
 
 const BACK = -1;
 const FORWARD = 1;
@@ -34,7 +34,7 @@ export function SnapControls({ targetId }: SnapControlsProps) {
         className={controlClassName}
       >
         <ArrowLeft aria-hidden className="size-4" />
-        <span className="sr-only">{copy.ui.previousSlide}</span>
+        <span className="sr-only">{uiCopy.previousSlide}</span>
       </button>
       <button
         type="button"
@@ -45,7 +45,7 @@ export function SnapControls({ targetId }: SnapControlsProps) {
         className={controlClassName}
       >
         <ArrowRight aria-hidden className="size-4" />
-        <span className="sr-only">{copy.ui.nextSlide}</span>
+        <span className="sr-only">{uiCopy.nextSlide}</span>
       </button>
     </div>
   );

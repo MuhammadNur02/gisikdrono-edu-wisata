@@ -1,0 +1,257 @@
+/* The type scale (docs/StyleGuide.md §3.2). Imported by src/styles/globals.css; the tokens it reads live there. */
+
+/* ===== Type scale (DESIGN-SPEC §1.3). Phone value first; the large public sizes grow fluidly from 390 to 1280 px,
+   the UI sizes step up at md. ===== */
+@utility text-hero-statement {
+  font-family: var(--font-sans);
+  font-weight: 300;
+  font-size: clamp(2.5rem, 1.514rem + 4.045vw, 4.75rem);
+  line-height: 1.15;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  @media (width >= 48rem) {
+    line-height: 1.05;
+    letter-spacing: 0.22em;
+  }
+}
+@utility text-hero-lead {
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: 1.0625rem;
+  line-height: 1.3;
+  letter-spacing: 0.02em;
+  @media (width >= 48rem) {
+    font-size: 1.375rem;
+  }
+}
+@utility text-display-rw {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(3.25rem, 2.045rem + 4.944vw, 6rem);
+  line-height: 1;
+  letter-spacing: -0.031em;
+}
+@utility text-display {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(2.375rem, 1.663rem + 2.921vw, 4rem);
+  line-height: 1.06;
+  letter-spacing: -0.025em;
+  @media (width >= 48rem) {
+    line-height: 1.04;
+  }
+}
+@utility text-display-lg {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 2.25rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  @media (width >= 48rem) {
+    font-size: 3rem;
+    line-height: 1.1;
+  }
+}
+@utility text-intro {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(2.125rem, 1.632rem + 2.022vw, 3.25rem);
+  line-height: 1.1;
+  letter-spacing: -0.027em;
+  @media (width >= 48rem) {
+    line-height: 1.06;
+  }
+}
+/* The h2 of a public section; 40 px in a compact section with text-section-title-compact. */
+@utility text-section-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.875rem, 1.437rem + 1.798vw, 2.875rem);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  @media (width >= 48rem) {
+    line-height: 1.08;
+  }
+}
+@utility text-section-title-compact {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.875rem, 1.6rem + 1.124vw, 2.5rem);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+/* The UI scale shared with the dashboard: page titles (h1), panel titles (h2), sub-sections (h3), list items (h4). */
+@utility text-h1 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.875rem;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  @media (width >= 48rem) {
+    font-size: 2.25rem;
+  }
+}
+@utility text-h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.5rem;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  @media (width >= 48rem) {
+    font-size: 1.875rem;
+  }
+}
+@utility text-h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.375rem;
+  line-height: 1.25;
+  letter-spacing: -0.011em;
+  @media (width >= 48rem) {
+    font-size: 1.75rem;
+    line-height: 1.2;
+  }
+}
+@utility text-h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.125rem;
+  line-height: 1.35;
+  @media (width >= 48rem) {
+    font-size: 1.25rem;
+  }
+}
+@utility text-card-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.3125rem;
+  line-height: 1.2;
+  letter-spacing: -0.0125em;
+  @media (width >= 48rem) {
+    font-size: 1.5rem;
+  }
+}
+@utility text-figure {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(3.25rem, 2.483rem + 3.146vw, 5rem);
+  line-height: 1;
+  letter-spacing: -0.0275em;
+  font-variant-numeric: tabular-nums;
+}
+@utility text-price {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.25rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  @media (width >= 48rem) {
+    font-size: 1.375rem;
+  }
+}
+@utility text-eyebrow {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  @media (width >= 48rem) {
+    font-size: 0.8125rem;
+  }
+}
+@utility text-meta-caps {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+@utility text-body-lg {
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  @media (width >= 48rem) {
+    font-size: 1.1875rem;
+    line-height: 1.65;
+  }
+}
+@utility text-body {
+  font-size: 1rem;
+  line-height: 1.6;
+}
+/* A review quote (DESIGN-SPEC §2.5): 16 on phones, 17 from md. */
+@utility text-quote {
+  font-size: 1rem;
+  line-height: 1.6;
+  @media (width >= 48rem) {
+    font-size: 1.0625rem;
+  }
+}
+@utility text-article {
+  font-size: 1.0625rem;
+  line-height: 1.72;
+  @media (width >= 48rem) {
+    font-size: 1.1875rem;
+    line-height: 1.75;
+  }
+}
+/* 15 px running text: card taglines in small cards, the footer, the review byline (DESIGN-SPEC §2.5, §2.8). */
+@utility text-body-md {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+@utility text-body-sm {
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+/* Label sizes (DESIGN-SPEC §1.3 label): sm 14, default 15, lg 16, xl 17. The weight is the caller's (buttons 600, nav
+   500), as it is for text-caption (500 in the design), so a font-* class never fights the size. */
+@utility text-label {
+  font-size: 0.9375rem;
+  line-height: 1;
+}
+@utility text-label-sm {
+  font-size: 0.875rem;
+  line-height: 1;
+}
+@utility text-label-lg {
+  font-size: 1rem;
+  line-height: 1;
+}
+@utility text-label-xl {
+  font-size: 1.0625rem;
+  line-height: 1;
+}
+@utility text-caption {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+/* The wordmark's two lines (DESIGN-SPEC §1.6): EDU WISATA over Gisikdrono. */
+@utility text-wordmark-eyebrow {
+  font-family: var(--font-sans);
+  font-size: 0.625rem;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+@utility text-wordmark {
+  font-family: var(--font-display);
+  font-size: 1.1875rem;
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  @media (width >= 48rem) {
+    font-size: 1.3125rem;
+  }
+}
+/* A small capitalised label in the dashboard and in dense lists; public sections use text-eyebrow. */
+@utility text-overline {
+  font-size: 0.75rem;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+/* Tabular figures use the built-in `tabular-nums` utility; no custom alias. */

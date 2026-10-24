@@ -3,6 +3,7 @@ import { bookingCopy } from '@/lib/copy/booking';
 import { cmsCopy } from '@/lib/copy/cms';
 import { dashboardCopy } from '@/lib/copy/dashboard';
 import { documentsCopy } from '@/lib/copy/documents';
+import { layoutCopy, uiCopy } from '@/lib/copy/ui';
 import type { ActionErrorCode } from '@/types/action-result';
 import type { UploadProblem } from '@/types/upload';
 
@@ -34,38 +35,8 @@ export const copy = {
   dashboard: dashboardCopy,
   documents: documentsCopy,
   cms: cmsCopy,
-  // Labels the base components read out to screen readers and show on their own controls.
-  ui: {
-    close: 'Tutup',
-    loading: 'Sedang diproses',
-    previousSlide: 'Slide sebelumnya',
-    nextSlide: 'Slide berikutnya',
-    goToSlide: (slide: number, total: number) => `Slide ${String(slide)} dari ${String(total)}`,
-    commandTitle: 'Cari menu',
-    commandDescription: 'Ketik nama menu atau tindakan yang Anda cari.',
-    commandPlaceholder: 'Cari menu atau tindakan...',
-    commandEmpty: 'Tidak ada yang cocok.',
-  },
-  layout: {
-    skipToContent: 'Lewati ke konten',
-    mainNav: 'Navigasi utama',
-    openMenu: 'Buka menu',
-    menuTitle: 'Menu',
-    menuDescription: 'Semua halaman Edu Wisata Gisikdrono.',
-    breadcrumb: 'Lokasi halaman',
-    footerNav: 'Navigasi bawah',
-    // Names no number of RWs, and promises no booking: an RW may show its profile before it takes visits.
-    footerAbout: 'Kunjungan edukasi ke kampung-kampung di Kelurahan Gisikdrono.',
-    footerManagedBy: 'Dikelola oleh',
-    footerContactTitle: 'Kontak',
-    footerEmail: 'Email',
-    footerWhatsApp: 'Chat WhatsApp',
-    // docs/StyleGuide.md §9.2: the fixed trust line, reused word for word wherever payment is mentioned.
-    paymentTrust:
-      'Pembayaran hanya melalui sistem (QRIS/VA); kelurahan tidak pernah meminta transfer ke rekening pribadi.',
-    whatsAppFab: 'Chat WhatsApp kelurahan',
-    whatsAppGreeting: (pageTopic: string) => `Halo, saya ingin bertanya tentang ${pageTopic}`,
-  },
+  ui: uiCopy,
+  layout: layoutCopy,
   pages: {
     notFound: {
       eyebrow: 'Halaman tidak ditemukan',
@@ -86,7 +57,7 @@ export const copy = {
   // Card labels shared by the home page, the RW pages and the catalogues of Task P2.4.
   catalogue: {
     bookNow: 'Pesan Sekarang',
-    packageDetail: 'Detail',
+    viewPackage: 'Lihat paket',
     viewProduct: 'Lihat Produk',
     fromPrice: 'mulai',
     perBasis: { orang: '/orang', rombongan: '/rombongan' },
@@ -94,7 +65,10 @@ export const copy = {
     paxRange: (min: number, max: number) => `${String(min)}–${String(max)} orang`,
     combo: 'Kombinasi',
     addonEligible: 'Bisa jadi tambahan',
-    featured: 'Unggulan',
+    addonEligibleLong: 'Bisa dipesan sebagai tambahan',
+    // A product card whose photo has not been taken yet (DESIGN-SPEC §0, §2.5).
+    photoComing: 'Foto menyusul',
+    exploreRw: (rwLabel: string) => 'Jelajahi ' + rwLabel,
     unavailable: 'Tidak Tersedia',
     rating: (rating: string, max: number) => `Rating ${rating} dari ${String(max)}`,
     // The label under the home page's average rating (docs/StyleGuide.md §5.7).

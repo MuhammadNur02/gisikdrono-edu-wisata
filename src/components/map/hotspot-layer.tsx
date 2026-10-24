@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useTransformEffect } from 'react-zoom-pan-pinch';
 
 import { HotspotPopover } from '@/components/map/hotspot-popover';
+import { MotionProvider } from '@/components/providers/motion-provider';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { HOTSPOT_ACTIVE_SCALE, PLAN_HOTSPOT_CLASS } from '@/config/map';
 import { rwAccentClasses } from '@/config/rw';
@@ -112,8 +113,10 @@ export function HotspotLayer({ hotspots, units, activeId, onSelect }: HotspotLay
   useTransformEffect(({ state }) => {
     setZoomScale(state.scale);
   });
+  // The plan's hotspots are the one motion island of the public site, so their provider loads with this lazy chunk
+  // and never with a page (first-load budget, docs/StyleGuide.md §7.1).
   return (
-    <>
+    <MotionProvider>
       {hotspots.map((point) => (
         <Hotspot
           key={point.id}
@@ -124,6 +127,6 @@ export function HotspotLayer({ hotspots, units, activeId, onSelect }: HotspotLay
           onSelect={onSelect}
         />
       ))}
-    </>
+    </MotionProvider>
   );
 }

@@ -38,6 +38,9 @@ export interface RwAccentClasses {
   border: string;
   // The palette class of the plan's RW layer and of the RW's map markers (.denah-rw-* in src/styles/globals.css).
   plan: string;
+  // Sets the current RW of a subtree (rw-scope-* in src/styles/globals.css), so the components inside read their
+  // accent as text-rw, bg-rw-fill, bg-rw-soft, text-rw-strong and bg-rw-hi (DESIGN-SPEC §1.1).
+  scope: string;
 }
 
 export const RW_ACCENT_CLASSES: Record<RwAccent, RwAccentClasses> = {
@@ -47,6 +50,7 @@ export const RW_ACCENT_CLASSES: Record<RwAccent, RwAccentClasses> = {
     soft: 'bg-rw-leaf-soft text-rw-leaf-soft-foreground',
     border: 'border-rw-leaf',
     plan: 'denah-rw-leaf',
+    scope: 'rw-scope-leaf',
   },
   terracotta: {
     text: 'text-rw-terracotta',
@@ -54,6 +58,7 @@ export const RW_ACCENT_CLASSES: Record<RwAccent, RwAccentClasses> = {
     soft: 'bg-rw-terracotta-soft text-rw-terracotta-soft-foreground',
     border: 'border-rw-terracotta',
     plan: 'denah-rw-terracotta',
+    scope: 'rw-scope-terracotta',
   },
   mulberry: {
     text: 'text-rw-mulberry',
@@ -61,6 +66,7 @@ export const RW_ACCENT_CLASSES: Record<RwAccent, RwAccentClasses> = {
     soft: 'bg-rw-mulberry-soft text-rw-mulberry-soft-foreground',
     border: 'border-rw-mulberry',
     plan: 'denah-rw-mulberry',
+    scope: 'rw-scope-mulberry',
   },
   teal: {
     text: 'text-rw-teal',
@@ -68,6 +74,7 @@ export const RW_ACCENT_CLASSES: Record<RwAccent, RwAccentClasses> = {
     soft: 'bg-rw-teal-soft text-rw-teal-soft-foreground',
     border: 'border-rw-teal',
     plan: 'denah-rw-teal',
+    scope: 'rw-scope-teal',
   },
   violet: {
     text: 'text-rw-violet',
@@ -75,6 +82,7 @@ export const RW_ACCENT_CLASSES: Record<RwAccent, RwAccentClasses> = {
     soft: 'bg-rw-violet-soft text-rw-violet-soft-foreground',
     border: 'border-rw-violet',
     plan: 'denah-rw-violet',
+    scope: 'rw-scope-violet',
   },
 };
 
@@ -85,6 +93,7 @@ export const NEUTRAL_ACCENT_CLASSES: RwAccentClasses = {
   soft: 'bg-neutral-soft text-neutral-soft-foreground',
   border: 'border-border',
   plan: 'denah-rw-neutral',
+  scope: 'rw-scope-neutral',
 };
 
 export function rwAccentClasses(accentKey: RwAccent | null): RwAccentClasses {

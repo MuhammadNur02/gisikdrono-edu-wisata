@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 import { useMediaQuery } from '@/hooks/use-media-query';
-import { copy } from '@/lib/copy/id';
+import { uiCopy } from '@/lib/copy/ui';
 import { cn } from '@/lib/utils/cn';
 
 // docs/StyleGuide.md §5.7: slides change every 6 s and wait while the visitor points at or tabs into the
@@ -63,13 +63,13 @@ function SlideControls({ api, total, selected }: ControlsProps) {
     <div className="flex items-center justify-center gap-1 pt-2 pb-6 md:pb-10 lg:absolute lg:inset-x-0 lg:bottom-20 lg:mx-auto lg:max-w-7xl lg:justify-end lg:px-8 lg:py-0">
       <button type="button" onClick={() => api?.scrollPrev()} className={controlClassName}>
         <ArrowLeft aria-hidden className="size-4" />
-        <span className="sr-only">{copy.ui.previousSlide}</span>
+        <span className="sr-only">{uiCopy.previousSlide}</span>
       </button>
       {Array.from({ length: total }, (_, index) => (
         <button
           key={index}
           type="button"
-          aria-label={copy.ui.goToSlide(index + 1, total)}
+          aria-label={uiCopy.goToSlide(index + 1, total)}
           aria-current={index === selected ? 'true' : undefined}
           onClick={() => api?.scrollTo(index)}
           className="group flex size-11 items-center justify-center rounded-full focus-visible:outline-none"
@@ -84,7 +84,7 @@ function SlideControls({ api, total, selected }: ControlsProps) {
       ))}
       <button type="button" onClick={() => api?.scrollNext()} className={controlClassName}>
         <ArrowRight aria-hidden className="size-4" />
-        <span className="sr-only">{copy.ui.nextSlide}</span>
+        <span className="sr-only">{uiCopy.nextSlide}</span>
       </button>
     </div>
   );

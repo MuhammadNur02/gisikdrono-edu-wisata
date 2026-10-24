@@ -32,7 +32,7 @@ export function AppSidebar({ context, nav, footer }: AppSidebarProps) {
           aria-label={copy.dashboard.homeLink}
           className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
         >
-          <SiteWordmark className="group-data-[collapsible=icon]:hidden" />
+          <SiteWordmark showEyebrow={false} className="group-data-[collapsible=icon]:hidden" />
           <span
             aria-hidden
             className="hidden size-10 items-center justify-center rounded-xl bg-primary text-h4 font-extrabold text-primary-foreground group-data-[collapsible=icon]:flex"

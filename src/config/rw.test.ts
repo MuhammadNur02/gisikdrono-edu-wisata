@@ -15,6 +15,7 @@ import {
 import { RW_ICONS } from './rw-icons';
 
 const globalsCss = readFileSync(new URL('../styles/globals.css', import.meta.url), 'utf8');
+const utilitiesCss = readFileSync(new URL('../styles/utilities.css', import.meta.url), 'utf8');
 const SLOTS = ['text', 'fill', 'soft', 'border'] as const;
 
 // Every colour a class names (bg-rw-leaf-soft -> rw-leaf-soft) must exist as --color-* in @theme inline,
@@ -33,20 +34,17 @@ describe('RW_ACCENT_CLASSES', () => {
       SLOTS.flatMap((slot) => RW_ACCENT_CLASSES[key][slot].split(' ')),
     );
     for (const className of classNames) {
-      expect(globalsCss).toContain(
-        `--color-${colourOf(className)}: hsl(var(--${colourOf(className)}));`,
-      );
+      expect(globalsCss).toContain(`--color-${colourOf(className)}:`);
     }
   });
 
-  it('defines every palette variable for light and dark mode', () => {
-    const [light = '', dark = ''] = globalsCss.split('.dark {');
+  // The values and their contrast in both themes are proven in src/styles/globals.test.ts.
+  it('gives every palette a scope class that utilities.css defines', () => {
     for (const key of DB_ENUMS.rw_accent) {
-      for (const suffix of ['', '-foreground', '-soft', '-soft-foreground']) {
-        expect(light).toContain(`--rw-${key}${suffix}:`);
-        expect(dark).toContain(`--rw-${key}${suffix}:`);
-      }
+      expect(RW_ACCENT_CLASSES[key].scope).toBe(`rw-scope-${key}`);
+      expect(utilitiesCss).toContain(`@utility rw-scope-${key} {`);
     }
+    expect(utilitiesCss).toContain(`@utility ${NEUTRAL_ACCENT_CLASSES.scope} {`);
   });
 
   it('keeps clear of the shadcn --accent token', () => {

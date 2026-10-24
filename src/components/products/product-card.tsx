@@ -1,9 +1,10 @@
+import { PackagePlus } from 'lucide-react';
 import Link from 'next/link';
 
+import { RwTag } from '@/components/layout/rw-tag';
 import { PhotoFrame } from '@/components/marketing/photo';
 import { PhotoPlaceholder } from '@/components/marketing/photo-placeholder';
 import { Badge } from '@/components/ui/badge';
-import { Card } from '@/components/ui/card';
 import { IMAGE_SIZES } from '@/config/images';
 import { PRODUCT_CATEGORY } from '@/config/status';
 import { copy } from '@/lib/copy/id';
@@ -13,8 +14,6 @@ import { productPath } from '@/lib/utils/paths';
 import type { ProductSummary } from '@/types/product';
 
 const COVER_ASPECT = 'aspect-square';
-// docs/StyleGuide.md §7.3: the photo zooms a little while the card is pointed at, inside its own frame.
-const COVER_HOVER_ZOOM = 'transition-transform duration-300 motion-safe:group-hover:scale-103';
 
 export interface ProductCardProps {
   product: ProductSummary;
@@ -23,65 +22,75 @@ export interface ProductCardProps {
 function ProductCover({ product }: ProductCardProps) {
   // Products are made to order, so an unavailable one fades but stays readable (docs/StyleGuide.md §5.9).
   const fade = product.isAvailable ? undefined : 'opacity-60';
-  return product.cover ? (
-    <PhotoFrame
-      image={product.cover}
-      sizes={IMAGE_SIZES.card}
-      aspectClassName={COVER_ASPECT}
-      className={cn('rounded-none', fade)}
-      imageClassName={COVER_HOVER_ZOOM}
-    />
-  ) : (
-    <PhotoPlaceholder
-      label={product.name}
-      icon={PRODUCT_CATEGORY[product.category].icon}
-      rws={[product.rw]}
-      className={cn(COVER_ASPECT, 'rounded-none', fade)}
-    />
-  );
-}
-
-function ProductBadges({ product }: ProductCardProps) {
   return (
-    <div className="flex flex-wrap gap-1.5">
-      <Badge variant="outline">{PRODUCT_CATEGORY[product.category].label}</Badge>
-      {product.isAddonEligible ? (
-        <Badge variant="info">{copy.catalogue.addonEligible}</Badge>
-      ) : null}
-      {product.isFeatured ? <Badge variant="secondary">{copy.catalogue.featured}</Badge> : null}
-      {product.isAvailable ? null : <Badge variant="neutral">{copy.catalogue.unavailable}</Badge>}
+    <div className="relative overflow-hidden rounded-lg">
+      {product.cover ? (
+        <PhotoFrame
+          image={product.cover}
+          sizes={IMAGE_SIZES.card}
+          aspectClassName={COVER_ASPECT}
+          className={cn('rounded-none', fade)}
+          imageClassName="hover-zoom"
+        />
+      ) : (
+        <PhotoPlaceholder
+          label={product.name}
+          icon={PRODUCT_CATEGORY[product.category].icon}
+          rws={[product.rw]}
+          note={copy.catalogue.photoComing}
+          iconClassName="transition-transform duration-500 ease-out-soft motion-safe:group-hover:scale-108"
+          className={cn(COVER_ASPECT, 'rounded-none', fade)}
+        />
+      )}
+      <RwTag rw={product.rw} tone="surface" className="absolute top-3.5 left-3.5" />
     </div>
   );
 }
 
-// docs/StyleGuide.md §5.9: the vendor named on every card, the price with its unit, no cart. The name link
-// stretches over the card, so the whole card opens the product.
+// The add-on hint, only for a product the wizard offers (DESIGN-SPEC §2.5); shorter on a phone.
+function AddonHint() {
+  return (
+    <p className="flex items-center gap-2 pt-1 text-caption font-medium text-ink-2">
+      <PackagePlus aria-hidden className="size-4 shrink-0 text-primary-ink" />
+      <span className="md:hidden">{copy.catalogue.addonEligible}</span>
+      <span className="max-md:hidden">{copy.catalogue.addonEligibleLong}</span>
+    </p>
+  );
+}
+
+// Card/Product of DESIGN-SPEC §2.5 (docs/StyleGuide.md §5.9): the square photo, or the RW-tinted placeholder with
+// `Foto menyusul`, with the RW badge on the surface; the vendor, the name, the price with its unit and, for an add-on,
+// the hint. No cart. The name link stretches over the card, so the whole card opens the product.
 export function ProductCard({ product }: ProductCardProps) {
   return (
-    <Card
-      variant="interactive"
-      className="group relative w-full gap-4 overflow-hidden pt-0 md:gap-4 md:pt-0"
-    >
+    <article className="group relative flex h-full w-full hover-rise flex-col">
       <ProductCover product={product} />
-      <div className="space-y-2 px-5 md:px-6">
+      <div className="flex flex-1 flex-col gap-1.5 pt-4">
         {product.vendor ? (
-          <p className="text-overline text-muted-foreground">{product.vendor.name}</p>
+          <p className="text-caption font-medium text-muted-foreground">{product.vendor.name}</p>
         ) : null}
-        <h3 className="line-clamp-2 text-h4">
+        <h3 className="font-display text-lg font-semibold text-balance transition-colors duration-200 group-hover:text-primary-ink">
           <Link
             href={productPath(product.slug)}
             aria-label={`${copy.catalogue.viewProduct}: ${product.name}`}
-            className="outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:after:ring-2 focus-visible:after:ring-ring"
+            className="outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:outline-2 focus-visible:after:outline-offset-4 focus-visible:after:outline-ring"
           >
             {product.name}
           </Link>
         </h3>
         <p className="text-body-sm text-muted-foreground">
-          <span className="text-h4 text-foreground tabular-nums">{formatIDR(product.price)}</span> /
-          {product.unitLabel}
+          <span className="font-display text-lg font-bold text-foreground tabular-nums">
+            {formatIDR(product.price)}
+          </span>{' '}
+          / {product.unitLabel}
         </p>
-        <ProductBadges product={product} />
+        {product.isAddonEligible ? <AddonHint /> : null}
+        {product.isAvailable ? null : (
+          <Badge variant="neutral" size="sm" className="mt-1">
+            {copy.catalogue.unavailable}
+          </Badge>
+        )}
       </div>
-    </Card>
+    </article>
   );
 }

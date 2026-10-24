@@ -1,4 +1,4 @@
-import { Mail, MapPin, MessageCircle, ShieldCheck } from 'lucide-react';
+import { Mail, MapPin, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 
 import { Container } from '@/components/layout/container';
@@ -8,47 +8,66 @@ import { WaveDivider } from '@/components/layout/wave-divider';
 import { LEGAL_NAV_ITEMS, type PublicNavGroup, type PublicNavItem } from '@/config/nav';
 import { siteConfig } from '@/config/site';
 import { copy } from '@/lib/copy/id';
-import { formatPhone } from '@/lib/utils/phone';
-import { buildWhatsAppChatUrl } from '@/lib/utils/whatsapp';
+import { cn } from '@/lib/utils/cn';
 
-const linkClassName =
-  'inline-flex min-h-11 items-center rounded-md text-body-sm text-muted-foreground transition-colors hover:text-foreground md:min-h-0 md:py-1';
+const LINK_CLASS =
+  'inline-flex min-h-11 items-center text-body-md text-on-dark-2 transition-colors duration-200 hover:text-white md:min-h-0';
 
-function FooterLink({ item }: { item: PublicNavItem }) {
-  return (
-    <Link href={item.href} className={linkClassName}>
-      <NavLinkLabel item={item} />
-    </Link>
-  );
+// An RW link reads `RW 05 · Ecowastreme`: the number and the programme on one line (DESIGN-SPEC §2.8).
+function linkLabel(item: PublicNavItem): string {
+  return item.rw ? `${item.rw.label} · ${item.rw.shortName}` : item.label;
 }
 
-function FooterIntro() {
-  const { district, city } = siteConfig.locality;
+// The office's place when site_settings has no written address yet (`kelurahan.address` still the sample).
+function fallbackAddress(): string {
+  const { district, city, province } = siteConfig.locality;
+  return `${siteConfig.ownerName}, ${district}, ${city}, ${province}`;
+}
+
+function FooterBrand({ contact }: { contact: FooterContactDetails }) {
   return (
-    <div className="space-y-4 xl:col-span-4">
-      <SiteWordmark />
-      <p className="max-w-sm text-body-sm text-muted-foreground">{copy.layout.footerAbout}</p>
-      <p className="text-body-sm">
-        {copy.layout.footerManagedBy} <span className="font-medium">{siteConfig.ownerName}</span>,{' '}
-        {district}, {city}.
+    <div className="space-y-5 lg:col-span-5 lg:max-w-95">
+      <SiteWordmark tone="light" />
+      <p className="text-body-md text-on-dark-2">{copy.layout.footerAbout}</p>
+      <p className="flex gap-2.5 text-body-sm text-on-dark-3">
+        <MapPin aria-hidden className="mt-0.5 size-4.5 shrink-0 text-gold" />
+        {contact.address ?? fallbackAddress()}
       </p>
+      {contact.email ? (
+        <a
+          href={`mailto:${contact.email}`}
+          className="flex gap-2.5 text-body-sm break-all text-on-dark-2 hover:text-white"
+        >
+          <Mail aria-hidden className="mt-0.5 size-4.5 shrink-0 text-gold" />
+          <span>
+            <span className="sr-only">{copy.layout.footerEmail}: </span>
+            {contact.email}
+          </span>
+        </a>
+      ) : null}
     </div>
   );
 }
 
+// EDU WISATA takes the whole row on a phone; KUNJUNGAN and INFORMASI then share the next one.
 function FooterNav({ groups }: { groups: readonly PublicNavGroup[] }) {
   return (
     <nav
       aria-label={copy.layout.footerNav}
-      className="grid gap-8 sm:grid-cols-3 md:col-span-2 xl:col-span-6"
+      className="grid grid-cols-2 gap-x-6 gap-y-9 sm:flex sm:flex-wrap sm:gap-x-12 lg:col-span-7 lg:justify-end lg:gap-x-16"
     >
-      {groups.map((group) => (
-        <div key={group.title} className="space-y-3">
-          <h2 className="text-overline text-foreground">{group.title}</h2>
-          <ul className="space-y-1">
+      {groups.map((group, index) => (
+        <div
+          key={group.title}
+          className={cn('space-y-3', index === 0 && 'col-span-2 sm:col-span-1')}
+        >
+          <h2 className="text-meta-caps text-gold">{group.title}</h2>
+          <ul className="md:space-y-3.5">
             {group.items.map((item) => (
               <li key={item.href}>
-                <FooterLink item={item} />
+                <Link href={item.href} className={LINK_CLASS}>
+                  <NavLinkLabel item={item} label={linkLabel(item)} />
+                </Link>
               </li>
             ))}
           </ul>
@@ -58,36 +77,37 @@ function FooterNav({ groups }: { groups: readonly PublicNavGroup[] }) {
   );
 }
 
-const contactLinkClassName =
-  'flex min-h-11 gap-2 rounded-md text-body-sm text-muted-foreground transition-colors hover:text-foreground';
-
-function FooterWhatsApp() {
-  const chatUrl = buildWhatsAppChatUrl(
-    siteConfig.whatsappContactNumber,
-    copy.layout.whatsAppGreeting(siteConfig.name),
-  );
+function PaymentNote() {
   return (
-    <a href={chatUrl} target="_blank" rel="noopener noreferrer" className={contactLinkClassName}>
-      <MessageCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
-      <span>
-        <span className="block">{copy.layout.footerWhatsApp}</span>
-        <span className="block font-medium whitespace-nowrap text-foreground tabular-nums">
-          {formatPhone(siteConfig.whatsappContactNumber)}
-        </span>
-      </span>
-    </a>
+    <p className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/5 px-5 py-4.5 text-body-sm text-on-dark-2">
+      <ShieldCheck aria-hidden className="size-5 shrink-0 text-rw05-hi" />
+      {copy.layout.paymentTrust}
+    </p>
   );
 }
 
-function FooterEmail({ email }: { email: string }) {
+// pb-24 on a phone leaves room under the last line for the 56 px WhatsApp button and its 16 px offset (§5.16).
+function FooterBottom() {
+  const year = new Date().getFullYear();
   return (
-    <a href={`mailto:${email}`} className={contactLinkClassName}>
-      <Mail aria-hidden className="mt-0.5 size-4 shrink-0" />
-      <span className="min-w-0">
-        <span className="block">{copy.layout.footerEmail}</span>
-        <span className="block font-medium break-all text-foreground">{email}</span>
-      </span>
-    </a>
+    <div className="flex flex-col gap-3 border-t border-white/10 pt-6 pb-24 text-caption text-on-dark-3 md:flex-row md:items-center md:justify-between md:pb-0">
+      <p>
+        <span className="md:hidden">{copy.layout.footerRightsShort(year)}</span>
+        <span className="max-md:hidden">{copy.layout.footerRights(year)}</span>
+      </p>
+      <div className="flex items-center gap-6">
+        {LEGAL_NAV_ITEMS.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="inline-flex min-h-11 items-center text-on-dark-2 underline underline-offset-4 hover:text-white md:min-h-0"
+          >
+            {item.label}
+          </Link>
+        ))}
+        <span className="max-md:hidden">{copy.layout.paymentMethods}</span>
+      </div>
+    </div>
   );
 }
 
@@ -97,66 +117,26 @@ export interface FooterContactDetails {
   address: string | null;
 }
 
-// A contact detail the kelurahan has not given yet is left out, not announced (docs/StyleGuide.md §6.9).
-// Office hours have no site_settings key, so they are not shown at all.
-function FooterContact({ contact }: { contact: FooterContactDetails }) {
-  return (
-    <div className="space-y-3 xl:order-last xl:col-span-2">
-      <h2 className="text-overline text-foreground">{copy.layout.footerContactTitle}</h2>
-      <FooterWhatsApp />
-      {contact.email ? <FooterEmail email={contact.email} /> : null}
-      {contact.address ? (
-        <p className="flex gap-2 text-body-sm text-muted-foreground">
-          <MapPin aria-hidden className="mt-0.5 size-4 shrink-0" />
-          {contact.address}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-// pb-24 leaves 96 px under the last line, more than the WhatsApp button's 56 px plus its 24 px offset,
-// so at the end of the page the button floats over empty space (docs/StyleGuide.md §5.16).
-function FooterBottom() {
-  return (
-    <div className="border-t border-border">
-      <Container className="flex flex-col gap-4 pt-6 pb-24 md:flex-row md:items-center md:justify-between">
-        <p className="flex max-w-2xl gap-2 text-caption text-muted-foreground">
-          <ShieldCheck aria-hidden className="size-4 shrink-0 text-success" />
-          {copy.layout.paymentTrust}
-        </p>
-        <ul className="flex flex-wrap gap-x-6">
-          {LEGAL_NAV_ITEMS.map((item) => (
-            <li key={item.href}>
-              <FooterLink item={item} />
-            </li>
-          ))}
-        </ul>
-      </Container>
-    </div>
-  );
-}
-
 export interface SiteFooterProps {
   contact: FooterContactDetails;
   navGroups: readonly PublicNavGroup[];
 }
 
-// The footer of every public page sits on the warm tone under a gentle wave (decision of 2026-10-23). The wave
-// needs a band above the footer it can stand in, whatever the page's last section is, so the top margin matches
-// its height and the wave never covers that section's content.
+// docs/StyleGuide.md §5.17 (DESIGN-SPEC §2.8): the night band with the kawung at 6 %, under a wave that steps down into
+// it from whatever the page ends with; the top margin is the wave's own band, so it never covers that section. The
+// WhatsApp number is never printed (the button opens the chat); an email shows once the kelurahan has given one.
 export function SiteFooter({ contact, navGroups }: SiteFooterProps) {
   return (
-    <footer className="relative mt-6 bg-surface-warm text-surface-warm-foreground md:mt-10 lg:mt-16">
-      <WaveDivider tone="warm" />
-      {/* Below xl the contact block sits beside the intro and the links take a full row; from xl all three
-          share one row, links in the middle. */}
-      <Container className="grid gap-10 py-12 md:grid-cols-2 md:py-16 xl:grid-cols-12 xl:gap-x-8">
-        <FooterIntro />
-        <FooterContact contact={contact} />
-        <FooterNav groups={navGroups} />
+    <footer className="kawung relative mt-6 bg-night text-on-dark-2 ring-on-dark kawung-6 md:mt-10 lg:mt-14">
+      <WaveDivider tone="night" />
+      <Container className="space-y-9 pt-14 pb-8 md:space-y-12 md:pt-22 md:pb-10">
+        <div className="grid gap-9 lg:grid-cols-12 lg:gap-16">
+          <FooterBrand contact={contact} />
+          <FooterNav groups={navGroups} />
+        </div>
+        <PaymentNote />
+        <FooterBottom />
       </Container>
-      <FooterBottom />
     </footer>
   );
 }

@@ -18,7 +18,7 @@ export const metadata: Metadata = { robots: { index: false, follow: false } };
 export default async function BookingLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <ThemeProvider scope="public" nonce={await requestNonce()}>
-      <div className="flex min-h-dvh flex-col bg-linear-to-b from-brand-ice to-background dark:from-secondary">
+      <div className="flex min-h-dvh flex-col bg-linear-to-b from-brand-ice to-background">
         <Container className="py-6">
           {/* Named by the wordmark itself: a label that differs from the visible text fails WCAG 2.5.3. */}
           <Link href={HOME_NAV_ITEM.href} className="inline-flex rounded-lg">

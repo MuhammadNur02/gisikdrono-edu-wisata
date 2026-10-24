@@ -40,7 +40,7 @@ export function CtaBand({ id }: CtaBandProps) {
         >
           <a href={chatUrl} target="_blank" rel="noopener noreferrer">
             <MessageCircle aria-hidden />
-            {copy.layout.footerWhatsApp}
+            {copy.layout.whatsAppChat}
           </a>
         </Button>
       </div>

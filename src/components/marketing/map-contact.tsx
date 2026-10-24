@@ -83,7 +83,7 @@ function ContactColumn({ address, booklets }: Pick<MapContactProps, 'address' | 
           <MessageCircle aria-hidden className="mt-1 size-4 shrink-0 text-success" />
           <span>
             <span className="block font-medium underline-offset-4 hover:underline">
-              {copy.layout.footerWhatsApp}
+              {copy.layout.whatsAppChat}
             </span>
             <span className="block text-muted-foreground tabular-nums">
               {formatPhone(siteConfig.whatsappContactNumber)}
@@ -106,7 +106,7 @@ export function MapContact({ id, address, points, units, booklets }: MapContactP
   return (
     <Section
       id={id}
-      tone="warm"
+      tone="muted"
       wave={{ variant: 'gentle', flip: true }}
       eyebrow="Peta & kontak"
       title="Titik kunjungan di Gisikdrono"

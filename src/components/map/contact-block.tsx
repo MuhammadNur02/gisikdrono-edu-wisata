@@ -34,7 +34,7 @@ function ContactRow({
 }) {
   return (
     <li className="flex gap-3">
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary text-secondary-foreground">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary-tint text-primary-ink">
         {icon}
       </span>
       <div className="min-w-0">
@@ -49,7 +49,10 @@ function ContactRow({
 function WhatsAppRow({ number }: { number: string }) {
   const chatUrl = buildWhatsAppChatUrl(number, copy.layout.whatsAppGreeting(siteConfig.name));
   return (
-    <ContactRow icon={<MessageCircle aria-hidden className="size-5" />} label={mapCopy.contactWhatsApp}>
+    <ContactRow
+      icon={<MessageCircle aria-hidden className="size-5" />}
+      label={mapCopy.contactWhatsApp}
+    >
       <a
         href={chatUrl}
         target="_blank"
@@ -83,7 +86,10 @@ function ContactDetails({
           </ContactRow>
         ) : null}
         {address ? (
-          <ContactRow icon={<MapPin aria-hidden className="size-5" />} label={mapCopy.contactAddress}>
+          <ContactRow
+            icon={<MapPin aria-hidden className="size-5" />}
+            label={mapCopy.contactAddress}
+          >
             <p className="text-pretty">{address}</p>
           </ContactRow>
         ) : null}

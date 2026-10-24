@@ -94,8 +94,9 @@ function StepButton({
   return (
     <Button
       type="button"
-      variant="outline"
-      className="size-11 p-0"
+      variant="ghost"
+      size="icon"
+      className={cn('h-full', direction === 'decrease' ? 'rounded-r-none' : 'rounded-l-none')}
       aria-label={label}
       disabled={disabled}
       onClick={onPress}
@@ -122,7 +123,7 @@ function StepperField({ settledValue, min, max, onStep, ...props }: StepperField
       aria-valuenow={settledValue}
       aria-valuemin={min}
       aria-valuemax={max}
-      className="h-11 w-20 text-center tabular-nums"
+      className="h-full w-12 rounded-none border-0 bg-transparent px-0 text-center font-semibold tabular-nums focus-visible:ring-0"
       onKeyDown={(event) => {
         if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
         event.preventDefault();
@@ -133,7 +134,7 @@ function StepperField({ settledValue, min, max, onStep, ...props }: StepperField
   );
 }
 
-// docs/StyleGuide.md §5.6: − / value / + with 44 px buttons for pax and add-on quantities. The middle
+// docs/StyleGuide.md §5.6 (DESIGN-SPEC §2.4): one 44 px box, − / value / + with 44 px buttons for pax and add-on quantities. The middle
 // field is a real spinbutton, so keyboards and screen readers work as they would on a native one.
 export function NumberStepper({
   value,
@@ -148,7 +149,12 @@ export function NumberStepper({
   const { stepBy, fieldProps } = useStepper({ value, onChange, min, max, step, onBlur });
 
   return (
-    <div className={cn('inline-flex items-center gap-2', className)}>
+    <div
+      className={cn(
+        'inline-flex h-11 items-stretch rounded-md border border-input bg-card transition-colors duration-120 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring',
+        className,
+      )}
+    >
       <StepButton
         direction="decrease"
         disabled={value <= min}

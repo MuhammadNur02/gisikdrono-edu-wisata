@@ -4,19 +4,20 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils/cn';
 
-// docs/StyleGuide.md §5.2. Dark mode trades the shadow for a faint white edge (§2.6).
+// docs/StyleGuide.md §5.2: the dashboard and form panel card. Public content cards are editorial instead (photo and
+// text straight on the paper, src/components/{packages,products,articles}); only the review card is a surface.
+// Dark mode trades the shadow for a faint white edge (§2.6).
 const cardVariants = cva(
   'flex flex-col gap-5 rounded-xl border border-border bg-card py-5 text-card-foreground shadow-card aria-disabled:pointer-events-none aria-disabled:opacity-60 md:gap-6 md:py-6 dark:border-white/5 dark:shadow-none',
   {
     variants: {
       variant: {
         base: '',
-        interactive:
-          'transition duration-200 hover:shadow-card-hover motion-safe:hover:-translate-y-0.5 dark:hover:shadow-none',
-        glass: 'bg-white/70 backdrop-blur-md dark:bg-slate-950/60',
+        interactive: 'hover-lift dark:hover:shadow-none',
+        glass: 'bg-card/70 backdrop-blur-md',
         // The header's first icon becomes the 40 px tile, so call sites only pass the bare lucide icon.
         feature:
-          '[&_[data-slot=card-header]>svg]:size-10 [&_[data-slot=card-header]>svg]:rounded-lg [&_[data-slot=card-header]>svg]:bg-secondary [&_[data-slot=card-header]>svg]:p-2.5 [&_[data-slot=card-header]>svg]:text-secondary-foreground',
+          '[&_[data-slot=card-header]>svg]:size-10 [&_[data-slot=card-header]>svg]:rounded-lg [&_[data-slot=card-header]>svg]:bg-primary-tint [&_[data-slot=card-header]>svg]:p-2.5 [&_[data-slot=card-header]>svg]:text-primary-ink',
       },
     },
     defaultVariants: { variant: 'base' },

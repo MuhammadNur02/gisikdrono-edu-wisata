@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight } from 'lucide-react';
 import * as React from 'react';
 
 import { Button } from '@/components/ui/button';
-import { copy } from '@/lib/copy/id';
+import { uiCopy } from '@/lib/copy/ui';
 import { cn } from '@/lib/utils/cn';
 
 type CarouselApi = UseEmblaCarouselType[1];
@@ -166,7 +166,7 @@ function CarouselPrevious({
       {...props}
     >
       <ArrowLeft aria-hidden />
-      <span className="sr-only">{copy.ui.previousSlide}</span>
+      <span className="sr-only">{uiCopy.previousSlide}</span>
     </Button>
   );
 }
@@ -194,7 +194,7 @@ function CarouselNext({
       {...props}
     >
       <ArrowRight aria-hidden />
-      <span className="sr-only">{copy.ui.nextSlide}</span>
+      <span className="sr-only">{uiCopy.nextSlide}</span>
     </Button>
   );
 }

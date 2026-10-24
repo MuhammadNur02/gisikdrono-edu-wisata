@@ -17,7 +17,7 @@ export function FeaturedPackages({ id, packages }: FeaturedPackagesProps) {
   return (
     <Section
       id={id}
-      tone="warm"
+      tone="muted"
       wave={{ variant: 'gentle' }}
       eyebrow="Paket wisata"
       title="Paket unggulan untuk rombongan Anda"
