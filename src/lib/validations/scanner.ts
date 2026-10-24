@@ -28,7 +28,9 @@ const TYPED_CODE_MAX_LENGTH = 40;
 // bookings.pax_count stays far below this; it only keeps a mistyped keypad from reaching the server.
 const ATTENDEE_CEILING = 10_000;
 
-const attemptIdField = z.uuid();
+// Lower case, as Postgres writes a uuid: the route's attestation and the stored attempt then name the same one
+// however the PWA spelled it (re-review of PR #54, L(a)).
+const attemptIdField = z.uuid().transform((id) => id.toLowerCase());
 const modeField = z.enum(['preview', 'commit']);
 const attendeeCountField = z
   .number()

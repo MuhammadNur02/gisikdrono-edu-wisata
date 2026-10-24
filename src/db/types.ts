@@ -4274,9 +4274,22 @@ export type Database = {
       owns_any_rw: { Args: { p_rw_ids: number[] }; Returns: boolean }
       owns_rw: { Args: { p_rw_id: number }; Returns: boolean }
       reset_staff_mfa: { Args: { p_user_id: string }; Returns: Json }
+      revenue_recap: {
+        Args: { p_from: string; p_rw_id?: number; p_to: string }
+        Returns: Json
+      }
       revoke_certificate: {
         Args: { p_certificate_id: string; p_reason: string }
         Returns: undefined
+      }
+      rpc_create_export: {
+        Args: {
+          p_filters: Json
+          p_format: string
+          p_kind: Database["public"]["Enums"]["export_kind"]
+          p_reason: string
+        }
+        Returns: Json
       }
       rpc_get_participants: {
         Args: { p_booking_id: string }
@@ -4617,6 +4630,16 @@ export type Database = {
           p_raw?: string
           p_source?: string
           p_ticket_id: string
+        }
+        Returns: Json
+      }
+      verify_audit_chain: { Args: never; Returns: Json }
+      visit_stats: {
+        Args: {
+          p_from: string
+          p_granularity?: string
+          p_rw_id?: number
+          p_to: string
         }
         Returns: Json
       }

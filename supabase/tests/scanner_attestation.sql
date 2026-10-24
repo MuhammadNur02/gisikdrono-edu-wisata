@@ -5,7 +5,7 @@
 -- signature failed: refused, recorded, counted toward the slow-down and a security event. validate_ticket,
 -- check_in_ticket and the turn are no longer anyone's to call. A refused turn answers before anything is read.
 begin;
-select plan(19);
+select plan(21);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -143,6 +143,18 @@ select is(pg_temp.scan('commit', '00000000-0000-4000-8000-0000000ae001',
 select throws_ok($$select public.scan_ticket('peek', gen_random_uuid(), 'qr', 'GSK.k1.x')$$, '22023', null,
   'a scan is a preview or a commit');
 reset role;
+
+-- ===== The same message as src/lib/scanner/attest.ts (re-review of PR #54, L(b)) =====
+-- The hex values are what attest.ts makes under the secret 'pgtap-cron-secret' (src/lib/scanner/attest.test.ts).
+select vault.update_secret(s.id, 'pgtap-cron-secret') from vault.secrets s where s.name = 'cron_secret';
+select is(internal.scanner_attestation('00000000-0000-4000-8000-00000000f005', '0192f3a4-5b6c-7d8e-9f01-0000000000aa',
+                                       '0192f3a4-5b6c-7d8e-9f01-00000000a001', 'commit', 'qr', 1793000060),
+  '0408e663a6f8bae9c03acee8bcedd8087156082a55fe2f329693e77cc2dfe1af',
+  'the database makes the attestation src/lib/scanner/attest.ts makes');
+select is(internal.scanner_attestation('00000000-0000-4000-8000-00000000f005', null,
+                                       '0192f3a4-5b6c-7d8e-9f01-00000000a001', 'commit', 'qr', 1793000060),
+  '1f3c7de6e0b9436e1a4a25d5244e90505f28906b5d7038940752dac20fb98b76',
+  'and an absent field stays in its place as an empty one, so no field shifts');
 
 -- ===== Without a key nothing verifies =====
 delete from vault.secrets where name = 'cron_secret';

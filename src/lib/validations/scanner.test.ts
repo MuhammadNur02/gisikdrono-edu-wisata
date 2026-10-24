@@ -27,6 +27,17 @@ describe('verifyTicketRequestSchema', () => {
     expect(verifyTicketRequestSchema.parse(commit)).toEqual(commit);
   });
 
+  it('reads the attempt id in lower case, however the PWA spelled it (re-review of PR #54, L(a))', () => {
+    expect(
+      verifyTicketRequestSchema.parse({ ...REQUEST, attemptId: ATTEMPT_ID.toUpperCase() })
+        .attemptId,
+    ).toBe(ATTEMPT_ID);
+    expect(
+      manualCheckInRequestSchema.parse({ ...MANUAL, attemptId: ATTEMPT_ID.toUpperCase() })
+        .attemptId,
+    ).toBe(ATTEMPT_ID);
+  });
+
   it('is strict and refuses anything but a ticket token', () => {
     expect(verifyTicketRequestSchema.safeParse({ ...REQUEST, ticketId: 'x' }).success).toBe(false);
     expect(
