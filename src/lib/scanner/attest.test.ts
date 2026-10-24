@@ -35,6 +35,22 @@ describe('attestScan', () => {
     expect(attestScan({ ...SCAN, ...change }, SECRET)).not.toBe(attestScan(SCAN, SECRET));
   });
 
+  it('reads a uuid in the lower case Postgres writes it in', () => {
+    const shouting = {
+      ...SCAN,
+      ticketId: SCAN.ticketId.toUpperCase(),
+      attemptId: SCAN.attemptId.toUpperCase(),
+    };
+    expect(attestScan(shouting, SECRET)).toBe(attestScan(SCAN, SECRET));
+  });
+
+  // supabase/tests/scanner_attestation.sql expects the same value from internal.scanner_attestation.
+  it('matches the database under the pgTAP secret', () => {
+    expect(attestScan(SCAN, 'pgtap-cron-secret')).toBe(
+      '0408e663a6f8bae9c03acee8bcedd8087156082a55fe2f329693e77cc2dfe1af',
+    );
+  });
+
   it('changes with the secret', () => {
     expect(attestScan(SCAN, 'another-secret')).not.toBe(attestScan(SCAN, SECRET));
   });

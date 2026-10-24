@@ -31,12 +31,14 @@ function attestationKey(cronSecret: string): Buffer {
   return createHmac('sha256', cronSecret).update(KEY_LABEL).digest();
 }
 
-// Hex, as Postgres encode(..., 'hex') writes it.
+// The message is every field in this fixed order, as the text Postgres writes for it (a uuid in lower case), joined
+// by '|'; internal.scanner_attestation spells out the same (20261027080000, re-review of PR #54, L(b)). Hex, as
+// Postgres encode(..., 'hex') writes it.
 export function attestScan(scan: AttestedScan, cronSecret: string): string {
   const message = [
-    scan.officerId,
-    scan.ticketId,
-    scan.attemptId,
+    scan.officerId.toLowerCase(),
+    scan.ticketId.toLowerCase(),
+    scan.attemptId.toLowerCase(),
     scan.mode,
     scan.source,
     String(scan.expiresAt),
