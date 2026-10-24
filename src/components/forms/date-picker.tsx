@@ -16,6 +16,7 @@ import {
   formatDateLong,
   visitDateToCalendarDate,
 } from '@/lib/utils/dates';
+import { fieldLabelId } from '@/lib/utils/field-ids';
 
 export interface DatePickerProps extends Omit<
   React.ComponentProps<'button'>,
@@ -114,6 +115,27 @@ function DatePickerTrigger({
   );
 }
 
+// Below md the calendar sits inline, with no trigger for `<label for>` to name. The group takes FormControl's id,
+// is named by the field's label (which carries "wajib" for a required field) and is described by its help and
+// error text, so a screen reader hears the same field the desktop button gives. aria-invalid and aria-required
+// stay off: neither is allowed on a group (axe aria-allowed-attr); the linked error message says it instead.
+function InlineDatePicker({
+  controlProps,
+  ...calendar
+}: CalendarSettings & { controlProps: React.ComponentProps<'button'> }) {
+  const { id } = controlProps;
+  return (
+    <div
+      role="group"
+      id={id}
+      aria-labelledby={id ? fieldLabelId(id) : undefined}
+      aria-describedby={controlProps['aria-describedby']}
+    >
+      <DateCalendar {...calendar} className="w-full rounded-xl border border-border" />
+    </div>
+  );
+}
+
 // docs/StyleGuide.md §5.6: a popover calendar from md up, the calendar inline and full width below md
 // (where a popover would cover the form). Months and days are in Indonesian.
 export function DatePicker({
@@ -130,19 +152,15 @@ export function DatePicker({
   const settings = { value, firstDate, lastDate, unavailableDates, busyDates };
 
   if (!isDesktop) {
-    return (
-      <DateCalendar
-        {...settings}
-        onChange={onChange}
-        className="w-full rounded-xl border border-border"
-      />
-    );
+    return <InlineDatePicker {...settings} onChange={onChange} controlProps={triggerProps} />;
   }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <DatePickerTrigger value={value} {...triggerProps} />
+        {/* FormControl marks a required field with aria-required, which a button may not carry (WCAG 4.1.2,
+            axe aria-allowed-attr); the label's RequiredMark already says "wajib". */}
+        <DatePickerTrigger value={value} {...triggerProps} aria-required={undefined} />
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
         <DateCalendar

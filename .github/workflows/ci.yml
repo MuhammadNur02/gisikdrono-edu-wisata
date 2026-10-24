@@ -150,14 +150,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       # Migrations, services and the money, QR and link libraries change what the booking flow does even when
-      # no file name says booking, so they run the suite as well; so does a change to the suite itself.
+      # no file name says booking, so they run the suite as well; so does a change to the suite itself, and to the
+      # public UI and SEO code the accessibility and metadata specs guard (Tasks P5.6.02, P5.6.04).
       - name: Did booking, payment, QR, scanner, migration, service or e2e code change?
         id: scope
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
           if git diff --name-only "origin/$BASE_REF...HEAD" \
-            | grep -Eq 'booking|payment|qr|scanner|^supabase/migrations/|^src/server/services/|^src/lib/(pricing|qr|links|midtrans)/|^tests/e2e/|^lighthouserc\.json$'; then
+            | grep -Eq 'booking|payment|qr|scanner|^supabase/migrations/|^src/server/services/|^src/lib/(pricing|qr|links|midtrans)/|^src/(app|components|config|styles)/|^src/lib/seo/|^tests/e2e/|^lighthouserc\.json$'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"

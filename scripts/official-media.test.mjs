@@ -7,6 +7,7 @@ import {
   OFFICIAL_PHOTOS,
   POINT_PHOTO_IDS,
   RW_HERO_PHOTO_IDS,
+  STAGING_HERO_PHOTO_ID,
   officialPhoto,
 } from './official-media.ts';
 
@@ -40,6 +41,10 @@ describe('scripts/official-media.ts', () => {
     for (const photoId of standingPhotos) {
       expect(officialPhoto(photoId).showsChildren).toBe(false);
     }
+  });
+
+  it('gives staging a home hero of the official set that shows no children', () => {
+    expect(officialPhoto(STAGING_HERO_PHOTO_ID).showsChildren).toBe(false);
   });
 
   it('shows each RW page one of its own photos', () => {

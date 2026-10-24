@@ -12,7 +12,6 @@ import {
   offerJsonLd,
   productJsonLd,
   reviewJsonLd,
-  rwAttractionJsonLd,
   serializeJsonLd,
   touristAttractionJsonLd,
   webSiteJsonLd,
@@ -131,6 +130,27 @@ describe('products and offers', () => {
     expect(product.offers).toMatchObject({ availability: 'https://schema.org/InStock' });
     expect(productJsonLd({ name: 'Paket', path: '/paket-wisata/x', offer }).brand).toBeUndefined();
   });
+
+  it('gives a "mulai dari" price as the low end of an AggregateOffer, never as one exact price', () => {
+    const fromPrice = {
+      priceIdr: 30000,
+      path: '/paket-wisata/x',
+      isAvailable: true,
+      isFromPrice: true,
+    };
+    expect(offerJsonLd(fromPrice)).toEqual({
+      '@type': 'AggregateOffer',
+      lowPrice: '30000',
+      priceCurrency: 'IDR',
+      url: `${site}/paket-wisata/x`,
+      availability: 'https://schema.org/InStock',
+    });
+  });
+
+  it('gives no Offer when the catalogue has no price', () => {
+    const product = productJsonLd({ name: 'Paket', path: '/paket-wisata/x' });
+    expect(serializeJsonLd(product)).not.toContain('Offer');
+  });
 });
 
 describe('articles, reviews and documents', () => {
@@ -140,22 +160,19 @@ describe('articles, reviews and documents', () => {
     ).toMatchObject({ dateModified: '2026-10-01', publisher: { '@id': `${site}/#organisasi` } });
   });
 
-  it('scores reviews and their aggregate on a 1 to 5 scale', () => {
-    expect(
-      reviewJsonLd({
-        rating: 4,
-        body: 'Seru',
-        authorName: 'Pengunjung',
-        datePublished: '2026-10-01',
-      }).reviewRating,
-    ).toEqual({ '@type': 'Rating', ratingValue: 4, bestRating: 5, worstRating: 1 });
-    expect(aggregateRatingJsonLd({ averageRating: 4.5, reviewCount: 2 })).toEqual({
-      '@type': 'AggregateRating',
-      ratingValue: 4.5,
-      reviewCount: 2,
-      bestRating: 5,
-      worstRating: 1,
+  it('scores reviews of the kelurahan on a 1 to 5 scale, naming the reviewer only', () => {
+    const kelurahan = { '@id': `${site}/#organisasi` };
+    const input = { rating: 4, body: 'Seru', authorName: 'Sari', datePublished: '2026-10-01' };
+    expect(reviewJsonLd(input)).toEqual({
+      '@type': 'Review',
+      reviewBody: 'Seru',
+      datePublished: '2026-10-01',
+      author: { '@type': 'Person', name: 'Sari' },
+      reviewRating: { '@type': 'Rating', ratingValue: 4, bestRating: 5, worstRating: 1 },
+      itemReviewed: kelurahan,
     });
+    const aggregate = aggregateRatingJsonLd({ averageRating: 4.5, reviewCount: 2 });
+    expect(aggregate).toMatchObject({ ratingValue: 4.5, bestRating: 5, itemReviewed: kelurahan });
   });
 
   it('points a booklet at its download route as a PDF', () => {
@@ -235,58 +252,6 @@ describe('serializeJsonLd', () => {
     expect(JSON.parse(output)).toMatchObject({
       headline: 'Judul </script><script>alert(1)</script>',
     });
-  });
-});
-
-describe('rwAttractionJsonLd', () => {
-  const unit = {
-    id: 5,
-    label: 'RW 05',
-    slug: 'rw-05-ecowastreme',
-    path: '/rw-05-ecowastreme',
-    name: 'RW 05 Ecowastreme',
-    shortName: 'Ecowastreme',
-    accentKey: 'leaf',
-    iconKey: 'recycle',
-    scheduleEnabled: false,
-    productsHeading: null,
-    themeLabel: 'Ekowisata & Lingkungan',
-    tagline: 'Belajar memilah, mengompos dan menanam di kampung tanpa sampah',
-    descriptionMd: null,
-    visionMd: null,
-    heroImage: null,
-    contactPhone: null,
-    contactEmail: null,
-    mapLat: null,
-    mapLng: null,
-  } as const;
-
-  it('describes an RW with its tagline and page, inside the kelurahan', () => {
-    expect(rwAttractionJsonLd(unit)).toMatchObject({
-      '@type': 'TouristAttraction',
-      name: 'RW 05 Ecowastreme',
-      description: unit.tagline,
-      url: `${site}/rw-05-ecowastreme`,
-      image: undefined,
-      containedInPlace: { '@type': 'AdministrativeArea', name: 'Kelurahan Gisikdrono' },
-    });
-  });
-
-  it('gives the full-size public URL of its photo', () => {
-    const withPhoto = {
-      ...unit,
-      heroImage: {
-        path: 'rw-05/gallery/a.webp',
-        alt: 'Foto',
-        width: 1600,
-        height: 1200,
-        placeholderColour: null,
-      },
-    };
-
-    expect(rwAttractionJsonLd(withPhoto).image).toEqual([
-      `${sandboxEnv.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/public-media/rw-05/gallery/a.webp`,
-    ]);
   });
 });
 

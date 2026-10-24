@@ -1,6 +1,15 @@
-import { linkPointPhoto, linkRwHero, seedGalleryPhoto, type GalleryRow } from './seed-photos';
+import {
+  HOME_HERO_TITLE,
+  linkPointPhoto,
+  linkRwHero,
+  seedGalleryPhoto,
+  seedHeroBanner,
+  type GalleryRow,
+  type HeroBanner,
+  type MediaTarget,
+} from './seed-photos';
 
-// pnpm db:seed --official-media <folder>: photos from the kelurahan's own site, gisikdrono.semarangkota.go.id. The
+// pnpm db:seed --official-media <folder> (and pnpm db:seed:staging-media for staging): photos from the kelurahan's own site, gisikdrono.semarangkota.go.id. The
 // kelurahan holds no originals and allowed these to be used (docs/content/konten-situs-kelurahan.md, section 4;
 // decision of 2026-10-22). The files are downloaded into a folder outside the repository, with a manifest beside
 // them, and are never committed; only their file names, descriptions and source addresses live here.
@@ -248,6 +257,16 @@ export const POINT_PHOTO_IDS: Record<string, string> = {
   'mural-dan-spot-foto': '0de00000-0000-4000-8001-000000000018',
 };
 
+// The home hero of staging (decision of 2026-10-24): a photo the kelurahan already publishes, with no children and
+// no faces at all, because the development photos of scripts/demo-media.ts stay in the gallery there. Its own
+// banner id and file, beside the gallery copy of the same photo.
+export const STAGING_HERO_PHOTO_ID = '0de00000-0000-4000-8001-000000000002';
+const STAGING_HERO: Omit<HeroBanner, 'file'> = {
+  id: '0de00000-0000-4000-8001-0000000000e1',
+  title: HOME_HERO_TITLE,
+  subtitle: 'Kolam ikan berbingkai hijau dengan pancuran kecil di antara tanaman sayur, RW 05.',
+};
+
 export function officialPhoto(photoId: string): OfficialPhoto {
   const photo = OFFICIAL_PHOTOS.find((candidate) => candidate.id === photoId);
   if (!photo) throw new Error(`no official photo ${photoId}`);
@@ -255,15 +274,25 @@ export function officialPhoto(photoId: string): OfficialPhoto {
 }
 
 // Runs after the development photos, so an RW page or a point that already shows one of those keeps it.
-export async function seedOfficialMedia(folder: string): Promise<number> {
+export async function seedOfficialMedia(target: MediaTarget, folder: string): Promise<number> {
   for (const [index, photo] of OFFICIAL_PHOTOS.entries()) {
-    await seedGalleryPhoto(folder, photo.file, { ...photo, sortOrder: FIRST_SORT_ORDER + index });
+    await seedGalleryPhoto(target, folder, photo.file, {
+      ...photo,
+      sortOrder: FIRST_SORT_ORDER + index,
+    });
   }
   for (const [rwId, photoId] of Object.entries(RW_HERO_PHOTO_IDS)) {
-    await linkRwHero(Number(rwId), photoId);
+    await linkRwHero(target, Number(rwId), photoId);
   }
   for (const [slug, photoId] of Object.entries(POINT_PHOTO_IDS)) {
-    await linkPointPhoto(folder, slug, officialPhoto(photoId));
+    await linkPointPhoto(target, folder, slug, officialPhoto(photoId));
   }
   return OFFICIAL_PHOTOS.length;
+}
+
+export async function seedOfficialHeroBanner(target: MediaTarget, folder: string): Promise<void> {
+  await seedHeroBanner(target, folder, {
+    ...STAGING_HERO,
+    file: officialPhoto(STAGING_HERO_PHOTO_ID).file,
+  });
 }

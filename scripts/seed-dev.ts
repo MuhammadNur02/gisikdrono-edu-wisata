@@ -1,8 +1,10 @@
-import { mediaFoldersFromArgs, seedDemoMedia } from './demo-media';
+import { seedDemoBooklet } from './demo-booklet';
+import { demoBookletPhotoFiles, mediaFoldersFromArgs, seedDemoMedia } from './demo-media';
 import { DEV_ACCOUNTS, DEV_ONLY_PASSWORD, DEV_ONLY_TOTP_SECRET, totpCode } from './dev-accounts';
 import { devSeedSql } from './dev-seed-sql';
 import { localStack, runSql, sqlText } from './local-stack';
 import { seedOfficialMedia } from './official-media';
+import { LOCAL_TARGET } from './seed-photos';
 
 // pnpm db:seed (Task P1.8.02): writes the development staff accounts of scripts/seed-dev.sql and the demo content of
 // scripts/seed-demo-content.sql into the local stack, then prints how to sign in with the TOTP code of this moment.
@@ -24,15 +26,21 @@ await runSql(`select set_config('dev_seed.password', ${sqlText(DEV_ONLY_PASSWORD
 ${seedSql}`);
 
 // After the SQL, which has already refused any database not marked local. The development photos go first, so
-// an RW page or an activity point that shows one of them keeps it.
+// an RW page or an activity point that shows one of them keeps it. The e-booklet is built only here, locally.
+async function seedLocalDemoMedia(folder: string): Promise<number> {
+  const placed = await seedDemoMedia(LOCAL_TARGET, folder);
+  await seedDemoBooklet(demoBookletPhotoFiles(folder));
+  return placed;
+}
+
 const mediaLine =
   folders.media === undefined
     ? 'Demo photos: none (pass --media <folder> to upload them; pages show Foto menyusul meanwhile)'
-    : `Demo photos: ${String(await seedDemoMedia(folders.media))} uploaded from ${folders.media}`;
+    : `Demo photos: ${String(await seedLocalDemoMedia(folders.media))} uploaded from ${folders.media}`;
 const officialMediaLine =
   folders.officialMedia === undefined
     ? 'Official-site photos: none (pass --official-media <folder> to upload them)'
-    : `Official-site photos: ${String(await seedOfficialMedia(folders.officialMedia))} uploaded from ${folders.officialMedia}`;
+    : `Official-site photos: ${String(await seedOfficialMedia(LOCAL_TARGET, folders.officialMedia))} uploaded from ${folders.officialMedia}`;
 
 const lines = [
   `Local development accounts on ${localStack().apiUrl}:`,

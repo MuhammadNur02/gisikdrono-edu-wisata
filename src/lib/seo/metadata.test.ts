@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { absoluteUrl, buildPageMetadata, rootMetadata } from './metadata';
+import { absoluteUrl, buildHomeMetadata, buildPageMetadata, rootMetadata } from './metadata';
 
 describe('rootMetadata', () => {
   it('titles every page "<page> | Edu Wisata Gisikdrono"', () => {
@@ -28,10 +28,23 @@ describe('buildPageMetadata', () => {
         type: 'website',
         locale: 'id_ID',
         siteName: 'Edu Wisata Gisikdrono',
+        images: { url: '/opengraph-image', width: 1200, height: 630, alt: 'Edu Wisata Gisikdrono' },
         title: 'Paket wisata',
         description: 'Semua paket.',
         url: '/paket-wisata',
       },
+    });
+  });
+});
+
+describe('buildHomeMetadata', () => {
+  it('keeps the default title and gives the home page its canonical and description', () => {
+    const metadata = buildHomeMetadata('Edu wisata di Semarang Barat.');
+    expect(metadata.title).toBeUndefined();
+    expect(metadata).toMatchObject({
+      description: 'Edu wisata di Semarang Barat.',
+      alternates: { canonical: '/' },
+      openGraph: { title: 'Edu Wisata Gisikdrono', url: '/', locale: 'id_ID' },
     });
   });
 });
