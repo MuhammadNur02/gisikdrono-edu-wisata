@@ -15,7 +15,12 @@ const BLOCKING_IMPACTS: readonly string[] = ['serious', 'critical'];
 // Enough selectors to find the element in the trace without flooding the log.
 const TARGETS_SHOWN = 5;
 
-// The package pnpm db:seed publishes (scripts/seed-dev.sql), the one the booking wizard spec books.
+// Cloudflare's Turnstile iframe mounts asynchronously and is not ours to fix, so scanning it makes a run flaky.
+// Its container (TurnstileField, a labelled group) stays in the scan. Every audited page excludes it, so a form
+// that gains the widget later needs no change here.
+const TURNSTILE_IFRAME = 'iframe[src*="challenges.cloudflare.com"]';
+
+// The package pnpm db:seed publishes (scripts/seed-demo-content.sql), the one the booking wizard spec books.
 const SEEDED_PACKAGE_SLUG = 'paket-eduwisata-ecowastreme';
 
 const AUDITED_PAGES = [
@@ -54,7 +59,10 @@ for (const { name, path } of AUDITED_PAGES) {
     expect(response?.status()).toBe(200);
     await expect(page.locator('main')).toBeVisible();
 
-    const results = await new AxeBuilder({ page }).withTags(WCAG_21_AA_TAGS).analyze();
+    const results = await new AxeBuilder({ page })
+      .withTags(WCAG_21_AA_TAGS)
+      .exclude(TURNSTILE_IFRAME)
+      .analyze();
     await attachReport(testInfo, results);
 
     const blocking = results.violations.filter((violation) =>
