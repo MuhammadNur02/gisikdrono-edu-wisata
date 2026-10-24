@@ -140,7 +140,7 @@ select throws_ok(
 );
 select throws_ok(
   $$update public.payments set method = 'virtual_account' where id = '00000000-0000-4000-9000-000000000341'$$,
-  'P0001', 'a settled payment only changes its status and refunded amount',
+  'P0001', 'a payment Midtrans settled only changes its status and refunded amount',
   'a settled payment keeps every other column'
 );
 select lives_ok(
