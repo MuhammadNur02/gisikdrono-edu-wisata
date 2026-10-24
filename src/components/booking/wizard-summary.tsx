@@ -141,7 +141,7 @@ export function WizardSummaryBar(props: WizardSummaryProps) {
     : wizardPackage.rws.map((rw) => rw.label).join(RW_JOINER);
   return (
     <details className="group border-b border-border bg-card lg:hidden">
-      <summary className="mx-auto flex min-h-16 w-full max-w-300 cursor-pointer list-none items-center gap-4 px-5 py-3 md:px-10">
+      <summary className="mx-auto flex h-16 w-full max-w-300 cursor-pointer list-none items-center gap-4 px-5 py-3 md:px-10">
         <span className="min-w-0 flex-1">
           <span className="block truncate py-0.5 text-label font-semibold text-foreground">
             {wizardPackage.name}
