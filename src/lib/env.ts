@@ -9,6 +9,7 @@ import {
   MIDTRANS_MERCHANT_ID_PATTERN,
 } from '@/lib/midtrans/environment';
 import { isHostedDeployment, publicEnv, TURNSTILE_TEST_KEY_PATTERN } from '@/lib/public-env';
+import { QR_KID_PATTERN } from '@/lib/qr/sign';
 import { MOBILE_PHONE_PATTERN } from '@/lib/utils/phone';
 
 const MIN_SECRET_LENGTH = 32;
@@ -86,6 +87,11 @@ function findKeyRingProblems(values: EnvValues): string[] {
   const problems: string[] = [];
   if (!(values.QR_SIGNING_ACTIVE_KID in values.QR_SIGNING_KEYS)) {
     problems.push('QR_SIGNING_ACTIVE_KID must name a kid that exists in QR_SIGNING_KEYS');
+  }
+  // The kid goes into every QR token and tickets_qr.key_id, which refuse any other spelling; caught here, not by the
+  // first settlement.
+  if (!QR_KID_PATTERN.test(values.QR_SIGNING_ACTIVE_KID)) {
+    problems.push('QR_SIGNING_ACTIVE_KID must be lowercase letters and digits only');
   }
   const piiKid = values.PARTICIPANT_PII_ACTIVE_KID;
   if (piiKid !== undefined && !(piiKid in (values.PARTICIPANT_PII_KEYS ?? {}))) {

@@ -84,3 +84,26 @@ describe('isAuthenticTicket', () => {
     expect(isAuthenticTicket({ ...read, signature: 'short' }, TICKET, KEY_RING)).toBe(false);
   });
 });
+
+// docs/Security.md §9.1 (QR-05): a rotation adds a kid and signs new tickets with it; the old kid stays in the ring
+// until 30 days after its last valid_on, then leaves it, and its tickets stop being valid.
+describe('a key rotation', () => {
+  const oldRead = readTicketToken(signTicket(TICKET, 'k1', KEY_RING));
+  const newRead = readTicketToken(signTicket(TICKET, 'k2', KEY_RING));
+  if (oldRead === null || newRead === null) throw new Error('the fixture tokens do not read');
+
+  it('keeps tickets of the old kid valid while it is in the ring, beside those of the new one', () => {
+    expect(isAuthenticTicket(oldRead, TICKET, KEY_RING)).toBe(true);
+    expect(isAuthenticTicket(newRead, TICKET, KEY_RING)).toBe(true);
+  });
+
+  it('ends them once the old kid leaves the ring, and the new kid’s tickets carry on', () => {
+    const afterRetirement = { k2: KEY_RING.k2 };
+    expect(isAuthenticTicket(oldRead, TICKET, afterRetirement)).toBe(false);
+    expect(isAuthenticTicket(newRead, TICKET, afterRetirement)).toBe(true);
+  });
+
+  it('never accepts an old signature relabelled with the new kid', () => {
+    expect(isAuthenticTicket({ ...oldRead, kid: 'k2' }, TICKET, KEY_RING)).toBe(false);
+  });
+});

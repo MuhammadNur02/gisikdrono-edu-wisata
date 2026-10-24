@@ -128,6 +128,13 @@ describe('findEnvProblems', () => {
     expect(findEnvProblems({ ...sandbox, PARTICIPANT_PII_ACTIVE_KID: 'k1' })).toHaveLength(1);
   });
 
+  it('rejects a QR kid a token or tickets_qr.key_id could not carry', () => {
+    const ring = { 'Kid-1': 'key' };
+    expect(
+      findEnvProblems({ ...sandbox, QR_SIGNING_KEYS: ring, QR_SIGNING_ACTIVE_KID: 'Kid-1' }),
+    ).toEqual(['QR_SIGNING_ACTIVE_KID must be lowercase letters and digits only']);
+  });
+
   it('refuses the Midtrans stub on a Vercel deployment and off this machine', () => {
     expect(
       findEnvProblems({ ...sandbox, MIDTRANS_LOCAL_STUB_URL: 'http://127.0.0.1:4010' }),
