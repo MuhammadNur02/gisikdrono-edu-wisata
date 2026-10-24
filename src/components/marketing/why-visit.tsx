@@ -1,166 +1,177 @@
-import { CalendarCheck, QrCode, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { Award, CalendarCheck, HandHeart, Recycle, type LucideIcon } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import type { ReactNode } from 'react';
 
-import { Container } from '@/components/layout/container';
 import { SectionShell } from '@/components/layout/section';
+import { SectionHeading } from '@/components/layout/section-heading';
 import { FigureStat, FiguresPanel } from '@/components/marketing/figure-stat';
-import { ParallaxPhoto } from '@/components/marketing/parallax-photo';
-import { IMAGE_SIZES } from '@/config/images';
-import { copy } from '@/lib/copy/id';
-import type { HomeGalleryPhoto } from '@/lib/utils/home-gallery';
-import { hasHomeStats, type HomeCountKey, type HomeStats } from '@/lib/utils/home-stats';
-import { countWord } from '@/lib/utils/number-words';
-import { formatRating } from '@/lib/utils/ratings';
+import { ARTS_KAMPUNG_HERITAGE, FIGURE_STAGGER_MS, MIN_FIGURES_SHOWN } from '@/config/home';
+import { homeCopy } from '@/lib/copy/home';
+import { joinWithAnd } from '@/lib/utils/lists';
+import type { RwUnitProfile } from '@/types/rw-unit';
 
 // The count-up loads after the page; the server already renders each final figure (docs/StyleGuide.md §7.4).
 const CountUp = dynamic(() =>
   import('@/components/marketing/count-up').then((module) => module.CountUp),
 );
 
-// What each figure counts; kelurahan to review (docs/StyleGuide.md §1.3 G6).
-const COUNT_LABELS: Record<HomeCountKey, string> = {
-  rws: 'kampung wisata',
-  packages: 'paket kunjungan',
-  points: 'titik kegiatan',
-  vendors: 'pelaku UMKM',
-};
-
 interface Reason {
   icon: LucideIcon;
+  // The tile's tint and icon colour: an RW accent set, or gold for the certificate.
+  tone: string;
   title: string;
   body: string;
 }
 
-// How a visit works, as docs/PRD.md describes the flow, rather than praise (§1.3 G6). `Sertifikat elektronik
-// untuk rombongan` joins once the certificate flow is live.
+// DESIGN-SPEC §3.1 `Kenapa Gisikdrono`, word for word.
 const REASONS: readonly Reason[] = [
   {
-    icon: CalendarCheck,
-    title: 'Sesi terjadwal, kuota terlihat',
-    body: 'Pilih tanggal dan sesi; sisa kuota tampil sebelum Anda membayar.',
+    icon: HandHeart,
+    tone: 'bg-rw05-tint text-rw05',
+    title: 'Dipandu warga sendiri',
+    body: 'Ibu-ibu PKK, pengurus RT/RW, kader lingkungan, dan seniman kampung menjelaskan apa yang mereka kerjakan setiap hari.',
   },
   {
-    icon: QrCode,
-    title: 'Tiket QR lewat WhatsApp dan email',
-    body: 'Setelah pembayaran diterima, tiket untuk gerbang kampung dikirim ke penanggung jawab rombongan.',
+    icon: Recycle,
+    tone: 'bg-rw13-tint text-rw13',
+    title: 'Praktik, bukan sekadar melihat',
+    body: 'Peserta ikut memilah sampah, melihat budidaya maggot, mencicipi minuman herbal TOGA, menabuh gamelan, dan bermain dolanan.',
   },
-  { icon: ShieldCheck, title: 'Bayar hanya lewat sistem', body: copy.layout.paymentTrust },
+  {
+    icon: CalendarCheck,
+    tone: 'bg-rw08-tint text-rw08',
+    title: 'Sesi berjadwal, kuota pasti',
+    body: 'Setiap sesi punya kuota. Kursi rombonganmu terkunci begitu pemesanan dibuat, jadi tidak ada pesanan ganda.',
+  },
+  {
+    icon: Award,
+    tone: 'bg-gold-tint text-gold-ink',
+    title: 'E-sertifikat setelah hadir',
+    body: 'Sertifikat kelompok dan peserta terbit otomatis setelah rombongan check-in di gerbang kampung.',
+  },
 ];
 
-function headlineFor(rwCount: number): string {
-  const where = rwCount > 0 ? `${countWord(rwCount)} kampung` : 'Gisikdrono';
-  return `Belajar langsung dari kegiatan warga di ${where}`;
-}
-
-// The icon sits in the 40 px tile of docs/StyleGuide.md §8.1.
+// The icon tile settles from .92 and the words rise 12 px, 60 ms apart (DESIGN-SPEC §4, Reasons).
 function ReasonItem({ reason }: { reason: Reason }) {
   const Icon = reason.icon;
   return (
-    <li className="flex gap-4">
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary-tint text-primary-ink">
-        <Icon aria-hidden className="size-5" strokeWidth={1.75} />
+    <li className="flex gap-4 md:flex-col md:gap-5">
+      <span
+        className={`flex size-11 shrink-0 reveal-scale items-center justify-center rounded-md md:size-12 ${reason.tone}`}
+      >
+        <Icon aria-hidden className="size-5" />
       </span>
-      <span className="space-y-1">
-        <span className="block text-h4">{reason.title}</span>
-        <span className="block text-body text-muted-foreground">{reason.body}</span>
+      <span className="reveal space-y-2">
+        <span className="block font-display text-lg leading-snug font-bold md:text-xl">
+          {reason.title}
+        </span>
+        <span className="block text-body text-ink-2">{reason.body}</span>
       </span>
     </li>
   );
 }
 
-function ReasonList() {
+interface Figure {
+  key: string;
+  value: number;
+  label: ReactNode;
+}
+
+// A long label from md, the short one on a phone (DESIGN-SPEC §3.1, figures band).
+function twoLengths(long: string, short: string): ReactNode {
   return (
-    <ul className="space-y-6">
-      {REASONS.map((reason) => (
-        <ReasonItem key={reason.title} reason={reason} />
-      ))}
-    </ul>
+    <>
+      <span className="max-md:hidden">{long}</span>
+      <span className="md:hidden">{short}</span>
+    </>
   );
 }
 
-// A row of figures counts up 120 ms apart (DESIGN-SPEC §4, Home figures).
-const COUNT_STAGGER_MS = 120;
+// 3 kampung and 14 points are counted from rw_units and activity_points; the dances and games count the arts
+// kampung's own lists, and show only while that kampung is online.
+function figuresFor(units: readonly RwUnitProfile[], pointCount: number): Figure[] {
+  const figures: Figure[] = [];
+  const copy = homeCopy.why;
+  if (units.length > 0) {
+    const labels = joinWithAnd(units.map((unit) => unit.label));
+    figures.push({
+      key: 'rw',
+      value: units.length,
+      label: twoLengths(copy.kampung(labels), copy.kampungShort),
+    });
+  }
+  if (pointCount > 0) {
+    figures.push({
+      key: 'points',
+      value: pointCount,
+      label: twoLengths(copy.points, copy.pointsShort),
+    });
+  }
+  if (units.some((unit) => unit.scheduleEnabled)) {
+    const { dances, games } = ARTS_KAMPUNG_HERITAGE;
+    figures.push(
+      {
+        key: 'dances',
+        value: dances.length,
+        label: twoLengths(copy.dances(joinWithAnd(dances)), copy.dancesShort),
+      },
+      {
+        key: 'games',
+        value: games.length,
+        label: twoLengths(copy.games(games.join(', ')), copy.gamesShort),
+      },
+    );
+  }
+  return figures;
+}
 
-// Counted figures and the rating in the forest figures band (DESIGN-SPEC §3.1). The rating is shown as it is, never
-// counted up.
-function Figures({ stats }: { stats: HomeStats }) {
+function Figures({ figures }: { figures: readonly Figure[] }) {
   return (
     <FiguresPanel
-      title="Gisikdrono dalam angka"
-      note="Dihitung dari data kampung di situs ini"
+      title={homeCopy.why.figuresTitle}
+      note={homeCopy.why.figuresNote}
       className="mt-14 lg:mt-18"
     >
-      {stats.counts.map((count, index) => (
+      {figures.map((figure, index) => (
         <FigureStat
-          key={count.key}
+          key={figure.key}
           tone="forest"
-          label={COUNT_LABELS[count.key]}
-          value={<CountUp value={count.value} delayMs={index * COUNT_STAGGER_MS} />}
+          label={figure.label}
+          value={<CountUp value={figure.value} delayMs={index * FIGURE_STAGGER_MS} />}
         />
       ))}
-      {stats.rating ? (
-        <FigureStat
-          tone="forest"
-          label={copy.catalogue.ratingFromReviews(stats.rating.reviewCount)}
-          value={formatRating(stats.rating.averageRating)}
-        />
-      ) : null}
     </FiguresPanel>
-  );
-}
-
-// A captioned gallery photo across the whole width (G8) under the parallax band grade (DESIGN-SPEC §1.7), the caption
-// over its darkened lower left.
-function PhotoBand({ photo }: { photo: HomeGalleryPhoto }) {
-  return (
-    <figure className="relative">
-      <ParallaxPhoto
-        image={photo.image}
-        sizes={IMAGE_SIZES.bleed}
-        aspectClassName="aspect-4/3 md:aspect-21/9"
-      />
-      <div aria-hidden className="photo-grade-band absolute inset-0" />
-      <figcaption className="absolute inset-x-0 bottom-0">
-        <Container className="pb-5 text-body-sm text-white md:pb-8 md:text-body">
-          {photo.caption}
-        </Container>
-      </figcaption>
-    </figure>
   );
 }
 
 export interface WhyVisitProps {
   id: string;
-  rwCount: number;
-  stats: HomeStats;
-  // The first captioned gallery photo, for the band under the section; NULL leaves the band out.
-  bandPhoto: HomeGalleryPhoto | null;
+  units: readonly RwUnitProfile[];
+  pointCount: number;
 }
 
-// Why a group visits, with figures counted from published rows (docs/StyleGuide.md §1.3 G5).
-export function WhyVisit({ id, rwCount, stats, bandPhoto }: WhyVisitProps) {
+// DESIGN-SPEC §3.1: why a group visits, in four reasons beside the heading, then the forest figures band, whose numbers
+// count up once as it comes into view. With fewer than two figures the band is left out (docs/StyleGuide.md §1.3 G5).
+export function WhyVisit({ id, units, pointCount }: WhyVisitProps) {
   const titleId = `${id}-judul`;
+  const figures = figuresFor(units, pointCount);
   return (
-    <SectionShell
-      id={id}
-      labelledBy={titleId}
-      wave={{ variant: 'gentle', flip: true }}
-      bleed={bandPhoto ? <PhotoBand photo={bandPhoto} /> : undefined}
-    >
-      <div className="grid gap-12 lg:grid-cols-12 lg:items-start">
-        <div className="space-y-8 lg:col-span-7">
-          <div className="space-y-3">
-            <p className="text-overline text-primary-text">Mengapa Gisikdrono</p>
-            <h2 id={titleId} className="text-h1 text-balance">
-              {headlineFor(rwCount)}
-            </h2>
-          </div>
-          <div className="reveal">
-            <ReasonList />
-          </div>
-        </div>
+    <SectionShell id={id} labelledBy={titleId} className="lg:py-32">
+      <div className="grid gap-10 lg:grid-cols-12 lg:gap-x-6">
+        <SectionHeading
+          titleId={titleId}
+          eyebrow={homeCopy.why.eyebrow}
+          title={homeCopy.why.title}
+          description={homeCopy.why.description}
+          className="lg:col-span-5"
+        />
+        <ul className="grid gap-8 reveal-stagger md:grid-cols-2 md:gap-x-12 md:gap-y-12 lg:col-span-6 lg:col-start-7">
+          {REASONS.map((reason) => (
+            <ReasonItem key={reason.title} reason={reason} />
+          ))}
+        </ul>
       </div>
-      {hasHomeStats(stats) ? <Figures stats={stats} /> : null}
+      {figures.length >= MIN_FIGURES_SHOWN ? <Figures figures={figures} /> : null}
     </SectionShell>
   );
 }

@@ -1,6 +1,12 @@
+import { ArrowRight, PackagePlus } from 'lucide-react';
+import Link from 'next/link';
+
 import { Section } from '@/components/layout/section';
-import { SectionLink } from '@/components/marketing/section-link';
+import { SnapRail } from '@/components/marketing/snap-rail';
 import { ProductCard } from '@/components/products/product-card';
+import { Button } from '@/components/ui/button';
+import { homeCopy } from '@/lib/copy/home';
+import { cn } from '@/lib/utils/cn';
 import { PUBLIC_PATHS } from '@/lib/utils/paths';
 import type { ProductSummary } from '@/types/product';
 
@@ -9,32 +15,76 @@ export interface FeaturedProductsProps {
   products: readonly ProductSummary[];
 }
 
-// The card grid of docs/StyleGuide.md §4.2 from sm. Below sm the four square cards would make one very long
-// column, so they become a scroll-snap row instead, the next card peeking in from the edge (decision of
-// 2026-10-23); the row reaches the screen edge and starts in line with the content. From sm each card fades up as
-// it enters the screen (`reveal`, §7.3); inside the phone's row it simply shows.
-const ROW_CLASSES = {
-  list: '-mx-4 flex snap-x snap-mandatory scroll-px-4 gap-4 overflow-x-auto px-4 scrollbar-none sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-6 sm:overflow-visible sm:px-0 lg:grid-cols-3 xl:grid-cols-4',
-  item: 'reveal flex shrink-0 basis-3/4 snap-start sm:basis-auto',
-};
+function AllProductsButton({ className }: { className?: string }) {
+  return (
+    <Button variant="outline" asChild className={className}>
+      <Link href={PUBLIC_PATHS.products}>
+        {homeCopy.products.all}
+        <ArrowRight data-icon="trailing" aria-hidden />
+      </Link>
+    </Button>
+  );
+}
 
-// The UMKM products the kelurahan marks `is_featured` (Task P2.4.01).
+// How an add-on is ordered, on night beside the cards: three numbered steps from md, one sentence on a phone. The step
+// numbers settle in one after another (DESIGN-SPEC §4, Add-on panel).
+function AddonPanel() {
+  return (
+    <aside className="kawung flex flex-col gap-5 rounded-lg bg-night p-7 text-white ring-on-dark kawung-6 md:reveal">
+      <p className="flex items-center gap-3 md:flex-col md:items-start md:gap-5">
+        <PackagePlus aria-hidden className="size-7 shrink-0 text-gold" />
+        <span className="font-display text-xl leading-tight font-bold md:text-2xl">
+          {homeCopy.products.panelTitle}
+        </span>
+      </p>
+      <ol className="space-y-3.5 reveal-stagger max-md:hidden">
+        {homeCopy.products.panelSteps.map((step, index) => (
+          <li key={step} className="flex gap-3 text-body-sm text-on-dark-2">
+            <span
+              aria-hidden
+              className="flex size-6 shrink-0 reveal-scale items-center justify-center rounded-full border border-white/40 text-xs font-semibold text-white"
+            >
+              {index + 1}
+            </span>
+            {step}
+          </li>
+        ))}
+      </ol>
+      <p className="text-body-sm text-on-dark-2 md:hidden">{homeCopy.products.panelShort}</p>
+    </aside>
+  );
+}
+
+const ROW_CLASS =
+  'flex snap-x snap-mandatory gap-4 overflow-x-auto scrollbar-none max-md:pr-container max-md:pl-container md:contents';
+
+// docs/PRD.md FR-PUB-04 and the products the kelurahan marks is_featured (Task P2.4.01), DESIGN-SPEC §3.1 `Produk UMKM`:
+// three cards and the add-on panel in one row from lg; on a phone the cards are a carousel of 220 px and the panel
+// follows at full width.
 export function FeaturedProducts({ id, products }: FeaturedProductsProps) {
+  const rowId = `${id}-baris`;
   return (
     <Section
       id={id}
-      wave={{ variant: 'gentle', flip: true }}
-      eyebrow="Produk UMKM"
-      title="Buatan warga, bisa jadi oleh-oleh rombongan"
-      headerAction={<SectionLink href={PUBLIC_PATHS.products} label="Lihat semua produk UMKM" />}
+      eyebrow={homeCopy.products.eyebrow}
+      title={homeCopy.products.title}
+      description={homeCopy.products.description}
+      headerAction={<AllProductsButton className="max-md:hidden" />}
     >
-      <ul className={ROW_CLASSES.list}>
-        {products.map((product) => (
-          <li key={product.id} className={ROW_CLASSES.item}>
-            <ProductCard product={product} />
-          </li>
-        ))}
-      </ul>
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <div className="space-y-5 max-md:-mx-5 md:contents">
+          <ul id={rowId} className={cn(ROW_CLASS, 'reveal-stagger')}>
+            {products.map((product) => (
+              <li key={product.id} className="flex w-55 shrink-0 snap-start md:w-auto md:reveal">
+                <ProductCard product={product} />
+              </li>
+            ))}
+          </ul>
+          <SnapRail targetId={rowId} count={products.length} barsClassName="px-5 md:hidden" />
+        </div>
+        <AddonPanel />
+      </div>
+      <AllProductsButton className="w-full md:hidden" />
     </Section>
   );
 }

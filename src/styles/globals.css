@@ -4,6 +4,7 @@
 @import './utilities.css';
 @import './motion.css';
 @import './catalogue.css';
+@import './pages.css';
 @plugin '@tailwindcss/typography';
 
 @custom-variant dark (&:is(.dark *));

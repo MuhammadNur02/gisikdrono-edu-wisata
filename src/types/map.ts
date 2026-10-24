@@ -79,3 +79,14 @@ export interface GeoMarker extends GeoPoint {
   // Still the position the demo seed estimated (src/lib/utils/map-estimates.ts): shown as `perkiraan`.
   isEstimate: boolean;
 }
+
+// An RW on the home page's map (DESIGN-SPEC §3.1): its centre from rw_units.map_lat / map_lng and the pill that links to
+// its page. Serialisable, so the island receives it as a prop.
+export interface RwPin extends GeoPoint {
+  // `RW 05`, the pill on a phone.
+  label: string;
+  // `RW 05 · Ecowastreme`, the pill from md.
+  name: string;
+  path: string;
+  accentKey: RwAccent;
+}
