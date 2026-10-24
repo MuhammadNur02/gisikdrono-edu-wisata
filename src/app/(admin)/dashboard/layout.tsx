@@ -94,6 +94,7 @@ export default async function DashboardLayout({ children }: Readonly<{ children:
         commandMenu={<CommandMenu items={menuItems} />}
         userMenu={<UserMenu fullName={profile.fullName} roleLabel={roleLabel} />}
         idleLock={<IdleLock action={verifyStaffTotpAction} />}
+        canOverrideScans={ctx.role === 'superadmin'}
       >
         {children}
       </DashboardShell>

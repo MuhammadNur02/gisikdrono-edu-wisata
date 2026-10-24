@@ -1,11 +1,8 @@
-import { ScanLine } from 'lucide-react';
-import Link from 'next/link';
 import type { ReactNode } from 'react';
 
+import { ScannerModalButton } from '@/components/admin/scanner/scanner-modal-button';
 import { Breadcrumbs, type BreadcrumbItem } from '@/components/admin/shell/breadcrumbs';
-import { Button } from '@/components/ui/button';
 import { SidebarTrigger } from '@/components/ui/sidebar';
-import { SCANNER_PATH } from '@/config/dashboard';
 import { copy } from '@/lib/copy/id';
 
 export interface TopbarProps {
@@ -17,17 +14,20 @@ export interface TopbarProps {
   context: ReactNode;
   commandMenu: ReactNode;
   userMenu: ReactNode;
+  // The superadmin may override a wrong day or a closed session window from the ScannerModal too (FR-SCAN-09).
+  canOverrideScans: boolean;
 }
 
 // docs/StyleGuide.md §6.1 (Task P4.1.01): sidebar trigger and breadcrumb on the left; the RwSwitcher, `Scan Tiket`,
-// the command palette and the avatar menu on the right. `Scan Tiket` opens the scanner page; the ScannerModal of
-// §6.6 takes its place in Task P4.4. Below md the QuickScannerBar carries the scan button instead.
+// the command palette and the avatar menu on the right. `Scan Tiket` opens the ScannerModal of §6.6 (Task P4.4.04).
+// Below md the QuickScannerBar carries the scan button instead.
 export function Topbar({
   breadcrumbItems,
   rwSwitcher,
   context,
   commandMenu,
   userMenu,
+  canOverrideScans,
 }: TopbarProps) {
   return (
     <header className="sticky top-0 z-40 flex h-16 items-center gap-2 border-b border-border bg-background/80 px-3 backdrop-blur md:gap-3 md:px-6">
@@ -38,12 +38,12 @@ export function Topbar({
       <div className="min-w-0 flex-1 sm:hidden">{rwSwitcher ? null : context}</div>
       <div className="flex shrink-0 items-center gap-1 md:gap-2">
         <div className="hidden md:block">{rwSwitcher}</div>
-        <Button asChild size="sm" className="hidden md:inline-flex">
-          <Link href={SCANNER_PATH}>
-            <ScanLine aria-hidden />
-            {copy.dashboard.topbar.scanTicket}
-          </Link>
-        </Button>
+        <ScannerModalButton
+          label={copy.dashboard.topbar.scanTicket}
+          canOverride={canOverrideScans}
+          size="sm"
+          className="hidden md:inline-flex"
+        />
         {commandMenu}
         {userMenu}
       </div>

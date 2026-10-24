@@ -34,7 +34,28 @@ export interface DashboardShellProps {
   userMenu: ReactNode;
   // The idle lock overlay, mounted last so it sits above everything.
   idleLock: ReactNode;
+  // The superadmin's scans may override a wrong day or a closed window (docs/PRD.md FR-SCAN-09).
+  canOverrideScans: boolean;
   children: ReactNode;
+}
+
+type ShellColumnProps = Omit<DashboardShellProps, 'sidebarOpen' | 'nav' | 'footer' | 'idleLock'>;
+
+// Everything right of the sidebar: the topbar, the RwSwitcher row below md, the page and the QuickScannerBar.
+function ShellColumn({ rwSwitcher, canOverrideScans, children, ...topbar }: ShellColumnProps) {
+  return (
+    <div className="flex min-h-svh min-w-0 flex-1 flex-col">
+      <Topbar {...topbar} rwSwitcher={rwSwitcher} canOverrideScans={canOverrideScans} />
+      {rwSwitcher ? <div className="overflow-x-auto px-4 pt-3 md:hidden">{rwSwitcher}</div> : null}
+      <main
+        id={MAIN_CONTENT_ID}
+        className="mx-auto w-full max-w-(--breakpoint-2xl) flex-1 space-y-6 p-4 pb-24 md:p-6 lg:p-8"
+      >
+        {children}
+      </main>
+      <QuickScannerBar canOverrideScans={canOverrideScans} />
+    </div>
+  );
 }
 
 // The frame around every dashboard page (docs/StyleGuide.md §6.1): the shadcn Sidebar (a sheet below md), the topbar,
@@ -44,37 +65,14 @@ export function DashboardShell({
   sidebarOpen,
   nav,
   footer,
-  context,
-  breadcrumbItems,
-  rwSwitcher,
-  commandMenu,
-  userMenu,
   idleLock,
-  children,
+  ...column
 }: DashboardShellProps) {
   return (
     <SidebarProvider id={DASHBOARD_SHELL_ID} defaultOpen={sidebarOpen} className="bg-background">
       <SkipLink />
-      <AppSidebar context={context} nav={nav} footer={footer} />
-      <div className="flex min-h-svh min-w-0 flex-1 flex-col">
-        <Topbar
-          breadcrumbItems={breadcrumbItems}
-          rwSwitcher={rwSwitcher}
-          context={context}
-          commandMenu={commandMenu}
-          userMenu={userMenu}
-        />
-        {rwSwitcher ? (
-          <div className="overflow-x-auto px-4 pt-3 md:hidden">{rwSwitcher}</div>
-        ) : null}
-        <main
-          id={MAIN_CONTENT_ID}
-          className="mx-auto w-full max-w-(--breakpoint-2xl) flex-1 space-y-6 p-4 pb-24 md:p-6 lg:p-8"
-        >
-          {children}
-        </main>
-        <QuickScannerBar />
-      </div>
+      <AppSidebar context={column.context} nav={nav} footer={footer} />
+      <ShellColumn {...column} />
       {idleLock}
     </SidebarProvider>
   );
