@@ -151,6 +151,7 @@ export async function middleware(request: NextRequest) {
     nonce,
     supabaseUrl: publicEnv.NEXT_PUBLIC_SUPABASE_URL,
     isDevelopment: publicEnv.NODE_ENV !== 'production',
+    pathname,
   });
   const galleryRedirect = redirectMalformedGallery(request);
   if (galleryRedirect) return withSecurityHeaders(galleryRedirect, pathname, csp);

@@ -11,6 +11,8 @@ type CspOptions = {
   nonce: string | null;
   supabaseUrl: string;
   isDevelopment: boolean;
+  // The requested path: WebAssembly runs on the gate scanner alone.
+  pathname: string;
 };
 
 // The request header src/middleware.ts passes the nonce on in; Next.js reads it from the CSP header itself.
@@ -39,6 +41,7 @@ export function cspHeaderNameFor(vercelEnv: typeof publicEnv.VERCEL_ENV): string
 }
 
 const SCANNER_PATH = '/dashboard/scanner';
+const WASM_EVAL = "'wasm-unsafe-eval'";
 const LOCKED_DOWN_FEATURES =
   'microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), display-capture=()';
 
@@ -46,13 +49,15 @@ export function isPrivateRoute(pathname: string): boolean {
   return PRIVATE_ROUTE_PREFIXES.some((prefix) => isPathUnder(pathname, prefix));
 }
 
-function scriptSources({ nonce, isDevelopment }: CspOptions): string {
+function scriptSources({ nonce, isDevelopment, pathname }: CspOptions): string {
   const sources =
     nonce === null
       ? // Next.js inlines its hydration data as script tags, which a static page can only allow this way.
         ["'self'", "'unsafe-inline'", TURNSTILE_ORIGIN]
-      : // 'wasm-unsafe-eval' is for the ZXing WASM fallback of the QR scanner.
-        ["'self'", `'nonce-${nonce}'`, "'strict-dynamic'", "'wasm-unsafe-eval'", TURNSTILE_ORIGIN];
+      : ["'self'", `'nonce-${nonce}'`, "'strict-dynamic'", TURNSTILE_ORIGIN];
+  // The ZXing WASM fallback of the QR reader, self-hosted under public/vendor/zxing, runs on the gate scanner and
+  // nowhere else (Task P4.4.03); every other page compiles no WebAssembly.
+  if (nonce !== null && isPathUnder(pathname, SCANNER_PATH)) sources.push(WASM_EVAL);
   if (isDevelopment) sources.push("'unsafe-eval'");
   return sources.join(' ');
 }

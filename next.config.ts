@@ -1,10 +1,14 @@
+import { randomUUID } from 'node:crypto';
+
 import bundleAnalyzer from '@next/bundle-analyzer';
+import withSerwistInit from '@serwist/next';
 import type { NextConfig } from 'next';
 import { PHASE_DEVELOPMENT_SERVER } from 'next/constants';
 
 import { IMAGE_DEVICE_WIDTHS, imageLoaderFileFor } from './src/config/images';
 import { MOVED_PATHS } from './src/config/redirects';
 import { PRIVATE_ROUTE_PREFIXES } from './src/config/routes';
+import { SCANNER_OFFLINE_PATH } from './src/config/scanner';
 import { publicEnv } from './src/lib/public-env';
 
 // pnpm sets npm_lifecycle_event to the running script, so `pnpm analyze` needs no extra env var.
@@ -127,6 +131,24 @@ export function pageExtensionsFor(phase: string): string[] {
   return phase === PHASE_DEVELOPMENT_SERVER ? DEVELOPMENT_PAGE_EXTENSIONS : PAGE_EXTENSIONS;
 }
 
+// Task P4.4.03: the scanner PWA's service worker, src/sw.ts built into public/sw.js. The page registers it itself
+// (src/components/admin/scanner/service-worker-registration.tsx), scoped to /dashboard/scanner, so no public visitor
+// ever installs it. Of public/ only the icons are precached; the offline page is precached under a revision that
+// changes with every build. A development server builds no worker.
+function withScannerServiceWorker(phase: string) {
+  return withSerwistInit({
+    swSrc: 'src/sw.ts',
+    swDest: 'public/sw.js',
+    register: false,
+    disable: phase === PHASE_DEVELOPMENT_SERVER,
+    globPublicPatterns: ['icons/**/*'],
+    additionalPrecacheEntries: [{ url: SCANNER_OFFLINE_PATH, revision: randomUUID() }],
+  });
+}
+
 export default function config(phase: string): NextConfig {
-  return withBundleAnalyzer({ ...nextConfig, pageExtensions: pageExtensionsFor(phase) });
+  const withScannerWorker = withScannerServiceWorker(phase);
+  return withBundleAnalyzer(
+    withScannerWorker({ ...nextConfig, pageExtensions: pageExtensionsFor(phase) }),
+  );
 }

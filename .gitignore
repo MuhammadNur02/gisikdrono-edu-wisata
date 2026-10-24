@@ -35,3 +35,8 @@ Thumbs.db
 
 # Supabase Studio saves SQL editor snippets here; they are personal scratch work, not migrations
 supabase/snippets/
+
+# the scanner PWA's service worker, built by @serwist/next from src/sw.ts (Task P4.4.03)
+public/sw.js
+public/sw.js.map
+public/swe-worker-*.js
