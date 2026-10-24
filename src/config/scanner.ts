@@ -36,3 +36,7 @@ export const SCANNER_OFFLINE_PATH = '/luring';
 // The installed scanner's own web manifest, linked from /dashboard/scanner alone; the site-wide src/app/manifest.ts
 // stays the public website's (review of PR #49). public/scanner.webmanifest, kept in step by scanner-manifest.test.ts.
 export const SCANNER_MANIFEST_PATH = '/scanner.webmanifest';
+
+// POST /api/tickets/verify (Task P4.4.02): a scan request is a token or a code and a few short fields; anything
+// larger is refused before it is parsed (CLAUDE.md §5.4).
+export const SCAN_REQUEST_BODY_LIMIT_BYTES = 2048;

@@ -4305,6 +4305,21 @@ export type Database = {
         Args: { p_booking_id: string; p_reason: string }
         Returns: Json
       }
+      scan_ticket: {
+        Args: {
+          p_attempt_id: string
+          p_attendee_count?: number
+          p_attestation?: string
+          p_device?: Json
+          p_expires_at?: number
+          p_mode: string
+          p_override_reason?: string
+          p_raw?: string
+          p_source: string
+          p_ticket_id?: string
+        }
+        Returns: Json
+      }
       set_rw_unit_status: {
         Args: { p_is_active: boolean; p_rw_id: number }
         Returns: undefined
@@ -4589,6 +4604,10 @@ export type Database = {
       today_jkt: { Args: never; Returns: string }
       undo_check_in: {
         Args: { p_reason: string; p_ticket_id: string }
+        Returns: undefined
+      }
+      unlock_scanner_officer: {
+        Args: { p_profile_id: string }
         Returns: undefined
       }
       validate_ticket: {

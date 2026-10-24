@@ -53,6 +53,8 @@ export default defineConfig({
         // CLAUDE.md §4 rule 13 (Task P3.8.01): the Midtrans status map and signature check are pure and fully tested.
         'src/lib/midtrans/map-status.ts': FULL_LINE_COVERAGE,
         'src/lib/midtrans/verify-signature.ts': FULL_LINE_COVERAGE,
+        // The scanner's attestation (review of PR #54, M1) is pure and fully tested.
+        'src/lib/scanner/attest.ts': FULL_LINE_COVERAGE,
       },
     },
   },

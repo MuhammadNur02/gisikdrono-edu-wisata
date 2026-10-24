@@ -5,7 +5,8 @@ import type { ManualCheckInRequest, VerifyOutcome, VerifyTicketRequest } from '@
 // The scanner's one way to the server: POST /api/tickets/verify (Task P4.4.02), the stable JSON contract of
 // CLAUDE.md §7.4. Online only, with no queue and no cache (the service worker sends /api/* to the network alone);
 // every way a request can end comes back as a VerifyOutcome, so the hook never sees an exception. Unit tests of the
-// scan flow replace this function; the Playwright run answers the route itself until Task P4.4.02 builds it.
+// scan flow replace this function; the Playwright specs use the real route (scanner-gate.spec.ts) or answer it.
+// 404, 405 and 501 still read as "not available", for a PWA that reaches a server older than its own deploy.
 
 const HTTP_UNAUTHORIZED = 401;
 const HTTP_FORBIDDEN = 403;

@@ -2,6 +2,7 @@ import { seedDemoBooklet } from './demo-booklet';
 import { demoBookletPhotoFiles, mediaFoldersFromArgs, seedDemoMedia } from './demo-media';
 import { DEV_ACCOUNTS, DEV_ONLY_PASSWORD, DEV_ONLY_TOTP_SECRET, totpCode } from './dev-accounts';
 import { devSeedSql } from './dev-seed-sql';
+import { localCronSecret } from './local-server-env';
 import { localStack, runSql, sqlText } from './local-stack';
 import { seedOfficialMedia } from './official-media';
 import { LOCAL_TARGET } from './seed-photos';
@@ -22,7 +23,8 @@ const folders = mediaFoldersFromArgs(scriptArgs);
 // One query string is one transaction in Postgres, so the settings below last exactly as long as the seed and a
 // failure anywhere leaves the database as it was.
 await runSql(`select set_config('dev_seed.password', ${sqlText(DEV_ONLY_PASSWORD)}, true),
-                     set_config('dev_seed.totp_secret', ${sqlText(DEV_ONLY_TOTP_SECRET)}, true);
+                     set_config('dev_seed.totp_secret', ${sqlText(DEV_ONLY_TOTP_SECRET)}, true),
+                     set_config('dev_seed.cron_secret', ${sqlText(localCronSecret())}, true);
 ${seedSql}`);
 
 // After the SQL, which has already refused any database not marked local. The development photos go first, so
