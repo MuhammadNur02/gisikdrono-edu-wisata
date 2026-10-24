@@ -28,6 +28,9 @@ export const POINT_SORT_COLUMNS = ['name', 'sort_order'] as const;
 export const POINT_DEFAULT_SORT = 'sort_order.asc';
 export const BANNER_SORT_COLUMNS = ['title', 'sort_order'] as const;
 export const BANNER_DEFAULT_SORT = 'sort_order.asc';
+// A banner has no content_status: `?status=` filters it by hero_banners.is_active instead (Task P4.9.02).
+export const BANNER_ACTIVITY = ['active', 'inactive'] as const;
+export type BannerActivity = (typeof BANNER_ACTIVITY)[number];
 
 // Length caps (docs/Security.md APP-09). Where the table has a CHECK the cap is the same number; the others keep a
 // pasted essay or a runaway form from reaching the database.

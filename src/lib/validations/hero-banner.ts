@@ -66,3 +66,8 @@ export const updateHeroBannerSchema = z
 export type HeroBannerInput = z.input<typeof createHeroBannerSchema>;
 export type HeroBannerValues = z.output<typeof createHeroBannerSchema>;
 export type UpdateHeroBannerValues = z.output<typeof updateHeroBannerSchema>;
+
+// A move of one banner a place up or down the home page's order (Task P4.9.02).
+export const moveHeroBannerSchema = z
+  .object({ id: rowIdSchema, direction: z.enum(['up', 'down']) })
+  .strict();

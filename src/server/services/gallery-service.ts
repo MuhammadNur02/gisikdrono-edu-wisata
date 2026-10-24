@@ -1,10 +1,15 @@
 import 'server-only';
 
+import { GALLERY_DEFAULT_SORT, GALLERY_SORT_COLUMNS } from '@/config/cms';
+import type { RwId } from '@/config/rw';
+import { DB_ENUMS } from '@/db/enums';
 import type { Tables } from '@/db/types';
 import { copy } from '@/lib/copy/id';
 import { AppError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isPublishedImagePathFor } from '@/lib/uploads/paths';
+import { allowedValue, planContentList } from '@/lib/utils/content-list';
+import type { ListQuery } from '@/lib/utils/list-query';
 import type { PublishedImage } from '@/lib/validations/content';
 import type { CreateGalleryItemValues, UpdateGalleryItemValues } from '@/lib/validations/gallery';
 import type { StaffContext } from '@/server/auth/guards';
@@ -14,6 +19,7 @@ import { isThumbnailOf } from '@/server/services/media-library';
 import { removeGalleryFiles } from '@/server/services/upload-service';
 import type { GalleryItemAdmin } from '@/types/cms';
 import type { ContentOwner } from '@/types/content';
+import type { ListResult } from '@/types/data-table';
 
 // Gallery items through the session client, so the galleries policies (uploaded_by = auth.uid() on insert) and the
 // AAL2 policy decide (0005). Every write names the owner as well as the id. Removing an item removes its files
@@ -21,8 +27,6 @@ import type { ContentOwner } from '@/types/content';
 
 const COLUMNS =
   'id, rw_id, category, media_type, storage_path, thumbnail_path, video_url, caption, alt_text, taken_at, sort_order, status';
-// A provisional list (Task P2.9.06): the DataTable of P4.3.03 brings paging.
-const LIST_LIMIT = 120;
 
 type GalleryRow = Pick<
   Tables<'galleries'>,
@@ -116,20 +120,42 @@ function describedBy(values: UpdateGalleryItemValues | CreateGalleryItemValues) 
   };
 }
 
-// The superadmin under `Semua` sees every item RLS shows them; everyone else one owner's.
+// One page of gallery items from the URL's query (Task P4.3.03): an RW admin's own RW, the superadmin's chosen one or
+// every item RLS shows them (effectiveRw), searched by the screen-reader text, as the public gallery orders them.
 export async function listGalleryForStaff(
-  owner: ContentOwner | 'all',
-): Promise<GalleryItemAdmin[]> {
+  query: ListQuery,
+  rw: RwId | null,
+): Promise<ListResult<GalleryItemAdmin>> {
+  const plan = planContentList(query, rw, {
+    columns: GALLERY_SORT_COLUMNS,
+    fallback: GALLERY_DEFAULT_SORT,
+  });
   const supabase = await createSupabaseServerClient();
-  let query = supabase.from('galleries').select(COLUMNS);
-  if (owner === null) query = query.is('rw_id', null);
-  else if (owner !== 'all') query = query.eq('rw_id', owner);
-  const { data, error } = await query
-    .order('sort_order')
+  let request = supabase.from('galleries').select(COLUMNS, { count: 'exact' });
+  if (plan.pattern !== null) request = request.ilike('alt_text', plan.pattern);
+  if (plan.statuses.length > 0) request = request.in('status', plan.statuses);
+  const category = allowedValue(query.category, DB_ENUMS.gallery_category);
+  if (category !== null) request = request.eq('category', category);
+  if (plan.rw !== null) request = request.eq('rw_id', plan.rw);
+  if (plan.order !== null) {
+    request = request.order(plan.order.column, { ascending: plan.order.ascending });
+  }
+  const { data, error, count } = await request
     .order('created_at', { ascending: false })
-    .limit(LIST_LIMIT);
+    .order('id')
+    .range(plan.from, plan.to);
   if (error) throw error;
-  return data.map(toGalleryItemAdmin);
+  return { rows: data.map(toGalleryItemAdmin), total: count ?? data.length };
+}
+
+// Archive by status (Task P4.3.03): off the galleries, kept here with its files.
+export async function archiveGalleryItem(owner: ContentOwner, id: string): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  let query = supabase.from('galleries').update({ status: 'archived' }).eq('id', id);
+  query = owner === null ? query.is('rw_id', null) : query.eq('rw_id', owner);
+  const { data, error } = await query.select('id').maybeSingle();
+  if (error) throw error;
+  rowOrNotFound(data);
 }
 
 async function readGalleryRow(id: string): Promise<GalleryRow | null> {

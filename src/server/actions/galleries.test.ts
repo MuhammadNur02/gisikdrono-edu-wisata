@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { requireAal2, type StaffContext } from '@/server/auth/guards';
 import {
+  archiveGalleryItem,
   createGalleryItem,
   readGalleryOwner,
   removeGalleryItem,
@@ -10,6 +11,7 @@ import {
 } from '@/server/services/gallery-service';
 
 import {
+  archiveGalleryItemAction,
   createGalleryItemAction,
   removeGalleryItemAction,
   updateGalleryItemAction,
@@ -28,6 +30,7 @@ vi.mock('next/headers', () => ({
 vi.mock('next/cache', () => ({ revalidateTag: vi.fn() }));
 vi.mock('@/server/auth/guards', () => ({ requireAal2: vi.fn() }));
 vi.mock('@/server/services/gallery-service', () => ({
+  archiveGalleryItem: vi.fn(),
   createGalleryItem: vi.fn(),
   readGalleryOwner: vi.fn(),
   removeGalleryItem: vi.fn(),
@@ -72,6 +75,7 @@ beforeEach(() => {
   vi.mocked(readGalleryOwner).mockReset().mockResolvedValue(5);
   // A removal whose files all went, unless a test says otherwise.
   vi.mocked(removeGalleryItem).mockResolvedValue(true);
+  vi.mocked(archiveGalleryItem).mockReset().mockResolvedValue(undefined);
   vi.mocked(revalidateTag).mockReset();
 });
 
@@ -125,5 +129,22 @@ describe('gallery actions', () => {
       error: { code: 'VALIDATION' },
     });
     expect(createGalleryItem).not.toHaveBeenCalled();
+  });
+});
+
+describe('archiveGalleryItemAction', () => {
+  it('archives an item of their own RW by status and revalidates its gallery', async () => {
+    const result = await archiveGalleryItemAction({ id: ITEM_ID });
+    expect(result.ok).toBe(true);
+    expect(archiveGalleryItem).toHaveBeenCalledWith(5, ITEM_ID);
+    expect(revalidateTag).toHaveBeenCalledWith('galleries:5');
+    expect(revalidateTag).toHaveBeenCalledWith('galleries:all');
+  });
+
+  it("refuses an RW 05 admin another RW's item", async () => {
+    vi.mocked(readGalleryOwner).mockResolvedValue(8);
+    const result = await archiveGalleryItemAction({ id: ITEM_ID });
+    expect(result).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
+    expect(archiveGalleryItem).not.toHaveBeenCalled();
   });
 });

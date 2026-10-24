@@ -4,13 +4,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { requireAal2, type StaffContext } from '@/server/auth/guards';
 import { listScheduleRwIds } from '@/server/services/rw-unit-service';
 import {
+  archiveSchedule,
   createSchedule,
   readScheduleOwner,
   removeSchedule,
   updateSchedule,
 } from '@/server/services/schedule-service';
 
-import { createScheduleAction, removeScheduleAction, updateScheduleAction } from './schedules';
+import {
+  archiveScheduleAction,
+  createScheduleAction,
+  removeScheduleAction,
+  updateScheduleAction,
+} from './schedules';
 
 const cookie = vi.hoisted(() => ({ value: undefined as string | undefined }));
 
@@ -26,6 +32,7 @@ vi.mock('@/server/services/rw-unit-service', () => ({
   listRwUnitsForStaff: () => Promise.resolve([{ id: 5 }, { id: 8 }, { id: 13 }]),
 }));
 vi.mock('@/server/services/schedule-service', () => ({
+  archiveSchedule: vi.fn(),
   createSchedule: vi.fn(),
   readScheduleOwner: vi.fn(),
   removeSchedule: vi.fn(),
@@ -62,6 +69,7 @@ beforeEach(() => {
   vi.mocked(removeSchedule).mockResolvedValue(true);
   vi.mocked(revalidateTag).mockReset();
   vi.mocked(listScheduleRwIds).mockReset().mockResolvedValue([8]);
+  vi.mocked(archiveSchedule).mockReset().mockResolvedValue(undefined);
   cookie.value = undefined;
 });
 
@@ -138,5 +146,21 @@ describe('schedule actions', () => {
     vi.mocked(listScheduleRwIds).mockResolvedValue([8, 13]);
     await createScheduleAction(INPUT);
     expect(createSchedule).toHaveBeenCalledWith(13, 'user-8', expect.anything());
+  });
+});
+
+describe('archiveScheduleAction', () => {
+  it('archives a schedule of their own RW by status', async () => {
+    const result = await archiveScheduleAction({ id: SCHEDULE_ID });
+    expect(result.ok).toBe(true);
+    expect(archiveSchedule).toHaveBeenCalledWith(8, SCHEDULE_ID);
+    expect(revalidateTag).toHaveBeenCalledWith('schedules');
+  });
+
+  it('refuses an RW admin whose RW runs no schedule', async () => {
+    vi.mocked(requireAal2).mockResolvedValue({ ok: true, ctx: ADMIN_05 });
+    const result = await archiveScheduleAction({ id: SCHEDULE_ID });
+    expect(result.ok).toBe(false);
+    expect(archiveSchedule).not.toHaveBeenCalled();
   });
 });

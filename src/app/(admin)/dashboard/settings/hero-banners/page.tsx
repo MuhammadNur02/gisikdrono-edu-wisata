@@ -1,27 +1,52 @@
-import { GalleryHorizontal } from 'lucide-react';
 import type { Metadata } from 'next';
 
-import { HeroBannerDialog } from '@/components/admin/cms/hero-banner-dialog';
-import { HeroBannerTable } from '@/components/admin/cms/hero-banner-table';
+import { HeroBannerBoard } from '@/components/admin/cms/hero-banner-table';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
-import { EmptyState } from '@/components/admin/shell/empty-state';
 import { FormAlert } from '@/components/forms/form-alert';
-import { copy } from '@/lib/copy/id';
+import { BANNER_ACTIVITY } from '@/config/cms';
+import { cmsCopy } from '@/lib/copy/cms';
+import { contentListsCopy } from '@/lib/copy/content-lists';
+import { bannerPhase } from '@/lib/utils/hero-banners';
+import { loadListQuery } from '@/lib/utils/list-query';
 import {
   createHeroBannerAction,
+  deactivateHeroBannerAction,
+  moveHeroBannerAction,
   removeHeroBannerAction,
   updateHeroBannerAction,
 } from '@/server/actions/hero-banners';
 import { requireDashboardStaff } from '@/server/auth/session';
 import { listBannerProducts, listHeroBannersForStaff } from '@/server/services/hero-banner-service';
+import type { ListFacet } from '@/types/data-table';
 
-const text = copy.cms.banners;
+const text = cmsCopy.banners;
+const lists = contentListsCopy;
 
 export const metadata: Metadata = { title: text.title };
 
-// Task P2.9.06, docs/PRD.md FR-ADMIN-23: the superadmin's alone. An RW admin has no menu item for it, and opening
-// the address directly says so instead of showing anything.
-export default async function HeroBannersPage() {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+const ACTIONS = {
+  create: createHeroBannerAction,
+  update: updateHeroBannerAction,
+  deactivate: deactivateHeroBannerAction,
+  remove: removeHeroBannerAction,
+  move: moveHeroBannerAction,
+};
+
+// A banner has no content_status: `?status=` reads is_active (BANNER_ACTIVITY).
+const ACTIVITY_LABELS = { active: text.active, inactive: text.inactive } as const;
+const FACETS: ListFacet[] = [
+  {
+    param: 'status',
+    title: lists.facets.status,
+    options: BANNER_ACTIVITY.map((value) => ({ value, label: ACTIVITY_LABELS[value] })),
+  },
+];
+
+// Task P2.9.06 and P4.9.02, docs/PRD.md FR-ADMIN-23: the superadmin's alone. An RW admin has no menu item for it, and
+// opening the address directly says so instead of showing anything.
+export default async function HeroBannersPage({ searchParams }: { searchParams: SearchParams }) {
   const ctx = await requireDashboardStaff();
   if (!ctx) return null;
   if (ctx.role !== 'superadmin') {
@@ -32,24 +57,25 @@ export default async function HeroBannersPage() {
       </>
     );
   }
-  const [banners, products] = await Promise.all([listHeroBannersForStaff(), listBannerProducts()]);
-  const addButton = (
-    <HeroBannerDialog banner={null} products={products} action={createHeroBannerAction} />
-  );
+  const query = await loadListQuery(searchParams);
+  const [result, products] = await Promise.all([
+    listHeroBannersForStaff(query),
+    listBannerProducts(),
+  ]);
+  const now = new Date();
+  const rows = result.rows.map((banner) => ({
+    ...banner,
+    phase: bannerPhase(banner, now),
+    productName: products.find((product) => product.id === banner.productId)?.name ?? null,
+  }));
 
   return (
-    <>
-      <DashboardPageHeader title={text.title} description={text.description} action={addButton} />
-      {banners.length === 0 ? (
-        <EmptyState icon={GalleryHorizontal} title={text.empty} description={text.emptyHint} />
-      ) : (
-        <HeroBannerTable
-          banners={banners}
-          products={products}
-          updateAction={updateHeroBannerAction}
-          removeAction={removeHeroBannerAction}
-        />
-      )}
-    </>
+    <HeroBannerBoard
+      rows={rows}
+      total={result.total}
+      facets={FACETS}
+      products={products}
+      actions={ACTIONS}
+    />
   );
 }

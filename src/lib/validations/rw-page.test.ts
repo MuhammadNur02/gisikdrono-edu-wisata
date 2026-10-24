@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { updateRwPageSchema } from './rw-page';
+import { saveRwPageSchema, updateRwPageSchema } from './rw-page';
 
 const VALID = {
   tagline: '  Kampung bebas sampah  ',
@@ -45,5 +45,28 @@ describe('updateRwPageSchema', () => {
     ['a tagline past its cap', { tagline: 'x'.repeat(161) }],
   ])('refuses %s', (_case, change) => {
     expect(updateRwPageSchema.safeParse({ ...VALID, ...change }).success).toBe(false);
+  });
+});
+
+describe('saveRwPageSchema', () => {
+  const FIELDS = {
+    tagline: 'Kampung bebas sampah',
+    descriptionMd: '',
+    visionMd: '',
+    heroImagePath: null,
+    contactPhone: '',
+    contactEmail: '',
+    mapLat: null,
+    mapLng: null,
+  };
+
+  it('takes the form with or without the RW the superadmin opened', () => {
+    expect(saveRwPageSchema.safeParse(FIELDS).success).toBe(true);
+    expect(saveRwPageSchema.safeParse({ ...FIELDS, rwId: 8 }).success).toBe(true);
+  });
+
+  it('stays strict and refuses an RW number out of range', () => {
+    expect(saveRwPageSchema.safeParse({ ...FIELDS, slug: 'rw-08-lain' }).success).toBe(false);
+    expect(saveRwPageSchema.safeParse({ ...FIELDS, rwId: 0 }).success).toBe(false);
   });
 });
