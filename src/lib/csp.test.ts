@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildContentSecurityPolicy, isPrivateRoute, permissionsPolicyFor } from '@/lib/csp';
+import {
+  buildContentSecurityPolicy,
+  cspHeaderNameFor,
+  isPrivateRoute,
+  permissionsPolicyFor,
+} from '@/lib/csp';
 
 const privateProduction = {
   nonce: 'abc123',
@@ -80,6 +85,59 @@ describe('buildContentSecurityPolicy in development', () => {
     expect(directive(policy, 'connect-src')).toContain('ws://127.0.0.1:54321');
     expect(policy).not.toContain('upgrade-insecure-requests');
   });
+
+  it('adds no third-party host, only eval for the dev server', () => {
+    const development = buildContentSecurityPolicy({ ...privateProduction, isDevelopment: true });
+    const hosts = (policy: string) => new Set(policy.match(/https?:\/\/[^\s;]+/g));
+    expect(hosts(development)).toEqual(hosts(buildContentSecurityPolicy(privateProduction)));
+    expect(development).not.toContain('vercel-scripts');
+  });
+});
+
+describe('the allow-list as a whole', () => {
+  // Task P5.4.01: Supabase, Turnstile, the OSM tiles, the Google Maps embed and, on public pages, the gallery's
+  // YouTube player and stills. A new host here is a decision for docs/Security.md §8.2 first.
+  const EXPECTED_HOSTS = [
+    'https://projectref.supabase.co',
+    'wss://projectref.supabase.co',
+    'https://challenges.cloudflare.com',
+    'https://tile.openstreetmap.org',
+    'https://www.google.com/maps/embed',
+    'https://www.youtube-nocookie.com/embed/',
+    'https://i.ytimg.com/vi/',
+  ];
+
+  it('names no host beyond the documented ones', () => {
+    const hosts = new Set(
+      [privateProduction, publicProduction].flatMap(
+        (options) => buildContentSecurityPolicy(options).match(/(?:https|wss):\/\/[^\s;]+/g) ?? [],
+      ),
+    );
+    expect([...hosts].sort()).toEqual([...EXPECTED_HOSTS].sort());
+  });
+
+  it('keeps inline styles, never inline or eval scripts, on private routes', () => {
+    const policy = buildContentSecurityPolicy(privateProduction);
+    expect(directive(policy, 'style-src')).toBe("style-src 'self' 'unsafe-inline'");
+    expect(directive(policy, 'script-src')).not.toMatch(/'unsafe-inline'|'unsafe-eval'/);
+  });
+});
+
+describe('cspHeaderNameFor', () => {
+  it('enforces the policy on production', () => {
+    expect(cspHeaderNameFor('production')).toBe('Content-Security-Policy');
+  });
+
+  it('only reports on a preview deployment (staging, docs/Security.md §8.2)', () => {
+    expect(cspHeaderNameFor('preview')).toBe('Content-Security-Policy-Report-Only');
+  });
+
+  it.each(['development', undefined] as const)(
+    'enforces on %s builds, so CI sees violations',
+    (env) => {
+      expect(cspHeaderNameFor(env)).toBe('Content-Security-Policy');
+    },
+  );
 });
 
 describe('isPrivateRoute', () => {
