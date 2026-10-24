@@ -38,7 +38,7 @@ export function HoldCountdown({ expiresAt }: { expiresAt: string }) {
   return (
     <p
       className={cn(
-        'inline-flex min-h-10 flex-wrap items-center gap-x-2 gap-y-0.5 rounded-full px-4 py-1.5 text-label-sm transition-colors duration-300',
+        'inline-flex min-h-10 flex-wrap items-center gap-x-2 gap-y-0.5 rounded-full px-4 py-1.5 text-label-sm font-semibold transition-colors duration-300',
         secondsLeft < DANGER_SECONDS
           ? 'bg-danger-soft text-danger-soft-foreground'
           : 'bg-warning-soft text-warning-soft-foreground',

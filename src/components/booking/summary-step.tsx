@@ -91,7 +91,7 @@ function PrivacyField({ form }: { form: SummaryForm }) {
             />
           </FormControl>
           <div className="space-y-1">
-            <FormLabel className="font-normal">
+            <FormLabel className="block text-body leading-normal font-normal text-ink-2">
               {text.privacy}{' '}
               <Link
                 href={PRIVACY_PATH}

@@ -71,7 +71,7 @@ function MethodRow(props: { icon: ReactNode; title: string; hint: string; childr
         {props.icon}
       </span>
       <div className="min-w-0 space-y-1">
-        <p className="text-label text-foreground">{props.title}</p>
+        <p className="text-label font-semibold text-foreground">{props.title}</p>
         <p className="text-body-sm text-ink-2">{props.hint}</p>
         {props.children}
       </div>

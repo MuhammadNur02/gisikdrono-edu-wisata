@@ -55,16 +55,18 @@ function SessionCard({ session, pax }: { session: SessionOption; pax: number }) 
         aria-disabled={isUnavailable}
         className="absolute top-4 right-4"
       />
-      {session.label && <span className="text-label text-foreground">{session.label}</span>}
+      {session.label && (
+        <span className="text-label font-semibold text-foreground">{session.label}</span>
+      )}
       <span
         className={cn(
           'tabular-nums',
-          session.label ? 'text-body-sm text-ink-2' : 'text-label text-foreground',
+          session.label ? 'text-body-sm text-ink-2' : 'text-label font-semibold text-foreground',
         )}
       >
         {time}
       </span>
-      <span className={cn('text-label-sm tabular-nums', seatsTone(session, pax))}>
+      <span className={cn('text-label-sm font-medium tabular-nums', seatsTone(session, pax))}>
         {seatsLabel(session, pax)}
       </span>
     </label>

@@ -34,7 +34,7 @@ export function BookingQuoteLines({ quote }: { quote: BookingQuote }) {
         ))}
       </ul>
       <p className="flex items-baseline justify-between gap-4 border-t border-border-strong pt-4">
-        <span className="text-label-lg text-foreground">{text.total}</span>
+        <span className="text-label-lg font-semibold text-foreground">{text.total}</span>
         <span className="text-h2 font-display font-extrabold tabular-nums">
           {formatIDR(quote.total)}
         </span>

@@ -23,7 +23,7 @@ function HelpLinks({ chatUrl }: { chatUrl: string }) {
         href={chatUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex h-11 shrink-0 items-center gap-2 rounded-full border border-border-strong px-4 text-label-sm text-foreground transition-colors duration-200 hover:bg-muted max-md:hidden"
+        className="inline-flex h-11 shrink-0 items-center gap-2 rounded-full border border-border-strong px-4 text-label-sm font-medium text-foreground transition-colors duration-200 hover:bg-muted max-md:hidden"
       >
         <WhatsAppIcon className="size-4.5 text-whatsapp" />
         {text.help}
@@ -66,7 +66,7 @@ export function WizardHeader({ packageName, packageSlug }: WizardHeaderProps) {
         <Link href={HOME_NAV_ITEM.href} className="shrink-0 rounded-md max-md:hidden">
           <SiteWordmark showEyebrow={false} />
         </Link>
-        <h1 className="min-w-0 flex-1 truncate py-1 text-center text-label-lg text-foreground md:text-label md:text-ink-2">
+        <h1 className="min-w-0 flex-1 truncate py-1 text-center text-label-lg font-semibold text-foreground md:text-label md:text-ink-2">
           {text.title}
           <span className="max-md:sr-only"> · {packageName}</span>
         </h1>

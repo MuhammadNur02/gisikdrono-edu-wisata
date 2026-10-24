@@ -84,7 +84,7 @@ function EstimateRow({ preview }: { preview: QuotePreviewState }) {
   return (
     <div className="space-y-2">
       <p className="flex items-baseline justify-between gap-4">
-        <span className="text-label text-foreground">{text.estimate}</span>
+        <span className="text-label font-semibold text-foreground">{text.estimate}</span>
         {total === null ? (
           <span className="text-right text-body-sm text-muted-foreground">
             {text.estimateLater}
@@ -138,7 +138,9 @@ export function WizardSummaryBar(props: WizardSummaryProps) {
     <details className="group border-b border-border bg-card lg:hidden">
       <summary className="mx-auto flex min-h-16 w-full max-w-300 cursor-pointer list-none items-center gap-4 px-5 py-3 md:px-10 [&::-webkit-details-marker]:hidden">
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-label text-foreground">{wizardPackage.name}</span>
+          <span className="block truncate py-0.5 text-label font-semibold text-foreground">
+            {wizardPackage.name}
+          </span>
           <span className="block truncate text-caption text-muted-foreground">{line}</span>
         </span>
         {total !== null && (

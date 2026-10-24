@@ -153,7 +153,7 @@ function PersonFields({
   emailFromProof: string | null;
 }) {
   return (
-    <div className="grid gap-5 md:grid-cols-2 md:gap-4">
+    <div className="grid items-start gap-5 md:grid-cols-2 md:gap-4">
       <FormField
         control={form.control}
         name="picName"

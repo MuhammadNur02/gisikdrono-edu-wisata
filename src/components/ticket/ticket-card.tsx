@@ -14,7 +14,9 @@ function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-4 md:flex-col md:justify-start md:gap-1">
       <dt className="text-body-sm text-muted-foreground md:text-meta-caps">{label}</dt>
-      <dd className="text-right text-label text-foreground md:text-left">{value}</dd>
+      <dd className="text-right text-label leading-snug font-semibold text-foreground md:text-left">
+        {value}
+      </dd>
     </div>
   );
 }
@@ -42,13 +44,13 @@ function TicketStub({ ticket }: { ticket: GuestTicket }) {
     <div className="kawung flex flex-col justify-between gap-6 bg-(--rw-grade-shade) p-6 kawung-10 md:p-7">
       <div className="space-y-2">
         <p className="text-eyebrow text-rw-hi">{text.stub}</p>
-        <h2 className="text-h3 font-display font-extrabold text-white">
+        <h2 className="text-h4 font-display font-extrabold text-balance text-white">
           {text.ticketOf(ticket.rwName)}
         </h2>
       </div>
       <div className="space-y-1 max-md:hidden">
         <p className="text-meta-caps text-on-dark-2">{text.gate}</p>
-        <p className="text-label text-white">{ticket.rwName}</p>
+        <p className="text-label leading-snug font-semibold text-white">{ticket.rwName}</p>
       </div>
     </div>
   );
@@ -61,7 +63,7 @@ function TicketScan({ ticket }: { ticket: GuestTicket }) {
     <div className="flex flex-col items-center gap-3 p-6 text-center max-md:order-2 md:p-7">
       <TicketQr ticket={ticket} />
       <p className="text-meta-caps text-muted-foreground">{text.code}</p>
-      <p className="-mt-2 text-h3 font-display font-extrabold tracking-wide tabular-nums">
+      <p className="-mt-2 text-h4 font-display font-extrabold tracking-wide whitespace-nowrap tabular-nums">
         {ticket.ticketCode}
       </p>
       <p className="flex items-center gap-1.5 text-caption text-ink-2">

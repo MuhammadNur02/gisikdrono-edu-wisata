@@ -75,7 +75,7 @@ function BackControl({
     <>
       <ArrowLeft aria-hidden />
       <span className="max-md:sr-only">
-        {onBack ? (backLabel ?? text.back) : text.backToPackage}
+        {onBack ? (backLabel ? text.backTo(backLabel) : text.back) : text.backToPackage}
       </span>
     </>
   );

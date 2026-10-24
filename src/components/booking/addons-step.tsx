@@ -153,7 +153,7 @@ function QuantityControls({
         <RemoveButton form={form} lines={lines} product={product} />
       </div>
       {lineTotal !== undefined && (
-        <p className="pr-12 text-label tabular-nums">{formatIDR(lineTotal)}</p>
+        <p className="pr-12 text-label font-semibold tabular-nums">{formatIDR(lineTotal)}</p>
       )}
       <p className="text-caption text-muted-foreground">
         {text.quantityRange(product.minOrderQty, product.maxOrderQty)}

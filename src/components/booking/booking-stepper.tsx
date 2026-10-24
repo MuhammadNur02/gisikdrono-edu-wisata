@@ -55,7 +55,7 @@ function StepMarker({ number, state }: { number: number; state: StepState }) {
     <span
       aria-hidden
       className={cn(
-        'flex size-8 shrink-0 items-center justify-center rounded-full text-label-sm tabular-nums transition-colors duration-200 ease-out-soft',
+        'flex size-8 shrink-0 items-center justify-center rounded-full text-label-sm font-semibold tabular-nums transition-colors duration-200 ease-out-soft',
         MARKER_CLASS[state],
       )}
     >
@@ -132,7 +132,7 @@ function CompactProgress(props: BookingStepperProps) {
   const number = BOOKING_STEPS.indexOf(props.current) + 1;
   return (
     <div className="space-y-2.5 md:hidden">
-      <p className="flex items-baseline justify-between gap-4 text-label-sm">
+      <p className="flex items-baseline justify-between gap-4 text-label-sm font-semibold">
         <span className="text-primary-ink">{text.stepOf(number, BOOKING_STEPS.length)}</span>
         <span className="text-ink-2">{text.steps[props.current]}</span>
       </p>

@@ -159,7 +159,10 @@ function LegSessions(props: {
   const sessions = sessionsOn(leg, visitDate);
   return (
     <div className="space-y-3">
-      <p id={labelId} className={cn('text-label text-foreground', !showsRw && 'sr-only')}>
+      <p
+        id={labelId}
+        className={cn('text-label font-semibold text-foreground', !showsRw && 'sr-only')}
+      >
         {text.sessionLabel(leg.rw.label)}
       </p>
       {sessions.length === 0 ? (
@@ -234,7 +237,7 @@ function SessionsHead({ form, isStale }: { form: ScheduleForm; isStale: boolean 
   if (visitDate === '') return <FreshnessNote isStale={isStale} />;
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-      <h3 className="text-label-lg text-foreground">
+      <h3 className="text-label-lg font-semibold text-foreground">
         {text.sessionsOn(formatDateLong(visitDate))}
       </h3>
       <FreshnessNote isStale={isStale} />
