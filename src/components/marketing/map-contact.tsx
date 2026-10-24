@@ -70,12 +70,12 @@ function DetailList({ details }: { details: readonly Detail[] }) {
       {details.map(({ icon, label, value }) => {
         const Icon = icon;
         return (
-          <div key={label} className="flex gap-3.5">
-            <Icon aria-hidden className="mt-0.5 size-5 shrink-0 text-rw05" />
-            <div className="space-y-0.5">
-              <dt className="text-caption font-semibold text-muted-foreground">{label}</dt>
-              <dd className="text-body text-foreground">{value}</dd>
-            </div>
+          <div key={label} className="relative space-y-0.5 pl-8.5">
+            <dt className="text-caption font-semibold text-muted-foreground">
+              <Icon aria-hidden className="absolute top-0.5 left-0 size-5 text-rw05" />
+              {label}
+            </dt>
+            <dd className="text-body text-foreground">{value}</dd>
           </div>
         );
       })}
