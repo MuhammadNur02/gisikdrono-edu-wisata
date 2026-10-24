@@ -28,6 +28,7 @@ describe('buildPageMetadata', () => {
         type: 'website',
         locale: 'id_ID',
         siteName: 'Edu Wisata Gisikdrono',
+        images: { url: '/opengraph-image', width: 1200, height: 630, alt: 'Edu Wisata Gisikdrono' },
         title: 'Paket wisata',
         description: 'Semua paket.',
         url: '/paket-wisata',
