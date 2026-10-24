@@ -51,6 +51,15 @@ The public pages are prerendered from the database, so `pnpm build` needs the lo
 
 No WhatsApp number is needed on your laptop. On `pnpm dev` with the local stack (`src/lib/local-development.ts`: development, no `VERCEL_ENV`, the site and Supabase on `127.0.0.1` or `localhost`), the outbox delivers every message to Mailpit at http://127.0.0.1:54324 instead of Meta and Resend, one-time codes and booking links included. Open http://localhost:3000/dev/otp, type a number, press "Kirim kode", read the code in Mailpit (the mail to `wa<number>@whatsapp.lokal`) and verify it. `/dev/otp` is a `page.dev.tsx`, which only `next dev` serves and no build contains, and it answers 404 on any server that is not local; staging and production never send a code anywhere but WhatsApp or email, and never log one (`docs/Security.md` §4.1).
 
+### Trying a payment locally
+
+A hold's pay page, `/reservasi/<code>/bayar`, asks Midtrans for a Snap page with the server key of `.env.local`, and every Midtrans notification reaches `POST /api/webhooks/midtrans/<MIDTRANS_WEBHOOK_PATH_TOKEN>`, which checks it against the Status API before it applies anything but `pending` (`docs/Security.md` §3.3). Two ways to try it:
+
+- **The real sandbox.** Keep your sandbox keys in `.env.local`, run `pnpm tunnel` (cloudflared) and set that tunnel's address plus `/api/webhooks/midtrans/<your path token>` as the Payment Notification URL in your sandbox dashboard (Settings > Configuration), never in the repository. Pay the order on Midtrans' sandbox simulator; the real notification comes back through the tunnel. `pnpm midtrans:status -- --order GSK-XXXXXXXX-01` shows what Midtrans says of an order.
+- **The stand-in.** With fake keys (or none at hand), start `tests/fixtures/midtrans-stub.ts` on port 4010 the way `tests/e2e/global-setup.ts` does, and set `MIDTRANS_LOCAL_STUB_URL=http://127.0.0.1:4010` in `.env.local`; `src/lib/env.ts` accepts it on this machine only and refuses it on every Vercel deployment. Then `pnpm midtrans:simulate -- --order GSK-XXXXXXXX-01 --status settlement` tells the stand-in the order was paid and posts a correctly signed notification to your local webhook. The CI e2e job works this way (`tests/e2e/booking-payment.spec.ts`).
+
+`pnpm midtrans:simulate` refuses production keys and any server that is not on this machine, and prints no key or path token. Against the real sandbox a simulated settlement is put under review instead, because the Status API says the order is still pending: that is the re-check doing its job.
+
 ### Local development accounts
 
 `pnpm db:seed` (`scripts/seed-dev.ts` with `scripts/seed-dev.sql`) creates four staff accounts with a verified TOTP factor. They exist only on your local database and in CI: the script takes its address from `supabase status` and refuses anything but `127.0.0.1`, and its SQL refuses any database whose Vault secret `environment` says anything but `local`, so these known credentials never reach an online project. The Supabase CLI's own seed is switched off, so `supabase db reset` writes no account anywhere. The credentials are not in `.env.example` on purpose.

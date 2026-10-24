@@ -812,7 +812,7 @@ select throws_ok(
 );
 select throws_ok(
   $$update public.payments set method = 'qris' where id = '00000000-0000-4000-8000-0000000000f1'$$,
-  'P0001', 'a settled payment only changes its status and refunded amount', 'a settled payment is frozen'
+  'P0001', 'a payment Midtrans settled only changes its status and refunded amount', 'a settled payment is frozen'
 );
 select throws_ok(
   $$delete from public.payments where id = '00000000-0000-4000-8000-0000000000f1'$$,

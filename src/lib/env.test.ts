@@ -128,6 +128,22 @@ describe('findEnvProblems', () => {
     expect(findEnvProblems({ ...sandbox, PARTICIPANT_PII_ACTIVE_KID: 'k1' })).toHaveLength(1);
   });
 
+  it('refuses the Midtrans stub on a Vercel deployment and off this machine', () => {
+    expect(
+      findEnvProblems({ ...sandbox, MIDTRANS_LOCAL_STUB_URL: 'http://127.0.0.1:4010' }),
+    ).toEqual([]);
+    expect(
+      findEnvProblems({
+        ...sandbox,
+        VERCEL_ENV: 'preview',
+        MIDTRANS_LOCAL_STUB_URL: 'http://127.0.0.1:4010',
+      }),
+    ).toHaveLength(1);
+    expect(
+      findEnvProblems({ ...sandbox, MIDTRANS_LOCAL_STUB_URL: 'https://stub.example.test' }),
+    ).toHaveLength(1);
+  });
+
   it('demands the WhatsApp credentials in production only', () => {
     expect(findEnvProblems({ ...production, WHATSAPP_APP_SECRET: undefined })).toEqual([
       'WHATSAPP_APP_SECRET is required in production',

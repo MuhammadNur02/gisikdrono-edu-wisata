@@ -50,6 +50,9 @@ export default defineConfig({
         'src/lib/qr/**': FULL_LINE_COVERAGE,
         'src/lib/links/**': FULL_LINE_COVERAGE,
         'src/server/services/booking-state.ts': FULL_LINE_COVERAGE,
+        // CLAUDE.md §4 rule 13 (Task P3.8.01): the Midtrans status map and signature check are pure and fully tested.
+        'src/lib/midtrans/map-status.ts': FULL_LINE_COVERAGE,
+        'src/lib/midtrans/verify-signature.ts': FULL_LINE_COVERAGE,
       },
     },
   },

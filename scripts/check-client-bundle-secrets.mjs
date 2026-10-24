@@ -5,12 +5,14 @@ import { join } from 'node:path';
 
 const CLIENT_BUNDLE_DIR = '.next/static';
 // 'Mid-server-' matches every Midtrans server key: live keys and both sandbox formats (SB-Mid-server- and the
-// newer Mid-server-), so it stays here even though SB-Mid-server- is listed too.
+// newer Mid-server-), so it stays here even though SB-Mid-server- is listed too. MIDTRANS_LOCAL_STUB_URL is no
+// secret, but a page that names it is reading the server's Midtrans setup (decision of 2026-10-24, Q3).
 const SECRET_FINGERPRINTS = [
   'Mid-server-',
   'SB-Mid-server-',
   'service_role',
   'MIDTRANS_SERVER_KEY',
+  'MIDTRANS_LOCAL_STUB_URL',
 ];
 
 async function listFiles(directory) {

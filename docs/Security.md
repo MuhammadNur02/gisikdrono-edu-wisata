@@ -274,12 +274,12 @@ Route `src/app/api/webhooks/midtrans/[token]/route.ts`: `runtime = 'nodejs'`, `d
 | 3 | `Content-Length` and actual bytes ≤ 16 384; `Content-Type` contains `application/json`; body read once with `req.text()` | 413 / 415 | — |
 | 4 | `JSON.parse` + zod `MidtransNotificationSchema` (`.passthrough()`; required `order_id, status_code, gross_amount, signature_key (128 hex), transaction_status, transaction_id, payment_type, currency`) | 400 | — |
 | 5 | `signature_key === sha512(order_id + status_code + gross_amount + MIDTRANS_SERVER_KEY)` using `gross_amount` **exactly as received** (`"1250000.00"`), compared with `crypto.timingSafeEqual`; during rotation also tried with `MIDTRANS_SERVER_KEY_PREVIOUS` | 403, empty body; **metadata only** (`order_id`, `sig_prefix` 8 hex, `ip`, `body_sha256`, `received_at`) into `webhook_rejections` (30-day retention, cap 20 rows/IP/hour) **[RT]** | `webhook_signature_invalid` |
-| 6 | `merchant_id`, when present, equals `MIDTRANS_MERCHANT_ID` | 200, `merchant_mismatch`, alert | `webhook_amount_mismatch` |
+| 6 | `merchant_id`, when present, equals `MIDTRANS_MERCHANT_ID` | 403, `merchant_mismatch` in `webhook_rejections`, high alert (2026-10-24: `docs/PRD.md` §10.1 answers 403 and decides, `docs/Security.md` §1.2 precedence; this row said 200 before, and nothing is relaxed, since the event is still recorded and alerted) | `webhook_signature_invalid` |
 | 7 | `INSERT INTO payment_events (… event_hash = sha256(raw body)) ON CONFLICT DO NOTHING RETURNING id`; no row = replay | 200 `{"status":"duplicate"}` | — |
 | 8 | Lookup `payments` by exact `order_id` (never parsed) | 200, `unknown_order`, alert only if the `order_id` matches our grammar `^GSK-[0-9A-HJKMNP-TV-Z]{8}-[0-9]{2}$` **[RT]** | `webhook_amount_mismatch` |
 | 9 | `currency = 'IDR'` and `Number(gross_amount)` integer and equal to `payments.gross_amount` | 200, payment → `needs_review`, high alert | `webhook_amount_mismatch` |
-| 10 | **Status API confirmation for every state-changing transition** (`settlement`, `capture`, `refund`, `partial_refund`, `cancel`, `expire`, `chargeback`) **[RT]**: `GET /v2/{order_id}/status` through `src/lib/midtrans/client.ts` (Basic auth; default 10 s timeout, capped at 5 s inside the webhook so the route stays within `maxDuration = 15`), no retry; `transaction_status`, `fraud_status`, `gross_amount` and `order_id` must agree | unreachable → 503 (Midtrans retries, poll retries), event left `awaiting_status_check`; disagreement → `needs_review`, **critical** alert, webhook quarantine mode | `status_disagreement` |
-| 11 | `internal.apply_payment_event(event_id, 'webhook', confirmed := true)` — one transaction | DB error → 503 | — |
+| 10 | **Status API confirmation for every status, `pending` included** (`settlement`, `capture`, `pending`, `deny`, `failure`, `refund`, `partial_refund`, `cancel`, `expire`, `chargeback`; 2026-10-24, review of PR #39, L1: a signature covers the order, status code and amount only, so the Virtual Account and payment type a pay page shows come from the Status API's body, never from the notification) **[RT]**: `GET /v2/{order_id}/status` through `src/lib/midtrans/client.ts` (Basic auth; default 10 s timeout, capped at 5 s inside the webhook so the route stays within `maxDuration = 15`), no retry; `transaction_status`, `fraud_status`, `gross_amount` and `order_id` must agree | unreachable → 503 (Midtrans retries, poll retries), event left `awaiting_status_check`; disagreement → `needs_review`, **critical** alert, webhook quarantine mode | `status_disagreement` |
+| 11 | `internal.apply_payment_event(event_id, 'webhook', <Status API body>)` — one transaction | DB error → 503 | — |
 | 12 | `after()` kicks `POST /api/jobs/process-notifications` | ignored (cron catches up) | — |
 | 13 | 200 `{"status":"ok"}`; target < 3 s | — | — |
 
@@ -287,33 +287,37 @@ Response contract: `200` processed/duplicate/ignored/needs_review; `400/413/415`
 
 ### 3.4 Status map and transitions (WH-07)
 
-> **Correction pending in Task P3.8.02 (decision of 2026-10-21, review of PR #19).** Where the "Booking effect" column below differs from docs/PRD.md §9.2 and `internal.bookings_status_transition`, those two decide: a `cancel` or `expire` notification closes the attempt and leaves the booking `pending_payment` until `expire_stale_bookings` expires it, and a `refund` notification never moves the booking, which becomes `refunded` only through `record_refund`. P3.8.02 rewrites the rows.
+> **Rewritten in Task P3.8.02 (2026-10-24).** The booking effects follow docs/PRD.md §9.2 and `internal.bookings_status_transition` (decision of 2026-10-21, review of PR #19), and a refund seen at Midtrans is the decision of 2026-10-24 (Q1). The map is `src/lib/midtrans/map-status.ts`, mirrored by `internal.midtrans_payment_status`; every status, `pending` included, is confirmed with the Status API before it is applied (§3.3 step 10; review of PR #39, 2026-10-24).
 
 | `transaction_status` × `fraud_status` | `payment_status` | Booking effect | Tickets |
 |---|---|---|---|
-| `settlement`; `capture`+`accept` | `settled` | `pending_payment`/`expired` → `paid`; invoice `INV/GSK/YYYY/MM/NNNN` + receipt `KW/GSK/YYYY/MM/NNNN`; ledger posted; outbox `payment_received_ticket`, `admin_new_paid_booking` | issued (one per `booking_legs` row) |
-| `capture`+`challenge` | `needs_review` | hold frozen (sweeper skips) | none |
-| `pending` | `pending` | unchanged; VA/QR details stored for the status page | none |
-| `deny`, `failure` | `denied`, `failed` | stays `pending_payment`; visitor may retry (new attempt) | none |
-| `cancel`, `expire` | `cancelled`, `expired` | booking `expired` if no other open attempt; quota released | none |
-| `refund` | `refunded` | booking `refunded`; `internal.reverse_revenue_share`; credit note `CN/GSK/YYYY/NNNN`; invoice `void` | **revoked** in the same transaction |
-| `partial_refund` | `partially_refunded` | booking stays `paid`; partial reversal | kept |
-| `chargeback` | `disputed` | flagged, high alert | `suspended` if the visit is in the future |
-| second settlement for an already-paid booking **[RT]** | `duplicate` | no invoice, no ledger; auto-refund task; high alert | unchanged |
+| `settlement`; `capture`+`accept` | `settled` | `pending_payment`/`expired` → `paid` (`paid_at`, `amount_paid`); invoice `INV/GSK/YYYY/MM/NNNN` + receipt `KW/GSK/YYYY/MM/NNNN`; ledger posted (Task P3.9.01); outbox `payment_received_ticket` (WhatsApp + email), `admin_new_paid_booking` (email to the active superadmins and the RW admins of the booking's legs, Q2); the booking's other open attempts closed and their orders expired at Midtrans. A booking in any other state (`cancelled`, `refunded`) keeps its status with `needs_review` and a high alert: money is never silently kept | issued, one per `booking_legs` row (Task P3.10.02) |
+| `capture`+`challenge` (or no verdict) | `needs_review` | `needs_review` = `PAYMENT_CHALLENGE`; the hold is frozen (`expire_stale_bookings` skips it); high alert; `admin_booking_needs_review` | none |
+| `capture`+`deny`, `deny`, `failure` | `denied`, `failed` | stays `pending_payment`; the visitor may start a new attempt | none |
+| `pending` | `pending` | unchanged; the VA/QRIS details of the Status API's body stored for the pay page | none |
+| `cancel`, `expire` | `cancelled`, `expired` | the attempt closes; the booking stays `pending_payment` until `expire_stale_bookings` expires it at `expires_at + 5 min` and releases its seats | none |
+| `refund`, `partial_refund` | stays `settled`, `refunded_amount` unchanged | unchanged; one high alert per order (`refund_seen:<order_id>`, "Refund terlihat di Midtrans; catat di Keuangan"); the booking becomes `refunded` only through `record_refund` (superadmin, AAL2), which reconciles with this stored event (Task P4.7) | unchanged until `record_refund` |
+| `chargeback` | `disputed` | `needs_review` = `CHARGEBACK`; critical alert | `suspended` while the visit is ahead (Task P3.10.02) |
+| a second settlement for a booking already paid **[RT]** | `duplicate` | no invoice, no ledger; high alert `duplicate_settlement:<order_id>` and `admin_booking_needs_review`; the superadmin refunds it (Task P4.7) | unchanged |
+| an amount, currency or order that does not match ours; a settlement of another amount than the booking's own total (a discount given after the attempt, review of PR #39, L4); a settlement, refund or chargeback the Status API does not confirm | an open attempt → `needs_review` | `needs_review` (`AMOUNT_MISMATCH`, `STATUS_DISAGREEMENT`); high (amount) or critical (disagreement) alert; never `paid` | none |
+| a chargeback on a payment already `refunded` or recorded as `duplicate` (review of PR #39, M1) | unchanged | `needs_review` = `CHARGEBACK`; critical alert, so the money is not given back twice | unchanged |
 
-Allowed payment transitions (everything else returns `{result:'ignored_transition'}` with 200, never raises): `initiated → pending`; `pending → settled | denied | failed | cancelled | expired | needs_review`; `needs_review → settled | failed | cancelled | expired`; `failed → settled` (bank-side retry, only if no other settled attempt, else `duplicate`); `expired → settled` (late settlement); `settled → refunded | partially_refunded | disputed`; `partially_refunded → refunded | disputed`. `settled` never regresses; an `expire` after `settlement` is ignored.
+Allowed payment transitions (everything else answers `{ result: 'ignored' }` with 200, never raises): `initiated | pending → pending | settled | denied | failed | cancelled | expired | needs_review`; `needs_review → settled | denied | failed | cancelled | expired`; `denied | failed | cancelled | expired → settled` (a payment made on the order after all; `duplicate` when another attempt is already settled); `settled | partially_refunded → disputed`. `settled` never regresses: an `expire` after a settlement is ignored. A notification Midtrans does not confirm follows Midtrans' answer: a `deny` whose order was paid after all settles, while an `expire` of an order still `pending` changes nothing.
+
+> **Review stays until staff resolve it (decision of 2026-10-24, review of PR #39, L3; docs/PRD.md §9.4).** An attempt held for `STATUS_DISAGREEMENT` or `PAYMENT_CHALLENGE` that later settles on a confirmed answer is settled and its booking paid, but the booking keeps `needs_review = true` and its `review_reason`, and stays in the review queue until a superadmin resolves it with `resolve_booking_review`; a settlement never clears a review by itself.
 
 **Late settlement.** If the booking is already `expired`, `internal.apply_payment_event` calls `internal.reserve_session_quota` per leg under the same ordered locks; success → `paid` with `booking_events.reason = 'revived_late_settlement'`; no capacity → `paid` with `needs_review = true`, tickets **not** issued, `admin_booking_needs_review` notification, superadmin resolves via `resolve_booking_review('issue_tickets' | 'refund')`. Money is never silently kept.
 
 ### 3.5 `internal.apply_payment_event` (one transaction)
 
 ```sql
--- internal.apply_payment_event(p_event_id bigint, p_source text, p_confirmed boolean) returns jsonb
+-- internal.apply_payment_event(p_event_id bigint, p_source text, p_confirmed jsonb) returns jsonb   (20261024090100)
 -- owner postgres, security definer, set search_path = '', execute revoked from public/anon/authenticated
 -- 1  select * from public.payment_events where id = p_event_id for update; already processed -> {result:'already_processed'}
--- 2  select * from public.payments where order_id = e.order_id for update;   -- serialises webhook vs poll
--- 3  select * from public.bookings where id = p.booking_id for update;
--- 4  target := status map; if target changes money state and not p_confirmed -> {result:'needs_confirmation'}
+-- 2  select * from public.bookings where id = <the order's booking> for update;   -- the booking first, as expire_stale_bookings
+-- 3  select * from public.payments where order_id = e.order_id for update;        -- serialises webhook vs poll
+-- 4  amount/currency/order vs the payment, else needs_review; target := status map of p_confirmed (the Status API
+--    body); a webhook event other than pending with p_confirmed NULL -> {result:'needs_confirmation'}, unprocessed
 -- 5  transition allowed? else mark event processed 'ignored_transition' and return
 -- 6  perform set_config('app.in_rpc', '1', true);  -- status columns are writable only here
 -- 7  if target = 'settled' and exists (select 1 from public.payments where booking_id = b.id and status = 'settled' and id <> p.id)
@@ -326,7 +330,7 @@ Allowed payment transitions (everything else returns `{result:'ignored_transitio
 -- 13 internal.log_audit(...); update payment_events set processed_at = now(), processing_result = 'applied'
 ```
 
-The same function is called with `p_source = 'poll'` by `/api/jobs/payments-poll` and with `'manual'` by the superadmin "Sinkronkan dengan Midtrans" action; both insert a synthetic `payment_events` row holding the Status API body (`signature_valid = NULL`) and pass `confirmed := true` because the Status API response *is* the confirmation.
+The same function is called with `p_source = 'poll'` by `/api/jobs/payments-poll` and with `'manual'` by the superadmin "Sinkronkan dengan Midtrans" action; both insert a synthetic `payment_events` row holding the Status API body (`signature_valid = NULL`) and pass no separate confirmation, because the Status API response *is* the confirmation (`internal.judge_payment_event` reads the event itself for these sources). The webhook source passes the Status API body it fetched as `p_confirmed`; the `'manual'` source arrives with `recheckPaymentAction` (Task P4.3.02).
 
 ### 3.6 Immutability, append-only and "tickets require money" (REC-03, REC-04, WH-12)
 
@@ -749,8 +753,9 @@ Notes: `'wasm-unsafe-eval'` is required by the ZXing WASM fallback of `barcode-d
 | booking documents `/api/documents/{quotation,invoice,receipt}/[id]` | ip / booking | 30/min before the row is read (`document:ip`); 20 per 10 min per booking (`document:booking`); every refusal one 404 (Task P3.6.04). Decision of 2026-10-23 on PR #33: 30/min, the Task's value, replaces the 60/min this row named before, the stricter of the two |
 | `/verifikasi/[code]` | ip | 30/min (`verify:code`), a plain notice past it |
 | `requestQuotationAction` | ip | 3/h (`quotation:create`) on top of the booking's own limits |
+| `startPaymentAction` ("Bayar sekarang") | booking | 10/h (`payment_start:booking`); an open Snap page is reused without counting against Midtrans (Task P3.7.04) |
 | last-4 step-up | booking | 5 per 24 h then lock + alert |
-| `/api/webhooks/midtrans/[token]` | ip / global | 30/min; 600/min |
+| `/api/webhooks/midtrans/[token]` | ip / global | 30/min (`webhook_midtrans:ip`); 600/min (`webhook_midtrans:all`), both before any other write; refused notifications recorded at most 20/h per IP (`webhook_rejection:ip`) |
 | `/api/webhooks/whatsapp` | ip | 300/min, drop with 200 |
 | `/api/webhooks/resend` | ip | 300/min, drop with 200 |
 | `/api/tickets/verify` | user | 60/min; bad payloads 30 per 5 min → slow-down |
@@ -1024,11 +1029,11 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 | PAY-01 | must | Server Key server-only; `server-only` imports; bundle scan | Key leak via client bundle | `src/lib/env.ts`, `src/lib/midtrans/*`, CI script | env schema unit tests; CI grep of `.next/static` | P1 - Environment Setup |
 | PAY-02 | must | Env fail-fast prod ⇔ `MIDTRANS_IS_PRODUCTION=true` with `Mid-` keys and never `SB-`, else sandbox keys in either format; `pnpm midtrans:check` against the Status API before keys enter staging or production; separate projects/accounts | Sandbox/prod mix-up | `src/lib/env.ts`, `src/lib/midtrans/environment.ts`, `scripts/midtrans-check.ts`, Vercel env scopes | env matrix unit test; `midtrans:check` output in the release PR | P1 - Environment Setup |
 | PAY-03 | must | Server pricing, `.strict()` DTO, integer IDR, snapshots | Price tampering | `src/lib/pricing`, `booking-service.ts`, `internal.create_booking` | golden tests; tampered-field integration test | P3 - Booking Engine & Quota |
-| PAY-04 | must | `order_id = code-NN`, unique; one pending attempt; token reuse | Cross-booking confusion, duplicate orders | `payments`, partial unique index, `internal.create_payment_attempt` | pgTAP; double-attempt test | P3 - Payment Gateway & Webhook |
+| PAY-04 | must | `order_id = code-NN`, unique; one pending attempt; token reuse | Cross-booking confusion, duplicate orders | `payments`, partial unique index, `internal.create_payment_attempt`, `payment-service.ts` `startPayment` (an open Snap page is reused) | pgTAP `payment_attempts.sql`; `payment-service.test.ts` | P3 - Payment Gateway & Webhook |
 | PAY-05 | must | Snap expiry derived from `expires_at`; sweeper at +5 min | Quota held past window | `snap.ts`, `internal.expire_stale_bookings` | payload snapshot; pgTAP time-shift | P3 - Payment Gateway & Webhook |
 | PAY-06 | must | `enabled_payments` fixed QRIS + VA | Card fraud/chargebacks | `src/lib/midtrans/snap.ts` | snapshot test | P3 - Payment Gateway & Webhook |
 | PAY-07 | must | PIC-only `customer_details` | PII to processor | `snap.ts` | snapshot test with participants | P3 - Payment Gateway & Webhook |
-| PAY-08 | must | Basic auth, 10 s timeout, zod responses, redacted logs | Hangs, log leakage | `src/lib/midtrans/client.ts`, `logger.ts` | msw tests incl. timeout | P3 - Payment Gateway & Webhook |
+| PAY-08 | must | Basic auth, 10 s timeout (5 s in the webhook), one retry on a network error only, zod responses, Snap redirect on Snap's own host only, redacted logs | Hangs, log leakage, open redirect | `src/lib/midtrans/client.ts`, `logger.ts` | `client.test.ts` with a stubbed `fetch` (no msw, decision of 2026-10-24): success, 4xx, network error, timeout | P3 - Payment Gateway & Webhook |
 | PAY-09 | must | Finish page polls DB; callbacks untrusted | Fake success | `/reservasi/[bookingCode]` | Playwright with webhook blocked | P3 - Payment Gateway & Webhook |
 | PAY-10 | should | Key rotation with `MIDTRANS_SERVER_KEY_PREVIOUS` overlap | Leaked key persists | signature verifier, Vercel env | staging rotation drill | P5 - Production Deployment |
 | PAY-11 | must | = PAY-03 (server pricing, Snap from DB rows) | Client price tampering | see PAY-03 | see PAY-03 | P3 - Booking Engine & Quota |
@@ -1039,20 +1044,20 @@ Critical and high alerts are sent **out-of-band**: a direct Resend call with a 5
 | PAY-16 | must | Midtrans dashboard governance; expected payout account in `site_settings`; merchant-compromise alert | Payout diversion, key regeneration by attacker | Midtrans console, `site_settings.finance.expected_payout_account_masked`, `anomaly-scan` | quarterly access review; monthly payout check; seeded burst test | P0 - Accounts |
 | WH-01 | must | SHA-512 `signature_key`, `timingSafeEqual`, 403 | Forged notification | webhook route step 5, `src/lib/midtrans/verify-signature.ts` | unit (doc example, tampered) | P3 - Payment Gateway & Webhook |
 | WH-02 | must | 16 KB body, JSON content type, zod | DoS/malformed input | webhook steps 3–4 | 413/415/400 tests | P3 - Payment Gateway & Webhook |
-| WH-03 | must | Rate limit 30/min/IP, 600/min global before DB writes | Flooding | `rate_limit_hit` in route | mocked limiter test | P3 - Payment Gateway & Webhook |
+| WH-03 | must | Rate limit 30/min/IP, 600/min global before DB writes (`webhook_midtrans:ip`, `webhook_midtrans:all`) | Flooding | `rate_limit_hit` in route | `route.test.ts` | P3 - Payment Gateway & Webhook |
 | WH-04 | should | Unguessable path token, 404 | Scanner noise | `[token]` segment | 404 test | P3 - Payment Gateway & Webhook |
 | WH-05 | must | Persist every event; `event_hash` unique; replay = 200 no-op | Replay | `payment_events` | replay integration test | P3 - Payment Gateway & Webhook |
 | WH-06 | must | IDR + integer amount vs DB; mismatch → `needs_review` + alert | Amount tampering | webhook step 9 | mismatch test | P3 - Payment Gateway & Webhook |
 | WH-07 | must | Guarded transitions in `internal.apply_payment_event` under row locks; structured results | Races, out-of-order | `internal.apply_payment_event` | pgTAP transition matrix | P3 - Payment Gateway & Webhook |
-| WH-08 | must | Status API re-check before `settled` | Forged-but-valid signature | webhook step 10 | msw disagreement test | P3 - Payment Gateway & Webhook |
+| WH-08 | must | Status API re-check before `settled` | Forged-but-valid signature | webhook step 10, `internal.judge_payment_event` | pgTAP `payment_event_review.sql` (disagreement); `payment-service.test.ts` | P3 - Payment Gateway & Webhook |
 | WH-09 | must | Response contract; 5 s status timeout; `maxDuration 15`; 503 transient | Lost events, hangs | webhook route | status-code tests | P3 - Payment Gateway & Webhook |
 | WH-10 | must | No IP allow-list as auth; IP for forensics only | False security | route, review checklist | review rule | P3 - Payment Gateway & Webhook |
-| WH-11 | should | `merchant_id` check | Cross-merchant notifications | webhook step 6 | unit test | P3 - Payment Gateway & Webhook |
+| WH-11 | should | `merchant_id` check; a mismatch answers 403, is recorded in `webhook_rejections` and alerts (decision of 2026-10-24) | Cross-merchant notifications | webhook step 6 | `route.test.ts` | P3 - Payment Gateway & Webhook |
 | WH-12 | must | `tickets_require_paid_booking` trigger; idempotent issuance | Ticket without money | trigger on `tickets_qr`, `ticket-service.ts` | pgTAP; re-run idempotency | P1 - DB & RLS |
 | WH-13 | must | 5-min poll; self-heal missing tickets | Lost webhooks | `/api/jobs/payments-poll` | blocked-webhook integration test | P3 - Payment Gateway & Webhook |
-| WH-14 | must | Status API confirmation for refund/cancel/expire/chargeback too; quarantine mode | Destructive forged notifications with a leaked key | webhook step 10, `internal.apply_payment_event` | msw forged refund test | P3 - Payment Gateway & Webhook |
+| WH-14 | must | Status API confirmation for refund/cancel/expire/chargeback too; quarantine mode | Destructive forged notifications with a leaked key | webhook step 10, `internal.apply_payment_event` | pgTAP `payment_event_review.sql` (unconfirmed expire, refund, chargeback) | P3 - Payment Gateway & Webhook |
 | WH-15 | must | Invalid-signature bodies not persisted; `webhook_rejections` metadata, 30 d, per-IP cap; burst alert for known `order_id`s only | Storage exhaustion, alert fatigue | webhook step 5, `webhook_rejections` | junk-post test; disk growth test | P3 - Payment Gateway & Webhook |
-| WH-16 | must | Expire previous order before a new attempt; second settlement → `duplicate` + auto-refund + alert | Double payment, double ledger | `payment-service.ts`, `internal.apply_payment_event` step 7 | pgTAP duplicate test; sandbox e2e | P3 - Payment Gateway & Webhook |
+| WH-16 | must | Expire previous order before a new attempt (`create_payment_attempt(p_replaces)` takes only the attempt just ended at Midtrans); a paid booking's other open orders closed and expired; second settlement → `duplicate` + high alert, refunded by the superadmin (Task P4.7) | Double payment, double ledger | `payment-service.ts`, `internal.settle_payment` | pgTAP `apply_payment_event.sql`; `payment-service.test.ts`; e2e `booking-payment.spec.ts` | P3 - Payment Gateway & Webhook |
 | REC-01 | must | Daily reconciliation, invariants, issues table, digest | Silent drift | `/api/jobs/reconcile-payments` | seeded mismatch test | P3 - Payment Gateway & Webhook |
 | REC-02 | should | Weekly Midtrans CSV import; monthly payout vs ledger | Transactions outside the app | superadmin import action | fixture CSV test | P4 - Dashboards & CRUD |
 | REC-03 | must | Financial-column immutability triggers | Post-settlement edits | `payments_protect_settled`, `bookings_immutable_guard`, `invoices_immutable` | pgTAP expects exception | P1 - DB & RLS |
