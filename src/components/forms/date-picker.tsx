@@ -142,7 +142,9 @@ export function DatePicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <DatePickerTrigger value={value} {...triggerProps} />
+        {/* FormControl marks a required field with aria-required, which a button may not carry (WCAG 4.1.2,
+            axe aria-allowed-attr); the label's RequiredMark already says "wajib". */}
+        <DatePickerTrigger value={value} {...triggerProps} aria-required={undefined} />
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
         <DateCalendar
