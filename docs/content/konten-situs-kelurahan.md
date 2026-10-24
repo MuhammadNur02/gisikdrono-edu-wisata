@@ -323,15 +323,29 @@ The directory lists 442 businesses. Every entry gives its address as "Gisikdrono
 1. ~~Lokasi Kampung Budaya & Seni~~: RW 13 (done).
 2. Izin orang tua untuk foto anak yang sudah dipublikasikan.
 3. PDF "Materi & Data Berkas Zero Wastreme".
-4. Ekspor KML dari Google My Maps "Peta Wilayah RW" (for the map, and for placing businesses in an RW).
+4. ~~Ekspor KML dari Google My Maps "Peta Wilayah RW"~~: received as "Peta RW Wilayah Gisikdrono 2024" (section 8). Placing the businesses of section 5.2 in an RW with it is still to do.
 5. Logo resolusi tinggi dan izin pemakaiannya.
 6. Nomor WhatsApp resmi untuk tombol chat.
 7. Nama dan jabatan penandatangan sertifikat.
 8. Harga, satuan, dan pelaku UMKM untuk produk di bagian 5.1, dan RW serta harga untuk usaha di bagian 5.2.
 9. Paket kunjungan: nama, isi, durasi, kapasitas, harga (RW 05, RW 13, and the study visits of RW 08 and RW 13).
 10. Jadwal rutin pentas tari dan sesi dolanan.
-11. Koordinat Google Maps setiap titik aktivitas.
+11. Koordinat Google Maps setiap titik aktivitas. Until then the demo seed places them by estimate (section 8).
 12. Izin menampilkan daftar tamu studi banding dan prestasi.
 13. Apa produk olahan minyak jelantah RW 05 (section 1).
 14. A photo of RW 08's programme without children, for its page (section 3).
 15. Syarat & Ketentuan kunjungan: pembatalan, jadwal ulang (reschedule), dan pengembalian dana (refund). The booking summary shows them beside the privacy notice once the kelurahan has written them; until then the site states no terms of its own (decision of 2026-10-22 on P3.5, Q3).
+
+## 8. Peta RW dan letak titik aktivitas
+
+The RW area map of `/peta-kontak` draws the kelurahan's own Google My Maps **"Peta RW Wilayah Gisikdrono 2024"** (embedded on https://gisikdrono.semarangkota.go.id/peta-wilayah-rw; reuse of the site's content allowed by the kelurahan). Its KML export stays outside the repository; `scripts/convert-rw-kml.ts` turns it into `public/map/gisikdrono-rw.geojson` (13 RW areas, RW 05 from two placemarks and RW 12 from three parts, the kelurahan boundary and the point "Kantor Kelurahan Gisikdrono"), coordinates rounded to six decimals and simplified by about half a metre. The placemark descriptions (population, households, potensi) are not copied. The "Rawan Bencana" layer is empty in the 2024 export, so nothing of it is used. The map credits the source as "Batas RW: Peta RW Wilayah Gisikdrono 2024, Kelurahan Gisikdrono".
+
+**Every activity point position is an estimate (perkiraan) and must be confirmed by the kelurahan** (request 11 of section 7). On 2026-10-24 each seeded point was looked up on OpenStreetMap Nominatim by its name plus "Gisikdrono, Semarang Barat" (one request per second, a descriptive User-Agent, names only). None had a hit, so `scripts/seed-demo-content.sql` places each inside its RW polygon and the map says the positions are estimates:
+
+| RW | Points | Surveyed in OSM | Placed at |
+|---|---|---|---|
+| RW 05 | Bank Sampah Sumber Rejeki, Taman TOGA Sumber Saras, Komposter dan Eco-Enzyme, Budidaya Maggot, Sistem Teba Modern, Kreasi Daur Ulang PKK | none (no hit) | perkiraan: a ring of about 55 m around the polygon's point-on-surface |
+| RW 13 | Pentas Tari Tradisional, Dolanan Anak, Sekolah Seni Anak, Upacara Serah Tampi Lurah, Mural dan Spot Foto, Kampung Siaga Tangguh Bencana Kebakaran | none (no hit); the street **Jalan Jatisari** is in OSM inside RW 13 | perkiraan: a ring around Jalan Jatisari, where `/seni-budaya` places the Kampung Budaya & Seni |
+| RW 08 | Rumah Pemberdayaan Semar Cakep, Ketan Ronggolawe | none (no hit); Kantor Kecamatan Semarang Barat is in OSM inside RW 08 but is not a point | perkiraan: around the polygon's point-on-surface |
+
+The RW centres (`rw_units.map_lat` / `map_lng` of RW 05, RW 08 and RW 13) get the point-on-surface of their polygon in the demo seed only, also as estimates. The office marker uses the kelurahan's own point from the KML (OSM's "Kantor Kelurahan Gisikdrono" lies about 30 m from it). No coordinate is written by a migration; production keeps NULL until the kelurahan enters the exact spots in `/dashboard/activity-points`, and a point without coordinates is left off the map, never guessed there.

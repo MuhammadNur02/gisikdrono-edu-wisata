@@ -162,6 +162,39 @@ insert into public.activity_points (rw_id, slug, name, point_type, short_descrip
    'Balai warga tempat anak bermain dan belajar, didampingi relawan warga.', 2, 'published')
 on conflict do nothing;
 
+-- PERKIRAAN: where the RW area map of /peta-kontak pins the points and the RW centres. OpenStreetMap's Nominatim
+-- (polite lookups by name plus "Gisikdrono, Semarang Barat", 2026-10-24) knows none of these places, so every
+-- position below is an estimate inside the RW's polygon of the kelurahan's "Peta RW Wilayah Gisikdrono 2024"
+-- (public/map/gisikdrono-rw.geojson): a small ring around the RW's point-on-surface, and for RW 13 around Jalan
+-- Jatisari (found in OSM inside RW 13), where /seni-budaya places the Kampung Budaya & Seni. The RW centres are the
+-- point-on-surface of each polygon. The kelurahan confirms the exact spots (docs/content/konten-situs-kelurahan.md,
+-- section 8). Only a row without coordinates gets one, so a position someone entered stays.
+update public.activity_points as point
+set lat = estimate.lat, lng = estimate.lng
+from (values
+  (5, 'bank-sampah-sumber-rejeki', -6.992862, 110.390212),
+  (5, 'taman-toga-sumber-saras', -6.992612, 110.389779),
+  (5, 'komposter-dan-eco-enzyme', -6.992862, 110.389346),
+  (5, 'budidaya-maggot', -6.993362, 110.389346),
+  (5, 'sistem-teba-modern', -6.993612, 110.389779),
+  (5, 'kreasi-daur-ulang-pkk', -6.993362, 110.390212),
+  (13, 'pentas-tari-tradisional', -6.996004, 110.386008),
+  (13, 'dolanan-anak', -6.995754, 110.385575),
+  (13, 'sekolah-seni-anak', -6.996079, 110.385272),
+  (13, 'upacara-serah-tampi-lurah', -6.996429, 110.385272),
+  (13, 'mural-dan-spot-foto', -6.996754, 110.385575),
+  (13, 'kampung-siaga-bencana-kebakaran', -6.996504, 110.386008),
+  (8, 'rumah-pemberdayaan-semar-cakep', -6.981051, 110.388058),
+  (8, 'ketan-ronggolawe', -6.981551, 110.387192)
+) as estimate(rw_id, slug, lat, lng)
+where point.rw_id = estimate.rw_id and point.slug = estimate.slug and point.lat is null and point.lng is null;
+
+update public.rw_units as unit
+set map_lat = centre.lat, map_lng = centre.lng
+from (values (5, -6.993112, 110.389779), (8, -6.981301, 110.387625), (13, -6.996775, 110.386199))
+  as centre(id, lat, lng)
+where unit.id = centre.id and unit.map_lat is null and unit.map_lng is null;
+
 -- Gallery photos and the hero banner need real files in public-media, so they come only from
 -- pnpm db:seed --media <folder> (scripts/demo-media.ts) and --official-media <folder>
 -- (scripts/official-media.ts); without them the pages show Foto menyusul.
