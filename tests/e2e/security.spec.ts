@@ -1,5 +1,6 @@
-import { expect, test, type APIResponse, type Page } from '@playwright/test';
+import { expect, test, type APIResponse } from '@playwright/test';
 
+import { cspViolationsOn } from './helpers/csp';
 import { resetAuthLimits, signInToDashboard, SUPERADMIN } from './helpers/staff';
 
 // Task P5.6.05: a public page that looks a row up answers with its real status code. The row-reading pages sit in
@@ -216,18 +217,6 @@ test.describe('security headers (docs/Security.md §8.2)', () => {
     expect(scanner).toContain('microphone=()');
   });
 });
-
-// docs/Security.md §13.1 #3: the enforced CSP leaves the key routes without a single violation. Chromium logs every
-// blocked script, style, frame, image or connection as a console error naming the Content Security Policy.
-async function cspViolationsOn(page: Page, path: string): Promise<string[]> {
-  const violations: string[] = [];
-  page.on('console', (message) => {
-    if (/Content Security Policy/i.test(message.text())) violations.push(message.text());
-  });
-  await page.goto(path);
-  await page.waitForLoadState('networkidle');
-  return violations;
-}
 
 test.describe('the enforced CSP blocks nothing the pages need', () => {
   for (const path of [...PUBLIC_PAGES, SEEDED_WIZARD_PATH, '/login']) {
