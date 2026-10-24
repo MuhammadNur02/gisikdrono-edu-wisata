@@ -25,21 +25,31 @@ export interface TestSessions {
   filled: { id: string; time: string };
 }
 
-// The desktop and phone projects may run side by side, each at its own hour of a day three days ahead.
-export async function createSessions(projectIndex: number, label: string): Promise<TestSessions> {
+// The desktop and phone projects may run side by side, each at its own hour of a day three days ahead. `slot` moves
+// the start minutes, so a worker that Playwright starts again after a failure (its beforeAll runs once more) does not
+// collide with the sessions its predecessor left (visit_sessions is unique on RW, date and start time).
+const MAX_SLOTS = 20;
+
+export async function createSessions(
+  projectIndex: number,
+  label: string,
+  slot = 0,
+): Promise<TestSessions> {
   const hour = String(5 + projectIndex).padStart(2, '0');
+  const minute = (base: number) => String(base + (slot % MAX_SLOTS)).padStart(2, '0');
+  const [bookedStart, filledStart] = [minute(5), minute(35)];
   const ids = [randomUUID(), randomUUID()];
   const rows = z.array(z.object({ visit_date: z.string() })).parse(
     await runSql(`insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity)
-      values ('${ids[0] ?? ''}', 5, public.today_jkt() + 3, '${hour}:05', '${hour}:30', ${sqlText(label)}, 40),
-             ('${ids[1] ?? ''}', 5, public.today_jkt() + 3, '${hour}:35', '${hour}:55', ${sqlText(label)}, 40)
+      values ('${ids[0] ?? ''}', 5, public.today_jkt() + 3, '${hour}:${bookedStart}', '${hour}:30', ${sqlText(label)}, 40),
+             ('${ids[1] ?? ''}', 5, public.today_jkt() + 3, '${hour}:${filledStart}', '${hour}:55', ${sqlText(label)}, 40)
       returning session_date::text as visit_date`),
   );
   return {
     label,
     visitDate: rows[0]?.visit_date ?? '',
-    booked: { id: ids[0] ?? '', time: `${hour}.05–${hour}.30 WIB` },
-    filled: { id: ids[1] ?? '', time: `${hour}.35–${hour}.55 WIB` },
+    booked: { id: ids[0] ?? '', time: `${hour}.${bookedStart}–${hour}.30 WIB` },
+    filled: { id: ids[1] ?? '', time: `${hour}.${filledStart}–${hour}.55 WIB` },
   };
 }
 
