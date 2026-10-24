@@ -4,6 +4,7 @@ import { ChevronDown, ShieldCheck } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import type { QuotePreviewState } from '@/hooks/use-quote-preview';
+import { bookingLayoutCopy } from '@/lib/copy/booking-layout';
 import { copy } from '@/lib/copy/id';
 import { sessionsOn, type BookingDraft } from '@/lib/utils/booking-wizard';
 import { formatIDR } from '@/lib/utils/currency';
@@ -11,7 +12,7 @@ import { formatDateLong, formatDateShort, formatTimeRange } from '@/lib/utils/da
 import type { WizardPackage } from '@/types/booking';
 import type { BookableLeg } from '@/types/session';
 
-const text = copy.booking.wizard.aside;
+const text = bookingLayoutCopy.wizard.aside;
 const DOT = ' · ';
 const RW_JOINER = ' + ';
 const paxText = copy.booking.wizard.summary.pax;
@@ -23,6 +24,8 @@ export interface WizardSummaryProps {
   draft: BookingDraft;
   legs: readonly BookableLeg[];
   preview: QuotePreviewState;
+  // On the summary step the server's quote is the total itself, no longer an estimate.
+  isFinal: boolean;
 }
 
 // The chosen session of each leg, "Sesi Pagi · 08.30–10.30 WIB", with the RW in front for a combo.
@@ -79,12 +82,14 @@ function SummaryRows({ draft, legs }: Pick<WizardSummaryProps, 'draft' | 'legs'>
   );
 }
 
-function EstimateRow({ preview }: { preview: QuotePreviewState }) {
+function EstimateRow({ preview, isFinal }: { preview: QuotePreviewState; isFinal: boolean }) {
   const total = quotedTotal(preview);
   return (
     <div className="space-y-2">
       <p className="flex items-baseline justify-between gap-4">
-        <span className="text-label font-semibold text-foreground">{text.estimate}</span>
+        <span className="text-label font-semibold text-foreground">
+          {isFinal ? text.total : text.estimate}
+        </span>
         {total === null ? (
           <span className="text-right text-body-sm text-muted-foreground">
             {text.estimateLater}
@@ -95,7 +100,7 @@ function EstimateRow({ preview }: { preview: QuotePreviewState }) {
           </span>
         )}
       </p>
-      <p className="text-caption text-muted-foreground">{text.note}</p>
+      <p className="text-caption text-muted-foreground">{isFinal ? text.totalNote : text.note}</p>
     </div>
   );
 }
@@ -119,7 +124,7 @@ export function WizardSummaryPanel(props: WizardSummaryProps) {
     >
       {props.packageCard}
       <SummaryRows draft={props.draft} legs={props.legs} />
-      <EstimateRow preview={props.preview} />
+      <EstimateRow preview={props.preview} isFinal={props.isFinal} />
       <TrustNote />
     </section>
   );
@@ -136,7 +141,7 @@ export function WizardSummaryBar(props: WizardSummaryProps) {
     : wizardPackage.rws.map((rw) => rw.label).join(RW_JOINER);
   return (
     <details className="group border-b border-border bg-card lg:hidden">
-      <summary className="mx-auto flex min-h-16 w-full max-w-300 cursor-pointer list-none items-center gap-4 px-5 py-3 md:px-10 [&::-webkit-details-marker]:hidden">
+      <summary className="mx-auto flex min-h-16 w-full max-w-300 cursor-pointer list-none items-center gap-4 px-5 py-3 md:px-10">
         <span className="min-w-0 flex-1">
           <span className="block truncate py-0.5 text-label font-semibold text-foreground">
             {wizardPackage.name}
@@ -150,13 +155,13 @@ export function WizardSummaryBar(props: WizardSummaryProps) {
         )}
         <ChevronDown
           aria-hidden
-          className="size-5 shrink-0 text-ink-2 transition-transform duration-240 ease-out-soft group-open:rotate-180"
+          className="size-5 shrink-0 text-ink-2 transition-transform duration-200 ease-out-soft group-open:rotate-180"
         />
         <span className="sr-only">{text.label}</span>
       </summary>
       <div className="mx-auto max-w-300 space-y-4 px-5 pb-5 md:px-10">
         <SummaryRows draft={draft} legs={legs} />
-        <EstimateRow preview={preview} />
+        <EstimateRow preview={preview} isFinal={props.isFinal} />
         <TrustNote />
       </div>
     </details>

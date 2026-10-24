@@ -5,12 +5,12 @@ import { SiteWordmark } from '@/components/layout/site-wordmark';
 import { WhatsAppIcon } from '@/components/layout/whatsapp-icon';
 import { HOME_NAV_ITEM } from '@/config/nav';
 import { siteConfig } from '@/config/site';
-import { copy } from '@/lib/copy/id';
+import { bookingLayoutCopy } from '@/lib/copy/booking-layout';
 import { cn } from '@/lib/utils/cn';
 import { packagePath } from '@/lib/utils/paths';
 import { buildWhatsAppChatUrl } from '@/lib/utils/whatsapp';
 
-const text = copy.booking.wizard.header;
+const text = bookingLayoutCopy.wizard.header;
 
 const ROUND_ICON_LINK =
   'inline-flex size-11 shrink-0 items-center justify-center rounded-full text-foreground transition-colors duration-200 hover:bg-muted';

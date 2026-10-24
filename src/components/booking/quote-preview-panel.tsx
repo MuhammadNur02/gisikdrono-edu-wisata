@@ -1,5 +1,7 @@
 'use client';
 
+import { useId } from 'react';
+
 import { BookingQuoteLines } from '@/components/booking/booking-quote-lines';
 import { FormAlert } from '@/components/forms/form-alert';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -30,13 +32,17 @@ export function QuotePreviewPanel({
   // A line under the total, such as the summary's "Dihitung oleh sistem…".
   note?: string;
 }) {
+  const titleId = useId();
   return (
-    <div
+    <section
+      aria-labelledby={titleId}
       aria-live="polite"
       aria-busy={state.status === 'loading'}
       className="space-y-5 rounded-2xl border border-border bg-card p-5 md:p-7"
     >
-      <h3 className="text-h4 font-bold">{text.title}</h3>
+      <h3 id={titleId} className="text-h4 font-bold">
+        {text.title}
+      </h3>
       {state.status === 'loading' && (
         <div className="space-y-2">
           <span className="sr-only">{text.loading}</span>
@@ -52,6 +58,6 @@ export function QuotePreviewPanel({
         <BookingQuoteLines quote={state.answer.quote} />
       )}
       {note && <p className="text-caption text-muted-foreground">{note}</p>}
-    </div>
+    </section>
   );
 }

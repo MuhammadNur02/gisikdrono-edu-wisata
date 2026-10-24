@@ -8,6 +8,7 @@ import { PayButton, type StartPaymentAction } from '@/components/booking/pay-but
 import { FormAlert } from '@/components/forms/form-alert';
 import { Button } from '@/components/ui/button';
 import { GUEST_BOOKING_PATH } from '@/config/guest';
+import { bookingLayoutCopy } from '@/lib/copy/booking-layout';
 import { copy } from '@/lib/copy/id';
 import { layoutCopy } from '@/lib/copy/ui';
 import { formatIDR } from '@/lib/utils/currency';
@@ -15,6 +16,7 @@ import { formatDateShort, formatTimeRange } from '@/lib/utils/dates';
 import type { PaymentPageView } from '@/types/payment';
 
 const text = copy.booking.payment;
+const layout = bookingLayoutCopy.payment;
 const DOT = ' · ';
 const PAID_STATUSES: ReadonlySet<PaymentPageView['status']> = new Set([
   'paid',
@@ -46,7 +48,7 @@ function PaymentHead({ view }: { view: PaymentPageView }) {
   return (
     <header className="space-y-3">
       <p className="text-meta-caps text-muted-foreground tabular-nums">
-        {text.bookingOf(view.bookingCode)}
+        {layout.bookingOf(view.bookingCode)}
       </p>
       <h1 className="text-eyebrow text-primary-ink">{text.title}</h1>
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
@@ -81,7 +83,7 @@ function MethodRow(props: { icon: ReactNode; title: string; hint: string; childr
 
 // The methods Midtrans will offer (DESIGN-SPEC §3.12): QRIS and the Virtual Accounts, chosen on Midtrans' own page.
 function MethodsCard() {
-  const methods = text.methods;
+  const methods = layout.methods;
   return (
     <section className="space-y-4 rounded-2xl border border-border bg-card p-5 md:p-7">
       <h2 className="text-h4 font-bold">{methods.title}</h2>
@@ -125,9 +127,10 @@ function CopyRow({ label, value, shown }: { label: string; value: string; shown:
       </div>
       <CopyValueButton
         value={value}
-        label={text.copy}
-        copiedLabel={text.copied}
-        accessibleLabel={text.copyLabel(label)}
+        label={layout.copy}
+        copiedLabel={layout.copied}
+        failedLabel={layout.copyFailed}
+        what={label.toLowerCase()}
       />
     </div>
   );
@@ -154,7 +157,7 @@ function PendingInstructions({
             shown={payment.vaNumber}
           />
           <CopyRow
-            label={text.amountDue}
+            label={layout.amountDue}
             value={String(totalAmount)}
             shown={formatIDR(totalAmount)}
           />

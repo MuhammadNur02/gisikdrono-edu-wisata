@@ -21,13 +21,15 @@ export function BookingQuoteLines({ quote }: { quote: BookingQuote }) {
         {quote.lines.map((line) => (
           <li
             key={line.kind === 'package' ? line.packageId : line.productId}
-            className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-0.5 text-body md:grid-cols-[minmax(0,1fr)_auto_8rem]"
+            className="flex items-start justify-between gap-6 text-body"
           >
-            <span className="min-w-0 text-foreground">{line.name}</span>
-            <span className="text-body-sm text-muted-foreground tabular-nums max-md:col-start-1 max-md:row-start-2 md:text-right">
-              {lineDetail(line)}
+            <span className="min-w-0 flex-1 md:flex md:items-baseline md:gap-6">
+              <span className="block text-foreground md:flex-1">{line.name}</span>
+              <span className="block text-body-sm text-muted-foreground tabular-nums">
+                {lineDetail(line)}
+              </span>
             </span>
-            <span className="text-right font-semibold tabular-nums max-md:row-span-2">
+            <span className="shrink-0 text-right font-semibold tabular-nums md:w-32">
               {formatIDR(line.lineTotal)}
             </span>
           </li>

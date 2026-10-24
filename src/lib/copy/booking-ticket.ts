@@ -10,20 +10,6 @@ export const bookingTicketCopy = {
   pax: 'Jumlah peserta',
   paxCount: (count: number) => `${String(count)} orang`,
   brightness: 'Naikkan kecerahan layar saat pemindaian.',
-  // DESIGN-SPEC §3.13: the stub, the QR column, the banner above and the notes below the ticket.
-  stub: 'Tiket rombongan',
-  gate: 'Gerbang',
-  showQr: 'Tunjukkan QR ini kepada petugas',
-  ready: 'Pembayaran diterima. Tiket rombongan Anda siap.',
-  readySent: 'Tiket juga sudah dikirim ke WhatsApp dan email penanggung jawab.',
-  paid: 'Lunas',
-  dayOf: {
-    title: 'Saat hari kunjungan',
-    items: [
-      'Tunjukkan tiket QR kepada petugas di gerbang RW.',
-      'Satu tiket berlaku untuk seluruh rombongan pada sesi ini.',
-    ],
-  },
   noQr: 'Kode QR tiket ini tidak lagi bisa ditampilkan. Hubungi kelurahan lewat WhatsApp, ya.',
   notice: {
     suspended:

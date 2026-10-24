@@ -223,7 +223,9 @@ test('can be completed with the keyboard alone', async ({ page }, testInfo) => {
   await page.getByRole('button', { name: 'Lanjut' }).focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: 'Ringkasan pesanan' })).toBeVisible(STEP);
-  await expect(page.getByText('Total', { exact: true })).toBeVisible(STEP);
+  await expect(
+    page.getByRole('region', { name: 'Rincian biaya' }).getByText('Total', { exact: true }),
+  ).toBeVisible(STEP);
   await page.getByRole('checkbox', { name: /Saya telah membaca/ }).focus();
   await page.keyboard.press('Space');
   await waitForTurnstile(page);

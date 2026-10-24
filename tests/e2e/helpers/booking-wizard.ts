@@ -173,13 +173,17 @@ export async function addOneAddon(page: Page) {
     STEP,
   );
   await page.getByRole('button', { name: 'Tambah' }).first().click();
-  await expect(page.getByText('Total', { exact: true })).toBeVisible(STEP);
+  await expect(
+    page.getByRole('region', { name: 'Rincian biaya' }).getByText('Total', { exact: true }),
+  ).toBeVisible(STEP);
   await page.getByRole('button', { name: 'Lanjut' }).click();
 }
 
 export async function readySummary(page: Page) {
   await expect(page.getByRole('heading', { name: 'Ringkasan pesanan' })).toBeVisible(STEP);
-  await expect(page.getByText('Total', { exact: true })).toBeVisible(STEP);
+  await expect(
+    page.getByRole('region', { name: 'Rincian biaya' }).getByText('Total', { exact: true }),
+  ).toBeVisible(STEP);
   await page.getByRole('checkbox', { name: /Saya telah membaca/ }).check();
   await waitForTurnstile(page);
 }

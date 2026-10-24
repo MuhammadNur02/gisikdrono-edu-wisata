@@ -77,7 +77,7 @@ function StepLine({ isDone }: { isDone: boolean }) {
     >
       <span
         className={cn(
-          'absolute inset-0 origin-left bg-success transition-transform duration-360 ease-out-soft',
+          'absolute inset-0 origin-left bg-success transition-transform duration-300 ease-out-soft',
           isDone ? 'scale-x-100' : 'scale-x-0',
         )}
       />
@@ -141,7 +141,7 @@ function CompactProgress(props: BookingStepperProps) {
           <span
             key={step}
             className={cn(
-              'h-1 rounded-full transition-colors duration-360 ease-out-soft',
+              'h-1 rounded-full transition-colors duration-300 ease-out-soft',
               BAR_CLASS[stateOf(step, props)],
             )}
           />

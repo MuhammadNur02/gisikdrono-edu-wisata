@@ -7,7 +7,6 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { BookingStepper } from '@/components/booking/booking-stepper';
 import {
-  StepEntrance,
   WIZARD_CONTAINER,
   WizardColumns,
   WizardSkeleton,
@@ -264,6 +263,7 @@ export function WizardShell(props: WizardShellProps) {
     draft: flow.draft,
     legs: flow.sessions.legs,
     preview: flow.quote.state,
+    isFinal: flow.step === 'ringkasan',
   };
   return (
     <>
@@ -290,9 +290,5 @@ function WizardBody({ flow, props }: { flow: WizardFlow; props: WizardShellProps
   if (flow.bookedUrl !== null) return <FormAlert tone="info">{text.summary.redirecting}</FormAlert>;
   if (flow.isResent) return <ResentPanel />;
   if (flow.draft === null) return <WizardSkeleton />;
-  return (
-    <StepEntrance step={flow.step}>
-      <CurrentStep {...props} flow={flow} draft={flow.draft} />
-    </StepEntrance>
-  );
+  return <CurrentStep {...props} flow={flow} draft={flow.draft} />;
 }

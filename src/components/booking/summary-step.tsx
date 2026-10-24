@@ -10,9 +10,8 @@ import { SummaryDetails } from '@/components/booking/summary-details';
 import {
   HoldNotice,
   PaymentTrust,
-  PayButton,
   PayMethods,
-  QuoteButton,
+  SendButtons,
   type SendState,
 } from '@/components/booking/summary-send';
 import {
@@ -40,6 +39,7 @@ import { useBookingSubmit, type SubmitNotice } from '@/hooks/use-booking-submit'
 import { useNow } from '@/hooks/use-now';
 import type { QuotePreviewState } from '@/hooks/use-quote-preview';
 import { useTurnstileToken } from '@/hooks/use-turnstile-token';
+import { bookingLayoutCopy } from '@/lib/copy/booking-layout';
 import { copy } from '@/lib/copy/id';
 import type { BookingDraft } from '@/lib/utils/booking-wizard';
 import { schemaResolver } from '@/lib/utils/schema-resolver';
@@ -49,6 +49,7 @@ import type { VerifiedContact } from '@/types/guest';
 import type { BookableLeg } from '@/types/session';
 
 const text = copy.booking.wizard.summary;
+const layout = bookingLayoutCopy.wizard.summary;
 const MS_PER_SECOND = 1000;
 // The re-verify check runs again while the visitor reads the summary.
 const CLOCK_TICK_MS = 15_000;
@@ -166,18 +167,21 @@ function CheckAndSend(
 ) {
   const { form, captcha, canAskQuotation, onQuote, ...state } = props;
   return (
-    <WizardPanel>
-      <PrivacyField form={form} />
-      <PayMethods />
-      <HoldNotice />
-      <TurnstileField
-        ref={captcha.ref}
-        action={TURNSTILE_ACTIONS.bookingCreate}
-        onToken={captcha.onToken}
-        error={form.formState.errors.turnstileToken?.message}
-      />
-      {canAskQuotation && <QuoteButton {...state} onQuote={onQuote} />}
-    </WizardPanel>
+    <>
+      <WizardPanel>
+        <PrivacyField form={form} />
+        <PayMethods />
+        <HoldNotice />
+        <TurnstileField
+          ref={captcha.ref}
+          action={TURNSTILE_ACTIONS.bookingCreate}
+          onToken={captcha.onToken}
+          error={form.formState.errors.turnstileToken?.message}
+        />
+        <SendButtons {...state} canAskQuotation={canAskQuotation} onQuote={onQuote} />
+      </WizardPanel>
+      <PaymentTrust />
+    </>
   );
 }
 
@@ -245,29 +249,27 @@ function useSummaryStep(props: SummaryStepProps) {
 }
 
 export function SummaryStep(props: SummaryStepProps) {
-  const { draft, wizardPackage, legs, preview, onOpen, onBack, update } = props;
+  const { draft, wizardPackage, legs, preview, onOpen, onBack } = props;
   const { form, captcha, send, needsReverify, state, canAskQuotation } = useSummaryStep(props);
   return (
     <Form {...form}>
       <PostForm onSubmit={send.sendAs('pay')}>
         <WizardStepFrame
           title={text.title}
-          description={text.description}
+          description={layout.description}
           onBack={onBack}
           backLabel={props.backLabel}
-          actions={<PayButton {...state} />}
+          actions={<span aria-hidden />}
         >
-          <SummaryDetails draft={draft} legs={legs} onOpen={onOpen} />
-          <QuotePreviewPanel state={preview} wizardPackage={wizardPackage} note={text.priceNote} />
+          <SummaryDetails draft={draft} legs={legs} preview={preview} onOpen={onOpen} />
+          <QuotePreviewPanel
+            state={preview}
+            wizardPackage={wizardPackage}
+            note={layout.priceNote}
+          />
           {send.notice && <SendNotice notice={send.notice} onOpen={onOpen} />}
           {needsReverify && (
-            <ReverifyPanel
-              key={String(draft.contact?.verifiedAt)}
-              draft={draft}
-              actions={props.actions}
-              update={update}
-              request={send}
-            />
+            <ReverifyPanel key={String(draft.contact?.verifiedAt)} {...props} request={send} />
           )}
           <CheckAndSend
             form={form}
@@ -276,7 +278,6 @@ export function SummaryStep(props: SummaryStepProps) {
             {...state}
             onQuote={() => void send.sendAs('quote')()}
           />
-          <PaymentTrust />
         </WizardStepFrame>
       </PostForm>
     </Form>

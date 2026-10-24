@@ -4,19 +4,19 @@ import { createContext, use, useEffect, useRef } from 'react';
 import type * as React from 'react';
 import {
   getDefaultClassNames,
-  labelDayButton,
   type DayButton,
   type Matcher,
+  type WeekProps,
 } from 'react-day-picker';
 
 import { Calendar } from '@/components/ui/calendar';
-import { copy } from '@/lib/copy/id';
+import { bookingLayoutCopy } from '@/lib/copy/booking-layout';
 import type { DayAvailability, DayState } from '@/lib/utils/booking-wizard';
 import { cn } from '@/lib/utils/cn';
 import { calendarDateToVisitDate, visitDateToCalendarDate } from '@/lib/utils/dates';
 import { fieldLabelId } from '@/lib/utils/field-ids';
 
-const text = copy.booking.wizard.schedule;
+const text = bookingLayoutCopy.wizard.schedule;
 
 export interface DatePickerProps {
   // Visit dates as Postgres `date` strings ('2026-10-18'), computed on the server with bookableRange().
@@ -88,9 +88,8 @@ function DayNote({
   return (
     <>
       <span
-        aria-hidden
         className={cn(
-          'text-caption leading-none font-medium tabular-nums max-md:hidden',
+          'text-caption leading-none font-medium tabular-nums max-md:sr-only',
           isSelected ? 'text-secondary-foreground/75' : STATE_TEXT[availability.state],
         )}
       >
@@ -108,7 +107,7 @@ function DayNote({
 }
 
 const CELL =
-  'flex h-13 w-full flex-col items-center justify-center gap-1 rounded-xl border border-transparent transition-colors duration-160 ease-out-soft md:h-16';
+  'flex h-13 w-full flex-col items-center justify-center gap-1 rounded-xl border border-transparent transition-colors duration-150 ease-out-soft md:h-16';
 
 // shadcn's focus handling: the focus follows the day the arrow keys reach.
 function useFocusedDay(isFocused: boolean) {
@@ -135,12 +134,15 @@ function cellClassName(modifiers: DayModifiers, availability: DayAvailability | 
   );
 }
 
-// One day: the number in the display face and the seats under it.
+// One day: the number in the display face and the seats under it. The button is named by its content, the full date
+// for screen readers and the seats as shown, so the visible words are always part of its name (axe
+// label-content-name-mismatch); react-day-picker's aria-label becomes that hidden date.
 function SeatDayButton({
   day,
   modifiers,
   children,
   className,
+  'aria-label': dayLabel,
   ...props
 }: React.ComponentProps<typeof DayButton>) {
   const facts = use(DayFactsContext);
@@ -156,7 +158,9 @@ function SeatDayButton({
       className={cn(cellClassName(modifiers, availability), className)}
       {...props}
     >
+      <span className="sr-only">{dayLabel}, </span>
       <span
+        aria-hidden
         className={cn(
           'text-h4 leading-none tabular-nums',
           availability?.state === 'full' && !isSelected && 'line-through',
@@ -167,6 +171,16 @@ function SeatDayButton({
       {availability && <DayNote availability={availability} isSelected={isSelected} />}
     </button>
   );
+}
+
+// On a phone the month keeps only the weeks that hold a day of the bookable range (DESIGN-SPEC §3.10 mobile).
+function BookableWeek({ week, className, ...props }: WeekProps) {
+  const facts = use(DayFactsContext);
+  const isOutside = week.days.every((each) => {
+    const visitDate = calendarDateToVisitDate(each.date);
+    return each.outside || visitDate < facts.firstDate || visitDate > facts.lastDate;
+  });
+  return <tr className={cn(className, isOutside && 'max-md:hidden')} {...props} />;
 }
 
 function disabledDays(
@@ -198,7 +212,7 @@ function Legend() {
 
 const defaults = getDefaultClassNames();
 const NAV_BUTTON =
-  'inline-flex size-11 items-center justify-center rounded-full border border-border-strong text-foreground transition-colors duration-160 hover:bg-muted aria-disabled:pointer-events-none aria-disabled:opacity-40';
+  'inline-flex size-11 items-center justify-center rounded-full border border-border-strong text-foreground transition-colors duration-150 hover:bg-muted aria-disabled:pointer-events-none aria-disabled:opacity-40';
 
 // DESIGN-SPEC §2.4 and §3.10: the month inline, never in a popover, so every day shows its seats. Previous, month and
 // next across the top (the month first and the arrows on the right on a phone), the legend at the right from md.
@@ -243,14 +257,7 @@ function SeatCalendar({
       onSelect={(date) => {
         onChange(calendarDateToVisitDate(date));
       }}
-      labels={{
-        labelDayButton: (date, modifiers, options) => {
-          const availability = availabilityOf(facts, calendarDateToVisitDate(date));
-          const name = labelDayButton(date, modifiers, options);
-          return availability ? `${name}, ${dayWord(availability)}` : name;
-        },
-      }}
-      components={{ DayButton: SeatDayButton }}
+      components={{ DayButton: SeatDayButton, Week: BookableWeek }}
       classNames={CALENDAR_CLASS_NAMES}
       className="bg-transparent p-0"
     />
@@ -260,7 +267,7 @@ function SeatCalendar({
 // docs/StyleGuide.md §5.6: the calendar sits in the form as a group, named by the field's label (which carries
 // "wajib" for a required field) and described by its help and error text. aria-invalid and aria-required stay off:
 // neither is allowed on a group (axe aria-allowed-attr); the linked error message says it instead. Months and days
-// are in Indonesian, and each day's name tells its seats too.
+// are in Indonesian, and each day tells its seats too.
 export function DatePicker({
   value,
   onChange,

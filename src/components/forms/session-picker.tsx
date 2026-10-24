@@ -44,7 +44,7 @@ function SessionCard({ session, pax }: { session: SessionOption; pax: number }) 
     <label
       htmlFor={itemId}
       className={cn(
-        'relative flex cursor-pointer flex-col gap-1 rounded-xl border border-border-strong bg-card py-4 pr-12 pl-4.5 transition-colors duration-160 ease-out-soft hover:bg-muted/60 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary-tint has-[[data-state=checked]]:ring-1 has-[[data-state=checked]]:ring-primary',
+        'relative flex cursor-pointer flex-col gap-1 rounded-xl border border-border-strong bg-card py-4 pr-12 pl-4.5 transition-colors duration-150 ease-out-soft hover:bg-muted/60 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary-tint has-[[data-state=checked]]:ring-1 has-[[data-state=checked]]:ring-primary',
         isUnavailable && 'cursor-not-allowed bg-muted opacity-55 hover:bg-muted',
       )}
     >

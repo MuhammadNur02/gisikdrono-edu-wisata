@@ -5,12 +5,14 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { bookingLayoutCopy } from '@/lib/copy/booking-layout';
 import { copy } from '@/lib/copy/id';
 import type { BookingDraft } from '@/lib/utils/booking-wizard';
 import { cn } from '@/lib/utils/cn';
 import type { WizardPackage } from '@/types/booking';
 
 const text = copy.booking.wizard;
+const layout = bookingLayoutCopy.wizard;
 
 // What every step of the wizard gets from the shell (src/components/booking/wizard-shell.tsx).
 export interface WizardStepProps {
@@ -75,7 +77,7 @@ function BackControl({
     <>
       <ArrowLeft aria-hidden />
       <span className="max-md:sr-only">
-        {onBack ? (backLabel ? text.backTo(backLabel) : text.back) : text.backToPackage}
+        {onBack ? (backLabel ? layout.backTo(backLabel) : text.back) : layout.backToPackage}
       </span>
     </>
   );
@@ -104,7 +106,7 @@ function StepNavigation(props: Omit<WizardStepFrameProps, 'title' | 'description
       <div className="flex flex-1 justify-end gap-3 max-md:*:flex-1 md:flex-none">
         {actions ?? (
           <Button type="submit" size="lg">
-            {nextLabel ? text.nextTo(nextLabel) : text.next}
+            {nextLabel ? layout.nextTo(nextLabel) : text.next}
             <ArrowRight aria-hidden data-icon="trailing" />
           </Button>
         )}

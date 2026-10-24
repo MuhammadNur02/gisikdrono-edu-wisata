@@ -11,11 +11,20 @@ import {
 } from '@/components/booking/wizard-step-frame';
 import { DatePicker } from '@/components/forms/date-picker';
 import { FormAlert } from '@/components/forms/form-alert';
-import { FormField } from '@/components/forms/form-field';
+import { FormField, RequiredMark } from '@/components/forms/form-field';
 import { NumberStepper } from '@/components/forms/number-stepper';
 import { PostForm } from '@/components/forms/post-form';
 import { SessionPicker } from '@/components/forms/session-picker';
-import { Form } from '@/components/ui/form';
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField as FieldController,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { bookingLayoutCopy } from '@/lib/copy/booking-layout';
 import { copy } from '@/lib/copy/id';
 import {
   bookableDates,
@@ -30,6 +39,7 @@ import { scheduleStepSchema } from '@/lib/validations/booking';
 import type { BookableLeg } from '@/types/session';
 
 const text = copy.booking.wizard.schedule;
+const layout = bookingLayoutCopy.wizard.schedule;
 
 export interface SessionPickerStepProps extends WizardStepProps {
   // The seats left, read again every 15 s by the shell (docs/PRD.md FR-BOOK-02).
@@ -75,8 +85,6 @@ function useScheduleForm({ wizardPackage, draft, update }: SessionPickerStepProp
 const PANEL_DIVIDER = 'border-t border-border pt-6 md:pt-7';
 
 // DESIGN-SPEC §3.10: the label and its hint on the left, the stepper on the right, on every screen.
-const PAX_ROW =
-  'grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-1 [&>*]:col-start-1 [&>*:nth-child(2)]:col-start-2 [&>*:nth-child(2)]:row-span-2 [&>*:nth-child(2)]:row-start-1';
 
 function PaxField({
   form,
@@ -88,23 +96,30 @@ function PaxField({
   maxPax: number;
 }) {
   return (
-    <FormField
+    <FieldController
       control={form.control}
       name="pax"
-      label={text.paxLabel}
-      description={text.paxHint(minPax, maxPax)}
-      required
-      className={PAX_ROW}
-      render={(field) => (
-        <NumberStepper
-          value={field.value}
-          min={minPax}
-          max={maxPax}
-          onBlur={field.onBlur}
-          onChange={(pax) => {
-            field.onChange(pax);
-          }}
-        />
+      render={({ field }) => (
+        <FormItem className="flex items-center justify-between gap-6">
+          <div className="min-w-0 space-y-1">
+            <FormLabel>
+              {text.paxLabel} <RequiredMark />
+            </FormLabel>
+            <FormDescription>{text.paxHint(minPax, maxPax)}</FormDescription>
+            <FormMessage />
+          </div>
+          <FormControl aria-required>
+            <NumberStepper
+              value={field.value}
+              min={minPax}
+              max={maxPax}
+              onBlur={field.onBlur}
+              onChange={(pax) => {
+                field.onChange(pax);
+              }}
+            />
+          </FormControl>
+        </FormItem>
       )}
     />
   );
@@ -238,7 +253,7 @@ function SessionsHead({ form, isStale }: { form: ScheduleForm; isStale: boolean 
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
       <h3 className="text-label-lg font-semibold text-foreground">
-        {text.sessionsOn(formatDateLong(visitDate))}
+        {layout.sessionsOn(formatDateLong(visitDate))}
       </h3>
       <FreshnessNote isStale={isStale} />
     </div>
@@ -263,7 +278,7 @@ export function SessionPickerStep(props: SessionPickerStepProps) {
       <PostForm onSubmit={submit}>
         <WizardStepFrame
           title={text.title}
-          description={text.description}
+          description={layout.description}
           onBack={onBack}
           backLabel={props.backLabel}
           nextLabel={props.nextLabel}

@@ -34,6 +34,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { BOOKING_LIMITS } from '@/config/booking';
 import { DB_ENUMS, type EnumValue } from '@/db/enums';
+import { bookingLayoutCopy } from '@/lib/copy/booking-layout';
 import { copy } from '@/lib/copy/id';
 import { bookerValues, namedRows } from '@/lib/utils/booking-wizard';
 import { schemaResolver } from '@/lib/utils/schema-resolver';
@@ -43,6 +44,7 @@ import type { ParticipantRow } from '@/types/forms';
 import type { VerifiedContact } from '@/types/guest';
 
 const text = copy.booking.wizard.booker;
+const layout = bookingLayoutCopy.wizard.booker;
 
 export interface BookerFormStepProps extends WizardStepProps {
   actions: Pick<WizardActions, 'requestOtp' | 'verifyOtp'>;
@@ -257,7 +259,6 @@ function PhoneProofField(props: BookerFormStepProps & { form: BookerForm; showMi
   );
 }
 
-// DESIGN-SPEC §3.10 step 2: the group, its contact, the proved number, a note and the names, a panel each.
 type BookerPanelsProps = BookerFormStepProps & {
   form: BookerForm;
   emailFromProof: string | null;
@@ -270,15 +271,13 @@ function BookerPanels({ form, emailFromProof, showMissing, ...props }: BookerPan
       <WizardPanel>
         <BookerTypeField form={form} />
       </WizardPanel>
-      <WizardPanel title={text.identityTitle}>
+      <WizardPanel title={layout.identityTitle}>
         <InstitutionField form={form} />
         <PersonFields form={form} emailFromProof={emailFromProof} />
       </WizardPanel>
       <PhoneProofField {...props} form={form} showMissing={showMissing} />
       <WizardPanel>
         <NotesField form={form} />
-      </WizardPanel>
-      <WizardPanel>
         <ParticipantRows form={form} pax={props.draft.pax} />
       </WizardPanel>
     </>
@@ -306,7 +305,7 @@ export function BookerFormStep(props: BookerFormStepProps) {
       <PostForm onSubmit={submit}>
         <WizardStepFrame
           title={text.title}
-          description={text.description}
+          description={layout.description}
           onBack={onBack}
           backLabel={props.backLabel}
           nextLabel={props.nextLabel}
