@@ -1,4 +1,4 @@
-import { expect, test, type APIResponse } from '@playwright/test';
+import { expect, test, type APIResponse, type Page } from '@playwright/test';
 
 import { resetAuthLimits, signInToDashboard, SUPERADMIN } from './helpers/staff';
 
@@ -217,6 +217,26 @@ test.describe('security headers (docs/Security.md §8.2)', () => {
   });
 });
 
+// docs/Security.md §13.1 #3: the enforced CSP leaves the key routes without a single violation. Chromium logs every
+// blocked script, style, frame, image or connection as a console error naming the Content Security Policy.
+async function cspViolationsOn(page: Page, path: string): Promise<string[]> {
+  const violations: string[] = [];
+  page.on('console', (message) => {
+    if (/Content Security Policy/i.test(message.text())) violations.push(message.text());
+  });
+  await page.goto(path);
+  await page.waitForLoadState('networkidle');
+  return violations;
+}
+
+test.describe('the enforced CSP blocks nothing the pages need', () => {
+  for (const path of [...PUBLIC_PAGES, SEEDED_WIZARD_PATH, '/login']) {
+    test(`${path} loads without a CSP violation`, async ({ page }) => {
+      expect(await cspViolationsOn(page, path)).toEqual([]);
+    });
+  }
+});
+
 test.describe('the security smoke refuses what it must (Task P5.3.02)', () => {
   test('/dashboard without a session goes to /login and keeps where it was headed', async ({
     request,
@@ -226,6 +246,8 @@ test.describe('the security smoke refuses what it must (Task P5.3.02)', () => {
     const location = new URL(response.headers()['location'] ?? '', response.url());
     expect(location.pathname).toBe('/login');
     expect(location.searchParams.get('next')).toBe('/dashboard/packages');
+    // Even the redirect of a dashboard address is never cached or indexed (Task P5.4.02).
+    expectPrivateAndNoIndex(response);
   });
 
   test('the Midtrans webhook under a wrong path token is a 404', async ({ request }) => {
@@ -291,12 +313,18 @@ test.describe('the security smoke refuses what it must (Task P5.3.02)', () => {
   }
 });
 
-test.describe('an SVG upload is refused even for the superadmin (UPL-01)', () => {
+test.describe('signed in as the superadmin (HDR-01, UPL-01)', () => {
   test.skip(({ isMobile }) => isMobile, 'one run is enough');
   test.describe.configure({ timeout: 90_000 });
 
   test.beforeAll(async () => {
     await resetAuthLimits();
+  });
+
+  test('the dashboard and the scanner load without a CSP violation', async ({ page }) => {
+    await signInToDashboard(page, SUPERADMIN);
+    expect(await cspViolationsOn(page, '/dashboard')).toEqual([]);
+    expect(await cspViolationsOn(page, SCANNER_PATH)).toEqual([]);
   });
 
   test('api/uploads/sign answers VALIDATION for image/svg+xml', async ({ page, baseURL }) => {
