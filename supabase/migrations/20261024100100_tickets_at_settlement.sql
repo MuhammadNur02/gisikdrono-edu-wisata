@@ -195,10 +195,12 @@ begin
 end;
 $$;
 
--- A settled payment seen again (the poll's self-heal, Task P3.10.04): whatever a paid booking still lacks is written,
--- its tickets and its ledger, once; anything else is ignored. A refused ledger stays with the review it raised at
--- settlement, so a poll every five minutes adds no alert or history line.
-create function internal.complete_paid_booking(p_booking public.bookings, p_payment public.payments) returns jsonb
+-- A settled payment seen again, or the poll's self-heal (Task P3.10.04): whatever a paid booking still lacks is
+-- written, its tickets and its ledger, once; anything else is ignored. A refused ledger raises the review a settlement
+-- would, unless the booking is under review already, so a settlement seen again adds no alert or history line. A
+-- ticket a paid booking had lost is a fault worth a look, so writing one raises a medium alert (MON-04).
+create function internal.complete_paid_booking(p_booking public.bookings, p_payment public.payments,
+  p_actor_type text) returns jsonb
   language plpgsql
   set search_path = ''
 as $$
@@ -213,8 +215,20 @@ begin
   if not exists (select 1 from public.revenue_share_entries e
                  where e.booking_id = p_booking.id and e.entry_type = 'settlement') then
     is_ledger_new := internal.try_allocate_revenue_share(p_booking.id, p_payment.id);
+    if not is_ledger_new and not p_booking.needs_review then
+      perform internal.flag_payment_review(p_booking, p_payment, 'REVENUE_RULE_REFUSED', 'high', p_actor_type);
+    end if;
   end if;
   tickets_written := internal.issue_booking_tickets(p_booking.id);
+  if tickets_written > 0 then
+    insert into public.security_alerts (rule, severity, fingerprint, title, details)
+    values ('tickets_reissued', 'medium', 'tickets_reissued:' || p_booking.id,
+            'Tiket pesanan lunas yang hilang diterbitkan ulang',
+            jsonb_build_object('booking_id', p_booking.id, 'order_id', p_payment.order_id,
+                               'tickets', tickets_written))
+    on conflict (fingerprint) where acknowledged_at is null do update
+    set last_seen_at = now(), occurrences = public.security_alerts.occurrences + 1, notified_at = null;
+  end if;
   return jsonb_build_object(
     'result', case when tickets_written > 0 or is_ledger_new then 'applied' else 'ignored' end,
     'processing_result', case when tickets_written > 0 or is_ledger_new then 'completed_paid_booking'
@@ -240,7 +254,7 @@ declare
 begin
   if p_target = 'settled' then
     if p_payment.status = 'settled' then
-      return internal.complete_paid_booking(p_booking, p_payment);
+      return internal.complete_paid_booking(p_booking, p_payment, p_actor_type);
     end if;
     if p_payment.status in ('refunded', 'partially_refunded', 'disputed', 'duplicate') then
       return ignored;
@@ -356,10 +370,55 @@ create function public.svc_apply_payment_event(p_event_id bigint, p_source text,
   set search_path = ''
 as $$ select internal.apply_payment_event(p_event_id, p_source, p_confirmed, p_key_id); $$;
 
+-- The poll's self-heal of a paid booking that lacks a ticket or its ledger (Task P3.10.04, MON-04). The payment is
+-- settled with Midtrans' confirmation stored, so nothing is asked again: re-applying the Status API answer would be the
+-- event that settled the booking whenever the poll itself had settled it, which changes nothing. Same locks as
+-- apply_payment_event: the audit turn, the booking, then its payment.
+create function internal.complete_paid_order(p_order_id text, p_key_id text) returns jsonb
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  previous_settings jsonb;
+  owner_booking_id uuid;
+  booking public.bookings;
+  payment public.payments;
+  outcome jsonb := '{"result": "ignored", "processing_result": "not_a_paid_order"}';
+begin
+  perform internal.require_server_caller('complete_paid_order');
+  if p_key_id is null or p_key_id !~ '^[a-z0-9]+$' then
+    raise exception 'a QR signing key id is lowercase letters and digits' using errcode = '22023';
+  end if;
+  perform internal.take_audit_turn();
+  previous_settings := internal.push_settings(jsonb_build_object('app.in_rpc', '1', 'app.actor_role', 'cron',
+                                                                 'app.qr_key_id', p_key_id));
+  select p.booking_id into owner_booking_id from public.payments p where p.order_id = p_order_id;
+  if owner_booking_id is not null then
+    select * into booking from public.bookings b where b.id = owner_booking_id for update;
+    select * into payment from public.payments p where p.order_id = p_order_id for update;
+    if payment.status = 'settled' and not booking.needs_review then
+      outcome := internal.complete_paid_booking(booking, payment, 'cron');
+      perform internal.log_audit('payment.paid_booking_completed', 'payments', payment.id::text,
+        jsonb_build_object('order_id', p_order_id, 'result', outcome ->> 'result',
+                           'tickets_issued', outcome -> 'tickets_issued', 'ledger_written', outcome -> 'ledger_written'));
+    end if;
+  end if;
+  perform internal.restore_settings(previous_settings);
+  return outcome;
+end;
+$$;
+
+create function public.svc_complete_paid_order(p_order_id text, p_key_id text) returns jsonb
+  language sql security definer
+  set search_path = ''
+as $$ select internal.complete_paid_order(p_order_id, p_key_id); $$;
+
 revoke execute on function internal.issue_booking_tickets(uuid), internal.suspend_booking_tickets(uuid, text),
   internal.revoke_booking_tickets(uuid, text, uuid), internal.try_allocate_revenue_share(uuid, uuid),
-  internal.complete_paid_booking(public.bookings, public.payments),
-  internal.apply_payment_event(bigint, text, jsonb, text)
+  internal.complete_paid_booking(public.bookings, public.payments, text),
+  internal.apply_payment_event(bigint, text, jsonb, text), internal.complete_paid_order(text, text)
   from public, anon, authenticated;
-revoke execute on function public.svc_apply_payment_event(bigint, text, text, jsonb) from public, anon, authenticated;
-grant execute on function public.svc_apply_payment_event(bigint, text, text, jsonb) to service_role;
+revoke execute on function public.svc_apply_payment_event(bigint, text, text, jsonb),
+  public.svc_complete_paid_order(text, text) from public, anon, authenticated;
+grant execute on function public.svc_apply_payment_event(bigint, text, text, jsonb),
+  public.svc_complete_paid_order(text, text) to service_role;

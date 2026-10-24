@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   svcApplyPaymentEvent,
+  svcCompletePaidOrder,
   svcPaymentsHousekeeping,
   svcPaymentsToPoll,
   svcRecordPaymentEvent,
@@ -14,6 +15,7 @@ import { pollPayments } from '@/server/services/payment-poll';
 
 vi.mock('@/db/rpc-payments', () => ({
   svcApplyPaymentEvent: vi.fn(),
+  svcCompletePaidOrder: vi.fn(),
   svcPaymentsHousekeeping: vi.fn(),
   svcPaymentsToPoll: vi.fn(),
   svcRecordPaymentEvent: vi.fn(),
@@ -81,6 +83,20 @@ describe('pollPayments', () => {
     ]);
     vi.mocked(svcRecordPaymentEvent).mockResolvedValue({ eventId: 7, isProcessed: true });
     await expect(pollPayments(adminClient)).resolves.toMatchObject({ asked: 2, applied: 0 });
+    expect(svcApplyPaymentEvent).not.toHaveBeenCalled();
+  });
+
+  it('completes a paid booking that lacks a ticket without asking Midtrans again', async () => {
+    vi.mocked(svcPaymentsToPoll).mockResolvedValue([
+      { orderId: 'GSK-7F3K9Q2M-01', reason: 'paid_incomplete' },
+    ]);
+    vi.mocked(svcCompletePaidOrder).mockResolvedValue(true);
+    await expect(pollPayments(adminClient)).resolves.toMatchObject({ asked: 1, applied: 1 });
+    expect(svcCompletePaidOrder).toHaveBeenCalledWith(adminClient, {
+      orderId: 'GSK-7F3K9Q2M-01',
+      keyId: 'k1',
+    });
+    expect(getTransactionStatus).not.toHaveBeenCalled();
     expect(svcApplyPaymentEvent).not.toHaveBeenCalled();
   });
 

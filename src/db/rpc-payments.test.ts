@@ -4,6 +4,7 @@ import { ZodError } from 'zod';
 import {
   svcApplyPaymentEvent,
   svcAttachSnapToken,
+  svcCompletePaidOrder,
   svcCreatePaymentAttempt,
   svcRecordPaymentEvent,
   svcRecordPaymentFailure,
@@ -153,5 +154,22 @@ describe('svcApplyPaymentEvent', () => {
         keyId: 'k1',
       }),
     ).rejects.toBeInstanceOf(ZodError);
+  });
+});
+
+describe('svcCompletePaidOrder', () => {
+  it('names the order and the kid, and says whether anything was written', async () => {
+    const { client, requests } = clientAnswering(200, { result: 'applied', tickets_issued: 1 });
+    await expect(
+      svcCompletePaidOrder(client, { orderId: 'GSK-7F3K9Q2M-01', keyId: 'k1' }),
+    ).resolves.toBe(true);
+    expect(requests[0]).toEqual({
+      url: `${RPC}/svc_complete_paid_order`,
+      body: { p_order_id: 'GSK-7F3K9Q2M-01', p_key_id: 'k1' },
+    });
+    const untouched = clientAnswering(200, { result: 'ignored' });
+    await expect(
+      svcCompletePaidOrder(untouched.client, { orderId: 'GSK-7F3K9Q2M-01', keyId: 'k1' }),
+    ).resolves.toBe(false);
   });
 });

@@ -194,6 +194,26 @@ export async function svcPaymentsToPoll(
   return rows.map((row) => ({ orderId: row.order_id, reason: row.reason }));
 }
 
+const completionReplySchema = z.looseObject({
+  result: z.enum(['applied', 'ignored', 'needs_review']),
+});
+
+// The self-heal of a paid booking the poll listed as paid_incomplete: true when a ticket or its ledger was written.
+export async function svcCompletePaidOrder(
+  adminClient: DatabaseClient,
+  order: { orderId: string; keyId: string },
+): Promise<boolean> {
+  const reply = completionReplySchema.parse(
+    await resultOf(
+      adminClient.rpc('svc_complete_paid_order', {
+        p_order_id: order.orderId,
+        p_key_id: order.keyId,
+      }),
+    ),
+  );
+  return reply.result === 'applied';
+}
+
 const housekeepingSchema = z.strictObject({
   suspended: z.int().nonnegative(),
   reminded: z.int().nonnegative(),

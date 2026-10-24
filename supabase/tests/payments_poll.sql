@@ -2,7 +2,7 @@
 -- housekeeping: tickets left issued on a booking no longer paid are suspended with a critical alert, and an
 -- institution's hold six hours from its deadline gets one payment reminder per channel.
 begin;
-select plan(10);
+select plan(15);
 select set_config('app.qr_key_id', 'k1', true);
 
 -- ===== Fixtures =====
@@ -74,6 +74,19 @@ delete from public.tickets_qr where booking_id = (select booking_id from public.
                                                     where order_id = (select order_id from paid_order));
 select is((select reason from internal.payments_to_poll(50) where order_id = (select order_id from paid_order)),
   'paid_incomplete', 'one that lost a ticket is asked about');
+-- The poll completes it without asking Midtrans again: the Status API's answer could be the very event that paid it.
+select is(internal.complete_paid_order((select order_id from paid_order), 'k1') ->> 'result', 'applied',
+  'the self-heal writes the lost ticket back');
+select is((select count(*)::int from public.tickets_qr
+           where booking_id = (select booking_id from public.payments where order_id = (select order_id from paid_order))),
+  1, 'one ticket for the leg again');
+select ok(exists (select 1 from public.security_alerts a join public.payments p on p.order_id = (select order_id from paid_order)
+                  where a.fingerprint = 'tickets_reissued:' || p.booking_id and a.severity = 'medium'),
+  'with a medium alert, since a paid booking should never lose a ticket');
+select is(internal.complete_paid_order((select order_id from paid_order), 'k1') ->> 'result', 'ignored',
+  'a second run writes nothing');
+select ok(not exists (select 1 from internal.payments_to_poll(50) where order_id = (select order_id from paid_order)),
+  'and the booking is no longer asked about');
 
 -- ===== Housekeeping =====
 -- A payment reminder for an institution's hold within six hours of its deadline, once.

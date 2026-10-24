@@ -4354,6 +4354,10 @@ export type Database = {
         Args: { p_id: string; p_provider_message_id: string }
         Returns: undefined
       }
+      svc_complete_paid_order: {
+        Args: { p_key_id: string; p_order_id: string }
+        Returns: Json
+      }
       svc_create_booking: {
         Args: {
           p_addons: Json

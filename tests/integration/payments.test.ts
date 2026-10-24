@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import type { Database } from '@/db/types';
+import { pollPayments } from '@/server/services/payment-poll';
 import { startPayment } from '@/server/services/payment-service';
 
 import { localStack, runSql, sqlText } from '../../scripts/local-stack';
@@ -13,9 +14,9 @@ import { POST } from '../../src/app/api/webhooks/midtrans/[token]/route';
 import { sandboxEnv } from '../fixtures/env';
 import { startMidtransStub, type MidtransStub } from '../fixtures/midtrans-stub';
 
-// Task P3.8.03 and P3.8.05 against the real stack (docs/PRD.md §10.1): a hold's Snap page from the stand-in of
-// MIDTRANS_LOCAL_STUB_URL, then signed notifications through the webhook route, the Status API re-check answered by the
-// same stand-in. The unit tests stand in for the database; only this run proves the whole path pays a booking once.
+// Task P3.8.03, P3.8.05 and P3.9.02 against the real stack (docs/PRD.md §10.1): a hold's Snap page from the stand-in
+// of MIDTRANS_LOCAL_STUB_URL, then signed notifications through the webhook route, or none and the payments poll, the
+// Status API answered by the same stand-in. The unit tests stand in for the database; only this run proves the whole path pays a booking once.
 // Paid rows stay behind (payments are never deleted), so every id here is this run's own.
 
 const STUB_PORT = 4011;
@@ -35,6 +36,14 @@ const PACKAGE_ID = randomUUID();
 const SESSION_ID = randomUUID();
 const RUN = String(randomInt(100000, 999999));
 const SLOW_MS = 120_000;
+// A session of this run's own hour and minute, since a run before it today left its session behind with its payments.
+const SESSION_START_MINUTE = randomInt(7 * 60, 16 * 60);
+const SESSION_MINUTES = 60;
+
+function clockOf(minuteOfDay: number): string {
+  const hours = String(Math.floor(minuteOfDay / 60)).padStart(2, '0');
+  return `${hours}:${String(minuteOfDay % 60).padStart(2, '0')}`;
+}
 
 let stub: MidtransStub;
 
@@ -94,6 +103,8 @@ async function stateOf(bookingId: string) {
         invoice: z.string().nullable(),
         receipt: z.string().nullable(),
         ticket_messages: z.number(),
+        tickets: z.number(),
+        ledger: z.number(),
       }),
     )
     .parse(
@@ -103,7 +114,10 @@ async function stateOf(bookingId: string) {
           (select i.invoice_number from public.invoices i where i.booking_id = b.id) as invoice,
           (select i.receipt_number from public.invoices i where i.booking_id = b.id) as receipt,
           (select count(*)::int from public.notifications n
-           where n.booking_id = b.id and n.template = 'payment_received_ticket') as ticket_messages
+           where n.booking_id = b.id and n.template = 'payment_received_ticket') as ticket_messages,
+          (select count(*)::int from public.tickets_qr t where t.booking_id = b.id) as tickets,
+          (select coalesce(sum(e.amount), 0)::int from public.revenue_share_entries e
+           where e.booking_id = b.id and e.entry_type = 'settlement') as ledger
         from public.bookings b where b.id = '${bookingId}'`),
     );
   return rows[0];
@@ -116,7 +130,8 @@ beforeAll(async () => {
       values ('${PACKAGE_ID}', 5, 'regular', 'uji-integrasi-bayar-${RUN}', 'Paket Uji Bayar', 'per_pax', 30000,
               'published');
     insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
-      ('${SESSION_ID}', 5, public.today_jkt() + 6, '10:05', '11:05', 'Uji bayar ${RUN}', 200);`);
+      ('${SESSION_ID}', 5, public.today_jkt() + 6, '${clockOf(SESSION_START_MINUTE)}',
+       '${clockOf(SESSION_START_MINUTE + SESSION_MINUTES)}', 'Uji bayar ${RUN}', 200);`);
 }, SLOW_MS);
 
 afterAll(async () => {
@@ -137,7 +152,13 @@ describe('a hold paid through Snap and the webhook', () => {
       expect(settled.status).toBe(200);
       await expect(settled.json()).resolves.toEqual({ status: 'applied' });
       const state = await stateOf(hold.id);
-      expect(state).toMatchObject({ booking: 'paid', payment: 'settled', ticket_messages: 2 });
+      expect(state).toMatchObject({
+        booking: 'paid',
+        payment: 'settled',
+        ticket_messages: 2,
+        tickets: 1,
+        ledger: 600000,
+      });
       expect(state?.invoice).toMatch(/^INV\/GSK\/\d{4}\/\d{2}\/\d{4,}$/);
       expect(state?.receipt).toMatch(/^KW\/GSK\/\d{4}\/\d{2}\/\d{4,}$/);
 
@@ -177,6 +198,32 @@ describe('a hold paid through Snap and the webhook', () => {
         payment: 'needs_review',
         invoice: null,
         ticket_messages: 0,
+      });
+    },
+    SLOW_MS,
+  );
+
+  it(
+    'pays a hold whose notification never came on the next payments poll, with its ticket and ledger',
+    async () => {
+      const hold = await holdFor(4);
+      await startPayment(hold.id);
+      const order = stub.orders.get(`${hold.code}-01`);
+      if (order) order.transactionStatus = 'settlement';
+      // Oldest first, and past the two minutes a visitor is still paying in, so this run asks about it.
+      await runSql(`update public.payments set created_at = now() - interval '47 hours'
+          where order_id = ${sqlText(`${hold.code}-01`)}`);
+      const report = await pollPayments(
+        createClient<Database>(localStack().apiUrl, localStack().serviceRoleKey, {
+          auth: { persistSession: false },
+        }),
+      );
+      expect(report.applied).toBeGreaterThanOrEqual(1);
+      expect(await stateOf(hold.id)).toMatchObject({
+        booking: 'paid',
+        payment: 'settled',
+        tickets: 1,
+        ledger: 600000,
       });
     },
     SLOW_MS,

@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 
 import {
   svcApplyPaymentEvent,
+  svcCompletePaidOrder,
   svcPaymentsHousekeeping,
   svcPaymentsToPoll,
   svcRecordPaymentEvent,
@@ -15,10 +16,11 @@ import { expireTransaction, getTransactionStatus } from '@/lib/midtrans/client';
 import { jsonValueSchema } from '@/lib/validations/json-value';
 
 // Task P3.9.02 (docs/Security.md §3.7; WH-13, MON-04, EP-02): what POST /api/jobs/payments-poll does every five
-// minutes with the service-role client it is handed. Each order internal.payments_to_poll lists is asked of the
+// minutes with the service-role client it is handed. Each open order internal.payments_to_poll lists is asked of the
 // Status API, the answer is stored as a payment_events row of its own (source poll) and applied by
 // internal.apply_payment_event, which takes the body as its own confirmation; an answer seen before is the same event
-// and changes nothing. Then the housekeeping: tickets left on unpaid bookings, payment reminders.
+// and changes nothing. A paid booking that lacks a ticket or its ledger is completed by internal.complete_paid_order
+// (Task P3.10.04). Then the housekeeping: tickets left on unpaid bookings, payment reminders.
 
 const POLL_BATCH_SIZE = 20;
 // maxDuration of the route is 60 s; the run stops asking with room left to report.
@@ -44,6 +46,11 @@ async function expireOrders(orderIds: readonly string[]): Promise<void> {
 }
 
 async function pollOrder(adminClient: DatabaseClient, order: OrderToPoll): Promise<boolean> {
+  const keyId = serverEnv.QR_SIGNING_ACTIVE_KID;
+  // Settled with Midtrans' confirmation already stored: asking again could return the very event that paid it.
+  if (order.reason === 'paid_incomplete') {
+    return svcCompletePaidOrder(adminClient, { orderId: order.orderId, keyId });
+  }
   const answer = await getTransactionStatus(order.orderId, STATUS_TIMEOUT_MS);
   // Midtrans has no transaction for a Snap page nobody chose a method on: nothing to apply yet.
   if (answer.status_code === UNKNOWN_ORDER_CODE) return false;
@@ -58,7 +65,7 @@ async function pollOrder(adminClient: DatabaseClient, order: OrderToPoll): Promi
     eventId: event.eventId,
     source: 'poll',
     confirmed: null,
-    keyId: serverEnv.QR_SIGNING_ACTIVE_KID,
+    keyId,
   });
   await expireOrders(outcome.closeOrders);
   return outcome.result === 'applied';
