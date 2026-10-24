@@ -68,7 +68,9 @@ export function governmentOrganizationJsonLd(
     url: siteConfig.url,
     address,
     location:
-      contact.mapUrl !== undefined ? { '@type': 'Place', address, hasMap: contact.mapUrl } : undefined,
+      contact.mapUrl !== undefined
+        ? { '@type': 'Place', address, hasMap: contact.mapUrl }
+        : undefined,
     contactPoint: hasContactPoint
       ? {
           '@type': 'ContactPoint',
@@ -170,7 +172,8 @@ export interface ProductInput {
   imageUrls?: readonly string[];
   // The UMKM vendor's name for products, absent for tour packages.
   brandName?: string;
-  offer: OfferInput;
+  // Absent when the catalogue holds no price for it, so no Offer ever claims a price of 0.
+  offer?: OfferInput;
 }
 
 export function productJsonLd(input: ProductInput): Node<Product> {
@@ -181,7 +184,7 @@ export function productJsonLd(input: ProductInput): Node<Product> {
     url: absoluteUrl(input.path),
     image: input.imageUrls ? [...input.imageUrls] : undefined,
     brand: input.brandName ? { '@type': 'Brand', name: input.brandName } : undefined,
-    offers: offerJsonLd(input.offer),
+    offers: input.offer ? offerJsonLd(input.offer) : undefined,
   };
 }
 
@@ -224,6 +227,8 @@ export function reviewJsonLd(input: ReviewInput): Node<Review> {
     datePublished: input.datePublished,
     author: { '@type': 'Person', name: input.authorName },
     reviewRating: { '@type': 'Rating', ratingValue: input.rating, ...RATING_SCALE },
+    // A visit is reviewed as a whole, so the subject is the kelurahan that runs the edu-tourism programme.
+    itemReviewed: organizationRef,
   };
 }
 
@@ -238,6 +243,7 @@ export function aggregateRatingJsonLd(input: AggregateRatingInput): Node<Aggrega
     ratingValue: input.averageRating,
     reviewCount: input.reviewCount,
     ...RATING_SCALE,
+    itemReviewed: organizationRef,
   };
 }
 

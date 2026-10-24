@@ -131,6 +131,11 @@ describe('products and offers', () => {
     expect(product.offers).toMatchObject({ availability: 'https://schema.org/InStock' });
     expect(productJsonLd({ name: 'Paket', path: '/paket-wisata/x', offer }).brand).toBeUndefined();
   });
+
+  it('gives no Offer when the catalogue has no price', () => {
+    const product = productJsonLd({ name: 'Paket', path: '/paket-wisata/x' });
+    expect(serializeJsonLd(product)).not.toContain('Offer');
+  });
 });
 
 describe('articles, reviews and documents', () => {
@@ -140,22 +145,19 @@ describe('articles, reviews and documents', () => {
     ).toMatchObject({ dateModified: '2026-10-01', publisher: { '@id': `${site}/#organisasi` } });
   });
 
-  it('scores reviews and their aggregate on a 1 to 5 scale', () => {
-    expect(
-      reviewJsonLd({
-        rating: 4,
-        body: 'Seru',
-        authorName: 'Pengunjung',
-        datePublished: '2026-10-01',
-      }).reviewRating,
-    ).toEqual({ '@type': 'Rating', ratingValue: 4, bestRating: 5, worstRating: 1 });
-    expect(aggregateRatingJsonLd({ averageRating: 4.5, reviewCount: 2 })).toEqual({
-      '@type': 'AggregateRating',
-      ratingValue: 4.5,
-      reviewCount: 2,
-      bestRating: 5,
-      worstRating: 1,
+  it('scores reviews of the kelurahan on a 1 to 5 scale, naming the reviewer only', () => {
+    const kelurahan = { '@id': `${site}/#organisasi` };
+    const input = { rating: 4, body: 'Seru', authorName: 'Sari', datePublished: '2026-10-01' };
+    expect(reviewJsonLd(input)).toEqual({
+      '@type': 'Review',
+      reviewBody: 'Seru',
+      datePublished: '2026-10-01',
+      author: { '@type': 'Person', name: 'Sari' },
+      reviewRating: { '@type': 'Rating', ratingValue: 4, bestRating: 5, worstRating: 1 },
+      itemReviewed: kelurahan,
     });
+    const aggregate = aggregateRatingJsonLd({ averageRating: 4.5, reviewCount: 2 });
+    expect(aggregate).toMatchObject({ ratingValue: 4.5, bestRating: 5, itemReviewed: kelurahan });
   });
 
   it('points a booklet at its download route as a PDF', () => {
