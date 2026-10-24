@@ -72,6 +72,16 @@ describe('getTicketsForBooking', () => {
     const tickets = await getTicketsForBooking('0192f3a4-5b6c-7d8e-9f01-0000000000bb');
     expect(tickets.map((ticket) => ticket.qr)).toEqual([null, null]);
   });
+
+  it('draws no QR for a suspended or revoked ticket, so it cannot be shown at a gate', async () => {
+    rows.tickets = [
+      { ...TICKET_ROW, status: 'suspended' },
+      { ...TICKET_ROW, status: 'revoked' },
+      { ...TICKET_ROW, status: 'used' },
+    ];
+    const tickets = await getTicketsForBooking('0192f3a4-5b6c-7d8e-9f01-0000000000bb');
+    expect(tickets.map((ticket) => ticket.qr === null)).toEqual([true, true, false]);
+  });
 });
 
 describe('readTicketLanding', () => {
