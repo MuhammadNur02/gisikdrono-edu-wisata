@@ -1,17 +1,15 @@
 'use client';
 
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useRef } from 'react';
 
-import { duration } from '@/lib/motion/transitions';
-
-// docs/StyleGuide.md §7.3 (decision of 2026-10-23): a home figure counts up once as it comes into view, after
-// reactbits.dev's CountUp idea (MIT + Commons Clause; re-implemented here, no source copied). A short rAF tween
-// with the browser's own IntersectionObserver and matchMedia, so no motion code reaches the page (first-load
-// budget, decision of 2026-10-24). The server renders the final figure, so a visitor without script, or one who
-// asks for reduced motion (§7.4), reads the truth at once; the final figure also holds the width, so counting
-// never shifts the layout.
-const MS_PER_SECOND = 1000;
-const TWEEN_MS = duration.max * MS_PER_SECOND;
+// DESIGN-SPEC §4 (Home, figures): a figure counts from zero once, as it comes into view (40 % of it on screen), over
+// 1.4 s on the expo ease-out, and a row of figures starts 120 ms apart (`delayMs`). It is the browser's own
+// IntersectionObserver and requestAnimationFrame writing the digits straight into the text node, so counting renders
+// nothing and ships no motion library (first-load budget). The server renders the final figure, so a visitor without
+// script, or one who asks for reduced motion, reads the truth at once; an invisible copy of the final figure holds
+// the width, so counting never shifts the layout, and screen readers hear only the final figure.
+const COUNT_MS = 1400;
+const VISIBLE_SHARE = 0.4;
 const REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
 // The exponential ease-out of ease.outExpo, written as a function: fast at first, settling at the end.
 const EXPO_BASE = 2;
@@ -22,17 +20,21 @@ function easeOutExpo(progress: number): number {
   return progress >= 1 ? 1 : 1 - EXPO_BASE ** (EXPO_STEEPNESS * progress);
 }
 
-function tweenTo(target: number, onFrame: (value: number) => void): () => void {
+// Writes the tween into the element; returns the cancel.
+function countInto(element: HTMLElement, target: number, delayMs: number): () => void {
   let frame = 0;
-  const startedAt = performance.now();
+  let startedAt: number | null = null;
   const step = (now: number) => {
-    const progress = Math.min((now - startedAt) / TWEEN_MS, 1);
-    onFrame(Math.round(target * easeOutExpo(progress)));
+    startedAt ??= now + delayMs;
+    const progress = Math.max(0, Math.min((now - startedAt) / COUNT_MS, 1));
+    element.textContent = numberFormat.format(Math.round(target * easeOutExpo(progress)));
     if (progress < 1) frame = requestAnimationFrame(step);
   };
+  element.textContent = numberFormat.format(0);
   frame = requestAnimationFrame(step);
   return () => {
     cancelAnimationFrame(frame);
+    element.textContent = numberFormat.format(target);
   };
 }
 
@@ -41,60 +43,51 @@ function isOnScreen(element: HTMLElement): boolean {
   return bottom > 0 && top < window.innerHeight;
 }
 
-// Counts from zero once the figure enters the screen; returns the cleanup.
-function countWhenSeen(element: HTMLElement, value: number, onFrame: (value: number) => void) {
-  let cancelTween: (() => void) | null = null;
-  const observer = new IntersectionObserver(([entry]) => {
-    if (!entry?.isIntersecting) return;
-    observer.disconnect();
-    cancelTween = tweenTo(value, onFrame);
-  });
+// Counts once the figure is seen; returns the cleanup.
+function countWhenSeen(element: HTMLElement, target: number, delayMs: number): () => void {
+  let cancelCount: (() => void) | null = null;
+  const observer = new IntersectionObserver(
+    ([entry]) => {
+      if (!entry?.isIntersecting) return;
+      observer.disconnect();
+      cancelCount = countInto(element, target, delayMs);
+    },
+    { threshold: VISIBLE_SHARE },
+  );
   observer.observe(element);
   return () => {
     observer.disconnect();
-    cancelTween?.();
+    cancelCount?.();
   };
-}
-
-// A figure already on screen at hydration stays final: resetting it in view would flash.
-// onMount (an admin KPI, §6.3): the figure is already on screen when the dashboard opens, so it counts once at once.
-function useCountUp(
-  value: number,
-  ref: RefObject<HTMLSpanElement | null>,
-  onMount: boolean,
-): number {
-  const [shown, setShown] = useState(value);
-  useEffect(() => {
-    const element = ref.current;
-    if (!element || window.matchMedia(REDUCED_MOTION).matches) return;
-    if (onMount) {
-      setShown(0);
-      return tweenTo(value, setShown);
-    }
-    if (isOnScreen(element)) return;
-    setShown(0);
-    return countWhenSeen(element, value, setShown);
-  }, [ref, value, onMount]);
-  return shown;
 }
 
 export interface CountUpProps {
   value: number;
+  // An admin KPI is on screen as the dashboard opens, so it counts once at once (docs/StyleGuide.md §6.3).
   onMount?: boolean;
+  // The stagger within a row of figures.
+  delayMs?: number;
 }
 
-export function CountUp({ value, onMount = false }: CountUpProps) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const shown = useCountUp(value, ref, onMount);
+export function CountUp({ value, onMount = false, delayMs = 0 }: CountUpProps) {
+  const digitsRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const digits = digitsRef.current;
+    if (!digits || window.matchMedia(REDUCED_MOTION).matches) return;
+    if (onMount) return countInto(digits, value, delayMs);
+    // A figure already on screen at hydration stays final: resetting it in view would flash.
+    if (isOnScreen(digits)) return;
+    return countWhenSeen(digits, value, delayMs);
+  }, [value, onMount, delayMs]);
   const final = numberFormat.format(value);
   return (
-    <span ref={ref} className="inline-grid tabular-nums">
+    <span className="inline-grid tabular-nums">
       <span className="sr-only">{final}</span>
       <span aria-hidden className="invisible col-start-1 row-start-1">
         {final}
       </span>
-      <span aria-hidden className="col-start-1 row-start-1">
-        {numberFormat.format(shown)}
+      <span ref={digitsRef} aria-hidden className="col-start-1 row-start-1">
+        {final}
       </span>
     </span>
   );

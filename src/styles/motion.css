@@ -1,0 +1,323 @@
+/* Motion utilities (docs/StyleGuide.md §7). Imported by src/styles/globals.css; the tokens it reads live there. */
+
+/* ===== Motion (DESIGN-SPEC §4, docs/StyleGuide.md §7). Content is visible by default: every entrance runs only
+   with no reduced-motion preference and in browsers with scroll-driven animations, so nothing is ever hidden from a
+   visitor without them. Never on the LCP element (the hero photo and h1), never on tables or forms. ===== */
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    translate: 0 var(--reveal-y, 1rem);
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+@keyframes reveal-scale {
+  from {
+    opacity: 0;
+    scale: var(--reveal-scale, 0.92);
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+@keyframes reveal-clip {
+  from {
+    opacity: 0;
+    clip-path: inset(8% round var(--radius-xl));
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 round var(--radius-xl));
+  }
+}
+@keyframes reveal-rule {
+  from {
+    scale: 0 1;
+  }
+  to {
+    scale: 1 1;
+  }
+}
+/* The shared timeline: a block reveals while it enters (entry 0 to 40 %); --i (stagger-*, reveal-stagger) moves an
+   item's window 6 % later per step, so a row enters one after another with the scroll. */
+@utility reveal {
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: view()) {
+      animation: reveal-up var(--ease-out-soft) both;
+      animation-timeline: view();
+      animation-range: entry calc(var(--i, 0) * 6%) entry calc(40% + var(--i, 0) * 6%);
+    }
+  }
+}
+/* 24 px instead of 16: RW tiles, the figures panel, the CTA band's title. */
+@utility reveal-lg {
+  --reveal-y: 1.5rem;
+}
+@utility reveal-scale {
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: view()) {
+      animation: reveal-scale var(--ease-spring-soft) both;
+      animation-timeline: view();
+      animation-range: entry calc(var(--i, 0) * 6%) entry calc(50% + var(--i, 0) * 6%);
+    }
+  }
+}
+/* From .96 instead of .92: a flourish rather than an object (the kawung row, an empty-state emblem). */
+@utility reveal-scale-subtle {
+  --reveal-scale: 0.96;
+}
+@utility reveal-clip {
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: view()) {
+      animation: reveal-clip var(--ease-out-soft) both;
+      animation-timeline: view();
+      animation-range: entry calc(var(--i, 0) * 6%) entry calc(60% + var(--i, 0) * 6%);
+    }
+  }
+}
+/* A rule that draws itself: pair it with origin-left, origin-right or origin-center for where it grows from. */
+@utility reveal-rule {
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: view()) {
+      animation: reveal-rule var(--ease-out-soft) both;
+      animation-timeline: view();
+      animation-range: entry calc(var(--i, 0) * 6%) cover 30%;
+    }
+  }
+}
+@utility stagger-* {
+  --i: --value(integer);
+}
+/* Numbers the direct children for the reveals above, up to eight; later children share the last step. */
+@utility reveal-stagger {
+  & > :nth-child(2) {
+    --i: 1;
+  }
+  & > :nth-child(3) {
+    --i: 2;
+  }
+  & > :nth-child(4) {
+    --i: 3;
+  }
+  & > :nth-child(5) {
+    --i: 4;
+  }
+  & > :nth-child(6) {
+    --i: 5;
+  }
+  & > :nth-child(7) {
+    --i: 6;
+  }
+  & > :nth-child(n + 8) {
+    --i: 7;
+  }
+}
+
+/* Hover: a card lifts 4 px on the soft spring and its shadow deepens; the photo inside zooms (hover-zoom), the title
+   turns primary-ink (group-hover in the component) and a trailing arrow nudges (hover-nudge, hover-nudge-diagonal).
+   They react to the nearest .group, so the whole card is one hover target. */
+@utility hover-lift {
+  transition:
+    translate var(--duration-spring-soft) var(--ease-spring-soft),
+    box-shadow var(--duration-base) var(--ease-out-soft);
+  &:hover,
+  &:focus-within {
+    box-shadow: var(--shadow-md);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    &:hover,
+    &:focus-within {
+      translate: 0 -0.25rem;
+    }
+  }
+}
+/* The editorial cards (package, product, article) have no box to cast a shadow: they only rise. */
+@utility hover-rise {
+  transition: translate var(--duration-spring-soft) var(--ease-spring-soft);
+  @media (prefers-reduced-motion: no-preference) {
+    &:hover,
+    &:focus-within {
+      translate: 0 -0.25rem;
+    }
+  }
+}
+@utility hover-zoom {
+  transition: scale var(--duration-max) var(--ease-out-soft);
+  @media (prefers-reduced-motion: no-preference) {
+    :where(.group):hover &,
+    :where(.group):focus-within & {
+      scale: 1.04;
+    }
+  }
+}
+@utility hover-nudge {
+  transition: translate var(--duration-short) var(--ease-out-soft);
+  @media (prefers-reduced-motion: no-preference) {
+    :where(.group):hover &,
+    :where(.group):focus-visible & {
+      translate: 0.25rem 0;
+    }
+  }
+}
+@utility hover-nudge-diagonal {
+  transition:
+    translate var(--duration-spring-snappy) var(--ease-spring-snappy),
+    scale var(--duration-spring-snappy) var(--ease-spring-snappy);
+  @media (prefers-reduced-motion: no-preference) {
+    :where(.group):hover &,
+    :where(.group):focus-within & {
+      translate: 0.1875rem -0.1875rem;
+      scale: 1.06;
+    }
+  }
+}
+/* A press: scale .98 over 100 ms (buttons, chips .97 with press-scale-sm, tiles .99 with press-scale-lg). */
+@utility press-scale {
+  transition-property: scale, translate, background-color, border-color, color, box-shadow, opacity;
+  transition-duration: var(--duration-micro);
+  transition-timing-function: var(--ease-out-soft);
+  @media (prefers-reduced-motion: no-preference) {
+    &:active:not(:disabled, [aria-disabled='true']) {
+      scale: 0.98;
+      transition-duration: var(--duration-press);
+    }
+  }
+}
+
+/* The gallery marquee (DESIGN-SPEC §4, Home): the track holds the photos twice (the copy aria-hidden) and slides by
+   half its width, 60 s a lap (45 s on phones). It pauses while pointed at or focused, and while its .marquee has
+   data-paused (the Jeda toggle). Reduced motion: no marquee, the row scrolls by hand instead. */
+@keyframes marquee {
+  to {
+    translate: -50% 0;
+  }
+}
+@utility marquee {
+  overflow-x: auto;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    overflow-x: clip;
+  }
+}
+@utility marquee-track {
+  display: flex;
+  width: max-content;
+  @media (prefers-reduced-motion: no-preference) {
+    animation: marquee var(--marquee-duration, 45s) linear infinite;
+    @media (width >= 48rem) {
+      --marquee-duration: 60s;
+    }
+    :where(.marquee):hover &,
+    :where(.marquee):focus-within &,
+    :where(.marquee[data-paused]) & {
+      animation-play-state: paused;
+    }
+  }
+}
+
+/* The hero's scroll cue: a 14 px dot runs down its 44 px track and fades, on a loop, after 1.2 s. */
+@keyframes scroll-cue {
+  0% {
+    opacity: 1;
+    translate: 0 0;
+  }
+  80%,
+  100% {
+    opacity: 0;
+    translate: 0 1.875rem;
+  }
+}
+@utility scroll-cue {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: scroll-cue 1.6s var(--ease-in-out) 1.2s infinite;
+  }
+}
+
+/* An element that joins the page late, as the WhatsApp FAB does 1.5 s after load (never the LCP). */
+@keyframes enter-up {
+  from {
+    opacity: 0;
+    translate: 0 1rem;
+    scale: 0.96;
+  }
+}
+@utility enter-late {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: enter-up 400ms var(--ease-spring-soft) 1.5s backwards;
+  }
+}
+/* The rows of an opening drawer or sheet: 12 px from the side, 30 ms apart, after the panel's first 80 ms. */
+@keyframes enter-side {
+  from {
+    opacity: 0;
+    translate: 0.75rem 0;
+  }
+}
+@utility enter-stagger {
+  @media (prefers-reduced-motion: no-preference) {
+    & > * {
+      animation: enter-side 260ms var(--ease-out-soft) backwards;
+      animation-delay: calc(80ms + var(--i, 0) * 30ms);
+    }
+  }
+}
+
+/* Loading (DESIGN-SPEC §3.14): the shimmer starts only after 300 ms, so a fast answer never flashes it. */
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+@utility skeleton-shimmer {
+  background-color: var(--muted);
+  @media (prefers-reduced-motion: no-preference) {
+    background-image: linear-gradient(
+      90deg,
+      var(--muted) 0%,
+      var(--background) 50%,
+      var(--muted) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.4s linear 300ms infinite;
+  }
+}
+
+/* The pinned hero photo (docs/StyleGuide.md §7.3): clip-path, unlike overflow, also clips a fixed descendant, so the
+   photo stays put inside its section while the page scrolls over it. */
+@utility clip-inset {
+  clip-path: inset(0);
+}
+/* Scroll-linked decorative photos (docs/StyleGuide.md §7.3), with no script: the frame names a view timeline, and
+   the photo layer inside it, --parallax-overscan tall, drifts 6.5 % of its height each way (4.5 % on phones), about 7.5 % of the frame, while the frame crosses the
+   screen. Without reduced motion, in browsers with scroll-driven animations; everywhere else the photo stays still. */
+@keyframes parallax-drift {
+  from {
+    transform: translateY(calc(var(--parallax-shift, 4.5%) * -1));
+  }
+  to {
+    transform: translateY(var(--parallax-shift, 4.5%));
+  }
+}
+@utility parallax-frame {
+  view-timeline-name: --parallax-frame;
+}
+@utility parallax-drift {
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: view()) {
+      animation: parallax-drift linear both;
+      animation-timeline: --parallax-frame;
+      @media (width >= 48rem) {
+        --parallax-shift: 6.5%;
+      }
+    }
+  }
+}
