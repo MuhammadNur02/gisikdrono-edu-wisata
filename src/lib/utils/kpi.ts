@@ -1,0 +1,108 @@
+import { TZDate } from '@date-fns/tz';
+import { addDays, format, startOfMonth, subMonths } from 'date-fns';
+
+import { APP_TZ } from '@/config/site';
+
+// The arithmetic behind the overview KPIs (docs/StyleGuide.md §6.3, Task P4.2.03). Pure, so every figure on
+// /dashboard is the sum of rows the database returned and nothing else: no row, no number (an empty state).
+
+const VISIT_DATE_FORMAT = 'yyyy-MM-dd';
+const PERCENT = 100;
+const ONE_DECIMAL = 10;
+
+export type TrendDirection = 'up' | 'down' | 'flat';
+
+export interface Trend {
+  direction: TrendDirection;
+  // Rounded to one decimal; null when the previous period had nothing to compare with.
+  percent: number | null;
+}
+
+// A Semarang calendar range in visit dates, both ends included.
+export interface DateRange {
+  from: string;
+  to: string;
+}
+
+export interface DailyValue {
+  day: string;
+  value: number;
+}
+
+export function sumOf<Row>(rows: readonly Row[], pick: (row: Row) => number): number {
+  return rows.reduce((total, row) => total + pick(row), 0);
+}
+
+// The change against the previous period. From zero to anything is "up" without a percentage, because a
+// percentage of nothing would be invented.
+export function trendBetween(current: number, previous: number): Trend {
+  if (current === previous) return { direction: 'flat', percent: current === 0 ? null : 0 };
+  const direction = current > previous ? 'up' : 'down';
+  if (previous === 0) return { direction, percent: null };
+  const change = ((current - previous) / Math.abs(previous)) * PERCENT;
+  return { direction, percent: Math.round(change * ONE_DECIMAL) / ONE_DECIMAL };
+}
+
+// Seats taken of today's sessions as a whole percentage; null when no session runs today.
+export function quotaUsagePercent(reservedPax: number, capacity: number): number | null {
+  if (capacity <= 0) return null;
+  return Math.round((reservedPax / capacity) * PERCENT);
+}
+
+export function averageOf(values: readonly number[]): number | null {
+  if (values.length === 0) return null;
+  return Math.round((sumOf(values, (value) => value) / values.length) * ONE_DECIMAL) / ONE_DECIMAL;
+}
+
+function jakartaNow(now: Date): TZDate {
+  return new TZDate(now.getTime(), APP_TZ);
+}
+
+// This Semarang month up to today, and the whole month before it.
+export function monthRanges(now: Date = new Date()): { current: DateRange; previous: DateRange } {
+  const today = jakartaNow(now);
+  const monthStart = startOfMonth(today);
+  const previousStart = subMonths(monthStart, 1);
+  return {
+    current: { from: format(monthStart, VISIT_DATE_FORMAT), to: format(today, VISIT_DATE_FORMAT) },
+    previous: {
+      from: format(previousStart, VISIT_DATE_FORMAT),
+      to: format(addDays(monthStart, -1), VISIT_DATE_FORMAT),
+    },
+  };
+}
+
+// The last `days` Semarang days, today included, oldest first.
+export function lastDays(days: number, now: Date = new Date()): string[] {
+  const today = jakartaNow(now);
+  return Array.from({ length: days }, (_, index) =>
+    format(addDays(today, index - days + 1), VISIT_DATE_FORMAT),
+  );
+}
+
+// One point per day, zero where the database had no row, so a chart never skips a quiet day.
+export function fillDailySeries(
+  days: readonly string[],
+  rows: readonly DailyValue[],
+): DailyValue[] {
+  const totals = new Map<string, number>();
+  for (const row of rows) totals.set(row.day, (totals.get(row.day) ?? 0) + row.value);
+  return days.map((day) => ({ day, value: totals.get(day) ?? 0 }));
+}
+
+export function hasAnyValue(series: readonly DailyValue[]): boolean {
+  return series.some((point) => point.value !== 0);
+}
+
+// The Semarang day an instant falls on, for bucketing check-ins by the day they happened.
+export function jakartaDayOf(instant: string): string {
+  return format(jakartaNow(new Date(instant)), VISIT_DATE_FORMAT);
+}
+
+// The UTC instant a Semarang day starts, for filtering timestamptz columns by a visit date.
+export function startOfJakartaDay(visitDate: string): string {
+  const [year, month, day] = visitDate.split('-').map(Number);
+  return new Date(
+    new TZDate(year ?? 0, (month ?? 1) - 1, day ?? 1, APP_TZ).getTime(),
+  ).toISOString();
+}
