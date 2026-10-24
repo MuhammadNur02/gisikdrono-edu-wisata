@@ -62,7 +62,7 @@ function TicketScan({ ticket }: { ticket: GuestTicket }) {
       )}
       {notice === null && ticket.status === 'issued' && (
         <>
-          <p className="text-label font-semibold text-foreground">{layout.showQr}</p>
+          <p className="text-label leading-snug font-semibold text-foreground">{layout.showQr}</p>
           <p className="flex items-center gap-1.5 text-caption text-ink-2">
             <Sun aria-hidden className="size-4 shrink-0" />
             {text.brightness}
