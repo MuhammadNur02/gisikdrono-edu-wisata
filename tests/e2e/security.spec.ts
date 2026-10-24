@@ -223,8 +223,16 @@ test.describe('security headers (docs/Security.md §8.2)', () => {
   });
 });
 
+// Unknown addresses too: a public one, and private ones whose nonce policy a prerendered 404 could never satisfy
+// (src/app/[...unknown]/page.tsx renders those per request).
+const UNKNOWN_PAGES = [
+  `/` + UNKNOWN_SLUG,
+  `/reservasi/` + UNKNOWN_BOOKING_CODE,
+  '/v/GSK.k1.tidak-ada',
+];
+
 test.describe('the enforced CSP blocks nothing the pages need', () => {
-  for (const path of [...PUBLIC_PAGES, SEEDED_WIZARD_PATH, '/login']) {
+  for (const path of [...PUBLIC_PAGES, SEEDED_WIZARD_PATH, '/login', ...UNKNOWN_PAGES]) {
     test(`${path} loads without a CSP violation`, async ({ page }) => {
       expect(await cspViolationsOn(page, path)).toEqual([]);
     });
@@ -323,10 +331,18 @@ test.describe('signed in as the superadmin (HDR-01, UPL-01)', () => {
     await removeAccounts(superadmin ? [superadmin.id] : []);
   });
 
-  test('the dashboard and the scanner load without a CSP violation', async ({ page }) => {
+  // /dashboard/scanner has no page until Task P4.4; the session calendar stands in for a heavy client page until then,
+  // and SCANNER_PATH joins this list when the scanner lands. An unknown dashboard address is checked as well.
+  test('dashboard pages and a dashboard 404 load without a CSP violation', async ({ page }) => {
     await signInToDashboard(page, superadmin?.email ?? '');
-    expect(await cspViolationsOn(page, '/dashboard')).toEqual([]);
-    expect(await cspViolationsOn(page, SCANNER_PATH)).toEqual([]);
+    for (const path of [
+      '/dashboard',
+      '/dashboard/sessions',
+      '/dashboard/articles/new',
+      '/dashboard/tidak-ada-e2e',
+    ]) {
+      expect(await cspViolationsOn(page, path), path).toEqual([]);
+    }
   });
 
   test('api/uploads/sign answers VALIDATION for image/svg+xml', async ({ page, baseURL }) => {
