@@ -2,6 +2,7 @@ import { rwLabel } from '@/config/rw';
 import { ACTIVITY_POINT_TYPE } from '@/config/status';
 import { googleMapsDirectionsUrl, type GeoPoint } from '@/lib/utils/geo';
 import { pointOnSurface } from '@/lib/utils/geo-polygon';
+import { isSeededPointEstimate, isSeededRwCentreEstimate } from '@/lib/utils/map-estimates';
 import type { ActivityPoint } from '@/types/activity-point';
 import type { RwAreaMapData, RwAreaSummary } from '@/types/map';
 import type { RwUnitProfile } from '@/types/rw-unit';
@@ -16,6 +17,12 @@ export function areaCentreOf(area: RwArea, unit: RwUnitProfile | null): GeoPoint
   return inside === null ? null : { lat: inside[1], lng: inside[0] };
 }
 
+// A centre the kelurahan has not set: the point inside the area, or the one the demo seed estimated.
+function isCentreEstimate(rw: number, unit: RwUnitProfile | null): boolean {
+  if (unit?.mapLat == null || unit.mapLng == null) return true;
+  return isSeededRwCentreEstimate(rw, { lat: unit.mapLat, lng: unit.mapLng });
+}
+
 function pointsOf(rw: number, points: readonly ActivityPoint[]): RwAreaSummary['points'] {
   return points
     .filter((point) => point.rwId === rw)
@@ -27,6 +34,7 @@ function pointsOf(rw: number, points: readonly ActivityPoint[]): RwAreaSummary['
         point.lat !== null && point.lng !== null
           ? googleMapsDirectionsUrl({ lat: point.lat, lng: point.lng })
           : null,
+      isEstimate: isSeededPointEstimate(point),
     }));
 }
 
@@ -47,6 +55,7 @@ export function buildRwAreaSummaries(
         label: rwLabel(area.rw),
         centre,
         routeUrl: googleMapsDirectionsUrl(centre),
+        centreIsEstimate: isCentreEstimate(area.rw, unit),
         unit: unit && {
           name: unit.name,
           shortName: unit.shortName,

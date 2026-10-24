@@ -4,6 +4,7 @@ import { ExternalLink } from 'lucide-react';
 import { useMemo } from 'react';
 import { CircleMarker, Popup, Tooltip } from 'react-leaflet';
 
+import { Badge } from '@/components/ui/badge';
 import { GEO_POINT_MARKER_RADIUS, RW_AREA_CLASS, RW_AREA_OFFICE_MARKER_RADIUS } from '@/config/map';
 import { rwAccentClasses } from '@/config/rw';
 import { RW_AREA_MAP } from '@/config/rw-areas';
@@ -21,19 +22,21 @@ const OFFICE_LATLNG: [number, number] = [
   RW_AREA_MAP.office.position[0],
 ];
 
-function PlacePopup({
-  eyebrow,
-  name,
-  routeUrl,
-}: {
+interface PlacePopupProps {
   eyebrow: string;
   name: string;
   routeUrl: string;
-}) {
+  isEstimate: boolean;
+}
+
+function PlacePopup({ eyebrow, name, routeUrl, isEstimate }: PlacePopupProps) {
   return (
     <div className="space-y-1 font-sans">
       <p className="text-overline text-muted-foreground">{eyebrow}</p>
-      <p className="text-body-sm font-semibold">{name}</p>
+      <p className="flex flex-wrap items-center gap-2 text-body-sm font-semibold">
+        {name}
+        {isEstimate ? <Badge variant="neutral">{mapCopy.estimateBadge}</Badge> : null}
+      </p>
       <a
         href={routeUrl}
         target="_blank"
@@ -68,6 +71,7 @@ export function PointMarker({ marker }: { marker: GeoMarker }) {
           eyebrow={marker.detail ? `${marker.rw.label} · ${marker.detail}` : marker.rw.label}
           name={marker.name}
           routeUrl={marker.routeUrl}
+          isEstimate={marker.isEstimate}
         />
       </Popup>
     </CircleMarker>
@@ -88,6 +92,7 @@ export function OfficeMarker({ routeUrl }: { routeUrl: string }) {
           eyebrow={mapCopy.legendOffice}
           name={RW_AREA_MAP.office.name}
           routeUrl={routeUrl}
+          isEstimate={false}
         />
       </Popup>
     </CircleMarker>

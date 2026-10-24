@@ -37,11 +37,14 @@ export const mapCopy = {
   legendOtherRw: 'RW lain',
   legendBoundary: 'Batas kelurahan',
   legendOffice: 'Kantor kelurahan',
-  legendPoint: 'Titik aktivitas',
+  legendPoint: 'Titik aktivitas (warna mengikuti RW)',
   // The credit the kelurahan's map needs wherever its boundaries are drawn (scripts/convert-rw-kml.ts).
   areaSource: 'Batas RW: Peta RW Wilayah Gisikdrono 2024, Kelurahan Gisikdrono',
-  // Under the map while the points carry estimated positions (docs/content/konten-situs-kelurahan.md, section 8).
-  pointsEstimated: 'Letak titik aktivitas masih perkiraan dan menunggu konfirmasi kelurahan.',
+  // Under the map while a drawn point still holds its estimated position (src/lib/utils/map-estimates.ts), and the
+  // badge on each such point (docs/content/konten-situs-kelurahan.md, section 8).
+  pointsEstimated: 'Letak titik bertanda perkiraan belum pasti dan menunggu konfirmasi kelurahan.',
+  estimateBadge: 'perkiraan',
+  centreEstimated: 'Tujuan rute adalah titik perkiraan di dalam wilayah RW.',
   geoZoomIn: 'Perbesar peta',
   geoZoomOut: 'Perkecil peta',
   geoReset: 'Tampilkan seluruh kelurahan',

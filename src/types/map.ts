@@ -47,8 +47,16 @@ export interface RwAreaSummary {
   // rw_units.map_lat / map_lng when the kelurahan has set them, otherwise a point inside the area.
   centre: GeoPoint;
   routeUrl: string;
+  // The centre is a point inside the area or the seeded estimate, not a place the kelurahan has set.
+  centreIsEstimate: boolean;
   unit: { name: string; shortName: string; path: string; accentKey: RwAccent } | null;
-  points: { id: string; name: string; typeLabel: string; routeUrl: string | null }[];
+  points: {
+    id: string;
+    name: string;
+    typeLabel: string;
+    routeUrl: string | null;
+    isEstimate: boolean;
+  }[];
 }
 
 // The RW open in the list and highlighted on the map, and where it was chosen: an RW picked in the list is brought
@@ -68,4 +76,6 @@ export interface GeoMarker extends GeoPoint {
   detail: string | null;
   rw: RwBadge;
   routeUrl: string;
+  // Still the position the demo seed estimated (src/lib/utils/map-estimates.ts): shown as `perkiraan`.
+  isEstimate: boolean;
 }

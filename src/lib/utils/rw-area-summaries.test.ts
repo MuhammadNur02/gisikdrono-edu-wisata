@@ -116,3 +116,27 @@ describe('buildRwAreaSummaries', () => {
     expect(summaries[1]).toMatchObject({ rw: 7, unit: null, points: [] });
   });
 });
+
+describe('the estimate flags', () => {
+  const seeded = { ...point('seeded', -6.992862, 110.390212), slug: 'bank-sampah-sumber-rejeki' };
+
+  it('mark a point still at its seeded estimate, and no other', () => {
+    const [summary] = buildRwAreaSummaries(
+      [square(5, 110.38)],
+      [unit(null, null)],
+      [seeded, point('edited', -6.985, 110.385)],
+    );
+    expect(summary?.points.map((entry) => [entry.id, entry.isEstimate])).toEqual([
+      ['seeded', true],
+      ['edited', false],
+    ]);
+  });
+
+  it('mark a centre the kelurahan has not set, or the seeded one, but not its own', () => {
+    const centreOf = (mapLat: number | null, mapLng: number | null) =>
+      buildRwAreaSummaries([square(5, 110.38)], [unit(mapLat, mapLng)], [])[0]?.centreIsEstimate;
+    expect(centreOf(null, null)).toBe(true);
+    expect(centreOf(-6.993112, 110.389779)).toBe(true);
+    expect(centreOf(-6.99, 110.389)).toBe(false);
+  });
+});

@@ -344,6 +344,27 @@
   /* The RW area map of /peta-kontak (src/components/map/rw-area-leaflet.tsx): every RW shape takes its palette
      class (an edu-tourism RW its accent, the others .denah-rw-neutral) and is tinted from it, an edu-tourism RW more
      strongly. Hover and the open RW are toggled on the path; the boundary is an outline only. */
+  /* The OSM tiles are always light, so the shapes and labels drawn over them keep the light-theme values of the
+     tokens they read (the same values as :root) in either theme; the dark tokens would fall under 3:1 on the tiles.
+     Only the panes over the tiles are scoped: popups and tooltips keep following the theme. */
+  .leaflet-container .leaflet-overlay-pane,
+  .leaflet-container .leaflet-marker-pane {
+    --rw-leaf: 89.2 55.1% 27.1%;
+    --rw-leaf-soft: 88 42.9% 93.1%;
+    --rw-terracotta: 22.9 58.6% 34.1%;
+    --rw-terracotta-soft: 28.6 60% 93.1%;
+    --rw-mulberry: 321 32.6% 36.1%;
+    --rw-mulberry-soft: 324 35.7% 94.5%;
+    --rw-teal: 160 30% 25%;
+    --rw-teal-soft: 158 32% 93.5%;
+    --rw-violet: 270 40% 32%;
+    --rw-violet-soft: 270 45% 95%;
+    --neutral: 240 3.8% 46.1%;
+    --neutral-soft: 210 40% 96.1%;
+    --foreground: 222.2 47.4% 11.2%;
+    --background: 0 0% 100%;
+    --primary: 221.2 83.2% 53.3%;
+  }
   .rw-area {
     fill: var(--denah-accent);
     fill-opacity: 0.12;

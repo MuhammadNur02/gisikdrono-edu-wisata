@@ -91,8 +91,8 @@ function RwAreaLegend({
 }
 
 // The kelurahan's map and the OSM tiles both need their credit next to the map; the estimate note stays while the
-// points carry estimated positions (docs/content/konten-situs-kelurahan.md, section 8).
-function RwAreaCredit({ hasPoints }: { hasPoints: boolean }) {
+// drawn points still hold estimated positions (docs/content/konten-situs-kelurahan.md, section 8).
+function RwAreaCredit({ hasEstimates }: { hasEstimates: boolean }) {
   return (
     <figcaption className="space-y-1 text-caption text-muted-foreground">
       <p>
@@ -106,7 +106,7 @@ function RwAreaCredit({ hasPoints }: { hasPoints: boolean }) {
           {mapCopy.osmContributors}
         </a>
       </p>
-      {hasPoints ? <p>{mapCopy.pointsEstimated}</p> : null}
+      {hasEstimates ? <p>{mapCopy.pointsEstimated}</p> : null}
     </figcaption>
   );
 }
@@ -142,7 +142,7 @@ export function RwAreaExplorer({ areas, markers, officeRouteUrl }: RwAreaExplore
           />
         </div>
         <RwAreaLegend areas={areas} hasPoints={hasPoints} />
-        <RwAreaCredit hasPoints={hasPoints} />
+        <RwAreaCredit hasEstimates={markers.some((marker) => marker.isEstimate)} />
       </figure>
       <RwAreaList
         areas={areas}

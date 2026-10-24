@@ -5,6 +5,7 @@ import { useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { useEffect, useId } from 'react';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { NEUTRAL_ACCENT_CLASSES, rwAccentClasses, type RwId } from '@/config/rw';
 import { mapCopy } from '@/lib/copy/map';
@@ -40,7 +41,10 @@ function PointRow({ point }: { point: AreaPoint }) {
       <MapPin aria-hidden className="size-4 shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1">
         <span className="block text-body-sm font-medium">{point.name}</span>
-        <span className="block text-caption text-muted-foreground">{point.typeLabel}</span>
+        <span className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
+          {point.typeLabel}
+          {point.isEstimate ? <Badge variant="neutral">{mapCopy.estimateBadge}</Badge> : null}
+        </span>
       </span>
       {point.routeUrl ? (
         <a
@@ -93,6 +97,9 @@ function EduPanel({ area, unit }: { area: RwAreaSummary; unit: AreaUnit }) {
           </a>
         </Button>
       </div>
+      {area.centreIsEstimate ? (
+        <p className="text-caption text-muted-foreground">{mapCopy.centreEstimated}</p>
+      ) : null}
     </div>
   );
 }
