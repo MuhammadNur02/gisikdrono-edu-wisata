@@ -13,10 +13,10 @@ const SECONDARY_CTA_LABEL = 'Lihat Paket';
 // The first line of the address block, as dusunbambu.id puts its region above the street.
 const REGION_LINE = `${siteConfig.locality.city}, Indonesia`;
 
-// What a first-time visitor needs before choosing a kampung (docs/PRD.md §1): the two programmes and who books them.
+// What a first-time visitor needs before choosing a kampung (docs/PRD.md §1): the three programmes and who books them.
 const INTRO_PARAGRAPHS = [
   'Gisikdrono adalah kelurahan di Semarang Barat yang menjadikan kampungnya ruang belajar terbuka. Di RW 05 Ecowastreme, Anda melihat langsung cara warga memilah sampah di Bank Sampah, mengolahnya menjadi kompos dan pakan maggot, lalu menghidupkan kebun sayur dan kerajinan daur ulang karya ibu-ibu PKK.',
-  'Di RW 08 Kampung Seni Budaya, sanggar anak menghadirkan tari tradisional dan dolanan, permainan anak khas Jawa, yang bisa Anda coba bersama mereka. Sekolah, kampus, instansi, maupun keluarga dapat memilih paket kunjungan yang sesuai, lalu memesannya langsung di sini.',
+  'Di RW 13 Kampung Budaya & Seni, sanggar anak menghadirkan tari tradisional dan dolanan, permainan anak khas Jawa, yang bisa Anda coba bersama mereka. RW 08 Kampung Inklusif & Ramah Anak memperkenalkan Semar Cakep, layanan inklusif bagi kelompok rentan dan penyandang disabilitas. Sekolah, kampus, instansi, maupun keluarga dapat memilih paket kunjungan yang sesuai, lalu memesannya langsung di sini.',
 ] as const;
 
 export interface HomeIntroProps {
