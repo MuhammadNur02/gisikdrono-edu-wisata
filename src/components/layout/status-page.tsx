@@ -42,7 +42,7 @@ export function StatusPage({
 }: StatusPageProps) {
   const Icon = icon;
   return (
-    <div className="flex min-h-dvh flex-col bg-linear-to-b from-brand-ice to-background dark:from-secondary">
+    <div className="flex min-h-dvh flex-col bg-linear-to-b from-brand-ice to-background">
       <HomeLinkBar />
       <main className="flex flex-1 items-center">
         <Container width="reading" className="space-y-6 py-16">

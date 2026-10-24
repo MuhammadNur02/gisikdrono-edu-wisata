@@ -1,271 +1,529 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import './type.css';
+@import './utilities.css';
+@import './motion.css';
 @plugin '@tailwindcss/typography';
 
 @custom-variant dark (&:is(.dark *));
 
-/* Values are copied from docs/StyleGuide.md §2.1-§2.3; change the StyleGuide first, then this file. */
+/* The palette of the pen.dev redesign (docs/StyleGuide.md §2, DESIGN-SPEC §1.1): warm paper, ink and batik brick, with
+   one accent set per RW. Colour values live in this file only; components use the Tailwind names of @theme inline.
+   docs/StyleGuide.md §2.3 copies these blocks; change the StyleGuide and this file together. */
 :root {
-  --background: 0 0% 100%;
-  --foreground: 222.2 47.4% 11.2%;
-  --card: 0 0% 100%;
-  --card-foreground: 222.2 47.4% 11.2%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 222.2 47.4% 11.2%;
-  --primary: 221.2 83.2% 53.3%;
-  --primary-foreground: 0 0% 100%;
-  --primary-hover: 224.3 76.3% 48%;
-  --primary-text: 221.2 83.2% 53.3%;
-  --secondary: 213.8 100% 96.9%;
-  --secondary-foreground: 226.2 70.7% 40.2%;
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 240 3.8% 46.1%;
-  --accent: 213.8 100% 96.9%;
-  --accent-foreground: 222.2 47.4% 11.2%;
-  --destructive: 0 72.2% 50.6%;
-  --destructive-foreground: 0 0% 100%;
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 221.2 83.2% 53.3%;
-  --chart-1: 221.2 83.2% 53.3%;
-  --chart-2: 226.2 70.7% 40.2%;
-  --chart-3: 198.6 88.7% 48.4%;
-  --chart-4: 160.1 84.1% 39.4%;
-  --chart-5: 37.7 92.1% 50.2%;
-  --sidebar-background: 0 0% 100%;
-  --sidebar-foreground: 215.3 25% 26.7%;
-  --sidebar-primary: 221.2 83.2% 53.3%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 213.8 100% 96.9%;
-  --sidebar-accent-foreground: 226.2 70.7% 40.2%;
-  --sidebar-border: 214.3 31.8% 91.4%;
-  --sidebar-ring: 221.2 83.2% 53.3%;
-  --brand-deep: 222.2 47.4% 11.2%;
-  --brand-royal: 226.2 70.7% 40.2%;
-  --brand-ice: 213.8 100% 96.9%;
-  --rw-leaf: 89.2 55.1% 27.1%;
-  --rw-leaf-foreground: 0 0% 100%;
-  --rw-leaf-soft: 88 42.9% 93.1%;
-  --rw-leaf-soft-foreground: 89.2 55.1% 27.1%;
-  --rw-terracotta: 22.9 58.6% 34.1%;
-  --rw-terracotta-foreground: 0 0% 100%;
-  --rw-terracotta-soft: 28.6 60% 93.1%;
-  --rw-terracotta-soft-foreground: 22.9 58.6% 34.1%;
-  --rw-mulberry: 321 32.6% 36.1%;
-  --rw-mulberry-foreground: 0 0% 100%;
-  --rw-mulberry-soft: 324 35.7% 94.5%;
-  --rw-mulberry-soft-foreground: 321 32.6% 36.1%;
-  --rw-teal: 160 30% 25%;
-  --rw-teal-foreground: 0 0% 100%;
-  --rw-teal-soft: 158 32% 93.5%;
-  --rw-teal-soft-foreground: 160 30% 25%;
-  --rw-violet: 270 40% 32%;
-  --rw-violet-foreground: 0 0% 100%;
-  --rw-violet-soft: 270 45% 95%;
-  --rw-violet-soft-foreground: 270 40% 32%;
-  --success: 142.1 76.2% 36.3%;
-  --success-foreground: 0 0% 100%;
-  --success-soft: 140.6 84.2% 92.5%;
-  --success-soft-foreground: 142.4 71.8% 29.2%;
-  --warning: 32.1 94.6% 43.7%;
-  --warning-foreground: 222.2 47.4% 11.2%;
-  --warning-soft: 48 96.5% 88.8%;
-  --warning-soft-foreground: 26 90.5% 37.1%;
-  --info: 200.4 98% 39.4%;
-  --info-foreground: 0 0% 100%;
-  --info-soft: 204 93.8% 93.7%;
-  --info-soft-foreground: 201.3 96.3% 32.2%;
-  --danger: var(--destructive);
-  --danger-foreground: var(--destructive-foreground);
-  --danger-soft: 0 93.3% 94.1%;
-  --danger-soft-foreground: 0 73.7% 41.8%;
-  --neutral: 240 3.8% 46.1%;
-  --neutral-foreground: 0 0% 100%;
-  --neutral-soft: 210 40% 96.1%;
-  --neutral-soft-foreground: 240 5.3% 26.1%;
-  --surface-warm: 37.5 44.4% 96.5%;
-  --surface-warm-foreground: 222.2 47.4% 11.2%;
-  --radius: 0.75rem;
-  /* Home page sizes (docs/StyleGuide.md §4.4): the full-viewport hero under the h-16 header, its stable minimum at
-     360 px, and the height of a parallax photo layer inside its frame. */
-  --hero-h: calc(100svh - 4rem);
+  /* Paper, ink and lines */
+  --background: #f6efe3;
+  --foreground: #1d1813;
+  --card: #fffaf2;
+  --card-foreground: #1d1813;
+  --popover: #fffaf2;
+  --popover-foreground: #1d1813;
+  --muted: #ede3d1;
+  --muted-foreground: #6e6152;
+  --accent: #ede3d1;
+  --accent-foreground: #1d1813;
+  --ink-2: #4a4036;
+  --border: #e2d5c0;
+  --border-strong: #cbb99c;
+  --input: #8c7a62;
+  --ring: #a93814;
+  /* Bata, the batik brick: the main action colour. As text it is always primary-ink (§2.5). */
+  --primary: #c4431b;
+  --primary-foreground: #ffffff;
+  --primary-hover: #a93814;
+  --primary-pressed: #8e2f10;
+  --primary-tint: #f8dccd;
+  --primary-ink: #a93814;
+  /* Inverse: the secondary button and the selected chip. */
+  --secondary: #1d1813;
+  --secondary-foreground: #f6efe3;
+  --secondary-hover: #352c23;
+  --secondary-pressed: #15120e;
+  --destructive: #a32015;
+  --destructive-foreground: #ffffff;
+  /* Dark bands and their text: these stay dark in both themes. */
+  --gold: #e0a63a;
+  --gold-ink: #8a5a0b;
+  --gold-tint: #f6e3b8;
+  --night: #15120e;
+  --forest-night: #0f2a1d;
+  --on-dark: #ffffff;
+  --on-dark-2: #d9ccb8;
+  --on-dark-3: #a59680;
+  --on-forest: #c9d6cc;
+  --on-forest-2: #a9bfb0;
+  --on-indigo: #e3e6f5;
+  --whatsapp: #0f7a3f;
+  --whatsapp-hover: #0b6532;
+  --whatsapp-foreground: #ffffff;
+  /* The brand names of CLAUDE.md §8, now the night band, the forest band and the sunken paper. */
+  --brand-deep: #15120e;
+  --brand-royal: #0f2a1d;
+  --brand-ice: #ede3d1;
+  /* Status pairs: the solid fill with its text, and the tint (-soft) with its text. */
+  --success: #1e6b40;
+  --success-foreground: #ffffff;
+  --success-soft: #dcefe2;
+  --success-soft-foreground: #1e6b40;
+  --warning: #8a5200;
+  --warning-foreground: #ffffff;
+  --warning-soft: #fbebc8;
+  --warning-soft-foreground: #8a5200;
+  --info: #2c5aa0;
+  --info-foreground: #ffffff;
+  --info-soft: #dee8f7;
+  --info-soft-foreground: #2c5aa0;
+  --danger-soft: #fbe0dc;
+  --danger-soft-foreground: #a32015;
+  --neutral: #6e6152;
+  --neutral-foreground: #ffffff;
+  --neutral-soft: #ede3d1;
+  --neutral-soft-foreground: #4a4036;
+  /* RW accent sets (§2.7), named after the RW that wears them in rw_units: accent, strong, tint, and the highlight
+     used on photos and dark bands. */
+  --rw05: #1f5c3a;
+  --rw05-strong: #154229;
+  --rw05-tint: #ddebdc;
+  --rw05-hi: #8cbf4f;
+  --rw13: #8e4a1f;
+  --rw13-strong: #6b3412;
+  --rw13-tint: #f3e1cb;
+  --rw13-hi: #d39b3a;
+  --rw08: #33427f;
+  --rw08-strong: #243063;
+  --rw08-tint: #dfe3f3;
+  --rw08-hi: #9caaf0;
+  /* The two spare palettes an RW may still be given (rw_accent 'teal', 'violet'). */
+  --rw-spare-teal: #1d5c59;
+  --rw-spare-teal-strong: #13403e;
+  --rw-spare-teal-tint: #d6eae7;
+  --rw-spare-violet: #6b3462;
+  --rw-spare-violet-strong: #4d2346;
+  --rw-spare-violet-tint: #f0ddeb;
+  --on-accent: #ffffff;
+  /* Dashboard: sidebar and charts. */
+  --sidebar-background: #fffaf2;
+  --sidebar-foreground: #4a4036;
+  --sidebar-primary: #c4431b;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ede3d1;
+  --sidebar-accent-foreground: #1d1813;
+  --sidebar-border: #e2d5c0;
+  --sidebar-ring: #a93814;
+  --chart-1: #c4431b;
+  --chart-2: #1f5c3a;
+  --chart-3: #33427f;
+  --chart-4: #e0a63a;
+  --chart-5: #8e4a1f;
+  --radius: 0.625rem;
+  /* Header heights (DESIGN-SPEC §2.7): 64 on phones; 72 solid and 88 over the home photo from lg. */
+  --header-h: 4rem;
+  --header-h-overlay: 4rem;
+  /* Home page sizes (docs/StyleGuide.md §4.4). */
+  --hero-max-h: 56.25rem;
   --hero-min-h-mobile: 32rem;
-  --parallax-overscan: 112%;
+  --parallax-overscan: 116%;
+  /* Motion tokens (docs/StyleGuide.md §7.2). Springs are approximated by the linear() curves of @theme. */
+  --duration-press: 100ms;
+  --duration-micro: 150ms;
+  --duration-short: 200ms;
+  --duration-header: 220ms;
+  --duration-base: 300ms;
+  --duration-long: 500ms;
+  --duration-reveal: 600ms;
+  --duration-max: 700ms;
+  --duration-count: 1400ms;
+  --duration-spring-soft: 610ms;
+  --duration-spring-snappy: 470ms;
+  --duration-spring-sheet: 440ms;
+  --duration-spring-pin: 590ms;
+}
+
+@media (width >= 64rem) {
+  :root {
+    --header-h: 4.5rem;
+    --header-h-overlay: 5.5rem;
+  }
 }
 
 .dark {
-  --background: 240 10% 3.9%;
-  --foreground: 210 40% 98%;
-  --card: 222.2 47.4% 11.2%;
-  --card-foreground: 210 40% 98%;
-  --popover: 222.2 47.4% 11.2%;
-  --popover-foreground: 210 40% 98%;
-  --primary: 221.2 83.2% 53.3%;
-  --primary-foreground: 0 0% 100%;
-  --primary-hover: 217.2 91.2% 59.8%;
-  --primary-text: 213.1 93.9% 67.8%;
-  --secondary: 217.2 32.6% 17.5%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217.2 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 65.1%;
-  --accent: 217.2 32.6% 17.5%;
-  --accent-foreground: 210 40% 98%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 0 0% 100%;
-  --border: 217.2 32.6% 17.5%;
-  --input: 217.2 32.6% 17.5%;
-  --ring: 217.2 91.2% 59.8%;
-  /* Re-declared because a var() resolves where it is declared: the :root alias would keep the light red. */
+  --background: #14110d;
+  --foreground: #f4ecdf;
+  --card: #1e1a15;
+  --card-foreground: #f4ecdf;
+  --popover: #1e1a15;
+  --popover-foreground: #f4ecdf;
+  --muted: #0f0d0a;
+  --muted-foreground: #a59680;
+  --accent: #2a241d;
+  --accent-foreground: #f4ecdf;
+  --ink-2: #cfc2ae;
+  --border: #3a3229;
+  --border-strong: #54493c;
+  --input: #7a6b57;
+  --ring: #f49d76;
+  --primary: #f0875a;
+  --primary-foreground: #1a0e08;
+  --primary-hover: #f49d76;
+  --primary-pressed: #e06e40;
+  --primary-tint: #3a1e12;
+  --primary-ink: #f49d76;
+  --secondary: #f4ecdf;
+  --secondary-foreground: #14110d;
+  --secondary-hover: #ffffff;
+  --secondary-pressed: #cfc2ae;
+  --destructive: #f28b7e;
+  --destructive-foreground: #1a0e08;
+  --gold: #e9b85a;
+  --gold-ink: #e9b85a;
+  --gold-tint: #3a2c10;
+  --night: #0b0907;
+  --forest-night: #0a1c13;
+  --brand-deep: #0b0907;
+  --brand-royal: #0a1c13;
+  --brand-ice: #1e1a15;
+  --success: #5cc98a;
+  --success-foreground: #0b1f13;
+  --success-soft: #12291b;
+  --success-soft-foreground: #5cc98a;
+  --warning: #f2be5c;
+  --warning-foreground: #1f1405;
+  --warning-soft: #2e220c;
+  --warning-soft-foreground: #f2be5c;
+  --info: #8db4f2;
+  --info-foreground: #0c1628;
+  --info-soft: #14213a;
+  --info-soft-foreground: #8db4f2;
+  --danger-soft: #331512;
+  --danger-soft-foreground: #f28b7e;
+  --neutral: #a59680;
+  --neutral-foreground: #14110d;
+  --neutral-soft: #2a241d;
+  --neutral-soft-foreground: #cfc2ae;
+  --rw05: #6cc08e;
+  --rw05-strong: #8fd3aa;
+  --rw05-tint: #15291e;
+  --rw13: #e39e68;
+  --rw13-strong: #f0b88a;
+  --rw13-tint: #2e1d12;
+  --rw13-hi: #e2b05a;
+  --rw08: #9caaf0;
+  --rw08-strong: #b9c3f5;
+  --rw08-tint: #1b2140;
+  --rw-spare-teal: #6cc2ba;
+  --rw-spare-teal-strong: #95d6cf;
+  --rw-spare-teal-tint: #132a28;
+  --rw-spare-violet: #d9a6cf;
+  --rw-spare-violet-strong: #e8c3e0;
+  --rw-spare-violet-tint: #2c1729;
+  --on-accent: #14110d;
+  --sidebar-background: #1e1a15;
+  --sidebar-foreground: #cfc2ae;
+  --sidebar-primary: #f0875a;
+  --sidebar-primary-foreground: #1a0e08;
+  --sidebar-accent: #2a241d;
+  --sidebar-accent-foreground: #f4ecdf;
+  --sidebar-border: #3a3229;
+  --sidebar-ring: #f49d76;
+  --chart-1: #f0875a;
+  --chart-2: #6cc08e;
+  --chart-3: #9caaf0;
+  --chart-4: #e9b85a;
+  --chart-5: #e39e68;
+}
+
+/* Aliases that follow the blocks above in either theme. The rw_accent palette keys of rw_units (leaf, terracotta,
+   mulberry, teal, violet) point at the RW sets; src/config/rw.ts spells the classes. */
+:root {
   --danger: var(--destructive);
   --danger-foreground: var(--destructive-foreground);
-  --chart-1: 217.2 91.2% 59.8%;
-  --chart-2: 213.1 93.9% 67.8%;
-  --chart-3: 198.4 93.2% 59.6%;
-  --chart-4: 158.1 64.4% 51.6%;
-  --chart-5: 43.3 96.4% 56.3%;
-  --sidebar-background: 240 10% 3.9%;
-  --sidebar-foreground: 215 20.2% 65.1%;
-  --sidebar-primary: 221.2 83.2% 53.3%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 217.2 32.6% 17.5%;
-  --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-border: 217.2 32.6% 17.5%;
-  --sidebar-ring: 217.2 91.2% 59.8%;
-  --rw-leaf: 87.3 43.3% 59.2%;
-  --rw-leaf-foreground: 240 10% 3.9%;
-  --rw-leaf-soft: 97.5 28.6% 11%;
-  --rw-leaf-soft-foreground: 87.3 43.3% 59.2%;
-  --rw-terracotta: 27.3 64.4% 65.9%;
-  --rw-terracotta-foreground: 240 10% 3.9%;
-  --rw-terracotta-soft: 24.5 35.5% 12.2%;
-  --rw-terracotta-soft-foreground: 27.3 64.4% 65.9%;
-  --rw-mulberry: 322.6 43.3% 72.4%;
-  --rw-mulberry-foreground: 240 10% 3.9%;
-  --rw-mulberry-soft: 321.2 29.8% 11.2%;
-  --rw-mulberry-soft-foreground: 322.6 43.3% 72.4%;
-  --rw-teal: 160 40% 69%;
-  --rw-teal-foreground: 240 10% 3.9%;
-  --rw-teal-soft: 160 30% 11%;
-  --rw-teal-soft-foreground: 160 40% 69%;
-  --rw-violet: 270 60% 82%;
-  --rw-violet-foreground: 240 10% 3.9%;
-  --rw-violet-soft: 270 30% 13%;
-  --rw-violet-soft-foreground: 270 60% 82%;
-  --success: 142.1 70.6% 45.3%;
-  --success-foreground: 222.2 47.4% 11.2%;
-  --success-soft: 142 70% 45% / 0.15;
-  --success-soft-foreground: 141.9 69.2% 58%;
-  --warning: 37.7 92.1% 50.2%;
-  --warning-foreground: 222.2 47.4% 11.2%;
-  --warning-soft: 38 92% 50% / 0.15;
-  --warning-soft-foreground: 43.3 96.4% 56.3%;
-  --info: 198.4 93.2% 59.6%;
-  --info-foreground: 222.2 47.4% 11.2%;
-  --info-soft: 198 93% 60% / 0.15;
-  --info-soft-foreground: 199.4 95.5% 73.9%;
-  --danger-soft: 0 84% 60% / 0.15;
-  --danger-soft-foreground: 0 93.5% 81.8%;
-  --neutral: 215 20.2% 65.1%;
-  --neutral-foreground: 222.2 47.4% 11.2%;
-  --neutral-soft: 217.2 32.6% 17.5%;
-  --neutral-soft-foreground: 212.7 26.8% 83.9%;
-  --surface-warm: 30 10% 8%;
-  --surface-warm-foreground: 210 40% 98%;
+  --primary-text: var(--primary-ink);
+  --rw-leaf: var(--rw05);
+  --rw-leaf-strong: var(--rw05-strong);
+  --rw-leaf-soft: var(--rw05-tint);
+  --rw-leaf-hi: var(--rw05-hi);
+  --rw-terracotta: var(--rw13);
+  --rw-terracotta-strong: var(--rw13-strong);
+  --rw-terracotta-soft: var(--rw13-tint);
+  --rw-terracotta-hi: var(--rw13-hi);
+  --rw-mulberry: var(--rw08);
+  --rw-mulberry-strong: var(--rw08-strong);
+  --rw-mulberry-soft: var(--rw08-tint);
+  --rw-mulberry-hi: var(--rw08-hi);
+  --rw-teal: var(--rw-spare-teal);
+  --rw-teal-strong: var(--rw-spare-teal-strong);
+  --rw-teal-soft: var(--rw-spare-teal-tint);
+  --rw-teal-hi: var(--rw-spare-teal);
+  --rw-violet: var(--rw-spare-violet);
+  --rw-violet-strong: var(--rw-spare-violet-strong);
+  --rw-violet-soft: var(--rw-spare-violet-tint);
+  --rw-violet-hi: var(--rw-spare-violet);
+  /* The current RW of a subtree (rw-scope-* below); outside any RW it is the combo set, the primary. */
+  --rw: var(--primary-ink);
+  --rw-strong: var(--primary-ink);
+  --rw-soft: var(--primary-tint);
+  --rw-hi: var(--gold);
+  --rw-fill: var(--primary);
+  /* The header's colours, solid by default; the overlay state over a hero photo swaps them (.site-header). */
+  --header-fg: var(--foreground);
+  --header-fg-2: var(--ink-2);
+  --header-fg-3: var(--muted-foreground);
+  --header-line: var(--border-strong);
 }
 
 @theme inline {
-  --color-background: hsl(var(--background));
-  --color-foreground: hsl(var(--foreground));
-  --color-card: hsl(var(--card));
-  --color-card-foreground: hsl(var(--card-foreground));
-  --color-popover: hsl(var(--popover));
-  --color-popover-foreground: hsl(var(--popover-foreground));
-  --color-primary: hsl(var(--primary));
-  --color-primary-foreground: hsl(var(--primary-foreground));
-  --color-primary-hover: hsl(var(--primary-hover));
-  --color-primary-text: hsl(var(--primary-text));
-  --color-secondary: hsl(var(--secondary));
-  --color-secondary-foreground: hsl(var(--secondary-foreground));
-  --color-muted: hsl(var(--muted));
-  --color-muted-foreground: hsl(var(--muted-foreground));
-  --color-accent: hsl(var(--accent));
-  --color-accent-foreground: hsl(var(--accent-foreground));
-  --color-destructive: hsl(var(--destructive));
-  --color-destructive-foreground: hsl(var(--destructive-foreground));
-  --color-border: hsl(var(--border));
-  --color-input: hsl(var(--input));
-  --color-ring: hsl(var(--ring));
-  --color-chart-1: hsl(var(--chart-1));
-  --color-chart-2: hsl(var(--chart-2));
-  --color-chart-3: hsl(var(--chart-3));
-  --color-chart-4: hsl(var(--chart-4));
-  --color-chart-5: hsl(var(--chart-5));
-  --color-sidebar: hsl(var(--sidebar-background));
-  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
-  --color-sidebar-primary: hsl(var(--sidebar-primary));
-  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
-  --color-sidebar-accent: hsl(var(--sidebar-accent));
-  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
-  --color-sidebar-border: hsl(var(--sidebar-border));
-  --color-sidebar-ring: hsl(var(--sidebar-ring));
-  --color-brand-deep: hsl(var(--brand-deep));
-  --color-brand-royal: hsl(var(--brand-royal));
-  --color-brand-ice: hsl(var(--brand-ice));
-  --color-rw-leaf: hsl(var(--rw-leaf));
-  --color-rw-leaf-foreground: hsl(var(--rw-leaf-foreground));
-  --color-rw-leaf-soft: hsl(var(--rw-leaf-soft));
-  --color-rw-leaf-soft-foreground: hsl(var(--rw-leaf-soft-foreground));
-  --color-rw-terracotta: hsl(var(--rw-terracotta));
-  --color-rw-terracotta-foreground: hsl(var(--rw-terracotta-foreground));
-  --color-rw-terracotta-soft: hsl(var(--rw-terracotta-soft));
-  --color-rw-terracotta-soft-foreground: hsl(var(--rw-terracotta-soft-foreground));
-  --color-rw-mulberry: hsl(var(--rw-mulberry));
-  --color-rw-mulberry-foreground: hsl(var(--rw-mulberry-foreground));
-  --color-rw-mulberry-soft: hsl(var(--rw-mulberry-soft));
-  --color-rw-mulberry-soft-foreground: hsl(var(--rw-mulberry-soft-foreground));
-  --color-rw-teal: hsl(var(--rw-teal));
-  --color-rw-teal-foreground: hsl(var(--rw-teal-foreground));
-  --color-rw-teal-soft: hsl(var(--rw-teal-soft));
-  --color-rw-teal-soft-foreground: hsl(var(--rw-teal-soft-foreground));
-  --color-rw-violet: hsl(var(--rw-violet));
-  --color-rw-violet-foreground: hsl(var(--rw-violet-foreground));
-  --color-rw-violet-soft: hsl(var(--rw-violet-soft));
-  --color-rw-violet-soft-foreground: hsl(var(--rw-violet-soft-foreground));
-  --color-success: hsl(var(--success));
-  --color-success-foreground: hsl(var(--success-foreground));
-  --color-success-soft: hsl(var(--success-soft));
-  --color-success-soft-foreground: hsl(var(--success-soft-foreground));
-  --color-warning: hsl(var(--warning));
-  --color-warning-foreground: hsl(var(--warning-foreground));
-  --color-warning-soft: hsl(var(--warning-soft));
-  --color-warning-soft-foreground: hsl(var(--warning-soft-foreground));
-  --color-info: hsl(var(--info));
-  --color-info-foreground: hsl(var(--info-foreground));
-  --color-info-soft: hsl(var(--info-soft));
-  --color-info-soft-foreground: hsl(var(--info-soft-foreground));
-  --color-danger: hsl(var(--danger));
-  --color-danger-foreground: hsl(var(--danger-foreground));
-  --color-danger-soft: hsl(var(--danger-soft));
-  --color-danger-soft-foreground: hsl(var(--danger-soft-foreground));
-  --color-neutral: hsl(var(--neutral));
-  --color-neutral-foreground: hsl(var(--neutral-foreground));
-  --color-neutral-soft: hsl(var(--neutral-soft));
-  --color-neutral-soft-foreground: hsl(var(--neutral-soft-foreground));
-  --color-surface-warm: hsl(var(--surface-warm));
-  --color-surface-warm-foreground: hsl(var(--surface-warm-foreground));
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-surface: var(--card);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-sunken: var(--muted);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-ink-2: var(--ink-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-pressed: var(--primary-pressed);
+  --color-primary-tint: var(--primary-tint);
+  --color-primary-ink: var(--primary-ink);
+  --color-primary-text: var(--primary-text);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary-hover: var(--secondary-hover);
+  --color-secondary-pressed: var(--secondary-pressed);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-gold: var(--gold);
+  --color-gold-ink: var(--gold-ink);
+  --color-gold-tint: var(--gold-tint);
+  --color-night: var(--night);
+  --color-forest-night: var(--forest-night);
+  --color-on-dark: var(--on-dark);
+  --color-on-dark-2: var(--on-dark-2);
+  --color-on-dark-3: var(--on-dark-3);
+  --color-on-forest: var(--on-forest);
+  --color-on-forest-2: var(--on-forest-2);
+  --color-on-indigo: var(--on-indigo);
+  --color-whatsapp: var(--whatsapp);
+  --color-whatsapp-hover: var(--whatsapp-hover);
+  --color-whatsapp-foreground: var(--whatsapp-foreground);
+  --color-brand-deep: var(--brand-deep);
+  --color-brand-royal: var(--brand-royal);
+  --color-brand-ice: var(--brand-ice);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-soft: var(--success-soft);
+  --color-success-soft-foreground: var(--success-soft-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-soft-foreground: var(--warning-soft-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-soft: var(--info-soft);
+  --color-info-soft-foreground: var(--info-soft-foreground);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-soft-foreground: var(--danger-soft-foreground);
+  --color-neutral: var(--neutral);
+  --color-neutral-foreground: var(--neutral-foreground);
+  --color-neutral-soft: var(--neutral-soft);
+  --color-neutral-soft-foreground: var(--neutral-soft-foreground);
+  --color-rw05: var(--rw05);
+  --color-rw05-strong: var(--rw05-strong);
+  --color-rw05-tint: var(--rw05-tint);
+  --color-rw05-hi: var(--rw05-hi);
+  --color-rw13: var(--rw13);
+  --color-rw13-strong: var(--rw13-strong);
+  --color-rw13-tint: var(--rw13-tint);
+  --color-rw13-hi: var(--rw13-hi);
+  --color-rw08: var(--rw08);
+  --color-rw08-strong: var(--rw08-strong);
+  --color-rw08-tint: var(--rw08-tint);
+  --color-rw08-hi: var(--rw08-hi);
+  --color-rw-leaf: var(--rw-leaf);
+  --color-rw-leaf-foreground: var(--on-accent);
+  --color-rw-leaf-soft: var(--rw-leaf-soft);
+  --color-rw-leaf-soft-foreground: var(--rw-leaf);
+  --color-rw-terracotta: var(--rw-terracotta);
+  --color-rw-terracotta-foreground: var(--on-accent);
+  --color-rw-terracotta-soft: var(--rw-terracotta-soft);
+  --color-rw-terracotta-soft-foreground: var(--rw-terracotta);
+  --color-rw-mulberry: var(--rw-mulberry);
+  --color-rw-mulberry-foreground: var(--on-accent);
+  --color-rw-mulberry-soft: var(--rw-mulberry-soft);
+  --color-rw-mulberry-soft-foreground: var(--rw-mulberry);
+  --color-rw-teal: var(--rw-teal);
+  --color-rw-teal-foreground: var(--on-accent);
+  --color-rw-teal-soft: var(--rw-teal-soft);
+  --color-rw-teal-soft-foreground: var(--rw-teal);
+  --color-rw-violet: var(--rw-violet);
+  --color-rw-violet-foreground: var(--on-accent);
+  --color-rw-violet-soft: var(--rw-violet-soft);
+  --color-rw-violet-soft-foreground: var(--rw-violet);
+  /* The current RW of the subtree (rw-scope-*): text-rw, bg-rw-fill, bg-rw-soft, text-rw-strong, bg-rw-hi. */
+  --color-rw: var(--rw);
+  --color-rw-strong: var(--rw-strong);
+  --color-rw-soft: var(--rw-soft);
+  --color-rw-hi: var(--rw-hi);
+  --color-rw-fill: var(--rw-fill);
+  --color-on-accent: var(--on-accent);
+  --color-header-fg: var(--header-fg);
+  --color-header-fg-2: var(--header-fg-2);
+  --color-header-fg-3: var(--header-fg-3);
+  --color-header-line: var(--header-line);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar-background);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
 
-  --radius-sm: calc(var(--radius) - 0.5rem);
-  --radius-md: calc(var(--radius) - 0.375rem);
-  --radius-lg: calc(var(--radius) - 0.25rem);
-  --radius-xl: var(--radius);
-  --radius-2xl: calc(var(--radius) + 0.25rem);
+  /* DESIGN-SPEC §1.5: 6 small swatches, 10 controls, 14 photos and cards, 16 tiles, 20 form panels, 24 large panels. */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+  --radius-3xl: 1.5rem;
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-plus-jakarta), var(--font-inter), ui-sans-serif, sans-serif;
 
-  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
-  --shadow-card-hover: 0 8px 24px rgb(15 23 42 / 0.08);
-  --shadow-modal: 0 24px 48px rgb(15 23 42 / 0.18);
+  /* Shadows are warm ink, never grey (DESIGN-SPEC §1.5). */
+  --shadow-sm: 0 1px 2px rgb(29 24 19 / 0.06);
+  --shadow-md: 0 10px 24px -12px rgb(29 24 19 / 0.24);
+  --shadow-lg: 0 24px 48px -20px rgb(29 24 19 / 0.32);
+  --shadow-card: 0 1px 2px rgb(29 24 19 / 0.06);
+  --shadow-card-hover: 0 10px 24px -12px rgb(29 24 19 / 0.24);
+  --shadow-modal: 0 24px 48px -20px rgb(29 24 19 / 0.32);
+  --shadow-panel: 0 24px 48px rgb(29 24 19 / 0.15);
+  --shadow-fab: 0 12px 28px rgb(15 42 29 / 0.3);
+  --shadow-drawer: -16px 0 48px rgb(21 18 14 / 0.4);
+  --shadow-bar: 0 -8px 24px rgb(29 24 19 / 0.12);
+
+  /* Text on photos always sits on a grade; this shadow only softens its edge (DESIGN-SPEC §3.1). */
+  --text-shadow-photo: 0 2px 16px rgb(0 0 0 / 0.35);
+  --text-shadow-photo-lg: 0 4px 28px rgb(0 0 0 / 0.36);
+}
+
+/* Easing curves (DESIGN-SPEC §4). Not inline: Tailwind turns each into an ease-* utility. The springs are linear()
+   samples of a damped spring (stiffness / damping): soft 170/26, snappy 300/24, sheet 260/30, pin 320/20; pair each
+   with its --duration-spring-* token. */
+@theme {
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-spring-soft: linear(
+    0,
+    0.065,
+    0.193,
+    0.342,
+    0.477,
+    0.597,
+    0.692,
+    0.77,
+    0.828,
+    0.874,
+    0.908,
+    0.933,
+    0.952,
+    0.965,
+    0.975,
+    0.982,
+    0.987,
+    0.991,
+    0.994,
+    0.996,
+    1
+  );
+  --ease-spring-snappy: linear(
+    0,
+    0.074,
+    0.229,
+    0.419,
+    0.594,
+    0.749,
+    0.864,
+    0.949,
+    1.002,
+    1.033,
+    1.045,
+    1.047,
+    1.042,
+    1.034,
+    1.025,
+    1.017,
+    1.01,
+    1.005,
+    1.002,
+    0.999,
+    1
+  );
+  --ease-spring-sheet: linear(
+    0,
+    0.053,
+    0.168,
+    0.303,
+    0.436,
+    0.557,
+    0.659,
+    0.743,
+    0.809,
+    0.861,
+    0.9,
+    0.929,
+    0.951,
+    0.966,
+    0.977,
+    0.985,
+    0.99,
+    0.994,
+    0.996,
+    0.998,
+    1
+  );
+  --ease-spring-pin: linear(
+    0,
+    0.121,
+    0.365,
+    0.637,
+    0.856,
+    1.011,
+    1.092,
+    1.118,
+    1.108,
+    1.08,
+    1.048,
+    1.02,
+    1.001,
+    0.99,
+    0.986,
+    0.987,
+    0.99,
+    0.994,
+    0.997,
+    1,
+    1
+  );
 }
 
 /* public/map/denah.svg (docs/StyleGuide.md §8.3): the plan carries no colour of its own. Each RW layer names its
@@ -275,31 +533,31 @@
    share the palette classes: Leaflet writes its colours as presentation attributes, which these rules outrank. */
 @layer components {
   .denah-rw-leaf {
-    --denah-accent: hsl(var(--rw-leaf));
-    --denah-soft: hsl(var(--rw-leaf-soft));
+    --denah-accent: var(--rw-leaf);
+    --denah-soft: var(--rw-leaf-soft);
   }
   .denah-rw-terracotta {
-    --denah-accent: hsl(var(--rw-terracotta));
-    --denah-soft: hsl(var(--rw-terracotta-soft));
+    --denah-accent: var(--rw-terracotta);
+    --denah-soft: var(--rw-terracotta-soft);
   }
   .denah-rw-mulberry {
-    --denah-accent: hsl(var(--rw-mulberry));
-    --denah-soft: hsl(var(--rw-mulberry-soft));
+    --denah-accent: var(--rw-mulberry);
+    --denah-soft: var(--rw-mulberry-soft);
   }
   .denah-rw-teal {
-    --denah-accent: hsl(var(--rw-teal));
-    --denah-soft: hsl(var(--rw-teal-soft));
+    --denah-accent: var(--rw-teal);
+    --denah-soft: var(--rw-teal-soft);
   }
   .denah-rw-violet {
-    --denah-accent: hsl(var(--rw-violet));
-    --denah-soft: hsl(var(--rw-violet-soft));
+    --denah-accent: var(--rw-violet);
+    --denah-soft: var(--rw-violet-soft);
   }
   .denah-rw-neutral {
-    --denah-accent: hsl(var(--neutral));
-    --denah-soft: hsl(var(--neutral-soft));
+    --denah-accent: var(--neutral);
+    --denah-soft: var(--neutral-soft);
   }
   .denah-ground {
-    fill: hsl(var(--muted));
+    fill: var(--muted);
   }
   .denah-area {
     fill: var(--denah-soft);
@@ -308,7 +566,7 @@
     stroke-dasharray: 14 10;
   }
   .denah-building {
-    fill: hsl(var(--card));
+    fill: var(--card);
     stroke: var(--denah-accent);
     stroke-width: 3;
     transition: fill 150ms ease;
@@ -320,7 +578,7 @@
   }
   .denah-road {
     fill: none;
-    stroke: hsl(var(--background));
+    stroke: var(--background);
     stroke-width: 26;
     stroke-linecap: round;
   }
@@ -333,12 +591,12 @@
   .denah-label-road {
     font-weight: 500;
     font-size: 22px;
-    fill: hsl(var(--muted-foreground));
+    fill: var(--muted-foreground);
   }
   .denah-marker {
     fill: var(--denah-accent);
     fill-opacity: 1;
-    stroke: hsl(var(--background));
+    stroke: var(--background);
     stroke-width: 3;
   }
   /* The RW area map of /peta-kontak (src/components/map/rw-area-leaflet.tsx): every RW shape takes its palette
@@ -349,21 +607,21 @@
      Only the panes over the tiles are scoped: popups and tooltips keep following the theme. */
   .leaflet-container .leaflet-overlay-pane,
   .leaflet-container .leaflet-marker-pane {
-    --rw-leaf: 89.2 55.1% 27.1%;
-    --rw-leaf-soft: 88 42.9% 93.1%;
-    --rw-terracotta: 22.9 58.6% 34.1%;
-    --rw-terracotta-soft: 28.6 60% 93.1%;
-    --rw-mulberry: 321 32.6% 36.1%;
-    --rw-mulberry-soft: 324 35.7% 94.5%;
-    --rw-teal: 160 30% 25%;
-    --rw-teal-soft: 158 32% 93.5%;
-    --rw-violet: 270 40% 32%;
-    --rw-violet-soft: 270 45% 95%;
-    --neutral: 240 3.8% 46.1%;
-    --neutral-soft: 210 40% 96.1%;
-    --foreground: 222.2 47.4% 11.2%;
-    --background: 0 0% 100%;
-    --primary: 221.2 83.2% 53.3%;
+    --rw-leaf: #1f5c3a;
+    --rw-leaf-soft: #ddebdc;
+    --rw-terracotta: #8e4a1f;
+    --rw-terracotta-soft: #f3e1cb;
+    --rw-mulberry: #33427f;
+    --rw-mulberry-soft: #dfe3f3;
+    --rw-teal: #1d5c59;
+    --rw-teal-soft: #d6eae7;
+    --rw-violet: #6b3462;
+    --rw-violet-soft: #f0ddeb;
+    --neutral: #6e6152;
+    --neutral-soft: #ede3d1;
+    --foreground: #1d1813;
+    --background: #f6efe3;
+    --primary: #c4431b;
   }
   .rw-area {
     fill: var(--denah-accent);
@@ -392,15 +650,15 @@
   }
   .rw-area-boundary {
     fill: none;
-    stroke: hsl(var(--foreground));
+    stroke: var(--foreground);
     stroke-opacity: 0.85;
     stroke-width: 2.5;
     stroke-dasharray: 8 6;
   }
   .rw-area-office {
-    fill: hsl(var(--primary));
+    fill: var(--primary);
     fill-opacity: 1;
-    stroke: hsl(var(--background));
+    stroke: var(--background);
     stroke-width: 3;
   }
   .rw-area-label > span {
@@ -408,8 +666,8 @@
     transform: translate(-50%, -50%);
     padding: 0 0.375rem;
     border-radius: 9999px;
-    background: hsl(var(--background) / 0.9);
-    color: hsl(var(--foreground));
+    background: color-mix(in srgb, var(--background) 90%, transparent);
+    color: var(--foreground);
     box-shadow: var(--shadow-card);
     font-family: var(--font-sans);
     font-size: 0.6875rem;
@@ -432,25 +690,61 @@
      AA in dark mode; these put them on the popover tokens in both themes (review of PR #29). */
   .leaflet-container .leaflet-popup-content-wrapper,
   .leaflet-container .leaflet-tooltip {
-    background: hsl(var(--popover));
-    color: hsl(var(--popover-foreground));
-    border: 1px solid hsl(var(--border));
+    background: var(--popover);
+    color: var(--popover-foreground);
+    border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: var(--shadow-card);
   }
   .leaflet-container .leaflet-popup-tip {
-    background: hsl(var(--popover));
-    border: 1px solid hsl(var(--border));
+    background: var(--popover);
+    border: 1px solid var(--border);
     box-shadow: none;
   }
   .leaflet-container .leaflet-tooltip-top::before {
-    border-top-color: hsl(var(--border));
+    border-top-color: var(--border);
   }
   .leaflet-container a {
-    color: hsl(var(--primary-text));
+    color: var(--primary-ink);
   }
   .leaflet-container a.leaflet-popup-close-button {
-    color: hsl(var(--muted-foreground));
+    color: var(--muted-foreground);
+  }
+
+  /* The public header (DESIGN-SPEC §2.7, src/components/layout/site-header.tsx). Solid and sticky by default; on a
+     page whose hero carries [data-header-overlay] it is fixed over the photo, transparent and white until the visitor
+     scrolls 24 px (HeaderScrollObserver sets data-scrolled). Only colours, height and the backdrop change. */
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    height: var(--header-h);
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--background) 92%, transparent);
+    backdrop-filter: blur(16px);
+    transition-property: height, background-color, border-color, color, backdrop-filter;
+    transition-duration: var(--duration-header);
+    transition-timing-function: var(--ease-out-soft);
+  }
+  :root:has([data-header-overlay]) .site-header {
+    position: fixed;
+    inset-inline: 0;
+  }
+  :root:has([data-header-overlay]) .site-header:not([data-scrolled]) {
+    --header-fg: var(--on-dark);
+    --header-fg-2: var(--on-dark);
+    --header-fg-3: var(--on-dark-2);
+    --header-line: rgb(255 255 255 / 0.35);
+    height: var(--header-h-overlay);
+    border-color: transparent;
+    background: transparent;
+    backdrop-filter: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .site-header {
+      transition-duration: var(--duration-micro);
+      transition-property: background-color, border-color, color;
+    }
   }
 }
 
@@ -471,185 +765,9 @@
   h4 {
     @apply font-display;
   }
+  /* DESIGN-SPEC §1.5: a 2 px ring, 2 px off the element, on every interactive element. */
   :focus-visible {
-    @apply ring-2 ring-ring ring-offset-2 ring-offset-background outline-none;
-  }
-}
-
-/* Type scale: one class per step, mobile value first, desktop from md (48rem). */
-@utility text-display-xl {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 2.5rem;
-  line-height: 1.1;
-  letter-spacing: -0.025em;
-  @media (width >= 48rem) {
-    font-size: 3.75rem;
-    line-height: 1.05;
-  }
-}
-@utility text-display-lg {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 2.25rem;
-  line-height: 1.15;
-  letter-spacing: -0.02em;
-  @media (width >= 48rem) {
-    font-size: 3rem;
-    line-height: 1.1;
-  }
-}
-@utility text-h1 {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 1.875rem;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-  @media (width >= 48rem) {
-    font-size: 2.25rem;
-  }
-}
-@utility text-h2 {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 1.5rem;
-  line-height: 1.25;
-  letter-spacing: -0.015em;
-  @media (width >= 48rem) {
-    font-size: 1.875rem;
-  }
-}
-@utility text-h3 {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 1.25rem;
-  line-height: 1.33;
-  letter-spacing: -0.01em;
-  @media (width >= 48rem) {
-    font-size: 1.5rem;
-  }
-}
-@utility text-h4 {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 1.125rem;
-  line-height: 1.4;
-  @media (width >= 48rem) {
-    font-size: 1.25rem;
-  }
-}
-@utility text-body-lg {
-  font-size: 1.0625rem;
-  line-height: 1.65;
-  @media (width >= 48rem) {
-    font-size: 1.125rem;
-  }
-}
-@utility text-body {
-  font-size: 1rem;
-  line-height: 1.6;
-}
-@utility text-body-sm {
-  font-size: 0.875rem;
-  line-height: 1.5;
-}
-@utility text-caption {
-  font-size: 0.75rem;
-  line-height: 1.4;
-  letter-spacing: 0.01em;
-}
-@utility text-overline {
-  font-size: 0.75rem;
-  line-height: 1;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-weight: 600;
-}
-/* Tabular figures use the built-in `tabular-nums` utility; no custom alias. */
-
-/* The home hero (redesign of 2026-10-24, after dusunbambu.id): one statement in light, widely set capitals over a
-   quiet, darker photo. Inter is a variable font, so weight 300 comes from the file already loaded. */
-@utility text-hero-statement {
-  font-family: var(--font-sans);
-  font-weight: 300;
-  font-size: 2.25rem;
-  line-height: 1.1;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  @media (width >= 48rem) {
-    font-size: 4rem;
-    line-height: 1.05;
-  }
-  @media (width >= 80rem) {
-    font-size: 5.25rem;
-  }
-}
-/* The photo's grade, applied to whatever banner the kelurahan uploads: darker, calmer colours and slightly warm, like
-   dusunbambu.id's photo; with hero-veil the white statement keeps AA (§8.2). */
-@utility hero-photo-tone {
-  filter: brightness(0.7) saturate(0.68) contrast(1.08) sepia(0.14);
-}
-/* A neutral veil, deeper at the top and bottom where the header and the arc meet the photo. The middle stays at 0.4,
-   so a white wall graded by hero-photo-tone still gives the light lead text 4.5:1 (review of PR #51). */
-@utility hero-veil {
-  background: linear-gradient(to bottom, rgb(0 0 0 / 0.5), rgb(0 0 0 / 0.4) 45%, rgb(0 0 0 / 0.5));
-}
-
-/* The pinned hero photo (docs/StyleGuide.md §7.3): clip-path, unlike overflow, also clips a fixed descendant, so the
-   photo stays put inside its section while the page scrolls over it. */
-@utility clip-inset {
-  clip-path: inset(0);
-}
-/* Scroll-linked decorative photos (docs/StyleGuide.md §7.3), with no script: the frame names a view timeline, and
-   the photo layer inside it, --parallax-overscan tall, drifts 5 % of its own height each way (about 5.6 % of the
-   frame) while the frame crosses the screen. From md, without reduced motion, in browsers with scroll-driven
-   animations; everywhere else the photo simply stays still. */
-@keyframes parallax-drift {
-  from {
-    transform: translateY(-5%);
-  }
-  to {
-    transform: translateY(5%);
-  }
-}
-@utility parallax-frame {
-  view-timeline-name: --parallax-frame;
-}
-@utility parallax-drift {
-  @media (width >= 48rem) and (prefers-reduced-motion: no-preference) {
-    @supports (animation-timeline: view()) {
-      animation: parallax-drift linear both;
-      animation-timeline: --parallax-frame;
-    }
-  }
-}
-/* Section reveals on the home page (docs/StyleGuide.md §7.3, decision of 2026-10-24): a block fades up 16 px as it
-   enters the screen, driven by the scroll itself rather than by script, so it ships no JS and never hides content
-   from a browser without scroll-driven animations, from a visitor without JS, or from one who asks for reduced
-   motion. The 16 px is fadeInUp's distance (src/lib/motion/variants.ts). */
-@keyframes reveal-up {
-  from {
-    opacity: 0;
-    translate: 0 1rem;
-  }
-  to {
-    opacity: 1;
-    translate: 0 0;
-  }
-}
-@utility reveal {
-  @media (prefers-reduced-motion: no-preference) {
-    @supports (animation-timeline: view()) {
-      animation: reveal-up linear both;
-      animation-timeline: view();
-      animation-range: entry 0% entry 80%;
-    }
-  }
-}
-/* Scroll-snap rows that peek at the next item instead of showing a scrollbar. */
-@utility scrollbar-none {
-  scrollbar-width: none;
-  &::-webkit-scrollbar {
-    display: none;
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
 }

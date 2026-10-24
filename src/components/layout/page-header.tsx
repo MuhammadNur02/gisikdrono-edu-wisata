@@ -87,7 +87,7 @@ export function PageHeader({
         ]
       : null;
   return (
-    <div className="bg-linear-to-b from-brand-ice to-background dark:from-secondary">
+    <div className="bg-linear-to-b from-brand-ice to-background">
       <Container className="space-y-6 pt-10 pb-12 md:pt-14 md:pb-16">
         {trail ? <Breadcrumbs trail={trail} /> : null}
         <div className="max-w-3xl space-y-4">

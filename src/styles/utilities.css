@@ -1,0 +1,232 @@
+/* RW scopes, photo grades, the kawung texture and layout helpers (docs/StyleGuide.md §2.7, §8). Imported by src/styles/globals.css; the tokens it reads live there. */
+
+/* ===== RW scopes (docs/StyleGuide.md §2.7): one class per rw_accent key sets the current RW of a subtree, so one
+   component set (text-rw, bg-rw-fill, bg-rw-soft, text-rw-strong, bg-rw-hi) serves every RW. ===== */
+@utility rw-scope-leaf {
+  --rw: var(--rw-leaf);
+  --rw-strong: var(--rw-leaf-strong);
+  --rw-soft: var(--rw-leaf-soft);
+  --rw-hi: var(--rw-leaf-hi);
+  --rw-fill: var(--rw-leaf);
+  --rw-grade-tint: #9fb59c;
+  --rw-grade-shade: var(--forest-night);
+}
+@utility rw-scope-terracotta {
+  --rw: var(--rw-terracotta);
+  --rw-strong: var(--rw-terracotta-strong);
+  --rw-soft: var(--rw-terracotta-soft);
+  --rw-hi: var(--rw-terracotta-hi);
+  --rw-fill: var(--rw-terracotta);
+  --rw-grade-tint: #c9a07a;
+  --rw-grade-shade: #2a160b;
+}
+@utility rw-scope-mulberry {
+  --rw: var(--rw-mulberry);
+  --rw-strong: var(--rw-mulberry-strong);
+  --rw-soft: var(--rw-mulberry-soft);
+  --rw-hi: var(--rw-mulberry-hi);
+  --rw-fill: var(--rw-mulberry);
+  --rw-grade-tint: #a9b0d6;
+  --rw-grade-shade: #161b38;
+}
+@utility rw-scope-teal {
+  --rw: var(--rw-teal);
+  --rw-strong: var(--rw-teal-strong);
+  --rw-soft: var(--rw-teal-soft);
+  --rw-hi: var(--rw-teal-hi);
+  --rw-fill: var(--rw-teal);
+  --rw-grade-tint: #9cbcb8;
+  --rw-grade-shade: #0c2321;
+}
+@utility rw-scope-violet {
+  --rw: var(--rw-violet);
+  --rw-strong: var(--rw-violet-strong);
+  --rw-soft: var(--rw-violet-soft);
+  --rw-hi: var(--rw-violet-hi);
+  --rw-fill: var(--rw-violet);
+  --rw-grade-tint: #c3a3bd;
+  --rw-grade-shade: #24101f;
+}
+@utility rw-scope-neutral {
+  --rw: var(--muted-foreground);
+  --rw-strong: var(--ink-2);
+  --rw-soft: var(--neutral-soft);
+  --rw-hi: var(--on-dark-2);
+  --rw-fill: var(--neutral);
+  --rw-grade-tint: #b5a48f;
+  --rw-grade-shade: var(--night);
+}
+/* A combination package: the primary set (DESIGN-SPEC §1.1). */
+@utility rw-scope-combo {
+  --rw: var(--primary-ink);
+  --rw-strong: var(--primary-ink);
+  --rw-soft: var(--primary-tint);
+  --rw-hi: var(--gold);
+  --rw-fill: var(--primary);
+}
+
+/* ===== Photo grades (DESIGN-SPEC §1.7). The tone filter goes on the <img>; the grade is an absolutely placed layer
+   over it, whose ::before multiplies a warm colour and ::after lays the scrims. White text on any grade stays on a
+   local background darker than #6E6B68 (>= 5.3:1). ===== */
+@utility photo-tone-hero {
+  filter: saturate(0.6);
+}
+/* The home hero crop: a little left of centre (DESIGN-SPEC §1.7). */
+@utility object-hero {
+  object-position: 42% 50%;
+  @media (width >= 48rem) {
+    object-position: 45% 50%;
+  }
+}
+@utility photo-tone-rw {
+  filter: saturate(0.75);
+}
+@utility photo-grade-hero {
+  pointer-events: none;
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+  &::before {
+    background: #a27c58;
+    mix-blend-mode: multiply;
+  }
+  &::after {
+    background:
+      radial-gradient(ellipse 70% 70% at 50% 50%, transparent 50%, rgb(26 16 10 / 0.5) 100%),
+      radial-gradient(ellipse 55% 35% at 50% 47%, rgb(26 16 10 / 0.45), transparent),
+      linear-gradient(
+        180deg,
+        rgb(26 16 10 / 0.8) 0%,
+        rgb(26 16 10 / 0.3) 30%,
+        rgb(26 16 10 / 0.35) 70%,
+        rgb(26 16 10 / 0.55) 100%
+      );
+  }
+}
+/* An RW hero: the multiply and the shade come from the RW scope (--rw-grade-tint, --rw-grade-shade). */
+@utility photo-grade-rw {
+  pointer-events: none;
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+  &::before {
+    background: var(--rw-grade-tint, #b5a48f);
+    mix-blend-mode: multiply;
+  }
+  &::after {
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--rw-grade-shade, #15120e) 70%, transparent) 0%,
+      color-mix(in srgb, var(--rw-grade-shade, #15120e) 20%, transparent) 35%,
+      color-mix(in srgb, var(--rw-grade-shade, #15120e) 60%, transparent) 70%,
+      color-mix(in srgb, var(--rw-grade-shade, #15120e) 95%, transparent) 100%
+    );
+  }
+}
+/* The parallax photo band: warm multiply, a left-to-right scrim for the quote and a bottom scrim. */
+@utility photo-grade-band {
+  pointer-events: none;
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+  &::before {
+    background: #b58a63;
+    mix-blend-mode: multiply;
+  }
+  &::after {
+    background:
+      linear-gradient(0deg, rgb(21 18 14 / 0.6) 0%, transparent 45%),
+      linear-gradient(
+        90deg,
+        rgb(21 18 14 / 0.85) 0%,
+        rgb(21 18 14 / 0.4) 55%,
+        rgb(21 18 14 / 0.1) 100%
+      );
+  }
+}
+/* An RW tile: night from the top fifth down to 92 % at the foot, where the title and the link sit. */
+@utility photo-grade-tile {
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgb(21 18 14 / 0) 22%,
+    rgb(21 18 14 / 0.6) 58%,
+    rgb(21 18 14 / 0.92) 100%
+  );
+}
+
+/* ===== Kawung (DESIGN-SPEC §1.8): the lattice of public/motifs/kawung.svg as a mask, painted in --kawung-colour at
+   --kawung-opacity on a ::before behind the content, so it costs no DOM node. Light on dark bands (kawung), ink on
+   tints (kawung-ink); kawung-6 ... kawung-16 set the opacity in per cent. ===== */
+@utility kawung {
+  isolation: isolate;
+  &:where(:not(.absolute, .fixed, .sticky)) {
+    position: relative;
+  }
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background-color: var(--kawung-colour, #ffffff);
+    opacity: var(--kawung-opacity, 0.07);
+    -webkit-mask: url('/motifs/kawung.svg') 0 0 / 15rem 15rem repeat;
+    mask: url('/motifs/kawung.svg') 0 0 / 15rem 15rem repeat;
+  }
+}
+@utility kawung-ink {
+  --kawung-colour: var(--foreground);
+}
+@utility kawung-* {
+  --kawung-opacity: calc(--value(integer) * 1%);
+}
+
+/* The 1.5 px edge of outline buttons, checkboxes and fields in an error or verified state (DESIGN-SPEC §2). */
+@utility border-control {
+  border-width: 1.5px;
+  border-style: solid;
+}
+/* A trailing arrow in a button moves 3 px forward while the button is pointed at (DESIGN-SPEC §4, Buttons). */
+@utility nudge-trailing-icon {
+  & [data-icon='trailing'] {
+    transition: translate var(--duration-micro) var(--ease-out-soft);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    &:hover:not(:disabled, [aria-disabled='true']) [data-icon='trailing'] {
+      translate: 0.1875rem 0;
+    }
+  }
+}
+/* The menu drawer (DESIGN-SPEC §2.7): 354 px, leaving at least 36 px of the page in view on any phone. */
+@utility w-drawer {
+  width: min(22.125rem, calc(100vw - 2.25rem));
+}
+/* Fixed buttons clear the phone's home indicator (DESIGN-SPEC §2.2): 16 px above it, or above an 80 px bottom bar. */
+@utility fab-offset {
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+@utility fab-offset-bar {
+  bottom: calc(6rem + env(safe-area-inset-bottom));
+}
+/* An anchored section clears the sticky header (64 px, 72 px from lg). */
+@utility scroll-mt-header {
+  scroll-margin-top: var(--header-h);
+}
+/* Scroll-snap rows that peek at the next item instead of showing a scrollbar. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

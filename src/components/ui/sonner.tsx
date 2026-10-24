@@ -33,12 +33,12 @@ function Toaster(props: ToasterProps) {
         error: <XCircle className="size-4" />,
         loading: <Loader2 className="size-4 motion-safe:animate-spin" />,
       }}
-      // The tokens are bare HSL triplets, so they need hsl() before sonner can use them as colours.
+      // sonner reads its colours from these variables; the tokens are full colours, so they pass straight through.
       style={
         {
-          '--normal-bg': 'hsl(var(--popover))',
-          '--normal-text': 'hsl(var(--popover-foreground))',
-          '--normal-border': 'hsl(var(--border))',
+          '--normal-bg': 'var(--popover)',
+          '--normal-text': 'var(--popover-foreground)',
+          '--normal-border': 'var(--border)',
           '--border-radius': 'var(--radius)',
         } as React.CSSProperties
       }
