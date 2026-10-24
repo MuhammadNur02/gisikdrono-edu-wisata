@@ -3,13 +3,13 @@ import 'server-only';
 import { timingSafeEqual } from 'node:crypto';
 
 import { ticketSignature, type QrKeyRing, type SignedTicketFacts } from '@/lib/qr/sign';
+import { QR_TOKEN_PATTERN } from '@/lib/qr/token-pattern';
 
 // Task P3.10.01: the only place a QR token is checked. A token is read first (its grammar, its kid, the ticket id it
 // names) and then checked against that ticket's own row, since the RW and the visit day it is bound to are not in it.
 // A kid QR_SIGNING_KEYS no longer holds has retired (30 days after its last valid_on, docs/Security.md §9.1), so its
 // tokens fail like forged ones.
 
-const TOKEN_PATTERN = /^GSK\.([a-z0-9]+)\.([A-Za-z0-9_-]{22})\.([A-Za-z0-9_-]{22})$/;
 const UUID_BYTES = 16;
 const UUID_GROUPS = /^(.{8})(.{4})(.{4})(.{4})(.{12})$/;
 
@@ -25,7 +25,7 @@ function uuidOf(bytes: Buffer): string {
 
 // null for anything that is not a ticket token: another grammar, a truncated signature, an id of another length.
 export function readTicketToken(token: string): ReadTicketToken | null {
-  const match = TOKEN_PATTERN.exec(token);
+  const match = QR_TOKEN_PATTERN.exec(token);
   if (!match) return null;
   const [, kid = '', encodedId = '', signature = ''] = match;
   const idBytes = Buffer.from(encodedId, 'base64url');
