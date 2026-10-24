@@ -21,13 +21,34 @@ export const mapCopy = {
   // The route link of a point in the list, named for a screen reader.
   routeTo: (name: string) => `Rute ke ${name}`,
   routeToOffice: 'Rute di Google Maps',
-  geoTitle: 'Lokasi di peta',
-  geoLabel: 'Peta lokasi titik aktivitas',
+  // The RW area map of /peta-kontak, drawn from the kelurahan's "Peta RW Wilayah Gisikdrono 2024".
+  areaTitle: 'Peta wilayah RW',
+  areaDescription:
+    'Tiga belas RW Kelurahan Gisikdrono. Kampung eduwisata diberi warna; pilih wilayah di peta atau di daftar untuk melihat program dan titik aktivitasnya.',
+  areaLabel: 'Peta wilayah RW Kelurahan Gisikdrono',
+  areaListEdu: 'Kampung eduwisata',
+  areaListOther: 'RW lainnya',
+  areaRwPage: (name: string) => `Buka halaman ${name}`,
+  areaRouteTo: (label: string) => `Rute ke ${label} di Google Maps`,
+  areaPoints: 'Titik aktivitas',
+  areaNoPoints: 'Titik aktivitas RW ini belum ditambahkan.',
+  areaNotEdu: 'Wilayah ini belum memiliki program kunjungan edukasi di situs ini.',
+  legendLabel: 'Keterangan peta',
+  legendOtherRw: 'RW lain',
+  legendBoundary: 'Batas kelurahan',
+  legendOffice: 'Kantor kelurahan',
+  legendPoint: 'Titik aktivitas',
+  // The credit the kelurahan's map needs wherever its boundaries are drawn (scripts/convert-rw-kml.ts).
+  areaSource: 'Batas RW: Peta RW Wilayah Gisikdrono 2024, Kelurahan Gisikdrono',
+  // Under the map while the points carry estimated positions (docs/content/konten-situs-kelurahan.md, section 8).
+  pointsEstimated: 'Letak titik aktivitas masih perkiraan dan menunggu konfirmasi kelurahan.',
   geoZoomIn: 'Perbesar peta',
   geoZoomOut: 'Perkecil peta',
+  geoReset: 'Tampilkan seluruh kelurahan',
   // The OpenStreetMap tiles need their credit next to the map (OSM tile usage policy).
   osmCredit: 'Peta',
   osmContributors: 'kontributor OpenStreetMap',
+  googleTitle: 'Lokasi di Google Maps',
   showGoogle: 'Tampilkan Google Maps',
   // Pressing the button loads Google's frame, so the visitor knows whose it is before it loads.
   googleHint: 'Peta dari Google dimuat setelah tombol ditekan.',

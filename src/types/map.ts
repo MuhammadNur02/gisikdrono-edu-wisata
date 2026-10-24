@@ -51,6 +51,13 @@ export interface RwAreaSummary {
   points: { id: string; name: string; typeLabel: string; routeUrl: string | null }[];
 }
 
+// The RW open in the list and highlighted on the map, and where it was chosen: an RW picked in the list is brought
+// into view on the map, one clicked on the map is scrolled into view in the list.
+export interface RwAreaSelection {
+  rw: RwId;
+  source: 'map' | 'list';
+}
+
 // A pin on the Leaflet map (docs/StyleGuide.md §5.13): an activity point by its own coordinates, or an RW's centre
 // from rw_units.map_lat / map_lng. Serialisable, so the island receives it as a prop.
 export interface GeoMarker extends GeoPoint {
