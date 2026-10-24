@@ -38,3 +38,13 @@ export function buildPageMetadata({ title, description, path }: PageMetadataInpu
     openGraph: { ...OPEN_GRAPH_DEFAULTS, title, description, url: path },
   };
 }
+
+// The home page is titled by the bare site name (the template's default), so it takes no page title; its
+// description is site_settings `seo.default_description` once the kelurahan has written it.
+export function buildHomeMetadata(description?: string): Metadata {
+  return {
+    description,
+    alternates: { canonical: '/' },
+    openGraph: { ...OPEN_GRAPH_DEFAULTS, title: siteConfig.name, description, url: '/' },
+  };
+}
