@@ -27,7 +27,7 @@ export function RwPinsMap({ pins, label }: RwPinsMapProps) {
     <div
       role="group"
       aria-label={label}
-      className="map-tiles-warm relative isolate h-75 overflow-hidden rounded-xl border border-border md:h-110 lg:h-140"
+      className="relative isolate h-75 overflow-hidden rounded-xl border border-border map-tiles-warm md:h-110 lg:h-140"
     >
       <RwPinsLeaflet pins={pins} />
       <p className="absolute right-3 bottom-3 z-10 rounded-sm bg-card/90 px-2 py-0.5 text-xs text-ink-2">

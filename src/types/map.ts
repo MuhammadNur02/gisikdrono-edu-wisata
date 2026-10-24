@@ -1,6 +1,7 @@
 import type { RwAccent, RwId } from '@/config/rw';
 import type { GeoPoint } from '@/lib/utils/geo';
 import type { PolygonRings, Position } from '@/lib/utils/geo-polygon';
+import type { PublicImage } from '@/types/media';
 import type { RwBadge } from '@/types/rw-unit';
 
 // public/map/gisikdrono-rw.geojson, written by scripts/convert-rw-kml.ts from the kelurahan's "Peta RW Wilayah
@@ -66,6 +67,12 @@ export interface RwAreaSelection {
   source: 'map' | 'list';
 }
 
+// The activity point whose card is open, and where it was picked: one picked in the list is flown to.
+export interface PointSelection {
+  id: string;
+  source: 'map' | 'list';
+}
+
 // A pin on the Leaflet map (docs/StyleGuide.md §5.13): an activity point by its own coordinates, or an RW's centre
 // from rw_units.map_lat / map_lng. Serialisable, so the island receives it as a prop.
 export interface GeoMarker extends GeoPoint {
@@ -78,6 +85,10 @@ export interface GeoMarker extends GeoPoint {
   routeUrl: string;
   // Still the position the demo seed estimated (src/lib/utils/map-estimates.ts): shown as `perkiraan`.
   isEstimate: boolean;
+  // The point card of /peta-kontak (DESIGN-SPEC §3.9): the short description, the photo and the RW page.
+  description: string | null;
+  image: PublicImage | null;
+  rwPath: string | null;
 }
 
 // An RW on the home page's map (DESIGN-SPEC §3.1): its centre from rw_units.map_lat / map_lng and the pill that links to
