@@ -2,6 +2,8 @@ import 'server-only';
 
 import { createHmac } from 'node:crypto';
 
+import { QR_KID_PATTERN } from '@/lib/qr/kid';
+
 // Task P3.10.01 (CLAUDE.md §7.3; docs/Security.md §9.1; QR-01, QR-05): a ticket's QR token, the only place one is
 // signed. 'GSK.' + kid + '.' + base64url(ticket id) + '.' + the first 22 characters of the base64url HMAC-SHA256 of
 // 'GSK.' + kid + '.' + ticket id + '|' + rw_id + '|' + valid_on. The token carries no name, no phone and no booking
@@ -10,7 +12,6 @@ import { createHmac } from 'node:crypto';
 
 export const QR_TOKEN_PREFIX = 'GSK';
 export const QR_SIGNATURE_LENGTH = 22;
-export const QR_KID_PATTERN = /^[a-z0-9]+$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // kid → the base64 of its 32-byte key, as QR_SIGNING_KEYS holds them.

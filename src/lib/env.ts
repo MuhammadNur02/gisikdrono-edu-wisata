@@ -9,7 +9,7 @@ import {
   MIDTRANS_MERCHANT_ID_PATTERN,
 } from '@/lib/midtrans/environment';
 import { isHostedDeployment, publicEnv, TURNSTILE_TEST_KEY_PATTERN } from '@/lib/public-env';
-import { QR_KID_PATTERN } from '@/lib/qr/sign';
+import { QR_KID_PATTERN } from '@/lib/qr/kid';
 import { MOBILE_PHONE_PATTERN } from '@/lib/utils/phone';
 
 const MIN_SECRET_LENGTH = 32;
