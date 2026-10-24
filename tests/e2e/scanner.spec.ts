@@ -1,12 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { answerScans, dropScans, SCANNER } from './helpers/scanner';
-import {
-  ADMIN_RW05,
-  hasHorizontalScroll,
-  resetAuthLimits,
-  signInToDashboard,
-} from './helpers/staff';
+import { answerScans, ownRwOfficerPerTest, dropScans, SCANNER } from './helpers/scanner';
+import { hasHorizontalScroll, signInToDashboard } from './helpers/staff';
 
 // Task P4.4.05 (docs/PRD.md FR-SCAN-03..07, docs/StyleGuide.md §6.6): the scanner page against the contract of
 // POST /api/tickets/verify, answered by tests/e2e/helpers/scanner.ts. The live camera has its own file
@@ -19,14 +14,15 @@ async function checkManually(page: Page) {
   await page.getByRole('button', { name: 'Periksa' }).click();
 }
 
-test.beforeAll(async () => {
-  await resetAuthLimits();
-});
+// Requests a service worker makes are out of page.route's reach, so the scanner's worker stays off here.
+test.use({ serviceWorkers: 'block' });
+
+const officerEmail = ownRwOfficerPerTest();
 
 test('an RW officer checks a group in by its code, with one person more than booked', async ({
   page,
 }) => {
-  await signInToDashboard(page, ADMIN_RW05);
+  await signInToDashboard(page, officerEmail());
   const response = await page.goto(SCANNER);
   expect(response?.headers()['permissions-policy']).toContain('camera=(self)');
   expect(await hasHorizontalScroll(page)).toBe(false);
@@ -56,7 +52,7 @@ test('an RW officer checks a group in by its code, with one person more than boo
 test('a second scan of a used ticket and a ticket of another RW only offer Tutup', async ({
   page,
 }) => {
-  await signInToDashboard(page, ADMIN_RW05);
+  await signInToDashboard(page, officerEmail());
   await page.goto(SCANNER);
   await answerScans(page, (_scan, index) => (index === 0 ? 'already_used' : 'wrong_rw'));
 
@@ -76,7 +72,7 @@ test('a second scan of a used ticket and a ticket of another RW only offer Tutup
 test('without a network the officer is told so, and Coba lagi sends the same attempt', async ({
   page,
 }) => {
-  await signInToDashboard(page, ADMIN_RW05);
+  await signInToDashboard(page, officerEmail());
   await page.goto(SCANNER);
   const attempts = await dropScans(page);
 

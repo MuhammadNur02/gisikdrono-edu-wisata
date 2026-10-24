@@ -81,13 +81,27 @@ export async function createAccount(
 // seeded one. For a spec that runs beside staff-sign-in.spec.ts, whose "Keluar" signs the seeded superadmin out
 // everywhere (signOutEverywhere) and, in another worker, can end a sign-in half-way.
 export async function createSuperadmin(): Promise<{ id: string; email: string }> {
+  return createVerifiedStaff('superadmin', null);
+}
+
+// The same for an RW officer (Task P4.4.05): a spec that signs in as the seeded admin_rw 05 in several workers at once
+// sends the same TOTP code twice in one window, which the verification hook refuses as a replay.
+export async function createRwAdmin(rwId: number): Promise<{ id: string; email: string }> {
+  return createVerifiedStaff('admin_rw', rwId);
+}
+
+async function createVerifiedStaff(
+  role: 'superadmin' | 'admin_rw',
+  rwId: number | null,
+): Promise<{ id: string; email: string }> {
   const account = await createAccount('none');
+  const fullName = role === 'superadmin' ? 'Superadmin Uji E2E' : 'Admin RW Uji E2E';
   await runSql(`begin;
     insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at, secret)
       values (gen_random_uuid(), '${account.id}', 'DEV-ONLY authenticator', 'totp', 'verified', now(), now(),
               '${DEV_ONLY_TOTP_SECRET}');
     insert into public.profiles (id, email, full_name, role, rw_id, is_active, claims_version)
-      values ('${account.id}', '${account.email}', 'Superadmin Uji E2E', 'superadmin', null, true, 1);
+      values ('${account.id}', '${account.email}', '${fullName}', '${role}', ${rwId === null ? 'null' : String(rwId)}, true, 1);
     commit;`);
   return account;
 }

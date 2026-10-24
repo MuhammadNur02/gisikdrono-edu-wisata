@@ -27,8 +27,10 @@ prepareZXingModule({
 const text = scannerCopy;
 const QR_ONLY = ['qr_code' as const];
 const REAR_CAMERA: MediaTrackConstraints = { facingMode: 'environment' };
-// The pause between two reads of the live frames while the officer has asked for a scan.
-const RETRY_DELAY_MS = 150;
+// The pause between two reads of the live frames: quick while the officer has asked for a scan, slow while the
+// preview only helps them aim. The stream is never paused, since a paused Scanner hides its video (FR-SCAN-06 is kept
+// by reading a code only while armed).
+const RETRY_DELAY_MS = { armed: 150, aiming: 1000 } as const;
 // The Scanner tells nobody when its stream is up, so the torch looks for the track until it is there.
 const TRACK_POLL_MS = 500;
 // The library's finder frame only; the torch is this file's own 44 px button.
@@ -106,9 +108,8 @@ export function CameraStream({ isArmed, onDecode, onError }: CameraStreamProps) 
         onError={onError}
         constraints={REAR_CAMERA}
         formats={QR_ONLY}
-        paused={!isArmed}
         allowMultiple
-        retryDelay={RETRY_DELAY_MS}
+        retryDelay={isArmed ? RETRY_DELAY_MS.armed : RETRY_DELAY_MS.aiming}
         sound={false}
         components={SCANNER_PARTS}
         classNames={SCANNER_CLASSES}

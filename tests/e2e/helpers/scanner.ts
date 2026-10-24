@@ -2,9 +2,11 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { Page, Route } from '@playwright/test';
+import { test, type Page, type Route } from '@playwright/test';
 import QRCode from 'qrcode';
 import { z } from 'zod';
+
+import { createRwAdmin, removeAccounts, resetAuthLimits } from './staff';
 
 // The scanner specs (Task P4.4.05) answer POST /api/tickets/verify themselves until the route of Task P4.4.02 exists,
 // after the DB lane's validate_ticket and check_in_ticket; the page, the camera, the result sheet and the requests it
@@ -97,4 +99,24 @@ export function fakeCameraWith(text: string): string {
   const file = join(tmpdir(), 'gisikdrono-scanner-camera.y4m');
   writeFileSync(file, Buffer.concat([header, Buffer.from('FRAME\n'), luma, chroma]));
   return file;
+}
+
+// Each test signs in as an RW 05 officer of its own, removed afterwards: the seeded admin_rw 05 is shared with other
+// specs running at the same time, whose sign-ins and sign-outs would cross this one's (the race seen in PR #46).
+export function ownRwOfficerPerTest(): () => string {
+  let officer: { id: string; email: string } | undefined;
+  test.beforeAll(async () => {
+    await resetAuthLimits();
+  });
+  test.beforeEach(async () => {
+    officer = await createRwAdmin(5);
+  });
+  test.afterEach(async () => {
+    await removeAccounts(officer ? [officer.id] : []);
+    officer = undefined;
+  });
+  return () => {
+    if (!officer) throw new Error('The RW officer of this test was not created');
+    return officer.email;
+  };
 }
