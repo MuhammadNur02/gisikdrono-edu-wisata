@@ -11,6 +11,7 @@ import {
 } from '@/config/auth';
 import {
   buildContentSecurityPolicy,
+  cspHeaderNameFor,
   isPrivateRoute,
   NONCE_HEADER,
   permissionsPolicyFor,
@@ -19,12 +20,16 @@ import { redirectGuestLink } from '@/lib/links/redirect';
 import { publicEnv } from '@/lib/public-env';
 import { canonicalGalleryPathFor } from '@/lib/utils/gallery-search';
 import { isPathUnder, PUBLIC_PATHS, rwRouteRewriteFor } from '@/lib/utils/paths';
+import { isSameOriginRequest } from '@/lib/utils/same-origin';
 import { pathWithNext } from '@/lib/utils/staff-paths';
 
 const NONCE_BYTES = 16;
 const MS_PER_SECOND = 1000;
 // Temporary on purpose: the page cap (GALLERY_MAX_PAGES) may change, and a browser keeps a permanent one.
 const TEMPORARY_REDIRECT = 307;
+const FORBIDDEN = 403;
+const SAFE_METHODS: ReadonlySet<string> = new Set(['GET', 'HEAD', 'OPTIONS']);
+const API_PATH = '/api';
 
 type ContinueRequest = () => NextResponse;
 
@@ -110,13 +115,9 @@ function redirectToStep(request: NextRequest, step: string, refreshed: NextRespo
   return redirect;
 }
 
-// docs/Security.md §8.2: staging only reports CSP violations until the policy is proven (P5.4.01).
+// docs/Security.md §8.2: production enforces the CSP, staging only reports violations (cspHeaderNameFor).
 function withSecurityHeaders(response: NextResponse, pathname: string, csp: string) {
-  const cspHeader =
-    publicEnv.VERCEL_ENV === 'preview'
-      ? 'Content-Security-Policy-Report-Only'
-      : 'Content-Security-Policy';
-  response.headers.set(cspHeader, csp);
+  response.headers.set(cspHeaderNameFor(publicEnv.VERCEL_ENV), csp);
   response.headers.set('Permissions-Policy', permissionsPolicyFor(pathname));
   return response;
 }
@@ -133,8 +134,18 @@ function redirectMalformedGallery(request: NextRequest): NextResponse | null {
   return NextResponse.redirect(destination, TEMPORARY_REDIRECT);
 }
 
+// A page takes a POST only as a Server Action. Next.js refuses one from another origin itself, but with a 500 and
+// only when an Origin is sent; this answers 403 before any session work and also refuses a POST without an Origin,
+// which no browser sends (docs/Security.md APP-12). Route handlers under /api check their own callers.
+function isCrossOriginPagePost(request: NextRequest): boolean {
+  if (SAFE_METHODS.has(request.method)) return false;
+  if (isPathUnder(request.nextUrl.pathname, API_PATH)) return false;
+  return !isSameOriginRequest(request);
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  if (isCrossOriginPagePost(request)) return new NextResponse(null, { status: FORBIDDEN });
   const nonce = isPrivateRoute(pathname) ? createNonce() : null;
   const csp = buildContentSecurityPolicy({
     nonce,
