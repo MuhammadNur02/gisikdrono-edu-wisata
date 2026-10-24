@@ -1,5 +1,8 @@
 import 'server-only';
 
+import type { User } from '@supabase/supabase-js';
+
+import { AUTH_USERS_PAGE_SIZE, STAFF_BAN_DURATION, STAFF_UNBAN_DURATION } from '@/config/staff';
 import { createLogger } from '@/lib/logger';
 import { withinRateLimits } from '@/lib/rate-limit';
 // The service role is needed for four things the session cannot do: the limiter is an internal function no API role
@@ -9,6 +12,11 @@ import { withinRateLimits } from '@/lib/rate-limit';
 // the address they typed or by the id of the verified session, and nothing read here goes back to the browser: the
 // pages answer the same whatever it says (docs/Security.md §5.1, AUTH-06). Keying by a typed address rather than a
 // verified id is the exception CLAUDE.md §6.1 records for this module (I2 of the independent review of PR #17).
+// /dashboard/users (Task P4.8.03) adds two more, both for the superadmin at AAL2 only: whether each account has a
+// verified TOTP factor, its last sign-in and its ban live in auth.users, which no API role reads, and are returned as
+// booleans and times keyed by the profile ids the superadmin already read under RLS; and the ban of
+// docs/Security.md §5.6 step 2 is the Auth admin API's, called only after set_staff_status has accepted the
+// superadmin's fresh TOTP and the change for that same id.
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 import { normalizeEmail } from '@/lib/validations/normalize';
@@ -44,6 +52,11 @@ export function withinAuthCallbackLimit(clientIp: string): Promise<boolean> {
 // per verified session id, never per anything typed.
 export function withinStepUpLimit(userId: string): Promise<boolean> {
   return withinRateLimits(createSupabaseAdminClient(), [{ name: 'step_up:user', subject: userId }]);
+}
+
+// L2 of the PR #43 review: invites per superadmin, counted by the verified session id before anything is written.
+export function withinInviteLimit(userId: string): Promise<boolean> {
+  return withinRateLimits(createSupabaseAdminClient(), [{ name: 'invite:user', subject: userId }]);
 }
 
 // docs/Security.md §5.1 (AUTH-09): a reset link only for an active account that finished onboarding, which is when
@@ -104,4 +117,59 @@ export async function recordSessionRevokeFailure(
   });
   if (error)
     log.error('internal_error', { source: 'session_revoke_failed', errorName: error.name });
+}
+
+// What /dashboard/users shows from Supabase Auth for one account (Task P4.8.03).
+export interface StaffAuthState {
+  hasVerifiedTotp: boolean;
+  isBanned: boolean;
+  lastSignInAt: string | null;
+}
+
+function authStateOf(user: User, nowMs: number): StaffAuthState {
+  const factors = user.factors ?? [];
+  const bannedUntil = user.banned_until ? Date.parse(user.banned_until) : Number.NaN;
+  return {
+    hasVerifiedTotp: factors.some((f) => f.factor_type === 'totp' && f.status === 'verified'),
+    isBanned: bannedUntil > nowMs,
+    lastSignInAt: user.last_sign_in_at ?? null,
+  };
+}
+
+// One page of Auth users covers the kelurahan's staff many times over; only the ids asked for are kept.
+export async function readStaffAuthStates(
+  userIds: readonly string[],
+): Promise<Map<string, StaffAuthState>> {
+  const states = new Map<string, StaffAuthState>();
+  if (userIds.length === 0) return states;
+  const { data, error } = await createSupabaseAdminClient().auth.admin.listUsers({
+    page: 1,
+    perPage: AUTH_USERS_PAGE_SIZE,
+  });
+  if (error) throw error;
+  const wanted = new Set(userIds);
+  const nowMs = Date.now();
+  for (const user of data.users) {
+    if (wanted.has(user.id)) states.set(user.id, authStateOf(user, nowMs));
+  }
+  return states;
+}
+
+// docs/Security.md §5.6 step 2: a deactivated account is banned in Supabase Auth, a reactivated one unbanned. The
+// profile has already changed; a failed call is reported, so the superadmin repeats the step, and logged by id only.
+export async function setStaffAuthBan(
+  userId: string,
+  isBanned: boolean,
+  requestId: string,
+): Promise<boolean> {
+  const { error } = await createSupabaseAdminClient().auth.admin.updateUserById(userId, {
+    ban_duration: isBanned ? STAFF_BAN_DURATION : STAFF_UNBAN_DURATION,
+  });
+  if (!error) return true;
+  createLogger(requestId).error('internal_error', {
+    source: 'staff_ban',
+    userId,
+    authErrorCode: error.code ?? null,
+  });
+  return false;
 }
