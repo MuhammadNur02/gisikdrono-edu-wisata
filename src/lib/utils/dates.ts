@@ -44,6 +44,11 @@ export function formatDateTimeShort(instant: string): string {
   return `${format(inJakarta(instant), 'd MMM yyyy, HH.mm', { locale: indonesian })} WIB`;
 }
 
+// '19.00 WIB': the Semarang clock time of an instant, where the day is already on screen (a day's scan history).
+export function formatClockTime(instant: string): string {
+  return `${format(inJakarta(instant), 'HH.mm')} WIB`;
+}
+
 function formatSessionTime(time: string): string {
   const match = SESSION_TIME_PATTERN.exec(time);
   if (!match) throw new RangeError(`Not a session time: ${time}`);

@@ -4,6 +4,7 @@ import {
   bookableRange,
   calendarDateToVisitDate,
   formatDateLong,
+  formatClockTime,
   formatDateShort,
   formatDayMonthShort,
   formatDateTimeShort,
@@ -144,5 +145,11 @@ describe('upcomingVisitDates', () => {
 describe('formatDayMonthShort', () => {
   it('writes a chart tick without the year, on the visit date itself', () => {
     expect(formatDayMonthShort('2026-10-18')).toBe('18 Okt');
+  });
+});
+
+describe('formatClockTime', () => {
+  it('reads an instant on the Semarang clock', () => {
+    expect(formatClockTime('2026-10-24T02:05:00Z')).toBe('09.05 WIB');
   });
 });
