@@ -12,6 +12,7 @@ import {
   svcIssuePhoneOtp,
   svcResendBookingLink,
   svcRevokeGuestLinks,
+  svcSubmitReview,
   svcVerifyPhoneOtp,
 } from './rpc-guest';
 import { clientAnswering } from '../../tests/fixtures/postgrest-client';
@@ -283,5 +284,29 @@ describe('svcCreateBooking', () => {
   it('refuses a reply of another shape', async () => {
     const { client } = clientAnswering(200, { result: 'created', booking_code: 'GSK-1' });
     await expect(svcCreateBooking(client, REQUEST)).rejects.toBeInstanceOf(ZodError);
+  });
+});
+
+describe('svcSubmitReview', () => {
+  it('sends a missing title as an empty string, which the database stores as NULL', async () => {
+    const { client, requests } = clientAnswering(200, 'review-1');
+    await expect(
+      svcSubmitReview(client, {
+        bookingId: 'b-1',
+        rating: 5,
+        title: null,
+        body: 'Anak-anak belajar memilah sampah.',
+        reviewerName: 'Bu Ani',
+        isAnonymous: false,
+      }),
+    ).resolves.toBe('review-1');
+    expect(requests[0]?.body).toEqual({
+      p_booking_id: 'b-1',
+      p_rating: 5,
+      p_title: '',
+      p_body: 'Anak-anak belajar memilah sampah.',
+      p_reviewer_name: 'Bu Ani',
+      p_is_anonymous: false,
+    });
   });
 });

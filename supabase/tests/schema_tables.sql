@@ -1,7 +1,7 @@
 -- Structure test for 0003_tables, extended group by group: exact columns, the types other code
 -- relies on, keys, and the CHECK / unique rules proven by trying to break them.
 begin;
-select plan(212);
+select plan(213);
 -- Every package write checks the price floor, which refuses to run without its setting (0005).
 insert into public.site_settings (key, value) values ('pricing.min_price_per_pax', '5000') on conflict (key) do nothing;
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
@@ -762,7 +762,7 @@ select columns_are('public', 'certificates', array[
   'id', 'booking_id', 'participant_id', 'kind', 'certificate_number', 'verify_code', 'status',
   'recipient_name', 'institution_name', 'visit_date', 'rw_ids', 'template_version', 'pdf_path',
   'rendered_at', 'released_at', 'release_waived_by', 'issued_at', 'issued_by', 'revoked_at',
-  'revoke_reason', 'purged_at'
+  'revoke_reason', 'purged_at', 'revoked_by_undo'
 ]);
 select is(
   (select count(*)::int from pg_indexes where schemaname = 'public'
@@ -823,8 +823,15 @@ values ('00000000-0000-4000-8000-000000000301', '00000000-0000-4000-8000-0000000
 select throws_ok(
   $$insert into public.ticket_scans (attempt_id, ticket_id, rw_id, scanned_by, phase, result)
     values ('00000000-0000-4000-8000-000000000301', '00000000-0000-4000-8000-000000000201', 5,
+            '00000000-0000-4000-8000-000000000002', 'validate', 'ok')$$,
+  '23505', null, 'a retried scan attempt cannot be recorded twice in one phase'
+);
+-- 20261025080100: the commit reuses its preview's attempt id.
+select lives_ok(
+  $$insert into public.ticket_scans (attempt_id, ticket_id, rw_id, scanned_by, phase, result)
+    values ('00000000-0000-4000-8000-000000000301', '00000000-0000-4000-8000-000000000201', 5,
             '00000000-0000-4000-8000-000000000002', 'check_in', 'ok')$$,
-  '23505', null, 'a retried scan attempt cannot be recorded twice'
+  'its commit is recorded under the same attempt'
 );
 -- 0005 (review L2): for a valid ticket the scanned string is the signed token, so it is kept only as a digest.
 select throws_ok(

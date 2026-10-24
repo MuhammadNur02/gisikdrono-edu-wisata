@@ -66,8 +66,8 @@ select is(
   array['public.today_jkt'],
   'anon can execute today_jkt() and nothing else'
 );
--- The RLS helpers of P1.3.01 and fresh_totp() of 0005, then the staff RPCs granted in 0005 (P1.4.07) and
--- set_rw_unit_status of 20261021120000.
+-- The RLS helpers of P1.3.01 and fresh_totp() of 0005, then the staff RPCs granted in 0005 (P1.4.07),
+-- set_rw_unit_status of 20261021120000, and the gate's and the certificates' of 20261025080000 and 20261025080100.
 select is(
   array(
     select n.nspname || '.' || p.proname from pg_proc p
@@ -77,11 +77,12 @@ select is(
     order by 1
   ),
   array['public.aal2', 'public.app_role', 'public.app_rw_id', 'public.cancel_staff_mfa_reset',
-        'public.cancel_superadmin_promotion', 'public.fresh_totp', 'public.generate_visit_sessions',
-        'public.invite_superadmin', 'public.is_admin_rw', 'public.is_staff', 'public.is_superadmin', 'public.owns_any_rw',
-        'public.owns_rw', 'public.reset_staff_mfa',
-        'public.rpc_get_participants', 'public.rpc_log_ui_event', 'public.rpc_reveal_booking_contact',
-        'public.set_rw_unit_status', 'public.set_staff_role', 'public.set_staff_status', 'public.today_jkt'],
+        'public.cancel_superadmin_promotion', 'public.check_in_ticket', 'public.find_manual_ticket', 'public.fresh_totp',
+        'public.generate_visit_sessions', 'public.invite_superadmin', 'public.is_admin_rw', 'public.is_staff',
+        'public.is_superadmin', 'public.issue_certificates', 'public.owns_any_rw', 'public.owns_rw',
+        'public.reset_staff_mfa', 'public.revoke_certificate', 'public.rpc_get_participants', 'public.rpc_log_ui_event',
+        'public.rpc_reveal_booking_contact', 'public.set_rw_unit_status', 'public.set_staff_role',
+        'public.set_staff_status', 'public.today_jkt', 'public.undo_check_in', 'public.validate_ticket'],
   'authenticated can execute the ten RLS helpers and the staff RPCs, nothing else'
 );
 select is(

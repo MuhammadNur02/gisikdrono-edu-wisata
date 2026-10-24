@@ -390,7 +390,7 @@ Priority uses MoSCoW: **M** must, **S** should, **C** could, **W** won't (this r
 | FR-SCAN-03 | Preview: client posts `{ token, attemptId, mode: 'preview' }` to `POST /api/tickets/verify`; server checks staff session (AAL2) + Origin, verifies HMAC in Node, calls `validate_ticket` (read-only, logs `ticket_scans`) and returns the group card (institution, PIC first name, package, session, `pax_count`, participant count, add-ons) | M | Client decoding is a hint only; payloads not matching `GSK.<kid>.<id>.<sig>` are reported as "bukan tiket" and not sent as attempts |
 | FR-SCAN-04 | Commit: officer confirms identity and enters attendee count (default `pax_count`, keypad) -> `{ mode: 'commit', attendeeCount }` -> `check_in_ticket` atomically moves `issued -> used`, records `checked_in_pax`, `unpaid_pax = max(0, attendees - pax_count)` (max 2x), updates leg, session counter, booking (`checked_in` on first leg), issues certificates when all legs are used, enqueues `checked_in_thanks` | M | Second commit of the same ticket -> `already_used` with who/when; attendee count outside 1..2x -> validation error |
 | FR-SCAN-05 | Result UX by `scan_result`: green `ok`; amber `already_used`, `outside_window`, `wrong_date`; red `invalid_signature`, `not_found`, `suspended`, `revoked`, `wrong_rw`, `booking_not_paid`, `ticket_expired`, `forbidden`; full-screen colour, vibration, `aria-live` text in Indonesian | M | Every result shows a next action ("Cek manual", "Hubungi superadmin") |
-| FR-SCAN-06 | Idempotent attempts: `ticket_scans.attempt_id` unique; a retried request after the 8 s timeout returns the stored result; same payload ignored for 3 s; one tap per scan (no continuous auto-scan) | M | Retry never produces a second check-in |
+| FR-SCAN-06 | Idempotent attempts: `ticket_scans` unique on `(attempt_id, phase)` (the commit reuses its preview's attempt); a retried request after the 8 s timeout returns the stored result; same payload ignored for 3 s; one tap per scan (no continuous auto-scan) | M | Retry never produces a second check-in |
 | FR-SCAN-07 | Manual check-in when the QR is unreadable: `booking_code` + last 4 digits of the verified phone, today only, logged as `manual_checkin` security event | M | Uses `check_in_ticket` with the resolved ticket; visible in attendance with a "manual" badge |
 | FR-SCAN-08 | Superadmin `undo_check_in` within 15 min (`used -> issued`, counters reverted, audited); trigger `tickets_no_revive` blocks any other revival | M | Undo after 15 min -> `STATE_INVALID` |
 | FR-SCAN-09 | Grace window `checkin.grace_before_minutes` 60 / `checkin.grace_after_minutes` 120 from `site_settings`; superadmin override for `wrong_date` and `outside_window` with reason | M | Override recorded in `ticket_scans.device_info` and `audit_logs` |
@@ -1264,7 +1264,7 @@ create index tickets_qr_booking_idx on public.tickets_qr (booking_id);
 -- ticket_scans (AO): every validate / check-in attempt including rejections; attempt_id makes retries idempotent.
 create table public.ticket_scans (
   id              bigint generated always as identity primary key,
-  attempt_id      uuid not null unique,                   -- client-generated per scan
+  attempt_id      uuid not null,                          -- client-generated per scan; unique with phase (20261025080100)
   ticket_id       uuid references public.tickets_qr(id),
   rw_id           smallint references public.rw_units(id),   -- scanner's RW (NULL for superadmin)
   scanned_by      uuid not null references public.profiles(id),
@@ -1303,9 +1303,11 @@ create table public.certificates (
   issued_by          uuid references public.profiles(id), -- NULL when auto-issued at check-in
   revoked_at         timestamptz,
   revoke_reason      text,
+  revoked_by_undo    boolean not null default false,      -- set by undo_check_in only; what issue_certificates may bring back (20261025080300)
   purged_at          timestamptz,                         -- set by internal.purge_participants: participant_id nulled, recipient_name '[dihapus]'
   constraint certificates_kind_ok check (
-    (kind = 'group' and participant_id is null) or (kind = 'participant' and (participant_id is not null or purged_at is not null)))
+    (kind = 'group' and participant_id is null) or (kind = 'participant' and (participant_id is not null or purged_at is not null))),
+  constraint certificates_undo_is_revoked check (not revoked_by_undo or status = 'revoked')
 );
 create unique index certificates_group_once       on public.certificates (booking_id) where kind = 'group';
 create unique index certificates_participant_once on public.certificates (participant_id) where kind = 'participant';
@@ -1601,7 +1603,8 @@ create table public.security_events (
     'mfa_failed','mfa_enrolled','scanner_invalid_signature','scanner_lockout','rate_limited','turnstile_failed',
     'upload_rejected','role_changed','staff_disabled','key_rotated','export_downloaded','pii_revealed',
     'manual_checkin','manual_backfill','undo_check_in','cron_failed','notification_dead','price_changed',
-    'session_changed_with_bookings','quota_pressure','mfa_reset','notification_blocked','upload_sanitized')), -- mfa_reset and notification_blocked added by 0004, upload_sanitized by 20261018133045
+    'session_changed_with_bookings','quota_pressure','mfa_reset','notification_blocked','upload_sanitized',
+    'mfa_locked','session_revoke_failed','manual_lookup')), -- mfa_reset and notification_blocked added by 0004, upload_sanitized by 20261018133045, mfa_locked and session_revoke_failed by 20261020080000, manual_lookup by 20261025080300
   severity    public.alert_severity not null default 'info',
   actor_id    uuid,
   actor_role  text,
@@ -1958,16 +1961,17 @@ Only the keys marked public below may have `is_public = true` (CHECK `site_setti
 
 | Function | Signature | Caller | Behaviour |
 |---|---|---|---|
-| `validate_ticket` | `(p_ticket_id uuid, p_attempt_id uuid, p_raw text, p_device jsonb) returns jsonb` | staff | Read-only evaluation with the check-in rules; inserts `ticket_scans` (`phase = 'validate'`); returns `{ok, result, ticket, booking (institution, PIC first name, pax), session, addons}`; idempotent on `attempt_id` |
-| `check_in_ticket` | `(p_ticket_id uuid, p_attempt_id uuid, p_attendee_count int, p_note text, p_device jsonb, p_override boolean, p_override_reason text, p_source text) returns jsonb` | staff | Derives admin/RW from `auth.uid()`; atomic `issued -> used`; `checked_in_pax`, `unpaid_pax`; leg `checked_in`; session counter; booking `checked_in` on first leg; re-checks `bookings.status in ('paid','checked_in')`; `issue_certificates` when all legs used; enqueues `checked_in_thanks`; returns stored result on duplicate `attempt_id` |
-| `undo_check_in` | `(p_ticket_id uuid, p_reason text) returns jsonb` | superadmin | `used -> issued` within 15 min; reverts counters and leg; security event `undo_check_in` |
+| `validate_ticket` | `(p_ticket_id uuid, p_attempt_id uuid, p_raw text, p_device jsonb, p_source text default 'qr') returns jsonb` | staff | Read-only evaluation with the check-in rules; inserts `ticket_scans` (`phase = 'validate'`); returns `{result, ticket (code, institution, PIC first name, package, session, pax, participant count, add-ons), used_at, used_by, checked_in_pax, unpaid_pax}`; idempotent on `attempt_id` |
+| `check_in_ticket` | `(p_ticket_id uuid, p_attempt_id uuid, p_attendee_count int, p_note text, p_device jsonb, p_override boolean, p_override_reason text, p_source text, p_raw text) returns jsonb` | staff | Derives admin/RW from `auth.uid()`; atomic `issued -> used`; `checked_in_pax`, `unpaid_pax`; leg `checked_in`; session counter; booking `checked_in` on first leg; re-checks `bookings.status in ('paid','checked_in')`; `issue_certificates` when all legs used; enqueues `checked_in_thanks`; returns stored result on duplicate `attempt_id` |
+| `undo_check_in` | `(p_ticket_id uuid, p_reason text) returns void` | superadmin, AAL2 | `used -> issued` within 15 min while the booking is `checked_in`; reverts counters and leg, the booking to `paid` when no other leg is in; revokes the booking's certificates with `certificates.revoked_by_undo` set until every leg is in again, when the group's comes back and the participants' only while the list fits the fewest people a gate let in (20261025080300); security event `undo_check_in` |
+| `find_manual_ticket` | `(p_booking_code text, p_phone_last_digits text) returns jsonb` | staff | FR-SCAN-07: `{ticket_id, rate_limited}`; `ticket_id` is today's ticket of the officer's RW for the booking whose verified phone ends in those four digits, null for anything else. Volatile: every call is a `manual_lookup` security event (outcome and booking id, never the digits tried); fail-closed caps in `rate_limit_buckets` of 30 lookups per officer per hour and 5 wrong last-four per booking per day, past which it answers `rate_limited: true` without looking and the first refusal of the window is a `high` `rate_limited` event (20261025080300, review of PR #53, M1) |
 | `mark_booking_paid_manually` | `(p_booking_id uuid, p_method payment_method, p_amount bigint, p_reference text, p_proof_path text) returns jsonb` | superadmin (`manual_transfer`), admin_rw (`cash`, `channel = 'admin'`) | Inserts `payments (provider = 'manual')`, then the settlement path of `internal.apply_payment_event`; records `payment_adjustments` of type `manual_mark_paid` for review |
 | `cancel_booking` | `(p_booking_id uuid, p_reason text) returns jsonb` | staff in scope (paid -> superadmin) | §9 transition; revokes tickets; releases quota; enqueues `booking_cancelled` |
 | `extend_booking_hold` | `(p_booking_id uuid, p_new_expires_at timestamptz) returns jsonb` | staff in scope | `pending_payment` only; <= now() + 14 d and < first session start; audited |
 | `reactivate_booking` | `(p_booking_id uuid) returns jsonb` | staff in scope | `expired -> pending_payment`; re-reserves quota (raises `QUOTA_UNAVAILABLE`); new `expires_at`; new attempt |
 | `record_refund` | `(p_booking_id uuid, p_amount bigint, p_reference text, p_reason text) returns jsonb` | superadmin, AAL2 | Sets `app.recording_refund`, the only way a booking becomes `refunded` (from `paid`, `checked_in`, `cancelled`, `completed`, `no_show`, or `pending_payment` under review), and only while it has a `settled` payment, so it moves the booking before it closes that payment. After the refund executed in Midtrans: payment `refunded`/`partially_refunded`, booking `refunded` (full) or stays with `needs_review` cleared (partial), tickets revoked (full), quota released if future, reversal ledger rows, invoice void + credit note, `refund_processed` |
 | `resolve_booking_review` | `(p_booking_id uuid, p_action text) returns jsonb` | superadmin | `issue_tickets` (re-reserve + issue) or `refund`; clears `needs_review` |
-| `issue_certificates` | `(p_booking_id uuid) returns setof public.certificates` | staff in scope / svc | Requires all legs checked in; inserts missing group + participant certificates; idempotent |
+| `issue_certificates` | `(p_booking_id uuid, p_waiver_reason text default null) returns integer` | staff in scope; the waiver superadmin only | Requires all legs checked in; inserts missing group + participant certificates; idempotent; returns how many it wrote, never the rows, since `verify_code` and `recipient_name` reach no API role; a waiver releases what unpaid people held back, audited `certificate_release_waived` |
 | `revoke_ticket` | `(p_ticket_id uuid, p_reason text) returns void` | superadmin | `issued -> revoked`; audited |
 | `revoke_certificate` | `(p_certificate_id uuid, p_reason text) returns void` | superadmin | `issued -> revoked` |
 | `settle_revenue_entries` | `(p_beneficiary_key text, p_from date, p_to date, p_reference text, p_proof_path text) returns public.payout_batches` | superadmin | Creates the batch and stamps `payout_batch_id` on unsettled entries in range |
