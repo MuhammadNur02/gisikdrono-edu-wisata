@@ -117,6 +117,18 @@ const BASELINE_HEADERS: Record<string, string> = {
   'cross-origin-opener-policy': 'same-origin',
   'cross-origin-resource-policy': 'same-origin',
 };
+// docs/Security.md §8.2: booking and ticket addresses carry a code or token, so they send no Referer at all.
+const NO_REFERRER_PREFIXES = ['/reservasi', '/v'];
+
+function expectedHeadersFor(path: string): Record<string, string> {
+  const pathname = new URL(path, 'http://localhost').pathname;
+  const sendsNoReferrer = NO_REFERRER_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+  return sendsNoReferrer
+    ? { ...BASELINE_HEADERS, 'referrer-policy': 'no-referrer' }
+    : BASELINE_HEADERS;
+}
 
 function directive(policy: string, name: string): string | undefined {
   return policy.split('; ').find((part) => part === name || part.startsWith(`${name} `));
@@ -143,8 +155,9 @@ test.describe('security headers (docs/Security.md §8.2)', () => {
       const response = await request.get(path, NO_REDIRECTS);
       expect(response.status()).toBe(200);
       const headers = response.headers();
-      for (const [name, value] of Object.entries(BASELINE_HEADERS))
-        expect(headers[name]).toBe(value);
+      for (const [name, value] of Object.entries(expectedHeadersFor(path))) {
+        expect(headers[name], name).toBe(value);
+      }
       const policy = enforcedPolicyOf(response);
       expect(policy).toContain("frame-ancestors 'none'");
       expect(policy).toContain("object-src 'none'");
@@ -188,8 +201,11 @@ test.describe('security headers (docs/Security.md §8.2)', () => {
     request,
   }) => {
     expectPrivateAndNoIndex(await request.post(JOB_PATHS[0] ?? '', NO_REDIRECTS));
-    expectPrivateAndNoIndex(await request.get('/v/GSK.k1.tidak-ada', NO_REDIRECTS));
-    expectPrivateAndNoIndex(await request.get(`/reservasi/${UNKNOWN_BOOKING_CODE}`, NO_REDIRECTS));
+    for (const path of ['/v/GSK.k1.tidak-ada', `/reservasi/${UNKNOWN_BOOKING_CODE}`]) {
+      const response = await request.get(path, NO_REDIRECTS);
+      expectPrivateAndNoIndex(response);
+      expect(response.headers()['referrer-policy']).toBe('no-referrer');
+    }
   });
 
   test('the camera opens on the scanner only', async ({ request }) => {
