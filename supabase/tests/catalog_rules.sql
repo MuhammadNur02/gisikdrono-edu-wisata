@@ -5,7 +5,7 @@
 -- vendor's ledger share counts for its RW; an export past 50 000 rows is refused without building a row, and its hit
 -- on the hourly cap stays counted.
 begin;
-select plan(36);
+select plan(45);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -265,6 +265,61 @@ select is((select (count(*)::int, (select r.count from public.rate_limit_buckets
            from public.exports e where e.requested_by = pg_temp.persona_id('superadmin_aal2')
              and e.kind = 'audit' and e.created_at = now()),
   '(0,1)', 'records nothing, and its hit on the hourly cap stays counted');
+select is((select count(*)::int from public.security_events e
+           where e.event_type = 'rate_limited' and e.details ->> 'limit' = 'export_rows'
+             and e.actor_id = pg_temp.persona_id('superadmin_aal2')),
+  1, 'and the refusal is a security event (review of PR #57, L5)');
+
+-- ===== Review of PR #57 =====
+-- M1: a published combo keeps two RWs, through save_package and through a leg write.
+select pg_temp.act_as('superadmin_aal2');
+select throws_ok($$select pg_temp.save(pg_temp.saved('combo'),
+                    pg_temp.package_fields('uji-kombo', 'combo', 'published') - 'rw_id', array[5]::smallint[])$$,
+  'P0001', null, 'a published combo is not cut to one RW by a save');
+select throws_ok($$delete from public.tour_package_legs where package_id = pg_temp.saved('combo') and rw_id = 13;
+                   set constraints public.combo_legs_on_sale immediate$$,
+  'P0001', null, 'nor by a leg removed under it');
+reset role;
+set constraints public.combo_legs_on_sale deferred;
+-- L2: a reordered combo keeps what its legs say.
+update public.tour_package_legs set duration_minutes = 45, notes = 'Pentas tari'
+where package_id = pg_temp.saved('combo') and rw_id = 13;
+select pg_temp.act_as('superadmin_aal2');
+select lives_ok($$select pg_temp.save(pg_temp.saved('combo'),
+                    pg_temp.package_fields('uji-kombo', 'combo', 'published') - 'rw_id', array[13, 5]::smallint[])$$,
+  'a combo reordered again saves');
+reset role;
+select is((select (l.leg_order, l.duration_minutes, l.notes)::text from public.tour_package_legs l
+           where l.package_id = pg_temp.saved('combo') and l.rw_id = 13),
+  (1, 45, 'Pentas tari')::text, 'and its kept leg keeps its duration and notes');
+-- L1, M2: both tiers move past each other's old range in one save, and the move is recorded.
+select pg_temp.act_as('admin_rw_05');
+select lives_ok($$select pg_temp.save(pg_temp.saved('rw05'),
+                    pg_temp.package_fields('uji-simpan-05', 'student', 'published') - 'rw_id', null,
+                    jsonb_build_array(
+                      jsonb_build_object('id', (select small from kept_tiers), 'min_pax', 5, 'max_pax', 40,
+                                         'price_per_pax', 28000),
+                      jsonb_build_object('id', (select large from kept_tiers), 'min_pax', 41, 'max_pax', null,
+                                         'price_per_pax', 21000),
+                      jsonb_build_object('id', null, 'min_pax', 1, 'max_pax', 4, 'price_per_pax', 32000)))$$,
+  'tiers that cross their old ranges save in one go (L1)');
+select throws_ok($$select pg_temp.save(pg_temp.saved('rw05'),
+                    pg_temp.package_fields('uji-simpan-05', 'student', 'published') - 'rw_id', null,
+                    jsonb_build_array(
+                      jsonb_build_object('id', (select small from kept_tiers), 'min_pax', 5, 'max_pax', 40,
+                                         'price_per_pax', 28000),
+                      jsonb_build_object('id', (select small from kept_tiers), 'min_pax', 41, 'max_pax', null,
+                                         'price_per_pax', 21000)))$$,
+  '22023', null, 'a tier named twice is refused (L3)');
+reset role;
+select is((select (h.old_min_pax, h.new_min_pax, h.old_max_pax, h.new_max_pax)::text
+           from public.package_price_history h
+           where h.tier_id = (select small from kept_tiers) and h.new_max_pax = 40),
+  (1, 5, 30, 40)::text, 'a tier''s range change is in the price history (M2)');
+select ok(exists (select 1 from public.security_events e
+                  where e.event_type = 'price_changed' and e.entity_id = pg_temp.saved('rw05')::text
+                    and e.details ->> 'new_max_pax' = '40'),
+  'and a price_changed event');
 
 select * from finish();
 rollback;

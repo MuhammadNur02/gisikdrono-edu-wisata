@@ -70,6 +70,8 @@ select columns_are('public', 'rw_units', array[
   'sort_order', 'created_at', 'updated_at',
   -- added by 20261021120000 so the pages, menu and colours of an RW come from its row
   'short_name', 'accent_key', 'icon_key', 'schedule_enabled',
+  -- added by 20261028080100: a centre given by estimate (P2.5.04)
+  'location_estimated',
   -- added by 20261021130000, the heading of the RW page's product section
   'products_heading'
 ]);
@@ -909,7 +911,9 @@ select columns_are('public', 'hero_banners', array[
 select columns_are('public', 'activity_points', array[
   'id', 'rw_id', 'slug', 'name', 'point_type', 'short_description', 'body_md', 'image_path',
   'map_x', 'map_y', 'svg_hotspot_id', 'lat', 'lng', 'sort_order', 'status', 'created_at',
-  'updated_at'
+  'updated_at',
+  -- added by 20261028080100: a position given by estimate (P2.5.04)
+  'location_estimated'
 ]);
 select columns_are('public', 'performance_schedules', array[
   'id', 'rw_id', 'title', 'schedule_type', 'description_md', 'starts_at', 'ends_at', 'venue',
