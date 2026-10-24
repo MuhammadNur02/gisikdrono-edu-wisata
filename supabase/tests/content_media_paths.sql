@@ -153,6 +153,9 @@ select throws_ok(
     where id = '00000000-0000-4000-8000-0000000cd5a1'$$,
   '23514', null, 'and every photo of the list counts'
 );
+-- Vendors and products are the superadmin's to write since 20261028080100; the path rules hold for them too.
+reset role;
+select pg_temp.act_as('superadmin_aal2');
 select throws_ok(
   $$update public.products_umkm set image_paths = array['rw-05/packages/00000000-0000-4000-8000-0000000cd5a1/a.webp']
     where id = '00000000-0000-4000-8000-0000000cd5a3'$$,
@@ -162,6 +165,8 @@ select throws_ok(
   $$update public.umkm_vendors set logo_path = 'rw-08/a.webp' where id = '00000000-0000-4000-8000-0000000cd5a2'$$,
   '23514', null, 'a vendor of RW 05 cannot show a logo of RW 08'
 );
+reset role;
+select pg_temp.act_as('admin_rw_05');
 select throws_ok(
   $$update public.profiles set avatar_path = 'rw-08/a.webp' where id = '00000000-0000-4000-8000-00000000f005'$$,
   '23514', null, 'nor can an RW 05 officer show an avatar of RW 08'
