@@ -236,6 +236,7 @@ describe('processMidtransNotification', () => {
       eventId: 41,
       source: 'webhook',
       confirmed: CONFIRMED,
+      keyId: 'k1',
     });
   });
 
@@ -269,6 +270,7 @@ describe('processMidtransNotification', () => {
       eventId: 41,
       source: 'webhook',
       confirmed: confirmedPending,
+      keyId: 'k1',
     });
   });
 
@@ -293,6 +295,7 @@ describe('processMidtransNotification', () => {
       eventId: 41,
       source: 'webhook',
       confirmed: CONFIRMED,
+      keyId: 'k1',
     });
   });
 

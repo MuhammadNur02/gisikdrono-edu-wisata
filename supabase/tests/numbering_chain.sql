@@ -3,7 +3,7 @@
 -- append-only triggers' back, the way only a database owner could, is reported at the row where it happened. Two
 -- sessions taking numbers at the same moment are in tests/integration/document-numbers.test.ts.
 begin;
-select plan(16);
+select plan(18);
 
 create function pg_temp.outcome(p_statement text) returns text
   language plpgsql
@@ -89,10 +89,36 @@ update public.revenue_share_entries set amount = 25000 where id = (select id fro
 alter table public.revenue_share_entries enable trigger append_only;
 select is((internal.verify_ledger_chain() ->> 'ok')::boolean, true, 'putting the amount back repairs it');
 
--- The same owner deletes an entry from the middle.
+-- The retention run's purge bypass does not reach the ledger, whose rows are money (review of PR #42).
 select set_config('app.purge', 'on', true);
-delete from public.revenue_share_entries where id = (select id from ledger_rows where n = 3);
+select throws_ok($$delete from public.revenue_share_entries where id = (select id from ledger_rows where n = 3)$$,
+  '42501', null, 'not even a retention run deletes a ledger entry');
 select set_config('app.purge', '', true);
+
+-- An owner deletes the ledger's oldest entries behind the triggers: the ledger is never pruned, so its first row must
+-- start the chain. Done inside a block that rolls itself back, so the entries are there again afterwards.
+create function pg_temp.verify_without_first_entry() returns jsonb
+  language plpgsql
+as $$
+begin
+  alter table public.revenue_share_entries disable trigger append_only;
+  delete from public.revenue_share_entries where id = (select min(id) from public.revenue_share_entries);
+  alter table public.revenue_share_entries enable trigger append_only;
+  raise exception using errcode = 'P0001', message = internal.verify_ledger_chain()::text;
+exception when sqlstate 'P0001' then
+  return sqlerrm::jsonb;
+end;
+$$;
+select is(
+  (pg_temp.verify_without_first_entry() ->> 'ok')::boolean,
+  false,
+  'deleting the oldest entries is caught, since the ledger''s first row anchors its chain'
+);
+
+-- The same owner deletes an entry from the middle.
+alter table public.revenue_share_entries disable trigger append_only;
+delete from public.revenue_share_entries where id = (select id from ledger_rows where n = 3);
+alter table public.revenue_share_entries enable trigger append_only;
 select is(
   (internal.verify_ledger_chain() ->> 'first_broken_id')::bigint,
   (select id from ledger_rows where n = 4),

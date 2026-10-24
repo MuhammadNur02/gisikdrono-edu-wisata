@@ -4,6 +4,7 @@ import { ZodError } from 'zod';
 import {
   svcApplyPaymentEvent,
   svcAttachSnapToken,
+  svcCompletePaidOrder,
   svcCreatePaymentAttempt,
   svcRecordPaymentEvent,
   svcRecordPaymentFailure,
@@ -112,7 +113,7 @@ describe('svcApplyPaymentEvent', () => {
     });
     const confirmed = { status_code: '200', transaction_status: 'settlement' };
     await expect(
-      svcApplyPaymentEvent(client, { eventId: 41, source: 'webhook', confirmed }),
+      svcApplyPaymentEvent(client, { eventId: 41, source: 'webhook', confirmed, keyId: 'k1' }),
     ).resolves.toEqual({
       result: 'applied',
       processingResult: 'settled',
@@ -123,6 +124,7 @@ describe('svcApplyPaymentEvent', () => {
     expect(requests[0]?.body).toEqual({
       p_event_id: 41,
       p_source: 'webhook',
+      p_key_id: 'k1',
       p_confirmed: confirmed,
     });
   });
@@ -130,7 +132,12 @@ describe('svcApplyPaymentEvent', () => {
   it('reads an outcome without statuses, and refuses an unknown result', async () => {
     const { client } = clientAnswering(200, { result: 'needs_confirmation' });
     await expect(
-      svcApplyPaymentEvent(client, { eventId: 41, source: 'webhook', confirmed: null }),
+      svcApplyPaymentEvent(client, {
+        eventId: 41,
+        source: 'webhook',
+        confirmed: null,
+        keyId: 'k1',
+      }),
     ).resolves.toEqual({
       result: 'needs_confirmation',
       processingResult: null,
@@ -140,7 +147,29 @@ describe('svcApplyPaymentEvent', () => {
     });
     const odd = clientAnswering(200, { result: 'paid' });
     await expect(
-      svcApplyPaymentEvent(odd.client, { eventId: 41, source: 'poll', confirmed: null }),
+      svcApplyPaymentEvent(odd.client, {
+        eventId: 41,
+        source: 'poll',
+        confirmed: null,
+        keyId: 'k1',
+      }),
     ).rejects.toBeInstanceOf(ZodError);
+  });
+});
+
+describe('svcCompletePaidOrder', () => {
+  it('names the order and the kid, and says whether anything was written', async () => {
+    const { client, requests } = clientAnswering(200, { result: 'applied', tickets_issued: 1 });
+    await expect(
+      svcCompletePaidOrder(client, { orderId: 'GSK-7F3K9Q2M-01', keyId: 'k1' }),
+    ).resolves.toBe(true);
+    expect(requests[0]).toEqual({
+      url: `${RPC}/svc_complete_paid_order`,
+      body: { p_order_id: 'GSK-7F3K9Q2M-01', p_key_id: 'k1' },
+    });
+    const untouched = clientAnswering(200, { result: 'ignored' });
+    await expect(
+      svcCompletePaidOrder(untouched.client, { orderId: 'GSK-7F3K9Q2M-01', keyId: 'k1' }),
+    ).resolves.toBe(false);
   });
 });

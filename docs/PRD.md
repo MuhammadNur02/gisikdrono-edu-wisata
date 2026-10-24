@@ -1069,6 +1069,7 @@ create table public.payments (
   refunded_amount    bigint not null default 0 check (refunded_amount >= 0),
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now(),
+  last_polled_at     timestamptz,                          -- when the payments poll last asked (20261024100300)
   unique (booking_id, attempt_no)
 );
 create index payments_booking_idx on public.payments (booking_id, status);
