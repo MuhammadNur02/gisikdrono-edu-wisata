@@ -10,6 +10,14 @@ const MIDTRANS_API_BASE_URLS = {
   production: 'https://api.midtrans.com',
 } as const;
 
+// Snap, the hosted payment page, lives on its own host in each environment.
+const MIDTRANS_SNAP_BASE_URLS = {
+  sandbox: 'https://app.sandbox.midtrans.com',
+  production: 'https://app.midtrans.com',
+} as const;
+
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
 // "G" plus digits on older merchant accounts, "M" plus digits on newer ones.
 export const MIDTRANS_MERCHANT_ID_PATTERN = /^[GM]\d+$/;
 
@@ -25,6 +33,37 @@ export type MidtransKeys = {
 
 export function midtransApiBaseUrl(isProduction: boolean): string {
   return isProduction ? MIDTRANS_API_BASE_URLS.production : MIDTRANS_API_BASE_URLS.sandbox;
+}
+
+export function midtransSnapBaseUrl(isProduction: boolean): string {
+  return isProduction ? MIDTRANS_SNAP_BASE_URLS.production : MIDTRANS_SNAP_BASE_URLS.sandbox;
+}
+
+function isLoopbackUrl(address: string): boolean {
+  try {
+    return LOOPBACK_HOSTS.has(new URL(address).hostname);
+  } catch {
+    return false;
+  }
+}
+
+// Decision of 2026-10-24 (Q3): MIDTRANS_LOCAL_STUB_URL points Snap and the Status API at the stand-in of
+// tests/fixtures/midtrans-stub.ts, for a local or CI server whose sandbox keys are fake. Every Vercel deployment
+// refuses it, and so does any address but this machine's own, so no real payment is ever answered by a stub.
+export function findLocalStubProblems(
+  stubUrl: string | undefined,
+  vercelEnv: string | undefined,
+): string[] {
+  if (stubUrl === undefined) return [];
+  if (vercelEnv !== undefined) {
+    return [
+      `MIDTRANS_LOCAL_STUB_URL is for local and CI servers only; unset it where VERCEL_ENV is ${vercelEnv}`,
+    ];
+  }
+  if (!isLoopbackUrl(stubUrl)) {
+    return ['MIDTRANS_LOCAL_STUB_URL must point at 127.0.0.1, localhost or ::1'];
+  }
+  return [];
 }
 
 function acceptedKeyPrefixes(kind: KeyKind, isProduction: boolean): string[] {

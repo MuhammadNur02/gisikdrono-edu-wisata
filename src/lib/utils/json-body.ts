@@ -7,6 +7,7 @@ const BAD_REQUEST = 400;
 const JSON_TYPE = 'application/json';
 
 export type JsonBody = { ok: true; value: unknown } | { ok: false; status: number };
+export type TextBody = { ok: true; text: string } | { ok: false; status: number };
 
 function isJson(contentType: string | null): boolean {
   return contentType?.split(';')[0]?.trim().toLowerCase() === JSON_TYPE;
@@ -30,7 +31,9 @@ async function readUpTo(request: Request, limitBytes: number): Promise<string | 
   return Buffer.concat(chunks).toString('utf8');
 }
 
-export async function readJsonBody(request: Request, limitBytes: number): Promise<JsonBody> {
+// A JSON body as the raw text it arrived as, for a caller that must hash or sign exactly those bytes (the Midtrans
+// webhook, CLAUDE.md §7.2 step 3).
+export async function readJsonText(request: Request, limitBytes: number): Promise<TextBody> {
   if (!isJson(request.headers.get('content-type'))) {
     return { ok: false, status: UNSUPPORTED_MEDIA_TYPE };
   }
@@ -39,9 +42,14 @@ export async function readJsonBody(request: Request, limitBytes: number): Promis
     return { ok: false, status: PAYLOAD_TOO_LARGE };
   }
   const text = await readUpTo(request, limitBytes);
-  if (text === null) return { ok: false, status: PAYLOAD_TOO_LARGE };
+  return text === null ? { ok: false, status: PAYLOAD_TOO_LARGE } : { ok: true, text };
+}
+
+export async function readJsonBody(request: Request, limitBytes: number): Promise<JsonBody> {
+  const body = await readJsonText(request, limitBytes);
+  if (!body.ok) return body;
   try {
-    return { ok: true, value: JSON.parse(text) as unknown };
+    return { ok: true, value: JSON.parse(body.text) as unknown };
   } catch {
     return { ok: false, status: BAD_REQUEST };
   }

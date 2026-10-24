@@ -22,6 +22,13 @@ export const REDACTED_PATHS = [
   '*.signature_key',
   'snap_token',
   '*.snap_token',
+  // A Snap page's address opens the payment itself (review of PR #39, L4).
+  'redirect_url',
+  '*.redirect_url',
+  'snap_redirect_url',
+  '*.snap_redirect_url',
+  'redirectUrl',
+  '*.redirectUrl',
   // An outbox row's params hold the OTP code until it is sent (Task P3.2.01), and names besides.
   'params',
   '*.params',
@@ -30,7 +37,7 @@ export const REDACTED_PATHS = [
 ];
 
 // The only event names a log line may carry: the security_events types of docs/PRD.md §8.4.9 the app logs
-// itself, plus the two operational ones.
+// itself, plus the operational ones.
 export const LOG_EVENTS = [
   'webhook_signature_invalid',
   'webhook_amount_mismatch',
@@ -63,6 +70,7 @@ export const LOG_EVENTS = [
   'session_revoke_failed',
   'internal_error',
   'job_run',
+  'payment_webhook',
 ] as const;
 
 export type LogEvent = (typeof LOG_EVENTS)[number];

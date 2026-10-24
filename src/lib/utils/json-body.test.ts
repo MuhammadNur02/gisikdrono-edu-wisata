@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { readJsonBody } from './json-body';
+import { readJsonBody, readJsonText } from './json-body';
 
 const URL_OF_ROUTE = 'http://127.0.0.1:3000/api/uploads/sign';
 
@@ -11,6 +11,24 @@ function post(body: string, headers: Record<string, string> = {}) {
     headers: { 'content-type': 'application/json', ...headers },
   });
 }
+
+describe('readJsonText', () => {
+  it('keeps the body exactly as it came, for a caller that hashes it', async () => {
+    const raw = '{"gross_amount":"600000.00" }';
+    await expect(readJsonText(post(raw), 64)).resolves.toEqual({ ok: true, text: raw });
+  });
+
+  it('refuses another type and a body over the limit', async () => {
+    await expect(readJsonText(post('{}', { 'content-type': 'text/plain' }), 64)).resolves.toEqual({
+      ok: false,
+      status: 415,
+    });
+    await expect(readJsonText(post('x'.repeat(65)), 64)).resolves.toEqual({
+      ok: false,
+      status: 413,
+    });
+  });
+});
 
 describe('readJsonBody', () => {
   it('parses a small JSON body', async () => {

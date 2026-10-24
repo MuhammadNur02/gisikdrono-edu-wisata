@@ -30,6 +30,8 @@ export function TurnstileField({ action, onToken, error, ref }: TurnstileFieldPr
       <Turnstile
         ref={ref}
         siteKey={PUBLIC_TURNSTILE_SITE_KEY}
+        // A plain div may not carry aria-label (axe aria-prohibited-attr); as a group it names the widget.
+        role="group"
         aria-label={copy.auth.turnstile.label}
         options={{ action, theme: 'light', language: 'id', size: 'flexible' }}
         onSuccess={(token) => {

@@ -13,12 +13,20 @@ import { WhyVisit } from '@/components/marketing/why-visit';
 import { JsonLd } from '@/components/seo/json-ld';
 import { HOME_RW_SECTION_ID } from '@/config/nav';
 import { getHomePageData } from '@/lib/queries/home-page';
+import { getPublicSiteSettings, isPlaceholderSetting } from '@/lib/queries/settings';
 import { rwAttractionJsonLd, webSiteJsonLd } from '@/lib/seo/json-ld';
+import { buildHomeMetadata } from '@/lib/seo/metadata';
 import type { HomePageData } from '@/types/home-page';
 
 export const revalidate = 3600;
 
-export const metadata: Metadata = { alternates: { canonical: '/' } };
+// Task P5.6.02: the description is the kelurahan's own text from site_settings, never a sample one.
+export async function generateMetadata(): Promise<Metadata> {
+  const { seoDefaultDescription } = await getPublicSiteSettings();
+  const isWritten =
+    seoDefaultDescription.trim() !== '' && !isPlaceholderSetting(seoDefaultDescription);
+  return buildHomeMetadata(isWritten ? seoDefaultDescription : undefined);
+}
 
 // Anchors within the page; `Lihat Paket` in the hero scrolls to the featured packages.
 const SECTION_IDS = {
@@ -36,7 +44,9 @@ const SECTION_IDS = {
 // Below the photo band the gallery strip shows the rest of the captioned photos.
 function GallerySection({ photos }: { photos: HomePageData['gallery'] }) {
   const stripPhotos = photos.slice(1);
-  return stripPhotos.length > 0 ? <GalleryStrip id={SECTION_IDS.gallery} photos={stripPhotos} /> : null;
+  return stripPhotos.length > 0 ? (
+    <GalleryStrip id={SECTION_IDS.gallery} photos={stripPhotos} />
+  ) : null;
 }
 
 // The sections after Why visit, each left out while it has nothing published.

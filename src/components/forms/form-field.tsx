@@ -10,8 +10,20 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  useFormField,
 } from '@/components/ui/form';
 import { copy } from '@/lib/copy/id';
+import { fieldLabelId } from '@/lib/utils/field-ids';
+
+// The label carries an id so a control that is no labelable element can still point aria-labelledby at it.
+function FieldLabel({ label, required }: { label: string; required: boolean }) {
+  const { formItemId } = useFormField();
+  return (
+    <FormLabel id={fieldLabelId(formItemId)}>
+      {label} {required && <RequiredMark />}
+    </FormLabel>
+  );
+}
 
 // TOutput is what the form's resolver hands on once it passes, when that differs from what the fields hold.
 export interface FormFieldProps<
@@ -66,9 +78,7 @@ export function FormField<
       name={name}
       render={({ field }) => (
         <FormItem className={className}>
-          <FormLabel>
-            {label} {required && <RequiredMark />}
-          </FormLabel>
+          <FieldLabel label={label} required={required} />
           {wrapsOwnControl ? (
             render(field)
           ) : (

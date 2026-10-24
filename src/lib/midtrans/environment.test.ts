@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  findLocalStubProblems,
   findMidtransKeyProblems,
   MIDTRANS_MERCHANT_ID_PATTERN,
   midtransApiBaseUrl,
+  midtransSnapBaseUrl,
   readKeyCheckAnswer,
 } from '@/lib/midtrans/environment';
 
@@ -11,6 +13,42 @@ describe('midtransApiBaseUrl', () => {
   it('points the sandbox and production at their own hosts', () => {
     expect(midtransApiBaseUrl(false)).toBe('https://api.sandbox.midtrans.com');
     expect(midtransApiBaseUrl(true)).toBe('https://api.midtrans.com');
+  });
+});
+
+describe('midtransSnapBaseUrl', () => {
+  it('points the sandbox and production Snap pages at their own hosts', () => {
+    expect(midtransSnapBaseUrl(false)).toBe('https://app.sandbox.midtrans.com');
+    expect(midtransSnapBaseUrl(true)).toBe('https://app.midtrans.com');
+  });
+});
+
+// Decision of 2026-10-24 (Q3): the stand-in answers only a local or CI server.
+describe('findLocalStubProblems', () => {
+  it('has nothing to say when no stub is set', () => {
+    expect(findLocalStubProblems(undefined, 'production')).toEqual([]);
+  });
+
+  it('lets a local or CI server use a stub on this machine', () => {
+    for (const url of ['http://127.0.0.1:4010', 'http://localhost:4010', 'http://[::1]:4010']) {
+      expect(findLocalStubProblems(url, undefined)).toEqual([]);
+    }
+  });
+
+  it('refuses the stub on every Vercel deployment, whatever its address', () => {
+    for (const vercelEnv of ['production', 'preview', 'development']) {
+      expect(findLocalStubProblems('http://127.0.0.1:4010', vercelEnv)).toEqual([
+        `MIDTRANS_LOCAL_STUB_URL is for local and CI servers only; unset it where VERCEL_ENV is ${vercelEnv}`,
+      ]);
+    }
+  });
+
+  it('refuses a stub that is not on this machine', () => {
+    for (const url of ['https://stub.example.test', 'http://10.0.0.5:4010', 'not a url']) {
+      expect(findLocalStubProblems(url, undefined)).toEqual([
+        'MIDTRANS_LOCAL_STUB_URL must point at 127.0.0.1, localhost or ::1',
+      ]);
+    }
   });
 });
 

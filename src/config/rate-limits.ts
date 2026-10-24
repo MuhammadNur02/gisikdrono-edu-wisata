@@ -36,6 +36,14 @@ export const RATE_LIMITS = {
   'verify:code': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   // Task P3.6.06: "Minta Surat Penawaran", per visitor IP, on top of the booking limits.
   'quotation:create': { limit: 3, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  // Task P3.7.04: "Bayar sekarang", per booking. An open Snap page is reused, so a visitor reaches this only by asking
+  // Midtrans for a new page again and again.
+  'payment_start:booking': { limit: 10, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  // docs/Security.md §3.3 step 2 (Task P3.8.03): the Midtrans webhook, per sender IP and for all senders together,
+  // counted before anything else is written. Refused rejections are recorded at most twenty an hour per IP.
+  'webhook_midtrans:ip': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
+  'webhook_midtrans:all': { limit: 600, windowSeconds: 60, whenUnavailable: 'fail-closed' },
+  'webhook_rejection:ip': { limit: 20, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
   // Visitors (Task P3.2, P3.3), per IP. The daily caps on codes (5 per number or address, 20 per IP) are counted by
   // internal.issue_phone_otp itself; these stop a burst before it reaches Turnstile and the database. A code has five
   // tries of its own; the verify limit stops one IP from trying many codes at once.
