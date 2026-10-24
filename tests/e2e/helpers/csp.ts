@@ -22,9 +22,13 @@ async function watchCspViolations(page: Page): Promise<string[]> {
   });
   await page.addInitScript(() => {
     window.cspViolations = [];
+    // Directive, what was blocked and where the blocked call came from, so a failure names its culprit.
     document.addEventListener('securitypolicyviolation', (event) => {
+      const source = event.sourceFile
+        ? `${event.sourceFile}:${String(event.lineNumber)}`
+        : 'unknown';
       window.cspViolations?.push(
-        `${event.effectiveDirective} blocked ${event.blockedURI || 'inline'}`,
+        `${event.violatedDirective} blocked ${event.blockedURI || 'inline'} from ${source}`,
       );
     });
   });

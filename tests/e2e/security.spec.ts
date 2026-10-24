@@ -1,7 +1,12 @@
 import { expect, test, type APIResponse } from '@playwright/test';
 
 import { cspViolationsOn } from './helpers/csp';
-import { resetAuthLimits, signInToDashboard, SUPERADMIN } from './helpers/staff';
+import {
+  createSuperadmin,
+  removeAccounts,
+  resetAuthLimits,
+  signInToDashboard,
+} from './helpers/staff';
 
 // Task P5.6.05: a public page that looks a row up answers with its real status code. The row-reading pages sit in
 // src/app/(public)/(rows), under no loading boundary, so notFound() and redirect() run before anything streams
@@ -306,18 +311,26 @@ test.describe('signed in as the superadmin (HDR-01, UPL-01)', () => {
   test.skip(({ isMobile }) => isMobile, 'one run is enough');
   test.describe.configure({ timeout: 90_000 });
 
+  // An account of its own: staff-sign-in.spec.ts signs the seeded superadmin out everywhere, from another worker.
+  let superadmin: { id: string; email: string } | undefined;
+
   test.beforeAll(async () => {
     await resetAuthLimits();
+    superadmin = await createSuperadmin();
+  });
+
+  test.afterAll(async () => {
+    await removeAccounts(superadmin ? [superadmin.id] : []);
   });
 
   test('the dashboard and the scanner load without a CSP violation', async ({ page }) => {
-    await signInToDashboard(page, SUPERADMIN);
+    await signInToDashboard(page, superadmin?.email ?? '');
     expect(await cspViolationsOn(page, '/dashboard')).toEqual([]);
     expect(await cspViolationsOn(page, SCANNER_PATH)).toEqual([]);
   });
 
   test('api/uploads/sign answers VALIDATION for image/svg+xml', async ({ page, baseURL }) => {
-    await signInToDashboard(page, SUPERADMIN);
+    await signInToDashboard(page, superadmin?.email ?? '');
     const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>').toString('base64');
     const response = await page.request.post('/api/uploads/sign', {
       headers: { origin: baseURL ?? '' },
