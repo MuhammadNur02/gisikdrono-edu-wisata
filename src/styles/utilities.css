@@ -237,3 +237,7 @@
     display: none;
   }
 }
+/* A dark surface in the current RW's shade (night without an RW scope): the ticket stub (DESIGN-SPEC §3.13). */
+@utility bg-rw-shade {
+  background-color: var(--rw-grade-shade, var(--night));
+}

@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 
+import { WizardHeader } from '@/components/booking/wizard-header';
+import { WizardPackageCard } from '@/components/booking/wizard-package-card';
 import { WizardShell } from '@/components/booking/wizard-shell';
 import { FormAlert } from '@/components/forms/form-alert';
 import { copy } from '@/lib/copy/id';
@@ -40,10 +42,11 @@ export async function generateMetadata({ params }: BookingWizardPageProps): Prom
   return wizard ? { title: text.title(wizard.package.name) } : {};
 }
 
-function BookingClosed({ packageName }: { packageName: string }) {
+const MAIN_CONTENT_ID = 'konten';
+
+function BookingClosed() {
   return (
-    <div className="mx-auto w-full max-w-md space-y-4 sm:my-auto">
-      <h1 className="text-h2 text-balance">{text.title(packageName)}</h1>
+    <div className="mx-auto w-full max-w-md px-5 py-16 md:py-24">
       <FormAlert tone="info">
         <p className="font-medium">{text.closedTitle}</p>
         <p>{text.closed}</p>
@@ -54,30 +57,43 @@ function BookingClosed({ packageName }: { packageName: string }) {
 
 // docs/PRD.md FR-BOOK-01 (Task P3.5.01): the booking wizard of one package. The server reads the package, its
 // add-ons and the sessions it can book; the browser keeps the draft and asks the server for every seat count and
-// price again.
+// price again. DESIGN-SPEC §3.10: the wizard header in place of the site's, then the steps beside the summary.
 export default async function BookingWizardPage({ params, searchParams }: BookingWizardPageProps) {
   const { packageSlug } = await params;
   const wizard = await wizardFor(packageSlug);
   if (!wizard) notFound();
   if (!isBookingStep((await searchParams).step)) redirect(bookingPath(packageSlug));
-  if (!wizard.isOpen) return <BookingClosed packageName={wizard.package.name} />;
+  const header = <WizardHeader packageName={wizard.package.name} packageSlug={packageSlug} />;
+  if (!wizard.isOpen) {
+    return (
+      <>
+        {header}
+        <main id={MAIN_CONTENT_ID} className="flex-1">
+          <BookingClosed />
+        </main>
+      </>
+    );
+  }
   const initialLegs = await listBookableSessions(wizard);
   return (
-    <div className="w-full max-w-3xl space-y-6">
-      <h1 className="text-h1 text-balance">{text.title(wizard.package.name)}</h1>
-      <WizardShell
-        wizardPackage={wizardPackageOf(wizard)}
-        addons={wizard.addons}
-        initialLegs={initialLegs}
-        actions={{
-          listSessions: listBookableSessionsAction,
-          previewQuote: previewQuoteAction,
-          createBooking: createBookingAction,
-          requestQuotation: requestQuotationAction,
-          requestOtp: requestPhoneOtpAction,
-          verifyOtp: verifyPhoneOtpAction,
-        }}
-      />
-    </div>
+    <>
+      {header}
+      <main id={MAIN_CONTENT_ID} className="flex-1">
+        <WizardShell
+          wizardPackage={wizardPackageOf(wizard)}
+          packageCard={<WizardPackageCard pkg={wizard.package} />}
+          addons={wizard.addons}
+          initialLegs={initialLegs}
+          actions={{
+            listSessions: listBookableSessionsAction,
+            previewQuote: previewQuoteAction,
+            createBooking: createBookingAction,
+            requestQuotation: requestQuotationAction,
+            requestOtp: requestPhoneOtpAction,
+            verifyOtp: verifyPhoneOtpAction,
+          }}
+        />
+      </main>
+    </>
   );
 }

@@ -25,7 +25,7 @@ export default async function PaymentPage({ params }: PaymentPageProps) {
   if (!guard.ok) notFound();
   const view = await loadPaymentPage(guard.guest.bookingId);
   return (
-    <div className="w-full max-w-lg">
+    <div className="w-full max-w-160">
       <PaymentCard view={view} action={startPaymentAction} />
     </div>
   );
