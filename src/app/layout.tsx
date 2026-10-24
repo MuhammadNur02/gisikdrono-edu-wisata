@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { DocumentPolicyGuard } from '@/components/providers/document-policy-guard';
 import { MotionProvider } from '@/components/providers/motion-provider';
 import { JsonLd } from '@/components/seo/json-ld';
 import { Toaster } from '@/components/ui/sonner';
@@ -21,6 +22,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
       <body>
         <MotionProvider>{children}</MotionProvider>
         <Toaster />
+        <DocumentPolicyGuard />
         <JsonLd data={governmentOrganizationJsonLd()} />
       </body>
     </html>

@@ -1,11 +1,17 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { answerScans, ownRwOfficerPerTest, dropScans, SCANNER } from './helpers/scanner';
-import { hasHorizontalScroll, signInToDashboard } from './helpers/staff';
+import {
+  AUTH_STEP,
+  hasHorizontalScroll,
+  signInToDashboard,
+  submitPassword,
+  submitTotp,
+} from './helpers/staff';
 
 // Task P4.4.05 (docs/PRD.md FR-SCAN-03..07, docs/StyleGuide.md §6.6): the scanner page against the contract of
 // POST /api/tickets/verify, answered by tests/e2e/helpers/scanner.ts. The live camera has its own file
-// (scanner-camera.spec.ts), since its browser flags need a browser of their own.
+// (scanner-camera.spec.ts), since it replaces getUserMedia.
 
 async function checkManually(page: Page) {
   await page.getByRole('tab', { name: 'Kode manual' }).click();
@@ -137,4 +143,25 @@ test('the sidebar loads the scanner as a document of its own, and leaves it the 
   expect((await dashboardDocument).headers()['permissions-policy']).toContain('camera=()');
   await expect(page).toHaveURL('/dashboard');
   expect(await cameraAllowed(page)).toBe(false);
+});
+
+// The installed scanner opens /dashboard/scanner; without a session that is sign-in and TOTP first. The forms then
+// load the scanner as a document of its own, not inside the MFA page's (review of PR #49).
+test('signing in on the way to the scanner lands in a scanner document of its own', async ({
+  page,
+}) => {
+  await page.goto(SCANNER);
+  await expect(page).toHaveURL(/\/login\?/, AUTH_STEP);
+  await submitPassword(page, officerEmail());
+  await page.waitForURL(/\/mfa\/verify/, AUTH_STEP);
+  const scannerDocument = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === SCANNER &&
+      response.request().resourceType() === 'document',
+    AUTH_STEP,
+  );
+  await submitTotp(page);
+  expect((await scannerDocument).headers()['permissions-policy']).toContain('camera=(self)');
+  await expect(page).toHaveURL(SCANNER, AUTH_STEP);
+  expect(await cameraAllowed(page)).toBe(true);
 });
