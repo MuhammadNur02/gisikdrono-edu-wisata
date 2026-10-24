@@ -133,6 +133,28 @@ export function ringArea(ring: Ring): number {
   return Math.abs(signedArea(ring));
 }
 
+// RFC 7946 §3.1.6: an outer ring runs counterclockwise and a hole clockwise. A ring without area stays as it is.
+export function orientRing(ring: Ring, orientation: 'counterclockwise' | 'clockwise'): Ring {
+  const area = signedArea(ring);
+  if (area === 0) return ring;
+  const wantsCounterclockwise = orientation === 'counterclockwise';
+  return area > 0 === wantsCounterclockwise ? ring : [...ring].reverse();
+}
+
+// Metres per degree of latitude, and of longitude at the equator (WGS 84); scaled by the cosine of the latitude,
+// close enough across one kelurahan.
+const METRES_PER_DEGREE_LAT = 110_574;
+const METRES_PER_DEGREE_LNG_AT_EQUATOR = 111_320;
+const HALF_TURN_DEGREES = 180;
+
+// The ring's area in square metres, for telling a drawn area from a stray sliver.
+export function ringAreaSquareMetres(ring: Ring): number {
+  if (ring.length === 0) return 0;
+  const meanLatitude = ring.reduce((sum, position) => sum + position[1], 0) / ring.length;
+  const lngScale = Math.cos((meanLatitude * Math.PI) / HALF_TURN_DEGREES);
+  return ringArea(ring) * METRES_PER_DEGREE_LAT * METRES_PER_DEGREE_LNG_AT_EQUATOR * lngScale;
+}
+
 // The area centroid of a closed ring; NULL for a ring without area.
 export function ringCentroid(ring: Ring): Position | null {
   const area = signedArea(ring);

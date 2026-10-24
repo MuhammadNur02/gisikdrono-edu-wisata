@@ -6,6 +6,7 @@ import {
   RW_AREA_SOURCE,
   rwNumberOf,
   serializeCollection,
+  withoutSlivers,
 } from './convert-rw-kml.ts';
 
 // A tiny export in the shape Google My Maps writes: an office layer, the boundary layer that also holds the RWs
@@ -42,7 +43,7 @@ const FIXTURE_KML = `<?xml version="1.0" encoding="UTF-8"?>
       <Placemark>
         <name>RW05</name>
         <Polygon><outerBoundaryIs><LinearRing><coordinates>
-          110.391,-6.990,0 110.392,-6.990,0 110.392,-6.989,0 110.391,-6.990,0
+          110.391,-6.990,0 110.392,-6.989,0 110.392,-6.990,0 110.391,-6.990,0
         </coordinates></LinearRing></outerBoundaryIs></Polygon>
       </Placemark>
       <Placemark>
@@ -53,6 +54,9 @@ const FIXTURE_KML = `<?xml version="1.0" encoding="UTF-8"?>
           </coordinates></LinearRing></outerBoundaryIs></Polygon>
           <Polygon><outerBoundaryIs><LinearRing><coordinates>
             110.395,-6.990,0 110.399,-6.990,0 110.399,-6.985,0 110.395,-6.990,0
+          </coordinates></LinearRing></outerBoundaryIs></Polygon>
+          <Polygon><outerBoundaryIs><LinearRing><coordinates>
+            110.3995,-6.9895,0 110.39955,-6.9895,0 110.39955,-6.98945,0 110.3995,-6.9895,0
           </coordinates></LinearRing></outerBoundaryIs></Polygon>
         </MultiGeometry>
       </Placemark>
@@ -79,6 +83,15 @@ const FIXTURE_KML = `<?xml version="1.0" encoding="UTF-8"?>
     </Folder>
   </Document>
 </kml>`;
+
+// Twice the signed area: positive for a counterclockwise ring.
+function windingOf(ring) {
+  let doubled = 0;
+  for (let index = 0; index < ring.length - 1; index += 1) {
+    doubled += ring[index][0] * ring[index + 1][1] - ring[index + 1][0] * ring[index][1];
+  }
+  return doubled > 0 ? 'counterclockwise' : 'clockwise';
+}
 
 function rwFeature(collection, rw) {
   return collection.features.find(
@@ -140,6 +153,26 @@ describe('convertRwKml', () => {
     expect(rwFeature(collection, 1)?.geometry.coordinates[0]).toHaveLength(2);
   });
 
+  it('winds every outer ring counterclockwise and every hole clockwise (RFC 7946)', () => {
+    const rings = collection.features
+      .filter((feature) => feature.geometry.type !== 'Point')
+      .flatMap((feature) =>
+        feature.geometry.type === 'Polygon'
+          ? [feature.geometry.coordinates]
+          : feature.geometry.coordinates,
+      );
+    for (const [outer, ...holes] of rings) {
+      expect(windingOf(outer)).toBe('counterclockwise');
+      for (const hole of holes) expect(windingOf(hole)).toBe('clockwise');
+    }
+  });
+
+  it('drops a part smaller than 100 m²', () => {
+    const parts = rwFeature(collection, 12)?.geometry.coordinates ?? [];
+    expect(parts).toHaveLength(2);
+    expect(parts.flat(2).some(([lng]) => lng === 110.39955)).toBe(false);
+  });
+
   it('drops a position on a straight edge and keeps the corners', () => {
     expect(rwFeature(collection, 5)?.geometry.coordinates[0]?.[0]).toEqual([
       [110.38, -6.99],
@@ -163,6 +196,30 @@ describe('convertRwKml', () => {
     expect(() => convertRwKml(withoutOffice)).toThrow(/Kantor Kelurahan/);
     const withoutBoundary = FIXTURE_KML.replace('<name>Batas Wilayah</name>', '<name>Lain</name>');
     expect(() => convertRwKml(withoutBoundary)).toThrow(/Batas Wilayah/);
+  });
+});
+
+describe('withoutSlivers', () => {
+  const sliver = [
+    [
+      [110, -7],
+      [110.00001, -7],
+      [110.00001, -6.99999],
+      [110, -7],
+    ],
+  ];
+  const tinier = [
+    [
+      [110, -7],
+      [110.000001, -7],
+      [110.000001, -6.999999],
+      [110, -7],
+    ],
+  ];
+
+  it('keeps the largest sliver of an RW drawn only in slivers', () => {
+    expect(withoutSlivers([tinier, sliver])).toEqual([sliver]);
+    expect(withoutSlivers([])).toEqual([]);
   });
 });
 

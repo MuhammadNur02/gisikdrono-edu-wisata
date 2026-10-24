@@ -8,17 +8,22 @@
 // kelurahan boundary (`Batas Wilayah`) and the office point (`Kantor Kelurahan ...`), each with only `kind`, `name`
 // and, for an RW, `rw`. The placemark descriptions (population counts and the like) and the styles are left out, and
 // so is the `Rawan Bencana` layer, which the 2024 export leaves empty. Coordinates are rounded to six decimals and
-// simplified lightly (about half a metre). The KML itself stays outside the repository; the GeoJSON names its source
+// simplified lightly (about half a metre), rings are wound as RFC 7946 asks (outer counterclockwise, holes
+// clockwise), and parts or holes under 100 m² (slivers of the drawing) are dropped. The KML itself stays outside the repository; the GeoJSON names its source
 // in its own `attribution` and `source` members, and the map repeats the credit under itself.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 import { RW_ID_MAX, RW_ID_MIN, rwLabel } from '../src/config/rw';
 import {
+  orientRing,
+  ringArea,
+  ringAreaSquareMetres,
   roundPosition,
   simplifyRing,
   type PolygonRings,
   type Position,
+  type Ring,
 } from '../src/lib/utils/geo-polygon';
 import type {
   RwAreaBoundaryFeature,
@@ -35,6 +40,8 @@ export const RW_AREA_SOURCE = {
 export const DEFAULT_OUTPUT_PATH = 'public/map/gisikdrono-rw.geojson';
 // About 0.55 m at this latitude: drops only the positions that sit on a straight edge.
 export const SIMPLIFY_TOLERANCE_DEGREES = 0.000005;
+// A part or hole smaller than this is a stray click in the drawing, not an area (a 10 m square).
+export const MIN_PART_AREA_SQUARE_METRES = 100;
 // The arguments after `node` and the script's own path.
 const FIRST_ARGUMENT = 2;
 const USAGE_EXIT = 2;
@@ -95,8 +102,22 @@ export function parseCoordinates(raw: string): Position[] {
     });
 }
 
-function ringFrom(raw: string): Position[] {
-  return [...simplifyRing(parseCoordinates(raw), SIMPLIFY_TOLERANCE_DEGREES)];
+function ringFrom(raw: string, orientation: 'counterclockwise' | 'clockwise'): Position[] {
+  return [
+    ...orientRing(simplifyRing(parseCoordinates(raw), SIMPLIFY_TOLERANCE_DEGREES), orientation),
+  ];
+}
+
+function isSliver(ring: Ring): boolean {
+  return ringAreaSquareMetres(ring) < MIN_PART_AREA_SQUARE_METRES;
+}
+
+// The parts of one RW without its slivers; an RW drawn only in slivers keeps its largest part.
+export function withoutSlivers(polygons: readonly PolygonRings[]): PolygonRings[] {
+  const kept = polygons.filter((polygon) => !isSliver(polygon[0] ?? []));
+  if (kept.length > 0) return kept;
+  const largest = [...polygons].sort((a, b) => ringArea(b[0] ?? []) - ringArea(a[0] ?? []))[0];
+  return largest === undefined ? [] : [largest];
 }
 
 function polygonsOf(body: string): PolygonRings[] {
@@ -104,8 +125,10 @@ function polygonsOf(body: string): PolygonRings[] {
     const polygon = match[1] ?? '';
     const outer = OUTER_RING.exec(polygon)?.[1];
     if (outer === undefined) return [];
-    const holes = [...polygon.matchAll(INNER_RING)].map((hole) => ringFrom(hole[1] ?? ''));
-    return [[ringFrom(outer), ...holes]];
+    const holes = [...polygon.matchAll(INNER_RING)]
+      .map((hole) => ringFrom(hole[1] ?? '', 'clockwise'))
+      .filter((hole) => !isSliver(hole));
+    return [[ringFrom(outer, 'counterclockwise'), ...holes]];
   });
 }
 
@@ -138,6 +161,9 @@ function rwFeatures(placemarks: readonly Placemark[]): RwAreaFeature[] {
     const rw = rwNumberOf(placemark.name);
     if (rw === null || placemark.polygons.length === 0) continue;
     polygonsByRw.set(rw, [...(polygonsByRw.get(rw) ?? []), ...placemark.polygons]);
+  }
+  for (const [rw, polygons] of polygonsByRw) {
+    polygonsByRw.set(rw, withoutSlivers(polygons));
   }
   return [...polygonsByRw.entries()]
     .sort(([a], [b]) => a - b)

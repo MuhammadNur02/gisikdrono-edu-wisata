@@ -4,8 +4,10 @@ import {
   closeRing,
   isInsidePolygon,
   isInsideRing,
+  orientRing,
   pointOnSurface,
   ringArea,
+  ringAreaSquareMetres,
   ringCentroid,
   roundCoordinate,
   roundPosition,
@@ -179,5 +181,40 @@ describe('pointOnSurface', () => {
         ],
       ]),
     ).toBeNull();
+  });
+});
+
+describe('orientRing', () => {
+  const clockwise = [...SQUARE].reverse();
+
+  it('turns an outer ring counterclockwise and a hole clockwise', () => {
+    expect(orientRing(clockwise, 'counterclockwise')).toEqual(SQUARE);
+    expect(orientRing(SQUARE, 'counterclockwise')).toBe(SQUARE);
+    expect(orientRing(SQUARE, 'clockwise')).toEqual(clockwise);
+    expect(orientRing(clockwise, 'clockwise')).toBe(clockwise);
+  });
+
+  it('leaves a ring without area as it is', () => {
+    const flat: Ring = [
+      [0, 0],
+      [1, 1],
+      [0, 0],
+    ];
+    expect(orientRing(flat, 'clockwise')).toBe(flat);
+  });
+});
+
+describe('ringAreaSquareMetres', () => {
+  it('measures a square of 0.001 degree near Gisikdrono at about 12 200 m²', () => {
+    const square: Ring = [
+      [110.38, -6.99],
+      [110.381, -6.99],
+      [110.381, -6.989],
+      [110.38, -6.989],
+      [110.38, -6.99],
+    ];
+    expect(ringAreaSquareMetres(square)).toBeGreaterThan(12_000);
+    expect(ringAreaSquareMetres(square)).toBeLessThan(12_400);
+    expect(ringAreaSquareMetres([])).toBe(0);
   });
 });
