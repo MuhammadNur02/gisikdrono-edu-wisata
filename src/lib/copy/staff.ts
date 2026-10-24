@@ -53,6 +53,7 @@ export const staffCopy = {
     rw: 'RW',
     rwPlaceholder: 'Pilih RW',
     submit: 'Ubah peran',
+    noFactor: 'Akun ini belum punya autentikator. Pasang ulang lewat kode pemulihan (menyusul).',
     applied: 'Peran sudah diubah.',
     requested: (after: string) =>
       `Permintaan tercatat. Ulangi langkah ini setelah ${after} untuk menerapkannya.`,

@@ -11,6 +11,7 @@ import {
   createStaffInvite,
   revokeStaffInvite,
 } from '@/server/services/staff-admin-service';
+import { withinInviteLimit } from '@/server/services/staff-service';
 
 import {
   cancelSuperadminPromotionAction,
@@ -30,6 +31,7 @@ vi.mock('@/server/services/staff-admin-service', () => ({
   createStaffInvite: vi.fn(),
   revokeStaffInvite: vi.fn(),
 }));
+vi.mock('@/server/services/staff-service', () => ({ withinInviteLimit: vi.fn() }));
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
   requestIdFrom: () => 'request-1',
@@ -59,6 +61,7 @@ beforeEach(() => {
   vi.mocked(requireFreshTotp).mockReset().mockResolvedValue({ ok: true, ctx: SUPERADMIN });
   for (const service of SERVICES) vi.mocked(service).mockReset();
   vi.mocked(revalidatePath).mockReset();
+  vi.mocked(withinInviteLimit).mockReset().mockResolvedValue(true);
 });
 
 describe('inviteStaffAction', () => {
@@ -171,5 +174,17 @@ describe('revokeStaffInviteAction and cancelSuperadminPromotionAction', () => {
       ok: false,
       error: { code: 'NOT_FOUND', message: staffCopy.notFound },
     });
+  });
+});
+
+// L2 of the PR #43 review: invites per superadmin, fail-closed.
+describe('inviteStaffAction limit', () => {
+  it('counts invites by the superadmin’s own id and refuses past the limit, before the service', async () => {
+    vi.mocked(withinInviteLimit).mockResolvedValueOnce(false);
+    await expect(
+      inviteStaffAction({ email: 'a@b.id', role: 'admin_rw', rwId: 5 }),
+    ).resolves.toMatchObject({ ok: false, error: { code: 'RATE_LIMITED' } });
+    expect(withinInviteLimit).toHaveBeenCalledWith(SELF_ID);
+    expect(createStaffInvite).not.toHaveBeenCalled();
   });
 });

@@ -47,7 +47,8 @@ function actionsOf(member: StaffMember, onRequest: StaffTableProps['onRequest'])
   const ask = (kind: 'role' | 'status' | 'cancelPromotion') => () => {
     onRequest({ kind, member });
   };
-  if (member.isActive)
+  // M1 of the PR #43 review: no role for an account without a verified factor (changeStaffRole refuses it too).
+  if (member.isActive && member.hasVerifiedTotp)
     items.push({ label: text.actions.changeRole, icon: UserCog, onSelect: ask('role') });
   if (member.promotionRequestedAt !== null) {
     items.push({

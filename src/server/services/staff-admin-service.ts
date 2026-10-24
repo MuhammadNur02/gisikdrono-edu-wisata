@@ -18,7 +18,7 @@ import type {
   SetStaffStatusValues,
 } from '@/lib/validations/staff';
 import type { StaffContext } from '@/server/auth/guards';
-import { setStaffAuthBan } from '@/server/services/staff-service';
+import { readStaffAuthStates, setStaffAuthBan } from '@/server/services/staff-service';
 import type { IssuedInvite, StaffRoleChange, StaffStatusChange } from '@/types/staff';
 
 // The superadmin's changes on /dashboard/users (Task P4.8.02). Every write goes through the superadmin's session
@@ -127,7 +127,15 @@ function roleChangeOf(stage: StaffChangeStage): StaffRoleChange {
     : { stage: 'applied' };
 }
 
+// M1 of the PR #43 review: deactivation removes every factor, so a role given to an account without a verified TOTP
+// factor would let whoever signs in first enrol their own authenticator, an MFA reset without the re-enrolment code
+// of P4.8.05. Every role set_staff_role can give here is a staff role, so such an account gets none until it has a
+// factor again; set_staff_role itself is to refuse the same (DB lane, Task P4.3.11).
 export async function changeStaffRole(input: SetStaffRoleValues): Promise<StaffRoleChange> {
+  const authStates = await readStaffAuthStates([input.userId]);
+  if (authStates.get(input.userId)?.hasVerifiedTotp !== true) {
+    throw new AppError('STATE_INVALID', staffCopy.role.noFactor);
+  }
   const supabase = await createSupabaseServerClient();
   return roleChangeOf(await asStaffChange(() => setStaffRole(supabase, input)));
 }

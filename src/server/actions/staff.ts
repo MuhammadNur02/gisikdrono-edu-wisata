@@ -22,6 +22,7 @@ import {
   createStaffInvite,
   revokeStaffInvite,
 } from '@/server/services/staff-admin-service';
+import { withinInviteLimit } from '@/server/services/staff-service';
 import type { ActionResult } from '@/types/action-result';
 import type { IssuedInvite, StaffRoleChange, StaffStatusChange } from '@/types/staff';
 
@@ -50,6 +51,7 @@ export async function inviteStaffAction(input: unknown): Promise<ActionResult<Is
   if (!guard.ok) return guard;
 
   try {
+    if (!(await withinInviteLimit(guard.ctx.userId))) return fail('RATE_LIMITED');
     const issued = await createStaffInvite(guard.ctx, parsed.data);
     revalidatePath(USERS_PATH);
     return ok(issued);

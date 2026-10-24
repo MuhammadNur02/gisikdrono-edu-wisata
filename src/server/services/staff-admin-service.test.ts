@@ -6,7 +6,7 @@ import { staffCopy } from '@/lib/copy/staff';
 import { AppError } from '@/lib/errors';
 import { inviteCodeHash } from '@/lib/staff-codes';
 import type { StaffContext } from '@/server/auth/guards';
-import { setStaffAuthBan } from '@/server/services/staff-service';
+import { readStaffAuthStates, setStaffAuthBan } from '@/server/services/staff-service';
 
 import {
   changeStaffRole,
@@ -61,7 +61,10 @@ vi.mock('@/db/rpc', () => ({
   setStaffStatus: vi.fn(),
 }));
 vi.mock('@/db/rpc-staff', () => ({ inviteSuperadmin: vi.fn() }));
-vi.mock('@/server/services/staff-service', () => ({ setStaffAuthBan: vi.fn() }));
+vi.mock('@/server/services/staff-service', () => ({
+  readStaffAuthStates: vi.fn(),
+  setStaffAuthBan: vi.fn(),
+}));
 
 const SUPERADMIN: StaffContext = {
   userId: 'super-1',
@@ -82,6 +85,11 @@ beforeEach(() => {
   vi.mocked(setStaffStatus).mockReset();
   vi.mocked(inviteSuperadmin).mockReset();
   vi.mocked(setStaffAuthBan).mockReset();
+  vi.mocked(readStaffAuthStates)
+    .mockReset()
+    .mockResolvedValue(
+      new Map([[USER_ID, { hasVerifiedTotp: true, isBanned: false, lastSignInAt: null }]]),
+    );
 });
 
 describe('createStaffInvite', () => {
@@ -195,5 +203,31 @@ describe('changeStaffRole and changeStaffStatus', () => {
       ),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     expect(setStaffAuthBan).not.toHaveBeenCalled();
+  });
+});
+
+// M1 of the PR #43 review: a role for an account whose factors deactivation removed would be an MFA reset without
+// the re-enrolment code.
+describe('changeStaffRole without an authenticator', () => {
+  it('refuses a role to an account with no verified TOTP factor, before the RPC', async () => {
+    vi.mocked(readStaffAuthStates).mockResolvedValueOnce(
+      new Map([[USER_ID, { hasVerifiedTotp: false, isBanned: false, lastSignInAt: null }]]),
+    );
+    await expect(changeStaffRole({ userId: USER_ID, role: 'admin_rw', rwId: 5 })).rejects.toEqual(
+      new AppError('STATE_INVALID', staffCopy.role.noFactor),
+    );
+    vi.mocked(readStaffAuthStates).mockResolvedValueOnce(new Map());
+    await expect(
+      changeStaffRole({ userId: USER_ID, role: 'superadmin', rwId: null }),
+    ).rejects.toMatchObject({ code: 'STATE_INVALID' });
+    expect(setStaffRole).not.toHaveBeenCalled();
+  });
+
+  it('gives the role once the account has its factor', async () => {
+    vi.mocked(setStaffRole).mockResolvedValueOnce({ stage: 'applied' });
+    await expect(changeStaffRole({ userId: USER_ID, role: 'admin_rw', rwId: 5 })).resolves.toEqual({
+      stage: 'applied',
+    });
+    expect(readStaffAuthStates).toHaveBeenCalledWith([USER_ID]);
   });
 });
