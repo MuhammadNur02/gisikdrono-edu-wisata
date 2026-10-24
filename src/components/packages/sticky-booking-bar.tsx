@@ -22,7 +22,7 @@ export function StickyBookingBar({ pkg }: { pkg: PackageSummary }) {
     <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/96 pb-safe shadow-bar backdrop-blur-lg md:hidden">
       <div className="flex h-20 items-center justify-between gap-4 px-5">
         <div className="min-w-0 space-y-1">
-          <PackagePrice pkg={pkg} />
+          <PackagePrice pkg={pkg} className="whitespace-nowrap" />
           <p className="truncate text-caption text-muted-foreground">{factsOf(pkg)}</p>
         </div>
         <Button asChild size="lg" className="shrink-0">

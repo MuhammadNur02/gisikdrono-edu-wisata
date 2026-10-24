@@ -33,9 +33,9 @@ export function NoCartNote() {
 // whose circles spring in one after another.
 export function AddonPanel() {
   return (
-    <div className="kawung flex w-full flex-col gap-5 rounded-lg bg-night p-6 text-white ring-on-dark kawung-6 md:p-7">
+    <div className="kawung flex w-full flex-col gap-4 rounded-lg bg-night p-4 text-white ring-on-dark kawung-6 md:gap-5 md:p-7">
       <PackagePlus aria-hidden className="size-7 text-gold" />
-      <p className="font-display text-xl leading-tight font-bold md:text-2xl">{text.addonTitle}</p>
+      <p className="font-display text-lg leading-tight font-bold md:text-2xl">{text.addonTitle}</p>
       <ol className="space-y-3.5 reveal-stagger">
         {text.addonSteps.map((step, index) => (
           <li key={step} className="flex gap-3 text-body-sm text-on-dark-2">

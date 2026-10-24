@@ -184,102 +184,101 @@
 }
 
 /* ===== The gallery lightbox (DESIGN-SPEC §3.7): yet-another-react-lightbox in the night of the site, its controls as
-   the design's circles, the counter at the top left and the thumbnail strip with a white edge on the photo shown. ===== */
-@layer components {
-  .lightbox-theme {
-    --yarl__color_backdrop: rgb(14 12 9 / 0.96);
-    --yarl__color_button: rgb(255 255 255 / 0.92);
-    --yarl__color_button_active: #ffffff;
-    --yarl__button_filter: none;
-    --yarl__counter_filter: none;
-    --yarl__counter_color: rgb(255 255 255 / 0.8);
-    --yarl__counter_top: 1.25rem;
-    --yarl__counter_left: 0.75rem;
-    --yarl__thumbnails_container_background_color: transparent;
-    --yarl__thumbnails_container_padding: 0.75rem 1rem 1.25rem;
-    --yarl__thumbnails_thumbnail_background: transparent;
-    --yarl__thumbnails_thumbnail_border_color: transparent;
-    --yarl__thumbnails_thumbnail_active_border_color: #ffffff;
-    --yarl__thumbnails_thumbnail_border_radius: 0.5rem;
-    --yarl__thumbnails_thumbnail_focus_box_shadow: 0 0 0 2px var(--gold);
-    --yarl__thumbnails_vignette_size: 0px;
-    font-family: var(--font-sans);
+   the design's circles, the counter at the top left and the thumbnail strip with a white edge on the photo shown. Not
+   in a layer: the library's own stylesheet is unlayered, so these rules must be too to win over it. ===== */
+.lightbox-theme {
+  --yarl__color_backdrop: rgb(14 12 9 / 0.96);
+  --yarl__color_button: rgb(255 255 255 / 0.92);
+  --yarl__color_button_active: #ffffff;
+  --yarl__button_filter: none;
+  --yarl__counter_filter: none;
+  --yarl__counter_color: rgb(255 255 255 / 0.8);
+  --yarl__counter_top: 1.25rem;
+  --yarl__counter_left: 0.75rem;
+  --yarl__thumbnails_container_background_color: rgb(14 12 9 / 0.96);
+  --yarl__thumbnails_container_padding: 0.75rem 1rem 1.25rem;
+  --yarl__thumbnails_thumbnail_background: transparent;
+  --yarl__thumbnails_thumbnail_border_color: transparent;
+  --yarl__thumbnails_thumbnail_active_border_color: #ffffff;
+  --yarl__thumbnails_thumbnail_border_radius: 0.5rem;
+  --yarl__thumbnails_thumbnail_focus_box_shadow: 0 0 0 2px var(--gold);
+  --yarl__thumbnails_vignette_size: 0px;
+  font-family: var(--font-sans);
+}
+.lightbox-theme .yarl__counter {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.lightbox-theme .yarl__toolbar {
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+}
+.lightbox-theme .yarl__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin: 0;
+  padding: 0;
+  border-radius: 9999px;
+  background-color: rgb(255 255 255 / 0.08);
+  transition: background-color var(--duration-micro) var(--ease-out-soft);
+}
+.lightbox-theme .yarl__button:hover {
+  background-color: rgb(255 255 255 / 0.16);
+}
+.lightbox-theme .yarl__button:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+.lightbox-theme .yarl__toolbar .yarl__button:last-child {
+  background-color: #ffffff;
+  color: var(--night);
+  --yarl__color_button: var(--night);
+  --yarl__color_button_active: var(--night);
+}
+.lightbox-theme .yarl__icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.lightbox-theme .yarl__navigation_prev,
+.lightbox-theme .yarl__navigation_next {
+  width: 3.5rem;
+  height: 3.5rem;
+  border: 1px solid rgb(255 255 255 / 0.2);
+  background-color: rgb(255 255 255 / 0.1);
+}
+.lightbox-theme .yarl__navigation_prev {
+  left: 2.5rem;
+}
+.lightbox-theme .yarl__navigation_next {
+  right: 2.5rem;
+}
+.lightbox-theme .yarl__slide_image {
+  border-radius: var(--radius-lg);
+}
+/* Room under the photo for its caption block (the badge, the caption, the alt text). */
+.lightbox-theme .yarl__slide {
+  padding: 4.5rem 1.25rem 10rem;
+  @media (width >= 48rem) {
+    padding: 4.5rem 9rem 10.5rem;
   }
-  .lightbox-theme .yarl__counter {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
-  .lightbox-theme .yarl__toolbar {
-    gap: 0.75rem;
-    padding: 0.875rem 1rem;
-  }
-  .lightbox-theme .yarl__button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.75rem;
-    height: 2.75rem;
-    margin: 0;
-    padding: 0;
-    border-radius: 9999px;
-    background-color: rgb(255 255 255 / 0.08);
-    transition: background-color var(--duration-micro) var(--ease-out-soft);
-  }
-  .lightbox-theme .yarl__button:hover {
-    background-color: rgb(255 255 255 / 0.16);
-  }
-  .lightbox-theme .yarl__button:focus-visible {
-    outline: 2px solid var(--gold);
-    outline-offset: 2px;
-  }
-  .lightbox-theme .yarl__toolbar .yarl__button:last-child {
-    background-color: #ffffff;
-    color: var(--night);
-    --yarl__color_button: var(--night);
-    --yarl__color_button_active: var(--night);
-  }
-  .lightbox-theme .yarl__icon {
-    width: 1.25rem;
-    height: 1.25rem;
-  }
+}
+.lightbox-theme .yarl__thumbnails_thumbnail {
+  opacity: 0.45;
+  transition: opacity var(--duration-short) var(--ease-out-soft);
+}
+.lightbox-theme .yarl__thumbnails_thumbnail_active,
+.lightbox-theme .yarl__thumbnails_thumbnail:hover {
+  opacity: 1;
+}
+@media (width < 48rem) {
   .lightbox-theme .yarl__navigation_prev,
-  .lightbox-theme .yarl__navigation_next {
-    width: 3.5rem;
-    height: 3.5rem;
-    border: 1px solid rgb(255 255 255 / 0.2);
-    background-color: rgb(255 255 255 / 0.1);
-  }
-  .lightbox-theme .yarl__navigation_prev {
-    left: 2.5rem;
-  }
-  .lightbox-theme .yarl__navigation_next {
-    right: 2.5rem;
-  }
-  .lightbox-theme .yarl__slide_image {
-    border-radius: var(--radius-lg);
-  }
-  /* Room under the photo for its caption block (the badge, the caption, the alt text). */
-  .lightbox-theme .yarl__slide {
-    padding: 4.5rem 1.25rem 10rem;
-    @media (width >= 48rem) {
-      padding: 4.5rem 9rem 10.5rem;
-    }
-  }
-  .lightbox-theme .yarl__thumbnails_thumbnail {
-    opacity: 0.45;
-    transition: opacity var(--duration-short) var(--ease-out-soft);
-  }
-  .lightbox-theme .yarl__thumbnails_thumbnail_active,
-  .lightbox-theme .yarl__thumbnails_thumbnail:hover {
-    opacity: 1;
-  }
-  @media (width < 48rem) {
-    .lightbox-theme .yarl__navigation_prev,
-    .lightbox-theme .yarl__navigation_next,
-    .lightbox-theme .yarl__thumbnails_container {
-      display: none;
-    }
+  .lightbox-theme .yarl__navigation_next,
+  .lightbox-theme .yarl__thumbnails_container {
+    display: none;
   }
 }
 
