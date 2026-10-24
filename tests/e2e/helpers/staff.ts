@@ -61,7 +61,7 @@ export async function signInToDashboard(page: Page, email: string): Promise<void
 
 // An Auth user with the DEV-ONLY password and no factor; with a role, also the profile onboarding would give it.
 export async function createAccount(
-  role: 'admin_rw' | 'none',
+  role: 'superadmin' | 'admin_rw' | 'none',
 ): Promise<{ id: string; email: string }> {
   const email = `e2e-${randomUUID()}@example.test`;
   const { data, error } = await adminClient().auth.admin.createUser({
@@ -70,9 +70,9 @@ export async function createAccount(
     email_confirm: true,
   });
   if (error) throw error;
-  if (role === 'admin_rw') {
+  if (role !== 'none') {
     await runSql(`insert into public.profiles (id, email, full_name, role, rw_id, is_active, claims_version)
-      values ('${data.user.id}', '${email}', 'Admin Uji E2E', 'admin_rw', 5, true, 1)`);
+      values ('${data.user.id}', '${email}', 'Admin Uji E2E', '${role}', ${role === 'admin_rw' ? '5' : 'null'}, true, 1)`);
   }
   return { id: data.user.id, email };
 }

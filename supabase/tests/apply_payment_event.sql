@@ -3,7 +3,10 @@
 -- and staff messages, never applies an event twice, records a second settlement as a duplicate, revives a late
 -- settlement's seats or puts it under review, and closes a denied attempt without moving the booking.
 begin;
-select plan(48);
+select plan(49);
+-- The kid the server signs tickets with, which svc_apply_payment_event passes and these direct calls do not
+-- (20261024100100).
+select set_config('app.qr_key_id', 'k1', true);
 
 -- ===== Fixtures =====
 insert into auth.users (id, email) values
@@ -63,7 +66,8 @@ as $$
     'signature_key', repeat('a', 128), 'transaction_status', p_status, 'transaction_id', 'txn-' || p_order,
     'payment_type', 'bank_transfer', 'currency', 'IDR', 'fraud_status', 'accept',
     'va_numbers', jsonb_build_array(jsonb_build_object('bank', 'bca', 'va_number', '12345678901')),
-    'transaction_time', '2026-10-24 09:00:00', 'settlement_time', '2026-10-24 09:05:00',
+    'transaction_time', to_char(now() at time zone 'Asia/Jakarta' - interval '5 minutes', 'YYYY-MM-DD HH24:MI:SS'),
+    'settlement_time', to_char(now() at time zone 'Asia/Jakarta', 'YYYY-MM-DD HH24:MI:SS'),
     'customer_details', jsonb_build_object('email', 'terapkan@contoh.test'));
 $$;
 
@@ -156,6 +160,13 @@ select is((select severity::text from public.security_alerts
   'high', 'with a high alert to refund it');
 select is((select count(*)::int from public.invoices where booking_id = (select id from paid)), 1,
   'and no second invoice');
+-- Its refund at Midtrans returns money the booking's own payment does not cover (review of PR #42, M6).
+select internal.apply_payment_event(
+  pg_temp.event(pg_temp.answer((select order_id from orders where name = 'first'), 'refund')
+                || '{"refund_amount": "600000.00"}'), 'webhook',
+  pg_temp.answer((select order_id from orders where name = 'first'), 'refund') || '{"refund_amount": "600000.00"}');
+select is((select array_agg(distinct status::text) from public.tickets_qr where booking_id = (select id from paid)),
+  array['issued'], 'so refunding the duplicate leaves the booking''s tickets valid');
 
 -- ===== A late settlement with seats left (docs/Security.md §3.4) =====
 create temporary table late on commit drop as select pg_temp.hold('+6281300000702', '00000000-0000-4000-8000-0000000c2001') as id;

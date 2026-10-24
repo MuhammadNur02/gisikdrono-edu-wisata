@@ -5,6 +5,7 @@ import {
   calendarDateToVisitDate,
   formatDateLong,
   formatDateShort,
+  formatDayMonthShort,
   formatDateTimeShort,
   formatInstantTimeRange,
   formatMonthLong,
@@ -137,5 +138,11 @@ describe('upcomingVisitDates', () => {
       from: '2026-10-19',
       to: '2026-11-01',
     });
+  });
+});
+
+describe('formatDayMonthShort', () => {
+  it('writes a chart tick without the year, on the visit date itself', () => {
+    expect(formatDayMonthShort('2026-10-18')).toBe('18 Okt');
   });
 });

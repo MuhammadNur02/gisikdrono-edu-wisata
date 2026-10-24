@@ -2,11 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { copy } from '@/lib/copy/id';
 import { requireRole, type StaffContext } from '@/server/auth/guards';
+import { countCheckInsToday } from '@/server/services/dashboard-stats-service';
 
-import { setRwScopeAction } from './dashboard';
+import { readCheckInsTodayAction, setRwScopeAction } from './dashboard';
 import { updateProfileAction } from './profile';
 
-const cookieJar = vi.hoisted(() => ({ set: vi.fn() }));
+const cookieJar = vi.hoisted(() => ({
+  set: vi.fn(),
+  get: vi.fn<(name: string) => { value: string } | undefined>(),
+}));
+vi.mock('@/server/services/dashboard-stats-service', () => ({ countCheckInsToday: vi.fn() }));
 
 vi.mock('next/headers', () => ({ cookies: () => Promise.resolve(cookieJar) }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
@@ -16,8 +21,12 @@ vi.mock('@/server/services/rw-unit-service', () => ({
   listRwUnitsForStaff: () => Promise.resolve([{ id: 5 }, { id: 8 }]),
 }));
 vi.mock('@/server/services/profile-service', () => ({
-  updateOwnFullName: (userId: string, fullName: string) =>
-    Promise.resolve({ fullName, email: `${userId}@dev.gisikdrono.test` }),
+  updateOwnProfile: (userId: string, values: { fullName: string; phone?: string | null }) =>
+    Promise.resolve({
+      fullName: values.fullName,
+      email: `${userId}@dev.gisikdrono.test`,
+      phone: values.phone ?? null,
+    }),
 }));
 
 const SUPERADMIN: StaffContext = {
@@ -35,6 +44,8 @@ const FORBIDDEN = {
 
 beforeEach(() => {
   cookieJar.set.mockReset();
+  cookieJar.get.mockReset();
+  vi.mocked(countCheckInsToday).mockReset().mockResolvedValue(12);
   vi.mocked(requireRole).mockReset().mockResolvedValue({ ok: true, ctx: SUPERADMIN });
 });
 
@@ -73,11 +84,44 @@ describe('setRwScopeAction', () => {
   });
 });
 
+describe('readCheckInsTodayAction', () => {
+  const RW_05: StaffContext = { ...SUPERADMIN, userId: 'rw05', role: 'admin_rw', rwId: 5 };
+
+  it('counts the superadmin’s switcher RW, or every RW under Semua', async () => {
+    cookieJar.get.mockReturnValueOnce({ value: '8' });
+    expect(await readCheckInsTodayAction()).toEqual({ ok: true, data: 12 });
+    expect(countCheckInsToday).toHaveBeenLastCalledWith(8);
+
+    expect(await readCheckInsTodayAction()).toEqual({ ok: true, data: 12 });
+    expect(countCheckInsToday).toHaveBeenLastCalledWith(null);
+  });
+
+  it('keeps an RW officer to their own RW whatever the cookie says', async () => {
+    vi.mocked(requireRole).mockResolvedValueOnce({ ok: true, ctx: RW_05 });
+    cookieJar.get.mockReturnValueOnce({ value: '8' });
+    await readCheckInsTodayAction();
+    expect(countCheckInsToday).toHaveBeenLastCalledWith(5);
+  });
+
+  it('refuses an AAL1 session and an RW officer without an RW, counting nothing', async () => {
+    vi.mocked(requireRole).mockResolvedValueOnce({ ok: true, ctx: { ...RW_05, isAal2: false } });
+    expect(await readCheckInsTodayAction()).toMatchObject({ error: { code: 'FORBIDDEN' } });
+    vi.mocked(requireRole).mockResolvedValueOnce({ ok: true, ctx: { ...RW_05, rwId: null } });
+    expect(await readCheckInsTodayAction()).toMatchObject({ error: { code: 'FORBIDDEN' } });
+    expect(countCheckInsToday).not.toHaveBeenCalled();
+  });
+
+  it('answers a failed read with the generic error', async () => {
+    vi.mocked(countCheckInsToday).mockRejectedValueOnce(new Error('connection reset'));
+    expect(await readCheckInsTodayAction()).toMatchObject({ error: { code: 'INTERNAL' } });
+  });
+});
+
 describe('updateProfileAction', () => {
   it('saves the staff member’s own name', async () => {
     expect(await updateProfileAction({ fullName: ' Superadmin Baru ' })).toEqual({
       ok: true,
-      data: { fullName: 'Superadmin Baru', email: 'super@dev.gisikdrono.test' },
+      data: { fullName: 'Superadmin Baru', email: 'super@dev.gisikdrono.test', phone: null },
     });
     expect(requireRole).toHaveBeenCalledWith('superadmin', 'admin_rw');
   });
@@ -92,6 +136,15 @@ describe('updateProfileAction', () => {
     });
     expect(await updateProfileAction({ fullName: 'https://evil.test' })).toMatchObject({
       error: { code: 'VALIDATION' },
+    });
+  });
+});
+
+describe('updateProfileAction phone', () => {
+  it('saves the staff member’s own phone in E.164', async () => {
+    expect(await updateProfileAction({ fullName: 'Siti', phone: '0812 3456 7890' })).toMatchObject({
+      ok: true,
+      data: { phone: '+6281234567890' },
     });
   });
 });

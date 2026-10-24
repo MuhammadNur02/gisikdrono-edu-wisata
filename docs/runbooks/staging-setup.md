@@ -318,7 +318,7 @@ from cron.job where jobname in ('payments-poll', 'anomaly-scan', 'reconcile-paym
 select jobname, active from cron.job order by jobname;
 ```
 
-Resume each one (`active := true`) in the staging release that ships its route.
+Resume each one (`active := true`) in the staging release that ships its route: `payments-poll` with Tasks P3.9 and P3.10 (`docs/runbooks/release-checklist.md`).
 
 ### D.6 Auth and API settings to mirror from `supabase/config.toml`
 

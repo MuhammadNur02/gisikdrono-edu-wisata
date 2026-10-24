@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatIDR, formatThousands, parseRupiah } from './currency';
+import { formatIDR, formatIDRCompact, formatThousands, parseRupiah } from './currency';
 
 const NBSP = ' ';
 
@@ -40,5 +40,16 @@ describe('parseRupiah', () => {
     expect(parseRupiah('')).toBeNull();
     expect(parseRupiah('Rp')).toBeNull();
     expect(parseRupiah('9'.repeat(20))).toBeNull();
+  });
+});
+
+describe('formatIDRCompact', () => {
+  it('shortens millions for a chart axis', () => {
+    expect(formatIDRCompact(1_250_000)).toBe(`Rp${NBSP}1,3${NBSP}jt`);
+    expect(formatIDRCompact(0)).toBe(`Rp${NBSP}0`);
+  });
+
+  it('refuses a fraction of a rupiah', () => {
+    expect(() => formatIDRCompact(1.5)).toThrow(RangeError);
   });
 });

@@ -7,12 +7,14 @@ import { toast } from 'sonner';
 
 import { FormAlert } from '@/components/forms/form-alert';
 import { FormField } from '@/components/forms/form-field';
+import { PhoneInput } from '@/components/forms/phone-input';
 import { PostForm } from '@/components/forms/post-form';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { useActionForm } from '@/hooks/use-action-form';
 import { copy } from '@/lib/copy/id';
+import { staffCopy } from '@/lib/copy/staff';
 import { updateProfileSchema } from '@/lib/validations/dashboard';
 import type { ActionResult } from '@/types/action-result';
 import type { StaffProfile } from '@/types/staff';
@@ -35,24 +37,33 @@ function SignInEmail({ email }: { email: string }) {
   );
 }
 
-// Task P2.8.03: the staff member's own name. The email is shown, not edited (it is the sign-in address).
-export function ProfileForm({ profile, action }: ProfileFormProps) {
+function valuesOf(profile: StaffProfile) {
+  return { fullName: profile.fullName, phone: profile.phone ?? '' };
+}
+
+function useProfileForm({ profile, action }: ProfileFormProps) {
   const router = useRouter();
   const form = useForm({
     resolver: zodResolver(updateProfileSchema),
-    defaultValues: { fullName: profile.fullName },
+    defaultValues: valuesOf(profile),
   });
   const { submit, failure } = useActionForm({
     form,
     action,
-    fields: ['fullName'],
+    fields: ['fullName', 'phone'],
     onSuccess: (saved) => {
-      form.reset({ fullName: saved.fullName });
+      form.reset(valuesOf(saved));
       toast.success(text.saved);
       router.refresh();
     },
   });
+  return { form, submit, failure };
+}
 
+// Task P2.8.03, P4.8.03: the staff member's own name and phone. The email is shown, not edited (it is the sign-in
+// address).
+export function ProfileForm({ profile, action }: ProfileFormProps) {
+  const { form, submit, failure } = useProfileForm({ profile, action });
   return (
     <Form {...form}>
       <PostForm onSubmit={submit}>
@@ -63,6 +74,13 @@ export function ProfileForm({ profile, action }: ProfileFormProps) {
           label={text.fullName}
           required
           render={(field) => <Input {...field} autoComplete="name" />}
+        />
+        <FormField
+          control={form.control}
+          name="phone"
+          label={staffCopy.profile.phone}
+          description={staffCopy.profile.phoneHint}
+          render={(field) => <PhoneInput {...field} value={field.value ?? ''} />}
         />
         <SignInEmail email={profile.email} />
         <Button

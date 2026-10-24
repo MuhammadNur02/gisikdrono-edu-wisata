@@ -19,6 +19,19 @@ export function formatIDR(amount: number): string {
   return rupiah.format(amount);
 }
 
+const compactRupiah = new Intl.NumberFormat('id-ID', {
+  style: 'currency',
+  currency: 'IDR',
+  notation: 'compact',
+  maximumFractionDigits: 1,
+});
+
+// A chart axis has no room for every digit: 1250000 -> 'Rp 1,3 jt'.
+export function formatIDRCompact(amount: number): string {
+  assertWholeRupiah(amount);
+  return compactRupiah.format(amount);
+}
+
 // The digits a MoneyInput shows while typing: 2500000 -> '2.500.000'.
 export function formatThousands(amount: number): string {
   assertWholeRupiah(amount);

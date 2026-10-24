@@ -35,3 +35,17 @@ A migration that stops is a release that stops: fix its cause, never edit an app
   - Check: `select value from public.site_settings where key = 'booking_enabled'` reads `false`. While it does, the wizard says that booking is closed, and `createBookingAction` books nothing.
   - A trial on staging may open it by hand with the superadmin's fresh TOTP (`site_settings_fresh_totp_update`), and closes it again afterwards.
 - **Migrate before the deploy.** The new code reads `visit_date` and `visit_date_end` from the reply of `internal.create_booking`, and refunds limits through `public.svc_rate_limit_refund`. Against the older database every booking would fail the reply check.
+
+### Tasks P3.9 and P3.10: the ledger, the payments poll and tickets (`20261024100000` to `20261024100300`)
+
+- **Migrate and deploy in one window.** `public.svc_apply_payment_event` now takes the QR kid of new tickets (`p_key_id`) and its older form is dropped, so between the migration and the deploy every Midtrans notification answers 503 and Midtrans retries it. Afterwards, settle one sandbox order on staging and check that it is applied with its ticket.
+- **The QR kid is lowercase letters and digits.** `src/lib/env.ts` now stops the server at boot on any other `QR_SIGNING_ACTIVE_KID`; the `k1` of `scripts/generate-staging-secrets.mjs` passes.
+- **Resume `payments-poll` on staging in this release, not before.** It was paused in `docs/runbooks/staging-setup.md` D.5 because its route did not exist. After the deploy:
+
+  ```sql
+  select cron.alter_job(job_id := (select jobid from cron.job where jobname = 'payments-poll'), active := true);
+  select job, last_success_at, last_failure_at, last_error_code from public.job_heartbeats where job = 'payments-poll';
+  ```
+
+  Within five minutes `last_success_at` moves and `last_error_code` stays empty. `anomaly-scan` and `reconcile-payments` stay paused until their own routes ship.
+- **The first runs on staging backfill earlier paid bookings.** Every paid booking settled before this release lacks its ledger and tickets, so the poll completes them about 20 a run, each written ticket raising one medium `tickets_reissued` alert. Acknowledge those alerts in one go. The default revenue rules start on the day their migration ran, so a booking settled earlier finds no rule for its Jakarta day and waits under `REVENUE_RULE_REFUSED`; the poll retries it each run. To clear it, a superadmin adds a rule that covers that day, or, while no ledger row uses the default rules yet, moves their `effective_from` back to the first staging settlement. Production has no earlier settlements.

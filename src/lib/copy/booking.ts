@@ -1,10 +1,12 @@
 import { bookingPaymentCopy } from '@/lib/copy/booking-payment';
+import { bookingTicketCopy } from '@/lib/copy/booking-ticket';
 import { bookingWizardCopy } from '@/lib/copy/booking-wizard';
 
 // The booking wizard (docs/PRD.md FR-BOOK-01…05), read through copy.booking in src/lib/copy/id.ts.
 export const bookingCopy = {
   wizard: bookingWizardCopy,
   payment: bookingPaymentCopy,
+  ticket: bookingTicketCopy,
   validation: {
     sessions: 'Pilih satu sesi untuk setiap RW yang dikunjungi, ya.',
     visitDate: 'Pilih tanggal kunjungan yang benar.',

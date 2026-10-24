@@ -1,9 +1,12 @@
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { AuthCard } from '@/components/auth/auth-card';
 import { HoldCountdown } from '@/components/booking/hold-countdown';
 import { PayButton, type StartPaymentAction } from '@/components/booking/pay-button';
 import { FormAlert } from '@/components/forms/form-alert';
+import { Button } from '@/components/ui/button';
+import { GUEST_BOOKING_PATH } from '@/config/guest';
 import { copy } from '@/lib/copy/id';
 import { formatIDR } from '@/lib/utils/currency';
 import { formatDateLong, formatTimeRange } from '@/lib/utils/dates';
@@ -72,7 +75,16 @@ function PendingInstructions({ payment }: { payment: NonNullable<PaymentPageView
 // pending_payment shows the button, and the server checks that again (create_payment_attempt).
 function PaymentState({ view, action }: { view: PaymentPageView; action: StartPaymentAction }) {
   if (view.needsReview) return <FormAlert tone="info">{text.underReview}</FormAlert>;
-  if (PAID_STATUSES.has(view.status)) return <FormAlert tone="info">{text.paid}</FormAlert>;
+  if (PAID_STATUSES.has(view.status)) {
+    return (
+      <div className="space-y-4">
+        <FormAlert tone="info">{text.paid}</FormAlert>
+        <Button asChild size="lg" className="w-full">
+          <Link href={`${GUEST_BOOKING_PATH}/${view.bookingCode}/tiket`}>{text.seeTickets}</Link>
+        </Button>
+      </div>
+    );
+  }
   if (view.status === 'expired') return <FormAlert tone="info">{text.expired}</FormAlert>;
   if (view.status !== 'pending_payment' || view.expiresAt === null) {
     return <FormAlert tone="info">{text.notAwaitingPayment}</FormAlert>;

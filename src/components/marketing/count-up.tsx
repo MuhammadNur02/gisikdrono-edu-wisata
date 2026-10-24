@@ -57,24 +57,35 @@ function countWhenSeen(element: HTMLElement, value: number, onFrame: (value: num
 }
 
 // A figure already on screen at hydration stays final: resetting it in view would flash.
-function useCountUp(value: number, ref: RefObject<HTMLSpanElement | null>): number {
+// onMount (an admin KPI, §6.3): the figure is already on screen when the dashboard opens, so it counts once at once.
+function useCountUp(
+  value: number,
+  ref: RefObject<HTMLSpanElement | null>,
+  onMount: boolean,
+): number {
   const [shown, setShown] = useState(value);
   useEffect(() => {
     const element = ref.current;
-    if (!element || window.matchMedia(REDUCED_MOTION).matches || isOnScreen(element)) return;
+    if (!element || window.matchMedia(REDUCED_MOTION).matches) return;
+    if (onMount) {
+      setShown(0);
+      return tweenTo(value, setShown);
+    }
+    if (isOnScreen(element)) return;
     setShown(0);
     return countWhenSeen(element, value, setShown);
-  }, [ref, value]);
+  }, [ref, value, onMount]);
   return shown;
 }
 
 export interface CountUpProps {
   value: number;
+  onMount?: boolean;
 }
 
-export function CountUp({ value }: CountUpProps) {
+export function CountUp({ value, onMount = false }: CountUpProps) {
   const ref = useRef<HTMLSpanElement>(null);
-  const shown = useCountUp(value, ref);
+  const shown = useCountUp(value, ref, onMount);
   const final = numberFormat.format(value);
   return (
     <span ref={ref} className="inline-grid tabular-nums">
