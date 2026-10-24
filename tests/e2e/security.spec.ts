@@ -1,4 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type APIResponse } from '@playwright/test';
+
+import { resetAuthLimits, signInToDashboard, SUPERADMIN } from './helpers/staff';
 
 // Task P5.6.05: a public page that looks a row up answers with its real status code. The row-reading pages sit in
 // src/app/(public)/(rows), under no loading boundary, so notFound() and redirect() run before anything streams
@@ -87,5 +89,210 @@ test.describe('the pages beside them still answer as before', () => {
     expect(response.status()).toBe(308);
     const location = response.headers()['location'];
     expect(new URL(location ?? '', response.url()).pathname).toBe(`/${SCHEDULED_RW_SLUG}`);
+  });
+});
+
+// Task P5.4.01, P5.4.02, P5.3.02 (HDR-01…HDR-03, APP-12): the headers of docs/Security.md §8.2 and the refusals of
+// the security smoke, against the production build CI runs. CI sets no VERCEL_ENV, so the CSP is enforced here as
+// on production (cspHeaderNameFor); only a preview deployment reports instead.
+
+const SEEDED_WIZARD_PATH = `/pesan/${SEEDED_PACKAGE_SLUG}?step=jadwal`;
+// Well-formed booking codes (Crockford base32) no seeded booking carries.
+const UNKNOWN_BOOKING_CODE = 'GSK-7F3K9Q2Z';
+const PUBLIC_PAGES = ['/', `/paket-wisata/${SEEDED_PACKAGE_SLUG}`];
+const PRIVATE_PAGES = [SEEDED_WIZARD_PATH, '/login', '/reservasi/cari'];
+const SCANNER_PATH = '/dashboard/scanner';
+const JOB_PATHS = [
+  '/api/jobs/expire-bookings',
+  '/api/jobs/process-notifications',
+  '/api/jobs/purge-storage',
+];
+const FOREIGN_ORIGIN = 'https://evil.example';
+
+const BASELINE_HEADERS: Record<string, string> = {
+  'strict-transport-security': 'max-age=63072000; includeSubDomains',
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'cross-origin-opener-policy': 'same-origin',
+  'cross-origin-resource-policy': 'same-origin',
+};
+
+function directive(policy: string, name: string): string | undefined {
+  return policy.split('; ').find((part) => part === name || part.startsWith(`${name} `));
+}
+
+function enforcedPolicyOf(response: APIResponse): string {
+  const headers = response.headers();
+  expect(headers['content-security-policy-report-only']).toBeUndefined();
+  const policy = headers['content-security-policy'];
+  expect(policy).toBeDefined();
+  return policy ?? '';
+}
+
+function expectPrivateAndNoIndex(response: APIResponse) {
+  const headers = response.headers();
+  expect(headers['cache-control']).toMatch(/\bprivate\b/);
+  expect(headers['cache-control']).toMatch(/\bno-store\b/);
+  expect(headers['x-robots-tag']).toMatch(/\bnoindex\b/);
+}
+
+test.describe('security headers (docs/Security.md §8.2)', () => {
+  for (const path of [...PUBLIC_PAGES, ...PRIVATE_PAGES]) {
+    test(`${path} carries the baseline headers and an enforced CSP`, async ({ request }) => {
+      const response = await request.get(path, NO_REDIRECTS);
+      expect(response.status()).toBe(200);
+      const headers = response.headers();
+      for (const [name, value] of Object.entries(BASELINE_HEADERS))
+        expect(headers[name]).toBe(value);
+      const policy = enforcedPolicyOf(response);
+      expect(policy).toContain("frame-ancestors 'none'");
+      expect(policy).toContain("object-src 'none'");
+      expect(directive(policy, 'script-src')).not.toContain("'unsafe-eval'");
+    });
+  }
+
+  test('a private page runs only scripts that carry its nonce', async ({ request }) => {
+    const response = await request.get(SEEDED_WIZARD_PATH, NO_REDIRECTS);
+    const scripts = directive(enforcedPolicyOf(response), 'script-src') ?? '';
+    expect(scripts).toContain("'strict-dynamic'");
+    expect(scripts).not.toContain("'unsafe-inline'");
+    const nonce = /'nonce-([^']+)'/.exec(scripts)?.[1];
+    expect(nonce).toBeDefined();
+    const html = await response.text();
+    expect(html).toContain(`nonce="${nonce ?? ''}"`);
+    // Every executable inline script carries it; JSON-LD is data, which CSP never runs.
+    const inlineScripts =
+      html.match(/<script(?![^>]*\bsrc=)(?![^>]*application\/ld\+json)[^>]*>/g) ?? [];
+    for (const tag of inlineScripts) expect(tag).toContain(`nonce="${nonce ?? ''}"`);
+  });
+
+  test('two requests never share a nonce', async ({ request }) => {
+    const nonces = await Promise.all(
+      [1, 2].map(async () => {
+        const policy = enforcedPolicyOf(await request.get('/login', NO_REDIRECTS));
+        return /'nonce-([^']+)'/.exec(policy)?.[1];
+      }),
+    );
+    expect(nonces[0]).toBeDefined();
+    expect(nonces[0]).not.toBe(nonces[1]);
+  });
+
+  for (const path of PRIVATE_PAGES) {
+    test(`${path} is private, uncached and noindex`, async ({ request }) => {
+      expectPrivateAndNoIndex(await request.get(path, NO_REDIRECTS));
+    });
+  }
+
+  test('the API, a ticket landing and an unknown booking are private and noindex too', async ({
+    request,
+  }) => {
+    expectPrivateAndNoIndex(await request.post(JOB_PATHS[0] ?? '', NO_REDIRECTS));
+    expectPrivateAndNoIndex(await request.get('/v/GSK.k1.tidak-ada', NO_REDIRECTS));
+    expectPrivateAndNoIndex(await request.get(`/reservasi/${UNKNOWN_BOOKING_CODE}`, NO_REDIRECTS));
+  });
+
+  test('the camera opens on the scanner only', async ({ request }) => {
+    const home = (await request.get('/', NO_REDIRECTS)).headers()['permissions-policy'];
+    const scanner = (await request.get(SCANNER_PATH, NO_REDIRECTS)).headers()['permissions-policy'];
+    expect(home).toMatch(/^camera=\(\),/);
+    expect(scanner).toMatch(/^camera=\(self\),/);
+    expect(scanner).toContain('microphone=()');
+  });
+});
+
+test.describe('the security smoke refuses what it must (Task P5.3.02)', () => {
+  test('/dashboard without a session goes to /login and keeps where it was headed', async ({
+    request,
+  }) => {
+    const response = await request.get('/dashboard/packages', NO_REDIRECTS);
+    expect(response.status()).toBe(307);
+    const location = new URL(response.headers()['location'] ?? '', response.url());
+    expect(location.pathname).toBe('/login');
+    expect(location.searchParams.get('next')).toBe('/dashboard/packages');
+  });
+
+  test('the Midtrans webhook under a wrong path token is a 404', async ({ request }) => {
+    const response = await request.post('/api/webhooks/midtrans/bukan-token-yang-benar', {
+      data: {},
+      ...NO_REDIRECTS,
+    });
+    expect(response.status()).toBe(404);
+  });
+
+  for (const path of JOB_PATHS) {
+    test(`${path} without the cron bearer is a 401`, async ({ request }) => {
+      expect((await request.post(path, NO_REDIRECTS)).status()).toBe(401);
+      const wrongBearer = { headers: { authorization: 'Bearer bukan-rahasia' }, ...NO_REDIRECTS };
+      expect((await request.post(path, wrongBearer)).status()).toBe(401);
+    });
+  }
+
+  test('a Server Action from another origin, or with no origin, is a 403', async ({ request }) => {
+    const action = { 'next-action': '0'.repeat(42), 'content-type': 'text/plain;charset=UTF-8' };
+    const foreign = await request.post('/login', {
+      headers: { ...action, origin: FOREIGN_ORIGIN },
+      data: '[]',
+      ...NO_REDIRECTS,
+    });
+    expect(foreign.status()).toBe(403);
+    const withoutOrigin = await request.post('/login', {
+      headers: action,
+      data: '[]',
+      ...NO_REDIRECTS,
+    });
+    expect(withoutOrigin.status()).toBe(403);
+  });
+
+  test('the same POST from our own origin gets past the origin check', async ({
+    request,
+    baseURL,
+  }) => {
+    const response = await request.post('/login', {
+      headers: { 'next-action': '0'.repeat(42), origin: baseURL ?? '' },
+      data: '[]',
+      ...NO_REDIRECTS,
+    });
+    expect(response.status()).not.toBe(403);
+  });
+
+  test('an upload URL is refused without a staff session', async ({ request, baseURL }) => {
+    const response = await request.post('/api/uploads/sign', {
+      headers: { origin: baseURL ?? '' },
+      data: { rwId: null, contentType: 'image/webp', size: 100, leadingBytes: 'UklGRg==' },
+      ...NO_REDIRECTS,
+    });
+    expect(response.status()).toBe(401);
+  });
+
+  for (const path of [
+    `/reservasi/${UNKNOWN_BOOKING_CODE}`,
+    `/reservasi/${UNKNOWN_BOOKING_CODE}/bayar`,
+  ]) {
+    test(`${path} is a 404`, async ({ request }) => {
+      expect((await request.get(path, NO_REDIRECTS)).status()).toBe(404);
+    });
+  }
+});
+
+test.describe('an SVG upload is refused even for the superadmin (UPL-01)', () => {
+  test.skip(({ isMobile }) => isMobile, 'one run is enough');
+  test.describe.configure({ timeout: 90_000 });
+
+  test.beforeAll(async () => {
+    await resetAuthLimits();
+  });
+
+  test('api/uploads/sign answers VALIDATION for image/svg+xml', async ({ page, baseURL }) => {
+    await signInToDashboard(page, SUPERADMIN);
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>').toString('base64');
+    const response = await page.request.post('/api/uploads/sign', {
+      headers: { origin: baseURL ?? '' },
+      data: { rwId: null, contentType: 'image/svg+xml', size: 64, leadingBytes: svg },
+      ...NO_REDIRECTS,
+    });
+    expect(response.status()).toBe(400);
+    const body: unknown = await response.json();
+    expect(body).toMatchObject({ ok: false, error: { code: 'VALIDATION' } });
   });
 });
