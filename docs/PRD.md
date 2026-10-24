@@ -1303,9 +1303,11 @@ create table public.certificates (
   issued_by          uuid references public.profiles(id), -- NULL when auto-issued at check-in
   revoked_at         timestamptz,
   revoke_reason      text,
+  revoked_by_undo    boolean not null default false,      -- set by undo_check_in only; what issue_certificates may bring back (20261025080300)
   purged_at          timestamptz,                         -- set by internal.purge_participants: participant_id nulled, recipient_name '[dihapus]'
   constraint certificates_kind_ok check (
-    (kind = 'group' and participant_id is null) or (kind = 'participant' and (participant_id is not null or purged_at is not null)))
+    (kind = 'group' and participant_id is null) or (kind = 'participant' and (participant_id is not null or purged_at is not null))),
+  constraint certificates_undo_is_revoked check (not revoked_by_undo or status = 'revoked')
 );
 create unique index certificates_group_once       on public.certificates (booking_id) where kind = 'group';
 create unique index certificates_participant_once on public.certificates (participant_id) where kind = 'participant';
@@ -1601,7 +1603,8 @@ create table public.security_events (
     'mfa_failed','mfa_enrolled','scanner_invalid_signature','scanner_lockout','rate_limited','turnstile_failed',
     'upload_rejected','role_changed','staff_disabled','key_rotated','export_downloaded','pii_revealed',
     'manual_checkin','manual_backfill','undo_check_in','cron_failed','notification_dead','price_changed',
-    'session_changed_with_bookings','quota_pressure','mfa_reset','notification_blocked','upload_sanitized')), -- mfa_reset and notification_blocked added by 0004, upload_sanitized by 20261018133045
+    'session_changed_with_bookings','quota_pressure','mfa_reset','notification_blocked','upload_sanitized',
+    'mfa_locked','session_revoke_failed','manual_lookup')), -- mfa_reset and notification_blocked added by 0004, upload_sanitized by 20261018133045, mfa_locked and session_revoke_failed by 20261020080000, manual_lookup by 20261025080300
   severity    public.alert_severity not null default 'info',
   actor_id    uuid,
   actor_role  text,
@@ -1960,8 +1963,8 @@ Only the keys marked public below may have `is_public = true` (CHECK `site_setti
 |---|---|---|---|
 | `validate_ticket` | `(p_ticket_id uuid, p_attempt_id uuid, p_raw text, p_device jsonb, p_source text default 'qr') returns jsonb` | staff | Read-only evaluation with the check-in rules; inserts `ticket_scans` (`phase = 'validate'`); returns `{result, ticket (code, institution, PIC first name, package, session, pax, participant count, add-ons), used_at, used_by, checked_in_pax, unpaid_pax}`; idempotent on `attempt_id` |
 | `check_in_ticket` | `(p_ticket_id uuid, p_attempt_id uuid, p_attendee_count int, p_note text, p_device jsonb, p_override boolean, p_override_reason text, p_source text, p_raw text) returns jsonb` | staff | Derives admin/RW from `auth.uid()`; atomic `issued -> used`; `checked_in_pax`, `unpaid_pax`; leg `checked_in`; session counter; booking `checked_in` on first leg; re-checks `bookings.status in ('paid','checked_in')`; `issue_certificates` when all legs used; enqueues `checked_in_thanks`; returns stored result on duplicate `attempt_id` |
-| `undo_check_in` | `(p_ticket_id uuid, p_reason text) returns void` | superadmin, AAL2 | `used -> issued` within 15 min while the booking is `checked_in`; reverts counters and leg, the booking to `paid` when no other leg is in; revokes the booking's certificates as `undo_check_in` until every leg is in again; security event `undo_check_in` |
-| `find_manual_ticket` | `(p_booking_code text, p_phone_last_digits text) returns uuid` | staff | FR-SCAN-07: today's ticket of the officer's RW for the booking whose verified phone ends in those four digits; null for anything else |
+| `undo_check_in` | `(p_ticket_id uuid, p_reason text) returns void` | superadmin, AAL2 | `used -> issued` within 15 min while the booking is `checked_in`; reverts counters and leg, the booking to `paid` when no other leg is in; revokes the booking's certificates with `certificates.revoked_by_undo` set until every leg is in again, when the group's comes back and the participants' only while the list fits the fewest people a gate let in (20261025080300); security event `undo_check_in` |
+| `find_manual_ticket` | `(p_booking_code text, p_phone_last_digits text) returns jsonb` | staff | FR-SCAN-07: `{ticket_id, rate_limited}`; `ticket_id` is today's ticket of the officer's RW for the booking whose verified phone ends in those four digits, null for anything else. Volatile: every call is a `manual_lookup` security event (outcome and booking id, never the digits tried); fail-closed caps in `rate_limit_buckets` of 30 lookups per officer per hour and 5 wrong last-four per booking per day, past which it answers `rate_limited: true` without looking and the first refusal of the window is a `high` `rate_limited` event (20261025080300, review of PR #53, M1) |
 | `mark_booking_paid_manually` | `(p_booking_id uuid, p_method payment_method, p_amount bigint, p_reference text, p_proof_path text) returns jsonb` | superadmin (`manual_transfer`), admin_rw (`cash`, `channel = 'admin'`) | Inserts `payments (provider = 'manual')`, then the settlement path of `internal.apply_payment_event`; records `payment_adjustments` of type `manual_mark_paid` for review |
 | `cancel_booking` | `(p_booking_id uuid, p_reason text) returns jsonb` | staff in scope (paid -> superadmin) | §9 transition; revokes tickets; releases quota; enqueues `booking_cancelled` |
 | `extend_booking_hold` | `(p_booking_id uuid, p_new_expires_at timestamptz) returns jsonb` | staff in scope | `pending_payment` only; <= now() + 14 d and < first session start; audited |

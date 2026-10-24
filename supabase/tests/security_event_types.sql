@@ -1,8 +1,15 @@
 -- security_events.event_type after 20261018133045_upload_sanitized_event: upload_sanitized is accepted next to
 -- upload_rejected, every earlier type still is, and a type outside the list is still refused. After
--- 20261020080000_auth_review_events: mfa_locked and session_revoke_failed (security review of PR #17, M1 and S1).
+-- 20261020080000_auth_review_events: mfa_locked and session_revoke_failed (security review of PR #17, M1 and S1). After
+-- 20261025080300_gate_review_fixes: manual_lookup (review of PR #53, M1).
 begin;
-select plan(6);
+select plan(7);
+
+select lives_ok(
+  $$insert into public.security_events (event_type, severity, entity_type, details)
+    values ('manual_lookup', 'medium', 'bookings', '{"outcome": "wrong_digits"}')$$,
+  'manual_lookup is a security event type'
+);
 
 select lives_ok(
   $$insert into public.security_events (event_type, severity, entity_type, details)

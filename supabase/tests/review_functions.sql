@@ -64,7 +64,7 @@ grant select on visits to authenticated, service_role;
 grant insert on submitted to service_role;
 select pg_temp.act_as('admin_rw_05');
 select public.check_in_ticket((select t.id from public.tickets_qr t where t.booking_id = (select visited from visits)),
-                              '00000000-0000-4000-8000-0000000ee001', 10);
+                              '00000000-0000-4000-8000-0000000ee001', 10, p_raw => 'GSK.k1.visited');
 reset role;
 
 -- ===== submit_review =====

@@ -3,9 +3,11 @@
 -- attempt returns its stored answer; a commit lets the group in once, counting the unpaid people, moving the leg, the
 -- session and the booking and issuing the certificates after the last leg; a second scan reads already_used; a revoked
 -- ticket and a wrong day are refused, the day overridable by the superadmin alone; the superadmin undoes a check-in
--- within 15 minutes; a QR nobody can read is found by its code and the phone's last four digits, today only.
+-- within 15 minutes; a QR nobody can read is found by its code and the phone's last four digits, today only, each
+-- lookup logged and capped per officer and per booking (review of PR #53, M1); a QR scan names its payload (L4) and a
+-- repeated record of one attempt keeps the first (L1).
 begin;
-select plan(58);
+select plan(73);
 \ir helpers/rls_personas.psql
 -- The kid the server signs tickets with, which svc_apply_payment_event passes and these direct calls do not.
 select set_config('app.qr_key_id', 'k1', true);
@@ -139,6 +141,8 @@ select is(public.validate_ticket(pg_temp.ticket('d05'), '00000000-0000-4000-8000
           ->> 'result', 'wrong_date', 'a ticket for another day reads wrong_date');
 select throws_ok($$select public.validate_ticket(pg_temp.ticket('a05'), '00000000-0000-4000-8000-0000000de007', 'x',
                     '{}', 'paper')$$, '22023', null, 'a scan comes from a QR or a manual lookup');
+select throws_ok($$select public.validate_ticket(pg_temp.ticket('a05'), '00000000-0000-4000-8000-0000000df001', ' ',
+                    '{}')$$, '22023', null, 'a QR preview without its payload is refused (review of PR #53, L4)');
 
 reset role;
 select pg_temp.act_as('admin_rw_08');
@@ -166,20 +170,35 @@ select is((select (s.raw_payload, s.device_info, s.ip, s.rw_id, s.source, s.phas
 select is((select count(*)::int from public.ticket_scans s
            where s.attempt_id between '00000000-0000-4000-8000-0000000de001' and '00000000-0000-4000-8000-0000000de010'),
   7, 'one row per attempt answered, none for a refused caller or a repeat');
+-- Review of PR #53, L1: two requests of one attempt that both missed the stored row both record it; the slower one
+-- leaves the row as it is and reads it back instead of raising 23505.
+select lives_ok($$select internal.record_scan('00000000-0000-4000-8000-0000000df002', pg_temp.ticket('a05'), 'validate',
+                    'ok', 'qr', null, null, 'GSK.k1.race', '{}', null);
+                  select internal.record_scan('00000000-0000-4000-8000-0000000df002', pg_temp.ticket('a05'), 'validate',
+                    'wrong_date', 'qr', null, null, 'GSK.k1.race', '{}', null)$$,
+  'a second record of the same attempt and phase does not raise');
+select is((select array_agg(s.result::text) from public.ticket_scans s
+           where s.attempt_id = '00000000-0000-4000-8000-0000000df002'),
+  array['ok'], 'and keeps the first answer');
 
 -- ===== Commit =====
 select pg_temp.act_as('admin_rw_05');
-select throws_ok($$select public.check_in_ticket(pg_temp.ticket('a05'), '00000000-0000-4000-8000-0000000de001', 41)$$,
+select throws_ok($$select public.check_in_ticket(pg_temp.ticket('a05'), '00000000-0000-4000-8000-0000000de001', 41,
+                    p_raw => 'GSK.k1.preview-a')$$,
   '22023', null, 'more than twice the booking cannot come in (QR-08)');
+select throws_ok($$select public.check_in_ticket(pg_temp.ticket('a05'), '00000000-0000-4000-8000-0000000de001', 22)$$,
+  '22023', null, 'a QR commit without its payload is refused (review of PR #53, L4)');
 insert into answers values ('a_commit', public.check_in_ticket(pg_temp.ticket('a05'),
-  '00000000-0000-4000-8000-0000000de001', 22, 'Dua guru tambahan', '{"user_agent": "pgTAP"}'));
+  '00000000-0000-4000-8000-0000000de001', 22, 'Dua guru tambahan', '{"user_agent": "pgTAP"}',
+  p_raw => 'GSK.k1.preview-a'));
 select is(pg_temp.answer('a_commit') - 'used_at' - 'ticket',
   '{"result": "ok", "used_by": "Admin RLS 05", "checked_in_pax": 22, "unpaid_pax": 2}',
   'the commit lets 22 in on a ticket for 20, the two above recorded as unpaid');
-select is(public.check_in_ticket(pg_temp.ticket('a05'), '00000000-0000-4000-8000-0000000de001', 22),
+select is(public.check_in_ticket(pg_temp.ticket('a05'), '00000000-0000-4000-8000-0000000de001', 22,
+                                 p_raw => 'GSK.k1.preview-a'),
   pg_temp.answer('a_commit'), 'the same commit again gets the stored answer and changes nothing');
 insert into answers values ('a_again', public.check_in_ticket(pg_temp.ticket('a05'),
-  '00000000-0000-4000-8000-0000000de011', 20));
+  '00000000-0000-4000-8000-0000000de011', 20, p_raw => 'GSK.k1.again'));
 select is(pg_temp.answer('a_again') ->> 'result', 'already_used', 'a second scan of the ticket reads already_used');
 select ok(pg_temp.answer('a_again') ->> 'used_at' is not null and pg_temp.answer('a_again') ->> 'used_by' = 'Admin RLS 05',
   'with when and by whom');
@@ -211,14 +230,14 @@ select is((select count(*)::int from public.notifications n
 -- ===== Override (FR-SCAN-09) =====
 select pg_temp.act_as('admin_rw_05');
 select is(public.check_in_ticket(pg_temp.ticket('d05'), '00000000-0000-4000-8000-0000000de006', 5, null, '{}', true,
-                                 'Rombongan datang lebih awal') ->> 'result',
+                                 'Rombongan datang lebih awal', p_raw => 'GSK.k1.d') ->> 'result',
   'wrong_date', 'an officer''s override is ignored');
 reset role;
 select pg_temp.act_as('superadmin_aal2');
 select throws_ok($$select public.check_in_ticket(pg_temp.ticket('d05'), '00000000-0000-4000-8000-0000000de012', 5, null,
-                    '{}', true, ' ')$$, '22023', null, 'the superadmin''s override needs a reason');
+                    '{}', true, ' ', p_raw => 'GSK.k1.d')$$, '22023', null, 'the superadmin''s override needs a reason');
 select is(public.check_in_ticket(pg_temp.ticket('d05'), '00000000-0000-4000-8000-0000000de012', 5, null, '{}', true,
-                                 'Rombongan datang lebih awal') ->> 'result',
+                                 'Rombongan datang lebih awal', p_raw => 'GSK.k1.d') ->> 'result',
   'ok', 'and with one lets the group in on another day');
 reset role;
 select is((select a.metadata from public.audit_logs a
@@ -231,14 +250,16 @@ select is((select s.override_reason from public.ticket_scans s
 
 -- ===== A combo's two gates =====
 select pg_temp.act_as('admin_rw_05');
-select is(public.check_in_ticket(pg_temp.ticket('b05'), '00000000-0000-4000-8000-0000000de013', 10) ->> 'result', 'ok',
+select is(public.check_in_ticket(pg_temp.ticket('b05'), '00000000-0000-4000-8000-0000000de013', 10,
+                                 p_raw => 'GSK.k1.b05') ->> 'result', 'ok',
   'the first gate of a combo lets the group in');
 reset role;
 select is((select (b.status::text, (select count(*) from public.certificates c where c.booking_id = b.id))::text
            from public.bookings b where b.id = (select b from gate)),
   '(checked_in,0)', 'the booking is checked in, its certificates wait for the second gate');
 select pg_temp.act_as('admin_rw_13');
-select is(public.check_in_ticket(pg_temp.ticket('b13'), '00000000-0000-4000-8000-0000000de014', 10) ->> 'result', 'ok',
+select is(public.check_in_ticket(pg_temp.ticket('b13'), '00000000-0000-4000-8000-0000000de014', 10,
+                                 p_raw => 'GSK.k1.b13') ->> 'result', 'ok',
   'the second gate lets them in');
 reset role;
 select is((select (count(*), count(c.released_at), min(c.rw_ids::text))::text from public.certificates c
@@ -275,21 +296,22 @@ select is((select (t.status::text, t.checked_in_pax, l.status::text, s.checked_i
            where t.id = pg_temp.ticket('b13')),
   ('issued', null, 'reserved', 0, 'checked_in')::text,
   'the ticket, its leg and its session count go back; the booking stays in through its first gate');
-select is((select (c.status::text, c.revoke_reason)::text from public.certificates c
+select is((select (c.status::text, c.revoke_reason, c.revoked_by_undo)::text from public.certificates c
            where c.booking_id = (select b from gate)),
-  '(revoked,undo_check_in)', 'the certificate waits again for every leg');
+  '(revoked,undo_check_in,t)', 'the certificate waits again for every leg, flagged as the undo''s');
 select is((select count(*)::int from public.security_events e
            where e.event_type = 'undo_check_in' and e.entity_id = pg_temp.ticket('b13')::text
              and e.details ->> 'reason' = 'Salah rombongan'),
   1, 'the undo is a security event with its reason');
 select pg_temp.act_as('admin_rw_13');
-select is(public.check_in_ticket(pg_temp.ticket('b13'), '00000000-0000-4000-8000-0000000de015', 10) ->> 'result', 'ok',
+select is(public.check_in_ticket(pg_temp.ticket('b13'), '00000000-0000-4000-8000-0000000de015', 10,
+                                 p_raw => 'GSK.k1.b13') ->> 'result', 'ok',
   'the group is let in again');
 reset role;
-select is((select (c.id, c.certificate_number, c.status::text)::text from public.certificates c
+select is((select (c.id, c.certificate_number, c.status::text, c.revoked_by_undo)::text from public.certificates c
            where c.booking_id = (select b from gate)),
-  (select (id, certificate_number, 'issued')::text from combo_certificate),
-  'and gets the same certificate back, number included');
+  (select (id, certificate_number, 'issued', false)::text from combo_certificate),
+  'and gets the same certificate back, number included, without the flag');
 -- A check-in 16 minutes old.
 update public.tickets_qr set checked_in_at = now() - interval '16 minutes' where id = pg_temp.ticket('a05');
 select pg_temp.act_as('superadmin_aal2');
@@ -302,12 +324,22 @@ select throws_ok($$update public.tickets_qr set status = 'issued' where id = pg_
 reset role;
 
 -- ===== A QR nobody can read (FR-SCAN-07) =====
+-- The officer's lookup of a fixture booking, as the route sends it.
+create function pg_temp.lookup(p_name text, p_digits text) returns jsonb
+  language sql
+as $$ select public.find_manual_ticket((select booking_code from gate_tickets where name = p_name), p_digits); $$;
+grant execute on function pg_temp.lookup(text, text) to authenticated;
+create function pg_temp.booking_of(p_name text) returns text
+  language sql stable
+as $$ select t.booking_id::text from public.tickets_qr t where t.id = pg_temp.ticket(p_name); $$;
+
 select pg_temp.act_as('admin_rw_05');
 select is(public.find_manual_ticket((select lower(booking_code) from gate_tickets where name = 'e05'), '2005'),
-  pg_temp.ticket('e05'), 'the code and the phone''s last four digits find today''s ticket of the officer''s RW');
-select is(public.find_manual_ticket((select booking_code from gate_tickets where name = 'e05'), '2006'), null,
+  jsonb_build_object('ticket_id', pg_temp.ticket('e05'), 'rate_limited', false),
+  'the code and the phone''s last four digits find today''s ticket of the officer''s RW');
+select is(pg_temp.lookup('e05', '2006'), '{"ticket_id": null, "rate_limited": false}',
   'a wrong phone finds nothing');
-select is(public.find_manual_ticket((select booking_code from gate_tickets where name = 'd05'), '2004'), null,
+select is(pg_temp.lookup('d05', '2004'), '{"ticket_id": null, "rate_limited": false}',
   'nor does a ticket of another day');
 insert into answers values ('e_preview', public.validate_ticket(pg_temp.ticket('e05'),
   '00000000-0000-4000-8000-0000000de016', null, '{}', 'manual'));
@@ -317,16 +349,60 @@ select is(public.check_in_ticket(pg_temp.ticket('e05'), '00000000-0000-4000-8000
   'ok', 'and the manual commit lets it in');
 reset role;
 select pg_temp.act_as('admin_rw_13');
-select is(public.find_manual_ticket((select booking_code from gate_tickets where name = 'e05'), '2005'), null,
+select is(pg_temp.lookup('e05', '2005'), '{"ticket_id": null, "rate_limited": false}',
   'an officer of another RW finds nothing');
-select is(public.find_manual_ticket((select booking_code from gate_tickets where name = 'b13'), '2002'),
-  pg_temp.ticket('b13'), 'but finds their own gate''s ticket of a combo');
+select is(pg_temp.lookup('b13', '2002'), jsonb_build_object('ticket_id', pg_temp.ticket('b13'), 'rate_limited', false),
+  'but finds their own gate''s ticket of a combo');
 reset role;
 select is((select (s.source, e.event_type, e.severity::text)::text
            from public.ticket_scans s
            join public.security_events e on e.entity_id = s.ticket_id::text and e.event_type = 'manual_checkin'
            where s.attempt_id = '00000000-0000-4000-8000-0000000de016' and s.phase = 'check_in'),
   ('manual', 'manual_checkin', 'medium')::text, 'a manual check-in is recorded as such and is a security event');
+
+-- ===== Manual lookups are logged and capped (review of PR #53, M1) =====
+select is((select p.provolatile::text from pg_proc p where p.oid = 'public.find_manual_ticket(text, text)'::regprocedure),
+  'v', 'find_manual_ticket is volatile: it counts and logs every call');
+select is((select array_agg((e.details, e.severity::text, e.entity_id, e.rw_id)::text order by e.id)
+           from public.security_events e
+           where e.event_type = 'manual_lookup' and e.actor_id = pg_temp.persona_id('admin_rw_05')),
+  array[('{"outcome": "found"}'::jsonb, 'info', pg_temp.booking_of('e05'), 5::smallint)::text,
+        ('{"outcome": "wrong_digits"}'::jsonb, 'medium', pg_temp.booking_of('e05'), 5::smallint)::text,
+        ('{"outcome": "not_found"}'::jsonb, 'medium', pg_temp.booking_of('d05'), 5::smallint)::text],
+  'every lookup is a manual_lookup event naming the booking and the outcome, never the digits tried');
+
+select pg_temp.act_as('admin_rw_05');
+select is((select array_agg(pg_temp.lookup('e05', d) ->> 'rate_limited')
+           from unnest(array['1111', '2222', '3333', '4444']) as d),
+  array['false', 'false', 'false', 'false'], 'four more wrong last-four make five for the booking today');
+select is(pg_temp.lookup('e05', '2005'), '{"ticket_id": null, "rate_limited": true}',
+  'past five the booking answers rate_limited, even to the right digits');
+select is(pg_temp.lookup('e05', '2005'), '{"ticket_id": null, "rate_limited": true}', 'and keeps doing so');
+reset role;
+select is((select array_agg((e.severity::text, e.details ->> 'limit', e.actor_id)::text)
+           from public.security_events e
+           where e.event_type = 'rate_limited' and e.entity_id = pg_temp.booking_of('e05')),
+  array[('high', 'manual_lookup_booking', pg_temp.persona_id('admin_rw_05'))::text],
+  'the first refusal is one high rate_limited event, the next one none');
+
+select pg_temp.act_as('none');
+select throws_ok($$select pg_temp.lookup('e05', '2005')$$, '42501', null, 'an account without a role looks up nothing');
+reset role;
+-- admin_rw_13 has looked up twice this hour; 28 more reach the officer's cap of 30.
+select count(*) from generate_series(1, 28)
+where internal.rate_limit_hit('manual_lookup:officer:' || pg_temp.persona_id('admin_rw_13'), 30, 3600);
+select pg_temp.act_as('admin_rw_13');
+select is(pg_temp.lookup('b13', '2002'), '{"ticket_id": null, "rate_limited": true}',
+  'past 30 lookups an hour the officer gets rate_limited, even for a ticket of their own gate');
+select is(pg_temp.lookup('b13', '2002') ->> 'rate_limited', 'true', 'and again');
+reset role;
+select is((select array_agg((e.severity::text, e.details ->> 'limit')::text)
+           from public.security_events e
+           where e.event_type = 'rate_limited' and e.actor_id = pg_temp.persona_id('admin_rw_13')),
+  array[('high', 'manual_lookup_officer')::text], 'the officer''s first refusal is one high rate_limited event');
+select is((select array_agg(e.details ->> 'outcome' order by e.id) from public.security_events e
+           where e.event_type = 'manual_lookup' and e.actor_id = pg_temp.persona_id('admin_rw_13')),
+  array['not_found', 'found', 'rate_limited', 'rate_limited'], 'and each refused lookup is still logged');
 
 select * from finish();
 rollback;

@@ -858,6 +858,7 @@ export type Database = {
           rendered_at: string | null
           revoke_reason: string | null
           revoked_at: string | null
+          revoked_by_undo: boolean
           rw_ids: number[]
           status: Database["public"]["Enums"]["certificate_status"]
           template_version: number
@@ -881,6 +882,7 @@ export type Database = {
           rendered_at?: string | null
           revoke_reason?: string | null
           revoked_at?: string | null
+          revoked_by_undo?: boolean
           rw_ids: number[]
           status?: Database["public"]["Enums"]["certificate_status"]
           template_version?: number
@@ -904,6 +906,7 @@ export type Database = {
           rendered_at?: string | null
           revoke_reason?: string | null
           revoked_at?: string | null
+          revoked_by_undo?: boolean
           rw_ids?: number[]
           status?: Database["public"]["Enums"]["certificate_status"]
           template_version?: number
@@ -4245,7 +4248,7 @@ export type Database = {
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       find_manual_ticket: {
         Args: { p_booking_code: string; p_phone_last_digits: string }
-        Returns: string
+        Returns: Json
       }
       fresh_totp: { Args: never; Returns: boolean }
       generate_visit_sessions: {

@@ -2,9 +2,11 @@
 -- leg's check-in issues the group certificate and, when the list fits the people who came, one per participant, each
 -- numbered SERT/GSK/YYYY/NNNNN with its verify code; issuing again writes nothing; unpaid people hold the release back
 -- until a superadmin waives it with a reason; a booking still waiting for a leg gets none; the superadmin revokes one
--- with a reason; a booking has one group certificate and a participant one at most.
+-- with a reason; a booking has one group certificate and a participant one at most. After an undone check-in only what
+-- the undo flagged comes back, the participants' only while the list fits the new count, and a superadmin's revocation
+-- stays whatever its reason reads (review of PR #53, M2).
 begin;
-select plan(26);
+select plan(38);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -81,9 +83,12 @@ create temporary table visits on commit drop as select
                array[5]::smallint[], 5, '+6281300003003') as unpaid,
   pg_temp.paid('00000000-0000-4000-8000-0000000f1002',
                array['00000000-0000-4000-8000-0000000f2051', '00000000-0000-4000-8000-0000000f2131']::uuid[],
-               array[5, 13]::smallint[], 4, '+6281300003004') as half_combo;
+               array[5, 13]::smallint[], 4, '+6281300003004') as half_combo,
+  pg_temp.paid('00000000-0000-4000-8000-0000000f1001', array['00000000-0000-4000-8000-0000000f2051']::uuid[],
+               array[5]::smallint[], 3, '+6281300003005') as redo;
 select pg_temp.participants((select listed from visits), array['Ani Murid', 'Budi Murid', 'Citra Murid']);
 select pg_temp.participants((select long_list from visits), array['Dewi Murid', 'Eka Murid', 'Fajar Murid']);
+select pg_temp.participants((select redo from visits), array['Gita Murid', 'Hadi Murid', 'Indah Murid']);
 grant select on visits to authenticated;
 
 create function pg_temp.ticket(p_booking uuid, p_rw smallint) returns uuid
@@ -94,13 +99,15 @@ grant execute on function pg_temp.ticket(uuid, smallint) to authenticated;
 -- ===== Check-in issues them =====
 select pg_temp.act_as('admin_rw_05');
 select public.check_in_ticket(pg_temp.ticket((select listed from visits), 5::smallint),
-                              '00000000-0000-4000-8000-0000000fe001', 3);
+                              '00000000-0000-4000-8000-0000000fe001', 3, p_raw => 'GSK.k1.listed');
 select public.check_in_ticket(pg_temp.ticket((select long_list from visits), 5::smallint),
-                              '00000000-0000-4000-8000-0000000fe002', 2);
+                              '00000000-0000-4000-8000-0000000fe002', 2, p_raw => 'GSK.k1.long');
 select public.check_in_ticket(pg_temp.ticket((select unpaid from visits), 5::smallint),
-                              '00000000-0000-4000-8000-0000000fe003', 7);
+                              '00000000-0000-4000-8000-0000000fe003', 7, p_raw => 'GSK.k1.unpaid');
 select public.check_in_ticket(pg_temp.ticket((select half_combo from visits), 5::smallint),
-                              '00000000-0000-4000-8000-0000000fe004', 4);
+                              '00000000-0000-4000-8000-0000000fe004', 4, p_raw => 'GSK.k1.combo');
+select public.check_in_ticket(pg_temp.ticket((select redo from visits), 5::smallint),
+                              '00000000-0000-4000-8000-0000000fe005', 3, p_raw => 'GSK.k1.redo');
 reset role;
 
 select is((select (count(*) filter (where c.kind = 'group'), count(*) filter (where c.kind = 'participant'),
@@ -196,6 +203,58 @@ select throws_ok($$insert into public.certificates (booking_id, kind, certificat
   select c.booking_id, 'group', 'SERT/GSK/2099/99999', 'ZZZZZZZZZZ', 'Kedua', c.visit_date, c.rw_ids
   from public.certificates c where c.booking_id = (select listed from visits) and c.kind = 'group'$$,
   '23505', null, 'a booking has one group certificate');
+select set_config('app.in_rpc', '', true);
+
+-- ===== After an undone check-in (review of PR #53, M2) =====
+-- What the redo booking's certificates are: issued, and revoked with or without the undo's flag.
+create function pg_temp.redo_certificates() returns text
+  language sql stable
+as $$
+  select (count(*) filter (where c.status = 'issued'), count(*) filter (where c.status = 'revoked' and c.revoked_by_undo),
+          count(*) filter (where c.status = 'revoked' and not c.revoked_by_undo))::text
+  from public.certificates c where c.booking_id = (select redo from visits);
+$$;
+select pg_temp.act_as('superadmin_aal2');
+select lives_ok($$select public.undo_check_in(pg_temp.ticket((select redo from visits), 5::smallint), 'Hitungan salah')$$,
+  'the superadmin undoes the check-in of three');
+reset role;
+select is(pg_temp.redo_certificates(), '(0,4,0)', 'which revokes the group''s and the three participants'', flagged');
+select pg_temp.act_as('admin_rw_05');
+select is(public.check_in_ticket(pg_temp.ticket((select redo from visits), 5::smallint),
+                                 '00000000-0000-4000-8000-0000000fe006', 2, p_raw => 'GSK.k1.redo') ->> 'result',
+  'ok', 'the group is let in again, two of them');
+reset role;
+select is(pg_temp.redo_certificates(), '(1,3,0)',
+  'the group certificate comes back, the participants'' stay revoked while three names outnumber two people');
+select pg_temp.act_as('superadmin_aal2');
+select lives_ok($$select public.undo_check_in(pg_temp.ticket((select redo from visits), 5::smallint), 'Hitungan salah')$$,
+  'the superadmin undoes the count of two');
+reset role;
+select pg_temp.act_as('admin_rw_05');
+select is(public.check_in_ticket(pg_temp.ticket((select redo from visits), 5::smallint),
+                                 '00000000-0000-4000-8000-0000000fe007', 3, p_raw => 'GSK.k1.redo') ->> 'result',
+  'ok', 'and the officer counts three');
+reset role;
+select is(pg_temp.redo_certificates(), '(4,0,0)', 'so every certificate comes back, the flags cleared');
+
+create temporary table revoked_as_undo on commit drop as
+  select c.id from public.certificates c
+  where c.booking_id = (select listed from visits) and c.recipient_name = 'Citra Murid';
+grant select on revoked_as_undo to authenticated;
+select pg_temp.act_as('superadmin_aal2');
+select lives_ok($$select public.revoke_certificate((select id from revoked_as_undo), 'undo_check_in')$$,
+  'the superadmin revokes a certificate with the reason text undo_check_in');
+select is(public.issue_certificates((select listed from visits)), 0, 'issuing again brings nothing back');
+reset role;
+select is((select (c.status::text, c.revoked_by_undo)::text from public.certificates c
+           where c.id = (select id from revoked_as_undo)),
+  '(revoked,f)', 'so it stays revoked: the reason text is no flag');
+select throws_ok($$update public.certificates set revoked_by_undo = true where id = (select id from revoked)$$,
+  '42501', null, 'no one sets the undo''s flag around the RPCs');
+select set_config('app.in_rpc', '1', true);
+select throws_ok($$update public.certificates set revoked_by_undo = true
+                   where booking_id = (select redo from visits) and kind = 'group'$$,
+  '23514', null, 'and only a revoked certificate carries it');
 select set_config('app.in_rpc', '', true);
 
 select * from finish();

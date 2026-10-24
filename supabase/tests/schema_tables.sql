@@ -762,7 +762,7 @@ select columns_are('public', 'certificates', array[
   'id', 'booking_id', 'participant_id', 'kind', 'certificate_number', 'verify_code', 'status',
   'recipient_name', 'institution_name', 'visit_date', 'rw_ids', 'template_version', 'pdf_path',
   'rendered_at', 'released_at', 'release_waived_by', 'issued_at', 'issued_by', 'revoked_at',
-  'revoke_reason', 'purged_at'
+  'revoke_reason', 'purged_at', 'revoked_by_undo'
 ]);
 select is(
   (select count(*)::int from pg_indexes where schemaname = 'public'
