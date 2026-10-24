@@ -61,3 +61,12 @@ export const getPublicSiteSettings = cachedPublicRead(
   ['settings', 'public'],
   [TAGS.settings],
 );
+
+// The typed accessor for one public setting (Task P4.9.01, CLAUDE.md §4 rule 3), through the same cached read and its
+// `settings` tag, so a save on /dashboard/settings reaches every caller. A private key is read by the database's own
+// functions or, for the superadmin, by settings-service.ts; it never passes through the anon client.
+export async function getSiteSetting<Key extends keyof PublicSiteSettings>(
+  key: Key,
+): Promise<PublicSiteSettings[Key]> {
+  return (await getPublicSiteSettings())[key];
+}

@@ -37,6 +37,10 @@ export type LoginNotice = (typeof LOGIN_NOTICES)[number];
 // `otp` session would prove the same mailbox, and /reset-password still asks for the TOTP code.
 export const RECOVERY_AUTH_METHOD = 'otp';
 
+// docs/Security.md §5.3 (AUTH-11): how recent a TOTP check a critical write needs, the five minutes
+// internal.has_fresh_totp() allows in the database (0004).
+export const STEP_UP_MAX_AGE_SECONDS = 300;
+
 // The name staff see for this site in their authenticator app.
 export const TOTP_ISSUER = 'Edu Wisata Gisikdrono';
 
