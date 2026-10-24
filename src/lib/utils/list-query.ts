@@ -28,6 +28,8 @@ export const listQueryParsers = {
   rw: parseAsInteger,
   // One category (a product category, a gallery category), where a list has one.
   category: parseAsString,
+  // One calendar day (`2026-10-24`), where a list is read day by day (/dashboard/attendance); the service checks it.
+  date: parseAsString,
 };
 
 export const loadListQuery = createLoader(listQueryParsers);
@@ -82,6 +84,10 @@ export function allowedValues<T extends string>(
 // Whether the staff member has narrowed the list, which decides the filter-empty state (docs/StyleGuide.md §6.9).
 export function hasActiveFilters(query: ListQuery): boolean {
   return (
-    query.q.trim() !== '' || query.status.length > 0 || query.rw !== null || query.category !== null
+    query.q.trim() !== '' ||
+    query.status.length > 0 ||
+    query.rw !== null ||
+    query.category !== null ||
+    query.date !== null
   );
 }

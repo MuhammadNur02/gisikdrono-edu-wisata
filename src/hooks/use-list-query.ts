@@ -16,7 +16,7 @@ export interface ListQueryState {
   isPending: boolean;
 }
 
-const FILTER_KEYS = ['q', 'status', 'rw', 'category', 'per'] as const;
+const FILTER_KEYS = ['q', 'status', 'rw', 'category', 'date', 'per'] as const;
 
 // docs/StyleGuide.md §6.4: the list's URL state, `?q=&sort=&page=&per=&status=&rw=`, as nuqs keeps it. Every write
 // is a server round trip (shallow: false), since the rows are server-rendered; isPending dims the table meanwhile.
