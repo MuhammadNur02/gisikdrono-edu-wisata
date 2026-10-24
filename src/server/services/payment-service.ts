@@ -15,6 +15,7 @@ import {
 } from '@/db/rpc-payments';
 import type { DatabaseClient } from '@/db/rpc-result';
 import { copy } from '@/lib/copy/id';
+import { serverEnv } from '@/lib/env';
 import { AppError } from '@/lib/errors';
 import { createLogger } from '@/lib/logger';
 import { isSameAmount } from '@/lib/midtrans/amount';
@@ -173,16 +174,19 @@ export async function processMidtransNotification(
   const confirmed = (await isConfirmable(adminClient, notification))
     ? await confirmedStatus(notification.order_id)
     : null;
+  const keyId = serverEnv.QR_SIGNING_ACTIVE_KID;
   const outcome = await svcApplyPaymentEvent(adminClient, {
     eventId: event.eventId,
     source: 'webhook',
     confirmed,
+    keyId,
   });
   if (outcome.result !== 'needs_confirmation') return outcome;
   return svcApplyPaymentEvent(adminClient, {
     eventId: event.eventId,
     source: 'webhook',
     confirmed: await confirmedStatus(notification.order_id),
+    keyId,
   });
 }
 
