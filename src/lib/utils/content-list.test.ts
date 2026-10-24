@@ -11,6 +11,7 @@ const QUERY: ListQuery = {
   status: [],
   rw: null,
   category: null,
+  date: null,
 };
 const SORT = { columns: ['title', 'updated_at'], fallback: 'updated_at.desc' };
 

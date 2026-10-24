@@ -49,3 +49,15 @@ export async function waitForRecoveryLink(email: string, since: Date): Promise<s
   }
   throw new Error(`no reset email reached ${email} within ${String(MAIL_WAIT_MS)} ms`);
 }
+
+const textSchema = z.object({ Text: z.string() });
+const OTP_CODE = /\b(\d{6})\b/;
+
+// Locally Mailpit stands in for WhatsApp too (src/lib/notifications/mailpit.ts): a message to +62… lands at
+// wa62…@whatsapp.lokal. The code of the newest one sent after `since`, or null while none has arrived.
+export async function whatsAppCodeSince(phone: string, since: Date): Promise<string | null> {
+  const [newest] = await messageIdsSince(`wa${phone.replace(/\D/g, '')}@whatsapp.lokal`, since);
+  if (!newest) return null;
+  const { Text } = textSchema.parse(await readJson(`/api/v1/message/${newest}`));
+  return OTP_CODE.exec(Text)?.[1] ?? null;
+}
