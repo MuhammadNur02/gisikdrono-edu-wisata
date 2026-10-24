@@ -65,6 +65,13 @@
   --rw-fill: var(--primary);
 }
 
+/* On night, forest, an RW accent field or a photo the brick ring falls under 3:1, so the focus ring turns gold there
+   (8.6:1 on night, 7.2:1 on forest). Every dark band carries this class (Section's dark tones, the footer, the
+   figures panel, an RW tile); the header over a hero photo turns its ring white (.site-header). */
+@utility ring-on-dark {
+  --ring: var(--gold);
+}
+
 /* ===== Photo grades (DESIGN-SPEC §1.7). The tone filter goes on the <img>; the grade is an absolutely placed layer
    over it, whose ::before multiplies a warm colour and ::after lays the scrims. White text on any grade stays on a
    local background darker than #6E6B68 (>= 5.3:1). ===== */

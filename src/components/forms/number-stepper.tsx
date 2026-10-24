@@ -96,7 +96,7 @@ function StepButton({
       type="button"
       variant="ghost"
       size="icon"
-      className="h-full rounded-none"
+      className={cn('h-full', direction === 'decrease' ? 'rounded-r-none' : 'rounded-l-none')}
       aria-label={label}
       disabled={disabled}
       onClick={onPress}
@@ -151,7 +151,7 @@ export function NumberStepper({
   return (
     <div
       className={cn(
-        'inline-flex h-11 items-stretch overflow-hidden rounded-md border border-input bg-card transition-colors duration-120 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring',
+        'inline-flex h-11 items-stretch rounded-md border border-input bg-card transition-colors duration-120 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring',
         className,
       )}
     >

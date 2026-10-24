@@ -71,6 +71,7 @@ export function RwTile({ unit, size = 'base', detail, linkLabel, sizes, classNam
       className={cn(
         'group relative isolate flex reveal flex-col justify-end overflow-hidden rounded-xl text-white reveal-lg active:scale-99 motion-safe:transition-transform',
         rwAccentClasses(unit.accentKey).scope,
+        'ring-on-dark',
         hasPhoto ? 'bg-night' : 'kawung bg-rw-fill kawung-16',
         layout.padding,
         className,

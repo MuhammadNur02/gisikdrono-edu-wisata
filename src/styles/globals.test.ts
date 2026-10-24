@@ -137,6 +137,19 @@ describe('the colour tokens', () => {
     },
   );
 
+  // The focus ring is the brick on the paper and gold on the dark bands (ring-on-dark), 3:1 for a UI edge (1.4.11).
+  it.each(THEMES)(
+    'keep the focus ring at 3:1 on the paper and on every dark band in %s mode',
+    (_mode, theme) => {
+      for (const surface of ['background', 'card', 'muted']) {
+        expect(contrastOf(theme, 'ring', surface), surface).toBeGreaterThan(AA_UI);
+      }
+      for (const band of ['night', 'forest-night', 'rw05', 'rw13', 'rw08']) {
+        expect(contrastOf(LIGHT, 'gold', band), band).toBeGreaterThan(AA_UI);
+      }
+    },
+  );
+
   it('need primary-ink, because the primary itself fails as text on the paper', () => {
     expect(contrastOf(LIGHT, 'primary', 'background')).toBeLessThan(AA_TEXT);
     expect(hexOf(LIGHT, 'primary-text')).toBe(hexOf(LIGHT, 'primary-ink'));

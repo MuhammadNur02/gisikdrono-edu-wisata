@@ -127,7 +127,7 @@ export interface SiteFooterProps {
 // WhatsApp number is never printed (the button opens the chat); an email shows once the kelurahan has given one.
 export function SiteFooter({ contact, navGroups }: SiteFooterProps) {
   return (
-    <footer className="kawung relative mt-6 bg-night text-on-dark-2 kawung-6 md:mt-10 lg:mt-14">
+    <footer className="kawung relative mt-6 bg-night text-on-dark-2 ring-on-dark kawung-6 md:mt-10 lg:mt-14">
       <WaveDivider tone="night" />
       <Container className="space-y-9 pt-14 pb-8 md:space-y-12 md:pt-22 md:pb-10">
         <div className="grid gap-9 lg:grid-cols-12 lg:gap-16">

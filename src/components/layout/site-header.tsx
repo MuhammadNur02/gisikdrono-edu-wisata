@@ -17,15 +17,16 @@ function LookupPill() {
   return (
     <Link
       href={LOOKUP_NAV_ITEM.href}
-      className="hidden h-11 items-center gap-2 rounded-full border border-header-line px-4 text-body-sm font-medium text-header-fg transition-colors duration-200 hover:bg-header-fg/10 xl:inline-flex"
+      className="hidden h-11 min-w-11 items-center justify-center gap-2 rounded-full border border-header-line text-body-sm font-medium text-header-fg transition-colors duration-200 hover:bg-header-fg/10 lg:inline-flex xl:px-4"
     >
       <Ticket aria-hidden className="size-4.5" />
-      {LOOKUP_NAV_ITEM.label}
+      <span className="max-xl:sr-only">{LOOKUP_NAV_ITEM.label}</span>
     </Link>
   );
 }
 
-// docs/StyleGuide.md §10.2 (DESIGN-SPEC §2.7): wordmark, five links from lg, the reservation lookup from xl and the
+// docs/StyleGuide.md §10.2 (DESIGN-SPEC §2.7): wordmark, five links from lg, the reservation lookup (an icon at lg,
+// the labelled pill from xl) and the
 // booking button. Solid and sticky on every page; over a hero photo that carries [data-header-overlay] it is fixed,
 // transparent and white until 24 px of scroll (.site-header in globals.css, HeaderScrollObserver). Below lg the
 // links live in MobileMenu, beside a short `Pesan`.
@@ -49,7 +50,7 @@ export function SiteHeader({ nav }: { nav: PublicNav }) {
           <HeaderNav items={nav.headerItems} className="mx-auto hidden lg:block" />
           <div className="ml-auto flex items-center gap-3 lg:ml-0">
             <LookupPill />
-            <Button asChild size="sm" className="lg:hidden">
+            <Button asChild size="sm" className="min-h-11 lg:hidden">
               <Link href={BOOKING_CTA.href}>{BOOKING_CTA.shortLabel}</Link>
             </Button>
             <Button asChild className="max-lg:hidden">

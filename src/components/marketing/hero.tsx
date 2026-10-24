@@ -67,7 +67,7 @@ function ScrollCue() {
 function HeroSlide({ banner, isFirst, isPinned, product }: HeroSlideProps) {
   const Statement = isFirst ? 'h1' : 'p';
   return (
-    <div className={cn('relative flex', SLIDE_HEIGHT, isPinned && PINNED_SLIDE)}>
+    <div className={cn('relative flex ring-on-dark', SLIDE_HEIGHT, isPinned && PINNED_SLIDE)}>
       <PhotoFrame
         image={banner.image}
         sizes={IMAGE_SIZES.bleed}

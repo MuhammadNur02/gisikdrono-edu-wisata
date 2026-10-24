@@ -48,7 +48,7 @@ export function FiguresPanel({ title, note, children, className }: FiguresPanelP
   return (
     <div
       className={cn(
-        'kawung reveal rounded-3xl bg-forest-night px-6 pt-8 pb-9 text-white kawung-7 reveal-lg md:px-16 md:pt-13 md:pb-14',
+        'kawung reveal rounded-3xl bg-forest-night px-6 pt-8 pb-9 text-white ring-on-dark kawung-7 reveal-lg md:px-16 md:pt-13 md:pb-14',
         className,
       )}
     >

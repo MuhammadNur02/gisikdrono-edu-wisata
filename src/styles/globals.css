@@ -135,7 +135,7 @@
   --duration-count: 1400ms;
   --duration-spring-soft: 610ms;
   --duration-spring-snappy: 470ms;
-  --duration-spring-sheet: 440ms;
+  --duration-spring-sheet: 360ms;
   --duration-spring-pin: 590ms;
 }
 
@@ -155,7 +155,7 @@
   --popover-foreground: #f4ecdf;
   --muted: #0f0d0a;
   --muted-foreground: #a59680;
-  --accent: #2a241d;
+  --accent: #0f0d0a;
   --accent-foreground: #f4ecdf;
   --ink-2: #cfc2ae;
   --border: #3a3229;
@@ -735,6 +735,7 @@
     --header-fg-2: var(--on-dark);
     --header-fg-3: var(--on-dark-2);
     --header-line: rgb(255 255 255 / 0.35);
+    --ring: var(--on-dark);
     height: var(--header-h-overlay);
     border-color: transparent;
     background: transparent;

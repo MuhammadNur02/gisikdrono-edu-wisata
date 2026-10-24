@@ -43,7 +43,7 @@ function StepMarker({ number, state }: { number: number; state: StepState }) {
       className={cn(
         'flex size-8 shrink-0 items-center justify-center rounded-full text-body-sm font-semibold tabular-nums',
         state === 'completed' && 'bg-primary text-primary-foreground',
-        state === 'current' && 'bg-background text-primary ring-2 ring-primary',
+        state === 'current' && 'bg-background text-primary-ink ring-2 ring-primary',
         state === 'upcoming' && 'bg-muted text-muted-foreground',
         state === 'error' && 'bg-danger-soft text-danger-soft-foreground ring-2 ring-destructive',
       )}

@@ -22,9 +22,9 @@ const sectionVariants = cva('relative scroll-mt-header py-14 md:py-20 lg:py-28',
     tone: {
       default: 'bg-background',
       muted: 'bg-muted',
-      night: 'bg-night text-white kawung kawung-6',
-      forest: 'bg-forest-night text-white kawung kawung-7',
-      brand: 'bg-forest-night text-white kawung kawung-7 lg:pt-32 lg:pb-38',
+      night: 'bg-night text-white ring-on-dark kawung kawung-6',
+      forest: 'bg-forest-night text-white ring-on-dark kawung kawung-7',
+      brand: 'bg-forest-night text-white ring-on-dark kawung kawung-7 lg:pt-32 lg:pb-38',
     },
   },
 });
