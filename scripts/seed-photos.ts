@@ -33,6 +33,20 @@ export interface UploadedPhoto {
   blurhash: string;
 }
 
+export interface HeroBanner {
+  id: string;
+  // The file name in the folder, without its extension.
+  file: string;
+  title: string;
+  // hero_banners has no alt text of its own: the subtitle says what the photo shows (G8) and is also its alt
+  // text (src/lib/queries/banners.ts).
+  subtitle: string;
+}
+
+// The home hero speaks for every kampung (decision of 2026-10-18), whichever photo carries it.
+export const HOME_HERO_TITLE =
+  'Belajar mengolah sampah dan mengenal seni budaya di kampung-kampung Gisikdrono';
+
 export interface GalleryRow {
   id: string;
   rwId: number;
@@ -77,7 +91,8 @@ export async function idOfSlug(
   slug: string,
 ): Promise<string | null> {
   const rows = z
-    .array(z.object({ id: z.string() }))
+    // The id becomes part of a Storage path, so only a uuid is accepted.
+    .array(z.object({ id: z.uuid() }))
     .parse(await target.runSql(`select id from public.${table} where slug = ${sqlText(slug)}`));
   return rows[0]?.id ?? null;
 }
@@ -122,4 +137,25 @@ export async function linkPointPhoto(
   await uploadPhoto(target, folder, photo.file, path);
   await target.runSql(`update public.activity_points set image_path = ${sqlText(path)}
     where id = ${sqlText(pointId)} and image_path is null`);
+}
+
+// The texts follow the caller's file, so a database seeded before they changed catches up on the next run; the
+// photo of an existing banner is never replaced.
+export async function seedHeroBanner(
+  target: MediaTarget,
+  folder: string,
+  banner: HeroBanner,
+): Promise<void> {
+  const uploaded = await uploadPhoto(
+    target,
+    folder,
+    banner.file,
+    `kelurahan/hero/${banner.id}.webp`,
+  );
+  await target.runSql(`insert into public.hero_banners (id, title, subtitle, cta_label, cta_href, image_path,
+      sort_order)
+    values (${sqlText(banner.id)}, ${sqlText(banner.title)}, ${sqlText(banner.subtitle)},
+            'Pesan Kunjungan', '/paket-wisata', ${sqlText(uploaded.path)}, 0)
+    on conflict (id) do update set title = excluded.title, subtitle = excluded.subtitle,
+      cta_label = excluded.cta_label, cta_href = excluded.cta_href`);
 }

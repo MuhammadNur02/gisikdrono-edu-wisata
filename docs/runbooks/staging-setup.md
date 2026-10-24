@@ -355,12 +355,14 @@ The custom access token hook must be on **before** part E: the superadmin's role
 
 ### D.7 Photos for the staging pages (`pnpm db:seed:staging-media`)
 
-After D.3 has written the demo content, this fills the photos so the pages stop showing "Foto menyusul". It uploads the same two photo sets as `pnpm db:seed --media` / `--official-media` locally (`scripts/demo-media.ts`, `scripts/official-media.ts`), through the same re-encoding (EXIF stripped, at most 1600 px, WebP) and the same SQL: existing rows are kept, an RW page or activity point that already has a photo keeps it, and a second run changes nothing. It writes no development account, no e-booklet and nothing else. No photo of children stands for an RW page or an activity point; those appear in the gallery only.
+After D.3 has written the demo content, this fills the photos so the pages stop showing "Foto menyusul". It uploads the two photo sets of `pnpm db:seed --media` / `--official-media` (`scripts/demo-media.ts`, `scripts/official-media.ts`), through the same re-encoding (EXIF stripped, at most 1600 px, WebP) and the same SQL: existing rows are kept, an RW page or activity point that already has a photo keeps it, and a second run changes nothing. It writes no development account, no e-booklet and nothing else.
+
+**Privacy rule for staging (decision of 2026-10-24).** Staging is open to anyone who has its link. The owner's visit photos (`--media`) still wait for the consent of the people in them, so on staging they appear **in the gallery only**: never as the home hero, an RW page hero, an activity point or an article photo. Those come from the kelurahan's own photos, which its website already publishes with permission. The home hero is the fish pond of RW 05 (`galeri_1781167605_244`), a photo with no people in it. No photo of children stands for any page; those appear in the gallery only. The local `pnpm db:seed --media` is unchanged.
 
 | Set | Photos | Where they show |
 |---|---|---|
-| Visit photos (`--media`, folder `Foto-Gisikdrono\jpg`) | 1 hero banner + 6 RW 05 gallery photos (plus copies for 2 activity points and the RW 05 article) | home hero, `/galeri`, `/rw-05-ecowastreme` (RW hero, Taman TOGA and Bank Sampah points), the article `bank-sampah-dan-taman-toga-rw-05` (cover and body photo) |
-| Official-site photos (`--official-media`, folder `Foto-Gisikdrono\situs-kelurahan`) | 19 gallery photos: 6 RW 05, 10 RW 13, 3 RW 08 (plus copies for 3 activity points) | `/galeri`, `/rw-13-kampung-budaya-seni` (RW hero, mural point), the RW 05 recycled-craft point; RW 08 keeps "Foto menyusul" as its hero, because every photo of its programme shows children |
+| Visit photos (`--media`, folder `Foto-Gisikdrono\jpg`) | 6 RW 05 gallery photos | `/galeri` only |
+| Official-site photos (`--official-media`, folder `Foto-Gisikdrono\situs-kelurahan`) | the home hero banner + 19 gallery photos: 6 RW 05, 10 RW 13, 3 RW 08 (plus copies for 3 activity points) | home hero, `/galeri`, `/rw-05-ecowastreme` (RW hero, Taman TOGA and recycled-craft points), `/rw-13-kampung-budaya-seni` (RW hero, mural point). RW 08 keeps "Foto menyusul" as its hero, because every photo of its programme shows children; the Bank Sampah point and the RW 05 article stay without a photo on staging |
 
 Before the first write the command checks, and stops if either fails: the Management API names the project `gisikdrono-staging`, and the database's Vault secret `environment` (D.1) is `staging` (compared inside the database; the value is never shown). It prints only counts and file paths, never a key.
 
@@ -389,7 +391,7 @@ Before the first write the command checks, and stops if either fails: the Manage
    pnpm db:seed:staging-media -- --media "$env:USERPROFILE\Foto-Gisikdrono\jpg" --official-media "$env:USERPROFILE\Foto-Gisikdrono\situs-kelurahan"
    ```
 
-   It ends with `Demo photos: 7 placed`, `Official-site photos: 19 placed` and `Done`. A file elsewhere is passed with `--credentials <file>`. If it stops at a guard, nothing was written: fix the file or D.1, then run it again.
+   It ends with `Demo photos (gallery only): 6 placed`, `Official-site photos: 19 placed, plus the home hero` and `Done`. A file elsewhere is passed with `--credentials <file>`. If it stops at a guard, nothing was written: fix the file or D.1, then run it again.
 3. **Delete the file and the token** straight after:
 
    ```powershell

@@ -6,13 +6,19 @@ import {
   idOfSlug,
   linkPointPhoto,
   linkRwHero,
+  HOME_HERO_TITLE,
   seedGalleryPhoto,
+  seedHeroBanner,
   uploadPhoto,
+  type HeroBanner,
   type MediaTarget,
 } from './seed-photos';
 
-// pnpm db:seed --media <folder>: real Gisikdrono photos for the local demo content (decision of 2026-10-18), and
-// pnpm db:seed:staging-media the same set for the staging project (scripts/seed-staging-media.ts).
+// pnpm db:seed --media <folder>: real Gisikdrono photos for the local demo content (decision of 2026-10-18).
+// On staging (pnpm db:seed:staging-media, scripts/seed-staging-media.ts) these photos appear in the gallery only,
+// never as the home hero, an RW page hero, an activity point or an article photo: consent for the people in them
+// is still pending, and staging is public to anyone with its link (decision of 2026-10-24). There the home hero
+// comes from the kelurahan's own published photos (scripts/official-media.ts). Locally nothing changes.
 // The photos themselves never enter the repository: faces are in them and the consent is still being
 // arranged. Only their file names and the descriptions below live here; scripts/seed-photos.ts uploads them.
 // Without --media the seed writes no hero banner, no gallery rows and no e-booklet, and the pages show
@@ -29,13 +35,11 @@ interface DemoPhoto {
 const RW05 = 5;
 
 // Descriptions say only what the photo shows; the place names are on the signs in the photos themselves.
-// hero_banners has no alt text or caption of its own: the subtitle says what the photo shows (G8) and is
-// also its alt text (src/lib/queries/banners.ts).
-const HERO_PHOTO: Pick<DemoPhoto, 'file' | 'id'> & { title: string; subtitle: string } = {
+// The local home hero; the subtitle stays with this photo.
+const HERO_PHOTO: HeroBanner = {
   file: 'IMG_7571',
   id: '0de00000-0000-4000-8000-0000000000e1',
-  // The home hero speaks for every kampung (decision of 2026-10-18); the subtitle stays with this photo.
-  title: 'Belajar mengolah sampah dan mengenal seni budaya di kampung-kampung Gisikdrono',
+  title: HOME_HERO_TITLE,
   subtitle: 'Rombongan tamu mendengarkan pemaparan di halaman beratap tanaman rambat, RW 05.',
 };
 
@@ -99,22 +103,6 @@ export function mediaFoldersFromArgs(args: string[]): { media?: string; official
   return { media: values.media, officialMedia: values['official-media'] };
 }
 
-async function seedHeroBanner(target: MediaTarget, folder: string): Promise<void> {
-  const uploaded = await uploadPhoto(
-    target,
-    folder,
-    HERO_PHOTO.file,
-    `kelurahan/hero/${HERO_PHOTO.id}.webp`,
-  );
-  // The texts follow this file, so a database seeded before they changed catches up on the next run.
-  await target.runSql(`insert into public.hero_banners (id, title, subtitle, cta_label, cta_href, image_path,
-      sort_order)
-    values (${sqlText(HERO_PHOTO.id)}, ${sqlText(HERO_PHOTO.title)}, ${sqlText(HERO_PHOTO.subtitle)},
-            'Pesan Kunjungan', '/paket-wisata', ${sqlText(uploaded.path)}, 0)
-    on conflict (id) do update set title = excluded.title, subtitle = excluded.subtitle,
-      cta_label = excluded.cta_label, cta_href = excluded.cta_href`);
-}
-
 function galleryPhoto(photoId: string): DemoPhoto {
   const photo = RW05_GALLERY.find((candidate) => candidate.id === photoId);
   if (!photo) throw new Error(`no demo photo ${photoId}`);
@@ -168,10 +156,9 @@ export function demoBookletPhotoFiles(folder: string): string[] {
   return RW05_GALLERY.map((photo) => findPhotoFile(folder, photo.file));
 }
 
-// The file goes up before its row, so no row ever points at a missing file. Running it again uploads the
-// same files over themselves and keeps the rows as they are. Returns the number of photos it placed.
-export async function seedDemoMedia(target: MediaTarget, folder: string): Promise<number> {
-  await seedHeroBanner(target, folder);
+// The six RW 05 gallery photos, the only part of this set that staging shows. The file goes up before its row,
+// so no row ever points at a missing file; a second run uploads the same files and keeps the rows.
+export async function seedDemoGallery(target: MediaTarget, folder: string): Promise<number> {
   for (const [index, photo] of RW05_GALLERY.entries()) {
     await seedGalleryPhoto(target, folder, photo.file, {
       id: photo.id,
@@ -182,7 +169,14 @@ export async function seedDemoMedia(target: MediaTarget, folder: string): Promis
       sortOrder: index + 1,
     });
   }
+  return RW05_GALLERY.length;
+}
+
+// Locally: the home hero, the gallery, and the RW 05 page, points and article. Returns the photos it placed.
+export async function seedDemoMedia(target: MediaTarget, folder: string): Promise<number> {
+  await seedHeroBanner(target, folder, HERO_PHOTO);
+  const galleryCount = await seedDemoGallery(target, folder);
   await linkRw05Photos(target, folder);
   await linkArticlePhotos(target, folder);
-  return RW05_GALLERY.length + 1;
+  return galleryCount + 1;
 }

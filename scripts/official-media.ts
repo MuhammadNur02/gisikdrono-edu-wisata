@@ -1,8 +1,11 @@
 import {
+  HOME_HERO_TITLE,
   linkPointPhoto,
   linkRwHero,
   seedGalleryPhoto,
+  seedHeroBanner,
   type GalleryRow,
+  type HeroBanner,
   type MediaTarget,
 } from './seed-photos';
 
@@ -254,6 +257,16 @@ export const POINT_PHOTO_IDS: Record<string, string> = {
   'mural-dan-spot-foto': '0de00000-0000-4000-8001-000000000018',
 };
 
+// The home hero of staging (decision of 2026-10-24): a photo the kelurahan already publishes, with no children and
+// no faces at all, because the development photos of scripts/demo-media.ts stay in the gallery there. Its own
+// banner id and file, beside the gallery copy of the same photo.
+export const STAGING_HERO_PHOTO_ID = '0de00000-0000-4000-8001-000000000002';
+const STAGING_HERO: Omit<HeroBanner, 'file'> = {
+  id: '0de00000-0000-4000-8001-0000000000e1',
+  title: HOME_HERO_TITLE,
+  subtitle: 'Kolam ikan berbingkai hijau dengan pancuran kecil di antara tanaman sayur, RW 05.',
+};
+
 export function officialPhoto(photoId: string): OfficialPhoto {
   const photo = OFFICIAL_PHOTOS.find((candidate) => candidate.id === photoId);
   if (!photo) throw new Error(`no official photo ${photoId}`);
@@ -275,4 +288,11 @@ export async function seedOfficialMedia(target: MediaTarget, folder: string): Pr
     await linkPointPhoto(target, folder, slug, officialPhoto(photoId));
   }
   return OFFICIAL_PHOTOS.length;
+}
+
+export async function seedOfficialHeroBanner(target: MediaTarget, folder: string): Promise<void> {
+  await seedHeroBanner(target, folder, {
+    ...STAGING_HERO,
+    file: officialPhoto(STAGING_HERO_PHOTO_ID).file,
+  });
 }

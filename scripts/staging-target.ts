@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
 
@@ -18,6 +18,8 @@ export const STAGING_PROJECT_NAME = 'gisikdrono-staging';
 export const DEFAULT_CREDENTIALS_FILE = join(homedir(), 'gisikdrono-staging-media.env');
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const MANAGEMENT_API = 'https://api.supabase.com/v1';
+// Every call to Supabase gives up after this long instead of hanging the run.
+const FETCH_TIMEOUT_MS = 20_000;
 // Postgres error texts are kept short in the thrown message; they never hold a credential.
 const MAX_ERROR_TEXT = 300;
 
@@ -36,6 +38,14 @@ function comparablePath(path: string): string {
   return process.platform === 'win32' ? path.toLowerCase() : path;
 }
 
+// The real, long form of a path: symlinks, junctions and 8.3 short names (PROGRA~1) resolved. A file
+// that does not exist yet is resolved through its folder.
+function canonicalPath(path: string): string {
+  if (existsSync(path)) return realpathSync.native(path);
+  const folder = dirname(resolve(path));
+  return existsSync(folder) ? join(realpathSync.native(folder), basename(path)) : resolve(path);
+}
+
 export function isInsideFolder(folder: string, path: string): boolean {
   const fromFolder = relative(comparablePath(resolve(folder)), comparablePath(resolve(path)));
   return fromFolder === '' || (!fromFolder.startsWith('..') && !isAbsolute(fromFolder));
@@ -43,8 +53,9 @@ export function isInsideFolder(folder: string, path: string): boolean {
 
 // A credentials file in the repository could be committed, so one there is refused before it is even read.
 export function readStagingCredentials(file: string, repoRoot = REPO_ROOT): StagingCredentials {
-  const path = existsSync(file) ? realpathSync(file) : resolve(file);
-  if (isInsideFolder(repoRoot, path) || isInsideFolder(repoRoot, file)) {
+  const path = canonicalPath(file);
+  const root = canonicalPath(repoRoot);
+  if (isInsideFolder(root, path) || isInsideFolder(repoRoot, file)) {
     throw new Error(`refusing ${file}: the credentials file must live outside the repository`);
   }
   if (!existsSync(path)) throw new Error(`no credentials file at ${file}`);
@@ -75,11 +86,12 @@ export async function assertStagingProject(
 ): Promise<void> {
   const response = await fetchFn(`${MANAGEMENT_API}/projects/${credentials.STAGING_PROJECT_REF}`, {
     headers: { Authorization: `Bearer ${credentials.SUPABASE_ACCESS_TOKEN}` },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!response.ok) {
     throw new Error(`the Management API refused the project lookup (${String(response.status)})`);
   }
-  const project = z.object({ name: z.string() }).safeParse(await response.json());
+  const project = z.object({ name: z.string() }).safeParse(await response.json().catch(() => null));
   if (!project.success || project.data.name !== STAGING_PROJECT_NAME) {
     throw new Error(`the project is not named ${STAGING_PROJECT_NAME}; nothing was written`);
   }
@@ -108,11 +120,14 @@ function managementSql(credentials: StagingCredentials, fetchFn: Fetch): MediaTa
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ query }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!response.ok) {
       throw new Error(`SQL failed (${String(response.status)}): ${await errorText(response)}`);
     }
-    return z.array(z.unknown()).parse(await response.json());
+    const rows = z.array(z.unknown()).safeParse(await response.json().catch(() => null));
+    if (!rows.success) throw new Error('SQL answered with something other than a list of rows');
+    return rows.data;
   };
 }
 
@@ -132,6 +147,7 @@ function storageUpload(
         'x-upsert': 'true',
       },
       body: new Uint8Array(body),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!response.ok) {
       throw new Error(

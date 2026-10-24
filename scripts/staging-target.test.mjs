@@ -26,11 +26,22 @@ function jsonResponse(body, status = 200) {
 }
 
 // A Management API that answers the project lookup and the Vault check as told, and records every call.
-function stubApi({ name = 'gisikdrono-staging', isStaging = true, projectStatus = 200 } = {}) {
+// project and query, when given, replace the answer of that endpoint.
+function stubApi({
+  name = 'gisikdrono-staging',
+  isStaging = true,
+  projectStatus = 200,
+  project,
+  query,
+} = {}) {
   return vi.fn(async (url, init) => {
-    if (String(url).endsWith(`/projects/${REF}`)) return jsonResponse({ name }, projectStatus);
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    if (String(url).endsWith(`/projects/${REF}`)) {
+      return project ? project() : jsonResponse({ name }, projectStatus);
+    }
     if (String(url).endsWith('/database/query')) {
       expect(JSON.parse(init.body).query).toContain("name = 'environment'");
+      if (query) return query();
       return jsonResponse(isStaging === null ? [] : [{ is_staging: isStaging }], 201);
     }
     return new Response('', { status: 200 });
@@ -125,4 +136,45 @@ describe('scripts/staging-target.ts', () => {
       false,
     );
   });
+  it.each([
+    ['a body that is not JSON', () => new Response('<html>oops</html>', { status: 200 })],
+    ['an empty object', () => jsonResponse({})],
+    ['a name of another type', () => jsonResponse({ name: 42 })],
+  ])('refuses a project lookup that answers with %s', async (_label, project) => {
+    writeFileSync(file, VALID_FILE);
+    const fetchFn = stubApi({ project });
+    await expect(openStagingTarget(file, { fetchFn })).rejects.toThrow(
+      /not named gisikdrono-staging/,
+    );
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['a server error', () => jsonResponse({ message: 'boom' }, 500), /SQL failed [(]500[)]/],
+    ['an object instead of rows', () => jsonResponse({ rows: [] }, 201), /list of rows/],
+    ['a body that is not JSON', () => new Response('nope', { status: 201 }), /list of rows/],
+    ['rows of another shape', () => jsonResponse([{ is_staging: 'true' }], 201), /not staging/],
+  ])('refuses when the Vault check answers with %s', async (_label, query, message) => {
+    writeFileSync(file, VALID_FILE);
+    await expect(openStagingTarget(file, { fetchFn: stubApi({ query }) })).rejects.toThrow(message);
+  });
+
+  it('refuses a malformed project ref before any request', async () => {
+    writeFileSync(file, VALID_FILE.replace(REF, 'abc.evil.com'));
+    const fetchFn = stubApi();
+    await expect(openStagingTarget(file, { fetchFn })).rejects.toThrow(/STAGING_PROJECT_REF/);
+    await expect(openStagingTarget(file, { fetchFn })).rejects.not.toThrow(/evil/);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it.runIf(process.platform === 'win32')(
+    'refuses a path inside the repository written in other letter case',
+    () => {
+      for (const root of [REPO_ROOT.toUpperCase(), REPO_ROOT.toLowerCase()]) {
+        expect(() => readStagingCredentials(join(root, 'staging-media.env'))).toThrow(
+          /outside the repository/,
+        );
+      }
+    },
+  );
 });
