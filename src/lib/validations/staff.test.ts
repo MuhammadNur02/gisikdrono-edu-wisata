@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   cancelPromotionSchema,
+  inviteStaffFormSchema,
   inviteStaffSchema,
   revokeInviteSchema,
+  setStaffRoleFormSchema,
   setStaffRoleSchema,
+  setStaffStatusFormSchema,
   setStaffStatusSchema,
 } from './staff';
 
@@ -117,5 +120,17 @@ describe('cancelPromotionSchema and revokeInviteSchema', () => {
     expect(cancelPromotionSchema.safeParse({ userId: USER_ID, role: 'none' }).success).toBe(false);
     expect(revokeInviteSchema.safeParse({ inviteId: USER_ID }).success).toBe(true);
     expect(revokeInviteSchema.safeParse({ inviteId: 'abc' }).success).toBe(false);
+  });
+});
+
+describe('the form schemas', () => {
+  it('carry the six-digit authenticator code next to the fields', () => {
+    const invite = { email: 'a@b.id', role: 'admin_rw', rwId: 5 };
+    expect(inviteStaffFormSchema.safeParse({ ...invite, code: '123456' }).success).toBe(true);
+    expect(inviteStaffFormSchema.safeParse({ ...invite, code: '12345' }).success).toBe(false);
+    const role = { userId: USER_ID, role: 'admin_rw', rwId: null, code: '123456' };
+    expect(setStaffRoleFormSchema.safeParse(role).success).toBe(false);
+    const status = { userId: USER_ID, isActive: true, reason: 'Kembali', code: '123456' };
+    expect(setStaffStatusFormSchema.safeParse(status).success).toBe(true);
   });
 });

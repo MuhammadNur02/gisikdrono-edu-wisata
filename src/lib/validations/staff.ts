@@ -3,12 +3,13 @@ import { z } from 'zod';
 import { STATUS_REASON_MAX_LENGTH, STATUS_REASON_MIN_LENGTH } from '@/config/staff';
 import { copy } from '@/lib/copy/id';
 import { staffCopy } from '@/lib/copy/staff';
-import { emailField } from '@/lib/validations/auth';
+import { emailField, totpCodeField } from '@/lib/validations/auth';
 import { isSafeFreeText } from '@/lib/validations/free-text';
 import { rwIdSchema } from '@/lib/validations/rw-unit';
 
-// /dashboard/users (Task P4.8.02), shared by the forms and src/server/actions/staff.ts. The TOTP code of the step-up
-// is not part of them: the form sends it to verifyStaffTotpAction first (src/lib/utils/step-up.ts).
+// /dashboard/users (Task P4.8.02), shared by the forms and src/server/actions/staff.ts. The forms carry the TOTP code
+// of the step-up as well (the *FormSchema variants); withStepUp (src/lib/utils/step-up.ts) sends it to
+// verifyStaffTotpAction first and the other fields to the action, which parses them with the plain schema.
 
 const messages = copy.cms.validation;
 
@@ -34,39 +35,47 @@ function requireRwForRwAdmin(
 }
 
 const roleFields = { role: z.enum(STAFF_ROLES), rwId: rwIdSchema.nullable() };
+const staffTarget = { userId: z.uuid() };
+// The reason lands in audit_logs.metadata, which the superadmin reads later, so it follows the free-text rules: no
+// phone numbers, addresses or links.
+const statusFields = {
+  ...staffTarget,
+  isActive: z.boolean(),
+  reason: z
+    .string()
+    .trim()
+    .min(STATUS_REASON_MIN_LENGTH, messages.required)
+    .max(STATUS_REASON_MAX_LENGTH)
+    .refine(isSafeFreeText, { message: copy.validation.freeText }),
+};
+const stepUpField = { code: totpCodeField };
 
 export const inviteStaffSchema = z
   .object({ email: emailField, ...roleFields })
+  .strict()
+  .superRefine(requireRwForRwAdmin);
+export const inviteStaffFormSchema = z
+  .object({ email: emailField, ...roleFields, ...stepUpField })
   .strict()
   .superRefine(requireRwForRwAdmin);
 
 export type InviteStaffInput = z.input<typeof inviteStaffSchema>;
 export type InviteStaffValues = z.output<typeof inviteStaffSchema>;
 
-const staffTarget = { userId: z.uuid() };
-
 export const setStaffRoleSchema = z
   .object({ ...staffTarget, ...roleFields })
+  .strict()
+  .superRefine(requireRwForRwAdmin);
+export const setStaffRoleFormSchema = z
+  .object({ ...staffTarget, ...roleFields, ...stepUpField })
   .strict()
   .superRefine(requireRwForRwAdmin);
 
 export type SetStaffRoleInput = z.input<typeof setStaffRoleSchema>;
 export type SetStaffRoleValues = z.output<typeof setStaffRoleSchema>;
 
-// The reason lands in audit_logs.metadata, which the superadmin reads later, so it follows the free-text rules: no
-// phone numbers, addresses or links.
-export const setStaffStatusSchema = z
-  .object({
-    ...staffTarget,
-    isActive: z.boolean(),
-    reason: z
-      .string()
-      .trim()
-      .min(STATUS_REASON_MIN_LENGTH, messages.required)
-      .max(STATUS_REASON_MAX_LENGTH)
-      .refine(isSafeFreeText, { message: copy.validation.freeText }),
-  })
-  .strict();
+export const setStaffStatusSchema = z.object(statusFields).strict();
+export const setStaffStatusFormSchema = z.object({ ...statusFields, ...stepUpField }).strict();
 
 export type SetStaffStatusInput = z.input<typeof setStaffStatusSchema>;
 export type SetStaffStatusValues = z.output<typeof setStaffStatusSchema>;

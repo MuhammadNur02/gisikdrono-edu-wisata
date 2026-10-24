@@ -34,3 +34,33 @@ export const AUTH_USERS_PAGE_SIZE = 1000;
 
 // /dashboard/audit-logs and /dashboard/security-alerts read one page at a time, newest first.
 export const SECURITY_LIST_PAGE_SIZE = 50;
+
+// docs/Security.md §11.1: the tables whose rows audit_logs records, which the audit log's table filter offers.
+// Application events (export.*, document.signed_url, …) name other entity types and stay reachable without a filter.
+export const AUDITED_ENTITY_TYPES = [
+  'bookings',
+  'booking_legs',
+  'booking_participants',
+  'payments',
+  'payment_adjustments',
+  'tickets_qr',
+  'certificates',
+  'quotations',
+  'invoices',
+  'tour_packages',
+  'products_umkm',
+  'umkm_vendors',
+  'visit_sessions',
+  'session_templates',
+  'profiles',
+  'staff_invites',
+  'rw_units',
+  'revenue_share_rules',
+  'revenue_share_rule_lines',
+  'revenue_share_entries',
+  'payout_batches',
+  'site_settings',
+  'reviews',
+  'articles',
+  'hero_banners',
+] as const;

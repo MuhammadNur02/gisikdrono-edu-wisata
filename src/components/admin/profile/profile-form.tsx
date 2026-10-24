@@ -41,9 +41,7 @@ function valuesOf(profile: StaffProfile) {
   return { fullName: profile.fullName, phone: profile.phone ?? '' };
 }
 
-// Task P2.8.03, P4.8.03: the staff member's own name and phone. The email is shown, not edited (it is the sign-in
-// address).
-export function ProfileForm({ profile, action }: ProfileFormProps) {
+function useProfileForm({ profile, action }: ProfileFormProps) {
   const router = useRouter();
   const form = useForm({
     resolver: zodResolver(updateProfileSchema),
@@ -59,7 +57,13 @@ export function ProfileForm({ profile, action }: ProfileFormProps) {
       router.refresh();
     },
   });
+  return { form, submit, failure };
+}
 
+// Task P2.8.03, P4.8.03: the staff member's own name and phone. The email is shown, not edited (it is the sign-in
+// address).
+export function ProfileForm({ profile, action }: ProfileFormProps) {
+  const { form, submit, failure } = useProfileForm({ profile, action });
   return (
     <Form {...form}>
       <PostForm onSubmit={submit}>

@@ -56,7 +56,6 @@ export const staffCopy = {
     applied: 'Peran sudah diubah.',
     requested: (after: string) =>
       `Permintaan tercatat. Ulangi langkah ini setelah ${after} untuk menerapkannya.`,
-    notYet: (after: string) => `Permintaan ini baru bisa diterapkan setelah ${after}.`,
   },
   status: {
     deactivateTitle: (name: string) => `Nonaktifkan ${name}`,
@@ -71,7 +70,6 @@ export const staffCopy = {
     reactivated: 'Akun sudah aktif lagi.',
     banFailed:
       'Status di dasbor sudah berubah, tetapi blokir masuk di sistem autentikasi belum. Ulangi langkah ini.',
-    lastSuperadmin: 'Superadmin aktif terakhir tidak bisa dinonaktifkan atau diturunkan.',
   },
   promotion: {
     title: (name: string) => `Batalkan ${name} jadi superadmin`,
