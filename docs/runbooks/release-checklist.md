@@ -36,6 +36,13 @@ A migration that stops is a release that stops: fix its cause, never edit an app
   - A trial on staging may open it by hand with the superadmin's fresh TOTP (`site_settings_fresh_totp_update`), and closes it again afterwards.
 - **Migrate before the deploy.** The new code reads `visit_date` and `visit_date_end` from the reply of `internal.create_booking`, and refunds limits through `public.svc_rate_limit_refund`. Against the older database every booking would fail the reply check.
 
+### Task P3.11, first PR: every message, the channel switches, alerts and health (`20261024120000` to `20261024120200`)
+
+- **The worker now sends every template.** Messages queued before this release for templates it could not send yet (`booking_created`, `payment_received_ticket`, the staff emails) go out on its first runs, unless their channel is switched off, which cancels them.
+- **WhatsApp stays silent while `whatsapp_enabled` is off.** Keep it off until the kelurahan's number and templates are approved (P0.1.08); nothing reaches Meta.
+- **Security alerts are emailed to `SECURITY_ALERT_EMAIL` even while `email_enabled` is off**, so check that address is the operator's before deploying to staging.
+- **Point the uptime monitor at `/api/health`** (P0.1.12). It answers 503 while any job is stalled, so on staging it stays red until `reconcile-payments` and `anomaly-scan` ship or are paused deliberately.
+
 ### Tasks P3.9 and P3.10: the ledger, the payments poll and tickets (`20261024100000` to `20261024100300`)
 
 - **Migrate and deploy in one window.** `public.svc_apply_payment_event` now takes the QR kid of new tickets (`p_key_id`) and its older form is dropped, so between the migration and the deploy every Midtrans notification answers 503 and Midtrans retries it. Afterwards, settle one sandbox order on staging and check that it is applied with its ticket.
