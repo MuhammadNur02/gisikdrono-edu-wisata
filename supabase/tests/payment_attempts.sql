@@ -2,14 +2,14 @@
 -- by internal.create_payment_attempt, one open attempt per booking, a replacement only of the attempt the caller has
 -- ended at Midtrans, none with less than five minutes of the hold left, and a quoted booking takes its seats with it.
 begin;
-select plan(24);
+select plan(26);
 
 -- ===== Fixtures: an RW 05 package and session, and the helpers that make a hold or a quotation booking =====
 insert into public.tour_packages (id, rw_id, category, slug, name, pricing_basis, price_per_pax, status) values
   ('00000000-0000-4000-8000-0000000e1001', 5, 'regular', 'uji-bayar-percobaan', 'Paket Uji Bayar', 'per_pax', 30000,
    'published');
 insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
-  ('00000000-0000-4000-8000-0000000e2001', 5, public.today_jkt() + 5, '09:05', '10:05', 'Uji percobaan bayar', 80);
+  ('00000000-0000-4000-8000-0000000e2001', 5, public.today_jkt() + 5, '09:05', '10:05', 'Uji percobaan bayar', 200);
 
 create function pg_temp.otp(p_phone text) returns uuid
   language sql
@@ -82,6 +82,19 @@ select throws_ok($$select internal.record_payment_failure((select (reply ->> 'pa
 insert into attempts select 3, internal.create_payment_attempt((select id from hold), null, null);
 select is((select reply ->> 'order_id' like '%-03' from attempts where n = 3), true,
   'with no attempt open, the next one needs no replacement');
+
+-- ===== What p_replaces may name (review of PR #39, M2) =====
+create temporary table other_hold on commit drop as select pg_temp.booking('+6281300000603', 'pay') as id;
+create temporary table other_attempt on commit drop as
+  select (internal.create_payment_attempt((select id from other_hold), null, null) ->> 'payment_id')::uuid as id;
+select throws_ok($$select internal.create_payment_attempt((select id from hold), (select id from other_attempt), null)$$,
+  'P0001', null, 'another booking''s attempt is no replacement for this one''s');
+select set_config('app.in_rpc', '1', true);
+update public.payments set status = 'needs_review' where id = (select (reply ->> 'payment_id')::uuid from attempts where n = 3);
+select set_config('app.in_rpc', '', true);
+select throws_ok($$select internal.create_payment_attempt((select id from hold),
+  (select (reply ->> 'payment_id')::uuid from attempts where n = 3), null)$$, 'P0001', null,
+  'and an attempt under review is replaced by nobody');
 
 -- ===== One open attempt, whoever writes it (payments_one_open_per_booking) =====
 select set_config('app.in_rpc', '1', true);

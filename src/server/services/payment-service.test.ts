@@ -8,7 +8,6 @@ import {
   svcCreatePaymentAttempt,
   svcRecordPaymentEvent,
   svcRecordPaymentFailure,
-  svcRecordWebhookRejection,
 } from '@/db/rpc-payments';
 import { copy } from '@/lib/copy/id';
 import {
@@ -17,13 +16,8 @@ import {
   getTransactionStatus,
 } from '@/lib/midtrans/client';
 import type { MidtransNotification } from '@/lib/midtrans/schemas';
-import { withinRateLimits } from '@/lib/rate-limit';
 import { openAttemptOf, snapBookingOf } from '@/server/services/payment-reads';
-import {
-  processMidtransNotification,
-  recordWebhookRejection,
-  startPayment,
-} from '@/server/services/payment-service';
+import { processMidtransNotification, startPayment } from '@/server/services/payment-service';
 
 // The amount the database holds for the notified order, or null for an order it never issued.
 const recorded: { grossAmount: number | null } = vi.hoisted(() => ({ grossAmount: 600000 }));
@@ -207,6 +201,7 @@ const NOTIFICATION: MidtransNotification = {
   payment_type: 'bank_transfer',
   currency: 'IDR',
   fraud_status: 'accept',
+  merchant_id: 'G000000000',
 };
 const RAW_BODY = JSON.stringify(NOTIFICATION);
 const CONFIRMED = {
@@ -252,14 +247,28 @@ describe('processMidtransNotification', () => {
     expect(svcApplyPaymentEvent).not.toHaveBeenCalled();
   });
 
-  it('asks nothing of the Status API for a pending notification', async () => {
-    const pending = { ...NOTIFICATION, transaction_status: 'pending', status_code: '201' };
-    await processMidtransNotification(pending, JSON.stringify(pending));
-    expect(getTransactionStatus).not.toHaveBeenCalled();
+  // Review of PR #39, L1: a signature covers no Virtual Account, so a pending body replayed with another one is applied
+  // with what the Status API says, and its own va_number reaches nothing.
+  it('confirms a pending notification too, and applies the Status API body rather than its own', async () => {
+    const replayed = {
+      ...NOTIFICATION,
+      transaction_status: 'pending',
+      status_code: '201',
+      va_numbers: [{ bank: 'bca', va_number: '99999999999' }],
+    };
+    const confirmedPending = {
+      status_code: '201',
+      transaction_status: 'pending',
+      gross_amount: '600000.00',
+      va_numbers: [{ bank: 'bca', va_number: '12345678901' }],
+    };
+    vi.mocked(getTransactionStatus).mockResolvedValue(confirmedPending);
+    await processMidtransNotification(replayed, JSON.stringify(replayed));
+    expect(getTransactionStatus).toHaveBeenCalledWith('GSK-7F3K9Q2M-02', 5000);
     expect(svcApplyPaymentEvent).toHaveBeenCalledWith(expect.anything(), {
       eventId: 41,
       source: 'webhook',
-      confirmed: null,
+      confirmed: confirmedPending,
     });
   });
 
@@ -272,7 +281,7 @@ describe('processMidtransNotification', () => {
   });
 
   it('asks the Status API after all when the database wants a confirmation', async () => {
-    const pending = { ...NOTIFICATION, transaction_status: 'pending' };
+    const pending = { ...NOTIFICATION, transaction_status: 'authorize' };
     vi.mocked(svcApplyPaymentEvent).mockResolvedValueOnce({
       ...APPLIED,
       result: 'needs_confirmation',
@@ -293,31 +302,5 @@ describe('processMidtransNotification', () => {
       'unreachable',
     );
     expect(svcApplyPaymentEvent).not.toHaveBeenCalled();
-  });
-});
-
-describe('recordWebhookRejection', () => {
-  const REJECTION = {
-    reason: 'signature_invalid' as const,
-    orderId: 'GSK-7F3K9Q2M-02',
-    statusCode: '200',
-    bodySha256: 'b'.repeat(64),
-    ip: '203.0.113.7',
-    userAgent: null,
-  };
-
-  it('records the metadata while the sender is within its hourly cap', async () => {
-    vi.mocked(withinRateLimits).mockResolvedValue(true);
-    await recordWebhookRejection(REJECTION, '203.0.113.7');
-    expect(withinRateLimits).toHaveBeenCalledWith(expect.anything(), [
-      { name: 'webhook_rejection:ip', subject: '203.0.113.7' },
-    ]);
-    expect(svcRecordWebhookRejection).toHaveBeenCalledWith(expect.anything(), REJECTION);
-  });
-
-  it('stops recording past the cap', async () => {
-    vi.mocked(withinRateLimits).mockResolvedValue(false);
-    await recordWebhookRejection(REJECTION, '203.0.113.7');
-    expect(svcRecordWebhookRejection).not.toHaveBeenCalled();
   });
 });

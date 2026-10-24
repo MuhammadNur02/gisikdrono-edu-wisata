@@ -4,7 +4,7 @@
 -- seats; a refund seen at Midtrans leaves the payment settled with a high alert (decision of 2026-10-24, Q1); a
 -- chargeback disputes it; an unknown order alerts only in our own grammar; refused notifications keep metadata only.
 begin;
-select plan(25);
+select plan(34);
 
 -- ===== Fixtures =====
 insert into public.tour_packages (id, rw_id, category, slug, name, pricing_basis, price_per_pax, status) values
@@ -146,6 +146,48 @@ select is(internal.apply_payment_event(pg_temp.event(pg_temp.answer(pg_temp.orde
 select is((select severity::text from public.security_alerts
            where fingerprint = 'payment_review:CHARGEBACK:' || pg_temp.order_of('refund')),
   'critical', 'with a critical alert');
+
+-- ===== A chargeback on money already given back is never dropped (review of PR #39, M1) =====
+create temporary table refunded_order on commit drop as select pg_temp.held_order('+6281300000805') as order_id;
+select internal.apply_payment_event(pg_temp.event(pg_temp.answer((select order_id from refunded_order), 'settlement')),
+  'webhook', pg_temp.answer((select order_id from refunded_order), 'settlement'));
+select set_config('app.in_rpc', '1', true);
+update public.payments set status = 'refunded', refunded_amount = gross_amount
+where order_id = (select order_id from refunded_order);
+update public.payments set status = 'duplicate' where order_id = pg_temp.order_of('mismatch');
+select set_config('app.in_rpc', '', true);
+select is(internal.apply_payment_event(pg_temp.event(pg_temp.answer((select order_id from refunded_order), 'chargeback')),
+            'webhook', pg_temp.answer((select order_id from refunded_order), 'chargeback')) ->> 'processing_result',
+  'chargeback_on_refunded', 'a chargeback on a refunded payment goes to review');
+select is((select status::text from public.payments where order_id = (select order_id from refunded_order)), 'refunded',
+  'which keeps its status');
+select is((select severity::text from public.security_alerts
+           where fingerprint = 'payment_review:CHARGEBACK:' || (select order_id from refunded_order)),
+  'critical', 'with a critical alert, so nobody refunds it twice');
+select is(internal.apply_payment_event(pg_temp.event(pg_temp.answer(pg_temp.order_of('mismatch'), 'chargeback')),
+            'webhook', pg_temp.answer(pg_temp.order_of('mismatch'), 'chargeback')) ->> 'processing_result',
+  'chargeback_on_duplicate', 'and so does a chargeback on a duplicate');
+select ok(exists (select 1 from public.security_alerts
+                  where fingerprint = 'payment_review:CHARGEBACK:' || pg_temp.order_of('mismatch') and severity = 'critical'),
+  'with its own critical alert');
+
+-- ===== What a settled payment recorded stays as recorded (review of PR #39, L7) =====
+select set_config('app.in_rpc', '1', true);
+select throws_ok($$update public.payments set va_number = '00000000000'
+  where order_id = (select order_id from refunded_order)$$, 'P0001', null,
+  'a refunded payment keeps its Virtual Account');
+select throws_ok($$update public.payments set provider_txn_id = 'txn-rewritten'
+  where order_id = pg_temp.order_of('mismatch')$$, 'P0001', null, 'and a duplicate keeps its transaction id');
+select lives_ok($$update public.payments set status = 'disputed'
+  where order_id = (select order_id from refunded_order)$$, 'while its status may still move');
+select set_config('app.in_rpc', '', true);
+
+-- ===== Alerts that notify again (review of PR #39, L5) =====
+update public.security_alerts set notified_at = now() where fingerprint = 'refund_seen:' || pg_temp.order_of('refund');
+select internal.apply_payment_event(pg_temp.event(pg_temp.answer(pg_temp.order_of('refund'), 'refund')), 'webhook',
+  pg_temp.answer(pg_temp.order_of('refund'), 'refund'));
+select is((select notified_at from public.security_alerts where fingerprint = 'refund_seen:' || pg_temp.order_of('refund')),
+  null, 'a refund seen again notifies again');
 
 -- ===== Orders we never issued (step 8) =====
 select is(internal.apply_payment_event(pg_temp.event(pg_temp.answer('GSK-ZZZZZZZZ-01', 'settlement')), 'webhook', null)

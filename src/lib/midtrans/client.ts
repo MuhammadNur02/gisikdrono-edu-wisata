@@ -92,6 +92,10 @@ export async function createSnapTransaction(
   return { token: parsed.data.token, redirectUrl: parsed.data.redirect_url };
 }
 
+// Midtrans may answer HTTP 200 with its own failure in the body (review of PR #39, L2): a refused key or a server
+// error there is no answer about the order either.
+const NO_ANSWER_CODE = /^(401|5\d\d)$/;
+
 // What Midtrans says of an order now. An order it never charged answers its own 404, which is an answer, not an
 // outage; a refused key or a server error is not, and reaches the caller as an error (the webhook answers 503).
 export async function getTransactionStatus(
@@ -106,6 +110,9 @@ export async function getTransactionStatus(
   );
   const parsed = midtransStatusSchema.safeParse(await readJson(response));
   if (!parsed.success) throw new MidtransError('malformed', response.status);
+  if (NO_ANSWER_CODE.test(parsed.data.status_code)) {
+    throw new MidtransError('unreachable', response.status);
+  }
   if (!response.ok && parsed.data.status_code !== UNKNOWN_ORDER_CODE) {
     throw new MidtransError('refused', response.status);
   }

@@ -3,7 +3,7 @@
 -- and staff messages, never applies an event twice, records a second settlement as a duplicate, revives a late
 -- settlement's seats or puts it under review, and closes a denied attempt without moving the booking.
 begin;
-select plan(34);
+select plan(48);
 
 -- ===== Fixtures =====
 insert into auth.users (id, email) values
@@ -195,15 +195,93 @@ select ok(exists (select 1 from public.notifications where template = 'admin_boo
   'and the staff are told why');
 
 -- ===== Pending, then denied =====
+-- A pending notification is confirmed too (review of PR #39, L1): its signature covers no Virtual Account, so the pay
+-- page shows what the Status API answered, never what the notification carried.
 create temporary table denied on commit drop as select pg_temp.hold('+6281300000704', '00000000-0000-4000-8000-0000000c2001') as id;
 insert into orders select 'denied', pg_temp.attempt((select id from denied));
-select is(internal.apply_payment_event(pg_temp.event(pg_temp.answer((select order_id from orders where name = 'denied'),
-            'pending')), 'webhook', null) ->> 'result',
-  'applied', 'a pending notification needs no confirmation');
+create temporary table pending_event on commit drop as
+  select pg_temp.event(jsonb_set(pg_temp.answer((select order_id from orders where name = 'denied'), 'pending'),
+                                 '{va_numbers,0,va_number}', '"99999999999"')) as id;
+select is(internal.apply_payment_event((select id from pending_event), 'webhook', null) ->> 'result',
+  'needs_confirmation', 'a pending notification waits for the Status API as well');
+select is((select va_number from public.payments where order_id = (select order_id from orders where name = 'denied')),
+  null, 'and stores nothing from its own body');
+select is(internal.apply_payment_event((select id from pending_event), 'webhook',
+            pg_temp.answer((select order_id from orders where name = 'denied'), 'pending')) ->> 'result',
+  'applied', 'once confirmed, it is applied');
+select is((select va_number from public.payments where order_id = (select order_id from orders where name = 'denied')),
+  '12345678901', 'with the Virtual Account Midtrans confirmed, not the one the notification named');
 select is(pg_temp.confirmed((select order_id from orders where name = 'denied'), 'deny') ->> 'payment_status', 'denied',
   'a confirmed deny closes the attempt');
 select is((select status::text from public.bookings where id = (select id from denied)), 'pending_payment',
   'and the booking still waits, so the visitor may try again');
+
+-- ===== A settlement of another total than the booking's own (review of PR #39, L4) =====
+-- A discount given after the attempt was made changes the total but not the order Midtrans holds.
+create temporary table discounted on commit drop as select pg_temp.hold('+6281300000706', '00000000-0000-4000-8000-0000000c2001') as id;
+insert into orders select 'discounted', pg_temp.attempt((select id from discounted));
+update public.bookings set discount_amount = 1000, total_amount = total_amount - 1000
+where id = (select id from discounted);
+select is(pg_temp.confirmed((select order_id from orders where name = 'discounted'), 'settlement') ->> 'processing_result',
+  'amount_mismatch', 'a payment of the total before a discount is never applied');
+select is((select (status::text, needs_review, review_reason) from public.bookings where id = (select id from discounted))::text,
+  ('pending_payment', true, 'AMOUNT_MISMATCH')::text, 'the booking is not paid and waits under review');
+
+-- ===== Paid while the booking was cancelled (PAID_WHILE_<status>) =====
+create temporary table cancelled on commit drop as select pg_temp.hold('+6281300000707', '00000000-0000-4000-8000-0000000c2001') as id;
+insert into orders select 'cancelled', pg_temp.attempt((select id from cancelled));
+select set_config('app.in_rpc', '1', true);
+update public.bookings set status = 'cancelled', cancelled_at = now() where id = (select id from cancelled);
+select set_config('app.in_rpc', '', true);
+select is(pg_temp.confirmed((select order_id from orders where name = 'cancelled'), 'settlement') ->> 'result', 'needs_review',
+  'money for a cancelled booking is never kept silently');
+select is((select (b.status::text, b.review_reason, p.status::text) from public.bookings b
+           join public.payments p on p.booking_id = b.id where b.id = (select id from cancelled))::text,
+  ('cancelled', 'PAID_WHILE_CANCELLED', 'settled')::text, 'the payment is settled and the booking waits under review');
+select is((select count(*)::int from public.invoices where booking_id = (select id from cancelled)), 0,
+  'with no invoice drawn');
+
+-- ===== A combo's late settlement takes both legs' seats or neither (review of PR #39, M2) =====
+insert into public.tour_packages (id, category, slug, name, pricing_basis, price_per_pax, status) values
+  ('00000000-0000-4000-8000-0000000c1002', 'combo', 'uji-terapkan-kombo', 'Kombo Uji Terapkan', 'per_pax', 30000,
+   'draft');
+insert into public.tour_package_legs (package_id, rw_id, leg_order) values
+  ('00000000-0000-4000-8000-0000000c1002', 5, 1), ('00000000-0000-4000-8000-0000000c1002', 13, 2);
+update public.tour_packages set status = 'published' where id = '00000000-0000-4000-8000-0000000c1002';
+insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
+  ('00000000-0000-4000-8000-0000000c2005', 5, public.today_jkt() + 5, '15:05', '16:05', 'Uji kombo 05', 40),
+  ('00000000-0000-4000-8000-0000000c2013', 13, public.today_jkt() + 5, '16:15', '17:15', 'Uji kombo 13', 40);
+create temporary table combo on commit drop as
+  select (internal.create_booking('00000000-0000-4000-8000-0000000c1002',
+    array['00000000-0000-4000-8000-0000000c2005', '00000000-0000-4000-8000-0000000c2013']::uuid[], 20,
+    jsonb_build_object('booker_type', 'school', 'institution_name', 'SD Negeri Kombo', 'pic_name', 'Ani Kombo',
+                       'pic_phone', '+6281300000708', 'pic_email', 'kombo@contoh.test', 'notes', null),
+    '[]', '[]', 'pay', 'web', null, pg_temp.otp('+6281300000708'), '{"version": "2026-10-18"}', null,
+    '{"ip": null, "user_agent": "pgTAP"}',
+    internal.booking_quote_hash(internal.booking_quote('00000000-0000-4000-8000-0000000c1002', 20, '[]',
+                                                       array[5, 13]::smallint[]))) ->> 'booking_id')::uuid as id;
+insert into orders select 'combo', pg_temp.attempt((select id from combo));
+select pg_temp.lapse((select id from combo));
+select set_config('app.in_rpc', '1', true);
+update public.visit_sessions set reserved_pax = capacity where id = '00000000-0000-4000-8000-0000000c2013';
+select set_config('app.in_rpc', '', true);
+select is(pg_temp.confirmed((select order_id from orders where name = 'combo'), 'settlement') ->> 'booking_status', 'paid',
+  'a combo paid after its expiry is paid');
+select is((select (needs_review, review_reason) from public.bookings where id = (select id from combo))::text,
+  (true, 'PAID_AFTER_EXPIRY_NO_QUOTA')::text, 'and waits for the superadmin when one of its sessions is full');
+select is((select array_agg(l.status::text order by l.leg_order) from public.booking_legs l
+           where l.booking_id = (select id from combo)),
+  array['released', 'released'], 'neither leg takes its seats back');
+select is((select reserved_pax from public.visit_sessions where id = '00000000-0000-4000-8000-0000000c2005'), 0,
+  'so the session with room left holds none for it');
+
+-- ===== Who the audit log says applied an event (review of PR #39, M2) =====
+select is((select a.actor_role from public.audit_logs a
+           where a.action = 'payment.event_applied' and a.entity_id = (select id::text from settle_event)),
+  'cron', 'the audit log names machine work cron, with the source in its row');
+select is((select a.metadata ->> 'source' from public.audit_logs a
+           where a.action = 'payment.event_applied' and a.entity_id = (select id::text from settle_event)),
+  'webhook', 'and the source is the webhook');
 
 -- ===== A greeting that names a host (notifications_guest_guard) =====
 -- The greeting is the first word of pic_name; a refused one holds the visitor's messages, never the settlement.

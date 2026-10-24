@@ -56,7 +56,12 @@ describe('logger redaction', () => {
     logger.warn('webhook_signature_invalid', {
       token: 'top-level-token',
       link: { token: 'nested-token' },
-      payload: { signature_key: 'sig-value', snap_token: 'snap-value' },
+      payload: {
+        signature_key: 'sig-value',
+        snap_token: 'snap-value',
+        redirect_url: 'snap-page-a',
+      },
+      page: { redirectUrl: 'snap-page-b', snap_redirect_url: 'snap-page-c' },
       customer_details: { phone: '+6281234567890' },
       req: { headers: { authorization: 'Bearer abc', cookie: 'bk_GSK=1' } },
     });
@@ -67,6 +72,9 @@ describe('logger redaction', () => {
       'nested-token',
       'sig-value',
       'snap-value',
+      'snap-page-a',
+      'snap-page-b',
+      'snap-page-c',
       'Bearer abc',
       'bk_GSK=1',
       '+6281234567890',
