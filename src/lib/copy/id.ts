@@ -54,15 +54,22 @@ export const copy = {
     menuDescription: 'Semua halaman Edu Wisata Gisikdrono.',
     breadcrumb: 'Lokasi halaman',
     footerNav: 'Navigasi bawah',
-    // Names no number of RWs, and promises no booking: an RW may show its profile before it takes visits.
-    footerAbout: 'Kunjungan edukasi ke kampung-kampung di Kelurahan Gisikdrono.',
-    footerManagedBy: 'Dikelola oleh',
-    footerContactTitle: 'Kontak',
+    // DESIGN-SPEC §2.8: what the platform is, in the footer's brand column.
+    footerAbout:
+      'Platform edu wisata digital Kelurahan Gisikdrono. Belajar langsung dari warga kampung, dipesan tanpa membuat akun.',
     footerEmail: 'Email',
-    footerWhatsApp: 'Chat WhatsApp',
+    footerRights: (year: number) =>
+      `© ${String(year)} Kelurahan Gisikdrono · Situs resmi edu wisata kelurahan`,
+    footerRightsShort: (year: number) => `© ${String(year)} Kelurahan Gisikdrono`,
+    paymentMethods: 'QRIS · Virtual Account · Midtrans',
+    whatsAppChat: 'Chat WhatsApp',
+    scrollCue: 'Gulir',
     // docs/StyleGuide.md §9.2: the fixed trust line, reused word for word wherever payment is mentioned.
     paymentTrust:
       'Pembayaran hanya melalui sistem (QRIS/VA); kelurahan tidak pernah meminta transfer ke rekening pribadi.',
+    // The same promise where room is short: the menu drawer.
+    paymentTrustShort:
+      'Pembayaran hanya melalui sistem (QRIS/VA), tidak pernah ke rekening pribadi.',
     whatsAppFab: 'Chat WhatsApp kelurahan',
     whatsAppGreeting: (pageTopic: string) => `Halo, saya ingin bertanya tentang ${pageTopic}`,
   },
@@ -86,7 +93,7 @@ export const copy = {
   // Card labels shared by the home page, the RW pages and the catalogues of Task P2.4.
   catalogue: {
     bookNow: 'Pesan Sekarang',
-    packageDetail: 'Detail',
+    viewPackage: 'Lihat paket',
     viewProduct: 'Lihat Produk',
     fromPrice: 'mulai',
     perBasis: { orang: '/orang', rombongan: '/rombongan' },
@@ -94,7 +101,10 @@ export const copy = {
     paxRange: (min: number, max: number) => `${String(min)}–${String(max)} orang`,
     combo: 'Kombinasi',
     addonEligible: 'Bisa jadi tambahan',
-    featured: 'Unggulan',
+    addonEligibleLong: 'Bisa dipesan sebagai tambahan',
+    // A product card whose photo has not been taken yet (DESIGN-SPEC §0, §2.5).
+    photoComing: 'Foto menyusul',
+    exploreRw: (rwLabel: string) => 'Jelajahi ' + rwLabel,
     unavailable: 'Tidak Tersedia',
     rating: (rating: string, max: number) => `Rating ${rating} dari ${String(max)}`,
     // The label under the home page's average rating (docs/StyleGuide.md §5.7).

@@ -29,7 +29,7 @@ import {
 
 import type { AppRole } from '@/db/enums';
 import { isPathUnder, rwSchedulePath } from '@/lib/utils/paths';
-import type { RwEyebrowData, RwUnitSummary } from '@/types/rw-unit';
+import type { RwEyebrowData, RwUnitProfile, RwUnitSummary } from '@/types/rw-unit';
 
 // Public navigation (docs/PRD.md §5.1) and the dashboard groups of docs/StyleGuide.md §6.2.
 
@@ -40,6 +40,8 @@ export interface PublicNavItem {
   rw?: RwEyebrowData;
   // For a link to a section of another page: the pages on which it still marks the current section.
   currentOn?: readonly string[];
+  // A short line under an RW's name in the menu drawer: its theme (rw_units.theme_label).
+  description?: string;
 }
 
 export interface PublicNavGroup {
@@ -66,13 +68,17 @@ export const BOOKING_CTA = {
   href: '/paket-wisata',
 } as const satisfies PublicNavItem & { shortLabel: string };
 
-const rwItem = (unit: RwUnitSummary): PublicNavItem => ({
+// The units of the public layout are full profiles; a summary (a test, another caller) simply goes without the theme.
+type NavRwUnit = RwUnitSummary & Partial<Pick<RwUnitProfile, 'themeLabel'>>;
+
+const rwItem = (unit: NavRwUnit): PublicNavItem => ({
   label: unit.shortName,
   href: unit.path,
   rw: { label: unit.label, shortName: unit.shortName, accentKey: unit.accentKey },
+  ...(unit.themeLabel ? { description: unit.themeLabel } : {}),
 });
 
-const scheduleItem = (unit: RwUnitSummary): PublicNavItem => ({
+const scheduleItem = (unit: NavRwUnit): PublicNavItem => ({
   label: `Jadwal pertunjukan ${unit.label}`,
   href: rwSchedulePath(unit.slug),
 });
@@ -82,9 +88,15 @@ const PRODUCTS_ITEM: PublicNavItem = { label: 'Produk UMKM', href: '/produk' };
 const GALLERY_ITEM: PublicNavItem = { label: 'Galeri', href: '/galeri' };
 const MAP_ITEM: PublicNavItem = { label: 'Peta & kontak', href: '/peta-kontak' };
 
+// The way back to a booking without an account; the desktop header shows it as a pill (DESIGN-SPEC §2.7).
+export const LOOKUP_NAV_ITEM = {
+  label: 'Cari reservasi',
+  href: '/reservasi/cari',
+} as const satisfies PublicNavItem;
+
 const VISIT_GROUP: PublicNavGroup = {
   title: 'Kunjungan',
-  items: [PACKAGES_ITEM, PRODUCTS_ITEM, { label: 'Cari reservasi', href: '/reservasi/cari' }],
+  items: [PACKAGES_ITEM, PRODUCTS_ITEM, LOOKUP_NAV_ITEM],
 };
 
 const INFORMATION_GROUP: PublicNavGroup = {
@@ -103,7 +115,7 @@ const INFORMATION_GROUP: PublicNavGroup = {
 // number, and a menu of them would cost every public page client script (decision of 2026-10-22). The mobile menu,
 // the footer, that section and the breadcrumbs link each RW directly, the schedule of each RW that runs one among
 // them.
-export function publicNavFor(units: readonly RwUnitSummary[]): PublicNav {
+export function publicNavFor(units: readonly NavRwUnit[]): PublicNav {
   const rwItems = units.map(rwItem);
   const kampungItem: PublicNavItem = {
     label: 'Kampung Wisata',
