@@ -89,7 +89,7 @@ export async function createPackageAction(input: unknown): Promise<ActionResult<
   if (refused) return refused;
 
   try {
-    const created = await createPackage(guard.ctx, target.owner, parsed.data);
+    const created = await createPackage(target.owner, parsed.data);
     revalidateTag(TAGS.allPackages);
     return ok(created);
   } catch (error) {
@@ -108,7 +108,7 @@ export async function updatePackageAction(input: unknown): Promise<ActionResult<
     if (!current) return fail('NOT_FOUND');
     const refused = refusedChange(guard.ctx, current, parsed.data);
     if (refused) return refused;
-    const saved = await updatePackage(guard.ctx, current, parsed.data);
+    const saved = await updatePackage(guard.ctx, parsed.data);
     revalidateTag(TAGS.allPackages);
     return okUnlessFilesLeft(saved);
   } catch (error) {

@@ -70,7 +70,8 @@ select is(
 -- set_rw_unit_status of 20261021120000, the gate's and the certificates' of 20261025080000 and 20261025080100, and the
 -- scanner's unlock and scan_ticket of 20261026080000 and 20261026090000, which since the latter is the gate's one
 -- entry point: validate_ticket, check_in_ticket and the turn are its own (review of PR #54, M1); then the export and
--- the figures of 20261027080100 and 20261027080200.
+-- the figures of 20261027080100 and 20261027080200; save_package and its two parts of 20261028080100, security
+-- invoker, so the grants and policies of a direct write decide.
 select is(
   array(
     select n.nspname || '.' || p.proname from pg_proc p
@@ -84,7 +85,8 @@ select is(
         'public.generate_visit_sessions', 'public.invite_superadmin', 'public.is_admin_rw', 'public.is_staff',
         'public.is_superadmin', 'public.issue_certificates', 'public.owns_any_rw', 'public.owns_rw',
         'public.reset_staff_mfa', 'public.revenue_recap', 'public.revoke_certificate', 'public.rpc_create_export',
-        'public.rpc_get_participants', 'public.rpc_log_ui_event', 'public.rpc_reveal_booking_contact', 'public.scan_ticket',
+        'public.rpc_get_participants', 'public.rpc_log_ui_event', 'public.rpc_reveal_booking_contact',
+        'public.save_package', 'public.save_package_legs', 'public.save_package_tiers', 'public.scan_ticket',
         'public.set_rw_unit_status', 'public.set_staff_role', 'public.set_staff_status', 'public.today_jkt',
         'public.undo_check_in', 'public.unlock_scanner_officer', 'public.verify_audit_chain', 'public.visit_stats'],
   'authenticated can execute the ten RLS helpers and the staff RPCs, nothing else'

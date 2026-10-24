@@ -112,7 +112,7 @@ describe('package actions', () => {
   it("files an RW admin's package under their own RW, whatever the scope cookie says", async () => {
     cookie.value = '8';
     expect(await createPackageAction(FORM)).toMatchObject({ ok: true });
-    expect(createPackage).toHaveBeenCalledWith(ADMIN_05, 5, expect.anything());
+    expect(createPackage).toHaveBeenCalledWith(5, expect.anything());
     expect(revalidateTag).toHaveBeenCalledWith('packages:all');
   });
 
@@ -120,7 +120,7 @@ describe('package actions', () => {
     vi.mocked(requireAal2).mockResolvedValue({ ok: true, ctx: SUPERADMIN });
     cookie.value = '8';
     await createPackageAction(FORM);
-    expect(createPackage).toHaveBeenCalledWith(SUPERADMIN, 8, expect.anything());
+    expect(createPackage).toHaveBeenCalledWith(8, expect.anything());
     cookie.value = undefined;
     expect(await createPackageAction(FORM)).toMatchObject({ error: { code: 'STATE_INVALID' } });
   });
@@ -131,7 +131,7 @@ describe('package actions', () => {
     });
     vi.mocked(requireAal2).mockResolvedValue({ ok: true, ctx: SUPERADMIN });
     await createPackageAction(COMBO_FORM);
-    expect(createPackage).toHaveBeenCalledWith(SUPERADMIN, null, expect.anything());
+    expect(createPackage).toHaveBeenCalledWith(null, expect.anything());
   });
 
   it('refuses a form that names the owner RW or the creator', async () => {
@@ -176,7 +176,7 @@ describe('package actions', () => {
     const current = stored();
     vi.mocked(readPackageForStaff).mockResolvedValue(current);
     expect(await updatePackageAction({ ...FORM, id: PACKAGE_ID })).toMatchObject({ ok: true });
-    expect(updatePackage).toHaveBeenCalledWith(ADMIN_05, current, expect.anything());
+    expect(updatePackage).toHaveBeenCalledWith(ADMIN_05, expect.anything());
     expect(await archivePackageAction({ id: PACKAGE_ID })).toEqual({ ok: true, data: null });
     expect(archivePackage).toHaveBeenCalledWith(ADMIN_05, PACKAGE_ID);
   });

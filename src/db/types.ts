@@ -17,6 +17,7 @@ export type Database = {
           image_path: string | null
           lat: number | null
           lng: number | null
+          location_estimated: boolean
           map_x: number | null
           map_y: number | null
           name: string
@@ -36,6 +37,7 @@ export type Database = {
           image_path?: string | null
           lat?: number | null
           lng?: number | null
+          location_estimated?: boolean
           map_x?: number | null
           map_y?: number | null
           name: string
@@ -55,6 +57,7 @@ export type Database = {
           image_path?: string | null
           lat?: number | null
           lng?: number | null
+          location_estimated?: boolean
           map_x?: number | null
           map_y?: number | null
           name?: string
@@ -2961,6 +2964,7 @@ export type Database = {
           icon_key: Database["public"]["Enums"]["rw_icon"]
           id: number
           is_active: boolean
+          location_estimated: boolean
           map_lat: number | null
           map_lng: number | null
           name: string
@@ -2988,6 +2992,7 @@ export type Database = {
           icon_key: Database["public"]["Enums"]["rw_icon"]
           id: number
           is_active?: boolean
+          location_estimated?: boolean
           map_lat?: number | null
           map_lng?: number | null
           name: string
@@ -3015,6 +3020,7 @@ export type Database = {
           icon_key?: Database["public"]["Enums"]["rw_icon"]
           id?: number
           is_active?: boolean
+          location_estimated?: boolean
           map_lat?: number | null
           map_lng?: number | null
           name?: string
@@ -4147,15 +4153,7 @@ export type Database = {
           paid_out: number | null
           rw_id: number | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "revenue_share_entries_rw_id_fkey"
-            columns: ["rw_id"]
-            isOneToOne: false
-            referencedRelation: "rw_units"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       v_revenue_recap_daily: {
         Row: {
@@ -4167,15 +4165,7 @@ export type Database = {
           rw_id: number | null
           settled_amount: number | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "revenue_share_entries_rw_id_fkey"
-            columns: ["rw_id"]
-            isOneToOne: false
-            referencedRelation: "rw_units"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       v_session_availability: {
         Row: {
@@ -4317,6 +4307,27 @@ export type Database = {
       rpc_reveal_booking_contact: {
         Args: { p_booking_id: string; p_reason: string }
         Returns: Json
+      }
+      save_package: {
+        Args: {
+          p_leg_rw_ids?: number[]
+          p_package: Json
+          p_package_id?: string
+          p_tiers?: Json
+        }
+        Returns: string
+      }
+      save_package_legs: {
+        Args: {
+          p_category: Database["public"]["Enums"]["package_category"]
+          p_leg_rw_ids: number[]
+          p_package_id: string
+        }
+        Returns: undefined
+      }
+      save_package_tiers: {
+        Args: { p_package_id: string; p_tiers: Json }
+        Returns: undefined
       }
       scan_ticket: {
         Args: {
