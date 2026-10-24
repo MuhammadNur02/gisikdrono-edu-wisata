@@ -4228,7 +4228,25 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: undefined
       }
+      check_in_ticket: {
+        Args: {
+          p_attempt_id: string
+          p_attendee_count: number
+          p_device?: Json
+          p_note?: string
+          p_override?: boolean
+          p_override_reason?: string
+          p_raw?: string
+          p_source?: string
+          p_ticket_id: string
+        }
+        Returns: Json
+      }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      find_manual_ticket: {
+        Args: { p_booking_code: string; p_phone_last_digits: string }
+        Returns: string
+      }
       fresh_totp: { Args: never; Returns: boolean }
       generate_visit_sessions: {
         Args: { p_from: string; p_rw_id: number; p_to: string }
@@ -4246,9 +4264,17 @@ export type Database = {
       is_admin_rw: { Args: never; Returns: boolean }
       is_staff: { Args: never; Returns: boolean }
       is_superadmin: { Args: never; Returns: boolean }
+      issue_certificates: {
+        Args: { p_booking_id: string; p_waiver_reason?: string }
+        Returns: number
+      }
       owns_any_rw: { Args: { p_rw_ids: number[] }; Returns: boolean }
       owns_rw: { Args: { p_rw_id: number }; Returns: boolean }
       reset_staff_mfa: { Args: { p_user_id: string }; Returns: Json }
+      revoke_certificate: {
+        Args: { p_certificate_id: string; p_reason: string }
+        Returns: undefined
+      }
       rpc_get_participants: {
         Args: { p_booking_id: string }
         Returns: {
@@ -4535,6 +4561,17 @@ export type Database = {
         Args: { p_booking_id: string }
         Returns: number
       }
+      svc_submit_review: {
+        Args: {
+          p_body: string
+          p_booking_id: string
+          p_is_anonymous: boolean
+          p_rating: number
+          p_reviewer_name: string
+          p_title: string
+        }
+        Returns: string
+      }
       svc_verify_phone_otp: {
         Args: {
           p_browser_hash: string
@@ -4547,6 +4584,20 @@ export type Database = {
         Returns: Json
       }
       today_jkt: { Args: never; Returns: string }
+      undo_check_in: {
+        Args: { p_reason: string; p_ticket_id: string }
+        Returns: undefined
+      }
+      validate_ticket: {
+        Args: {
+          p_attempt_id: string
+          p_device?: Json
+          p_raw?: string
+          p_source?: string
+          p_ticket_id: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       activity_point_type:
