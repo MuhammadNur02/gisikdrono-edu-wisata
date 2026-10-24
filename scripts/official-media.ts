@@ -185,7 +185,7 @@ export const OFFICIAL_PHOTOS: OfficialPhoto[] = [
     page: SENI_BUDAYA,
     showsChildren: false,
     altText:
-      'Seorang penampil berkain batik membawa nampan sesaji di tengah jalan kampung, dikelilingi penabuh dan warga berpakaian adat.',
+      'Jalan kampung berhias umbul-umbul merah putih, dengan mural bergambar wajah di dinding rumah dan warga berjalan di jalan',
     caption: 'Mural di sepanjang jalan kampung',
   },
   {

@@ -502,6 +502,7 @@ When the production project is set up (Task P5.7), undo what is staging-only her
 - Production leaves `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS` unset; the build refuses `off` there. Do the steps marked **production only** in this guide on the production project.
 - Staging may stay on Free and Hobby, or move to the paid plans as well; if it moves, drop the flag from its Preview variables and redeploy so photos use the transformer again.
 - Remove the **Ignored Build Step** of part B step 5 (or narrow it), so `main` builds as Production again with its own Production-scoped variables.
+- Add `"main": true` to `git.deploymentEnabled` in `vercel.json`. Since 2026-10-24 it creates deployments for the `staging` branch only, because the Hobby limit of 100 deployments a day was reached by the cancelled builds of every PR push.
 - Keep the `staging` domain on Preview; production gets its own domain on Production.
 - Revisit the Deployment Protection choice of part B for the new team setup.
 - Production is migrated only by its own release job (Task P5.7.02), never by this workflow.
