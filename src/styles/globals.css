@@ -567,6 +567,38 @@
 }
 /* Tabular figures use the built-in `tabular-nums` utility; no custom alias. */
 
+/* The home hero (redesign of 2026-10-24, after dusunbambu.id): one statement in light, widely set capitals over a
+   quiet, darker photo. Inter is a variable font, so weight 300 comes from the file already loaded. */
+@utility text-hero-statement {
+  font-family: var(--font-sans);
+  font-weight: 300;
+  font-size: 2.25rem;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  @media (width >= 48rem) {
+    font-size: 4rem;
+    line-height: 1.05;
+  }
+  @media (width >= 80rem) {
+    font-size: 5.25rem;
+  }
+}
+/* The photo's grade, applied to whatever banner the kelurahan uploads: darker, calmer colours and slightly warm, like
+   dusunbambu.id's photo, so the white statement keeps AA (§8.2). */
+@utility hero-photo-tone {
+  filter: brightness(0.7) saturate(0.68) contrast(1.08) sepia(0.14);
+}
+/* A neutral veil, deeper at the top and bottom where the header and the arc meet the photo. */
+@utility hero-veil {
+  background: linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 0.42),
+    rgb(0 0 0 / 0.22) 45%,
+    rgb(0 0 0 / 0.42)
+  );
+}
+
 /* The pinned hero photo (docs/StyleGuide.md §7.3): clip-path, unlike overflow, also clips a fixed descendant, so the
    photo stays put inside its section while the page scrolls over it. */
 @utility clip-inset {

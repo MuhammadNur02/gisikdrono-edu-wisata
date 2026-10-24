@@ -19,6 +19,13 @@ export const siteConfig = {
   },
 } as const;
 
+// The home hero's one statement (redesign of 2026-10-24, after dusunbambu.id's "Experience of / Outdoor Dining
+// Resort"): a short lead and the place itself, so the photo stays clean and the h1 names the kampung.
+export const HOME_HERO_STATEMENT = {
+  lead: 'Pengalaman belajar di',
+  title: 'Kampung Gisikdrono',
+} as const;
+
 // Every visit date, session time and "today" is Semarang time, whatever the visitor's device says.
 export const APP_TZ = 'Asia/Jakarta';
 

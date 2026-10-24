@@ -139,8 +139,9 @@ export async function linkPointPhoto(
     where id = ${sqlText(pointId)} and image_path is null`);
 }
 
-// The texts follow the caller's file, so a database seeded before they changed catches up on the next run; the
-// photo of an existing banner is never replaced.
+// The texts and the photo follow the caller's file, so a database seeded before they changed catches up on the next
+// run. Only the seeded banners carry these ids; a banner the kelurahan uploads is never touched. The object is named
+// after its photo, so a new photo gets a new URL and no cache keeps showing the old one.
 export async function seedHeroBanner(
   target: MediaTarget,
   folder: string,
@@ -150,12 +151,12 @@ export async function seedHeroBanner(
     target,
     folder,
     banner.file,
-    `kelurahan/hero/${banner.id}.webp`,
+    `kelurahan/hero/${banner.id}-${banner.file}.webp`,
   );
   await target.runSql(`insert into public.hero_banners (id, title, subtitle, cta_label, cta_href, image_path,
       sort_order)
     values (${sqlText(banner.id)}, ${sqlText(banner.title)}, ${sqlText(banner.subtitle)},
             'Pesan Kunjungan', '/paket-wisata', ${sqlText(uploaded.path)}, 0)
     on conflict (id) do update set title = excluded.title, subtitle = excluded.subtitle,
-      cta_label = excluded.cta_label, cta_href = excluded.cta_href`);
+      cta_label = excluded.cta_label, cta_href = excluded.cta_href, image_path = excluded.image_path`);
 }
