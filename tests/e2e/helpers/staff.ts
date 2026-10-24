@@ -77,6 +77,21 @@ export async function createAccount(
   return { id: data.user.id, email };
 }
 
+// A throwaway superadmin with the DEV-ONLY TOTP factor already verified, made the way scripts/seed-dev.sql makes the
+// seeded one. For a spec that runs beside staff-sign-in.spec.ts, whose "Keluar" signs the seeded superadmin out
+// everywhere (signOutEverywhere) and, in another worker, can end a sign-in half-way.
+export async function createSuperadmin(): Promise<{ id: string; email: string }> {
+  const account = await createAccount('none');
+  await runSql(`begin;
+    insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at, secret)
+      values (gen_random_uuid(), '${account.id}', 'DEV-ONLY authenticator', 'totp', 'verified', now(), now(),
+              '${DEV_ONLY_TOTP_SECRET}');
+    insert into public.profiles (id, email, full_name, role, rw_id, is_active, claims_version)
+      values ('${account.id}', '${account.email}', 'Superadmin Uji E2E', 'superadmin', null, true, 1);
+    commit;`);
+  return account;
+}
+
 // Login attempts and security events are append-only, so they go under the retention flag, as the integration
 // suites do; deleting the Auth user takes its factors and sessions with it.
 export async function removeAccounts(userIds: readonly string[]): Promise<void> {
