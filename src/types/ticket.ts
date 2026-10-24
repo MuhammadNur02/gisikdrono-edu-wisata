@@ -18,8 +18,6 @@ export interface GuestTicket {
   qr: { size: number; path: string } | null;
 }
 
-// What /v/[token] may say: valid with the RW and the day, or not, and nothing about the booking or the check-in.
-export type TicketLanding =
-  | { kind: 'valid'; rwName: string; validOn: string }
-  | { kind: 'invalid' }
-  | { kind: 'rate_limited' };
+// What /v/[token] may say (docs/PRD.md FR-PUB-21): valid or not, and nothing about the ticket, its booking or its
+// check-in.
+export type TicketLanding = { kind: 'valid' } | { kind: 'invalid' } | { kind: 'rate_limited' };

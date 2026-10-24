@@ -112,8 +112,10 @@ test('pays a hold through Snap and the webhook, and the pay page says so', async
 });
 
 test('says a forged ticket is not valid, and nothing more', async ({ page }) => {
-  // Task P3.10.03: a token of the right shape whose signature no key made.
-  await page.goto(`/v/GSK.k1.${'A'.repeat(22)}.${'B'.repeat(22)}`);
+  // Task P3.10.03: a token of the right shape whose signature no key made, on a page never cached or indexed.
+  const response = await page.goto(`/v/GSK.k1.${'A'.repeat(22)}.${'B'.repeat(22)}`);
+  expect(response?.headers()['cache-control']).toMatch(/private.*no-store|no-store.*private/);
+  expect(response?.headers()['x-robots-tag']).toContain('noindex');
   await expect(page.getByText('Tiket tidak valid', { exact: true })).toBeVisible(STEP);
   await expect(page.getByText('Tiket valid', { exact: true })).toHaveCount(0);
 });

@@ -85,7 +85,7 @@ function findMidtransMismatches(values: EnvValues): string[] {
 
 function findKeyRingProblems(values: EnvValues): string[] {
   const problems: string[] = [];
-  if (!(values.QR_SIGNING_ACTIVE_KID in values.QR_SIGNING_KEYS)) {
+  if (!Object.hasOwn(values.QR_SIGNING_KEYS, values.QR_SIGNING_ACTIVE_KID)) {
     problems.push('QR_SIGNING_ACTIVE_KID must name a kid that exists in QR_SIGNING_KEYS');
   }
   // The kid goes into every QR token and tickets_qr.key_id, which refuse any other spelling; caught here, not by the
@@ -94,7 +94,7 @@ function findKeyRingProblems(values: EnvValues): string[] {
     problems.push('QR_SIGNING_ACTIVE_KID must be lowercase letters and digits only');
   }
   const piiKid = values.PARTICIPANT_PII_ACTIVE_KID;
-  if (piiKid !== undefined && !(piiKid in (values.PARTICIPANT_PII_KEYS ?? {}))) {
+  if (piiKid !== undefined && !Object.hasOwn(values.PARTICIPANT_PII_KEYS ?? {}, piiKid)) {
     problems.push('PARTICIPANT_PII_ACTIVE_KID must name a kid that exists in PARTICIPANT_PII_KEYS');
   }
   return problems;

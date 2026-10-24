@@ -40,7 +40,7 @@ export function isAuthenticTicket(
   ticket: SignedTicketFacts,
   keyRing: QrKeyRing,
 ): boolean {
-  if (!(read.kid in keyRing) || read.ticketId !== ticket.ticketId) return false;
+  if (!Object.hasOwn(keyRing, read.kid) || read.ticketId !== ticket.ticketId) return false;
   const expected = Buffer.from(ticketSignature(ticket, read.kid, keyRing));
   const received = Buffer.from(read.signature);
   return expected.length === received.length && timingSafeEqual(expected, received);

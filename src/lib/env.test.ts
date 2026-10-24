@@ -125,6 +125,9 @@ describe('findEnvProblems', () => {
 
   it('rejects an active kid that is missing from its key ring', () => {
     expect(findEnvProblems({ ...sandbox, QR_SIGNING_ACTIVE_KID: 'k2' })).toHaveLength(1);
+    expect(findEnvProblems({ ...sandbox, QR_SIGNING_ACTIVE_KID: 'constructor' })).toEqual([
+      'QR_SIGNING_ACTIVE_KID must name a kid that exists in QR_SIGNING_KEYS',
+    ]);
     expect(findEnvProblems({ ...sandbox, PARTICIPANT_PII_ACTIVE_KID: 'k1' })).toHaveLength(1);
   });
 

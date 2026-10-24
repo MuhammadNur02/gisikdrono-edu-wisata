@@ -17,7 +17,6 @@ export const bookingTicketCopy = {
   landing: {
     title: 'Pemeriksaan tiket',
     valid: 'Tiket valid',
-    validFor: (rwName: string, visitDate: string) => `Untuk ${rwName}, ${visitDate}.`,
     invalid: 'Tiket tidak valid',
     invalidHint: 'Kode QR ini tidak dikenali sebagai tiket Edu Wisata Gisikdrono yang berlaku.',
     rateLimited: 'Terlalu banyak pemeriksaan dari jaringan Anda. Coba lagi beberapa saat lagi, ya.',

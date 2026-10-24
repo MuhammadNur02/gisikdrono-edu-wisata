@@ -33,6 +33,7 @@ describe('signTicket', () => {
   it('refuses a kid outside the grammar or the ring, and an id that is no uuid', () => {
     expect(() => signTicket(TICKET, 'K1', KEY_RING)).toThrow(RangeError);
     expect(() => signTicket(TICKET, 'k9', KEY_RING)).toThrow(/no kid k9/);
+    expect(() => signTicket(TICKET, 'constructor', KEY_RING)).toThrow(/no kid constructor/);
     expect(() => signTicket({ ...TICKET, ticketId: 'not-a-uuid' }, 'k1', KEY_RING)).toThrow(
       RangeError,
     );
@@ -80,6 +81,7 @@ describe('isAuthenticTicket', () => {
 
   it('refuses a retired kid, a forged signature and a signature of another length', () => {
     expect(isAuthenticTicket(read, TICKET, { k2: KEY_RING.k2 })).toBe(false);
+    expect(isAuthenticTicket({ ...read, kid: 'constructor' }, TICKET, KEY_RING)).toBe(false);
     expect(isAuthenticTicket({ ...read, signature: 'a'.repeat(22) }, TICKET, KEY_RING)).toBe(false);
     expect(isAuthenticTicket({ ...read, signature: 'short' }, TICKET, KEY_RING)).toBe(false);
   });

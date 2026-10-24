@@ -25,7 +25,7 @@ const VALID_STATUSES: ReadonlySet<string> = new Set(['issued', 'used']);
 // The QR of a ticket, signed with the kid its row names, so it stays the same on every visit to the page. A kid
 // QR_SIGNING_KEYS no longer holds has retired, and that ticket shows no QR.
 function qrOf(ticket: { id: string; rw_id: number; valid_on: string; key_id: string }) {
-  if (!(ticket.key_id in serverEnv.QR_SIGNING_KEYS)) return null;
+  if (!Object.hasOwn(serverEnv.QR_SIGNING_KEYS, ticket.key_id)) return null;
   const token = signTicket(
     { ticketId: ticket.id, rwId: ticket.rw_id, validOn: ticket.valid_on },
     ticket.key_id,
@@ -53,24 +53,26 @@ export async function getTicketsForBooking(bookingId: string): Promise<GuestTick
   }));
 }
 
-// /v/[token]: the signature is checked in Node against the ticket's own RW and day; a token that names no ticket, a
-// forged or retired one and a ticket no longer valid all read the same "tidak valid".
+// /v/[token] (docs/PRD.md FR-PUB-21): valid or not, nothing more. Junk is refused by its grammar before it counts
+// against the visitor's limit or reaches the database; then the signature is checked in Node against the ticket's own
+// RW and day, and a token that names no ticket, a forged or retired one and a ticket no longer valid all read the
+// same "tidak valid".
 export async function readTicketLanding(token: string, clientIp: string): Promise<TicketLanding> {
+  const read = readTicketToken(token);
+  if (read === null) return { kind: 'invalid' };
   const adminClient = createSupabaseAdminClient();
   const ipBucket = rateLimitIpBucket(clientIp);
   if (!(await withinRateLimits(adminClient, [{ name: 'qr_landing:ip', subject: ipBucket }]))) {
     return { kind: 'rate_limited' };
   }
-  const read = readTicketToken(token);
-  if (read === null) return { kind: 'invalid' };
   const { data, error } = await adminClient
     .from('tickets_qr')
-    .select('id, rw_id, valid_on, status, rw_units(name)')
+    .select('id, rw_id, valid_on, status')
     .eq('id', read.ticketId)
     .maybeSingle();
   if (error) throw error;
   if (data === null || !VALID_STATUSES.has(data.status)) return { kind: 'invalid' };
   const facts = { ticketId: data.id, rwId: data.rw_id, validOn: data.valid_on };
   if (!isAuthenticTicket(read, facts, serverEnv.QR_SIGNING_KEYS)) return { kind: 'invalid' };
-  return { kind: 'valid', rwName: data.rw_units.name, validOn: data.valid_on };
+  return { kind: 'valid' };
 }

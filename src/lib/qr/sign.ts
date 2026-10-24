@@ -24,8 +24,9 @@ export interface SignedTicketFacts {
   validOn: string;
 }
 
+// Own keys only: a kid such as "constructor" passes the grammar and would otherwise find Object's own.
 function keyOf(kid: string, keyRing: QrKeyRing): Buffer {
-  const key = keyRing[kid];
+  const key = Object.hasOwn(keyRing, kid) ? keyRing[kid] : undefined;
   if (key === undefined) throw new RangeError(`QR_SIGNING_KEYS has no kid ${kid}`);
   return Buffer.from(key, 'base64');
 }

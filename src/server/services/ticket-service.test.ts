@@ -64,20 +64,19 @@ describe('getTicketsForBooking', () => {
     expect(ticket?.qr?.path).toMatch(/^M\d+ \d+h/);
   });
 
-  it('draws no QR for a ticket whose kid has retired', async () => {
-    rows.tickets = [{ ...TICKET_ROW, key_id: 'retired' }];
-    const [ticket] = await getTicketsForBooking('0192f3a4-5b6c-7d8e-9f01-0000000000bb');
-    expect(ticket?.qr).toBeNull();
+  it('draws no QR for a ticket whose kid has retired, or names one only Object itself has', async () => {
+    rows.tickets = [
+      { ...TICKET_ROW, key_id: 'retired' },
+      { ...TICKET_ROW, key_id: 'constructor' },
+    ];
+    const tickets = await getTicketsForBooking('0192f3a4-5b6c-7d8e-9f01-0000000000bb');
+    expect(tickets.map((ticket) => ticket.qr)).toEqual([null, null]);
   });
 });
 
 describe('readTicketLanding', () => {
-  it('says valid with the RW and the day, and nothing else, for a signed ticket', async () => {
-    await expect(readTicketLanding(TOKEN, '203.0.113.7')).resolves.toEqual({
-      kind: 'valid',
-      rwName: 'RW 05 Ecowastreme',
-      validOn: '2026-11-12',
-    });
+  it('says valid, and nothing else, for a signed ticket', async () => {
+    await expect(readTicketLanding(TOKEN, '203.0.113.7')).resolves.toEqual({ kind: 'valid' });
     expect(withinRateLimits).toHaveBeenCalledWith(expect.anything(), [
       { name: 'qr_landing:ip', subject: '203.0.113.7' },
     ]);
@@ -91,15 +90,19 @@ describe('readTicketLanding', () => {
   it('says not valid for a forged token, an unknown ticket, another day or a revoked ticket', async () => {
     const forged = `${TOKEN.slice(0, -4)}AAAA`;
     await expect(readTicketLanding(forged, '203.0.113.7')).resolves.toEqual({ kind: 'invalid' });
-    await expect(readTicketLanding('not-a-token', '203.0.113.7')).resolves.toEqual({
-      kind: 'invalid',
-    });
     rows.landing = { ...TICKET_ROW, valid_on: '2026-11-13' };
     await expect(readTicketLanding(TOKEN, '203.0.113.7')).resolves.toEqual({ kind: 'invalid' });
     rows.landing = { ...TICKET_ROW, status: 'revoked' };
     await expect(readTicketLanding(TOKEN, '203.0.113.7')).resolves.toEqual({ kind: 'invalid' });
     rows.landing = null;
     await expect(readTicketLanding(TOKEN, '203.0.113.7')).resolves.toEqual({ kind: 'invalid' });
+  });
+
+  it('refuses junk by its grammar before it counts against the limit', async () => {
+    await expect(readTicketLanding('not-a-token', '203.0.113.7')).resolves.toEqual({
+      kind: 'invalid',
+    });
+    expect(withinRateLimits).not.toHaveBeenCalled();
   });
 
   it('stops a visitor who checks too many tokens', async () => {
