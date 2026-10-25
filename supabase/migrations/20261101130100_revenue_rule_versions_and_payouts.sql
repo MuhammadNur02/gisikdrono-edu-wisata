@@ -11,6 +11,8 @@
 --   RULE_LINES_INVALID   no line, a share outside 0–100 or more than two decimals, or shares not adding up to 100
 --   RULE_START_INVALID   a version starting before tomorrow while another is in force, or before today
 --   RULE_OVERLAP         a version of the same target already starts on or after that day
+--   RULE_TARGET_INVALID  a scope without its package or product, or one that does not exist
+--   PROOF_MISSING        no file at the proof's path in the documents bucket
 --   PAYOUT_EMPTY         nothing left to pay out to that beneficiary in the period
 
 
@@ -33,15 +35,22 @@ begin
     raise exception 'a revenue rule has one to ten lines' using errcode = 'P0001', hint = 'RULE_LINES_INVALID';
   end if;
   for line in select value from jsonb_array_elements(p_lines) loop
-    share := (line ->> 'pct')::numeric;
+    -- A share, beneficiary, RW or vendor that is not one at all reads as an invalid line, not as a cast error
+    -- (review of PR #68, L7).
+    begin
+      share := (line ->> 'pct')::numeric;
+      beneficiary := (line ->> 'beneficiary')::public.revenue_beneficiary;
+      rw_id := (line ->> 'rw_id')::smallint;
+      vendor_id := (line ->> 'vendor_id')::uuid;
+    exception when invalid_text_representation or numeric_value_out_of_range or invalid_parameter_value then
+      raise exception 'a line names a share, a beneficiary, an RW and a vendor it can be read as'
+        using errcode = 'P0001', hint = 'RULE_LINES_INVALID';
+    end;
     if share is null or share <= 0 or share > 100 or share <> round(share, 2) then
       raise exception 'a share is above 0 and at most 100, with at most two decimals'
         using errcode = 'P0001', hint = 'RULE_LINES_INVALID';
     end if;
     total := total + share;
-    beneficiary := (line ->> 'beneficiary')::public.revenue_beneficiary;
-    rw_id := (line ->> 'rw_id')::smallint;
-    vendor_id := (line ->> 'vendor_id')::uuid;
     pct := share;
     return next;
   end loop;
@@ -100,18 +109,41 @@ begin
     insert into public.revenue_share_rules (scope, rw_id, package_id, product_id, name, effective_from, created_by)
     values (p_scope, p_rw_id, p_package_id, p_product_id, btrim(p_name), p_effective_from, auth.uid())
     returning id into new_rule_id;
-  exception when exclusion_violation then
-    raise exception 'another version of this rule is in force on %', p_effective_from
-      using errcode = 'P0001', hint = 'RULE_OVERLAP';
+  exception
+    when exclusion_violation then
+      raise exception 'another version of this rule is in force on %', p_effective_from
+        using errcode = 'P0001', hint = 'RULE_OVERLAP';
+    when check_violation or foreign_key_violation then
+      raise exception 'a % rule names its own target, and that target exists', p_scope
+        using errcode = 'P0001', hint = 'RULE_TARGET_INVALID';
   end;
-  insert into public.revenue_share_rule_lines (rule_id, beneficiary, rw_id, vendor_id, pct)
-  select new_rule_id, l.beneficiary, l.rw_id, l.vendor_id, l.pct from internal.revenue_rule_lines_of(p_lines) l;
+  begin
+    insert into public.revenue_share_rule_lines (rule_id, beneficiary, rw_id, vendor_id, pct)
+    select new_rule_id, l.beneficiary, l.rw_id, l.vendor_id, l.pct from internal.revenue_rule_lines_of(p_lines) l;
+  exception when check_violation or foreign_key_violation then
+    raise exception 'each line names the RW or the vendor its beneficiary needs, and only that'
+      using errcode = 'P0001', hint = 'RULE_LINES_INVALID';
+  end;
   return jsonb_build_object('rule_id', new_rule_id, 'closed_rule_id', previous.id);
 end;
 $$;
 
 
 -- ===== settle_revenue_entries =====
+
+-- A proof or an evidence file is named only once the server has put it in the documents bucket at exactly that path
+-- (review of PR #68, L7). Shared with the refund and adjustment RPCs of 20261101130200.
+create function internal.require_document(p_path text) returns void
+  language plpgsql stable
+  set search_path = ''
+as $$
+begin
+  if not exists (select 1 from storage.objects o where o.bucket_id = 'documents' and o.name = p_path) then
+    raise exception 'no document at %', p_path using errcode = 'P0001', hint = 'PROOF_MISSING';
+  end if;
+end;
+$$;
+revoke execute on function internal.require_document(text) from public, anon, authenticated, service_role;
 
 -- The payout batch as jsonb, once its total and its ledger rows are stamped. p_from and p_to are Jakarta days of the rows.
 create function public.settle_revenue_entries(
@@ -138,27 +170,30 @@ begin
   if length(reference) not between 3 and 100 then
     raise exception 'a payout names its transfer in 3 to 100 characters' using errcode = '22023';
   end if;
-  if p_proof_path is null or p_proof_path !~ '^payouts/[0-9a-f-]{36}/[A-Za-z0-9._-]{1,80}$' then
+  if p_proof_path is null or p_proof_path !~ '^payouts/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[A-Za-z0-9._-]{1,80}$' then
     raise exception 'a payout keeps its proof under documents/payouts/' using errcode = '22023';
   end if;
+  perform internal.require_document(p_proof_path);
 
   perform pg_advisory_xact_lock(hashtext('payout:' || key));
-  select coalesce(sum(e.amount), 0) into total
-  from public.revenue_share_entries e
-  where e.beneficiary_key = key and e.payout_batch_id is null
-    and (e.created_at at time zone 'Asia/Jakarta')::date between p_from and p_to;
+  -- The batch first, then the rows it stamps, so its total is the sum of exactly the rows it stamped (review of PR #68,
+  -- L1): a ledger row written between a separate sum and the stamp can no longer slip in uncounted.
+  insert into public.payout_batches (id, beneficiary_key, period_from, period_to, total_amount, paid_at, reference,
+    proof_path, created_by)
+  values (split_part(p_proof_path, '/', 2)::uuid, key, p_from, p_to, 0, now(), reference, p_proof_path, auth.uid())
+  returning * into batch;
+  with stamped as (
+    update public.revenue_share_entries e set payout_batch_id = batch.id
+    where e.beneficiary_key = key and e.payout_batch_id is null
+      and (e.created_at at time zone 'Asia/Jakarta')::date between p_from and p_to
+    returning e.amount
+  )
+  select coalesce(sum(stamped.amount), 0) into total from stamped;
   if total <= 0 then
     raise exception 'nothing is left to pay out to % from % to %', key, p_from, p_to
       using errcode = 'P0001', hint = 'PAYOUT_EMPTY';
   end if;
-
-  insert into public.payout_batches (id, beneficiary_key, period_from, period_to, total_amount, paid_at, reference,
-    proof_path, created_by)
-  values (split_part(p_proof_path, '/', 2)::uuid, key, p_from, p_to, total, now(), reference, p_proof_path, auth.uid())
-  returning * into batch;
-  update public.revenue_share_entries e set payout_batch_id = batch.id
-  where e.beneficiary_key = key and e.payout_batch_id is null
-    and (e.created_at at time zone 'Asia/Jakarta')::date between p_from and p_to;
+  update public.payout_batches set total_amount = total where id = batch.id returning * into batch;
   return to_jsonb(batch);
 end;
 $$;
@@ -169,3 +204,12 @@ revoke execute on function public.save_revenue_rule(public.revenue_rule_scope, s
 grant execute on function public.save_revenue_rule(public.revenue_rule_scope, smallint, uuid, uuid, text, date, jsonb),
   public.settle_revenue_entries(text, date, date, text, text)
   to authenticated;
+
+
+-- ===== settle_revenue_entries is the only way a payout is written =====
+
+-- Review of PR #68, M3: the superadmin's direct writes of 0005 would let a batch exist without the ledger rows it pays,
+-- or change its total afterwards. Reads stay as they were.
+revoke insert, update on public.payout_batches from authenticated;
+drop policy payout_batches_super_insert on public.payout_batches;
+drop policy payout_batches_super_update on public.payout_batches;

@@ -3,7 +3,7 @@
 -- version closing the one in force the day before with its shares adding up to 100 %, and a payout that stamps its
 -- ledger rows once.
 begin;
-select plan(31);
+select plan(36);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: a paid RW 05 booking with its payment, invoice and ledger =====
@@ -29,6 +29,11 @@ insert into public.revenue_share_entries (booking_id, payment_id, entry_type, li
    'kelurahan', 'kelurahan', null, 100000, 30, 30000),
   ('00000000-0000-4000-8000-0000000e2001', '00000000-0000-4000-8000-0000000e3001', 'settlement', 'package', '{}',
    'rw_treasury', 'rw:5', 5, 100000, 70, 70000);
+
+-- The proofs the server would have put in the documents bucket (review of PR #68, L7).
+insert into storage.objects (bucket_id, name) values
+  ('documents', 'payouts/00000000-0000-4000-8000-0000000e4001/bukti.pdf'),
+  ('documents', 'payouts/00000000-0000-4000-8000-0000000e4002/bukti.pdf');
 
 -- ===== finance_overview and finance_booking: who =====
 reset role;
@@ -85,6 +90,16 @@ select throws_ok($$select public.save_revenue_rule('package', null, '00000000-00
 select throws_ok($$select public.save_revenue_rule('package', null, '00000000-0000-4000-8000-0000000e1001', null,
   'Uji', public.today_jkt() - 1, '[{"beneficiary": "kelurahan", "pct": 100}]')$$, 'P0001', null,
   'a version never starts in the past');
+select throws_ok($$select public.save_revenue_rule('package', null, '00000000-0000-4000-8000-0000000e1001', null,
+  'Uji', public.today_jkt(), '[{"beneficiary": "umkm_vendor", "vendor_id": "bukan-uuid", "pct": 100}]')$$, 'P0001',
+  'a line names a share, a beneficiary, an RW and a vendor it can be read as',
+  'a vendor that is no uuid reads as an invalid line (L7)');
+select throws_ok($$select public.save_revenue_rule('package', null, '00000000-0000-4000-8000-0000000e1001', null,
+  'Uji', public.today_jkt(), '[{"beneficiary": "lurah", "pct": 100}]')$$, 'P0001',
+  'a line names a share, a beneficiary, an RW and a vendor it can be read as', 'and so does an unknown beneficiary');
+select throws_ok($$select public.save_revenue_rule('package', null, null, null, 'Uji', public.today_jkt(),
+  '[{"beneficiary": "kelurahan", "pct": 100}]')$$, 'P0001', 'a package rule names its own target, and that target exists',
+  'a package rule without its package is refused readably');
 create temporary table first_version on commit drop as
   select (public.save_revenue_rule('package', null, '00000000-0000-4000-8000-0000000e1001', null, 'Uji keuangan v1',
     public.today_jkt(), '[{"beneficiary": "kelurahan", "pct": 30}, {"beneficiary": "rw_treasury", "rw_id": 5,
@@ -129,6 +144,9 @@ create temporary table payout on commit drop as
 select cmp_ok((select total_amount from payout), '>=', 70000::bigint,
   'the payout totals what RW 05 was owed in the period');
 reset role;
+select is((select total_amount from payout),
+  (select sum(e.amount)::bigint from public.revenue_share_entries e where e.payout_batch_id = (select id from payout)),
+  'exactly the sum of the rows it stamped (L1)');
 select is((select count(*)::int from public.revenue_share_entries
            where booking_id = '00000000-0000-4000-8000-0000000e2001' and payout_batch_id = (select id from payout)), 1,
   'and stamps the RW''s ledger row with it');
@@ -139,6 +157,10 @@ select pg_temp.act_as('superadmin_aal2');
 select throws_ok($$select public.settle_revenue_entries('rw:5', public.today_jkt() - 1, public.today_jkt(),
   'TRF-RW5-002', 'payouts/00000000-0000-4000-8000-0000000e4002/bukti.pdf')$$, 'P0001', null,
   'a second payout of the same rows finds nothing left');
+select throws_ok($$select public.settle_revenue_entries('kelurahan', public.today_jkt() - 1, public.today_jkt(),
+  'TRF-KEL-001', 'payouts/00000000-0000-4000-8000-0000000e4009/bukti.pdf')$$, 'P0001',
+  'no document at payouts/00000000-0000-4000-8000-0000000e4009/bukti.pdf',
+  'a payout names a proof the documents bucket holds (L7)');
 select throws_ok($$select public.settle_revenue_entries('rw:5', public.today_jkt(), public.today_jkt() + 1,
   'TRF-RW5-003', 'payouts/00000000-0000-4000-8000-0000000e4003/bukti.pdf')$$, '22023', null,
   'and a payout covers no day still to come');

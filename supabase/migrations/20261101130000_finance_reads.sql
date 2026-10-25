@@ -37,8 +37,16 @@ create function internal.recap_invariant(p_from date, p_to date) returns jsonb
 as $$
   with paid as (
     select b.id, b.total_amount,
+           -- Only refunds of a payment the ledger settled from: a duplicate payment's refund gives back money the
+           -- ledger never held (review of PR #68, M1). A booking without any settlement row (its split refused) counts
+           -- the refunds of its own payment, so refunding it whole settles the invariant.
            coalesce((select sum(p.refunded_amount) from public.payments p
-                     where p.booking_id = b.id and p.status in ('settled', 'partially_refunded', 'refunded')), 0)
+                     where p.booking_id = b.id
+                       and (p.id in (select e.payment_id from public.revenue_share_entries e
+                                     where e.booking_id = b.id and e.entry_type = 'settlement')
+                            or (p.status <> 'duplicate'
+                                and not exists (select 1 from public.revenue_share_entries e
+                                                where e.booking_id = b.id and e.entry_type = 'settlement')))), 0)
              as refunded,
            coalesce((select sum(e.amount) from public.revenue_share_entries e where e.booking_id = b.id), 0) as ledger
     from public.bookings b

@@ -17,7 +17,8 @@
 -- Each RPC answers with the adjustment row as jsonb. Every write needs the superadmin with a TOTP code verified in the last five minutes (fresh_totp).
 -- Refusals carry hints that adjustment-service.ts turns into Indonesian copy: ADJUSTMENT_TYPE_UNSUPPORTED,
 -- ADJUSTMENT_OPEN, ADJUSTMENT_STATE, APPROVER_INELIGIBLE, APPLY_TOO_EARLY, REFUND_NO_PAYMENT, REFUND_TOO_LARGE,
--- SHARE_TOO_LARGE; and STATE_INVALID for a retried refund with another amount.
+-- SHARE_TOO_LARGE, LEDGER_MISSING (a partial refund of a booking whose split never reached the ledger), PROOF_MISSING
+-- (20261101130100); and STATE_INVALID for a retried refund with another amount.
 
 
 -- ===== The terms an adjustment carries beyond its amount =====
@@ -54,6 +55,10 @@ create function internal.payment_adjustments_workflow() returns trigger
   set search_path = ''
 as $$
 begin
+  -- The retention run of 0004's append_only trigger may still prune or anonymise (review of PR #68, L2).
+  if internal.in_purge() then
+    return coalesce(new, old);
+  end if;
   if tg_op = 'DELETE' then
     raise exception 'payment adjustments are never deleted' using errcode = '42501';
   end if;
@@ -75,13 +80,13 @@ begin
       old.proposed_at, old.details) then
     raise exception 'the terms of an adjustment never change' using errcode = '42501';
   end if;
+  if new.apply_not_before < old.apply_not_before then
+    raise exception 'the delay of an adjustment never shortens' using errcode = '42501';
+  end if;
   if (old.status::text, new.status::text) not in (('proposed', 'approved'), ('proposed', 'rejected'),
                                                     ('approved', 'applied')) then
     raise exception 'an adjustment does not go from % to %', old.status, new.status
       using errcode = 'P0001', hint = 'ADJUSTMENT_STATE';
-  end if;
-  if new.apply_not_before < old.apply_not_before then
-    raise exception 'the delay of an adjustment never shortens' using errcode = '42501';
   end if;
 
   if new.status = 'approved' then
@@ -104,6 +109,15 @@ begin
     if new.applied_at is null or new.applied_by is null then
       raise exception 'an applied adjustment names when and by whom' using errcode = '22023';
     end if;
+    if (new.approved_by, new.approved_at, new.rejected_reason, new.apply_not_before)
+       is distinct from (old.approved_by, old.approved_at, old.rejected_reason, old.apply_not_before) then
+      raise exception 'an approval is applied as it was given' using errcode = '42501';
+    end if;
+    if not exists (select 1 from public.profiles a
+                   where a.id = old.approved_by and a.role = 'superadmin' and a.is_active) then
+      raise exception 'the approver is no longer an active superadmin' using errcode = 'P0001',
+        hint = 'APPROVER_INELIGIBLE';
+    end if;
     if new.applied_at < old.apply_not_before then
       raise exception 'this adjustment applies from %', old.apply_not_before
         using errcode = 'P0001', hint = 'APPLY_TOO_EARLY';
@@ -117,10 +131,25 @@ create trigger payment_adjustments_workflow before insert or update or delete on
 revoke execute on function internal.payment_adjustments_workflow() from public, anon, authenticated;
 
 
--- ===== A booking refunded while its payment is partly refunded =====
+-- ===== A booking refunded while its payment is partly refunded, or held for review =====
+
+-- docs/PRD.md §9.2 (review of PR #68, M5): a payment held for review counts as money received once Midtrans itself
+-- answered settlement for its order, through the Status API or the poll ("Cek status Midtrans"); a webhook alone does
+-- not, since holding it for review is what the webhook's word earned.
+create function internal.midtrans_confirmed_settled(p_order_id text) returns boolean
+  language sql stable
+  set search_path = ''
+as $$
+  select exists (select 1 from public.payment_events e
+                 where e.order_id = p_order_id and e.source <> 'webhook'
+                   and internal.midtrans_payment_status(e.transaction_status, e.fraud_status) = 'settled');
+$$;
+revoke execute on function internal.midtrans_confirmed_settled(text) from public, anon, authenticated, service_role;
 
 -- Replaces the 0004 version: a booking is refunded while money is held for it in a settled payment, or in one partly
--- refunded already, since the second refund of a payment completes its first. Everything else is unchanged.
+-- refunded already, since the second refund of a payment completes its first; a booking still pending payment is
+-- refunded while its payment is held for review and Midtrans confirmed the settlement (M5). Everything else is
+-- unchanged.
 create or replace function internal.bookings_status_transition() returns trigger
   language plpgsql security definer
   set search_path = ''
@@ -147,7 +176,10 @@ begin
         using errcode = '42501';
     end if;
     if not exists (select 1 from public.payments p
-                   where p.booking_id = new.id and p.status = any (array['settled', 'partially_refunded']::public.payment_status[])) then
+                   where p.booking_id = new.id
+                     and (p.status = any (array['settled', 'partially_refunded']::public.payment_status[])
+                          or (old.status = 'pending_payment' and p.status = 'needs_review'
+                              and internal.midtrans_confirmed_settled(p.order_id)))) then
       raise exception 'a booking is refunded only while it has a settled payment'
         using errcode = 'P0001', hint = 'STATE_INVALID';
     end if;
@@ -219,9 +251,121 @@ end;
 $$;
 
 
+-- ===== Messages and alerts of a refund =====
+
+-- Replaces the 20261024120000 version, adding p_dedupe_scope (review of PR #68, L4): a message that may rightly go more
+-- than once for one booking, such as refund_processed for each of its refunds, names what it is about, and only a
+-- repeat about the same thing is the row already queued. Everything else is unchanged.
+drop function internal.enqueue_notification(uuid, public.notification_template, public.notification_channel, jsonb);
+create function internal.enqueue_notification(
+  p_booking_id uuid, p_template public.notification_template, p_channel public.notification_channel, p_params jsonb,
+  p_dedupe_scope text default null
+) returns uuid
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  emails_before_payment constant integer := 3;
+  pre_payment_templates constant public.notification_template[] :=
+    array['booking_created', 'quotation_ready', 'payment_reminder', 'booking_expired', 'booking_link'];
+  booking record;
+  recipient text;
+  dedupe text := format('booking:%s:%s:%s', p_booking_id, p_template, p_channel)
+    || coalesce(':' || md5(p_dedupe_scope), '');
+  notification_id uuid;
+begin
+  select b.pic_phone, b.pic_email, b.pic_first_name, b.phone_verified_at, b.paid_at into booking
+  from public.bookings b where b.id = p_booking_id;
+  if not found then
+    raise exception 'booking % does not exist', p_booking_id using errcode = 'P0002';
+  end if;
+  if not internal.setting_is_on(case p_channel when 'whatsapp' then 'whatsapp_enabled' else 'email_enabled' end) then
+    return null;
+  end if;
+
+  if p_channel = 'whatsapp' and p_template <> 'phone_otp' and booking.phone_verified_at is null then
+    return null;
+  end if;
+  recipient := case p_channel when 'whatsapp' then booking.pic_phone else booking.pic_email end;
+  if recipient is null then
+    return null;
+  end if;
+  if p_channel = 'email' and p_template = any (pre_payment_templates) and booking.paid_at is null
+     and not exists (select 1 from public.notifications n where n.dedupe_key = dedupe)
+     and (select count(*) from public.notifications n
+          where n.channel = 'email' and n.recipient = booking.pic_email and n.template = any (pre_payment_templates)
+            and n.created_at > now() - interval '1 day') >= emails_before_payment then
+    insert into public.security_events (event_type, severity, entity_type, entity_id, details)
+    values ('rate_limited', 'info', 'bookings', p_booking_id::text,
+            jsonb_build_object('limit', 'email_before_payment', 'template', p_template));
+    return null;
+  end if;
+
+  insert into public.notifications (booking_id, channel, template, recipient, recipient_name, params, dedupe_key)
+  values (p_booking_id, p_channel, p_template, recipient, booking.pic_first_name, coalesce(p_params, '{}'), dedupe)
+  on conflict (dedupe_key) do nothing
+  returning id into notification_id;
+  if notification_id is null then
+    select n.id into notification_id from public.notifications n where n.dedupe_key = dedupe;
+  end if;
+  return notification_id;
+end;
+$$;
+revoke execute on function internal.enqueue_notification(uuid, public.notification_template,
+  public.notification_channel, jsonb, text) from public, anon, authenticated;
+
+-- Replaces the 20261024095000 version (review of PR #68, L5): Midtrans telling of a refund the superadmin has already
+-- recorded, in whole, raises nothing; one that goes beyond what was recorded still raises the high alert. What Midtrans
+-- refunded is read from the event being applied (its refund_amount, or the whole payment for a refunded status).
+create or replace function internal.note_refund_seen(p_payment public.payments, p_target public.payment_status)
+  returns jsonb
+  language plpgsql
+  set search_path = ''
+as $$
+declare
+  told jsonb;
+  refunded_at_midtrans bigint;
+begin
+  select e.payload into told from public.payment_events e
+  where e.order_id = p_payment.order_id and e.processed_at is null
+  order by e.id desc
+  limit 1;
+  refunded_at_midtrans := case
+    when p_target = 'refunded' then p_payment.gross_amount
+    when coalesce(told ->> 'refund_amount', '') ~ '^[0-9]{1,15}(\.0{1,2})?$'
+      then split_part(told ->> 'refund_amount', '.', 1)::bigint
+  end;
+  if refunded_at_midtrans is not null and p_payment.refunded_amount >= refunded_at_midtrans then
+    return jsonb_build_object('result', 'ignored', 'processing_result', 'refund_already_recorded',
+                              'payment_status', p_payment.status);
+  end if;
+  insert into public.security_alerts (rule, severity, fingerprint, title, details)
+  values ('refund_seen', 'high', 'refund_seen:' || p_payment.order_id,
+          'Refund terlihat di Midtrans; catat di Keuangan',
+          jsonb_build_object('booking_id', p_payment.booking_id, 'order_id', p_payment.order_id, 'status', p_target))
+  on conflict (fingerprint) where acknowledged_at is null do update
+  set last_seen_at = now(), occurrences = public.security_alerts.occurrences + 1, details = excluded.details,
+      notified_at = null;
+  return jsonb_build_object('result', 'ignored', 'processing_result', 'refund_awaiting_record',
+                            'payment_status', p_payment.status);
+end;
+$$;
+
+-- An open alert a recorded refund answers is closed in the recording superadmin's name.
+create function internal.close_refund_alert(p_fingerprint text, p_actor uuid) returns void
+  language sql
+  set search_path = ''
+as $$
+  update public.security_alerts set acknowledged_by = p_actor
+  where fingerprint = p_fingerprint and acknowledged_at is null;
+$$;
+revoke execute on function internal.close_refund_alert(text, uuid) from public, anon, authenticated, service_role;
+
+
 -- ===== record_refund =====
 
--- The payment a refund comes out of: the one named, or the booking's settled (or partly refunded) one.
+-- The payment a refund comes out of: the one named, or the booking's settled (or partly refunded) one, or the one
+-- held for review (M5).
 create function internal.refund_payment_of(p_booking_id uuid, p_payment_id uuid) returns public.payments
   language plpgsql
   set search_path = ''
@@ -232,7 +376,7 @@ begin
   select p.* into payment from public.payments p
   where p.booking_id = p_booking_id
     and (p.id = p_payment_id
-         or (p_payment_id is null and p.status in ('settled', 'partially_refunded')))
+         or (p_payment_id is null and p.status in ('settled', 'partially_refunded', 'needs_review')))
   order by p.attempt_no desc
   limit 1
   for update;
@@ -244,7 +388,57 @@ begin
 end;
 $$;
 
--- What a whole refund does beyond the payment: the booking refunded, its tickets revoked, the seats of a visit ahead
+-- What a payment may give back now (REFUND_NO_PAYMENT or REFUND_TOO_LARGE otherwise): a settled or partly refunded
+-- payment any part of what it still holds; a duplicate one, or one held for review that Midtrans confirmed settled
+-- while its booking still waits for payment (M5), all of it at once.
+create function internal.check_refund_amount(p_booking public.bookings, p_payment public.payments, p_amount bigint)
+  returns void
+  language plpgsql stable
+  set search_path = ''
+as $$
+declare
+  holds bigint := p_payment.gross_amount - p_payment.refunded_amount;
+  is_held boolean := p_payment.status = 'needs_review';
+begin
+  if not (p_payment.status in ('settled', 'partially_refunded', 'duplicate')
+          or (is_held and p_booking.status = 'pending_payment'
+              and internal.midtrans_confirmed_settled(p_payment.order_id))) then
+    raise exception 'a % payment is not refunded', p_payment.status using errcode = 'P0001', hint = 'REFUND_NO_PAYMENT';
+  end if;
+  if p_amount is null or p_amount <= 0 or p_amount > holds
+     or ((p_payment.status = 'duplicate' or is_held) and p_amount <> holds) then
+    raise exception 'payment % cannot refund %', p_payment.order_id, p_amount
+      using errcode = 'P0001', hint = 'REFUND_TOO_LARGE';
+  end if;
+end;
+$$;
+
+-- The seats of the legs whose session is still ahead go back to their sessions; a leg already visited keeps its count
+-- (review of PR #68, L6).
+create function internal.release_quota_ahead(p_booking_id uuid) returns void
+  language plpgsql
+  set search_path = ''
+as $$
+declare
+  leg record;
+begin
+  for leg in
+    select l.id, l.visit_session_id, l.pax_count
+    from public.booking_legs l
+    join public.visit_sessions s on s.id = l.visit_session_id
+    where l.booking_id = p_booking_id and l.status = 'reserved' and l.quota_released_at is null
+      and (s.session_date + s.start_time) at time zone 'Asia/Jakarta' > now()
+    order by l.visit_session_id
+    for update of l
+  loop
+    update public.visit_sessions set reserved_pax = greatest(reserved_pax - leg.pax_count, 0)
+    where id = leg.visit_session_id;
+    update public.booking_legs set status = 'released', quota_released_at = now() where id = leg.id;
+  end loop;
+end;
+$$;
+
+-- What a whole refund does beyond the payment: the booking refunded, its tickets revoked, the seats of the legs ahead
 -- freed, the invoice voided under a credit note. Returns the credit note's number.
 create function internal.close_refunded_booking(p_booking public.bookings, p_payment public.payments, p_reason text,
   p_actor uuid) returns text
@@ -258,14 +452,44 @@ begin
     update public.bookings set status = 'refunded', needs_review = false, review_reason = null where id = p_booking.id;
   end if;
   perform internal.revoke_booking_tickets(p_booking.id, 'refund', p_actor);
-  if p_booking.visit_date >= public.today_jkt() then
-    perform internal.release_booking_quota(p_booking.id);
-  end if;
+  perform internal.release_quota_ahead(p_booking.id);
   update public.invoices
   set status = 'void', void_reason = left(p_reason, 200), voided_at = now(),
       credit_note_number = coalesce(credit_note_number, internal.next_document_number('credit_note', now()))
   where booking_id = p_booking.id and payment_id = p_payment.id and status = 'paid'
   returning credit_note_number into credit_note;
+  return credit_note;
+end;
+$$;
+
+-- The booking's side of a refund (review of PR #68, M1, M2, M5): a duplicate payment carries no booking money, so its
+-- refund leaves the booking and the ledger alone and answers its own alert; a whole refund closes the booking, which
+-- answers every review it was under; a partial one changes no review, and needs a settlement ledger to reverse
+-- (LEDGER_MISSING). Returns the credit note's number of a whole refund.
+create function internal.refund_booking_side(p_booking public.bookings, p_payment public.payments, p_amount bigint,
+  p_is_whole boolean, p_reference text, p_reason text, p_actor uuid) returns text
+  language plpgsql
+  set search_path = ''
+as $$
+declare
+  has_ledger boolean := exists (select 1 from public.revenue_share_entries e
+                                where e.booking_id = p_booking.id and e.entry_type = 'settlement');
+  credit_note text;
+begin
+  if p_payment.status = 'duplicate' then
+    perform internal.close_refund_alert('duplicate_settlement:' || p_payment.order_id, p_actor);
+    return null;
+  end if;
+  if not p_is_whole and not has_ledger then
+    raise exception 'booking % has no settlement ledger to take a partial refund from', p_booking.booking_code
+      using errcode = 'P0001', hint = 'LEDGER_MISSING';
+  end if;
+  if p_is_whole then
+    credit_note := internal.close_refunded_booking(p_booking, p_payment, p_reason, p_actor);
+  end if;
+  if has_ledger then
+    perform internal.reverse_revenue_share(p_booking.id, p_amount, p_reference, p_reason);
+  end if;
   return credit_note;
 end;
 $$;
@@ -295,6 +519,7 @@ begin
   if p_proof_path is null or p_proof_path !~ ('^bookings/' || p_booking_id || '/[A-Za-z0-9._-]{1,120}$') then
     raise exception 'a refund keeps its proof under documents/bookings/%/', p_booking_id using errcode = '22023';
   end if;
+  perform internal.require_document(p_proof_path);
   perform internal.take_audit_turn();
   select b.* into booking from public.bookings b where b.id = p_booking_id for update;
   if not found then
@@ -310,41 +535,30 @@ begin
     return jsonb_build_object('result', 'already_recorded', 'amount', p_amount);
   end if;
   payment := internal.refund_payment_of(p_booking_id, p_payment_id);
-  if payment.status not in ('settled', 'partially_refunded', 'duplicate') then
-    raise exception 'a % payment is not refunded', payment.status using errcode = 'P0001', hint = 'REFUND_NO_PAYMENT';
-  end if;
-  if p_amount is null or p_amount <= 0 or p_amount > payment.gross_amount - payment.refunded_amount
-     or (payment.status = 'duplicate' and p_amount <> payment.gross_amount - payment.refunded_amount) then
-    raise exception 'payment % cannot refund %', payment.order_id, p_amount
-      using errcode = 'P0001', hint = 'REFUND_TOO_LARGE';
-  end if;
+  perform internal.check_refund_amount(booking, payment, p_amount);
   is_whole := payment.refunded_amount + p_amount = payment.gross_amount;
 
   previous_settings := internal.push_settings('{"app.in_rpc": "1", "app.recording_refund": "1"}');
-  -- A duplicate payment carries no booking money: only the payment itself is refunded.
-  if payment.status <> 'duplicate' then
-    if is_whole then
-      credit_note := internal.close_refunded_booking(booking, payment, p_reason, p_actor);
-    elsif booking.needs_review then
-      update public.bookings set needs_review = false, review_reason = null where id = booking.id;
-    end if;
-    if exists (select 1 from public.revenue_share_entries e
-               where e.booking_id = booking.id and e.entry_type = 'settlement') then
-      perform internal.reverse_revenue_share(booking.id, p_amount, reference, p_reason);
-    end if;
-  end if;
+  credit_note := internal.refund_booking_side(booking, payment, p_amount, is_whole, reference, p_reason, p_actor);
+  -- A duplicate payment stays duplicate, its refund shown in refunded_amount alone (M1).
   update public.payments
-  set status = case when is_whole then 'refunded'::public.payment_status else 'partially_refunded' end,
+  set status = case when status = 'duplicate' then status
+                    when is_whole then 'refunded'::public.payment_status
+                    else 'partially_refunded' end,
       refunded_amount = refunded_amount + p_amount
   where id = payment.id;
+  perform internal.close_refund_alert('refund_seen:' || payment.order_id, p_actor);
   insert into public.booking_events (booking_id, from_status, to_status, actor_type, actor_id, reason, payload)
   select booking.id, booking.status, b.status, 'admin', p_actor, 'refund_recorded',
          jsonb_build_object('refund_reference', reference, 'amount', p_amount, 'order_id', payment.order_id,
                             'whole', is_whole, 'proof_path', p_proof_path, 'credit_note_number', credit_note)
   from public.bookings b where b.id = booking.id;
+  -- Each refund sends its own message with its own amount (L4).
   if payment.status <> 'duplicate' then
-    perform internal.enqueue_notification(booking.id, 'refund_processed', 'whatsapp', '{}');
-    perform internal.enqueue_notification(booking.id, 'refund_processed', 'email', '{}');
+    perform internal.enqueue_notification(booking.id, 'refund_processed', 'whatsapp',
+                                          jsonb_build_object('refund_amount', p_amount), 'refund:' || reference);
+    perform internal.enqueue_notification(booking.id, 'refund_processed', 'email',
+                                          jsonb_build_object('refund_amount', p_amount), 'refund:' || reference);
   end if;
   perform internal.restore_settings(previous_settings);
   return jsonb_build_object('result', 'recorded', 'amount', p_amount, 'whole', is_whole,
@@ -353,7 +567,10 @@ end;
 $$;
 
 revoke execute on function internal.refund_payment_of(uuid, uuid),
+  internal.check_refund_amount(public.bookings, public.payments, bigint),
+  internal.release_quota_ahead(uuid),
   internal.close_refunded_booking(public.bookings, public.payments, text, uuid),
+  internal.refund_booking_side(public.bookings, public.payments, bigint, boolean, text, text, uuid),
   internal.record_refund_core(uuid, uuid, bigint, text, text, text, uuid)
   from public, anon, authenticated, service_role;
 
@@ -451,10 +668,15 @@ declare
 begin
   perform internal.require_finance_writer();
   if p_evidence_path is null
-     or p_evidence_path !~ ('^bookings/' || p_booking_id || '/adjustment-[0-9a-f-]{36}\.(pdf|jpg|jpeg|png|webp)$') then
+     or p_evidence_path !~ ('^bookings/' || p_booking_id
+                            || '/adjustment-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+                            || '\.(pdf|jpg|jpeg|png|webp)$') then
     raise exception 'an adjustment keeps its evidence under documents/bookings/%/', p_booking_id
       using errcode = '22023';
   end if;
+  perform internal.require_document(p_evidence_path);
+  -- The audit turn before any row lock, as every writer takes them (review of PR #68, L3).
+  perform internal.take_audit_turn();
   perform 1 from public.bookings b where b.id = p_booking_id for update;
   if not found then
     raise exception 'booking % does not exist', p_booking_id using errcode = 'P0002';
@@ -512,6 +734,7 @@ declare
   previous_settings jsonb;
 begin
   perform internal.require_finance_writer();
+  perform internal.take_audit_turn();
   adjustment := internal.open_adjustment(p_id, 'proposed');
   is_own := adjustment.proposed_by = auth.uid();
   if is_own and (select count(*) from public.profiles p where p.role = 'superadmin' and p.is_active) > 1 then
@@ -547,6 +770,7 @@ declare
   previous_settings jsonb;
 begin
   perform internal.require_finance_writer();
+  perform internal.take_audit_turn();
   perform internal.open_adjustment(p_id, 'proposed');
   previous_settings := internal.push_settings('{"app.in_rpc": "1"}');
   update public.payment_adjustments set status = 'rejected', rejected_reason = btrim(p_reason)

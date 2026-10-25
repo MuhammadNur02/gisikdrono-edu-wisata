@@ -64,7 +64,7 @@ insert into public.security_events (event_type, entity_id) values ('rate_limited
 -- A price change is what writes package_price_history.
 update public.tour_packages set price_per_pax = 30000 where id = '00000000-0000-4000-9000-000000000301';
 insert into public.login_attempts (success, reason, attempted_at) values (false, 'bad_password', '2001-02-03 04:05:06+00');
--- Adjustments are written by their RPCs (20261101080200); the fixture stands in for one.
+-- Adjustments are written by their RPCs (20261101130200); the fixture stands in for one.
 select set_config('app.in_rpc', '1', true);
 insert into public.payment_adjustments (id, booking_id, type, amount, reason, evidence_path, proposed_by)
 values ('00000000-0000-4000-9000-000000000361', '00000000-0000-4000-9000-000000000322', 'write_off', 1000,
