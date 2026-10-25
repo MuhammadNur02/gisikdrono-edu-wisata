@@ -61,26 +61,15 @@ function RevealButton({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-// docs/StyleGuide.md §6.10 (Task P4.3.02): the masked contact of v_booking_admin, and "Tampilkan kontak", whose answer
-// lives in this component's state only, so it is gone once the page is left or reloaded.
-export function ContactPanel({
-  bookingId,
-  contact,
-  revealAction,
-}: {
+interface ContactPanelProps {
   bookingId: string;
   contact: MaskedContact;
   revealAction: RevealAction;
-}) {
+}
+
+function RevealableContact({ bookingId, contact, revealAction }: ContactPanelProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [revealed, setRevealed] = useState<RevealedContact | null>(null);
-  if (contact.isAnonymised) {
-    return (
-      <DetailCard title={text.title}>
-        <EmptyLine>{bookingsAdminCopy.detail.anonymised}</EmptyLine>
-      </DetailCard>
-    );
-  }
   const close = () => {
     setIsOpen(false);
   };
@@ -107,6 +96,18 @@ export function ContactPanel({
           onClose={close}
         />
       ) : null}
+    </DetailCard>
+  );
+}
+
+// docs/StyleGuide.md §6.10 (Task P4.3.02): the masked contact of v_booking_admin, and "Tampilkan kontak", whose answer
+// lives in the component's state only, so it is gone once the page is left or reloaded. An anonymised booking has no
+// contact left to reveal.
+export function ContactPanel(props: ContactPanelProps) {
+  if (!props.contact.isAnonymised) return <RevealableContact {...props} />;
+  return (
+    <DetailCard title={text.title}>
+      <EmptyLine>{bookingsAdminCopy.detail.anonymised}</EmptyLine>
     </DetailCard>
   );
 }
