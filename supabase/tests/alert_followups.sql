@@ -1,8 +1,9 @@
 -- Re-review of PR #58 at fb759d9 (20261029080400), N2: a high alert seen again an hour after it went out of band goes
 -- out again; a sole superadmin acknowledges an alert that names them only 24 hours after it went out, with a reason,
--- and that raises an alert of its own; and the project owner's break-glass reset reaches only the sole superadmin.
+-- and that raises an alert of its own, though acknowledging that one raises no further alert (20261030080200); and
+-- the project owner's break-glass reset reaches only the sole superadmin.
 begin;
-select plan(19);
+select plan(21);
 \ir helpers/rls_personas.psql
 
 -- The kelurahan's only active superadmin is the persona, whatever else this database holds.
@@ -57,6 +58,18 @@ select is((select details ->> 'reason' from public.security_events
 select is((select (severity, notified_at is null)::text from public.security_alerts
            where fingerprint = 'alert_self_ack_sole_superadmin:00000000-0000-4000-8000-0000000fa001'),
   '(high,t)', 'and a high alert of its own, queued for the out-of-band contacts');
+update public.security_alerts set notified_at = now() - interval '25 hours'
+where fingerprint = 'alert_self_ack_sole_superadmin:00000000-0000-4000-8000-0000000fa001';
+select pg_temp.act_as('superadmin_aal2');
+select lives_ok(
+  format($$select public.acknowledge_alert_as_sole_superadmin(%L, 'Penutupan sendiri sudah dilaporkan ke Lurah')$$,
+         (select id from public.security_alerts
+          where fingerprint = 'alert_self_ack_sole_superadmin:00000000-0000-4000-8000-0000000fa001')),
+  'the self-acknowledgement alert is acknowledged the same way a day after it went out');
+reset role;
+select is((select count(*)::int from public.security_alerts a
+           where a.rule = 'alert_self_ack_sole_superadmin' and a.acknowledged_at is null),
+  0, 'and raises no further alert, so the chain stops there');
 select pg_temp.act_as('admin_rw_05');
 select throws_ok($$select public.acknowledge_alert_as_sole_superadmin('00000000-0000-4000-8000-0000000fa003',
                      'Sudah dicek bersama Lurah')$$,
