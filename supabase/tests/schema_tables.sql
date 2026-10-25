@@ -611,7 +611,7 @@ select columns_are('public', 'webhook_rejections', array[
 select columns_are('public', 'payment_adjustments', array[
   'id', 'booking_id', 'payment_id', 'type', 'status', 'amount', 'reason', 'evidence_path',
   'proposed_by', 'proposed_at', 'approved_by', 'approved_at', 'rejected_reason',
-  'apply_not_before', 'applied_at'
+  'apply_not_before', 'applied_at', 'details', 'applied_by'
 ]);
 select columns_are('public', 'reconciliation_runs', array[
   'id', 'run_date', 'source', 'started_at', 'finished_at', 'payments_checked', 'issues_found',
@@ -692,16 +692,25 @@ select throws_ok(
   '23514', null, 'webhook rejections use a known reason'
 );
 
+-- An adjustment starts as proposed (payment_adjustments_workflow); the 24 h rule applies when it is approved. The
+-- approver meets REC-16: an account of at least 7 days and an authenticator verified before the proposal.
+update public.profiles set created_at = now() - interval '40 days' where id = '00000000-0000-4000-8000-000000000001';
+insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at) values
+  (gen_random_uuid(), '00000000-0000-4000-8000-000000000001', 'uji-tabel', 'totp', 'verified',
+   now() - interval '39 days', now());
+insert into public.payment_adjustments (id, booking_id, type, amount, reason, evidence_path, proposed_by)
+values ('00000000-0000-4000-8000-000000000c11', '00000000-0000-4000-8000-0000000000e1', 'manual_refund', 100000,
+        'Refund karena hujan deras', 'documents/x.pdf', '00000000-0000-4000-8000-000000000001');
 select throws_ok(
-  $$insert into public.payment_adjustments (booking_id, type, amount, reason, evidence_path, proposed_by, approved_by)
-    values ('00000000-0000-4000-8000-0000000000e1', 'manual_refund', 100000, 'Refund karena hujan deras',
-            'documents/x.pdf', '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001')$$,
-  '23514', null, 'a superadmin approving their own adjustment needs the 24 h delay'
+  $$update public.payment_adjustments set status = 'approved', approved_by = '00000000-0000-4000-8000-000000000001',
+      approved_at = now(), apply_not_before = now() where id = '00000000-0000-4000-8000-000000000c11'$$,
+  'P0001', 'a proposer approving their own adjustment waits 24 hours before it applies',
+  'a superadmin approving their own adjustment needs the 24 h delay'
 );
 select lives_ok(
-  $$insert into public.payment_adjustments (booking_id, type, amount, reason, evidence_path, proposed_by, approved_by, apply_not_before)
-    values ('00000000-0000-4000-8000-0000000000e1', 'manual_refund', 100000, 'Refund karena hujan deras',
-            'documents/x.pdf', '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', now() + interval '24 hours')$$,
+  $$update public.payment_adjustments set status = 'approved', approved_by = '00000000-0000-4000-8000-000000000001',
+      approved_at = now(), apply_not_before = now() + interval '24 hours'
+    where id = '00000000-0000-4000-8000-000000000c11'$$,
   'self-approval with the 24 h delay is accepted'
 );
 select throws_ok(
@@ -1237,7 +1246,7 @@ select throws_ok(
 select tables_are(
   'public',
   array['rw_units', 'profiles', 'staff_invites', 'site_settings', 'session_templates', 'visit_sessions', 'tour_packages', 'tour_package_legs', 'tour_package_price_tiers', 'umkm_vendors', 'products_umkm', 'package_price_history', 'bookings', 'booking_legs', 'booking_addons', 'booking_participants', 'booking_events', 'guest_otps', 'payments', 'payment_events', 'webhook_rejections', 'payment_adjustments', 'reconciliation_runs', 'reconciliation_issues', 'quotations', 'invoices', 'document_sequences', 'certificates', 'tickets_qr', 'ticket_scans', 'galleries', 'articles', 'booklets', 'hero_banners', 'activity_points', 'performance_schedules', 'reviews', 'revenue_share_rules', 'revenue_share_rule_lines', 'revenue_share_entries', 'payout_batches', 'notifications', 'security_events', 'security_alerts', 'exports', 'dsr_requests', 'audit_logs', 'login_attempts', 'rate_limit_buckets', 'job_heartbeats', 'booklet_page_claims', 'weather_notices', 'weather_notice_bookings', 'refund_requests'],
-  'public holds exactly the 54 tables of the CLAUDE.md A.1 registry, job_heartbeats of 0007, booklet_page_claims of 20261019080000 and the visit terms'' weather_notices, weather_notice_bookings and refund_requests of 20261102080000 included'
+  'public holds exactly the 54 tables of the CLAUDE.md A.1 registry, job_heartbeats of 0007, booklet_page_claims of 20261019080000 and the visit terms'' weather_notices, weather_notice_bookings and refund_requests of 20261104080100 included'
 );
 
 -- docs/PRD.md §8.1: money and operational rows are never deleted through a parent. Only these

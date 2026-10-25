@@ -148,7 +148,7 @@ create function internal.package_keeper_holdings(p_booking_id uuid) returns bigi
   set search_path = ''
 as $$
   select coalesce(sum(s.amount + coalesce((select sum(r.amount) from public.revenue_share_entries r
-                                           where r.booking_id = s.booking_id and r.entry_type = 'reversal'
+                                           where r.booking_id = s.booking_id and r.entry_type in ('reversal', 'adjustment')
                                              and r.line_ref = s.line_ref and r.beneficiary_key = s.beneficiary_key), 0)),
                   0)::bigint
   from public.revenue_share_entries s
@@ -559,7 +559,7 @@ begin
   select s.id, s.line_ref, s.beneficiary, s.amount + coalesce(given_back.amount, 0) as remaining
   from public.revenue_share_entries s
   left join lateral (select sum(r.amount) as amount from public.revenue_share_entries r
-                     where r.booking_id = s.booking_id and r.entry_type = 'reversal'
+                     where r.booking_id = s.booking_id and r.entry_type in ('reversal', 'adjustment')
                        and r.line_ref = s.line_ref and r.beneficiary_key = s.beneficiary_key) as given_back on true
   where s.booking_id = p_booking_id and s.entry_type = 'settlement';
   if not exists (select 1 from held) then
@@ -605,19 +605,24 @@ $$;
 
 -- ===== Booking the refund =====
 
--- The refund request of a payment that is being refunded, once its money has gone back: the payment takes Midtrans'
--- status and the cumulative refunded amount, the ledger gives back what the request names, the invoice is voided with
--- a credit note, the request is recorded and refund_processed goes out. The booking stays cancelled: its seats and
--- tickets went with the cancellation. p_refunded is the cumulative amount Midtrans (or the transfer) has returned.
+-- The refund request of a payment that is being refunded, once its money has gone back: the payment takes the
+-- refunded status and the cumulative amount, the ledger gives back what the request names, the invoice is voided with
+-- a credit note, the request is recorded and refund_processed goes out, once per refund (p_dedupe_scope 'refund:'
+-- and its refund_key, 20261101130200). The booking keeps its status: its seats and tickets went with the cancellation.
+-- p_refunded is the cumulative amount returned; p_reported whether Midtrans itself reports this refund (a QRIS refund
+-- its notification booked, or a record_refund under its word) rather than a bank transfer, which
+-- internal.midtrans_recorded counts from the event's payload; p_reference is the refund's own name in the event.
 create function internal.book_refund_request(p_request public.refund_requests, p_target public.payment_status,
-  p_refunded bigint) returns jsonb
+  p_refunded bigint, p_reported boolean, p_reference text, p_actor uuid) returns jsonb
   language plpgsql
   set search_path = ''
 as $$
 declare
   ledger jsonb;
+  payment public.payments;
 begin
-  update public.payments set status = p_target, refunded_amount = p_refunded where id = p_request.payment_id;
+  update public.payments set status = p_target, refunded_amount = p_refunded where id = p_request.payment_id
+  returning * into payment;
   -- The money is already back with the visitor (review of PR #69, M-C): a ledger that cannot take the reversal is
   -- the superadmin's to settle, never a reason to refuse the refund, which would fail the webhook and the poll forever.
   begin
@@ -630,7 +635,7 @@ begin
     else
       ledger := internal.reverse_revenue_share(p_request.booking_id,
         (select coalesce(sum(e.amount), 0)::bigint from public.revenue_share_entries e
-         where e.booking_id = p_request.booking_id and e.entry_type in ('settlement', 'reversal')),
+         where e.booking_id = p_request.booking_id and e.entry_type in ('settlement', 'reversal', 'adjustment')),
         p_request.refund_key, 'weather_refund');
     end if;
   exception when sqlstate 'P0001' then
@@ -650,21 +655,34 @@ begin
       credit_note_number = coalesce(credit_note_number, internal.next_document_number('credit_note', now()))
   where booking_id = p_request.booking_id and status = 'paid' and p_request.booking_leg_id is null;
   update public.refund_requests set status = 'recorded', recorded_at = now() where id = p_request.id;
-  insert into public.booking_events (booking_id, from_status, to_status, actor_type, reason, payload)
-  select p_request.booking_id, b.status, b.status, 'webhook', 'refund_recorded',
-          jsonb_build_object('refund_key', p_request.refund_key, 'amount', p_request.amount)
+  insert into public.booking_events (booking_id, from_status, to_status, actor_type, actor_id, reason, payload)
+  select p_request.booking_id, b.status, b.status, case when p_actor is null then 'webhook' else 'admin' end, p_actor,
+         'refund_recorded',
+         jsonb_build_object('refund_reference', p_reference, 'refund_key', p_request.refund_key,
+                            'amount', p_request.amount, 'order_id', payment.order_id, 'reported', p_reported,
+                            'whole', p_target = 'refunded')
   from public.bookings b where b.id = p_request.booking_id;
-  perform internal.enqueue_notification(p_request.booking_id, 'refund_processed', 'whatsapp', '{}');
-  perform internal.enqueue_notification(p_request.booking_id, 'refund_processed', 'email', '{}');
+  if p_reported then
+    perform internal.close_refund_alert('refund_seen:' || payment.order_id, internal.midtrans_recorded(payment),
+                                        p_actor);
+  end if;
+  perform internal.enqueue_notification(p_request.booking_id, 'refund_processed', 'whatsapp',
+                                        jsonb_build_object('refund_amount', p_request.amount),
+                                        'refund:' || p_request.refund_key);
+  perform internal.enqueue_notification(p_request.booking_id, 'refund_processed', 'email',
+                                        jsonb_build_object('refund_amount', p_request.amount),
+                                        'refund:' || p_request.refund_key);
   return jsonb_build_object('result', 'applied', 'processing_result', 'refund_recorded', 'payment_status', p_target,
-                            'booking_status', 'cancelled', 'ledger', ledger);
+                            'booking_status', (select b.status from public.bookings b where b.id = p_request.booking_id),
+                            'ledger', ledger);
 end;
 $$;
 
--- A refund Midtrans reports for a payment with an open refund request (QRIS): booked when the cumulative refund_amount
--- of the confirmed answer is what was refunded before plus this request; any other amount, or none, is the refund
--- someone made by hand, which keeps the alert of 20261024095000 for the superadmin's record_refund. A request marked
--- failed still matches: a refusal Midtrans later carried out after all is booked like any other (review of PR #69, M1).
+-- A refund Midtrans reports for a payment with an open QRIS refund request: booked when the cumulative refunded
+-- amount of the confirmed answer (internal.midtrans_refund_total, 20261101130200) is what was refunded before plus this
+-- request; any other amount, or none, is a refund someone made by hand, which keeps note_refund_seen's alert. A request
+-- marked failed still matches: a refusal Midtrans later carried out after all is booked like any other (review of PR
+-- #69, M1).
 create function internal.record_requested_refund(p_payment public.payments, p_target public.payment_status,
   p_answer jsonb) returns jsonb
   language plpgsql
@@ -672,24 +690,21 @@ create function internal.record_requested_refund(p_payment public.payments, p_ta
 as $$
 declare
   request public.refund_requests;
-  reported bigint;
+  reported bigint := internal.midtrans_refund_total(p_answer);
 begin
   select * into request from public.refund_requests r
   where r.payment_id = p_payment.id and r.status in ('requested', 'submitted', 'failed') and r.method = 'qris'
   for update;
-  if request.id is null or coalesce(p_answer ->> 'refund_amount', '') !~ '^[0-9]{1,15}(\.0{1,2})?$' then
+  if request.id is null or reported is null or reported <> p_payment.refunded_amount + request.amount then
     return null;
   end if;
-  reported := split_part(p_answer ->> 'refund_amount', '.', 1)::bigint;
-  if reported <> p_payment.refunded_amount + request.amount then
-    return null;
-  end if;
-  return internal.book_refund_request(request, p_target, reported);
+  return internal.book_refund_request(request, p_target, reported, true, request.refund_key, null);
 end;
 $$;
 
--- Replaces the 20261024100300 version. A refund notification for a payment whose cancellation requested it is booked
--- (A16); every other refund keeps the alert and waits for record_refund. Everything else is unchanged.
+-- Replaces the 20261101130200 version. A refund Midtrans reports for a payment whose cancellation requested it is
+-- booked (A16); every other refund goes to note_refund_seen with the confirmed answer, which also stays silent about one
+-- already recorded (review of PR #69, L-2). Everything else is unchanged.
 create or replace function internal.apply_payment_status(p_booking public.bookings, p_payment public.payments,
   p_target public.payment_status, p_answer jsonb, p_actor_type text) returns jsonb
   language plpgsql
@@ -698,8 +713,7 @@ as $$
 declare
   is_open boolean := p_payment.status in ('initiated', 'pending');
   is_whole_refund boolean := p_target = 'refunded'
-    or (coalesce(p_answer ->> 'refund_amount', '') ~ '^[0-9]{1,15}(\.0{1,2})?$'
-        and split_part(p_answer ->> 'refund_amount', '.', 1)::bigint >= p_payment.gross_amount);
+    or coalesce(internal.midtrans_refund_total(p_answer) >= p_payment.gross_amount, false);
   ignored jsonb := jsonb_build_object('result', 'ignored', 'processing_result', 'ignored_transition',
                                       'payment_status', p_payment.status, 'booking_status', p_booking.status);
   applied jsonb := jsonb_build_object('result', 'applied', 'processing_result', p_target,
@@ -721,19 +735,10 @@ begin
         return booked;
       end if;
     end if;
-    -- The same refund reported again after its request was recorded changes nothing and alerts nobody (review of
-    -- PR #69, L-2).
-    if coalesce(p_answer ->> 'refund_amount', '') ~ '^[0-9]{1,15}(\.0{1,2})?$'
-       and split_part(p_answer ->> 'refund_amount', '.', 1)::bigint = p_payment.refunded_amount
-       and exists (select 1 from public.refund_requests q
-                   where q.payment_id = p_payment.id and q.status = 'recorded') then
-      return jsonb_build_object('result', 'ignored', 'processing_result', 'refund_already_recorded',
-                                'payment_status', p_payment.status, 'booking_status', p_booking.status);
-    end if;
     if is_whole_refund and p_payment.status in ('settled', 'partially_refunded') then
       perform internal.suspend_booking_tickets(p_booking.id, 'refund_seen');
     end if;
-    return internal.note_refund_seen(p_payment, p_target);
+    return internal.note_refund_seen(p_payment, p_target, p_answer);
   elsif p_target = 'disputed' then
     if p_payment.status in ('duplicate', 'refunded') then
       perform internal.flag_payment_review(p_booking, p_payment, 'CHARGEBACK', 'critical', p_actor_type);
@@ -768,6 +773,124 @@ begin
             jsonb_build_object('order_id', p_payment.order_id));
   end if;
   return applied;
+end;
+$$;
+
+-- Replaces the 20261101130200 version (review of PR #69, H1, on #68): a refund that answers an open visit-terms
+-- request, by record_refund under Midtrans' word or by a manual_refund adjustment's bank transfer, is booked through
+-- book_refund_request, so a cancellation keeps the A16 split and the booking stays cancelled (or checked_in for a leg,
+-- A20). Every other refund is unchanged.
+create or replace function internal.record_refund_core(p_booking_id uuid, p_payment_id uuid, p_amount bigint, p_reference text,
+  p_reason text, p_proof_path text, p_actor uuid, p_reported_only boolean) returns jsonb
+  language plpgsql
+  set search_path = ''
+as $$
+declare
+  reference text := btrim(coalesce(p_reference, ''));
+  booking public.bookings;
+  payment public.payments;
+  recorded bigint;
+  is_whole boolean;
+  credit_note text;
+  previous_settings jsonb;
+  request public.refund_requests;
+  is_whole_request boolean;
+begin
+  if reference = '' or length(reference) > 100 then
+    raise exception 'a refund names its transfer in 1 to 100 characters' using errcode = '22023';
+  end if;
+  if length(btrim(coalesce(p_reason, ''))) < 10 then
+    raise exception 'a refund says why in at least 10 characters' using errcode = '22023';
+  end if;
+  if p_proof_path is null
+     or p_proof_path !~ ('^bookings/' || p_booking_id
+                         || '/(refund|adjustment)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+                         || '\.(pdf|jpg|jpeg|png|webp)$') then
+    raise exception 'a refund keeps its proof under documents/bookings/%/', p_booking_id using errcode = '22023';
+  end if;
+  perform internal.require_document(p_proof_path);
+  perform internal.take_audit_turn();
+  select b.* into booking from public.bookings b where b.id = p_booking_id for update;
+  if not found then
+    raise exception 'booking % does not exist', p_booking_id using errcode = 'P0002';
+  end if;
+  select (e.payload ->> 'amount')::bigint into recorded from public.booking_events e
+  where e.booking_id = p_booking_id and e.reason = 'refund_recorded' and e.payload ->> 'refund_reference' = reference;
+  if recorded is not null then
+    if recorded <> p_amount then
+      raise exception 'refund % was recorded for %, not %', reference, recorded, p_amount
+        using errcode = 'P0001', hint = 'STATE_INVALID';
+    end if;
+    return jsonb_build_object('result', 'already_recorded', 'amount', p_amount);
+  end if;
+  -- A Midtrans refund whose refund_key is an applied adjustment's id was booked by that adjustment (N17).
+  if p_reported_only and regexp_replace(reference, '^adjustment:', '') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+     and exists (select 1 from public.payment_adjustments a
+                 where a.id = regexp_replace(reference, '^adjustment:', '')::uuid and a.booking_id = p_booking_id
+                   and a.status = 'applied') then
+    raise exception 'refund % was recorded when its adjustment was applied', reference
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  perform internal.require_unused_proof(p_booking_id, p_proof_path,
+                                        nullif(current_setting('app.adjustment_id', true), '')::uuid);
+  payment := internal.refund_payment_of(p_booking_id, p_payment_id);
+  -- Review of PR #69, H1: a refund of the amount a cancellation under the visit terms requested books that request,
+  -- so its ledger keeps the A16 split and the booking keeps its status. Midtrans' word is checked as for any other.
+  select * into request from public.refund_requests r
+  where r.payment_id = payment.id and r.status in ('requested', 'submitted', 'failed') and r.amount = p_amount
+  for update;
+  if request.id is not null then
+    if p_reported_only and internal.midtrans_refunded(payment) < internal.midtrans_recorded(payment) + p_amount then
+      raise exception 'Midtrans reports no refund of % on order %', internal.midtrans_recorded(payment) + p_amount,
+        payment.order_id using errcode = 'P0001', hint = 'REFUND_NOT_AT_MIDTRANS';
+    end if;
+    is_whole_request := payment.refunded_amount + p_amount >= payment.gross_amount;
+    previous_settings := internal.push_settings('{"app.in_rpc": "1"}');
+    perform internal.book_refund_request(request,
+      case when is_whole_request then 'refunded' else 'partially_refunded' end::public.payment_status,
+      payment.refunded_amount + p_amount, p_reported_only, reference, p_actor);
+    perform internal.restore_settings(previous_settings);
+    return jsonb_build_object('result', 'recorded', 'amount', p_amount, 'whole', is_whole_request,
+                              'credit_note_number', null);
+  end if;
+  perform internal.check_refund_amount(booking, payment, p_amount);
+  -- What Midtrans reports is compared with what was recorded under its word alone (delta review of PR #68, N16): a
+  -- bank-transfer refund before it neither counts towards it nor blocks a genuine Midtrans refund after it.
+  if p_reported_only
+     and internal.midtrans_refunded(payment) < internal.midtrans_recorded(payment) + p_amount then
+    raise exception 'Midtrans reports no refund of % on order %', internal.midtrans_recorded(payment) + p_amount,
+      payment.order_id using errcode = 'P0001', hint = 'REFUND_NOT_AT_MIDTRANS';
+  end if;
+  is_whole := payment.refunded_amount + p_amount = payment.gross_amount;
+
+  previous_settings := internal.push_settings('{"app.in_rpc": "1", "app.recording_refund": "1"}');
+  credit_note := internal.refund_booking_side(booking, payment, p_amount, is_whole, reference, p_reason, p_actor);
+  -- A duplicate payment stays duplicate, its refund shown in refunded_amount alone (M1).
+  update public.payments
+  set status = case when status = 'duplicate' then status
+                    when is_whole then 'refunded'::public.payment_status
+                    else 'partially_refunded' end,
+      refunded_amount = refunded_amount + p_amount
+  where id = payment.id;
+  -- Only a refund recorded under Midtrans' word answers the alert of a refund Midtrans made (N16).
+  perform internal.close_refund_alert('refund_seen:' || payment.order_id,
+    internal.midtrans_recorded(payment) + case when p_reported_only then p_amount else 0 end, p_actor);
+  insert into public.booking_events (booking_id, from_status, to_status, actor_type, actor_id, reason, payload)
+  select booking.id, booking.status, b.status, 'admin', p_actor, 'refund_recorded',
+         jsonb_build_object('refund_reference', reference, 'amount', p_amount, 'order_id', payment.order_id,
+                            'whole', is_whole, 'proof_path', p_proof_path, 'credit_note_number', credit_note,
+                            'reported', p_reported_only)
+  from public.bookings b where b.id = booking.id;
+  -- Each refund sends its own message with its own amount (L4).
+  if payment.status <> 'duplicate' then
+    perform internal.enqueue_notification(booking.id, 'refund_processed', 'whatsapp',
+                                          jsonb_build_object('refund_amount', p_amount), 'refund:' || reference);
+    perform internal.enqueue_notification(booking.id, 'refund_processed', 'email',
+                                          jsonb_build_object('refund_amount', p_amount), 'refund:' || reference);
+  end if;
+  perform internal.restore_settings(previous_settings);
+  return jsonb_build_object('result', 'recorded', 'amount', p_amount, 'whole', is_whole,
+                            'credit_note_number', credit_note);
 end;
 $$;
 
@@ -1139,7 +1262,7 @@ revoke execute on function internal.cancel_refund_pct(integer),
   internal.refund_preview(uuid, public.refund_request_kind),
   internal.mark_refund_request(uuid, public.refund_request_status, text, text),
   internal.reverse_cancellation_share(uuid, bigint, text),
-  internal.book_refund_request(public.refund_requests, public.payment_status, bigint),
+  internal.book_refund_request(public.refund_requests, public.payment_status, bigint, boolean, text, uuid),
   internal.record_requested_refund(public.payments, public.payment_status, jsonb),
   internal.reschedule_for_weather(uuid, uuid),
   internal.settle_lapsed_weather_links(integer)

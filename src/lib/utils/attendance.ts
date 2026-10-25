@@ -7,7 +7,7 @@ import { dayAfter, startOfJakartaDay, visitDateAfter } from '@/lib/utils/kpi';
 const VISIT_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // A real calendar day, not a rolled-over one ('2026-02-30' would be read as 2 March).
-function isCalendarDate(value: string): boolean {
+export function isCalendarDate(value: string): boolean {
   if (!VISIT_DATE.test(value)) return false;
   try {
     return visitDateAfter(value, 0) === value;

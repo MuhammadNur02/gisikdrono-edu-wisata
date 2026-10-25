@@ -229,7 +229,7 @@ describe('public queries as a visitor', () => {
   it('reads the public settings and hides the seeded sample contacts', async () => {
     const settings = await getPublicSiteSettings();
 
-    // Booking is open again now the pay page and the status hub exist (20261102080200).
+    // Booking is open again now the pay page and the status hub exist (20261104080300).
     expect(settings).toMatchObject({ bookingEnabled: true, maxPax: 500, contactEmail: null });
     expect(settings.kelurahanAddress).toContain('Gisikdrono');
   });
