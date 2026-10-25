@@ -2,9 +2,15 @@
 -- upload_rejected, every earlier type still is, and a type outside the list is still refused. After
 -- 20261020080000_auth_review_events: mfa_locked and session_revoke_failed (security review of PR #17, M1 and S1). After
 -- 20261025080300_gate_review_fixes: manual_lookup (review of PR #53, M1). After 20261029080400:
--- alert_self_ack_sole_superadmin (re-review of PR #58, N2).
+-- alert_self_ack_sole_superadmin (re-review of PR #58, N2). After 20261103131000: invite_claimed (Task P4.8.01).
 begin;
-select plan(8);
+select plan(9);
+
+select lives_ok(
+  $$insert into public.security_events (event_type, severity, entity_type, details)
+    values ('invite_claimed', 'info', 'staff_invites', '{"sessions_ended": 0}')$$,
+  'invite_claimed is a security event type'
+);
 
 select lives_ok(
   $$insert into public.security_events (event_type, severity, entity_type, details)
