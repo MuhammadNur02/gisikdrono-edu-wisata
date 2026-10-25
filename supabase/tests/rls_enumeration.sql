@@ -70,7 +70,10 @@ select is(
 -- set_rw_unit_status of 20261021120000, the gate's and the certificates' of 20261025080000 and 20261025080100, and the
 -- scanner's unlock and scan_ticket of 20261026080000 and 20261026090000, which since the latter is the gate's one
 -- entry point: validate_ticket, check_in_ticket and the turn are its own (review of PR #54, M1); then the export and
--- the figures of 20261027080100 and 20261027080200; then the finance RPCs of 20261101080000 to 20261101080200.
+-- the figures of 20261027080100 and 20261027080200; save_package and its two parts of 20261028080100, security
+-- invoker, so the grants and policies of a direct write decide; issue_mfa_reenrolment_code of 20261029080000; and
+-- acknowledge_alert_as_sole_superadmin of 20261029080400; then the finance RPCs of 20261101080000 to
+-- 20261101080200.
 select is(
   array(
     select n.nspname || '.' || p.proname from pg_proc p
@@ -79,18 +82,18 @@ select is(
       and has_function_privilege('authenticated', p.oid, 'execute')
     order by 1
   ),
-  array['public.aal2', 'public.app_role', 'public.app_rw_id', 'public.apply_adjustment', 'public.approve_adjustment',
-        'public.cancel_staff_mfa_reset',
+  array['public.aal2', 'public.acknowledge_alert_as_sole_superadmin', 'public.app_role', 'public.app_rw_id',
+        'public.apply_adjustment', 'public.approve_adjustment', 'public.cancel_staff_mfa_reset',
         'public.cancel_superadmin_promotion', 'public.finance_booking', 'public.finance_overview',
-        'public.find_manual_ticket', 'public.fresh_totp',
-        'public.generate_visit_sessions', 'public.invite_superadmin', 'public.is_admin_rw', 'public.is_staff',
-        'public.is_superadmin', 'public.issue_certificates', 'public.owns_any_rw', 'public.owns_rw',
-        'public.propose_adjustment', 'public.record_refund', 'public.reject_adjustment',
-        'public.reset_staff_mfa', 'public.revenue_recap', 'public.revoke_certificate', 'public.rpc_create_export',
+        'public.find_manual_ticket', 'public.fresh_totp', 'public.generate_visit_sessions',
+        'public.invite_superadmin', 'public.is_admin_rw', 'public.is_staff', 'public.is_superadmin',
+        'public.issue_certificates', 'public.issue_mfa_reenrolment_code', 'public.owns_any_rw', 'public.owns_rw',
+        'public.propose_adjustment', 'public.record_refund', 'public.reject_adjustment', 'public.reset_staff_mfa',
+        'public.revenue_recap', 'public.revoke_certificate', 'public.rpc_create_export',
         'public.rpc_get_participants', 'public.rpc_log_ui_event', 'public.rpc_reveal_booking_contact',
-        'public.save_revenue_rule', 'public.scan_ticket',
-        'public.set_rw_unit_status', 'public.set_staff_role', 'public.set_staff_status', 'public.settle_revenue_entries',
-        'public.today_jkt',
+        'public.save_package', 'public.save_package_legs', 'public.save_package_tiers', 'public.save_revenue_rule',
+        'public.scan_ticket', 'public.set_rw_unit_status', 'public.set_staff_role', 'public.set_staff_status',
+        'public.settle_revenue_entries', 'public.today_jkt',
         'public.undo_check_in', 'public.unlock_scanner_officer', 'public.verify_audit_chain', 'public.visit_stats'],
   'authenticated can execute the ten RLS helpers and the staff RPCs, nothing else'
 );

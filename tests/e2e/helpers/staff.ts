@@ -71,7 +71,10 @@ export async function createAccount(
   });
   if (error) throw error;
   if (role !== 'none') {
-    await runSql(`insert into public.profiles (id, email, full_name, role, rw_id, is_active, claims_version)
+    // handle_new_auth_user gave the account a profile without a role (20261029080000); this one replaces it.
+    await runSql(`select set_config('app.purge', 'on', true);
+      delete from public.profiles where id = '${data.user.id}';
+      insert into public.profiles (id, email, full_name, role, rw_id, is_active, claims_version)
       values ('${data.user.id}', '${email}', 'Admin Uji E2E', '${role}', ${role === 'admin_rw' ? '5' : 'null'}, true, 1)`);
   }
   return { id: data.user.id, email };
@@ -100,6 +103,8 @@ async function createVerifiedStaff(
     insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at, secret)
       values (gen_random_uuid(), '${account.id}', 'DEV-ONLY authenticator', 'totp', 'verified', now(), now(),
               '${DEV_ONLY_TOTP_SECRET}');
+    select set_config('app.purge', 'on', true);
+    delete from public.profiles where id = '${account.id}';
     insert into public.profiles (id, email, full_name, role, rw_id, is_active, claims_version)
       values ('${account.id}', '${account.email}', '${fullName}', '${role}', ${rwId === null ? 'null' : String(rwId)}, true, 1);
     commit;`);
