@@ -27,8 +27,9 @@ where b.id in ('00000000-0000-4000-8000-0000b5000001', '00000000-0000-4000-8000-
 insert into public.notifications (channel, template, recipient, params, dedupe_key)
 values ('email', 'security_alert', 'alerts@example.test', '{"severity": "high"}', 'rls:alert');
 insert into public.security_events (event_type, severity, fingerprint) values ('rate_limited', 'info', 'rls:event:1');
-insert into public.security_alerts (id, rule, severity, fingerprint, title)
-values ('00000000-0000-4000-8000-0000af000001', 'rls_test', 'high', 'rls:alert:1', 'Uji RLS');
+-- Already sent out of band: a high alert is acknowledged only after that (20261029080000).
+insert into public.security_alerts (id, rule, severity, fingerprint, title, notified_at)
+values ('00000000-0000-4000-8000-0000af000001', 'rls_test', 'high', 'rls:alert:1', 'Uji RLS', now());
 insert into public.exports (kind, format, requested_by, rw_id, watermark, expires_at) values
   ('attendance', 'csv', '00000000-0000-4000-8000-00000000f005', 5, 'Diekspor oleh Admin RLS 05', now() + interval '1 day'),
   ('finance', 'xlsx', '00000000-0000-4000-8000-00000000f001', null, 'Diekspor oleh Super RLS', now() + interval '1 day');
@@ -136,6 +137,8 @@ select is((select count(*)::int from public.exports where watermark like 'Dieksp
 select throws_ok($$update public.security_alerts set acknowledged_at = now() - interval '3 days'
   where id = '00000000-0000-4000-8000-0000af000001'$$, '42501', null,
   'dates no acknowledgement: the moment is the database''s');
+select throws_ok($$update public.security_alerts set acknowledged_by = '00000000-0000-4000-8000-00000000f005'
+  where id = '00000000-0000-4000-8000-0000af000001'$$, '42501', null, 'never in someone else''s');
 select is(pg_temp.row_count($$update public.security_alerts set acknowledged_by = '00000000-0000-4000-8000-00000000f001'
   where id = '00000000-0000-4000-8000-0000af000001'$$), 1, 'acknowledges an alert in their own name');
 select is(
@@ -143,8 +146,6 @@ select is(
   true,
   'stamped with the moment it happened'
 );
-select throws_ok($$update public.security_alerts set acknowledged_by = '00000000-0000-4000-8000-00000000f005'
-  where id = '00000000-0000-4000-8000-0000af000001'$$, '42501', null, 'never in someone else''s');
 select is(pg_temp.row_count($$update public.dsr_requests set status = 'in_progress', handled_at = now(),
   handled_by = '00000000-0000-4000-8000-00000000f001' where id = '00000000-0000-4000-8000-0000af000002'$$), 1,
   'and takes on a data-subject request');
