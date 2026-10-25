@@ -3,7 +3,7 @@
 -- version closing the one in force the day before with its shares adding up to 100 %, and a payout that stamps its
 -- ledger rows once.
 begin;
-select plan(36);
+select plan(37);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: a paid RW 05 booking with its payment, invoice and ledger =====
@@ -126,6 +126,9 @@ reset role;
 select pg_temp.act_as('superadmin_aal2');
 select throws_ok($$select public.settle_revenue_entries('rw:5', public.today_jkt(), public.today_jkt(), 'TRF-RW5',
   'proofs/x.pdf')$$, '22023', null, 'a payout keeps its proof under documents/payouts/');
+select throws_ok($$select public.settle_revenue_entries('rw:5', public.today_jkt(), public.today_jkt(), 'TRF-RW5',
+  'payouts/00000000-0000-4000-8000-0000000e4001/.bukti.pdf')$$, '22023', null,
+  'and its file name never starts with a dot (N6)');
 create temporary table payout on commit drop as
   select (batch ->> 'id')::uuid as id, (batch ->> 'total_amount')::bigint as total_amount
   from (select public.settle_revenue_entries('rw:5', public.today_jkt() - 1, public.today_jkt(), 'TRF-RW5-001',

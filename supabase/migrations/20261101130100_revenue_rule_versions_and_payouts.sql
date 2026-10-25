@@ -78,6 +78,7 @@ begin
     raise exception 'revenue rules are written by the superadmin with a fresh authenticator code'
       using errcode = '42501';
   end if;
+  perform internal.take_audit_turn();
   if p_effective_from is null or p_effective_from < today then
     raise exception 'a rule version starts today or later' using errcode = 'P0001', hint = 'RULE_START_INVALID';
   end if;
@@ -161,6 +162,7 @@ begin
   if not (public.is_superadmin() and public.fresh_totp()) then
     raise exception 'payouts are recorded by the superadmin with a fresh authenticator code' using errcode = '42501';
   end if;
+  perform internal.take_audit_turn();
   if key !~ '^(kelurahan|rw:[0-9]{1,2}|vendor:[0-9a-f-]{36})$' then
     raise exception 'unknown beneficiary %', key using errcode = '22023';
   end if;
@@ -170,7 +172,7 @@ begin
   if length(reference) not between 3 and 100 then
     raise exception 'a payout names its transfer in 3 to 100 characters' using errcode = '22023';
   end if;
-  if p_proof_path is null or p_proof_path !~ '^payouts/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[A-Za-z0-9._-]{1,80}$' then
+  if p_proof_path is null or p_proof_path !~ '^payouts/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}$' then
     raise exception 'a payout keeps its proof under documents/payouts/' using errcode = '22023';
   end if;
   perform internal.require_document(p_proof_path);

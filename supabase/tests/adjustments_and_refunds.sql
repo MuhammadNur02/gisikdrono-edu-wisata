@@ -3,9 +3,10 @@
 -- a credit note, and the ledger gives back each party's share as it stands; an adjustment is proposed with evidence,
 -- approved by another superadmin who meets REC-16 (or by its proposer alone after 24 hours), and applied once.
 -- Review of PR #68: a duplicate payment's refund (M1), a partial refund without a ledger (M2), a refund of money held
--- for review (M5), and the Lows L2, L4, L5 and L9.
+-- for review (M5), and the Lows L2, L4, L5 and L9. Re-review: record_refund records only what Midtrans reports (N1),
+-- a stuck approval is withdrawn (N2), and N3, N5 to N8.
 begin;
-select plan(80);
+select plan(101);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: RW 05 and combo packages and two superadmins old enough to approve =====
@@ -69,6 +70,28 @@ begin
 end;
 $$;
 grant execute on function pg_temp.doc(text) to authenticated;
+
+-- A refund's proof as finance-service.ts names it, refund-<uuid>.pdf (N6), with or without the file in the bucket.
+create function pg_temp.proof_path(p_booking uuid, p_name text) returns text
+  language sql
+as $$ select 'bookings/' || p_booking || '/refund-' || md5(p_booking::text || p_name)::uuid || '.pdf' $$;
+grant execute on function pg_temp.proof_path(uuid, text) to authenticated;
+create function pg_temp.proof(p_booking uuid, p_name text) returns text
+  language sql security definer
+as $$ select pg_temp.doc(pg_temp.proof_path(p_booking, p_name)) $$;
+grant execute on function pg_temp.proof(uuid, text) to authenticated;
+
+-- Midtrans answering the Status API with a refund of p_refunded in all for the payment (N1).
+create function pg_temp.midtrans_refund(p_payment uuid, p_refunded bigint) returns void
+  language sql
+as $$
+  insert into public.payment_events (payment_id, order_id, source, event_hash, transaction_status, status_code,
+    gross_amount_raw, payload, processed_at)
+  select p.id, p.order_id, 'status_api', md5(p.id::text || p_refunded || clock_timestamp()::text),
+         case when p_refunded >= p.gross_amount then 'refund' else 'partial_refund' end, '200', p.gross_amount || '.00',
+         jsonb_build_object('refund_amount', p_refunded || '.00', 'currency', 'IDR'), now()
+  from public.payments p where p.id = p_payment;
+$$;
 
 create function pg_temp.otp(p_phone text) returns uuid
   language sql
@@ -163,8 +186,9 @@ select set_config('app.in_rpc', '', true);
 insert into public.security_alerts (rule, severity, fingerprint, title)
 select 'duplicate_settlement', 'high', 'duplicate_settlement:' || p.order_id, 'Pembayaran ganda'
 from public.payments p where p.id = '00000000-0000-4000-8000-0000000f4003';
-insert into public.security_alerts (rule, severity, fingerprint, title)
-select 'refund_seen', 'high', 'refund_seen:' || p.order_id, 'Refund terlihat di Midtrans'
+insert into public.security_alerts (rule, severity, fingerprint, title, details)
+select 'refund_seen', 'high', 'refund_seen:' || p.order_id, 'Refund terlihat di Midtrans',
+       '{"refunded_amount": 300000}'
 from public.payments p where p.id = pg_temp.payment_of((select id from refunded));
 create temporary table invariant_before on commit drop as
   select internal.recap_invariant(public.today_jkt(), public.today_jkt()) as value;
@@ -176,17 +200,17 @@ select is((select status::text from public.bookings where id = (select id from r
 reset role;
 select pg_temp.act_as('admin_rw_05');
 select throws_ok($$select public.record_refund((select id from refunded), 100000, 'TRF-001', 'Sebagian rombongan batal',
-  null, pg_temp.doc('bookings/' || (select id from refunded) || '/refund-1.pdf'))$$, '42501', null,
+  null, pg_temp.proof((select id from refunded), '1'))$$, '42501', null,
   'an RW admin records no refund');
 reset role;
 select pg_temp.act_as('superadmin_stale_totp');
 select throws_ok($$select public.record_refund((select id from refunded), 100000, 'TRF-001', 'Sebagian rombongan batal',
-  null, pg_temp.doc('bookings/' || (select id from refunded) || '/refund-1.pdf'))$$, '42501', null,
+  null, pg_temp.proof((select id from refunded), '1'))$$, '42501', null,
   'nor a superadmin whose code is two hours old (AUTH-11)');
 reset role;
 select pg_temp.act_as('superadmin_aal1');
 select throws_ok($$select public.record_refund((select id from refunded), 100000, 'TRF-001', 'Sebagian rombongan batal',
-  null, pg_temp.doc('bookings/' || (select id from refunded) || '/refund-1.pdf'))$$, '42501', null, 'nor one at AAL1');
+  null, pg_temp.proof((select id from refunded), '1'))$$, '42501', null, 'nor one at AAL1');
 
 -- ===== record_refund: a partial refund, then the rest =====
 reset role;
@@ -194,14 +218,17 @@ select pg_temp.act_as('superadmin_aal2');
 select throws_ok($$select public.record_refund((select id from refunded), 100000, 'TRF-001', 'Sebagian rombongan batal')$$,
   '22023', null, 'a refund without proof is refused');
 select throws_ok($$select public.record_refund((select id from refunded), 100000, 'TRF-001', 'Sebagian rombongan batal',
-  null, 'bookings/' || (select id from refunded) || '/belum-diunggah.pdf')$$, 'P0001',
-  'no document at bookings/' || (select id from refunded) || '/belum-diunggah.pdf',
+  null, pg_temp.proof_path((select id from refunded), 'belum'))$$, 'P0001',
+  'no document at ' || pg_temp.proof_path((select id from refunded), 'belum'),
   'nor one whose proof the documents bucket does not hold (L7)');
+select throws_ok($$select public.record_refund((select id from refunded), 100000, 'TRF-001', 'Sebagian rombongan batal',
+  null, pg_temp.doc('bookings/' || (select id from refunded) || '/.refund-1.pdf'))$$, '22023', null,
+  'nor one whose proof is not a refund-<uuid> file (N6)');
 select throws_ok($$select public.record_refund((select id from refunded), 300001, 'TRF-001', 'Sebagian rombongan batal',
-  null, pg_temp.doc('bookings/' || (select id from refunded) || '/refund-1.pdf'))$$, 'P0001', null,
+  null, pg_temp.proof((select id from refunded), '1'))$$, 'P0001', null,
   'nor more than the payment holds');
 select is(public.record_refund((select id from refunded), 100000, 'TRF-001', 'Sebagian rombongan batal', null,
-  pg_temp.doc('bookings/' || (select id from refunded) || '/refund-1.pdf')) ->> 'result', 'recorded',
+  pg_temp.proof((select id from refunded), '1')) ->> 'result', 'recorded',
   'a partial refund is recorded');
 reset role;
 select is((select status::text || ':' || refunded_amount from public.payments
@@ -217,10 +244,10 @@ select is((select count(*)::int from public.tickets_qr where booking_id = (selec
 select is((select count(*)::int from public.notifications
            where booking_id = (select id from refunded) and template = 'refund_processed'), 2,
   'refund_processed is queued for WhatsApp and email');
-select isnt((select acknowledged_at from public.security_alerts a join public.payments p
-             on a.fingerprint = 'refund_seen:' || p.order_id
-             where p.id = pg_temp.payment_of((select id from refunded))), null,
-  'and the refund Midtrans was seen making is closed in the superadmin''s name (L5)');
+select is((select (a.acknowledged_at is null) || ':' || (a.details ->> 'recorded_amount')
+           from public.security_alerts a join public.payments p on a.fingerprint = 'refund_seen:' || p.order_id
+           where p.id = pg_temp.payment_of((select id from refunded))), 'true:100000',
+  'the alert of the whole refund Midtrans made stays open, noting what is recorded so far (N5)');
 
 -- L5: Midtrans telling of the refund already recorded raises nothing; telling of more still does.
 insert into public.payment_events (order_id, source, event_hash, payload)
@@ -238,17 +265,18 @@ select is(internal.note_refund_seen((select p from public.payments p
                                     'partially_refunded') ->> 'processing_result', 'refund_awaiting_record',
   'one beyond what was recorded still does');
 update public.payment_events set processed_at = now() where event_hash in ('uji-refund-seen-1', 'uji-refund-seen-2');
+select pg_temp.midtrans_refund(pg_temp.payment_of((select id from refunded)), 300000);
 
 reset role;
 select pg_temp.act_as('superadmin_aal2');
 select is(public.record_refund((select id from refunded), 100000, 'TRF-001', 'Sebagian rombongan batal', null,
-  pg_temp.doc('bookings/' || (select id from refunded) || '/refund-1.pdf')) ->> 'result', 'already_recorded',
+  pg_temp.proof((select id from refunded), '1')) ->> 'result', 'already_recorded',
   'the same refund retried records nothing again');
 select throws_ok($$select public.record_refund((select id from refunded), 99999, 'TRF-001', 'Sebagian rombongan batal',
-  null, pg_temp.doc('bookings/' || (select id from refunded) || '/refund-1.pdf'))$$, 'P0001', null,
+  null, pg_temp.proof((select id from refunded), '1'))$$, 'P0001', null,
   'and its reference with another amount is refused');
 select is(public.record_refund((select id from refunded), 200000, 'TRF-002', 'Seluruh kunjungan dibatalkan', null,
-  pg_temp.doc('bookings/' || (select id from refunded) || '/refund-2.pdf')) ->> 'whole', 'true',
+  pg_temp.proof((select id from refunded), '2')) ->> 'whole', 'true',
   'the rest is a whole refund');
 reset role;
 select is((select status::text from public.bookings where id = (select id from refunded)), 'refunded',
@@ -273,13 +301,23 @@ select is((select array_agg((params ->> 'refund_amount')::bigint order by (param
            from public.notifications
            where booking_id = (select id from refunded) and template = 'refund_processed'),
   array[100000, 100000, 200000, 200000]::bigint[], 'and each refund sends its own message with its own amount (L4)');
+select isnt((select a.acknowledged_at from public.security_alerts a join public.payments p
+             on a.fingerprint = 'refund_seen:' || p.order_id
+             where p.id = pg_temp.payment_of((select id from refunded))), null,
+  'and once all of it is recorded, the refund Midtrans was seen making is closed in the superadmin''s name (L5, N5)');
+select set_config('app.in_rpc', '1', true);
+select throws_ok($$update public.payments set refunded_amount = gross_amount + 1
+  where id = pg_temp.payment_of((select id from refunded))$$, '23514', null,
+  'a payment never gives back more than it took (N7)');
+select set_config('app.in_rpc', '', true);
 
 -- ===== M1: a duplicate payment's refund =====
 reset role;
+select pg_temp.midtrans_refund('00000000-0000-4000-8000-0000000f4003', 300000);
 select pg_temp.act_as('superadmin_aal2');
 select is(public.record_refund((select id from doubled), 300000, 'TRF-DUP', 'Pembayaran ganda dikembalikan',
   '00000000-0000-4000-8000-0000000f4003',
-  pg_temp.doc('bookings/' || (select id from doubled) || '/refund-dup.pdf')) ->> 'result', 'recorded',
+  pg_temp.proof((select id from doubled), 'dup')) ->> 'result', 'recorded',
   'a duplicate payment is refunded whole');
 reset role;
 select is((select status::text || ':' || refunded_amount from public.payments
@@ -305,34 +343,47 @@ select is((select (now_value ->> 'expected')::bigint - (now_value ->> 'ledger'):
 
 -- ===== M2: a partial refund needs a ledger =====
 reset role;
+select pg_temp.midtrans_refund('00000000-0000-4000-8000-0000000f4001', 300000);
 select pg_temp.act_as('superadmin_aal2');
 select throws_ok($$select public.record_refund('00000000-0000-4000-8000-0000000f3001', 100000, 'TRF-M2A',
   'Sebagian rombongan batal', null,
-  pg_temp.doc('bookings/00000000-0000-4000-8000-0000000f3001/refund-m2.pdf'))$$, 'P0001',
+  pg_temp.proof('00000000-0000-4000-8000-0000000f3001', 'm2'))$$, 'P0001',
   'booking GSK-RF0000M2 has no settlement ledger to take a partial refund from',
   'a partial refund of a booking without a ledger is refused (LEDGER_MISSING)');
 select is(public.record_refund('00000000-0000-4000-8000-0000000f3001', 300000, 'TRF-M2B',
   'Seluruh kunjungan dibatalkan', null,
-  pg_temp.doc('bookings/00000000-0000-4000-8000-0000000f3001/refund-m2.pdf')) ->> 'whole', 'true',
+  pg_temp.proof('00000000-0000-4000-8000-0000000f3001', 'm2')) ->> 'whole', 'true',
   'a whole one is recorded, with nothing to reverse');
 
 -- ===== M5: money Midtrans settled while the payment was held for review =====
 select throws_ok($$select public.record_refund('00000000-0000-4000-8000-0000000f3002', 300000, 'TRF-M5',
   'Dana masuk saat ditinjau, dikembalikan', null,
-  pg_temp.doc('bookings/00000000-0000-4000-8000-0000000f3002/refund-m5.pdf'))$$, 'P0001',
+  pg_temp.proof('00000000-0000-4000-8000-0000000f3002', 'm5'))$$, 'P0001',
   'a needs_review payment is not refunded', 'a held payment Midtrans has not confirmed is not refunded');
 reset role;
-insert into public.payment_events (order_id, source, event_hash, payload, transaction_status, fraud_status,
-  gross_amount_raw, processed_at)
-values ('GSK-RF0000M5-01', 'status_api', 'uji-held-settled', '{}', 'settlement', 'accept', '300000.00', now());
+insert into public.payment_events (payment_id, order_id, source, event_hash, payload, transaction_status,
+  fraud_status, gross_amount_raw, processed_at)
+values ('00000000-0000-4000-8000-0000000f4002', 'GSK-RF0000M5-01', 'status_api', 'uji-held-settled-short',
+        '{"currency": "IDR"}', 'settlement', 'accept', '299000.00', now());
+select pg_temp.act_as('superadmin_aal2');
+select throws_ok($$select public.record_refund('00000000-0000-4000-8000-0000000f3002', 300000, 'TRF-M5',
+  'Dana masuk saat ditinjau, dikembalikan', null,
+  pg_temp.proof('00000000-0000-4000-8000-0000000f3002', 'm5'))$$, 'P0001',
+  'a needs_review payment is not refunded', 'a settlement of another amount confirms nothing (N3)');
+reset role;
+insert into public.payment_events (payment_id, order_id, source, event_hash, payload, transaction_status,
+  fraud_status, gross_amount_raw, processed_at)
+values ('00000000-0000-4000-8000-0000000f4002', 'GSK-RF0000M5-01', 'status_api', 'uji-held-settled',
+        '{"currency": "IDR"}', 'settlement', 'accept', '300000.00', now());
+select pg_temp.midtrans_refund('00000000-0000-4000-8000-0000000f4002', 300000);
 select pg_temp.act_as('superadmin_aal2');
 select throws_ok($$select public.record_refund('00000000-0000-4000-8000-0000000f3002', 100000, 'TRF-M5',
   'Dana masuk saat ditinjau, dikembalikan', null,
-  pg_temp.doc('bookings/00000000-0000-4000-8000-0000000f3002/refund-m5.pdf'))$$, 'P0001', null,
+  pg_temp.proof('00000000-0000-4000-8000-0000000f3002', 'm5'))$$, 'P0001', null,
   'once confirmed, it is refunded whole only');
 select is(public.record_refund('00000000-0000-4000-8000-0000000f3002', 300000, 'TRF-M5',
   'Dana masuk saat ditinjau, dikembalikan', null,
-  pg_temp.doc('bookings/00000000-0000-4000-8000-0000000f3002/refund-m5.pdf')) ->> 'whole', 'true',
+  pg_temp.proof('00000000-0000-4000-8000-0000000f3002', 'm5')) ->> 'whole', 'true',
   'and then it is');
 reset role;
 select is((select b.status::text || ':' || p.status::text || ':'
@@ -343,9 +394,10 @@ select is((select b.status::text || ':' || p.status::text || ':'
 
 -- ===== A combo refunded whole =====
 reset role;
+select pg_temp.midtrans_refund(pg_temp.payment_of((select id from combo)), 300000);
 select pg_temp.act_as('superadmin_aal2');
 select is(public.record_refund((select id from combo), 300000, 'TRF-KOMBO', 'Seluruh kunjungan dibatalkan', null,
-  pg_temp.doc('bookings/' || (select id from combo) || '/refund-kombo.pdf')) ->> 'whole', 'true',
+  pg_temp.proof((select id from combo), 'kombo')) ->> 'whole', 'true',
   'a combo is refunded whole');
 reset role;
 select is((select string_agg(status::text, ',' order by rw_id) from public.tickets_qr
@@ -455,6 +507,9 @@ select pg_temp.act_as('superadmin_aal2');
 create temporary table write_off on commit drop as
   select ((public.propose_adjustment('write_off', (select id from adjusted), 2500, 'Selisih pembulatan transfer bank', pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.png'), '{}', null))
     ->> 'id')::uuid as id;
+select isnt((select id from public.security_alerts
+              where fingerprint = 'adjustment_proposed_alone:' || (select id from write_off)), null,
+  'the sole superadmin''s proposal is reported to the kelurahan head (N8)');
 select cmp_ok((public.approve_adjustment((select id from write_off)) ->> 'apply_not_before')::timestamptz, '>=',
   now() + interval '24 hours', 'alone, the proposer approves their own, applying 24 hours later');
 select throws_ok($$select public.apply_adjustment((select id from write_off))$$, 'P0001', null,
@@ -471,8 +526,8 @@ select set_config('app.in_rpc', '', true);
 
 reset role;
 select pg_temp.act_as('superadmin_aal2');
-select throws_ok($$select public.reject_adjustment((select id from write_off), 'Salah')$$, 'P0001', null,
-  'an approved adjustment is no longer withdrawn');
+select throws_ok($$select public.reject_adjustment((select id from write_off), 'Salah')$$, '22023', null,
+  'an approval is withdrawn only with a reason of ten characters or more (N2)');
 
 -- L2: the retention run still prunes, as 0004's trigger lets it.
 reset role;
@@ -520,21 +575,128 @@ select is((select array_agg(amount order by amount) from public.revenue_share_en
   'as two adjustment rows that net to zero');
 reset role;
 select pg_temp.act_as('superadmin_aal2');
+select throws_ok($$select public.record_refund((select id from shared), 100000, 'TRF-003A', 'Sebagian rombongan batal',
+  null, pg_temp.proof((select id from shared), '3a'))$$, 'P0001', null,
+  'a refund Midtrans does not report is refused: a transfer goes through a manual_refund adjustment (N1)');
+reset role;
+select pg_temp.midtrans_refund(pg_temp.payment_of((select id from shared)), 100000);
+select pg_temp.act_as('superadmin_aal2');
 select is(public.record_refund((select id from shared), 100000, 'TRF-003A', 'Sebagian rombongan batal', null,
-  pg_temp.doc('bookings/' || (select id from shared) || '/refund-3a.pdf')) ->> 'whole', 'false',
+  pg_temp.proof((select id from shared), '3a')) ->> 'whole', 'false',
   'a partial refund after the move (L9)');
 reset role;
 select is((select sum(amount)::bigint from public.revenue_share_entries where booking_id = (select id from shared))
           || ':' || (select bool_and(split_part(held, '=', 2)::bigint >= 0)
                      from unnest(pg_temp.holdings((select id from shared))) as held),
   '200000:true', 'gives back a third of each share as it stands, none below nothing');
+select pg_temp.midtrans_refund(pg_temp.payment_of((select id from shared)), 300000);
 select pg_temp.act_as('superadmin_aal2');
 select is(public.record_refund((select id from shared), 200000, 'TRF-003', 'Seluruh kunjungan dibatalkan', null,
-  pg_temp.doc('bookings/' || (select id from shared) || '/refund-3.pdf')) ->> 'whole', 'true',
+  pg_temp.proof((select id from shared), '3')) ->> 'whole', 'true',
   'then the rest, a whole refund');
 reset role;
 select is((select bool_and(held like '%=0') from unnest(pg_temp.holdings((select id from shared))) as held), true,
   'gives every party back exactly the share it held after the move');
+
+-- ===== N2: an approval that can no longer apply is withdrawn, so the next proposal is free =====
+-- Terms that stopped holding: the payment refunded in between (REFUND_TOO_LARGE).
+reset role;
+select pg_temp.act_as('superadmin_aal2');
+create temporary table stuck_refund on commit drop as
+  select ((public.propose_adjustment('manual_refund', (select id from adjusted),
+    pg_temp.payment_of((select id from adjusted)), 250000, 'Sisa dana dikembalikan',
+    pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf')))
+    ->> 'id')::uuid as id;
+reset role;
+select pg_temp.act_as_super_b();
+select is((public.approve_adjustment((select id from stuck_refund)) ->> 'status'), 'approved',
+  'a manual refund of all that is left is approved');
+reset role;
+select pg_temp.midtrans_refund(pg_temp.payment_of((select id from adjusted)), 100000);
+select pg_temp.act_as('superadmin_aal2');
+select is(public.record_refund((select id from adjusted), 50000, 'TRF-ADJ-B', 'Sebagian rombongan batal', null,
+  pg_temp.proof((select id from adjusted), 'adj-b')) ->> 'result', 'recorded', 'then a refund Midtrans made lands first');
+select throws_ok($$select public.apply_adjustment((select id from stuck_refund))$$, 'P0001', null,
+  'so the approval no longer applies (REFUND_TOO_LARGE)');
+select is((public.reject_adjustment((select id from stuck_refund), 'Sebagian dana sudah dikembalikan lewat Midtrans')
+           ->> 'status'), 'rejected', 'and any superadmin withdraws it, saying why (N2)');
+select isnt(((public.propose_adjustment('manual_refund', (select id from adjusted),
+  pg_temp.payment_of((select id from adjusted)), 1000, 'Selisih kecil dikembalikan',
+  pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf'))) ->> 'id'),
+  null,
+  'which frees the booking for the next proposal of its kind');
+
+-- A share that stopped holding: the booking refunded whole after the move was approved (SHARE_TOO_LARGE).
+reset role;
+create temporary table doubled_keys on commit drop as
+  select array_agg(distinct beneficiary_key order by beneficiary_key) as keys from public.revenue_share_entries
+  where booking_id = (select id from doubled) and line_ref = 'package';
+grant select on doubled_keys to authenticated;
+select pg_temp.act_as('superadmin_aal2');
+create temporary table stuck_move on commit drop as
+  select ((public.propose_adjustment('reclassify_share', (select id from doubled), null, 1000,
+    'Bagian RW salah dicatat',
+    pg_temp.doc('bookings/' || (select id from doubled) || '/adjustment-' || gen_random_uuid() || '.pdf'),
+    jsonb_build_object('line_ref', 'package', 'from_key', (select keys[1] from doubled_keys),
+                       'to_key', (select keys[2] from doubled_keys)))) ->> 'id')::uuid as id;
+reset role;
+select pg_temp.act_as_super_b();
+select is((public.approve_adjustment((select id from stuck_move)) ->> 'status'), 'approved', 'a move is approved');
+reset role;
+select pg_temp.midtrans_refund(pg_temp.payment_of((select id from doubled)), 300000);
+select pg_temp.act_as('superadmin_aal2');
+select is(public.record_refund((select id from doubled), 300000, 'TRF-DBL', 'Seluruh kunjungan dibatalkan', null,
+  pg_temp.proof((select id from doubled), 'dbl')) ->> 'whole', 'true', 'then the booking is refunded whole');
+select throws_ok($$select public.apply_adjustment((select id from stuck_move))$$, 'P0001', null,
+  'so the share it moves is gone (SHARE_TOO_LARGE)');
+select is((public.reject_adjustment((select id from stuck_move), 'Pemesanan sudah dikembalikan seluruhnya')
+           ->> 'status'), 'rejected', 'and it is withdrawn too');
+
+-- An approver who left: B deactivated after approving.
+create temporary table stuck_write_off on commit drop as
+  select ((public.propose_adjustment('write_off', (select id from combo), null, 1500, 'Selisih biaya admin bank',
+    pg_temp.doc('bookings/' || (select id from combo) || '/adjustment-' || gen_random_uuid() || '.pdf')))
+    ->> 'id')::uuid as id;
+reset role;
+select pg_temp.act_as_super_b();
+select is((public.approve_adjustment((select id from stuck_write_off)) ->> 'status'), 'approved',
+  'B approves a write-off');
+reset role;
+select set_config('request.jwt.claims', '', true);
+select set_config('app.privileged_rpc', 'on', true);
+update public.profiles set is_active = false where id = '00000000-0000-4000-8000-00000000f002';
+select set_config('app.privileged_rpc', '', true);
+select pg_temp.act_as('superadmin_aal2');
+select throws_ok($$select public.apply_adjustment((select id from stuck_write_off))$$, 'P0001',
+  'the approver is no longer an active superadmin', 'and leaves before it is applied');
+select is((public.reject_adjustment((select id from stuck_write_off), 'Penyetuju sudah tidak aktif lagi')
+           ->> 'status'), 'rejected', 'so the remaining superadmin withdraws it');
+reset role;
+select is((select count(*)::int from public.audit_logs
+           where action = 'adjustment.withdrawn'
+             and entity_id in ((select id from stuck_refund)::text, (select id from stuck_move)::text,
+                               (select id from stuck_write_off)::text)), 3,
+  'each withdrawal is in the audit log');
+
+-- ===== N8: a self-approved adjustment applied is reported =====
+reset role;
+select set_config('app.in_rpc', '1', true);
+insert into public.payment_adjustments (id, booking_id, type, amount, reason, evidence_path, proposed_by)
+select '00000000-0000-4000-8000-0000000f5001', (select id from shared), 'write_off', 700, 'Selisih biaya admin bank',
+       'bookings/' || (select id from shared) || '/adjustment-00000000-0000-4000-8000-0000000f5002.pdf',
+       '00000000-0000-4000-8000-00000000f001';
+update public.payment_adjustments
+set status = 'approved', approved_by = '00000000-0000-4000-8000-00000000f001', approved_at = now() - interval '25 hours',
+    apply_not_before = now() - interval '1 hour'
+where id = '00000000-0000-4000-8000-0000000f5001';
+select set_config('app.in_rpc', '', true);
+select pg_temp.act_as('superadmin_aal2');
+select is((public.apply_adjustment('00000000-0000-4000-8000-0000000f5001') ->> 'status'), 'applied',
+  'a self-approved write-off whose 24 hours have passed is applied');
+reset role;
+select is((select severity::text from public.security_alerts
+           where fingerprint = 'adjustment_self_applied:00000000-0000-4000-8000-0000000f5001'), 'high',
+  'and the kelurahan head hears of it on apply as well (N8)');
 
 select set_config('request.jwt.claims', '', true);
 select set_config('app.privileged_rpc', 'on', true);

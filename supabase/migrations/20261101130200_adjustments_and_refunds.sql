@@ -15,7 +15,7 @@
 --                                 reversed under the refund's reference, once; refund_processed is queued
 --
 -- Each RPC answers with the adjustment row as jsonb. Every write needs the superadmin with a TOTP code verified in the last five minutes (fresh_totp).
--- Refusals carry hints that adjustment-service.ts turns into Indonesian copy: ADJUSTMENT_TYPE_UNSUPPORTED,
+-- Refusals carry hints that adjustment-service.ts turns into Indonesian copy: REFUND_NOT_AT_MIDTRANS, ADJUSTMENT_TYPE_UNSUPPORTED,
 -- ADJUSTMENT_OPEN, ADJUSTMENT_STATE, APPROVER_INELIGIBLE, APPLY_TOO_EARLY, REFUND_NO_PAYMENT, REFUND_TOO_LARGE,
 -- SHARE_TOO_LARGE, LEDGER_MISSING (a partial refund of a booking whose split never reached the ledger), PROOF_MISSING
 -- (20261101130100); and STATE_INVALID for a retried refund with another amount.
@@ -83,8 +83,10 @@ begin
   if new.apply_not_before < old.apply_not_before then
     raise exception 'the delay of an adjustment never shortens' using errcode = '42501';
   end if;
+  -- approved -> rejected is a withdrawal of an approval whose terms stopped holding or whose approver left
+  -- (re-review of PR #68, N2); it says why like any rejection.
   if (old.status::text, new.status::text) not in (('proposed', 'approved'), ('proposed', 'rejected'),
-                                                    ('approved', 'applied')) then
+                                                    ('approved', 'applied'), ('approved', 'rejected')) then
     raise exception 'an adjustment does not go from % to %', old.status, new.status
       using errcode = 'P0001', hint = 'ADJUSTMENT_STATE';
   end if;
@@ -136,15 +138,41 @@ revoke execute on function internal.payment_adjustments_workflow() from public, 
 -- docs/PRD.md §9.2 (review of PR #68, M5): a payment held for review counts as money received once Midtrans itself
 -- answered settlement for its order, through the Status API or the poll ("Cek status Midtrans"); a webhook alone does
 -- not, since holding it for review is what the webhook's word earned.
-create function internal.midtrans_confirmed_settled(p_order_id text) returns boolean
+create function internal.midtrans_confirmed_settled(p_payment public.payments) returns boolean
   language sql stable
   set search_path = ''
 as $$
   select exists (select 1 from public.payment_events e
-                 where e.order_id = p_order_id and e.source <> 'webhook'
-                   and internal.midtrans_payment_status(e.transaction_status, e.fraud_status) = 'settled');
+                 where e.payment_id = p_payment.id and e.order_id = p_payment.order_id
+                   and e.source in ('status_api', 'poll')
+                   and internal.midtrans_payment_status(e.transaction_status, e.fraud_status) = 'settled'
+                   and internal.midtrans_amount_matches(e.gross_amount_raw, e.payload ->> 'currency',
+                                                        p_payment.gross_amount));
 $$;
-revoke execute on function internal.midtrans_confirmed_settled(text) from public, anon, authenticated, service_role;
+revoke execute on function internal.midtrans_confirmed_settled(public.payments)
+  from public, anon, authenticated, service_role;
+
+-- What Midtrans itself reports refunded for a payment (re-review of PR #68, N1): its Status API or poll answers of a
+-- refund or partial refund, or the refunded amount the refund_seen alert stored (N5). 0 when it reports none.
+create function internal.midtrans_refunded(p_payment public.payments) returns bigint
+  language sql stable
+  set search_path = ''
+as $$
+  select coalesce(greatest(
+    (select max(case when e.transaction_status = 'refund' then p_payment.gross_amount
+                     when coalesce(e.payload ->> 'refund_amount', '') ~ '^[0-9]{1,15}(\.0{1,2})?$'
+                       then split_part(e.payload ->> 'refund_amount', '.', 1)::bigint end)
+     from public.payment_events e
+     where e.payment_id = p_payment.id and e.source in ('status_api', 'poll')
+       and e.transaction_status in ('refund', 'partial_refund')),
+    (select max((a.details ->> 'refunded_amount')::bigint) from public.security_alerts a
+     where a.fingerprint = 'refund_seen:' || p_payment.order_id
+       and coalesce(a.details ->> 'refunded_amount', '') ~ '^[0-9]{1,15}$')), 0)::bigint;
+$$;
+revoke execute on function internal.midtrans_refunded(public.payments) from public, anon, authenticated, service_role;
+
+-- N7: a payment never gives back more than it took.
+alter table public.payments add constraint payments_refunded_within_gross check (refunded_amount <= gross_amount);
 
 -- Replaces the 0004 version: a booking is refunded while money is held for it in a settled payment, or in one partly
 -- refunded already, since the second refund of a payment completes its first; a booking still pending payment is
@@ -179,7 +207,7 @@ begin
                    where p.booking_id = new.id
                      and (p.status = any (array['settled', 'partially_refunded']::public.payment_status[])
                           or (old.status = 'pending_payment' and p.status = 'needs_review'
-                              and internal.midtrans_confirmed_settled(p.order_id)))) then
+                              and internal.midtrans_confirmed_settled(p)))) then
       raise exception 'a booking is refunded only while it has a settled payment'
         using errcode = 'P0001', hint = 'STATE_INVALID';
     end if;
@@ -256,6 +284,8 @@ $$;
 -- Replaces the 20261024120000 version, adding p_dedupe_scope (review of PR #68, L4): a message that may rightly go more
 -- than once for one booking, such as refund_processed for each of its refunds, names what it is about, and only a
 -- repeat about the same thing is the row already queued. Everything else is unchanged.
+-- Never create or replace the four-argument form again: it would sit beside this one as an overload, and every
+-- four-argument call would then be ambiguous. Change this function, with its p_dedupe_scope, instead.
 drop function internal.enqueue_notification(uuid, public.notification_template, public.notification_channel, jsonb);
 create function internal.enqueue_notification(
   p_booking_id uuid, p_template public.notification_template, p_channel public.notification_channel, p_params jsonb,
@@ -342,7 +372,8 @@ begin
   insert into public.security_alerts (rule, severity, fingerprint, title, details)
   values ('refund_seen', 'high', 'refund_seen:' || p_payment.order_id,
           'Refund terlihat di Midtrans; catat di Keuangan',
-          jsonb_build_object('booking_id', p_payment.booking_id, 'order_id', p_payment.order_id, 'status', p_target))
+          jsonb_strip_nulls(jsonb_build_object('booking_id', p_payment.booking_id, 'order_id', p_payment.order_id,
+                                               'status', p_target, 'refunded_amount', refunded_at_midtrans)))
   on conflict (fingerprint) where acknowledged_at is null do update
   set last_seen_at = now(), occurrences = public.security_alerts.occurrences + 1, details = excluded.details,
       notified_at = null;
@@ -351,15 +382,20 @@ begin
 end;
 $$;
 
--- An open alert a recorded refund answers is closed in the recording superadmin's name.
-create function internal.close_refund_alert(p_fingerprint text, p_actor uuid) returns void
+-- An open alert a recorded refund answers is closed in the recording superadmin's name once p_recorded covers the
+-- refunded amount it names (re-review of PR #68, N5); short of that it stays open, noting what is recorded so far.
+create function internal.close_refund_alert(p_fingerprint text, p_recorded bigint, p_actor uuid) returns void
   language sql
   set search_path = ''
 as $$
   update public.security_alerts set acknowledged_by = p_actor
+  where fingerprint = p_fingerprint and acknowledged_at is null
+    and coalesce(nullif(details ->> 'refunded_amount', '')::bigint, 0) <= p_recorded;
+  update public.security_alerts set details = details || jsonb_build_object('recorded_amount', p_recorded)
   where fingerprint = p_fingerprint and acknowledged_at is null;
 $$;
-revoke execute on function internal.close_refund_alert(text, uuid) from public, anon, authenticated, service_role;
+revoke execute on function internal.close_refund_alert(text, bigint, uuid)
+  from public, anon, authenticated, service_role;
 
 
 -- ===== record_refund =====
@@ -402,7 +438,7 @@ declare
 begin
   if not (p_payment.status in ('settled', 'partially_refunded', 'duplicate')
           or (is_held and p_booking.status = 'pending_payment'
-              and internal.midtrans_confirmed_settled(p_payment.order_id))) then
+              and internal.midtrans_confirmed_settled(p_payment))) then
     raise exception 'a % payment is not refunded', p_payment.status using errcode = 'P0001', hint = 'REFUND_NO_PAYMENT';
   end if;
   if p_amount is null or p_amount <= 0 or p_amount > holds
@@ -477,7 +513,7 @@ declare
   credit_note text;
 begin
   if p_payment.status = 'duplicate' then
-    perform internal.close_refund_alert('duplicate_settlement:' || p_payment.order_id, p_actor);
+    perform internal.close_refund_alert('duplicate_settlement:' || p_payment.order_id, p_amount, p_actor);
     return null;
   end if;
   if not p_is_whole and not has_ledger then
@@ -496,8 +532,10 @@ $$;
 
 -- The refund of a payment already moved at Midtrans or by bank transfer. p_reference names it (the Midtrans refund key
 -- or the transfer's reference); the same reference with the same amount is the same refund and records nothing again.
+-- p_reported_only (re-review of PR #68, N1): record_refund's own call, which records only what Midtrans reports as
+-- refunded (REFUND_NOT_AT_MIDTRANS otherwise); apply_adjustment's manual refund, dual-controlled, does not need it.
 create function internal.record_refund_core(p_booking_id uuid, p_payment_id uuid, p_amount bigint, p_reference text,
-  p_reason text, p_proof_path text, p_actor uuid) returns jsonb
+  p_reason text, p_proof_path text, p_actor uuid, p_reported_only boolean) returns jsonb
   language plpgsql
   set search_path = ''
 as $$
@@ -516,7 +554,10 @@ begin
   if length(btrim(coalesce(p_reason, ''))) < 10 then
     raise exception 'a refund says why in at least 10 characters' using errcode = '22023';
   end if;
-  if p_proof_path is null or p_proof_path !~ ('^bookings/' || p_booking_id || '/[A-Za-z0-9._-]{1,120}$') then
+  if p_proof_path is null
+     or p_proof_path !~ ('^bookings/' || p_booking_id
+                         || '/(refund|adjustment)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+                         || '\.(pdf|jpg|jpeg|png|webp)$') then
     raise exception 'a refund keeps its proof under documents/bookings/%/', p_booking_id using errcode = '22023';
   end if;
   perform internal.require_document(p_proof_path);
@@ -536,6 +577,10 @@ begin
   end if;
   payment := internal.refund_payment_of(p_booking_id, p_payment_id);
   perform internal.check_refund_amount(booking, payment, p_amount);
+  if p_reported_only and internal.midtrans_refunded(payment) < payment.refunded_amount + p_amount then
+    raise exception 'Midtrans reports no refund of % on order %', payment.refunded_amount + p_amount, payment.order_id
+      using errcode = 'P0001', hint = 'REFUND_NOT_AT_MIDTRANS';
+  end if;
   is_whole := payment.refunded_amount + p_amount = payment.gross_amount;
 
   previous_settings := internal.push_settings('{"app.in_rpc": "1", "app.recording_refund": "1"}');
@@ -547,7 +592,8 @@ begin
                     else 'partially_refunded' end,
       refunded_amount = refunded_amount + p_amount
   where id = payment.id;
-  perform internal.close_refund_alert('refund_seen:' || payment.order_id, p_actor);
+  perform internal.close_refund_alert('refund_seen:' || payment.order_id, payment.refunded_amount + p_amount,
+                                      p_actor);
   insert into public.booking_events (booking_id, from_status, to_status, actor_type, actor_id, reason, payload)
   select booking.id, booking.status, b.status, 'admin', p_actor, 'refund_recorded',
          jsonb_build_object('refund_reference', reference, 'amount', p_amount, 'order_id', payment.order_id,
@@ -571,7 +617,7 @@ revoke execute on function internal.refund_payment_of(uuid, uuid),
   internal.release_quota_ahead(uuid),
   internal.close_refunded_booking(public.bookings, public.payments, text, uuid),
   internal.refund_booking_side(public.bookings, public.payments, bigint, boolean, text, text, uuid),
-  internal.record_refund_core(uuid, uuid, bigint, text, text, text, uuid)
+  internal.record_refund_core(uuid, uuid, bigint, text, text, text, uuid, boolean)
   from public, anon, authenticated, service_role;
 
 create function internal.require_finance_writer() returns void
@@ -586,7 +632,9 @@ end;
 $$;
 revoke execute on function internal.require_finance_writer() from public, anon, authenticated, service_role;
 
--- A refund made at Midtrans or by bank transfer, with its proof, recorded by the superadmin.
+-- A refund made at Midtrans, with its proof, recorded by the superadmin once Midtrans reports it (N1). A refund by
+-- bank transfer, whose amount the superadmin chooses, goes through a manual_refund adjustment and its second
+-- superadmin instead; a cancellation's refund, whose amount the system works out, through #69's refund requests.
 create function public.record_refund(p_booking_id uuid, p_amount bigint, p_reference text, p_reason text,
   p_payment_id uuid default null, p_proof_path text default null) returns jsonb
   language plpgsql security definer
@@ -595,7 +643,7 @@ as $$
 begin
   perform internal.require_finance_writer();
   return internal.record_refund_core(p_booking_id, p_payment_id, p_amount, p_reference, p_reason, p_proof_path,
-                                     auth.uid());
+                                     auth.uid(), true);
 end;
 $$;
 
@@ -693,6 +741,10 @@ begin
     details)
   values (p_booking_id, p_payment_id, p_type, p_amount, btrim(p_reason), p_evidence_path, auth.uid(), details)
   returning * into proposed;
+  if internal.is_sole_superadmin(auth.uid()) then
+    perform internal.raise_adjustment_alert('adjustment_proposed_alone',
+                                            'Penyesuaian diusulkan oleh satu-satunya superadmin', proposed);
+  end if;
   perform internal.restore_settings(previous_settings);
   return to_jsonb(proposed);
 end;
@@ -700,6 +752,32 @@ $$;
 
 
 -- ===== approve, reject =====
+
+-- docs/Security.md §3.8: while one superadmin alone can propose, approve and apply, the kelurahan head hears of each
+-- step out of band (a high alert goes by email and gsk_security_alert_v1), on proposal and on apply as well as on the
+-- self-approval (re-review of PR #68, N8).
+create function internal.raise_adjustment_alert(p_rule text, p_title text, p_adjustment public.payment_adjustments)
+  returns void
+  language sql
+  set search_path = ''
+as $$
+  insert into public.security_alerts (rule, severity, fingerprint, title, details)
+  values (p_rule, 'high', p_rule || ':' || p_adjustment.id, p_title,
+          jsonb_strip_nulls(jsonb_build_object('adjustment_id', p_adjustment.id, 'booking_id', p_adjustment.booking_id,
+                                               'type', p_adjustment.type, 'amount', p_adjustment.amount,
+                                               'apply_not_before', p_adjustment.apply_not_before)))
+  on conflict (fingerprint) where acknowledged_at is null do nothing;
+$$;
+revoke execute on function internal.raise_adjustment_alert(text, text, public.payment_adjustments)
+  from public, anon, authenticated, service_role;
+
+create function internal.is_sole_superadmin(p_user uuid) returns boolean
+  language sql stable
+  set search_path = ''
+as $$
+  select not exists (select 1 from public.profiles p where p.role = 'superadmin' and p.is_active and p.id <> p_user);
+$$;
+revoke execute on function internal.is_sole_superadmin(uuid) from public, anon, authenticated, service_role;
 
 create function internal.open_adjustment(p_id uuid, p_status public.adjustment_status)
   returns public.payment_adjustments
@@ -748,19 +826,17 @@ begin
   where id = p_id
   returning * into adjustment;
   if is_own then
-    insert into public.security_alerts (rule, severity, fingerprint, title, details)
-    values ('adjustment_self_approved', 'high', 'adjustment_self_approved:' || p_id,
-            'Penyesuaian disetujui oleh pengusulnya sendiri',
-            jsonb_build_object('adjustment_id', p_id, 'booking_id', adjustment.booking_id, 'type', adjustment.type,
-                               'amount', adjustment.amount, 'apply_not_before', adjustment.apply_not_before))
-    on conflict (fingerprint) where acknowledged_at is null do nothing;
+    perform internal.raise_adjustment_alert('adjustment_self_approved',
+                                            'Penyesuaian disetujui oleh pengusulnya sendiri', adjustment);
   end if;
   perform internal.restore_settings(previous_settings);
   return to_jsonb(adjustment);
 end;
 $$;
 
--- The proposer withdraws, or another superadmin turns it down, saying why.
+-- The proposer withdraws, or another superadmin turns it down, saying why. An approved adjustment that can no longer
+-- apply (its terms stopped holding, or its approver left) is withdrawn the same way by any superadmin with a fresh
+-- code, so it never blocks the next one with ADJUSTMENT_OPEN (re-review of PR #68, N2).
 create function public.reject_adjustment(p_id uuid, p_reason text) returns jsonb
   language plpgsql security definer
   set search_path = ''
@@ -771,11 +847,20 @@ declare
 begin
   perform internal.require_finance_writer();
   perform internal.take_audit_turn();
-  perform internal.open_adjustment(p_id, 'proposed');
+  select a.* into adjustment from public.payment_adjustments a where a.id = p_id for update;
+  if not found then
+    raise exception 'adjustment % does not exist', p_id using errcode = 'P0002';
+  end if;
+  if adjustment.status not in ('proposed', 'approved') then
+    raise exception 'adjustment % is %', p_id, adjustment.status using errcode = 'P0001', hint = 'ADJUSTMENT_STATE';
+  end if;
   previous_settings := internal.push_settings('{"app.in_rpc": "1"}');
   update public.payment_adjustments set status = 'rejected', rejected_reason = btrim(p_reason)
   where id = p_id
   returning * into adjustment;
+  perform internal.log_audit('adjustment.' || case when adjustment.approved_at is null then 'rejected' else 'withdrawn' end,
+    'payment_adjustments', p_id::text,
+    jsonb_build_object('reason', left(btrim(p_reason), 200), 'approved_by', adjustment.approved_by));
   perform internal.restore_settings(previous_settings);
   return to_jsonb(adjustment);
 end;
@@ -836,7 +921,8 @@ begin
   previous_settings := internal.push_settings(jsonb_build_object('app.in_rpc', '1', 'app.adjustment_id', p_id::text));
   if adjustment.type = 'manual_refund' then
     perform internal.record_refund_core(adjustment.booking_id, adjustment.payment_id, adjustment.amount,
-                                        'adjustment:' || p_id, adjustment.reason, adjustment.evidence_path, auth.uid());
+                                        'adjustment:' || p_id, adjustment.reason, adjustment.evidence_path, auth.uid(),
+                                        false);
   elsif adjustment.type = 'reclassify_share' then
     perform internal.apply_reclassify_share(adjustment);
   else
@@ -848,6 +934,10 @@ begin
   update public.payment_adjustments set status = 'applied', applied_at = now(), applied_by = auth.uid()
   where id = p_id
   returning * into adjustment;
+  if adjustment.approved_by = adjustment.proposed_by then
+    perform internal.raise_adjustment_alert('adjustment_self_applied',
+                                            'Penyesuaian yang disetujui sendiri telah diterapkan', adjustment);
+  end if;
   perform internal.restore_settings(previous_settings);
   return to_jsonb(adjustment);
 end;
