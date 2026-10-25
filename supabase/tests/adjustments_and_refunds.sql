@@ -4,9 +4,11 @@
 -- approved by another superadmin who meets REC-16 (or by its proposer alone after 24 hours), and applied once.
 -- Review of PR #68: a duplicate payment's refund (M1), a partial refund without a ledger (M2), a refund of money held
 -- for review (M5), and the Lows L2, L4, L5 and L9. Re-review: record_refund records only what Midtrans reports (N1),
--- a stuck approval is withdrawn (N2), and N3, N5 to N8.
+-- a stuck approval is withdrawn (N2), and N3, N5 to N8. Final re-review: a refund's amount comes from Midtrans' confirmed
+-- answer, never the webhook body (N9), what was recorded under Midtrans' word (N11), refunds[] (N13), an applied
+-- adjustment is not rejected (N14), and a proof backs one refund or adjustment.
 begin;
-select plan(101);
+select plan(111);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: RW 05 and combo packages and two superadmins old enough to approve =====
@@ -20,7 +22,8 @@ insert into public.tour_package_legs (package_id, rw_id, leg_order) values
 update public.tour_packages set status = 'published' where id = '00000000-0000-4000-8000-0000000f1002';
 insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
   ('00000000-0000-4000-8000-0000000f2001', 5, public.today_jkt() + 6, '09:00', '10:00', 'Uji refund', 200),
-  ('00000000-0000-4000-8000-0000000f2002', 8, public.today_jkt() + 6, '13:00', '14:00', 'Uji refund 08', 200);
+  ('00000000-0000-4000-8000-0000000f2002', 8, public.today_jkt() + 6, '13:00', '14:00', 'Uji refund 08', 200),
+  ('00000000-0000-4000-8000-0000000f2003', 5, public.today_jkt() + 7, '09:00', '10:00', 'Uji refund 2', 200);
 
 insert into auth.users (id, email) values ('00000000-0000-4000-8000-00000000f002', 'rls-super-b@example.test');
 insert into public.profiles (id, email, full_name, role, rw_id) values
@@ -156,7 +159,10 @@ create temporary table doubled on commit drop as select pg_temp.paid_booking('+6
 create temporary table combo on commit drop as
   select pg_temp.paid_booking('+6281300002005', '00000000-0000-4000-8000-0000000f1002',
     array['00000000-0000-4000-8000-0000000f2001', '00000000-0000-4000-8000-0000000f2002']::uuid[]) as id;
-grant select on refunded, adjusted, shared, doubled, combo to authenticated;
+create temporary table seen on commit drop as
+  select pg_temp.paid_booking('+6281300002008', '00000000-0000-4000-8000-0000000f1001',
+    array['00000000-0000-4000-8000-0000000f2003']::uuid[]) as id;
+grant select on refunded, adjusted, shared, doubled, combo, seen to authenticated;
 
 -- A booking paid without a ledger (its split refused) and one still waiting while Midtrans' money is held for review.
 select set_config('app.in_rpc', '1', true);
@@ -250,21 +256,20 @@ select is((select (a.acknowledged_at is null) || ':' || (a.details ->> 'recorded
   'the alert of the whole refund Midtrans made stays open, noting what is recorded so far (N5)');
 
 -- L5: Midtrans telling of the refund already recorded raises nothing; telling of more still does.
-insert into public.payment_events (order_id, source, event_hash, payload)
-select p.order_id, 'webhook', 'uji-refund-seen-1', '{"refund_amount": "100000.00"}'
-from public.payments p where p.id = pg_temp.payment_of((select id from refunded));
 select is(internal.note_refund_seen((select p from public.payments p
                                      where p.id = pg_temp.payment_of((select id from refunded))),
-                                    'partially_refunded') ->> 'processing_result', 'refund_already_recorded',
-  'a Midtrans notice of the refund already recorded raises no alert');
-insert into public.payment_events (order_id, source, event_hash, payload)
-select p.order_id, 'webhook', 'uji-refund-seen-2', '{"refund_amount": "150000.00"}'
-from public.payments p where p.id = pg_temp.payment_of((select id from refunded));
+                                    'partially_refunded', '{"refund_amount": "100000.00"}') ->> 'processing_result',
+  'refund_already_recorded', 'a Midtrans notice of the refund already recorded raises no alert');
 select is(internal.note_refund_seen((select p from public.payments p
                                      where p.id = pg_temp.payment_of((select id from refunded))),
-                                    'partially_refunded') ->> 'processing_result', 'refund_awaiting_record',
-  'one beyond what was recorded still does');
-update public.payment_events set processed_at = now() where event_hash in ('uji-refund-seen-1', 'uji-refund-seen-2');
+                                    'partially_refunded', '{"refund_amount": "150000.00"}') ->> 'processing_result',
+  'refund_awaiting_record', 'one beyond what was recorded still does');
+-- N13: refunds[] is summed when the answer lists it; the top-level field counts only without it.
+select is(internal.midtrans_refund_total('{"refund_amount": "999999.00",
+  "refunds": [{"refund_amount": "1000.00"}, {"refund_amount": "2000.00"}]}'), 3000::bigint,
+  'a refunded total is the sum of the refunds Midtrans lists (N13)');
+select is(internal.midtrans_refund_total('{"refund_amount": "5000.00"}'), 5000::bigint,
+  'and its top-level refund_amount when it lists none');
 select pg_temp.midtrans_refund(pg_temp.payment_of((select id from refunded)), 300000);
 
 reset role;
@@ -305,6 +310,12 @@ select isnt((select a.acknowledged_at from public.security_alerts a join public.
              on a.fingerprint = 'refund_seen:' || p.order_id
              where p.id = pg_temp.payment_of((select id from refunded))), null,
   'and once all of it is recorded, the refund Midtrans was seen making is closed in the superadmin''s name (L5, N5)');
+select pg_temp.act_as('superadmin_aal2');
+select throws_ok($$select public.record_refund((select id from refunded), 1000, 'TRF-REUSE', 'Bukti dipakai ulang',
+  null, pg_temp.proof((select id from refunded), '1'))$$, 'P0001',
+  'the file ' || pg_temp.proof_path((select id from refunded), '1') || ' already backs another refund or adjustment',
+  'a proof that backs one refund backs no other (PROOF_REUSED)');
+reset role;
 select set_config('app.in_rpc', '1', true);
 select throws_ok($$update public.payments set refunded_amount = gross_amount + 1
   where id = pg_temp.payment_of((select id from refunded))$$, '23514', null,
@@ -407,6 +418,30 @@ select is((select string_agg(status::text, ',' order by rw_id) || ' ' || coalesc
           || ' ' || (select sum(amount) from public.revenue_share_entries where booking_id = (select id from combo)),
   'released,released 0 0', 'both legs free their seats, and the ledger of each RW gives everything back');
 
+-- ===== N9: what Midtrans refunded is its confirmed answer, never the webhook body =====
+reset role;
+create temporary table seen_order on commit drop as
+  select order_id from public.payments where id = pg_temp.payment_of((select id from seen));
+select internal.apply_payment_event((internal.record_payment_event('webhook', 'uji-n9-body',
+    jsonb_build_object('order_id', (select order_id from seen_order), 'status_code', '200',
+      'gross_amount', '300000.00', 'currency', 'IDR', 'transaction_status', 'partial_refund',
+      'refund_amount', '300000.00', 'signature_key', repeat('a', 128))) ->> 'event_id')::bigint,
+  'webhook',
+  jsonb_build_object('order_id', (select order_id from seen_order), 'status_code', '200',
+    'gross_amount', '300000.00', 'currency', 'IDR', 'transaction_status', 'partial_refund', 'refund_amount', '1000.00',
+    'refunds', jsonb_build_array(jsonb_build_object('refund_amount', '1000.00'))),
+  'k1');
+select is((select (details ->> 'refunded_amount')::bigint from public.security_alerts
+           where fingerprint = 'refund_seen:' || (select order_id from seen_order) and acknowledged_at is null),
+  1000::bigint, 'a body claiming the whole payment leaves the alert with the 1000 Midtrans confirmed (N9)');
+select pg_temp.act_as('superadmin_aal2');
+select throws_ok($$select public.record_refund((select id from seen), 300000, 'TRF-N9', 'Seluruh dana dikembalikan',
+  null, pg_temp.proof((select id from seen), 'n9'))$$, 'P0001',
+  'Midtrans reports no refund of 300000 on order ' || (select order_id from seen_order),
+  'so the whole payment cannot be recorded as refunded (REFUND_NOT_AT_MIDTRANS)');
+select is(public.record_refund((select id from seen), 1000, 'TRF-N9', 'Sebagian dana dikembalikan', null,
+  pg_temp.proof((select id from seen), 'n9')) ->> 'result', 'recorded', 'only the 1000 Midtrans refunded');
+
 -- ===== Adjustments: the workflow =====
 reset role;
 select pg_temp.act_as('superadmin_aal2');
@@ -495,6 +530,15 @@ select is((select count(*)::int from public.revenue_share_entries
 reset role;
 select pg_temp.act_as('superadmin_aal2');
 select throws_ok($$select public.apply_adjustment((select id from proposal))$$, 'P0001', null, 'and only once');
+select throws_ok($$select public.reject_adjustment((select id from proposal), 'Ditarik setelah diterapkan')$$, 'P0001',
+  null, 'nor is an applied adjustment rejected or withdrawn (N14)');
+reset role;
+select is(internal.note_refund_seen((select p from public.payments p
+                                     where p.id = pg_temp.payment_of((select id from adjusted))),
+                                    'partially_refunded', '{"refund_amount": "50000.00"}') ->> 'processing_result',
+  'refund_awaiting_record',
+  'a Midtrans refund still alerts when only a bank transfer of that amount was recorded (N11)');
+select pg_temp.act_as('superadmin_aal2');
 reset role;
 select set_config('app.in_rpc', '1', true);
 select throws_ok($$update public.payment_adjustments set status = 'approved' where id = (select id from proposal)$$,
@@ -641,6 +685,13 @@ select isnt(((public.propose_adjustment('manual_refund', (select id from adjuste
   pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf'))) ->> 'id'),
   null,
   'which frees the booking for the next proposal of its kind');
+
+select is((select severity::text from public.security_alerts
+           where fingerprint = 'adjustment_withdrawn:' || (select id from stuck_refund)), 'medium',
+  'a withdrawn approval raises a medium alert');
+select throws_ok($$select public.propose_adjustment('write_off', (select id from adjusted), null, 500,
+  'Selisih biaya admin bank', (select evidence_path from public.payment_adjustments where id = (select id from proposal)))$$,
+  'P0001', null, 'and an evidence file that backs one adjustment backs no other (PROOF_REUSED)');
 
 -- A share that stopped holding: the booking refunded whole after the move was approved (SHARE_TOO_LARGE).
 reset role;

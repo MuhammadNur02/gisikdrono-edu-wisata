@@ -240,6 +240,15 @@ describe('processMidtransNotification', () => {
     });
   });
 
+  it('keeps the Status API answer as a status_api event of its own (N9)', async () => {
+    await processMidtransNotification(NOTIFICATION, RAW_BODY);
+    expect(svcRecordPaymentEvent).toHaveBeenCalledWith(expect.anything(), {
+      source: 'status_api',
+      eventHash: createHash('sha256').update(`status_api\n${JSON.stringify(CONFIRMED)}`).digest('hex'),
+      payload: CONFIRMED,
+    });
+  });
+
   it('answers a body already processed as a duplicate delivery, applying nothing', async () => {
     vi.mocked(svcRecordPaymentEvent).mockResolvedValue({ eventId: 41, isProcessed: true });
     await expect(processMidtransNotification(NOTIFICATION, RAW_BODY)).resolves.toEqual({

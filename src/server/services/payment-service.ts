@@ -151,8 +151,18 @@ async function isConfirmable(
   );
 }
 
-async function confirmedStatus(orderId: string) {
-  return jsonValueSchema.parse(await getTransactionStatus(orderId, WEBHOOK_STATUS_TIMEOUT_MS));
+// The Status API's answer is kept as a status_api event of its own (re-review of PR #68, N9): it is Midtrans' word,
+// which record_refund and a held payment's refund may rely on, where the webhook body the signature does not cover
+// may not. Recording the same answer twice is the same event.
+async function confirmedStatus(adminClient: DatabaseClient, orderId: string) {
+  const answer = jsonValueSchema.parse(await getTransactionStatus(orderId, WEBHOOK_STATUS_TIMEOUT_MS));
+  await svcRecordPaymentEvent(adminClient, {
+    source: 'status_api',
+    eventHash: sha256Hex(`status_api
+${JSON.stringify(answer)}`),
+    payload: answer,
+  });
+  return answer;
 }
 
 // Steps 7 to 10. A body seen before and processed is a duplicate delivery; one whose first delivery stopped short is
@@ -172,7 +182,7 @@ export async function processMidtransNotification(
   if (event.isProcessed) return { result: 'duplicate_delivery' };
 
   const confirmed = (await isConfirmable(adminClient, notification))
-    ? await confirmedStatus(notification.order_id)
+    ? await confirmedStatus(adminClient, notification.order_id)
     : null;
   const keyId = serverEnv.QR_SIGNING_ACTIVE_KID;
   const outcome = await svcApplyPaymentEvent(adminClient, {
@@ -185,7 +195,7 @@ export async function processMidtransNotification(
   return svcApplyPaymentEvent(adminClient, {
     eventId: event.eventId,
     source: 'webhook',
-    confirmed: await confirmedStatus(notification.order_id),
+    confirmed: await confirmedStatus(adminClient, notification.order_id),
     keyId,
   });
 }
