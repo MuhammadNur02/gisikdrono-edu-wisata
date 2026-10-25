@@ -129,6 +129,7 @@ export const dashboardCopy = {
       purposeTooLong: 'Tujuan ekspor paling banyak 200 karakter.',
       periodOrder: 'Tanggal akhir tidak boleh sebelum tanggal awal.',
       periodTooLong: 'Periode ekspor paling lama 12 bulan.',
+      csvOnly: 'Log audit hanya bisa diekspor sebagai CSV.',
     },
   },
   profile: {

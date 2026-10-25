@@ -13,3 +13,11 @@ export function isSameOriginRequest(request: Request): boolean {
   if (origin === null || !URL.canParse(origin)) return false;
   return new URL(origin).host === requestHost(request);
 }
+
+// A GET from a link on the site's own pages. A browser sends no Origin on a plain navigation, but it does send
+// Sec-Fetch-Site; a request with neither, or from another site, is refused (review of PR #63, Low).
+export function isSameOriginNavigation(request: Request): boolean {
+  const fetchSite = request.headers.get('sec-fetch-site');
+  if (fetchSite !== null) return fetchSite === 'same-origin';
+  return isSameOriginRequest(request);
+}
