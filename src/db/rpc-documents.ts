@@ -68,7 +68,7 @@ export function svcRecordDocumentPdf(
   );
 }
 
-// The kept e-ticket file of a booking with the fingerprint of the tickets it shows (Task P3.11.05, 20261030080100),
+// The kept e-ticket file of a booking with the fingerprint of the tickets it shows (Task P3.11.05, 20261101120100),
 // under the reader's name as svcRecordDocumentPdf records the others.
 export function svcRecordTicketPdf(
   adminClient: DatabaseClient,

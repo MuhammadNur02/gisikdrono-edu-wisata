@@ -91,7 +91,7 @@ export async function svcReleaseSecurityAlert(
   await resultOf(adminClient.rpc('svc_release_security_alert', { p_id: id }));
 }
 
-// A provider's report on a sent message (Task P3.11.06, P3.11.09; 20261030080000): updated, unchanged (a replay, an
+// A provider's report on a sent message (Task P3.11.06, P3.11.09; 20261101120000): updated, unchanged (a replay, an
 // older report, a message already dead) or unknown (an id the outbox never sent on that channel).
 export type ProviderReportOutcome = 'updated' | 'unchanged' | 'unknown';
 const PROVIDER_REPORT_OUTCOMES: readonly ProviderReportOutcome[] = [

@@ -1,4 +1,4 @@
--- Task P3.11.06 and P3.11.09 (20261030080000): what Meta and Resend report after a send moves a message forward only,
+-- Task P3.11.06 and P3.11.09 (20261101120000): what Meta and Resend report after a send moves a message forward only,
 -- a failure after sending dead-letters it once, a report for an unknown, dead or further message changes nothing (so
 -- a replay is a no-op), and only the server records reports or signature failures.
 begin;

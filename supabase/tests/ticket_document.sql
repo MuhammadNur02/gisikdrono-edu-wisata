@@ -1,4 +1,4 @@
--- Task P3.11.05 (20261030080100): the e-ticket file of a booking is recorded by internal.record_ticket_pdf: only for a
+-- Task P3.11.05 (20261101120100): the e-ticket file of a booking is recorded by internal.record_ticket_pdf: only for a
 -- booking with tickets, only under its own name, with the fingerprint of the tickets it shows, replaced when they change.
 begin;
 select plan(8);
