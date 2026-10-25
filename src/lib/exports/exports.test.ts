@@ -61,6 +61,31 @@ describe('export columns', () => {
     expect(cellOf({ a: 1 })).toBe('{"a":1}');
   });
 
+  it('writes enum values as the dashboard labels them, an unknown one as it is', () => {
+    const [visit] = exportRowsOf([
+      {
+        booking_status: 'paid',
+        booker_type: 'school',
+        leg_status: 'checked_in',
+        ticket_status: 'used',
+      },
+    ]);
+    const cells = exportColumns('visits').map((column) => [
+      column.header,
+      visit && column.value(visit),
+    ]);
+    expect(Object.fromEntries(cells)).toMatchObject({
+      'Status reservasi': 'Lunas',
+      'Jenis rombongan': 'Sekolah',
+      'Status tiket': 'Terpakai',
+    });
+    const [entry] = exportRowsOf([{ entry_type: 'reversal', beneficiary: 'rw_treasury' }]);
+    const ledger = exportColumns('finance').map((column) => entry && column.value(entry));
+    expect(ledger).toContain('Pembalikan');
+    expect(ledger).toContain('Kas RW');
+    expect(cellOf('new_status', 'label', { paid: 'Lunas' })).toBe('new_status');
+  });
+
   it('reads only the objects of the answer', () => {
     expect(exportRowsOf([ATTENDANCE_ROW, 'x', null, [1]])).toEqual([ATTENDANCE_ROW]);
     expect(exportRowsOf(undefined)).toEqual([]);
@@ -99,14 +124,31 @@ describe('the XLSX of an export', () => {
   });
 });
 
+const EXPORT_ID = '0b6f1c2e-5d4a-4c3b-9a8f-7e6d5c4b3a21';
+const OTHER_EXPORT_ID = '1c7a2d3f-6e5b-4d4c-8b9a-8f7e6d5c4b32';
+
 describe('export files', () => {
-  it('names the file by Semarang time and kind, in the requester’s folder', () => {
+  it('names the file by Semarang time, kind and export id, in the requester’s folder', () => {
     const at = new Date('2026-10-25T02:30:05Z');
-    const name = exportFileName('attendance', 'xlsx', at);
-    expect(name).toBe('20261025-093005-attendance.xlsx');
+    const name = exportFileName('attendance', 'xlsx', at, EXPORT_ID);
+    expect(name).toBe(`20261025-093005-attendance-${EXPORT_ID}.xlsx`);
     expect(exportStoragePath('00000000-0000-4000-8000-000000000005', name)).toBe(
-      'exports/00000000-0000-4000-8000-000000000005/20261025-093005-attendance.xlsx',
+      `exports/00000000-0000-4000-8000-000000000005/20261025-093005-attendance-${EXPORT_ID}.xlsx`,
     );
+  });
+
+  it('keeps two exports of the same second apart', () => {
+    const at = new Date('2026-10-25T02:30:05Z');
+    expect(exportFileName('visits', 'csv', at, EXPORT_ID)).not.toBe(
+      exportFileName('visits', 'csv', at, OTHER_EXPORT_ID),
+    );
+  });
+
+  it('saves the file without its export id', () => {
+    const name = exportFileName('attendance', 'xlsx', new Date('2026-10-25T02:30:05Z'), EXPORT_ID);
     expect(exportDownloadName(`exports/x/${name}`)).toBe('ekspor-20261025-093005-attendance.xlsx');
+    expect(exportDownloadName('exports/x/20261025-093005-visits.csv')).toBe(
+      'ekspor-20261025-093005-visits.csv',
+    );
   });
 });

@@ -4,11 +4,15 @@ import { EXPORT_REQUEST_BODY_LIMIT_BYTES } from '@/config/exports';
 import { DB_ENUMS } from '@/db/enums';
 import { exportsCopy } from '@/lib/copy/exports';
 import { fail, mapError, ok, resultResponse } from '@/lib/errors';
-import { isSameOriginRequest } from '@/lib/utils/same-origin';
+import { isSameOriginNavigation, isSameOriginRequest } from '@/lib/utils/same-origin';
 import { readStaffRequest } from '@/lib/utils/staff-request';
 import { exportBodySchemaFor } from '@/lib/validations/export';
 import { requireAal2, type GuardResult } from '@/server/auth/guards';
-import { createExport, exportDownloadUrl } from '@/server/services/export-service';
+import {
+  createExport,
+  exportDownloadUrl,
+  type ExportOutcome,
+} from '@/server/services/export-service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -43,10 +47,17 @@ async function requireExporter(kind: ExportKind): Promise<GuardResult> {
   return fail('FORBIDDEN');
 }
 
-// 422 for a period past 50 000 rows, with the words the form shows under the period.
-function tooLargeResponse(): Response {
-  const result = fail('VALIDATION', { to: [exportsCopy.tooLarge] }, exportsCopy.tooLarge);
+// 422 for a period past 50 000 rows, or for a file too big for the documents bucket (review of PR #63, M1), with the
+// words the form shows under the period.
+function tooLargeResponse(message: string): Response {
+  const result = fail('VALIDATION', { to: [message] }, message);
   return Response.json(result, { status: UNPROCESSABLE, headers: { 'Cache-Control': NO_STORE } });
+}
+
+function outcomeResponse(outcome: ExportOutcome): Response {
+  if (outcome.kind === 'too_large') return tooLargeResponse(exportsCopy.tooLarge);
+  if (outcome.kind === 'file_too_large') return tooLargeResponse(exportsCopy.fileTooLarge);
+  return resultResponse(ok(outcome.created));
 }
 
 // Task P4.6.02 (CLAUDE.md §5.4, Export row; DATA-06, AUD-04, REC-07): a new export. Same Origin, the exporter's session,
@@ -66,18 +77,19 @@ export async function POST(request: Request, context: ExportRouteContext): Promi
   if (!read.ok) return read.response;
 
   try {
-    const outcome = await createExport(guard.ctx, read.input);
-    return outcome.kind === 'too_large' ? tooLargeResponse() : resultResponse(ok(outcome.created));
+    return outcomeResponse(await createExport(guard.ctx, read.input));
   } catch (error) {
     return resultResponse(await mapError(error));
   }
 }
 
 // Task P4.6.03: the history's "Unduh lagi", `?id=<export id>`, a 303 to a fresh 300-second link while the export is
-// within its 24 hours; 404 for one the session may not see or that is gone.
+// within its 24 hours; 404 for one the session may not see or that is gone, 403 for a link followed from another
+// site, 429 past 30 an hour.
 export async function GET(request: Request, context: ExportRouteContext): Promise<Response> {
   const kind = kindSchema.safeParse((await context.params).kind);
   if (!kind.success) return plainStatus(NOT_FOUND);
+  if (!isSameOriginNavigation(request)) return plainStatus(FORBIDDEN);
   const guard = await requireExporter(kind.data);
   if (!guard.ok) return resultResponse(guard);
   const exportId = exportIdSchema.safeParse(new URL(request.url).searchParams.get('id'));

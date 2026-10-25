@@ -67,9 +67,13 @@ function postExport(kind: string, body: unknown, headers: Record<string, string>
   );
 }
 
-function getExport(kind: string, id: string | null) {
+function getExport(
+  kind: string,
+  id: string | null,
+  headers: Record<string, string> = { 'sec-fetch-site': 'same-origin' },
+) {
   const query = id === null ? '' : `?id=${id}`;
-  return GET(new Request(`${SITE}/api/export/${kind}${query}`), context(kind));
+  return GET(new Request(`${SITE}/api/export/${kind}${query}`, { headers }), context(kind));
 }
 
 beforeEach(() => {
@@ -171,6 +175,20 @@ describe('POST /api/export/[kind]', () => {
     });
   });
 
+  it('answers 422 for a file too big for the bucket, with its own words', async () => {
+    vi.mocked(createExport).mockResolvedValueOnce({ kind: 'file_too_large' });
+    const response = await postExport('audit', BODY);
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      error: {
+        code: 'VALIDATION',
+        message: 'File terlalu besar, persempit periode atau filter.',
+        fieldErrors: { to: ['File terlalu besar, persempit periode atau filter.'] },
+      },
+    });
+  });
+
   it('answers 429 past 10 exports an hour, as the database raises it', async () => {
     vi.mocked(createExport).mockRejectedValueOnce({
       code: 'P0001',
@@ -200,6 +218,28 @@ describe('GET /api/export/[kind]?id=', () => {
     expect((await getExport('visits', EXPORT_ID)).status).toBe(404);
     expect((await getExport('visits', 'not-an-id')).status).toBe(404);
     expect((await getExport('visits', null)).status).toBe(404);
+  });
+
+  it('refuses a link followed from another site, or a request that names no site', async () => {
+    expect((await getExport('visits', EXPORT_ID, { 'sec-fetch-site': 'cross-site' })).status).toBe(
+      403,
+    );
+    expect((await getExport('visits', EXPORT_ID, { 'sec-fetch-site': 'same-site' })).status).toBe(
+      403,
+    );
+    expect((await getExport('visits', EXPORT_ID, {})).status).toBe(403);
+    expect(requireAal2).not.toHaveBeenCalled();
+    expect(exportDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it('takes a same-origin Origin where the browser sends no Sec-Fetch-Site', async () => {
+    const headers = { origin: SITE, host: '127.0.0.1:3000' };
+    expect((await getExport('visits', EXPORT_ID, headers)).status).toBe(303);
+  });
+
+  it('answers 429 past 30 repeat downloads an hour', async () => {
+    vi.mocked(exportDownloadUrl).mockRejectedValueOnce(new AppError('RATE_LIMITED'));
+    expect((await getExport('visits', EXPORT_ID)).status).toBe(429);
   });
 
   it('keeps an RW admin to attendance downloads', async () => {

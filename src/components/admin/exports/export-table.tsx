@@ -23,8 +23,9 @@ function periodText(row: ExportListItem): string {
 }
 
 // "Unduh lagi" while the file is within its 24 hours: a plain link to the route, which answers with a fresh 300-second
-// link; after that, the export only says it has expired.
+// link; after that, the export only says it has expired, or that it never had a file.
 function DownloadCell({ row }: { row: ExportListItem }) {
+  if (row.hasFailed) return <Badge variant="danger">{text.failed}</Badge>;
   if (!row.isAvailable) return <Badge variant="neutral">{text.expired}</Badge>;
   const kindLabel = exportsCopy.kinds[row.kind];
   return (

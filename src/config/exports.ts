@@ -21,3 +21,15 @@ export const CSV_ONLY_KINDS = ['audit'] as const;
 
 // The JSON body of POST /api/export/[kind] is a handful of short fields.
 export const EXPORT_REQUEST_BODY_LIMIT_BYTES = 2048;
+
+// The documents bucket's file size limit (20261031080000_export_failures.sql), the Supabase upload ceiling. The route
+// measures a file before it uploads it, so an export too big for the bucket fails cleanly.
+export const EXPORT_FILE_MAX_BYTES = 50 * 1024 * 1024;
+// Why an export left no file; svc_fail_export accepts these and no others.
+export const EXPORT_FAILURE_REASONS = [
+  'render_failed',
+  'too_large',
+  'upload_failed',
+  'record_failed',
+] as const;
+export type ExportFailureReason = (typeof EXPORT_FAILURE_REASONS)[number];

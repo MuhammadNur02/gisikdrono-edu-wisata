@@ -10,7 +10,7 @@ import { listFacets, rwFacet } from '@/lib/utils/facets';
 import { visitDateAfter } from '@/lib/utils/kpi';
 import { loadListQuery } from '@/lib/utils/list-query';
 import { requireDashboardStaff } from '@/server/auth/session';
-import { listExports } from '@/server/services/export-service';
+import { listExports } from '@/server/services/export-history-service';
 import { listRwUnitsForStaff } from '@/server/services/rw-unit-service';
 import type { ListFacet } from '@/types/data-table';
 

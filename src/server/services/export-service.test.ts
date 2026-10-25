@@ -11,6 +11,16 @@ import { createExport, exportDownloadUrl } from './export-service';
 vi.mock('@/lib/supabase/server', () => ({ createSupabaseServerClient: vi.fn() }));
 const createSupabaseAdminClient = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient }));
+const withinRateLimits = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/rate-limit', () => ({ withinRateLimits }));
+// The bucket's 50 MB, made small enough for a test to pass it.
+const fileLimit = vi.hoisted(() => ({ bytes: 50 * 1024 * 1024 }));
+vi.mock('@/config/exports', async (importOriginal) =>
+  Object.defineProperty({ ...(await importOriginal<object>()) }, 'EXPORT_FILE_MAX_BYTES', {
+    enumerable: true,
+    get: () => fileLimit.bytes,
+  }),
+);
 
 const EXPORT_ID = '0192f3a4-5b6c-4d8e-9f01-00000000e001';
 const OFFICER: StaffContext = {
@@ -47,22 +57,37 @@ function sessionClient(rpcAnswer: { data: unknown; error: unknown }, exportRow: 
   return { rpc, from };
 }
 
-function adminClient() {
-  const upload = vi.fn(() => Promise.resolve({ data: {}, error: null }));
+function adminClient(options: { uploadError?: unknown; recordError?: unknown } = {}) {
+  const upload = vi.fn(() => Promise.resolve({ data: {}, error: options.uploadError ?? null }));
+  const remove = vi.fn(() => Promise.resolve({ data: [], error: null }));
   const createSignedUrl = vi.fn(() =>
     Promise.resolve({ data: { signedUrl: 'https://signed' }, error: null }),
   );
+  const rpc = vi.fn(() => Promise.resolve({ data: true, error: null }));
   const tables = new Map<string, ReturnType<typeof chain>>();
   const from = vi.fn((table: string) => {
-    const query = chain({ data: null, error: null });
+    const query = chain({ data: null, error: options.recordError ?? null });
     tables.set(table, query);
     return query;
   });
   createSupabaseAdminClient.mockReturnValue({
-    storage: { from: () => ({ upload, createSignedUrl }) },
+    storage: { from: () => ({ upload, remove, createSignedUrl }) },
     from,
+    rpc,
   });
-  return { upload, createSignedUrl, from, tables };
+  return { upload, remove, createSignedUrl, rpc, from, tables };
+}
+
+const READY = {
+  data: { export_id: EXPORT_ID, watermark: WATERMARK, row_count: 1, rows: [] as unknown[] },
+  error: null,
+};
+
+function failedAs(reason: string) {
+  return [
+    'svc_fail_export',
+    { p_export_id: EXPORT_ID, p_actor_id: OFFICER.userId, p_reason: reason },
+  ] as const;
 }
 
 const ROWS = [{ booking_code: 'GSK-7F3K9Q2M', institution_name: '+cmd', booked_pax: 30, rw_id: 5 }];
@@ -70,6 +95,8 @@ const ROWS = [{ booking_code: 'GSK-7F3K9Q2M', institution_name: '+cmd', booked_p
 beforeEach(() => {
   vi.mocked(createSupabaseServerClient).mockReset();
   createSupabaseAdminClient.mockReset();
+  withinRateLimits.mockReset().mockResolvedValue(true);
+  fileLimit.bytes = 50 * 1024 * 1024;
 });
 
 describe('createExport', () => {
@@ -93,15 +120,22 @@ describe('createExport', () => {
       created: { exportId: EXPORT_ID, rowCount: 1, url: 'https://signed' },
     });
     const [path, body, options] = admin.upload.mock.calls[0] as unknown as [string, Buffer, object];
-    expect(path).toMatch(new RegExp(`^exports/${OFFICER.userId}/\\d{8}-\\d{6}-attendance\\.csv$`));
+    expect(path).toMatch(
+      new RegExp(`^exports/${OFFICER.userId}/\\d{8}-\\d{6}-attendance-${EXPORT_ID}\\.csv$`),
+    );
     expect(options).toEqual({ contentType: 'text/csv', upsert: false });
     const csv = body.toString('utf8');
     expect(csv.startsWith(UTF8_BOM)).toBe(true);
     expect(csv).toContain("'+cmd");
     expect(csv).toContain(WATERMARK);
-    expect(admin.createSignedUrl).toHaveBeenCalledWith(path, 300, {
-      download: `ekspor-${path.split('/').at(-1) ?? ''}`,
-    });
+    const [signedPath, ttl, signOptions] = admin.createSignedUrl.mock.calls[0] as unknown as [
+      string,
+      number,
+      { download: string },
+    ];
+    expect([signedPath, ttl]).toEqual([path, 300]);
+    expect(signOptions.download).toMatch(/^ekspor-\d{8}-\d{6}-attendance\.csv$/);
+    expect(admin.rpc).not.toHaveBeenCalled();
     const update = admin.tables.get('exports');
     expect(update?.eq).toHaveBeenCalledWith('id', EXPORT_ID);
     expect(update?.eq).toHaveBeenCalledWith('requested_by', OFFICER.userId);
@@ -129,6 +163,49 @@ describe('createExport', () => {
     const admin = adminClient();
     expect(await createExport(OFFICER, REQUEST)).toEqual({ kind: 'too_large' });
     expect(admin.upload).not.toHaveBeenCalled();
+  });
+
+  it('answers too_large when the database answers the refusal instead of raising it', async () => {
+    sessionClient({ data: { refused: 'EXPORT_TOO_LARGE', row_count: 50001 }, error: null });
+    const admin = adminClient();
+    expect(await createExport(OFFICER, REQUEST)).toEqual({ kind: 'too_large' });
+    expect(admin.upload).not.toHaveBeenCalled();
+  });
+
+  it('fails an export whose file is too big for the bucket before uploading it', async () => {
+    sessionClient(READY);
+    const admin = adminClient();
+    fileLimit.bytes = 16;
+    expect(await createExport(OFFICER, REQUEST)).toEqual({ kind: 'file_too_large' });
+    expect(admin.upload).not.toHaveBeenCalled();
+    expect(admin.rpc).toHaveBeenCalledWith(...failedAs('too_large'));
+  });
+
+  it('fails an export whose file Storage refuses as too big', async () => {
+    sessionClient(READY);
+    const admin = adminClient({ uploadError: { statusCode: '413', message: 'too big' } });
+    expect(await createExport(OFFICER, REQUEST)).toEqual({ kind: 'file_too_large' });
+    expect(admin.rpc).toHaveBeenCalledWith(...failedAs('too_large'));
+    expect(admin.createSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('fails an export whose upload breaks, and passes the error on', async () => {
+    sessionClient(READY);
+    const uploadError = { statusCode: '500', message: 'down' };
+    const admin = adminClient({ uploadError });
+    await expect(createExport(OFFICER, REQUEST)).rejects.toBe(uploadError);
+    expect(admin.rpc).toHaveBeenCalledWith(...failedAs('upload_failed'));
+  });
+
+  it('removes a stored file whose path the row could not learn, and fails the export', async () => {
+    sessionClient(READY);
+    const recordError = { code: '57014', message: 'canceled' };
+    const admin = adminClient({ recordError });
+    await expect(createExport(OFFICER, REQUEST)).rejects.toBe(recordError);
+    const [path] = admin.upload.mock.calls[0] as unknown as [string];
+    expect(admin.remove).toHaveBeenCalledWith([path]);
+    expect(admin.rpc).toHaveBeenCalledWith(...failedAs('record_failed'));
+    expect(admin.createSignedUrl).not.toHaveBeenCalled();
   });
 
   it('reads the database refusals as the app errors the route maps to 403, 429 and 400', async () => {
@@ -162,6 +239,20 @@ describe('exportDownloadUrl', () => {
     expect(admin.tables.get('security_events')?.insert).toHaveBeenCalledWith(
       expect.objectContaining({ event_type: 'export_downloaded', entity_id: EXPORT_ID }),
     );
+  });
+
+  it('refuses past its hourly limit before reading or logging anything', async () => {
+    withinRateLimits.mockResolvedValueOnce(false);
+    const session = sessionClient({ data: null, error: null }, LIVE_ROW);
+    const admin = adminClient();
+    await expect(exportDownloadUrl(OFFICER, 'attendance', EXPORT_ID)).rejects.toEqual(
+      new AppError('RATE_LIMITED'),
+    );
+    expect(withinRateLimits).toHaveBeenCalledWith(expect.anything(), [
+      { name: 'export_download:user', subject: OFFICER.userId },
+    ]);
+    expect(session.from).not.toHaveBeenCalled();
+    expect(admin.tables.has('security_events')).toBe(false);
   });
 
   it('gives nothing for another kind, an expired or deleted export, or one RLS does not show', async () => {

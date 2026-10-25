@@ -40,6 +40,8 @@ export const exportsCopy = {
   started: (rows: number) => `Ekspor ${String(rows)} baris siap. Unduhan dimulai.`,
   tooLarge:
     'Data periode ini lebih dari 50.000 baris. Persempit periode atau pilih satu kampung, lalu coba lagi.',
+  // An export whose file is too big for the documents bucket (20261031080000_export_failures.sql).
+  fileTooLarge: 'File terlalu besar, persempit periode atau filter.',
   history: {
     heading: 'Riwayat ekspor',
     noun: 'ekspor',
@@ -63,6 +65,7 @@ export const exportsCopy = {
     downloadOf: (kind: string, createdAt: string) => `Unduh lagi ekspor ${kind} ${createdAt}`,
     expiresAt: (time: string) => `sampai ${time}`,
     expired: 'Kedaluwarsa',
+    failed: 'Gagal',
     rowCount: (rows: number) => `${String(rows)} baris`,
   },
   // The columns of the files themselves (src/lib/exports/columns.ts).
@@ -110,5 +113,15 @@ export const exportsCopy = {
     details: 'Rincian',
     yes: 'Ya',
     no: 'Tidak',
+    entryTypes: {
+      settlement: 'Pelunasan',
+      reversal: 'Pembalikan',
+      adjustment: 'Penyesuaian',
+    } satisfies Record<EnumValue<'revenue_entry_type'>, string>,
+    beneficiaries: {
+      kelurahan: 'Kelurahan',
+      rw_treasury: 'Kas RW',
+      umkm_vendor: 'UMKM',
+    } satisfies Record<EnumValue<'revenue_beneficiary'>, string>,
   },
 };

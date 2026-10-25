@@ -18,6 +18,8 @@ export interface ExportListItem {
   expiresAt: string;
   // The file is still there and its 24 hours have not run out, so it can be downloaded again.
   isAvailable: boolean;
+  // Its file was never stored (too big, or Storage refused it); the hourly cap gave its hit back.
+  hasFailed: boolean;
 }
 
 // What POST /api/export/[kind] answers: the 300-second link to the file just written, never stored anywhere.
