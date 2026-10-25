@@ -1,8 +1,9 @@
--- Task P4.10.01 (20261029080100, 20261029080200; docs/Security.md §11.2): each rule of the anomaly scan raises its alert
--- from a seeded case, one open alert per rule and subject however many runs see it, an order named by its short hash
--- only, the actors kept in the alert, the chains checked by a call of their own, and only the server runs either.
+-- Task P4.10.01 (20261029080100, 20261029080200, 20261103081000; docs/Security.md §11.2): each rule of the anomaly
+-- scan raises its alert from a seeded case, one open alert per rule and subject however many runs see it, an order
+-- named by its short hash only, the actors kept in the alert, the chains checked by a call of their own, and only the
+-- server runs either.
 begin;
-select plan(23);
+select plan(27);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -107,6 +108,20 @@ insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, c
   ('00000000-0000-4000-8000-0000000d9f03', '00000000-0000-4000-8000-00000000f013', 'HP', 'totp', 'verified', now(), now()),
   ('00000000-0000-4000-8000-0000000d9f04', '00000000-0000-4000-8000-00000000f013', 'HP lama', 'totp', 'unverified', now(), now());
 
+-- F-72-1 (20261103081000): two RW 05 officers waiting for their re-enrolment code with no factor, one reset three
+-- days ago and one eight days ago.
+insert into auth.users (id, email) values
+  ('00000000-0000-4000-8000-0000000d9e01', 'tunggu-baru@example.test'),
+  ('00000000-0000-4000-8000-0000000d9e02', 'tunggu-lama@example.test');
+insert into public.profiles (id, email, full_name, role, rw_id, reenrolment_required) values
+  ('00000000-0000-4000-8000-0000000d9e01', 'tunggu-baru@example.test', 'Tunggu Baru', 'admin_rw', 5, true),
+  ('00000000-0000-4000-8000-0000000d9e02', 'tunggu-lama@example.test', 'Tunggu Lama', 'admin_rw', 5, true);
+insert into public.security_events (event_type, severity, entity_type, entity_id, details, occurred_at) values
+  ('mfa_reset', 'critical', 'profiles', '00000000-0000-4000-8000-0000000d9e01', '{"stage": "completed"}',
+   now() - interval '3 days'),
+  ('mfa_reset', 'critical', 'profiles', '00000000-0000-4000-8000-0000000d9e02', '{"stage": "completed"}',
+   now() - interval '8 days');
+
 -- ===== One run =====
 select ok((internal.run_anomaly_scan() ->> 'raised')::int >= 10, 'a run raises the seeded alerts');
 select is(pg_temp.alerted('signature_burst', internal.order_ref((select early from orders))), 1,
@@ -140,6 +155,16 @@ select is(pg_temp.alerted('staff_factor_count', '00000000-0000-4000-8000-0000000
   'but not one with exactly one, whatever unverified factor lies beside it');
 select is(pg_temp.alerted('staff_factor_count', '00000000-0000-4000-8000-00000000f000'), 0,
   'nor an account without a role');
+select is(pg_temp.alerted('staff_factor_count', '00000000-0000-4000-8000-0000000d9e01')
+          + pg_temp.alerted('staff_factor_count', '00000000-0000-4000-8000-0000000d9e02'), 0,
+  'an officer waiting for their re-enrolment code without a factor is not a staff member without one');
+select is(pg_temp.alerted('staff_reenrolment_overdue', '00000000-0000-4000-8000-0000000d9e01'), 0,
+  'within seven days of the reset the wait raises nothing');
+select is(pg_temp.alerted('staff_reenrolment_overdue', '00000000-0000-4000-8000-0000000d9e02'), 1,
+  'past seven days it is followed up');
+select is((select a.severity::text from public.security_alerts a
+           where a.fingerprint = 'staff_reenrolment_overdue:00000000-0000-4000-8000-0000000d9e02'),
+  'medium', 'as a medium alert');
 select is((select a.severity::text from public.security_alerts a
            where a.rule = 'paid_without_tickets' and a.created_at = now()),
   'critical', 'money without tickets is critical');
