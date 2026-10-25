@@ -1,10 +1,10 @@
 'use client';
 
-import { divIcon, type LeafletEventHandlerFnMap } from 'leaflet';
-import { useMemo } from 'react';
+import { divIcon, type LeafletEventHandlerFnMap, type Marker as LeafletMarker } from 'leaflet';
+import { useEffect, useMemo, useRef, type RefObject } from 'react';
 import { CircleMarker, Marker, Tooltip } from 'react-leaflet';
 
-import { RW_AREA_CLASS, RW_AREA_OFFICE_MARKER_RADIUS } from '@/config/map';
+import { HOTSPOT_ID_ATTRIBUTE, RW_AREA_CLASS, RW_AREA_OFFICE_MARKER_RADIUS } from '@/config/map';
 import { rwAccentClasses } from '@/config/rw';
 import { RW_AREA_MAP } from '@/config/rw-areas';
 import { mapCopy } from '@/lib/copy/map';
@@ -31,15 +31,29 @@ const PIN_SVG =
 const HOTSPOT_CLASS =
   'pin-drop pointer-events-auto flex cursor-pointer items-center justify-center rounded-full bg-rw-fill text-white shadow-md transition-[width,height,scale] duration-200 ease-spring-snappy hover:scale-112 focus-visible:scale-112';
 
+// The hotspot's size at rest and while its card is open; toggled on the live button, never by rebuilding the icon.
+const REST_CLASSES = ['size-7.5', 'ring-2'];
+const SELECTED_CLASSES = ['size-10', 'ring-3'];
+
 // DESIGN-SPEC §3.9 hotspot: a 30 px circle in the RW's accent with a 2 px white ring and the pin, 40 px with a 3 px
 // ring while its card is open. It is a real <button> named after the point and its RW, so the map's points are
 // reachable by keyboard; the outer span centres it, the button itself drops in (--i staggers the drops by 40 ms).
-// The name goes through escapeHtml: Leaflet sets this string as markup.
-function hotspotMarkup(marker: GeoMarker, index: number, isSelected: boolean): string {
+// The name and the id go through escapeHtml: Leaflet sets this string as markup.
+function hotspotMarkup(marker: GeoMarker, index: number): string {
   const label = escapeHtml(mapCopy.hotspot(marker.name, marker.rw.label));
   const scope = rwAccentClasses(marker.rw.accentKey).scope;
-  const size = isSelected ? 'size-10 ring-3 ring-white' : 'size-7.5 ring-2 ring-white';
-  return `<span class="absolute -translate-x-1/2 -translate-y-1/2"><button type="button" aria-label="${label}" aria-pressed="${String(isSelected)}" style="--i:${String(index)};--pin-stagger:40ms" class="${HOTSPOT_CLASS} ${scope} ${size}">${PIN_SVG}</button></span>`;
+  return `<span class="absolute -translate-x-1/2 -translate-y-1/2"><button type="button" ${HOTSPOT_ID_ATTRIBUTE}="${escapeHtml(marker.id)}" aria-label="${label}" aria-pressed="false" style="--i:${String(index)};--pin-stagger:40ms" class="${HOTSPOT_CLASS} ${scope} ${REST_CLASSES.join(' ')} ring-white">${PIN_SVG}</button></span>`;
+}
+
+// Marks the open hotspot on the element Leaflet already drew, so its focus and its drop animation survive.
+function useSelectedState(ref: RefObject<LeafletMarker | null>, isSelected: boolean) {
+  useEffect(() => {
+    const button = ref.current?.getElement()?.querySelector('button');
+    if (!button) return;
+    button.setAttribute('aria-pressed', String(isSelected));
+    button.classList.remove(...(isSelected ? REST_CLASSES : SELECTED_CLASSES));
+    button.classList.add(...(isSelected ? SELECTED_CLASSES : REST_CLASSES));
+  }, [ref, isSelected]);
 }
 
 export interface PointMarkerProps {
@@ -52,15 +66,12 @@ export interface PointMarkerProps {
 // A click on the button (or Enter and Space, which a button turns into a click) bubbles to Leaflet's marker, which
 // opens the point's card. The marker itself takes no focus: the button inside it does.
 export function PointMarker({ marker, index, isSelected, onSelect }: PointMarkerProps) {
+  const ref = useRef<LeafletMarker>(null);
   const icon = useMemo(
-    () =>
-      divIcon({
-        className: '',
-        html: hotspotMarkup(marker, index, isSelected),
-        iconSize: ICON_SIZE,
-      }),
-    [marker, index, isSelected],
+    () => divIcon({ className: '', html: hotspotMarkup(marker, index), iconSize: ICON_SIZE }),
+    [marker, index],
   );
+  useSelectedState(ref, isSelected);
   const eventHandlers = useMemo<LeafletEventHandlerFnMap>(
     () => ({
       click: () => {
@@ -71,6 +82,7 @@ export function PointMarker({ marker, index, isSelected, onSelect }: PointMarker
   );
   return (
     <Marker
+      ref={ref}
       position={[marker.lat, marker.lng]}
       icon={icon}
       keyboard={false}

@@ -34,10 +34,11 @@ const PIN_SVG =
   '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></svg>';
 
 // The pill of DESIGN-SPEC §3.1 (home map): the RW's accent circle with the pin, then its name (the number alone on a
-// phone). It is a link to the RW page; every text in it comes from rw_units through escapeHtml.
+// phone). It is a link to the RW page; every text in it comes from rw_units through escapeHtml. The outer span centres
+// it on the point and the link itself drops in: both use the CSS translate property, so they cannot share an element.
 function pinMarkup(pin: RwPin, index: number): string {
   const scope = rwAccentClasses(pin.accentKey).scope;
-  return `<a href="${escapeHtml(pin.path)}" style="--i:${String(index)}" class="pin-drop ${scope} pointer-events-auto absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 whitespace-nowrap rounded-full bg-card py-1 pr-3.5 pl-1 font-sans text-label-sm font-semibold text-foreground! no-underline shadow-md md:pr-4"><span class="flex size-7 items-center justify-center rounded-full bg-rw-fill text-white">${PIN_SVG}</span><span class="md:hidden">${escapeHtml(pin.label)}</span><span class="max-md:hidden">${escapeHtml(pin.name)}</span></a>`;
+  return `<span class="absolute -translate-x-1/2 -translate-y-1/2"><a href="${escapeHtml(pin.path)}" style="--i:${String(index)}" class="pin-drop ${scope} pointer-events-auto flex items-center gap-2 whitespace-nowrap rounded-full bg-card py-1 pr-3.5 pl-1 font-sans text-label-sm font-semibold text-foreground! no-underline shadow-md md:pr-4"><span class="flex size-7 items-center justify-center rounded-full bg-rw-fill text-white">${PIN_SVG}</span><span class="md:hidden">${escapeHtml(pin.label)}</span><span class="max-md:hidden">${escapeHtml(pin.name)}</span></a></span>`;
 }
 
 function PinMarker({ pin, index }: { pin: RwPin; index: number }) {

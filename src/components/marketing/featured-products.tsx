@@ -55,6 +55,7 @@ function AddonPanel() {
   );
 }
 
+// md:contents takes the list out of the box tree; role="list" keeps it a list for assistive technology.
 const ROW_CLASS =
   'flex snap-x snap-mandatory gap-4 overflow-x-auto scrollbar-none max-md:pr-container max-md:pl-container md:contents';
 
@@ -73,7 +74,7 @@ export function FeaturedProducts({ id, products }: FeaturedProductsProps) {
     >
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
         <div className="space-y-5 max-md:-mx-5 md:contents">
-          <ul id={rowId} className={cn(ROW_CLASS, 'reveal-stagger')}>
+          <ul id={rowId} role="list" className={cn(ROW_CLASS, 'reveal-stagger')}>
             {products.map((product) => (
               <li key={product.id} className="flex w-55 shrink-0 snap-start md:w-auto md:reveal">
                 <ProductCard product={product} />

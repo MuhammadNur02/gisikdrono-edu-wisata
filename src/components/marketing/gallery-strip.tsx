@@ -19,16 +19,34 @@ export interface GalleryStripProps {
 // 360 px of height never asks a low-resolution source for more than about 500 px of width.
 const PHOTO_SIZES = '(min-width: 768px) 540px, 320px';
 
-// One lap of the track. The copy is hidden from assistive technology and out of the tab order, so each photo is
-// announced and focused once.
-function PhotoSet({ photos, isCopy }: { photos: readonly HomeGalleryPhoto[]; isCopy: boolean }) {
+// One lap holds at least this many photos, repeating a short set, so the track always covers a wide screen and the
+// loop never shows a gap.
+const MIN_LAP_PHOTOS = 8;
+
+interface LapPhoto {
+  key: string;
+  photo: HomeGalleryPhoto;
+  // A repeat of a photo already in the lap.
+  isRepeat: boolean;
+}
+
+function lapOf(photos: readonly HomeGalleryPhoto[]): LapPhoto[] {
+  const rounds = Math.max(1, Math.ceil(MIN_LAP_PHOTOS / photos.length));
+  return Array.from({ length: rounds }, (_, round) =>
+    photos.map((photo) => ({ key: `${String(round)}-${photo.id}`, photo, isRepeat: round > 0 })),
+  ).flat();
+}
+
+// One lap of the track. The copy and every repeat are hidden from assistive technology and out of the tab order, so
+// each photo is announced and focused once.
+function PhotoSet({ lap, isCopy }: { lap: readonly LapPhoto[]; isCopy: boolean }) {
   return (
     <ul aria-hidden={isCopy || undefined} className="flex gap-4 pr-4 md:gap-5 md:pr-5">
-      {photos.map((photo) => (
-        <li key={photo.id} className="shrink-0">
+      {lap.map(({ key, photo, isRepeat }) => (
+        <li key={key} aria-hidden={(!isCopy && isRepeat) || undefined} className="shrink-0">
           <Link
             href={photo.href}
-            tabIndex={isCopy ? -1 : undefined}
+            tabIndex={isCopy || isRepeat ? -1 : undefined}
             className="group block space-y-3 rounded-lg"
           >
             <PhotoFrame
@@ -66,6 +84,7 @@ function Controls({ marqueeId, className }: { marqueeId: string; className?: str
 // under reduced motion it does not move and scrolls by hand instead.
 export function GalleryStrip({ id, photos }: GalleryStripProps) {
   const marqueeId = `${id}-marquee`;
+  const lap = lapOf(photos);
   const marquee = (
     <div
       id={marqueeId}
@@ -74,8 +93,8 @@ export function GalleryStrip({ id, photos }: GalleryStripProps) {
       className="marquee pl-5 md:-ml-38 md:pl-0"
     >
       <div className="marquee-track">
-        <PhotoSet photos={photos} isCopy={false} />
-        <PhotoSet photos={photos} isCopy />
+        <PhotoSet lap={lap} isCopy={false} />
+        <PhotoSet lap={lap} isCopy />
       </div>
     </div>
   );

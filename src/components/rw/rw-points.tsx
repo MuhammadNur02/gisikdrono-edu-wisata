@@ -30,7 +30,7 @@ function PointRow({ point, index }: { point: ActivityPoint; index: number }) {
       <span className="w-6 shrink-0 pt-1 font-display text-body-md font-bold text-rw tabular-nums max-md:hidden">
         {String(index + 1).padStart(ROW_NUMBER_DIGITS, '0')}
       </span>
-      <span className="flex size-11 shrink-0 items-center justify-center rounded-md bg-rw-soft text-rw transition-transform duration-200 group-hover:scale-106 md:size-12">
+      <span className="flex size-11 shrink-0 items-center justify-center rounded-md bg-rw-soft text-rw transition-transform duration-200 motion-safe:group-hover:scale-106 md:size-12">
         <Icon aria-hidden className="size-5" />
       </span>
       <div className="min-w-0 flex-1 space-y-1">

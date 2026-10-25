@@ -135,6 +135,7 @@ export function RwHero(props: RwHeroProps) {
   return (
     <section
       data-header-overlay=""
+      data-rw-hero=""
       className={
         hasPhoto
           ? 'relative isolate flex h-160 bg-night text-white ring-on-dark clip-inset md:h-170'

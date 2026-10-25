@@ -5,8 +5,6 @@ import 'leaflet/dist/leaflet.css';
 import {
   divIcon,
   latLngBounds,
-  type LatLngBounds,
-  type LatLngTuple,
   type LeafletEventHandlerFnMap,
   type Map as LeafletMapInstance,
   type Polygon as LeafletPolygon,
@@ -16,6 +14,14 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { MapContainer, Marker, Polygon, TileLayer, Tooltip } from 'react-leaflet';
 
 import { MapControls } from '@/components/map/rw-area-controls';
+import {
+  AREA_LATLNGS,
+  areaBoundsOf,
+  BOUNDARY_LATLNGS,
+  KELURAHAN_BOUNDS,
+  openingBoundsOf,
+  RING_DEPTH,
+} from '@/components/map/rw-area-geometry';
 import { OfficeMarker, PointMarker } from '@/components/map/rw-area-markers';
 import {
   GEO_MAX_ZOOM,
@@ -29,47 +35,9 @@ import {
   RW_AREA_ZOOM_SNAP,
 } from '@/config/map';
 import { rwAccentClasses, rwLabel, rwNumber, type RwId } from '@/config/rw';
-import { RW_AREA_MAP } from '@/config/rw-areas';
 import { cn } from '@/lib/utils/cn';
-import type { PolygonRings, Position } from '@/lib/utils/geo-polygon';
 import type { GeoMarker, PointSelection, RwAreaSelection, RwAreaSummary } from '@/types/map';
 
-// GeoJSON writes [lng, lat]; Leaflet takes [lat, lng].
-function toLatLng([lng, lat]: Position): LatLngTuple {
-  return [lat, lng];
-}
-
-function toLatLngs(polygon: PolygonRings): LatLngTuple[][] {
-  return polygon.map((ring) => ring.map(toLatLng));
-}
-
-const BOUNDARY_LATLNGS = toLatLngs(RW_AREA_MAP.boundary);
-const KELURAHAN_BOUNDS = latLngBounds(BOUNDARY_LATLNGS.flat());
-const AREA_LATLNGS = new Map(
-  RW_AREA_MAP.areas.map((area) => [area.rw, area.polygons.map(toLatLngs)]),
-);
-// An RW's positions are nested polygon > ring > position; its bounds need the positions alone.
-const RING_DEPTH = 2;
-
-function areaBoundsOf(rw: RwId): LatLngBounds | null {
-  const positions = AREA_LATLNGS.get(rw);
-  return positions === undefined ? null : latLngBounds(positions.flat(RING_DEPTH));
-}
-
-// DESIGN-SPEC §3.9 opens on the kampung edukasi, so their points stand apart; the reset button shows the whole
-// kelurahan. Without an edu-tourism RW the map opens on the kelurahan.
-function openingBoundsOf(areas: readonly RwAreaSummary[]): LatLngBounds {
-  const eduBounds = areas.flatMap((area) => {
-    const bounds = area.unit ? areaBoundsOf(area.rw) : null;
-    return bounds ? [bounds] : [];
-  });
-  const [first, ...rest] = eduBounds;
-  if (!first) return KELURAHAN_BOUNDS;
-  return rest.reduce(
-    (all, bounds) => all.extend(bounds),
-    latLngBounds(first.getSouthWest(), first.getNorthEast()),
-  );
-}
 const FIT_PADDING: [number, number] = [RW_AREA_FIT_PADDING_PX, RW_AREA_FIT_PADDING_PX];
 const FIT_OPTIONS = { padding: FIT_PADDING };
 // The boundary is an outline only and never takes a click from the RW under it.

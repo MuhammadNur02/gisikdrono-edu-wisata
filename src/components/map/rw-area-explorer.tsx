@@ -2,13 +2,13 @@
 
 import { LayoutGrid, Map as MapIcon } from 'lucide-react';
 import dynamic from 'next/dynamic';
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 
 import { Container } from '@/components/layout/container';
 import { PointCard } from '@/components/map/point-card';
 import { RwAreaList } from '@/components/map/rw-area-list';
 import { Skeleton } from '@/components/ui/skeleton';
-import { OSM_COPYRIGHT_URL, RW_AREA_FRAME_CLASS } from '@/config/map';
+import { HOTSPOT_ID_ATTRIBUTE, OSM_COPYRIGHT_URL, RW_AREA_FRAME_CLASS } from '@/config/map';
 import { rwAccentClasses, type RwId } from '@/config/rw';
 import { mapCopy } from '@/lib/copy/map';
 import { cn } from '@/lib/utils/cn';
@@ -130,8 +130,15 @@ function useAreaSelection() {
 }
 
 // A point picked in the list switches back to the map, scrolls it into view and flies to the point.
+// The hotspot of a point, by the id its button carries.
+function hotspotOf(id: string): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`[${HOTSPOT_ID_ATTRIBUTE}="${CSS.escape(id)}"]`);
+}
+
 function usePointSelection(setView: (view: MapView) => void) {
   const [pointSelection, setPointSelection] = useState<PointSelection | null>(null);
+  const openId = useRef<string | null>(null);
+  openId.current = pointSelection?.id ?? null;
   const selectPoint = useCallback((id: string) => {
     setPointSelection({ id, source: 'map' });
   }, []);
@@ -143,8 +150,15 @@ function usePointSelection(setView: (view: MapView) => void) {
     },
     [setView],
   );
+  // The focus goes back to the point's hotspot once its card has gone (Esc or the close button).
   const closePoint = useCallback(() => {
+    const id = openId.current;
     setPointSelection(null);
+    if (id !== null) {
+      requestAnimationFrame(() => {
+        hotspotOf(id)?.focus();
+      });
+    }
   }, []);
   return { pointSelection, selectPoint, locatePoint, closePoint };
 }

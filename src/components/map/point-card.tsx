@@ -2,7 +2,7 @@
 
 import { ArrowRight, Navigation, X } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { RwTag } from '@/components/layout/rw-tag';
 import { PhotoFrame } from '@/components/marketing/photo';
@@ -88,14 +88,21 @@ function CardHeader({ marker, onClose }: PointCardProps) {
 
 // DESIGN-SPEC §3.9 point card: over the map's top left on a wide screen (360 px, 8 px up and in), a bottom sheet with a
 // grabber on a phone (it slides up). The photo when the point has one, the RW badge with the point's type, the name,
-// the description, the route and the RW page. Esc or the close button closes it; it is announced as it opens.
+// the description, the route and the RW page. It takes the focus as it opens; Esc or the close button
+// closes it and the focus goes back to its hotspot.
 export function PointCard({ marker, onClose }: PointCardProps) {
   useCloseOnEscape(onClose);
+  const cardRef = useRef<HTMLElement>(null);
+  // The focus moves into the card as it opens, so a keyboard user reads it and reaches its actions next.
+  useEffect(() => {
+    cardRef.current?.focus();
+  }, []);
   return (
     <section
+      ref={cardRef}
+      tabIndex={-1}
       aria-label={marker.name}
-      aria-live="polite"
-      className="absolute inset-x-0 bottom-0 z-20 card-enter overflow-hidden rounded-t-2xl bg-card shadow-lg md:inset-x-auto md:top-6 md:bottom-auto md:left-6 md:w-90 md:rounded-2xl"
+      className="absolute inset-x-0 bottom-0 z-20 card-enter overflow-hidden rounded-t-2xl bg-card shadow-lg outline-none md:inset-x-auto md:top-6 md:bottom-auto md:left-6 md:w-90 md:rounded-2xl"
     >
       <span
         aria-hidden

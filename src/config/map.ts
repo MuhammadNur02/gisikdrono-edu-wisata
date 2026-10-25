@@ -63,6 +63,9 @@ export const RW_AREA_ZOOM_SNAP = 0.25;
 export const RW_AREA_FLY_SECONDS = 0.5;
 export const RW_AREA_OFFICE_MARKER_RADIUS = 9;
 // The classes the shapes carry; src/styles/globals.css colours them from the RW palette tokens.
+// The attribute a map hotspot carries its point's id in, so the focus can go back to it when the point's card closes.
+export const HOTSPOT_ID_ATTRIBUTE = 'data-point-id';
+
 export const RW_AREA_CLASS = {
   area: 'rw-area',
   edu: 'rw-area-edu',

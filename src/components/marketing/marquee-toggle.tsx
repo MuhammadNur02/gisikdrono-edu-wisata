@@ -1,9 +1,11 @@
 'use client';
 
 import { Pause, Play } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { cn } from '@/lib/utils/cn';
+
+const PAUSED_ATTRIBUTE = 'data-paused';
 
 export interface MarqueeToggleProps {
   // The id of the .marquee element the button pauses.
@@ -13,15 +15,33 @@ export interface MarqueeToggleProps {
   className?: string;
 }
 
+// The marquee's data-paused attribute is the one state: every toggle of the same marquee (the heading's and the
+// phone's) follows it, so pressing either one updates both.
+function usePausedAttribute(targetId: string): boolean {
+  const [isPaused, setIsPaused] = useState(false);
+  useEffect(() => {
+    const target = document.getElementById(targetId);
+    if (!target) return;
+    const sync = () => {
+      setIsPaused(target.hasAttribute(PAUSED_ATTRIBUTE));
+    };
+    const observer = new MutationObserver(sync);
+    observer.observe(target, { attributes: true, attributeFilter: [PAUSED_ATTRIBUTE] });
+    sync();
+    return () => {
+      observer.disconnect();
+    };
+  }, [targetId]);
+  return isPaused;
+}
+
 // The Jeda toggle of the gallery marquee (DESIGN-SPEC §3.1, §6; WCAG 2.2.2): it sets data-paused on the marquee,
 // which stops the CSS track (motion.css), and says so through aria-pressed. Under reduced motion the row does not
 // move at all, so the button is not shown.
 export function MarqueeToggle({ targetId, label, className }: MarqueeToggleProps) {
-  const [isPaused, setIsPaused] = useState(false);
+  const isPaused = usePausedAttribute(targetId);
   const toggle = () => {
-    const next = !isPaused;
-    document.getElementById(targetId)?.toggleAttribute('data-paused', next);
-    setIsPaused(next);
+    document.getElementById(targetId)?.toggleAttribute(PAUSED_ATTRIBUTE, !isPaused);
   };
   const Icon = isPaused ? Play : Pause;
   return (
