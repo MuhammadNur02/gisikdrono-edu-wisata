@@ -1,0 +1,204 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { parseArgs, parseEnv } from 'node:util';
+
+import { z } from 'zod';
+
+// pnpm wa:send-test -- --to +6281234567890 --template payment_received_ticket [--document-url https://...]
+//   [--file .env.local] [--dry-run]   (Task P3.11.03, CLAUDE.md §10.1)
+// Sends one approved WhatsApp template to a test number with sample parameters, through the same payload builder and
+// provider the outbox uses, so a template's approval and the credentials can be tried before the first real message.
+// The ticket template carries a document header, so it needs --document-url: a signed URL of our own documents
+// bucket, as the outbox mints it, never any other address. Staff templates go by email only and are refused. Nothing
+// printed carries the access token; the answer is Meta's message id or the server's own error code. --dry-run prints
+// the template and its parts without sending.
+//
+// Guards (review of PR #66, M1): the env file must not be production's (VERCEL_ENV=production or
+// MIDTRANS_IS_PRODUCTION=true are refused), and its Supabase must be this machine's or the staging project named by
+// STAGING_PROJECT_REF in the same file; and a message goes only to a number listed in the git-ignored
+// .wa-test-numbers, one E.164 number a line (lines starting with # are comments).
+
+const DEFAULT_ENV_FILE = '.env.local';
+const TICKET_TEMPLATE = 'payment_received_ticket';
+const SAMPLE_BOOKING_CODE = 'GSK-7F3K9Q2M';
+const SAMPLE_PAX = 25;
+const SAMPLE_TOTAL = 1_250_000;
+const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
+const DAYS_AHEAD = 7;
+const ISO_DATE_LENGTH = 10;
+const SAMPLE_OTP = '123456';
+const TEST_NUMBERS_FILE = '.wa-test-numbers';
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+const SIGNED_DOCUMENTS_PATH = '/storage/v1/object/sign/documents/';
+
+const SENDABLE = [
+  'phone_otp',
+  'booking_created',
+  'quotation_ready',
+  'payment_reminder',
+  'payment_received_ticket',
+  'booking_expired',
+  'booking_cancelled',
+  'visit_reminder_d1',
+  'checked_in_thanks',
+  'certificate_ready',
+  'review_invite',
+  'refund_processed',
+  'security_alert',
+  'booking_link',
+] as const;
+
+const argsSchema = z.object({
+  to: z.string().regex(/^\+62[0-9]{8,13}$/, 'an Indonesian E.164 number, +62…'),
+  template: z.enum(SENDABLE),
+  'document-url': z.url({ protocol: /^https?$/ }).optional(),
+  file: z.string().default(DEFAULT_ENV_FILE),
+  'dry-run': z.boolean().default(false),
+});
+
+const envSchema = z.object({
+  WHATSAPP_ACCESS_TOKEN: z.string().min(1),
+  WHATSAPP_PHONE_NUMBER_ID: z.string().min(1),
+  NEXT_PUBLIC_SUPABASE_URL: z.url(),
+  VERCEL_ENV: z.string().optional(),
+  MIDTRANS_IS_PRODUCTION: z.string().optional(),
+  STAGING_PROJECT_REF: z
+    .string()
+    .regex(/^[a-z]{20}$/)
+    .optional(),
+});
+type ScriptEnv = z.infer<typeof envSchema>;
+
+// Only this machine's stack, or the staging project the file itself names, never production.
+function readTestEnv(file: string): ScriptEnv {
+  const env = envSchema.parse(parseEnv(readFileSync(file, 'utf8')));
+  if (env.VERCEL_ENV === 'production' || env.MIDTRANS_IS_PRODUCTION === 'true') {
+    throw new Error('wa:send-test refuses production settings');
+  }
+  const host = new URL(env.NEXT_PUBLIC_SUPABASE_URL).hostname;
+  const isStaging =
+    env.STAGING_PROJECT_REF !== undefined && host === `${env.STAGING_PROJECT_REF}.supabase.co`;
+  if (!LOOPBACK_HOSTS.has(host) && !isStaging) {
+    throw new Error(
+      'wa:send-test runs against this machine or the staging project named by STAGING_PROJECT_REF only',
+    );
+  }
+  return env;
+}
+
+function assertTestNumber(to: string): void {
+  if (!existsSync(TEST_NUMBERS_FILE)) {
+    throw new Error(
+      `List the test numbers in ${TEST_NUMBERS_FILE} (git-ignored), one E.164 number a line`,
+    );
+  }
+  const numbers = readFileSync(TEST_NUMBERS_FILE, 'utf8')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !line.startsWith('#'));
+  if (!numbers.includes(to)) throw new Error(`${to} is not in ${TEST_NUMBERS_FILE}`);
+}
+
+function assertOwnDocumentUrl(url: string | undefined, env: ScriptEnv): void {
+  if (url === undefined) return;
+  const ownPrefix = new URL(SIGNED_DOCUMENTS_PATH, env.NEXT_PUBLIC_SUPABASE_URL).toString();
+  if (!url.startsWith(ownPrefix)) {
+    throw new Error(`--document-url must be a signed URL of our documents bucket (${ownPrefix}…)`);
+  }
+}
+
+function readArgs() {
+  const { values } = parseArgs({
+    // process.argv starts with the node binary and this script; the options follow.
+    args: process.argv.filter((_, index) => index > 1).filter((arg) => arg !== '--'),
+    options: {
+      to: { type: 'string' },
+      template: { type: 'string' },
+      'document-url': { type: 'string' },
+      file: { type: 'string' },
+      'dry-run': { type: 'boolean' },
+    },
+  });
+  const args = argsSchema.parse(values);
+  if (args.template === TICKET_TEMPLATE && args['document-url'] === undefined) {
+    throw new Error(
+      'gsk_ticket_issued_v1 has a document header: pass --document-url with a PDF Meta can fetch',
+    );
+  }
+  return args;
+}
+
+function isoDate(offsetDays: number): string {
+  return new Date(Date.now() + offsetDays * DAY_MS).toISOString().slice(0, ISO_DATE_LENGTH);
+}
+
+const SAMPLE_FACTS = {
+  bookingCode: SAMPLE_BOOKING_CODE,
+  packageName: 'Paket Uji Coba',
+  visitDate: isoDate(DAYS_AHEAD),
+  session: '09.00–10.00 WIB',
+  gate: 'RW 05 Ecowastreme',
+  pax: SAMPLE_PAX,
+  total: SAMPLE_TOTAL,
+  deadline: new Date(Date.now() + HOUR_MS).toISOString(),
+  institution: 'SD Negeri Uji Coba',
+  quotationNumber: 'SP/GSK/2026/10/0001',
+  quotationValidUntil: isoDate(DAYS_AHEAD),
+  refundedAmount: 0,
+};
+
+async function sampleParams(template: (typeof SENDABLE)[number]): Promise<Record<string, unknown>> {
+  if (template === 'phone_otp') return { code: SAMPLE_OTP };
+  if (template === 'security_alert') {
+    return { severity: 'high', rule: 'uji_coba', time: new Date().toISOString() };
+  }
+  if (template === 'booking_link') return { name: 'Bapak/Ibu', booking_code: SAMPLE_BOOKING_CODE };
+  const { guestTemplateParams } = await import('../src/lib/notifications/compose');
+  return guestTemplateParams(template, 'Bapak/Ibu', SAMPLE_FACTS, null);
+}
+
+async function main(): Promise<void> {
+  const args = readArgs();
+  const env = readTestEnv(args.file);
+  assertOwnDocumentUrl(args['document-url'], env);
+  if (!args['dry-run']) assertTestNumber(args.to);
+  // The modules below read NEXT_PUBLIC_SITE_URL as they load, so the env file goes into the process first.
+  process.loadEnvFile(args.file);
+  const { templateParamsSchemas } = await import('../src/lib/notifications/templates');
+  const { displayParams } = await import('../src/lib/notifications/compose');
+  const { createWhatsAppMetaProvider, whatsAppPayload } =
+    await import('../src/lib/notifications/whatsapp-meta');
+
+  const params = templateParamsSchemas[args.template].parse(await sampleParams(args.template));
+  const documentUrl = args['document-url'];
+  const message = {
+    notificationId: 'wa-send-test',
+    channel: 'whatsapp' as const,
+    template: args.template,
+    recipient: args.to,
+    bodyParams: displayParams(params),
+    link: { url: '', buttonSuffix: SAMPLE_BOOKING_CODE },
+    ...(documentUrl === undefined
+      ? {}
+      : { document: { url: documentUrl, filename: 'tiket-uji.pdf' } }),
+  };
+  if (args['dry-run']) {
+    const { template } = whatsAppPayload(message);
+    const parts = template.components.map((component) => component.type).join(', ');
+    const names = Object.keys(message.bodyParams).join(', ');
+    process.stdout.write(`Would send ${template.name} (${parts}) with ${names}
+`);
+    return;
+  }
+  const result = await createWhatsAppMetaProvider({
+    accessToken: env.WHATSAPP_ACCESS_TOKEN,
+    phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,
+  }).send(message);
+  if (!result.ok) throw new Error(`Meta did not accept it: ${result.errorCode}`);
+  process.stdout.write(`Sent ${args.template} as ${result.providerMessageId}\n`);
+}
+
+main().catch((error: unknown) => {
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.exitCode = 1;
+});

@@ -28,6 +28,8 @@ export const RATE_LIMITS = {
   upload_forbidden: { limit: 10, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
   // Task P2.4.08: the public "Unduh PDF" of a published booklet, per visitor IP.
   'booklet:download': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
+  // Task P4.6.03: the history's "Unduh lagi", per staff member, before each repeat download is logged (review of PR #63).
+  'export_download:user': { limit: 30, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
   // Task P3.6.04 (docs/Security.md §10.3, DOC-01): a booking's own documents (quotation, invoice, receipt), per
   // visitor IP and per booking, counted before the row is looked up, so guessing ids costs the same as reading.
   'document:ip': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
@@ -44,6 +46,13 @@ export const RATE_LIMITS = {
   'webhook_midtrans:ip': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   'webhook_midtrans:all': { limit: 600, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   'webhook_rejection:ip': { limit: 20, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  // docs/Security.md §8.3 (Task P3.11.06, P3.11.09; review of PR #66, L4): Meta's and Resend's delivery reports, per
+  // sender IP, counted before the signature is checked; past the limit a report is answered 429 so its sender tries it
+  // again later. Meta's is sized from its documented Cloud API throughput of 80 messages a second for one business
+  // number, each with up to three statuses (sent, delivered, read): 80 × 3 × 60 = 14 400 a minute, rounded up. Resend's
+  // follows the emails this site sends, a few hundred a day at most.
+  'webhook_whatsapp:ip': { limit: 15_000, windowSeconds: 60, whenUnavailable: 'fail-closed' },
+  'webhook_resend:ip': { limit: 300, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   // Task P3.10.03: the public QR landing /v/[token], per visitor IP, so ticket ids cannot be guessed in bulk.
   'qr_landing:ip': { limit: 60, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   // Task P3.11.07: GET /api/health, per IP, so its reads cannot be used to load the database. The uptime monitor asks

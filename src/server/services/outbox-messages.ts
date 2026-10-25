@@ -24,6 +24,7 @@ import { templateParamsSchemas, type NotificationTemplate } from '@/lib/notifica
 import type { MessageLink, OutgoingMessage } from '@/lib/notifications/types';
 import { publicEnv } from '@/lib/public-env';
 import { formatTimeRange } from '@/lib/utils/dates';
+import { ticketWhatsAppDocument } from '@/server/services/document-service';
 
 // One outbox row made into the message its provider sends (Task P3.11.02, P3.11.05). The worker hands in the
 // service-role client it was given (src/server/services/notification-service.ts); every booking read here is the one
@@ -208,7 +209,28 @@ async function composeGuest(
   if (link === null && LINKED_TEMPLATES.has(row.template)) {
     return refusal('bad_params', 'The message names no link scope for its button');
   }
-  return { ok: true, message: messageOf(row, displayParams(params.data), link) };
+  return withTicketDocument(adminClient, row, messageOf(row, displayParams(params.data), link));
+}
+
+// gsk_ticket_issued_v1 carries the ticket PDF in its document header (Task P3.11.03), minted now and never stored.
+// Without a file that may be kept the message waits for the next try rather than going out without its header,
+// which Meta would refuse; the email goes out meanwhile with its link.
+async function withTicketDocument(
+  adminClient: DatabaseClient,
+  row: OutboxRow,
+  message: OutgoingMessage,
+): Promise<Composed> {
+  if (row.channel !== 'whatsapp' || row.template !== 'payment_received_ticket' || !row.booking_id) {
+    return { ok: true, message };
+  }
+  const document = await ticketWhatsAppDocument(adminClient, row.booking_id);
+  if (document === null) {
+    return {
+      ok: false,
+      failure: sendFailure('ticket_pdf_unavailable', 'The ticket file is not ready yet', false),
+    };
+  }
+  return { ok: true, message: { ...message, document } };
 }
 
 function isGuestTemplate(row: OutboxRow): row is OutboxRow & { template: GuestTemplate } {

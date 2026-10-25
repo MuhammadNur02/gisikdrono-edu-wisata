@@ -67,3 +67,19 @@ export function svcRecordDocumentPdf(
     }),
   );
 }
+
+// The kept e-ticket file of a booking with the fingerprint of the tickets it shows (Task P3.11.05, 20261101120100),
+// under the reader's name as svcRecordDocumentPdf records the others.
+export function svcRecordTicketPdf(
+  adminClient: DatabaseClient,
+  kept: { bookingId: string; path: string; fingerprint: string; readerId: string | null },
+): Promise<void> {
+  return resultOf(
+    adminClient.rpc('svc_record_ticket_pdf', {
+      p_booking_id: kept.bookingId,
+      p_path: kept.path,
+      p_fingerprint: kept.fingerprint,
+      p_actor_id: kept.readerId ?? undefined,
+    }),
+  );
+}

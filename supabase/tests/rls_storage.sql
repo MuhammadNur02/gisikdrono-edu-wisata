@@ -26,7 +26,7 @@ select is(
   (select string_agg(id || ':' || public || ':' || file_size_limit || ':' || coalesce(array_to_string(allowed_mime_types, ' '), '-'),
                      ', ' order by id)
    from storage.buckets where id in ('uploads-quarantine', 'public-media', 'documents')),
-  'documents:false:20971520:application/pdf image/jpeg image/png image/webp text/csv '
+  'documents:false:52428800:application/pdf image/jpeg image/png image/webp text/csv '
   || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, '
   || 'public-media:true:52428800:image/webp application/pdf, '
   || 'uploads-quarantine:false:52428800:image/jpeg image/png image/webp application/pdf',
