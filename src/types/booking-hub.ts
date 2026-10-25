@@ -60,11 +60,18 @@ export interface WeatherOption {
   remaining: number;
 }
 
+// One leg a weather notice stopped (decision of 2026-10-25 on the weather): when its window closes, the moves left and
+// where it may go. A combo's other leg keeps its day.
+export interface WeatherLeg {
+  rwName: string;
+  openUntil: string;
+  movesLeft: number;
+  options: WeatherOption[];
+}
+
 export interface WeatherState {
-  // When the 24 h after the notice end.
+  // When the first open window closes; the weather refund is there until then.
   openUntil: string;
   reason: string | null;
-  movesLeft: number;
-  // One per leg, in leg order; a combo moves every leg to one day.
-  legs: { rwName: string; options: WeatherOption[] }[];
+  legs: WeatherLeg[];
 }

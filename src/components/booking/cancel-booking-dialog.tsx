@@ -23,6 +23,9 @@ export type CancelBookingAction = (input: unknown) => Promise<ActionResult<null>
 export interface CancelBookingDialogProps {
   bookingCode: string;
   kind: 'cancellation' | 'weather';
+  // The refund this page shows, sent back so the database can tell when it has moved since (review of PR #69, M3).
+  refundAmount: number;
+  refundPct: number | null;
   action: CancelBookingAction;
   // Labels and the refund the server computed come from the server component, so this island ships no copy file.
   trigger: ReactNode;
@@ -67,9 +70,16 @@ function useCancellation(props: CancelBookingDialogProps) {
   const cancel = () => {
     setError(null);
     startTransition(async () => {
-      const result = await props.action({ bookingCode: props.bookingCode, kind: props.kind });
+      const result = await props.action({
+        bookingCode: props.bookingCode,
+        kind: props.kind,
+        refundAmount: props.refundAmount,
+        refundPct: props.refundPct,
+      });
       if (!result.ok) {
         setError(result.error.message);
+        // A refund that moved: the page reads the new figure, and the dialog stays open to ask again.
+        if (result.error.code === 'PRICE_MISMATCH') router.refresh();
         return;
       }
       setIsOpen(false);

@@ -22,7 +22,7 @@ import { formatIDR } from '@/lib/utils/currency';
 import { formatClockTime, formatDateLong } from '@/lib/utils/dates';
 import { buildWhatsAppShareUrl } from '@/lib/utils/whatsapp';
 import type { ActionResult } from '@/types/action-result';
-import type { StatusHubView, WeatherState } from '@/types/booking-hub';
+import type { StatusHubView, WeatherLeg, WeatherState } from '@/types/booking-hub';
 
 const text = bookingHubCopy;
 const CARD = 'space-y-4 rounded-2xl border border-border bg-card p-5 md:p-6';
@@ -125,6 +125,8 @@ export function CancelPanel(props: {
       <CancelBookingDialog
         bookingCode={view.booking.bookingCode}
         kind="cancellation"
+        refundAmount={isPaid && quote ? quote.amount : 0}
+        refundPct={isPaid && quote ? quote.refundPct : null}
         action={actions.cancel}
         trigger={text.cancel.open}
         title={text.cancel.dialogTitle}
@@ -154,6 +156,8 @@ function WeatherRefund(props: {
       <CancelBookingDialog
         bookingCode={props.bookingCode}
         kind="weather"
+        refundAmount={quote.amount}
+        refundPct={quote.refundPct}
         action={props.actions.cancel}
         trigger={text.weather.refund}
         triggerVariant="outline"
@@ -181,17 +185,36 @@ function WeatherNotice({ weather }: { weather: WeatherState }) {
   );
 }
 
-function rescheduleLabels(weather: WeatherState) {
-  return {
-    pickDay: text.weather.pickDay,
-    pickSession: weather.legs.map((leg) => text.weather.pickSession(leg.rwName)),
-    noOptions: text.weather.noOptions,
-    move: text.weather.move,
-    moved: text.weather.moved,
-  };
+// One stopped leg: its moves left and where it may go (decision of 2026-10-25 on the weather, rules 1 and 3).
+function WeatherLegMove(props: { bookingCode: string; leg: WeatherLeg; actions: HubActions }) {
+  const { leg } = props;
+  return (
+    <div className="space-y-3">
+      <p className="text-body-sm font-medium">
+        {leg.movesLeft > 0
+          ? text.weather.movesLeft(leg.rwName, leg.movesLeft)
+          : text.weather.noMovesLeft(leg.rwName)}
+      </p>
+      {leg.movesLeft > 0 && (
+        <WeatherReschedule
+          bookingCode={props.bookingCode}
+          options={leg.options}
+          action={props.actions.reschedule}
+          labels={{
+            pickDay: text.weather.pickDay,
+            pickSession: text.weather.pickSession(leg.rwName),
+            noOptions: text.weather.noOptions,
+            move: text.weather.move,
+            moved: text.weather.moved,
+          }}
+        />
+      )}
+    </div>
+  );
 }
 
-// docs/PRD.md FR-BOOK-24, FR-BOOK-25 (A17): after a weather notice the manage link picks a new day or the refund.
+// docs/PRD.md FR-BOOK-24, FR-BOOK-25 (A17): after a weather notice the manage link moves the stopped leg, up to the
+// cap, or takes the weather refund, both until the window closes; with no choice by then the refund comes on its own.
 export function WeatherPanel(props: {
   bookingCode: string;
   weather: WeatherState;
@@ -199,22 +222,13 @@ export function WeatherPanel(props: {
   actions: HubActions;
 }) {
   const { weather, bookingCode, actions } = props;
-  const canMove = weather.movesLeft > 0;
   return (
     <section aria-labelledby="hub-weather" className="space-y-4 rounded-2xl bg-warning-soft p-5">
       <WeatherNotice weather={weather} />
       <div className="space-y-4 rounded-xl bg-card p-4">
-        <p className="text-body-sm font-medium">
-          {canMove ? text.weather.movesLeft(weather.movesLeft) : text.weather.noMovesLeft}
-        </p>
-        {canMove && (
-          <WeatherReschedule
-            bookingCode={bookingCode}
-            legs={weather.legs}
-            action={actions.reschedule}
-            labels={rescheduleLabels(weather)}
-          />
-        )}
+        {weather.legs.map((leg) => (
+          <WeatherLegMove key={leg.rwName} bookingCode={bookingCode} leg={leg} actions={actions} />
+        ))}
         <WeatherRefund bookingCode={bookingCode} quote={props.refund} actions={actions} />
       </div>
     </section>

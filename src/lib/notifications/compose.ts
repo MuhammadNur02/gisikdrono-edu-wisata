@@ -38,6 +38,10 @@ export type GuestTemplate = Exclude<
 const rowParamsSchema = z.looseObject({
   quotation_number: z.string().optional(),
   valid_until: z.string().optional(),
+  // The weather notice of the row (internal.queue_weather_messages): its RW, its session's day, the window's end.
+  rw_name: z.string().optional(),
+  session_date: z.string().optional(),
+  open_until: z.string().optional(),
 });
 
 interface GuestParamsInput {
@@ -90,6 +94,12 @@ const GUEST_PARAMS: Record<GuestTemplate, (input: GuestParamsInput) => Record<st
   booking_cancelled: named,
   certificate_ready: named,
   booking_link: named,
+  weather_disruption: (input) => ({
+    ...named(input),
+    rw: input.queued?.rw_name,
+    date: input.queued?.session_date,
+    deadline: input.queued?.open_until,
+  }),
 };
 
 // The named parameters of a guest template, before its schema checks them.

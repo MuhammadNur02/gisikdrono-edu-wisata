@@ -1,5 +1,6 @@
 'use server';
 
+import { revalidateTag } from 'next/cache';
 import { cookies, headers } from 'next/headers';
 import { after } from 'next/server';
 import { z } from 'zod';
@@ -13,8 +14,9 @@ import {
 } from '@/config/guest';
 import { bookingHubCopy } from '@/lib/copy/booking-hub';
 import { copy } from '@/lib/copy/id';
-import { fail, mapError, ok } from '@/lib/errors';
+import { fail, mapError, ok, raisedHintOf } from '@/lib/errors';
 import { guestLinkCookieNames } from '@/lib/links/token';
+import { TAGS } from '@/lib/queries/tags';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { clientIpFrom, rateLimitIpBucket } from '@/lib/utils/client-ip';
 import { BOOKING_CODE_PATTERN } from '@/lib/utils/codes';
@@ -28,6 +30,7 @@ import {
 import { requireGuestToken } from '@/server/auth/guards';
 import { readPhoneProofCookie } from '@/server/auth/guest-cookies';
 import {
+  bookingSessionDays,
   cancelGuestBooking,
   isBookingPhone,
   rescheduleGuestBooking,
@@ -98,6 +101,23 @@ export async function revokeGuestLinksAction(input: unknown): Promise<ActionResu
 
 const hubText = bookingHubCopy;
 const MS_PER_SECOND = 1000;
+const MONTH_KEY_LENGTH = 'YYYY-MM'.length;
+
+// CLAUDE.md §5.5 (review of PR #69, L3): a hub action changed the booking's own page and the seats of its sessions.
+function revalidateBooking(bookingId: string, days: { rwId: number; sessionDate: string }[]): void {
+  revalidateTag(TAGS.booking(bookingId));
+  const months = new Set(
+    days.map((day) => `${String(day.rwId)}|${day.sessionDate.slice(0, MONTH_KEY_LENGTH)}`),
+  );
+  for (const key of months) {
+    const [rwId = '', month = ''] = key.split('|');
+    revalidateTag(TAGS.sessions(Number(rwId), month));
+  }
+}
+
+function isRaised(error: unknown, hint: string): boolean {
+  return raisedHintOf(error) === hint;
+}
 
 // "Batalkan reservasi": an unpaid booking for free, a paid one under the refund terms (or, after a weather notice, the
 // weather refund). The orders end and a QRIS refund is asked of Midtrans after the answer; the page reads the new
@@ -113,14 +133,22 @@ export async function cancelBookingAction(input: unknown): Promise<ActionResult<
     if (!(await withinGuestLimits([{ name: 'booking_cancel:booking', subject: bookingId }]))) {
       return fail('RATE_LIMITED');
     }
+    const days = await bookingSessionDays(bookingId);
     const outcome = await cancelGuestBooking(bookingId, {
       reason: parsed.data.reason ?? hubText.cancel.defaultReason,
       kind: parsed.data.kind,
+      expectedAmount: parsed.data.refundAmount,
+      expectedPct: parsed.data.refundPct,
     });
     after(() => settleCancellation(outcome));
     after(kickNotificationWorker);
+    revalidateBooking(bookingId, days);
     return ok(null);
   } catch (error) {
+    // The refund moved since the page was read (the day turned, a fee was set): show the new one and ask again.
+    if (isRaised(error, 'PRICE_MISMATCH')) {
+      return fail('PRICE_MISMATCH', undefined, hubText.cancel.changed);
+    }
     return mapError(error);
   }
 }
@@ -139,7 +167,10 @@ export async function rescheduleBookingAction(
     if (!(await withinGuestLimits([{ name: 'booking_reschedule:booking', subject: bookingId }]))) {
       return fail('RATE_LIMITED');
     }
-    const moved = await rescheduleGuestBooking(bookingId, parsed.data.sessionIds);
+    const before = await bookingSessionDays(bookingId);
+    const moved = await rescheduleGuestBooking(bookingId, parsed.data.sessionId);
+    revalidateBooking(bookingId, [...before, ...(await bookingSessionDays(bookingId))]);
+    after(kickNotificationWorker);
     return ok({ visitDate: moved.visitDate });
   } catch (error) {
     return mapError(error);
@@ -169,7 +200,9 @@ export async function confirmQuotationAction(
     if (!isFreshProof || !(await isBookingPhone(bookingId, proof.phone))) {
       return fail('VALIDATION', undefined, hubText.quoted.wrongPhone);
     }
-    return ok(await startPayment(bookingId));
+    const payment = await startPayment(bookingId);
+    revalidateBooking(bookingId, await bookingSessionDays(bookingId));
+    return ok(payment);
   } catch (error) {
     return mapError(error);
   }

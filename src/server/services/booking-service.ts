@@ -23,6 +23,7 @@ import {
   svcRefundPreview,
   svcRescheduleForWeather,
   type CancellationOutcome,
+  type CancellationRequest,
   type RefundKind,
   type RefundQuote,
 } from '@/db/rpc-terms';
@@ -38,7 +39,8 @@ import { refundRateLimits, withinRateLimits, type RateLimitCheck } from '@/lib/r
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 import type { SubmitReviewValues } from '@/lib/validations/review';
-import { statusHubOf, weatherStateOf } from '@/server/services/booking-hub-reads';
+import { statusHubOf } from '@/server/services/booking-hub-reads';
+import { sessionDaysOf, weatherStateOf } from '@/server/services/booking-weather-reads';
 import {
   bookingLimitsOf,
   bookingToCreate,
@@ -324,19 +326,26 @@ export async function loadStatusHub(guest: GuestAccess): Promise<StatusHubData> 
   };
 }
 
-// docs/PRD.md §9.2: the manage link cancels; the database decides what the state allows and what comes back.
+// docs/PRD.md §9.2: the manage link cancels; the database decides what the state allows and what comes back, and
+// refuses (PRICE_MISMATCH) when the refund the visitor confirmed is no longer the one it gives.
 export function cancelGuestBooking(
   bookingId: string,
-  cancellation: { reason: string; kind: RefundKind },
+  cancellation: Omit<CancellationRequest, 'bookingId'>,
 ): Promise<CancellationOutcome> {
   return svcCancelBooking(createSupabaseAdminClient(), { bookingId, ...cancellation });
 }
 
+export function bookingSessionDays(
+  bookingId: string,
+): Promise<{ rwId: number; sessionDate: string }[]> {
+  return sessionDaysOf(createSupabaseAdminClient(), bookingId);
+}
+
 export function rescheduleGuestBooking(
   bookingId: string,
-  sessionIds: string[],
-): Promise<{ visitDate: string; moves: number }> {
-  return svcRescheduleForWeather(createSupabaseAdminClient(), { bookingId, sessionIds });
+  sessionId: string,
+): Promise<{ visitDate: string; moves: number; movesLeft: number }> {
+  return svcRescheduleForWeather(createSupabaseAdminClient(), { bookingId, sessionId });
 }
 
 // "Konfirmasi & Bayar" of a quotation (docs/PRD.md §9.2 quoted → pending_payment): the number the visitor just proved

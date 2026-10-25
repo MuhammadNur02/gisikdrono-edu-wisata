@@ -152,7 +152,7 @@ export const bookingHubCopy = {
         : `H-${String(minDays)} atau lebih awal: ${String(pct)} % paket dikembalikan`,
     addons: 'Produk tambahan dikembalikan penuh bila reservasi dibatalkan.',
     weather: (max: number, hours: number) =>
-      `Bila kunjungan terhalang cuaca, rombongan boleh pindah jadwal paling banyak ${String(max)} kali dalam ${String(hours)} jam setelah pemberitahuan, atau meminta pengembalian dana dikurangi biaya Midtrans.`,
+      `Bila kunjungan terhalang cuaca, dalam ${String(hours)} jam setelah pemberitahuan rombongan boleh pindah jadwal paling banyak ${String(max)} kali atau meminta pengembalian dana dikurangi biaya Midtrans, juga setelah pindah. Bila tidak ada pilihan dalam ${String(hours)} jam, dana dikembalikan otomatis. Pada paket gabungan, hanya kunjungan di RW yang terhalang yang pindah.`,
   },
   cancel: {
     open: 'Batalkan reservasi',
@@ -169,6 +169,8 @@ export const bookingHubCopy = {
       `${String(pct)} % paket (${packagePart}) dan produk tambahan (${addons}).`,
     confirm: 'Ya, batalkan',
     keep: 'Tidak jadi',
+    changed:
+      'Jumlah pengembalian dana sudah berubah sejak halaman ini dibuka. Periksa angka terbaru di atas, lalu konfirmasi lagi.',
     defaultReason: 'Dibatalkan penanggung jawab lewat halaman reservasi',
   },
   refund: {
@@ -181,9 +183,11 @@ export const bookingHubCopy = {
   weather: {
     title: 'Kunjungan terhalang cuaca',
     body: (until: string) =>
-      `Kelurahan mengabarkan sesi Anda terhalang cuaca. Pilih jadwal baru atau minta pengembalian dana sebelum ${until}.`,
-    movesLeft: (count: number) => `Sisa ${String(count)} kali pindah jadwal.`,
-    noMovesLeft: 'Reservasi ini sudah mencapai batas pindah jadwal karena cuaca.',
+      `Kelurahan mengabarkan sesi Anda terhalang cuaca. Sampai ${until}, pindah jadwal atau minta pengembalian dana. Bila tidak ada pilihan sampai saat itu, dana dikembalikan otomatis dikurangi biaya Midtrans.`,
+    movesLeft: (rwName: string, count: number) =>
+      `Jadwal di ${rwName} bisa dipindah ${String(count)} kali lagi.`,
+    noMovesLeft: (rwName: string) =>
+      `Jadwal di ${rwName} sudah mencapai batas pindah karena cuaca. Pengembalian dana masih bisa diminta.`,
     pickDay: 'Pilih tanggal baru',
     pickSession: (rwName: string) => `Sesi di ${rwName}`,
     noOptions:

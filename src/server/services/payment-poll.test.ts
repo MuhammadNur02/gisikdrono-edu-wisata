@@ -10,8 +10,13 @@ import {
   svcRecordPaymentEvent,
 } from '@/db/rpc-payments';
 import type { DatabaseClient } from '@/db/rpc-result';
-import { expireTransaction, getTransactionStatus } from '@/lib/midtrans/client';
-import { pollPayments } from '@/server/services/payment-poll';
+import {
+  svcMarkRefundRequest,
+  svcRefundRequestsToRetry,
+  svcSettleLapsedWeatherLinks,
+} from '@/db/rpc-terms';
+import { expireTransaction, getTransactionStatus, requestRefund } from '@/lib/midtrans/client';
+import { askMidtransForRefund, pollPayments } from '@/server/services/payment-poll';
 
 vi.mock('@/db/rpc-payments', () => ({
   svcApplyPaymentEvent: vi.fn(),
@@ -20,9 +25,15 @@ vi.mock('@/db/rpc-payments', () => ({
   svcPaymentsToPoll: vi.fn(),
   svcRecordPaymentEvent: vi.fn(),
 }));
+vi.mock('@/db/rpc-terms', () => ({
+  svcMarkRefundRequest: vi.fn(),
+  svcRefundRequestsToRetry: vi.fn(),
+  svcSettleLapsedWeatherLinks: vi.fn(),
+}));
 vi.mock('@/lib/midtrans/client', () => ({
   expireTransaction: vi.fn(),
   getTransactionStatus: vi.fn(),
+  requestRefund: vi.fn(),
 }));
 
 // The poll is handed its client by the job route; these calls never reach it, since every RPC is a mock.
@@ -48,7 +59,23 @@ beforeEach(() => {
   vi.mocked(svcRecordPaymentEvent).mockResolvedValue({ eventId: 7, isProcessed: false });
   vi.mocked(svcApplyPaymentEvent).mockResolvedValue(APPLIED);
   vi.mocked(svcPaymentsHousekeeping).mockResolvedValue({ suspended: 0, reminded: 1 });
+  vi.mocked(svcRefundRequestsToRetry).mockResolvedValue([]);
+  vi.mocked(svcSettleLapsedWeatherLinks).mockResolvedValue({
+    auto_refunded: 0,
+    kept: 0,
+    cancelled: 0,
+    held: 0,
+  });
 });
+
+const REFUND = {
+  requestId: '3f1c2a6e-5b7d-4e8f-9a0b-1c2d3e4f5a6b',
+  status: 'requested' as const,
+  refundKey: 'GSK-7F3K9Q2M-01-R01',
+  orderId: 'GSK-7F3K9Q2M-01',
+  amount: 270000,
+};
+const NOTHING_NEW = { eventId: 8, isProcessed: true };
 
 describe('pollPayments', () => {
   it('stores the Status API answer as a poll event and applies it as its own confirmation', async () => {
@@ -58,6 +85,9 @@ describe('pollPayments', () => {
       failed: 0,
       suspended: 0,
       reminded: 1,
+      refundsRetried: 0,
+      weatherRefunded: 0,
+      weatherHeld: 0,
     });
     expect(svcRecordPaymentEvent).toHaveBeenCalledWith(adminClient, {
       source: 'poll',
@@ -104,5 +134,96 @@ describe('pollPayments', () => {
     vi.mocked(getTransactionStatus).mockRejectedValue(new Error('unreachable'));
     await expect(pollPayments(adminClient)).resolves.toMatchObject({ failed: 1, reminded: 1 });
     expect(svcPaymentsHousekeeping).toHaveBeenCalled();
+  });
+});
+
+describe('askMidtransForRefund (review of PR #69, M1)', () => {
+  it('marks a refund Midtrans took submitted', async () => {
+    vi.mocked(requestRefund).mockResolvedValue({ outcome: 'accepted', statusCode: '200' });
+    await expect(askMidtransForRefund(adminClient, REFUND)).resolves.toBe('accepted');
+    expect(svcMarkRefundRequest).toHaveBeenCalledWith(adminClient, {
+      requestId: REFUND.requestId,
+      status: 'submitted',
+      statusCode: '200',
+      reason: null,
+    });
+    expect(getTransactionStatus).not.toHaveBeenCalled();
+  });
+
+  it('marks it failed only when Midtrans refuses it in so many words', async () => {
+    vi.mocked(requestRefund).mockResolvedValue({ outcome: 'refused', statusCode: '412' });
+    await askMidtransForRefund(adminClient, REFUND);
+    expect(svcMarkRefundRequest).toHaveBeenCalledWith(
+      adminClient,
+      expect.objectContaining({ status: 'failed', statusCode: '412', reason: 'midtrans_refused' }),
+    );
+  });
+
+  it('keeps a refund with no answer requested and asks the Status API at once', async () => {
+    vi.mocked(requestRefund).mockResolvedValue({ outcome: 'unknown', statusCode: null });
+    vi.mocked(svcRecordPaymentEvent).mockResolvedValue(NOTHING_NEW);
+    await askMidtransForRefund(adminClient, REFUND);
+    expect(svcMarkRefundRequest).toHaveBeenCalledWith(
+      adminClient,
+      expect.objectContaining({ status: 'requested', reason: null }),
+    );
+    expect(getTransactionStatus).toHaveBeenCalledWith(REFUND.orderId, expect.any(Number));
+  });
+
+  it('survives a Status API that does not answer either', async () => {
+    vi.mocked(requestRefund).mockResolvedValue({ outcome: 'unknown', statusCode: null });
+    vi.mocked(getTransactionStatus).mockRejectedValue(new Error('unreachable'));
+    await expect(askMidtransForRefund(adminClient, REFUND)).resolves.toBe('unknown');
+  });
+});
+
+describe('pollPayments and the refunds left open (review of PR #69, H1)', () => {
+  beforeEach(() => {
+    vi.mocked(svcPaymentsToPoll).mockResolvedValue([]);
+  });
+
+  it('books a refund the Status API shows done without calling the refund API again', async () => {
+    vi.mocked(svcRefundRequestsToRetry).mockResolvedValue([REFUND]);
+    await expect(pollPayments(adminClient)).resolves.toMatchObject({ refundsRetried: 1 });
+    expect(svcApplyPaymentEvent).toHaveBeenCalled();
+    expect(requestRefund).not.toHaveBeenCalled();
+  });
+
+  it('calls the refund API again, with the same key, for a request still without an answer', async () => {
+    vi.mocked(svcRefundRequestsToRetry).mockResolvedValue([REFUND]);
+    vi.mocked(svcRecordPaymentEvent).mockResolvedValue(NOTHING_NEW);
+    vi.mocked(requestRefund).mockResolvedValue({ outcome: 'accepted', statusCode: '200' });
+    await pollPayments(adminClient);
+    expect(requestRefund).toHaveBeenCalledWith(
+      expect.objectContaining({ refundKey: REFUND.refundKey, amount: REFUND.amount }),
+    );
+  });
+
+  it('only counts another look at a request Midtrans already took', async () => {
+    vi.mocked(svcRefundRequestsToRetry).mockResolvedValue([{ ...REFUND, status: 'submitted' }]);
+    vi.mocked(svcRecordPaymentEvent).mockResolvedValue(NOTHING_NEW);
+    await pollPayments(adminClient);
+    expect(requestRefund).not.toHaveBeenCalled();
+    expect(svcMarkRefundRequest).toHaveBeenCalledWith(
+      adminClient,
+      expect.objectContaining({ status: 'submitted' }),
+    );
+  });
+});
+
+describe('pollPayments and the weather windows (decision of 2026-10-25, rule 2)', () => {
+  it('settles the closed windows and reports the refunds and the bookings held', async () => {
+    vi.mocked(svcPaymentsToPoll).mockResolvedValue([]);
+    vi.mocked(svcSettleLapsedWeatherLinks).mockResolvedValue({
+      auto_refunded: 2,
+      kept: 1,
+      cancelled: 0,
+      held: 1,
+    });
+    await expect(pollPayments(adminClient)).resolves.toMatchObject({
+      weatherRefunded: 2,
+      weatherHeld: 1,
+    });
+    expect(svcSettleLapsedWeatherLinks).toHaveBeenCalledWith(adminClient, 20);
   });
 });

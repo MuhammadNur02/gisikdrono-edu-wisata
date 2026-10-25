@@ -83,6 +83,13 @@ export const templateParamsSchemas = {
     time: moment,
   }),
   booking_link: z.strictObject({ name, booking_code: bookingCode }),
+  weather_disruption: z.strictObject({
+    name,
+    booking_code: bookingCode,
+    rw: label,
+    date: visitDate,
+    deadline: moment,
+  }),
 } satisfies Record<NotificationTemplate, z.ZodType>;
 
 export type TemplateParams<Template extends NotificationTemplate> = z.infer<

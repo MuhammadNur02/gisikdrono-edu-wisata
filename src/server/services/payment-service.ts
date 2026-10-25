@@ -14,7 +14,7 @@ import {
   type WebhookRejection,
 } from '@/db/rpc-payments';
 import type { DatabaseClient } from '@/db/rpc-result';
-import { svcMarkRefundRequest, type CancellationOutcome } from '@/db/rpc-terms';
+import type { CancellationOutcome } from '@/db/rpc-terms';
 import { copy } from '@/lib/copy/id';
 import { serverEnv } from '@/lib/env';
 import { AppError } from '@/lib/errors';
@@ -24,7 +24,6 @@ import {
   createSnapTransaction,
   expireTransaction,
   getTransactionStatus,
-  requestRefund,
   WEBHOOK_STATUS_TIMEOUT_MS,
 } from '@/lib/midtrans/client';
 import { mapMidtransStatus, needsStatusConfirmation } from '@/lib/midtrans/map-status';
@@ -38,6 +37,7 @@ import { withinRateLimits, type RateLimitCheck } from '@/lib/rate-limit';
 // the internal.* functions behind the svc_* wrappers.
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { jsonValueSchema } from '@/lib/validations/json-value';
+import { askMidtransForRefund } from '@/server/services/payment-poll';
 import {
   openAttemptOf,
   paymentPageOf,
@@ -55,8 +55,6 @@ const MIN_HOLD_LEFT_MINUTES = 5;
 const MIN_HOLD_LEFT_MS = MIN_HOLD_LEFT_MINUTES * MS_PER_MINUTE;
 // An attempt this young without its Snap page is another request still asking Midtrans for one.
 const SNAP_REQUEST_GRACE_MS = 20_000;
-// What Midtrans records as the reason of a refund the visit terms gave (docs/PRD.md §13.1 A16).
-const CANCELLATION_REFUND_REASON = 'Pembatalan kunjungan sesuai syarat kunjungan';
 
 export function withinPaymentLimits(checks: readonly RateLimitCheck[]): Promise<boolean> {
   return withinRateLimits(createSupabaseAdminClient(), checks);
@@ -220,32 +218,12 @@ export async function recordWebhookRejection(
 }
 
 // docs/PRD.md §13.1 A16 (Task P3.12.02): what a cancellation leaves for Midtrans, after its commit and best effort.
-// Its open orders end; a QRIS refund is asked of Midtrans' refund API and the request marked submitted or failed. A
-// Virtual Account refund waits for the treasurer's transfer and record_refund, so nothing is called for it.
+// Its open orders end; a QRIS refund is asked of Midtrans' refund API (payment-poll.ts askMidtransForRefund), and one
+// that got no answer is asked again by payments-poll. A Virtual Account refund waits for the treasurer's transfer and
+// record_refund, so nothing is called for it.
 export async function settleCancellation(outcome: CancellationOutcome): Promise<void> {
   await expireClosedOrders(outcome.closeOrders);
   const refund = outcome.refund;
   if (refund?.method !== 'qris') return;
-  const adminClient = createSupabaseAdminClient();
-  try {
-    const answer = await requestRefund({
-      orderId: refund.orderId,
-      refundKey: refund.refundKey,
-      amount: refund.amount,
-      reason: CANCELLATION_REFUND_REASON,
-    });
-    await svcMarkRefundRequest(adminClient, {
-      requestId: refund.requestId,
-      status: answer.accepted ? 'submitted' : 'failed',
-      statusCode: answer.statusCode,
-      reason: answer.accepted ? null : 'midtrans_refused',
-    });
-  } catch {
-    await svcMarkRefundRequest(adminClient, {
-      requestId: refund.requestId,
-      status: 'failed',
-      statusCode: null,
-      reason: 'midtrans_unreachable',
-    });
-  }
+  await askMidtransForRefund(createSupabaseAdminClient(), refund);
 }

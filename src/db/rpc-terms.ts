@@ -96,9 +96,19 @@ export interface CancellationOutcome {
   } | null;
 }
 
+// The refund the visitor saw goes with the cancellation; the database answers PRICE_MISMATCH when its own figure has
+// moved since (review of PR #69, M3).
+export interface CancellationRequest {
+  bookingId: string;
+  reason: string;
+  kind: RefundKind;
+  expectedAmount: number;
+  expectedPct: number | null;
+}
+
 export async function svcCancelBooking(
   adminClient: DatabaseClient,
-  request: { bookingId: string; reason: string; kind: RefundKind },
+  request: CancellationRequest,
 ): Promise<CancellationOutcome> {
   const reply = cancelReplySchema.parse(
     await resultOf(
@@ -106,6 +116,8 @@ export async function svcCancelBooking(
         p_booking_id: request.bookingId,
         p_reason: request.reason,
         p_kind: request.kind,
+        p_expected_amount: request.expectedAmount,
+        ...(request.expectedPct === null ? {} : { p_expected_pct: request.expectedPct }),
       }),
     ),
   );
@@ -121,12 +133,13 @@ export async function svcCancelBooking(
   };
 }
 
-// After Midtrans' refund call: submitted when Midtrans took it, failed (with its status code) when it refused.
+// After Midtrans' refund call: submitted when Midtrans took it, failed (with its status code) when it refused in so
+// many words, requested when no answer came, so payments-poll tries again (review of PR #69, M1).
 export async function svcMarkRefundRequest(
   adminClient: DatabaseClient,
   report: {
     requestId: string;
-    status: 'submitted' | 'failed';
+    status: 'requested' | 'submitted' | 'failed';
     statusCode: string | null;
     reason: string | null;
   },
@@ -145,19 +158,74 @@ const rescheduleReplySchema = z.strictObject({
   result: z.literal('rescheduled'),
   visit_date: z.string(),
   moves: z.int().positive(),
+  moves_left: z.int().nonnegative(),
 });
 
+// Decision of 2026-10-25 on the weather, rule 3: the one leg the notice stopped moves to sessionId.
 export async function svcRescheduleForWeather(
   adminClient: DatabaseClient,
-  request: { bookingId: string; sessionIds: string[] },
-): Promise<{ visitDate: string; moves: number }> {
+  request: { bookingId: string; sessionId: string },
+): Promise<{ visitDate: string; moves: number; movesLeft: number }> {
   const reply = rescheduleReplySchema.parse(
     await resultOf(
       adminClient.rpc('svc_reschedule_for_weather', {
         p_booking_id: request.bookingId,
-        p_session_ids: request.sessionIds,
+        p_session_id: request.sessionId,
       }),
     ),
   );
-  return { visitDate: reply.visit_date, moves: reply.moves };
+  return { visitDate: reply.visit_date, moves: reply.moves, movesLeft: reply.moves_left };
+}
+
+const settledSchema = z.strictObject({
+  auto_refunded: z.int().nonnegative(),
+  kept: z.int().nonnegative(),
+  cancelled: z.int().nonnegative(),
+  held: z.int().nonnegative(),
+});
+
+// Rule 2, for payments-poll: the weather windows that closed, settled; held counts the bookings left paid for the
+// superadmin while their method's Midtrans fee is not set.
+export async function svcSettleLapsedWeatherLinks(
+  adminClient: DatabaseClient,
+  limit: number,
+): Promise<z.infer<typeof settledSchema>> {
+  return settledSchema.parse(
+    await resultOf(adminClient.rpc('svc_settle_lapsed_weather_links', { p_limit: limit })),
+  );
+}
+
+const retrySchema = z.array(
+  z.strictObject({
+    request_id: z.uuid(),
+    status: z.enum(['requested', 'submitted']),
+    refund_key: z.string(),
+    order_id: z.string(),
+    amount: z.int().positive(),
+  }),
+);
+
+export interface RefundToRetry {
+  requestId: string;
+  status: 'requested' | 'submitted';
+  refundKey: string;
+  orderId: string;
+  amount: number;
+}
+
+// The QRIS refunds payments-poll looks at again (review of PR #69, H1): last tried more than ten minutes ago.
+export async function svcRefundRequestsToRetry(
+  adminClient: DatabaseClient,
+  limit: number,
+): Promise<RefundToRetry[]> {
+  const rows = retrySchema.parse(
+    await resultOf(adminClient.rpc('svc_refund_requests_to_retry', { p_limit: limit })),
+  );
+  return rows.map((row) => ({
+    requestId: row.request_id,
+    status: row.status,
+    refundKey: row.refund_key,
+    orderId: row.order_id,
+    amount: row.amount,
+  }));
 }

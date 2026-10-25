@@ -2,11 +2,9 @@ import 'server-only';
 
 import { z } from 'zod';
 
-import { WEATHER_RESCHEDULE_REASON } from '@/config/booking';
 import type { DatabaseClient } from '@/db/rpc-result';
-import { sessionStartsAt, toVisitDate } from '@/lib/utils/dates';
 import { paymentPageOf } from '@/server/services/payment-reads';
-import type { HubEvent, StatusHubView, WeatherOption, WeatherState } from '@/types/booking-hub';
+import type { HubEvent, StatusHubView } from '@/types/booking-hub';
 
 // The reads behind the status hub (Task P3.12.01), on the service-role client booking-service.ts hands in, keyed by
 // the booking id a verified guest link gave (CLAUDE.md §6.1). Nothing here writes, and nothing here reads a contact:
@@ -182,132 +180,5 @@ export async function statusHubOf(
     ticketCount,
     refund,
     terms,
-  };
-}
-
-// ===== Weather (docs/PRD.md §13.1 A17) =====
-
-const WEATHER_SETTING_KEYS = [
-  'booking.weather_window_hours',
-  'booking.weather_reschedule_max',
-] as const;
-const HOUR_MS = 3_600_000;
-// How far ahead the hub offers a new day: the booking window's own limit is checked again by the database.
-const WEATHER_OPTION_DAYS = 60;
-const HOURS_PER_DAY = 24;
-const DAY_MS = HOURS_PER_DAY * HOUR_MS;
-
-async function weatherRulesOf(adminClient: DatabaseClient) {
-  const { data, error } = await adminClient
-    .from('site_settings')
-    .select('key, value')
-    .in('key', WEATHER_SETTING_KEYS);
-  if (error) throw error;
-  const numberOf = (key: string) => {
-    const value = data.find((row) => row.key === key)?.value;
-    return typeof value === 'number' ? value : 0;
-  };
-  return {
-    windowHours: numberOf('booking.weather_window_hours'),
-    maxMoves: numberOf('booking.weather_reschedule_max'),
-  };
-}
-
-async function legsOf(adminClient: DatabaseClient, bookingId: string) {
-  const { data, error } = await adminClient
-    .from('booking_legs')
-    .select('leg_order, rw_id, pax_count, visit_session_id, rw_units(name)')
-    .eq('booking_id', bookingId)
-    .order('leg_order');
-  if (error) throw error;
-  return data;
-}
-
-async function latestNoticeOf(adminClient: DatabaseClient, sessionIds: string[]) {
-  const { data, error } = await adminClient
-    .from('weather_notices')
-    .select('declared_at, reason')
-    .in('visit_session_id', sessionIds)
-    .order('declared_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  return data;
-}
-
-async function weatherMovesOf(adminClient: DatabaseClient, bookingId: string): Promise<number> {
-  const { count, error } = await adminClient
-    .from('booking_events')
-    .select('id', { count: 'exact', head: true })
-    .eq('booking_id', bookingId)
-    .eq('reason', WEATHER_RESCHEDULE_REASON);
-  if (error) throw error;
-  return count ?? 0;
-}
-
-// The open sessions of one RW a leg of p_pax may move to: ahead, not the one it leaves, with room for the group.
-async function sessionOptionsOf(
-  adminClient: DatabaseClient,
-  leg: { rw_id: number; pax_count: number; visit_session_id: string },
-  now: Date,
-): Promise<WeatherOption[]> {
-  const today = toVisitDate(now);
-  const last = toVisitDate(new Date(now.getTime() + WEATHER_OPTION_DAYS * DAY_MS));
-  const { data, error } = await adminClient
-    .from('v_session_availability')
-    .select('id, session_date, start_time, end_time, label, remaining')
-    .eq('rw_id', leg.rw_id)
-    .gte('session_date', today)
-    .lte('session_date', last)
-    .gte('remaining', leg.pax_count)
-    .neq('id', leg.visit_session_id)
-    .order('session_date')
-    .order('start_time');
-  if (error) throw error;
-  return data
-    .flatMap((row) =>
-      row.id && row.session_date && row.start_time && row.end_time && row.remaining !== null
-        ? [
-            {
-              sessionId: row.id,
-              sessionDate: row.session_date,
-              startTime: row.start_time,
-              endTime: row.end_time,
-              label: row.label,
-              remaining: row.remaining,
-            },
-          ]
-        : [],
-    )
-    .filter((option) => sessionStartsAt(option.sessionDate, option.startTime) > now);
-}
-
-// A booking's weather state, or null when no notice is open for it: when the window closes, the moves left and, for
-// each leg, the sessions it may move to.
-export async function weatherStateOf(
-  adminClient: DatabaseClient,
-  bookingId: string,
-  now: Date = new Date(),
-): Promise<WeatherState | null> {
-  const legs = await legsOf(adminClient, bookingId);
-  const notice = await latestNoticeOf(
-    adminClient,
-    legs.map((leg) => leg.visit_session_id),
-  );
-  if (!notice) return null;
-  const rules = await weatherRulesOf(adminClient);
-  const openUntil = new Date(Date.parse(notice.declared_at) + rules.windowHours * HOUR_MS);
-  if (openUntil <= now) return null;
-  const moves = await weatherMovesOf(adminClient, bookingId);
-  return {
-    openUntil: openUntil.toISOString(),
-    reason: notice.reason,
-    movesLeft: Math.max(rules.maxMoves - moves, 0),
-    legs: await Promise.all(
-      legs.map(async (leg) => ({
-        rwName: leg.rw_units.name,
-        options: await sessionOptionsOf(adminClient, leg, now),
-      })),
-    ),
   };
 }

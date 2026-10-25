@@ -201,7 +201,9 @@ describe('the dates a package can be booked on', () => {
     expect(days.get('2026-11-12')).toEqual({ seats: 30, state: 'open' });
     expect(days.get('2026-11-13')).toEqual({ seats: 4, state: 'full' });
     expect(days.get('2026-11-14')).toEqual({ seats: 0, state: 'closed' });
-    const nearlyFull = [{ ...legs[0], sessions: [session('f', 5, '2026-11-20', 7)] }] as BookableLeg[];
+    const nearlyFull = [
+      { ...legs[0], sessions: [session('f', 5, '2026-11-20', 7)] },
+    ] as BookableLeg[];
     expect(dayAvailability(nearlyFull, 5).get('2026-11-20')).toEqual({ seats: 7, state: 'busy' });
   });
 

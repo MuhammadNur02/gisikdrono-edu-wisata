@@ -57,4 +57,6 @@ export const WHATSAPP_TEMPLATE_NAMES = {
   security_alert: 'gsk_security_alert_v1',
   // Decision of 2026-10-21 (Task P3.3.03): the link a visitor asks for again at /reservasi/cari.
   booking_link: 'gsk_booking_link_v1',
+  // Decision of 2026-10-25 on the weather, rule 4; sent by email only until Meta approves it (docs/notifications.md).
+  weather_disruption: 'gsk_weather_disruption_v1',
 } as const satisfies Record<EnumValue<'notification_template'>, string>;
