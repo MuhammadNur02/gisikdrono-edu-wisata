@@ -31,6 +31,8 @@ const REFUSALS: Readonly<Record<string, { code: ActionErrorCode; message: string
   SHARE_TOO_LARGE: { code: 'VALIDATION', message: adjustmentsCopy.errors.SHARE_TOO_LARGE },
   LEDGER_MISSING: { code: 'STATE_INVALID', message: adjustmentsCopy.errors.LEDGER_MISSING },
   REFUND_NOT_AT_MIDTRANS: { code: 'STATE_INVALID', message: adjustmentsCopy.errors.REFUND_NOT_AT_MIDTRANS },
+  REFUND_KEY_MISMATCH: { code: 'STATE_INVALID', message: adjustmentsCopy.errors.REFUND_KEY_MISMATCH },
+  REFUND_LIST_MISSING: { code: 'STATE_INVALID', message: adjustmentsCopy.errors.REFUND_LIST_MISSING },
 };
 
 // The readable refusal for a finance RPC's error, or null to let mapError decide.

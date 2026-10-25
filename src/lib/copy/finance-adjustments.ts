@@ -84,6 +84,10 @@ export const adjustmentsCopy = {
       'Pemesanan ini belum punya entri bagi hasil, jadi refund sebagian belum bisa dicatat. Selesaikan pembagiannya dulu.',
     PROOF_MISSING: 'Bukti belum tersimpan. Unggah ulang lalu coba lagi.',
     PROOF_REUSED: 'Berkas bukti ini sudah dipakai untuk refund atau penyesuaian lain. Unggah bukti yang sesuai.',
+    REFUND_KEY_MISMATCH:
+      'Midtrans mencatat refund penyesuaian ini dengan jumlah lain. Periksa refund di dasbor Midtrans sebelum mencatat refund berikutnya.',
+    REFUND_LIST_MISSING:
+      'Jawaban terakhir Midtrans tidak merinci refund-nya, padahal ada refund manual yang belum terhitung. Tekan Cek status Midtrans lalu coba lagi.',
     REFUND_NOT_AT_MIDTRANS:
       'Midtrans belum mencatat refund sebesar itu untuk pembayaran ini. Refund lewat transfer bank dicatat sebagai penyesuaian Refund manual.',
   },
