@@ -75,6 +75,7 @@ export const documentsCopy = {
     number: 'Nomor',
     institution: 'Instansi',
     recipient: 'Penerima',
+    recipientRemoved: 'Nama sudah dihapus sesuai masa simpan data',
     validUntil: 'Berlaku sampai',
     visitDate: 'Tanggal kunjungan',
     version: (version: number) => `Versi ${String(version)}`,
