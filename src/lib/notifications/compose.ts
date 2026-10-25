@@ -38,6 +38,8 @@ export type GuestTemplate = Exclude<
 const rowParamsSchema = z.looseObject({
   quotation_number: z.string().optional(),
   valid_until: z.string().optional(),
+  // record_refund queues each refund with its own amount (review of PR #68, L4).
+  refund_amount: z.number().int().positive().optional(),
 });
 
 interface GuestParamsInput {
@@ -85,7 +87,10 @@ const GUEST_PARAMS: Record<GuestTemplate, (input: GuestParamsInput) => Record<st
   }),
   checked_in_thanks: ({ name, facts }) => ({ name, institution: facts.institution }),
   review_invite: ({ name }) => ({ name }),
-  refund_processed: (input) => ({ ...named(input), amount: input.facts.refundedAmount }),
+  refund_processed: (input) => ({
+    ...named(input),
+    amount: input.queued?.refund_amount ?? input.facts.refundedAmount,
+  }),
   booking_expired: named,
   booking_cancelled: named,
   certificate_ready: named,

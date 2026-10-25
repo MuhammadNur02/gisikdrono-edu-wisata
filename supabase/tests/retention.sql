@@ -86,6 +86,7 @@ select is(
 select ok(
   (select (metadata ->> 'participants_deleted')::int >= 1 and metadata ? 'certificates_marked' and metadata ? 'exports_marked'
    from public.audit_logs where action = 'purge_run' and metadata ->> 'job' = 'purge_participants'
+     and occurred_at = now()
    order by id desc limit 1),
   'the run leaves a purge_run row with its counts'
 );
@@ -142,6 +143,7 @@ select is(
 select ok(
   (select (metadata ->> 'bookings_anonymised')::int >= 3 and metadata ? 'participants_deleted' and metadata ? 'otps_deleted'
    from public.audit_logs where action = 'purge_run' and metadata ->> 'job' = 'anonymise_booker_pii'
+     and occurred_at = now()
    order by id desc limit 1),
   'the run leaves a purge_run row with its counts'
 );
@@ -231,6 +233,7 @@ select is(
 select is(
   (select jsonb_build_object('id', (metadata ->> 'audit_anchor_id')::bigint, 'hash', metadata ->> 'audit_anchor_hash')
    from public.audit_logs where action = 'purge_run' and metadata ->> 'job' = 'prune_operational_tables'
+     and occurred_at = now()
    order by id desc limit 1),
   (select jsonb_build_object('id', id, 'hash', entry_hash) from old_audit_row),
   'the purge_run row keeps the last pruned row''s hash as the new anchor'
