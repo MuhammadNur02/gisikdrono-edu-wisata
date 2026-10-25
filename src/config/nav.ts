@@ -74,6 +74,8 @@ export const DASHBOARD_NAV_GROUPS: readonly DashboardNavGroup[] = [
       },
       { label: 'Scanner', href: '/dashboard/scanner', icon: ScanLine, roles: BOTH_ROLES },
       { label: 'Kehadiran', href: '/dashboard/attendance', icon: UserCheck, roles: BOTH_ROLES },
+      // An RW admin exports their own RW's attendance; the superadmin every kind (Task P4.6.03).
+      { label: 'Ekspor', href: '/dashboard/exports', icon: Download, roles: BOTH_ROLES },
       { label: 'Sertifikat', href: '/dashboard/certificates', icon: Award, roles: BOTH_ROLES },
     ],
   },
@@ -134,7 +136,6 @@ export const DASHBOARD_NAV_GROUPS: readonly DashboardNavGroup[] = [
         icon: SlidersHorizontal,
         roles: SUPERADMIN_ONLY,
       },
-      { label: 'Ekspor', href: '/dashboard/exports', icon: Download, roles: SUPERADMIN_ONLY },
     ],
   },
   {

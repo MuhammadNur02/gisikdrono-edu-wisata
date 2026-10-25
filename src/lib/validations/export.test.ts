@@ -17,16 +17,24 @@ function fieldErrorsOf(input: unknown): Record<string, string[] | undefined> {
 }
 
 describe('exportRequestSchema', () => {
-  it('accepts a request of every kind and both formats', () => {
+  it('accepts a request of every kind in CSV and XLSX, the audit log in CSV only', () => {
     for (const kind of ['visits', 'attendance', 'finance', 'audit']) {
-      for (const format of ['csv', 'xlsx']) {
-        expect(exportRequestSchema.safeParse({ ...REQUEST, kind, format }).success).toBe(true);
-      }
+      expect(exportRequestSchema.safeParse({ ...REQUEST, kind, format: 'csv' }).success).toBe(true);
     }
+    for (const kind of ['visits', 'attendance', 'finance']) {
+      expect(exportRequestSchema.safeParse({ ...REQUEST, kind, format: 'xlsx' }).success).toBe(
+        true,
+      );
+    }
+    expect(fieldErrorsOf({ ...REQUEST, kind: 'audit', format: 'xlsx' }).format).toEqual([
+      'Log audit hanya bisa diekspor sebagai CSV.',
+    ]);
   });
 
-  it('rejects an extra field, so no column list or RW can be smuggled in', () => {
-    expect(exportRequestSchema.safeParse({ ...REQUEST, rwId: 8 }).success).toBe(false);
+  it('takes an RW to narrow to, and rejects an extra field, so no column list can be smuggled in', () => {
+    expect(exportRequestSchema.safeParse({ ...REQUEST, rwId: 8 }).success).toBe(true);
+    expect(exportRequestSchema.safeParse({ ...REQUEST, rwId: 0 }).success).toBe(false);
+    expect(exportRequestSchema.safeParse({ ...REQUEST, rwId: '05' }).success).toBe(false);
     expect(exportRequestSchema.safeParse({ ...REQUEST, columns: ['pic_phone'] }).success).toBe(
       false,
     );
