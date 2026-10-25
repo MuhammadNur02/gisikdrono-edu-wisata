@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { expect, test, type Locator, type Page, type Request, type Response } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Response } from '@playwright/test';
 
 import {
   ADMIN_RW05,
@@ -44,8 +44,8 @@ const SIGN_IN_TRIES = 6;
 const SWITCH_STEP = { timeout: 90_000 };
 // F-74-3: each wait has its own bound, and together they stay inside the test's own timeout (SWITCH_TEST_MS).
 const SETTLE_STEP = { timeout: 20_000 };
-// From before the click, so it covers the click's own wait for an enabled button (SETTLE_STEP) as well.
-const NO_POST_WAIT = { timeout: 30_000 };
+// How long after a click the button must show that the switch took it (D4 of the delta review of PR #72).
+const CLICK_TAKEN_WAIT = { timeout: 10_000 };
 const SWITCH_TEST_MS = 240_000;
 const SWITCH_CLICKS = 2;
 const HTTP_OK = 200;
@@ -173,25 +173,31 @@ function isRwScopeAnswer(response: Response): Promise<boolean> | boolean {
     .then((cookie) => cookie?.includes(`${RW_SCOPE_COOKIE}=`) ?? false);
 }
 
-function isServerActionPost(request: Request): boolean {
-  return request.method() === 'POST' && request.headers()['next-action'] !== undefined;
+// The switch took the click when its button is disabled for the transition (rw-switcher.tsx) or, after a quick answer,
+// pressed: the button's own state, never some other action's POST.
+async function isClickTaken(button: Locator): Promise<boolean> {
+  const taken = async () =>
+    (await button.isDisabled()) || (await button.getAttribute('aria-pressed')) === 'true';
+  return expect
+    .poll(taken, CLICK_TAKEN_WAIT)
+    .toBe(true)
+    .then(
+      () => true,
+      () => false,
+    );
 }
 
-// A click that lands before the button hydrated sends nothing (F-74-1), so a click no POST followed within
-// NO_POST_WAIT is made once more, at most SWITCH_CLICKS in all. A POST that was sent is only waited for.
+// A click that lands before the button hydrated does nothing (F-74-1), so a click the button does not take within
+// CLICK_TAKEN_WAIT is made once more, at most SWITCH_CLICKS in all. A click that was taken is only waited for.
 async function switchRw(page: Page, button: Locator): Promise<{ answer: Response; clicks: number }> {
   const answer = page.waitForResponse(isRwScopeAnswer, SWITCH_STEP);
   // Awaited below; this only keeps a timeout during the clicks from reading as an unhandled rejection.
   answer.catch(() => undefined);
   let clicks = 0;
   while (clicks < SWITCH_CLICKS) {
-    const sent = page.waitForRequest(isServerActionPost, NO_POST_WAIT).then(
-      () => true,
-      () => false,
-    );
     await button.click(SETTLE_STEP);
     clicks += 1;
-    if (await sent) break;
+    if (await isClickTaken(button)) break;
   }
   return { answer: await answer, clicks };
 }
