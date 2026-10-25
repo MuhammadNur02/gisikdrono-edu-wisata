@@ -206,6 +206,15 @@ describe('certificatePdf', () => {
   });
 });
 
+describe('a split that does not match', () => {
+  it('keeps nothing when the document has another number of pages than certificates', async () => {
+    vi.mocked(splitPdfPages).mockResolvedValueOnce([BUNDLE]);
+    const { client, calls } = fakeStack({ rows: [GROUP, ANI, BUDI] });
+    await expect(certificatePdf(client, ANI, CONTEXT)).rejects.toThrow();
+    expect(recordedPaths(calls)).toEqual([]);
+  });
+});
+
 describe('rerenderBookingCertificates', () => {
   it('renders the group and the class again over their kept files', async () => {
     const { client, calls } = fakeStack({ rows: [GROUP, ANI, BUDI] });

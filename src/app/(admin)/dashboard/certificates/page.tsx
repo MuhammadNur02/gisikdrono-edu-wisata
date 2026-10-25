@@ -21,6 +21,8 @@ import type { ListFacet } from '@/types/data-table';
 const text = certificatesCopy.dashboard;
 
 export const metadata: Metadata = { title: text.title };
+// "Render ulang PDF" runs on this page's Server Action and may render a whole class (docs/Security.md §10.4).
+export const maxDuration = 60;
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 

@@ -85,6 +85,28 @@ describe('the e-certificate', () => {
     SLOW_MS,
   );
 
+  it(
+    'keeps a certificate on one page at the longest name, class and institution the database allows',
+    async () => {
+      const longest = page({
+        kind: 'participant',
+        recipientName: 'Ananda '.repeat(17).slice(0, 120),
+        groupLabel: 'Kelas '.repeat(10).slice(0, 60),
+        institutionName: 'Sekolah Dasar Negeri '.repeat(15).slice(0, 300),
+        rwNames: [
+          'RW 05 Ecowastreme',
+          'RW 13 Kampung Budaya & Seni',
+          'RW 08 Kampung Inklusif & Ramah Anak',
+        ],
+      });
+      const { pageCount } = await pdfText(
+        await renderCertificatePdf({ ...INPUT, pages: [longest] }),
+      );
+      expect(pageCount).toBe(1);
+    },
+    SLOW_MS,
+  );
+
   it('builds the verify URL from the site and the code only', () => {
     expect(certificateVerifyUrl(SITE, '7F3K9Q2M4A')).toBe(`${SITE}/verifikasi/7F3K9Q2M4A`);
   });

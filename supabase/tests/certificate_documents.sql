@@ -112,8 +112,8 @@ update public.certificates set rendered_at = now() - interval '1 day' where id =
 select lives_ok(format($$select internal.record_document_pdf('certificate', %L, %L, %L)$$,
   (pg_temp.file('group')).id, (pg_temp.file('group')).path, pg_temp.persona_id('superadmin_aal2')),
   'recording the same file again is the re-render');
-select ok((select c.rendered_at > now() - interval '1 minute' from public.certificates c
-           where c.id = (pg_temp.file('group')).id), 'which stamps rendered_at anew');
+select is((select c.rendered_at from public.certificates c where c.id = (pg_temp.file('group')).id), now(),
+  'which moves rendered_at from the day before back to this render');
 
 -- ===== Refusals =====
 select throws_ok(format($$select internal.record_document_pdf('certificate', %L, %L, null)$$,

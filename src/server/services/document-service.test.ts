@@ -9,6 +9,7 @@ import {
   createDocumentSignedUrl,
   isDocumentPathFor,
   purgeMarkedFiles,
+  rerenderCertificateFiles,
   SIGNED_URL_TTL_SECONDS,
   withinBookletDownloadLimit,
 } from './document-service';
@@ -217,6 +218,26 @@ describe('createDocumentSignedUrl', () => {
     });
 
     await expect(createDocumentSignedUrl(client, ticketPath, 'ticket')).rejects.toBeDefined();
+  });
+});
+
+describe('certificate re-render', () => {
+  it('refuses past five an hour per staff member before anything is read or rendered', async () => {
+    const { client, requests } = clientWith({
+      'GET /rest/v1/site_settings': { status: 200, body: [{ value: 'normal' }] },
+      'POST /rest/v1/rpc/svc_rate_limit_hit': { status: 200, body: false },
+    });
+
+    await expect(
+      rerenderCertificateFiles('0192f3a4-5b6c-7d8e-9f01-0000000000bb', 'staff-1', client),
+    ).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+    const [body] = bodiesOf(requests, 'POST', '/rest/v1/rpc/svc_rate_limit_hit');
+    expect(body).toEqual({
+      p_key: rateLimitKey('certificate_rerender:user', 'staff-1'),
+      p_limit: 5,
+      p_window_seconds: 3600,
+    });
+    expect(requests.some((request) => request.path.endsWith('/certificates'))).toBe(false);
   });
 });
 

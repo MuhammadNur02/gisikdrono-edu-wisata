@@ -9,6 +9,7 @@ import {
   bookingTitle,
   hasHeldCertificates,
   isHeld,
+  unpaidCountShown,
 } from '@/components/admin/certificates/certificate-labels';
 import { RevokeForm, WaiveForm } from '@/components/admin/certificates/reason-form';
 import { StatusBadge } from '@/components/admin/status/status-badge';
@@ -100,11 +101,10 @@ function HoldNotice({
   booking: CertificateBooking;
   onWaive: (() => void) | null;
 }) {
+  const count = unpaidCountShown(booking, onWaive !== null);
   return (
     <FormAlert tone="info">
-      <span className="block">
-        {booking.unpaidPax > 0 ? text.heldHint(booking.unpaidPax) : text.heldHintNoCount}
-      </span>
+      <span className="block">{count === null ? text.heldHintNoCount : text.heldHint(count)}</span>
       {onWaive ? (
         <Button
           type="button"

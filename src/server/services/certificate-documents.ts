@@ -132,6 +132,9 @@ async function renderAndKeep(
     bundle,
     input.pages.map((page) => page.certificateNumber),
   );
+  // One page per certificate, or the files would carry the wrong person's page; nothing is kept then.
+  if (pages.length !== input.ids.length)
+    throw new Error('certificate pages do not match the certificates');
   const byId = new Map(certificates.map((certificate) => [certificate.id, certificate]));
   const files = input.ids.flatMap((id, index) => {
     const certificate = byId.get(id);

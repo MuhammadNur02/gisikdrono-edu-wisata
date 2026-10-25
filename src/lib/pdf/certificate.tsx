@@ -196,7 +196,8 @@ function CertificatePage({
 }) {
   const groupLine = groupLineOf(page);
   return (
-    <Page size="A4" orientation="landscape" style={styles.page}>
+    // wrap={false}: a certificate is one page, so a long name never pushes its signature onto a second one.
+    <Page size="A4" orientation="landscape" style={styles.page} wrap={false}>
       <View style={styles.frame}>
         <View style={styles.inner}>
           <Letterhead />

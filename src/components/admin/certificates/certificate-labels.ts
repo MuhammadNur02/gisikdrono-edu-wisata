@@ -16,3 +16,13 @@ export function isHeld(certificate: CertificateSummary): boolean {
 export function hasHeldCertificates(booking: CertificateBooking): boolean {
   return [booking.group, ...booking.participants].some(isHeld);
 }
+
+// The unpaid count is the gates this staff member sees: an RW admin sees one gate of a combo, so a combo's count is
+// only the superadmin's to show (review of PR #71, L6).
+export function unpaidCountShown(
+  booking: CertificateBooking,
+  isSuperadmin: boolean,
+): number | null {
+  if (booking.unpaidPax === 0) return null;
+  return isSuperadmin || booking.rwIds.length <= 1 ? booking.unpaidPax : null;
+}

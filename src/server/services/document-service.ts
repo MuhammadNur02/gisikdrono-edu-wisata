@@ -214,12 +214,16 @@ export function certificateDocumentFile(
 }
 
 // /dashboard/certificates "Render ulang" (FR-ADMIN-07): the caller has checked that the staff member may act on the
-// booking's certificates; the files are rewritten under their name.
-export function rerenderCertificateFiles(
+// booking's certificates; the files are rewritten under their name, within the staff member's hourly limit.
+export async function rerenderCertificateFiles(
   bookingId: string,
   staffId: string,
   adminClient: DatabaseClient = createSupabaseAdminClient(),
 ): Promise<number> {
+  const isWithinLimit = await withinRateLimits(adminClient, [
+    { name: 'certificate_rerender:user', subject: staffId },
+  ]);
+  if (!isWithinLimit) throw new AppError('RATE_LIMITED');
   return rerenderBookingCertificates(adminClient, bookingId, {
     siteUrl: publicEnv.NEXT_PUBLIC_SITE_URL,
     readerId: staffId,
