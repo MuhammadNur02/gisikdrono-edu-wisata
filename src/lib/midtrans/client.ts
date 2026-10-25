@@ -137,3 +137,39 @@ export async function expireTransaction(orderId: string): Promise<ExpireOutcome>
     parsed.data.status_code === EXPIRED_CODE || parsed.data.transaction_status === 'expire';
   return isExpired ? 'expired' : 'refused';
 }
+
+export interface RefundAnswer {
+  accepted: boolean;
+  statusCode: string | null;
+}
+
+// Midtrans takes a refund it can make (QRIS) with 200; any other code is a refusal the superadmin finishes by hand
+// (docs/PRD.md §13.1 A16). refund_key makes a retried call the same refund at Midtrans, never a second one.
+const REFUND_ACCEPTED_CODE = '200';
+
+export async function requestRefund(refund: {
+  orderId: string;
+  refundKey: string;
+  amount: number;
+  reason: string;
+}): Promise<RefundAnswer> {
+  const { api } = hosts();
+  const response = await send(
+    `${api}/v2/${encodeURIComponent(refund.orderId)}/refund`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        refund_key: refund.refundKey,
+        amount: refund.amount,
+        reason: refund.reason,
+      }),
+    },
+    DEFAULT_TIMEOUT_MS,
+  );
+  const parsed = midtransStatusSchema.safeParse(await readJson(response));
+  if (!parsed.success) return { accepted: false, statusCode: null };
+  return {
+    accepted: response.ok && parsed.data.status_code === REFUND_ACCEPTED_CODE,
+    statusCode: parsed.data.status_code,
+  };
+}

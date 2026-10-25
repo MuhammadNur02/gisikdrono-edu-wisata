@@ -18,6 +18,14 @@ import {
   type OtpIssue,
 } from '@/db/rpc-guest';
 import type { DatabaseClient } from '@/db/rpc-result';
+import {
+  svcCancelBooking,
+  svcRefundPreview,
+  svcRescheduleForWeather,
+  type CancellationOutcome,
+  type RefundKind,
+  type RefundQuote,
+} from '@/db/rpc-terms';
 import { AppError, raisedHintOf } from '@/lib/errors';
 import { mintGuestLink } from '@/lib/links/mint';
 import { isCurrentLink, readGuestLink } from '@/lib/links/verify';
@@ -30,6 +38,7 @@ import { refundRateLimits, withinRateLimits, type RateLimitCheck } from '@/lib/r
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 import type { SubmitReviewValues } from '@/lib/validations/review';
+import { statusHubOf, weatherStateOf } from '@/server/services/booking-hub-reads';
 import {
   bookingLimitsOf,
   bookingToCreate,
@@ -38,6 +47,7 @@ import {
   type BookingOutcome,
   type BookingRequest,
 } from '@/server/services/booking-request';
+import type { StatusHubView, WeatherState } from '@/types/booking-hub';
 
 // The guest side of a booking (Task P3.2, P3.3, P3.4): proving the PIC's phone with a one-time code, making the hold
 // or quotation booking itself, sending a link again from /reservasi/cari, and checking or revoking the links
@@ -176,17 +186,25 @@ export async function submitReview(bookingId: string, review: SubmitReviewValues
 
 const MS_PER_SECOND = 1000;
 
-// docs/Security.md §3.2 (decision of 2026-10-22 on P3.5, Q1): the browser that proved the PIC's contact and made the
-// booking holds its manage link at once, as the WhatsApp number or the proven address receives it.
-async function manageLinkFor(adminClient: DatabaseClient, bookingCode: string): Promise<string> {
+async function linkFor(
+  adminClient: DatabaseClient,
+  bookingCode: string,
+  scope: GuestLinkScope,
+): Promise<string> {
   const booking = await tokenVersionOf(adminClient, bookingCode);
   if (!booking) throw new AppError('NOT_FOUND');
   return mintGuestLink({
     bookingCode,
-    scope: 'manage',
+    scope,
     tokenVersion: booking.token_version,
     nowSeconds: Math.floor(Date.now() / MS_PER_SECOND),
   });
+}
+
+// docs/Security.md §3.2 (decision of 2026-10-22 on P3.5, Q1): the browser that proved the PIC's contact and made the
+// booking holds its manage link at once, as the WhatsApp number or the proven address receives it.
+function manageLinkFor(adminClient: DatabaseClient, bookingCode: string): Promise<string> {
+  return linkFor(adminClient, bookingCode, 'manage');
 }
 
 const CONTACT_UNVERIFIED = 'CONTACT_UNVERIFIED';
@@ -262,4 +280,74 @@ export async function createQuotedBooking(request: BookingRequest): Promise<Book
     await svcIssueFirstQuotation(createSupabaseAdminClient(), outcome.bookingId);
   }
   return outcome;
+}
+
+// ===== The status hub (Task P3.12.01, P3.12.02; docs/PRD.md §13.1 A16–A18) =====
+
+export interface StatusHubData {
+  view: StatusHubView;
+  // What a cancellation would give back now (FR-BOOK-23), for the manage link of a paid booking.
+  cancellation: RefundQuote | null;
+  // After a weather notice: the moves and the weather refund the manage link may choose (FR-BOOK-24, FR-BOOK-25).
+  weather: WeatherState | null;
+  weatherRefund: RefundQuote | null;
+  // The pay link a manage holder may hand the treasurer (FR-B2B-10): /reservasi/<code>/bayar?t=…, 24 h.
+  payLinkToken: string | null;
+}
+
+// A refund the terms cannot give now (a booking past its visit, a fee not yet set) is no option, not an error.
+async function quoteOrNull(adminClient: DatabaseClient, bookingId: string, kind: RefundKind) {
+  try {
+    return await svcRefundPreview(adminClient, { bookingId, kind });
+  } catch (error) {
+    if (raisedHintOf(error) === 'STATE_INVALID') return null;
+    throw error;
+  }
+}
+
+export async function loadStatusHub(guest: GuestAccess): Promise<StatusHubData> {
+  const adminClient = createSupabaseAdminClient();
+  const view = await statusHubOf(adminClient, guest.bookingId);
+  const canManage = guest.scope === 'manage';
+  const isPaid = view.booking.status === 'paid' && !view.booking.needsReview;
+  const weather = canManage && isPaid ? await weatherStateOf(adminClient, guest.bookingId) : null;
+  return {
+    view,
+    cancellation:
+      canManage && isPaid ? await quoteOrNull(adminClient, guest.bookingId, 'cancellation') : null,
+    weather,
+    weatherRefund: weather ? await quoteOrNull(adminClient, guest.bookingId, 'weather') : null,
+    payLinkToken:
+      canManage && view.booking.status === 'pending_payment'
+        ? await linkFor(adminClient, guest.bookingCode, 'pay')
+        : null,
+  };
+}
+
+// docs/PRD.md §9.2: the manage link cancels; the database decides what the state allows and what comes back.
+export function cancelGuestBooking(
+  bookingId: string,
+  cancellation: { reason: string; kind: RefundKind },
+): Promise<CancellationOutcome> {
+  return svcCancelBooking(createSupabaseAdminClient(), { bookingId, ...cancellation });
+}
+
+export function rescheduleGuestBooking(
+  bookingId: string,
+  sessionIds: string[],
+): Promise<{ visitDate: string; moves: number }> {
+  return svcRescheduleForWeather(createSupabaseAdminClient(), { bookingId, sessionIds });
+}
+
+// "Konfirmasi & Bayar" of a quotation (docs/PRD.md §9.2 quoted → pending_payment): the number the visitor just proved
+// with a code must be the booking's own; the contact itself never leaves the database side of this check.
+export async function isBookingPhone(bookingId: string, phone: string): Promise<boolean> {
+  const { data, error } = await createSupabaseAdminClient()
+    .from('bookings')
+    .select('id')
+    .eq('id', bookingId)
+    .eq('pic_phone', phone)
+    .maybeSingle();
+  if (error) throw error;
+  return data !== null;
 }

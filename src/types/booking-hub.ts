@@ -33,6 +33,38 @@ export interface StatusHubView {
   events: HubEvent[];
   quotation: (HubDocument & { validUntil: string; status: EnumValue<'quotation_status'> }) | null;
   // The invoice and, once paid, its receipt, which share one row.
-  invoice: (HubDocument & { receiptNumber: string | null; status: EnumValue<'invoice_status'> }) | null;
+  invoice:
+    (HubDocument & { receiptNumber: string | null; status: EnumValue<'invoice_status'> }) | null;
   ticketCount: number;
+  // The latest refund a cancellation requested, and how far it got (docs/PRD.md §13.1 A16).
+  refund: {
+    amount: number;
+    status: EnumValue<'refund_request_status'>;
+    method: EnumValue<'payment_method'>;
+  } | null;
+  // The visit terms in force, from site_settings, for the hub to show (go-live check #27).
+  terms: {
+    refundSchedule: { minDays: number; pct: number }[];
+    weatherMax: number;
+    weatherHours: number;
+  };
+}
+
+// A session a leg may move to after a weather notice (docs/PRD.md §13.1 A17).
+export interface WeatherOption {
+  sessionId: string;
+  sessionDate: string;
+  startTime: string;
+  endTime: string;
+  label: string | null;
+  remaining: number;
+}
+
+export interface WeatherState {
+  // When the 24 h after the notice end.
+  openUntil: string;
+  reason: string | null;
+  movesLeft: number;
+  // One per leg, in leg order; a combo moves every leg to one day.
+  legs: { rwName: string; options: WeatherOption[] }[];
 }

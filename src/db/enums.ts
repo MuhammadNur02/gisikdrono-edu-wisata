@@ -123,6 +123,8 @@ export const DB_ENUMS = {
   otp_purpose: ['booking_phone', 'dsr_identity'],
   export_kind: ['visits', 'attendance', 'finance', 'audit'],
   alert_severity: ['info', 'medium', 'high', 'critical'],
+  refund_request_kind: ['cancellation', 'weather'],
+  refund_request_status: ['requested', 'submitted', 'failed', 'recorded'],
   // 20261021120000_rw_units_data_driven: the palette key and placeholder icon of an RW.
   rw_accent: ['leaf', 'terracotta', 'mulberry', 'teal', 'violet'],
   rw_icon: ['recycle', 'drama', 'heart_handshake', 'landmark', 'users'],

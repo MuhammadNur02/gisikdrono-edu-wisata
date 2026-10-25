@@ -59,6 +59,11 @@ export const RATE_LIMITS = {
   // Every guest page and action checks its link; the status page refreshing every 5 s stays well inside this.
   'link_verify:ip': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   'link_revoke:booking': { limit: 5, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  // The status hub's manage actions (Task P3.12.02): a cancellation, a weather move and a quotation's confirmation each
+  // run once or twice in a booking's life; these stop a script repeating them against one booking.
+  'booking_cancel:booking': { limit: 5, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  'booking_reschedule:booking': { limit: 10, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  'quotation_confirm:booking': { limit: 10, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
   // Task P4.11.02 (docs/Security.md RL-04): reviews sent from one IP a day, counted before Turnstile. A booking takes one
   // review only; this stops one IP filling the moderation queue through many links.
   'review:submit': { limit: 3, windowSeconds: 86400, whenUnavailable: 'fail-closed' },
