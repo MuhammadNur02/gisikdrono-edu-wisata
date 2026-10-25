@@ -14,7 +14,7 @@
 --                                 frees the seats of a visit ahead, voids the invoice with a credit note; the ledger is
 --                                 reversed under the refund's reference, once; refund_processed is queued
 --
--- Every write needs the superadmin with a TOTP code verified in the last five minutes (fresh_totp).
+-- Each RPC answers with the adjustment row as jsonb. Every write needs the superadmin with a TOTP code verified in the last five minutes (fresh_totp).
 -- Refusals carry hints that adjustment-service.ts turns into Indonesian copy: ADJUSTMENT_TYPE_UNSUPPORTED,
 -- ADJUSTMENT_OPEN, ADJUSTMENT_STATE, APPROVER_INELIGIBLE, APPLY_TOO_EARLY, REFUND_NO_PAYMENT, REFUND_TOO_LARGE,
 -- SHARE_TOO_LARGE; and STATE_INVALID for a retried refund with another amount.
@@ -437,7 +437,7 @@ revoke execute on function internal.check_adjustment_terms(public.adjustment_typ
   from public, anon, authenticated, service_role;
 
 create function public.propose_adjustment(p_type public.adjustment_type, p_booking_id uuid, p_payment_id uuid,
-  p_amount bigint, p_reason text, p_evidence_path text, p_details jsonb default '{}') returns public.payment_adjustments
+  p_amount bigint, p_reason text, p_evidence_path text, p_details jsonb default '{}') returns jsonb
   language plpgsql security definer
   set search_path = ''
 as $$
@@ -472,7 +472,7 @@ begin
   values (p_booking_id, p_payment_id, p_type, p_amount, btrim(p_reason), p_evidence_path, auth.uid(), details)
   returning * into proposed;
   perform internal.restore_settings(previous_settings);
-  return proposed;
+  return to_jsonb(proposed);
 end;
 $$;
 
@@ -502,7 +502,7 @@ revoke execute on function internal.open_adjustment(uuid, public.adjustment_stat
 
 -- Another superadmin approves at once. The proposer approves their own only while they are the one active superadmin
 -- (decision OD-2): it applies 24 hours later, and a high alert tells the kelurahan head (security alert delivery).
-create function public.approve_adjustment(p_id uuid) returns public.payment_adjustments
+create function public.approve_adjustment(p_id uuid) returns jsonb
   language plpgsql security definer
   set search_path = ''
 as $$
@@ -533,12 +533,12 @@ begin
     on conflict (fingerprint) where acknowledged_at is null do nothing;
   end if;
   perform internal.restore_settings(previous_settings);
-  return adjustment;
+  return to_jsonb(adjustment);
 end;
 $$;
 
 -- The proposer withdraws, or another superadmin turns it down, saying why.
-create function public.reject_adjustment(p_id uuid, p_reason text) returns public.payment_adjustments
+create function public.reject_adjustment(p_id uuid, p_reason text) returns jsonb
   language plpgsql security definer
   set search_path = ''
 as $$
@@ -553,7 +553,7 @@ begin
   where id = p_id
   returning * into adjustment;
   perform internal.restore_settings(previous_settings);
-  return adjustment;
+  return to_jsonb(adjustment);
 end;
 $$;
 
@@ -591,7 +591,7 @@ revoke execute on function internal.apply_reclassify_share(public.payment_adjust
 -- refund itself already made, at Midtrans under refund_key = the adjustment's id, or by bank transfer whose proof is
 -- the evidence), a reclassified share in the ledger, a write-off recorded on the booking. The adjustment is applied in
 -- the same transaction, under app.adjustment_id.
-create function public.apply_adjustment(p_id uuid) returns public.payment_adjustments
+create function public.apply_adjustment(p_id uuid) returns jsonb
   language plpgsql security definer
   set search_path = ''
 as $$
@@ -625,7 +625,7 @@ begin
   where id = p_id
   returning * into adjustment;
   perform internal.restore_settings(previous_settings);
-  return adjustment;
+  return to_jsonb(adjustment);
 end;
 $$;
 

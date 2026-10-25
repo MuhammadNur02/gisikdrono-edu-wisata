@@ -189,9 +189,9 @@ select throws_ok($$select public.propose_adjustment('manual_mark_paid', (select 
   'Bayar tunai di loket', 'bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf')$$,
   'P0001', null, 'manual_mark_paid is not proposed here');
 create temporary table proposal on commit drop as
-  select (public.propose_adjustment('manual_refund', (select id from adjusted),
+  select ((public.propose_adjustment('manual_refund', (select id from adjusted),
     pg_temp.payment_of((select id from adjusted)), 50000, 'Biaya tambahan dikembalikan',
-    'bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf')).id;
+    'bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf')) ->> 'id')::uuid as id;
 select is((select status::text from public.payment_adjustments where id = (select id from proposal)), 'proposed',
   'a manual refund is proposed with its evidence');
 select throws_ok($$select public.propose_adjustment('manual_refund', (select id from adjusted),
@@ -227,13 +227,13 @@ where user_id = '00000000-0000-4000-8000-00000000f002';
 
 reset role;
 select pg_temp.act_as_super_b();
-select is((public.approve_adjustment((select id from proposal))).status::text, 'approved',
+select is((public.approve_adjustment((select id from proposal)) ->> 'status'), 'approved',
   'another eligible superadmin approves it');
 select throws_ok($$select public.approve_adjustment((select id from proposal))$$, 'P0001', null,
   'once');
 reset role;
 select pg_temp.act_as('superadmin_aal2');
-select is((public.apply_adjustment((select id from proposal))).status::text, 'applied', 'and it is applied');
+select is((public.apply_adjustment((select id from proposal)) ->> 'status'), 'applied', 'and it is applied');
 reset role;
 select is((select status::text || ':' || refunded_amount from public.payments
            where id = pg_temp.payment_of((select id from adjusted))), 'partially_refunded:50000',
@@ -254,10 +254,10 @@ select set_config('app.privileged_rpc', '', true);
 reset role;
 select pg_temp.act_as('superadmin_aal2');
 create temporary table write_off on commit drop as
-  select (public.propose_adjustment('write_off', (select id from adjusted), null, 2500,
+  select ((public.propose_adjustment('write_off', (select id from adjusted), null, 2500,
     'Selisih pembulatan transfer bank', 'bookings/' || (select id from adjusted) || '/adjustment-'
-    || gen_random_uuid() || '.png')).id;
-select cmp_ok((public.approve_adjustment((select id from write_off))).apply_not_before, '>=',
+    || gen_random_uuid() || '.png')) ->> 'id')::uuid as id;
+select cmp_ok((public.approve_adjustment((select id from write_off)) ->> 'apply_not_before')::timestamptz, '>=',
   now() + interval '24 hours', 'alone, the proposer approves their own, applying 24 hours later');
 select throws_ok($$select public.apply_adjustment((select id from write_off))$$, 'P0001', null,
   'and it does not apply before then');
@@ -289,14 +289,14 @@ select throws_ok($$select public.propose_adjustment('reclassify_share', (select 
                      'to_key', (select keys[2] from shared_keys)))$$, 'P0001', null,
   'a share is not moved beyond what it holds');
 create temporary table reclassified on commit drop as
-  select (public.propose_adjustment('reclassify_share', (select id from shared), null, 1000,
+  select ((public.propose_adjustment('reclassify_share', (select id from shared), null, 1000,
     'Bagian RW salah dicatat', 'bookings/' || (select id from shared) || '/adjustment-' || gen_random_uuid() || '.pdf',
     jsonb_build_object('line_ref', 'package', 'from_key', (select keys[1] from shared_keys),
-                       'to_key', (select keys[2] from shared_keys)))).id;
+                       'to_key', (select keys[2] from shared_keys)))) ->> 'id')::uuid as id;
 reset role;
 select pg_temp.act_as_super_b();
-select is((public.approve_adjustment((select id from reclassified))).status::text, 'approved', 'B approves the move');
-select is((public.apply_adjustment((select id from reclassified))).status::text, 'applied', 'and applies it');
+select is((public.approve_adjustment((select id from reclassified)) ->> 'status'), 'approved', 'B approves the move');
+select is((public.apply_adjustment((select id from reclassified)) ->> 'status'), 'applied', 'and applies it');
 reset role;
 select is((select array_agg(amount order by amount) from public.revenue_share_entries
            where adjustment_id = (select id from reclassified)), array[-1000, 1000]::bigint[],

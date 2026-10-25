@@ -123,8 +123,9 @@ select pg_temp.act_as('superadmin_aal2');
 select throws_ok($$select public.settle_revenue_entries('rw:5', public.today_jkt(), public.today_jkt(), 'TRF-RW5',
   'proofs/x.pdf')$$, '22023', null, 'a payout keeps its proof under documents/payouts/');
 create temporary table payout on commit drop as
-  select * from public.settle_revenue_entries('rw:5', public.today_jkt() - 1, public.today_jkt(), 'TRF-RW5-001',
-    'payouts/00000000-0000-4000-8000-0000000e4001/bukti.pdf');
+  select (batch ->> 'id')::uuid as id, (batch ->> 'total_amount')::bigint as total_amount
+  from (select public.settle_revenue_entries('rw:5', public.today_jkt() - 1, public.today_jkt(), 'TRF-RW5-001',
+          'payouts/00000000-0000-4000-8000-0000000e4001/bukti.pdf') as batch) as recorded;
 select cmp_ok((select total_amount from payout), '>=', 70000::bigint,
   'the payout totals what RW 05 was owed in the period');
 reset role;

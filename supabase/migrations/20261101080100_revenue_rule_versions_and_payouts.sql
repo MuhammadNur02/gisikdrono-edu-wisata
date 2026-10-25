@@ -113,10 +113,10 @@ $$;
 
 -- ===== settle_revenue_entries =====
 
--- The payout batch, once its total and its ledger rows are stamped. p_from and p_to are Jakarta days of the rows.
+-- The payout batch as jsonb, once its total and its ledger rows are stamped. p_from and p_to are Jakarta days of the rows.
 create function public.settle_revenue_entries(
   p_beneficiary_key text, p_from date, p_to date, p_reference text, p_proof_path text
-) returns public.payout_batches
+) returns jsonb
   language plpgsql security definer
   set search_path = ''
 as $$
@@ -159,7 +159,7 @@ begin
   update public.revenue_share_entries e set payout_batch_id = batch.id
   where e.beneficiary_key = key and e.payout_batch_id is null
     and (e.created_at at time zone 'Asia/Jakarta')::date between p_from and p_to;
-  return batch;
+  return to_jsonb(batch);
 end;
 $$;
 
