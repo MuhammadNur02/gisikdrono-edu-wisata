@@ -44,6 +44,10 @@ export const RATE_LIMITS = {
   'webhook_midtrans:ip': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   'webhook_midtrans:all': { limit: 600, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   'webhook_rejection:ip': { limit: 20, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  // docs/Security.md §8.3 (Task P3.11.06, P3.11.09): Meta's and Resend's delivery reports, per sender IP, counted
+  // before the signature is checked; past the limit a report is dropped with 200, since it only ever informs.
+  'webhook_whatsapp:ip': { limit: 300, windowSeconds: 60, whenUnavailable: 'fail-closed' },
+  'webhook_resend:ip': { limit: 300, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   // Task P3.10.03: the public QR landing /v/[token], per visitor IP, so ticket ids cannot be guessed in bulk.
   'qr_landing:ip': { limit: 60, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   // Task P3.11.07: GET /api/health, per IP, so its reads cannot be used to load the database. The uptime monitor asks
