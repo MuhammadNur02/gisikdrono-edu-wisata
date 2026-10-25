@@ -67,6 +67,7 @@ function CopyableRow({ label, value, shown }: { label: string; value: string; sh
 }
 
 function methodName(payment: OpenPayment): string {
+  if (payment.method === null) return text.payment.notChosen;
   if (payment.method !== 'virtual_account' || !payment.vaBank) return text.payment.qris;
   const bank = copy.booking.payment.banks[payment.vaBank] ?? payment.vaBank;
   return text.payment.virtualAccount(bank.toUpperCase());
