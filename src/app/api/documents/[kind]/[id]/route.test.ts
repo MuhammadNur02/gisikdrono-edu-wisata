@@ -54,7 +54,7 @@ describe('GET /api/documents/booklet/[id]', () => {
   });
 
   it.each([
-    ['a document kind the route does not serve', 'certificate', BOOKLET_ID],
+    ['a document kind the route does not serve', 'credit_note', BOOKLET_ID],
     ['an id that is not a uuid', 'booklet', '..%2F..%2Fsecret'],
   ])('answers 404 for %s without touching the database', async (_case, kind, id) => {
     const response = await download(kind, id);
