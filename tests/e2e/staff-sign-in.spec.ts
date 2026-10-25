@@ -140,7 +140,11 @@ test('the sixth failed sign-in for an address gets the locked message, and an un
   expect(known[SIGN_IN_TRIES - 1]).not.toContain(failed);
   await expect(page.getByText(locked)).toBeVisible(AUTH_STEP);
 
-  const unknown = await sixWrongPasswords(page, `nobody-${randomUUID()}@example.test`, '198.51.101.1');
+  const unknown = await sixWrongPasswords(
+    page,
+    `nobody-${randomUUID()}@example.test`,
+    '198.51.101.1',
+  );
   for (const answer of unknown.slice(0, SIGN_IN_TRIES - 1)) expect(answer).toContain(failed);
   expect(unknown[SIGN_IN_TRIES - 1]).toContain(locked);
   await expect(page).toHaveURL(/\/login/, AUTH_STEP);
@@ -189,7 +193,10 @@ async function isClickTaken(button: Locator): Promise<boolean> {
 
 // A click that lands before the button hydrated does nothing (F-74-1), so a click the button does not take within
 // CLICK_TAKEN_WAIT is made once more, at most SWITCH_CLICKS in all. A click that was taken is only waited for.
-async function switchRw(page: Page, button: Locator): Promise<{ answer: Response; clicks: number }> {
+async function switchRw(
+  page: Page,
+  button: Locator,
+): Promise<{ answer: Response; clicks: number }> {
   const answer = page.waitForResponse(isRwScopeAnswer, SWITCH_STEP);
   // Awaited below; this only keeps a timeout during the clicks from reading as an unhandled rejection.
   answer.catch(() => undefined);
@@ -216,10 +223,11 @@ test('the superadmin sees every group and the RwSwitcher, and signing out ends t
   const rw05 = page.getByRole('group', { name: 'Tampilkan data' }).getByRole('button', {
     name: 'RW 05',
   });
-  // The switch's Server Action answers with the whole dashboard rendered again for RW 05, and its button stays
-  // disabled until that render has arrived, the overview's figures included. Clicking while the first figures were
-  // still streaming, then re-clicking a button that was only waiting, timed out under CI load. So: the first
-  // overview in full, the page settled (hydrated), a click, and the action's own answer before the state.
+  // The switch's Server Action answers with the dashboard rendered again for RW 05. Its overview is a Suspense
+  // boundary keyed by the scope (dashboard/page.tsx), so the button is pressed as soon as the shell has arrived and the
+  // figures stream in after it; before that key, the transition waited for every figure, which under CI load outlasted
+  // the wait (PR #68). The test still starts from a settled, hydrated page, clicks, and waits for the action's own
+  // answer before the state, and then for the RW 05 figures.
   await expect(page.getByRole('region', { name: copy.dashboard.overview.kpiLabel })).toBeVisible(
     AUTH_STEP,
   );
@@ -232,6 +240,9 @@ test('the superadmin sees every group and the RwSwitcher, and signing out ends t
   });
   expect(answer.status()).toBe(HTTP_OK);
   await expect(rw05).toHaveAttribute('aria-pressed', 'true', AUTH_STEP);
+  await expect(page.getByRole('region', { name: copy.dashboard.overview.kpiLabel })).toBeVisible(
+    SWITCH_STEP,
+  );
 
   await page.getByRole('button', { name: 'Keluar' }).click();
   await expect(page).toHaveURL('/login', AUTH_STEP);
