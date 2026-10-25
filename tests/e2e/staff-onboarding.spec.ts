@@ -114,7 +114,7 @@ test('an invited RW officer onboards with the code, an authenticator and a passw
   const secret = (await officer.locator('code').innerText(AUTH_STEP)).replace(/\s/g, '');
   const enrolCode = totpCode(secret);
   await officer.getByLabel('Kode autentikator').fill(enrolCode);
-  await officer.getByLabel('Kata sandi baru', { exact: true }).fill(NEW_PASSWORD);
+  await officer.getByLabel(/^Kata sandi baru/).fill(NEW_PASSWORD);
   await officer.getByLabel('Ulangi kata sandi baru').fill(NEW_PASSWORD);
   await officer.getByRole('button', { name: 'Selesaikan pendaftaran' }).click();
   await expect(officer).toHaveURL('/login?info=onboarding-done', AUTH_STEP);

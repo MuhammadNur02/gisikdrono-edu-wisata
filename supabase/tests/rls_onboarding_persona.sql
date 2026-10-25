@@ -32,16 +32,16 @@ $$;
 
 -- The statements that read, change and remove every table and view the signed-in role may touch, and that call every
 -- function it may execute but the RLS helpers and onboarding_state() itself, with NULL arguments.
-create function pg_temp.probes() returns table (probe text, statement text, counts boolean)
+create function pg_temp.probes() returns table (probe text, statement text, counts boolean, is_definer boolean)
   language sql stable
 as $$
-  select 'select ' || c.relname, format('select count(*) from public.%I', c.relname), true
+  select 'select ' || c.relname, format('select count(*) from public.%I', c.relname), true, false
   from pg_class c
   where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p', 'v')
     and has_any_column_privilege('authenticated', c.oid, 'select')
   union all
   select 'update ' || c.relname,
-         format('update public.%I set %I = %I', c.relname, col.attname, col.attname), false
+         format('update public.%I set %I = %I', c.relname, col.attname, col.attname), false, false
   from pg_class c
   cross join lateral (
     select a.attname from pg_attribute a
@@ -51,7 +51,7 @@ as $$
   ) col
   where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p')
   union all
-  select 'delete ' || c.relname, format('delete from public.%I', c.relname), false
+  select 'delete ' || c.relname, format('delete from public.%I', c.relname), false, false
   from pg_class c
   where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p')
     and has_table_privilege('authenticated', c.oid, 'delete')
@@ -60,7 +60,7 @@ as $$
          format('select public.%I(%s)', p.proname,
                 coalesce((select string_agg('null::' || format_type(t.type_oid, null), ', ' order by t.ordinality)
                           from unnest(p.proargtypes::oid[]) with ordinality as t(type_oid, ordinality)), '')),
-         false
+         false, p.prosecdef
   from pg_proc p
   where p.pronamespace = 'public'::regnamespace and p.prokind = 'f'
     and has_function_privilege('authenticated', p.oid, 'execute')
@@ -69,7 +69,7 @@ as $$
 $$;
 
 create temporary table outcomes as
-select probe, pg_temp.outcome('none', statement, counts) as without_factor,
+select probe, is_definer, pg_temp.outcome('none', statement, counts) as without_factor,
        pg_temp.outcome('none_aal2_factor', statement, counts) as with_factor
 from pg_temp.probes();
 
@@ -103,9 +103,11 @@ select is(array(select probe from outcomes where probe like 'update %' and with_
 select is(array(select probe from outcomes where probe like 'call %' and with_factor is distinct from without_factor
                 order by 1),
   array[]::text[], 'every staff RPC answers it as it answers an account without a role');
-select is(array(select probe || ' ' || with_factor from outcomes where probe like 'call %'
+-- A security invoker RPC (save_package_legs, save_package_tiers) does nothing with NULL arguments, and what it would
+-- write is decided by the grants and policies the probes above walk; every security definer one refuses outright.
+select is(array(select probe || ' ' || with_factor from outcomes where probe like 'call %' and is_definer
                   and with_factor not like 'error:%' order by 1),
-  array[]::text[], 'and refuses it');
+  array[]::text[], 'and every security definer one refuses it');
 select is((select count(*)::int from auth.mfa_factors f
            where f.user_id = '00000000-0000-4000-8000-00000000f00f' and f.status = 'verified'), 1,
   'the walk left the persona as it was');
