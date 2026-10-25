@@ -14,6 +14,7 @@ import {
   type WebhookRejection,
 } from '@/db/rpc-payments';
 import type { DatabaseClient } from '@/db/rpc-result';
+import type { Json } from '@/db/types';
 import { copy } from '@/lib/copy/id';
 import { serverEnv } from '@/lib/env';
 import { AppError } from '@/lib/errors';
@@ -151,17 +152,31 @@ async function isConfirmable(
   );
 }
 
+function answersFor(answer: Json, orderId: string): boolean {
+  return (
+    typeof answer === 'object' &&
+    answer !== null &&
+    !Array.isArray(answer) &&
+    answer.order_id === orderId
+  );
+}
+
 // The Status API's answer is kept as a status_api event of its own (re-review of PR #68, N9): it is Midtrans' word,
 // which record_refund and a held payment's refund may rely on, where the webhook body the signature does not cover
-// may not. Recording the same answer twice is the same event.
-async function confirmedStatus(adminClient: DatabaseClient, orderId: string) {
-  const answer = jsonValueSchema.parse(await getTransactionStatus(orderId, WEBHOOK_STATUS_TIMEOUT_MS));
-  await svcRecordPaymentEvent(adminClient, {
-    source: 'status_api',
-    eventHash: sha256Hex(`status_api
-${JSON.stringify(answer)}`),
-    payload: answer,
-  });
+// may not. Only an answer about this very order is kept (delta review, L3); any other, a 404 included, still goes on
+// to apply_payment_event, which holds the payment for review as a status disagreement. Recording the same answer
+// twice is the same event.
+async function confirmedStatus(adminClient: DatabaseClient, orderId: string): Promise<Json> {
+  const answer = jsonValueSchema.parse(
+    await getTransactionStatus(orderId, WEBHOOK_STATUS_TIMEOUT_MS),
+  );
+  if (answersFor(answer, orderId)) {
+    await svcRecordPaymentEvent(adminClient, {
+      source: 'status_api',
+      eventHash: sha256Hex(`status_api\n${JSON.stringify(answer)}`),
+      payload: answer,
+    });
+  }
   return answer;
 }
 

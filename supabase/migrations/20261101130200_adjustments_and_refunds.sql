@@ -409,15 +409,9 @@ $$;
 revoke execute on function internal.note_refund_seen(public.payments, public.payment_status, jsonb)
   from public, anon, authenticated, service_role;
 
--- The two-argument form stays for a caller that has no answer to hand over: its alert then names no amount, so it
--- proves nothing to record_refund, which needs the Status API's own answer instead.
-create or replace function internal.note_refund_seen(p_payment public.payments, p_target public.payment_status)
-  returns jsonb
-  language sql
-  set search_path = ''
-as $$
-  select internal.note_refund_seen(p_payment, p_target, null);
-$$;
+-- The two-argument form goes (delta review of PR #68, L1): every caller hands over the confirmed answer, so a later
+-- version of apply_payment_status calls the three-argument form.
+drop function internal.note_refund_seen(public.payments, public.payment_status);
 
 -- Replaces the 20261024100300 version (re-review of PR #68, N9, N13): a refund's amount is the confirmed answer's
 -- refunded total, handed to note_refund_seen with it. Everything else is unchanged.
@@ -678,12 +672,16 @@ begin
     end if;
     return jsonb_build_object('result', 'already_recorded', 'amount', p_amount);
   end if;
-  perform internal.require_unused_proof(p_proof_path, nullif(current_setting('app.adjustment_id', true), '')::uuid);
+  perform internal.require_unused_proof(p_booking_id, p_proof_path,
+                                        nullif(current_setting('app.adjustment_id', true), '')::uuid);
   payment := internal.refund_payment_of(p_booking_id, p_payment_id);
   perform internal.check_refund_amount(booking, payment, p_amount);
-  if p_reported_only and internal.midtrans_refunded(payment) < payment.refunded_amount + p_amount then
-    raise exception 'Midtrans reports no refund of % on order %', payment.refunded_amount + p_amount, payment.order_id
-      using errcode = 'P0001', hint = 'REFUND_NOT_AT_MIDTRANS';
+  -- What Midtrans reports is compared with what was recorded under its word alone (delta review of PR #68, N16): a
+  -- bank-transfer refund before it neither counts towards it nor blocks a genuine Midtrans refund after it.
+  if p_reported_only
+     and internal.midtrans_refunded(payment) < internal.midtrans_recorded(payment) + p_amount then
+    raise exception 'Midtrans reports no refund of % on order %', internal.midtrans_recorded(payment) + p_amount,
+      payment.order_id using errcode = 'P0001', hint = 'REFUND_NOT_AT_MIDTRANS';
   end if;
   is_whole := payment.refunded_amount + p_amount = payment.gross_amount;
 
@@ -696,8 +694,9 @@ begin
                     else 'partially_refunded' end,
       refunded_amount = refunded_amount + p_amount
   where id = payment.id;
-  perform internal.close_refund_alert('refund_seen:' || payment.order_id, payment.refunded_amount + p_amount,
-                                      p_actor);
+  -- Only a refund recorded under Midtrans' word answers the alert of a refund Midtrans made (N16).
+  perform internal.close_refund_alert('refund_seen:' || payment.order_id,
+    internal.midtrans_recorded(payment) + case when p_reported_only then p_amount else 0 end, p_actor);
   insert into public.booking_events (booking_id, from_status, to_status, actor_type, actor_id, reason, payload)
   select booking.id, booking.status, b.status, 'admin', p_actor, 'refund_recorded',
          jsonb_build_object('refund_reference', reference, 'amount', p_amount, 'order_id', payment.order_id,
@@ -828,13 +827,14 @@ begin
       using errcode = '22023';
   end if;
   perform internal.require_document(p_evidence_path);
-  perform internal.require_unused_proof(p_evidence_path, null);
   -- The audit turn before any row lock, as every writer takes them (review of PR #68, L3).
   perform internal.take_audit_turn();
   perform 1 from public.bookings b where b.id = p_booking_id for update;
   if not found then
     raise exception 'booking % does not exist', p_booking_id using errcode = 'P0002';
   end if;
+  -- Under the booking's lock, so two proposals naming one file cannot both pass (L2 c).
+  perform internal.require_unused_proof(p_booking_id, p_evidence_path, null);
   perform internal.check_adjustment_terms(p_type, p_booking_id, p_payment_id, p_amount, details);
   if exists (select 1 from public.payment_adjustments a
              where a.booking_id = p_booking_id and a.type = p_type and a.status in ('proposed', 'approved')) then
@@ -881,21 +881,24 @@ revoke execute on function internal.raise_adjustment_alert(text, text, public.pa
 -- A proof or evidence file backs one refund or one adjustment (decision of the re-review of PR #68): another refund
 -- naming a proof already recorded, or another adjustment naming an evidence file already used, is refused. The
 -- adjustment being applied may name its own evidence as its refund's proof.
-create function internal.require_unused_proof(p_path text, p_own_adjustment uuid) returns void
+create function internal.require_unused_proof(p_booking_id uuid, p_path text, p_own_adjustment uuid) returns void
   language plpgsql stable
   set search_path = ''
 as $$
 begin
+  -- Every proof sits under its booking's folder, so the booking bounds the search (L2 d); a rejected adjustment backs
+  -- nothing, so its evidence may back the next proposal (L2 b).
   if exists (select 1 from public.booking_events e
-             where e.reason = 'refund_recorded' and e.payload ->> 'proof_path' = p_path)
+             where e.booking_id = p_booking_id and e.reason = 'refund_recorded' and e.payload ->> 'proof_path' = p_path)
      or exists (select 1 from public.payment_adjustments a
-                where a.evidence_path = p_path and a.id is distinct from p_own_adjustment) then
+                where a.booking_id = p_booking_id and a.evidence_path = p_path and a.status <> 'rejected'
+                  and a.id is distinct from p_own_adjustment) then
     raise exception 'the file % already backs another refund or adjustment', p_path
       using errcode = 'P0001', hint = 'PROOF_REUSED';
   end if;
 end;
 $$;
-revoke execute on function internal.require_unused_proof(text, uuid) from public, anon, authenticated, service_role;
+revoke execute on function internal.require_unused_proof(uuid, text, uuid) from public, anon, authenticated, service_role;
 
 create function internal.is_sole_superadmin(p_user uuid) returns boolean
   language sql stable
@@ -999,6 +1002,26 @@ $$;
 
 -- ===== apply_adjustment =====
 
+-- Whether Midtrans itself reports a refund under this refund_key (decision of the delta review of PR #68): a
+-- manual_refund executed at Midtrans with refund_key = the adjustment's id is then recorded under Midtrans' word, like
+-- record_refund's; without such a confirmed answer it is a bank transfer.
+create function internal.midtrans_refunded_under_key(p_payment_id uuid, p_refund_key text) returns boolean
+  language sql stable
+  set search_path = ''
+as $$
+  select exists (
+    select 1 from public.payment_events e
+    join public.payments p on p.id = e.payment_id and p.order_id = e.order_id
+    where e.payment_id = p_payment_id and e.source in ('status_api', 'poll')
+      and e.transaction_status in ('refund', 'partial_refund')
+      and (e.payload ->> 'refund_key' = p_refund_key
+           or exists (select 1 from jsonb_array_elements(case when jsonb_typeof(e.payload -> 'refunds') = 'array'
+                                                              then e.payload -> 'refunds' else '[]' end) as r
+                      where r ->> 'refund_key' = p_refund_key)));
+$$;
+revoke execute on function internal.midtrans_refunded_under_key(uuid, text)
+  from public, anon, authenticated, service_role;
+
 -- reclassify_share: the amount leaves one beneficiary's share of a line and joins another's, as two adjustment rows
 -- shaped like the line's settlement rows, so the ledger still adds up to what was paid.
 create function internal.apply_reclassify_share(p_adjustment public.payment_adjustments) returns void
@@ -1052,7 +1075,7 @@ begin
   if adjustment.type = 'manual_refund' then
     perform internal.record_refund_core(adjustment.booking_id, adjustment.payment_id, adjustment.amount,
                                         'adjustment:' || p_id, adjustment.reason, adjustment.evidence_path, auth.uid(),
-                                        false);
+                                        internal.midtrans_refunded_under_key(adjustment.payment_id, p_id::text));
   elsif adjustment.type = 'reclassify_share' then
     perform internal.apply_reclassify_share(adjustment);
   else
@@ -1070,6 +1093,50 @@ begin
   end if;
   perform internal.restore_settings(previous_settings);
   return to_jsonb(adjustment);
+end;
+$$;
+
+-- ===== An event is judged under the source it came from =====
+
+-- Replaces the 20261024095000 version (delta review of PR #68, L4): a webhook body is never judged as the Status API's
+-- or the poll's own answer, which would let it stand in for the confirmation it needs. Everything else is unchanged.
+create or replace function internal.judge_payment_event(p_event public.payment_events, p_booking public.bookings,
+  p_payment public.payments, p_source text, p_confirmed jsonb, p_actor_type text) returns jsonb
+  language plpgsql
+  set search_path = ''
+as $$
+declare
+  claimed public.payment_status := internal.midtrans_payment_status(p_event.transaction_status, p_event.fraud_status);
+  answer jsonb;
+  target public.payment_status;
+begin
+  if p_source is distinct from p_event.source then
+    raise exception 'payment event % came from %, not %', p_event.id, p_event.source, p_source using errcode = '22023';
+  end if;
+  if not internal.midtrans_amount_matches(p_event.gross_amount_raw, p_event.payload ->> 'currency',
+                                          p_payment.gross_amount) then
+    return internal.hold_for_review(p_booking, p_payment, 'AMOUNT_MISMATCH', 'webhook_amount_mismatch', 'high',
+                                    p_actor_type);
+  end if;
+  if claimed is null then
+    return jsonb_build_object('result', 'ignored', 'processing_result', 'unknown_status');
+  end if;
+  answer := case when p_source <> 'webhook' then p_event.payload else p_confirmed end;
+  if answer is null then
+    return jsonb_build_object('result', 'needs_confirmation');
+  end if;
+
+  target := internal.midtrans_payment_status(answer ->> 'transaction_status', answer ->> 'fraud_status');
+  if answer ->> 'order_id' is distinct from p_payment.order_id
+     or not internal.midtrans_amount_matches(answer ->> 'gross_amount', answer ->> 'currency', p_payment.gross_amount)
+     or (claimed in ('settled', 'refunded', 'partially_refunded', 'disputed') and target is distinct from claimed) then
+    if target is null and claimed not in ('settled', 'refunded', 'partially_refunded', 'disputed') then
+      return jsonb_build_object('result', 'ignored', 'processing_result', 'not_confirmed');
+    end if;
+    return internal.hold_for_review(p_booking, p_payment, 'STATUS_DISAGREEMENT', 'status_disagreement', 'critical',
+                                    p_actor_type);
+  end if;
+  return internal.apply_payment_status(p_booking, p_payment, target, answer, p_actor_type);
 end;
 $$;
 

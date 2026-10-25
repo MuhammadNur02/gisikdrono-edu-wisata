@@ -6,9 +6,11 @@
 -- for review (M5), and the Lows L2, L4, L5 and L9. Re-review: record_refund records only what Midtrans reports (N1),
 -- a stuck approval is withdrawn (N2), and N3, N5 to N8. Final re-review: a refund's amount comes from Midtrans' confirmed
 -- answer, never the webhook body (N9), what was recorded under Midtrans' word (N11), refunds[] (N13), an applied
--- adjustment is not rejected (N14), and a proof backs one refund or adjustment.
+-- adjustment is not rejected (N14), and a proof backs one refund or adjustment. Delta review: bank transfers neither
+-- count towards nor block what Midtrans refunded (N16), a manual refund Midtrans made under its refund_key, a
+-- rejected adjustment's evidence (L2), and an event judged only under its own source (L4).
 begin;
-select plan(111);
+select plan(118);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: RW 05 and combo packages and two superadmins old enough to approve =====
@@ -443,6 +445,14 @@ select throws_ok($$select public.record_refund((select id from seen), 300000, 'T
 select is(public.record_refund((select id from seen), 1000, 'TRF-N9', 'Sebagian dana dikembalikan', null,
   pg_temp.proof((select id from seen), 'n9')) ->> 'result', 'recorded', 'only the 1000 Midtrans refunded');
 
+reset role;
+select throws_ok($$select internal.apply_payment_event((internal.record_payment_event('webhook',
+    encode(extensions.digest('uji-l4-body', 'sha256'), 'hex'),
+    jsonb_build_object('order_id', (select order_id from seen_order), 'status_code', '200',
+      'gross_amount', '300000.00', 'currency', 'IDR', 'transaction_status', 'settlement',
+      'signature_key', repeat('a', 128))) ->> 'event_id')::bigint, 'poll', null, 'k1')$$, '22023', null,
+  'a webhook body is never judged as the poll''s own answer (L4)');
+
 -- ===== Adjustments: the workflow =====
 reset role;
 select pg_temp.act_as('superadmin_aal2');
@@ -539,6 +549,13 @@ select is(internal.note_refund_seen((select p from public.payments p
                                     'partially_refunded', '{"refund_amount": "50000.00"}') ->> 'processing_result',
   'refund_awaiting_record',
   'a Midtrans refund still alerts when only a bank transfer of that amount was recorded (N11)');
+select is(internal.record_refund_core((select id from adjusted), pg_temp.payment_of((select id from adjusted)), 10000,
+  'TRF-BANK-N16', 'Transfer bank sebagian dana', pg_temp.proof((select id from adjusted), 'bank16'),
+  '00000000-0000-4000-8000-00000000f001', false) ->> 'result', 'recorded', 'then a bank transfer is recorded');
+select is((select count(*)::int from public.security_alerts a join public.payments p
+           on a.fingerprint = 'refund_seen:' || p.order_id
+           where p.id = pg_temp.payment_of((select id from adjusted)) and a.acknowledged_at is null), 1,
+  'and the alert of the refund Midtrans made stays open: a bank transfer does not answer it (N16)');
 select pg_temp.act_as('superadmin_aal2');
 reset role;
 select set_config('app.in_rpc', '1', true);
@@ -665,18 +682,19 @@ reset role;
 select pg_temp.act_as('superadmin_aal2');
 create temporary table stuck_refund on commit drop as
   select ((public.propose_adjustment('manual_refund', (select id from adjusted),
-    pg_temp.payment_of((select id from adjusted)), 250000, 'Sisa dana dikembalikan',
+    pg_temp.payment_of((select id from adjusted)), 200000, 'Sisa dana dikembalikan',
     pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf')))
     ->> 'id')::uuid as id;
 reset role;
 select pg_temp.act_as_super_b();
 select is((public.approve_adjustment((select id from stuck_refund)) ->> 'status'), 'approved',
-  'a manual refund of all that is left is approved');
+  'a manual refund of 200000 is approved');
 reset role;
 select pg_temp.midtrans_refund(pg_temp.payment_of((select id from adjusted)), 100000);
 select pg_temp.act_as('superadmin_aal2');
-select is(public.record_refund((select id from adjusted), 50000, 'TRF-ADJ-B', 'Sebagian rombongan batal', null,
-  pg_temp.proof((select id from adjusted), 'adj-b')) ->> 'result', 'recorded', 'then a refund Midtrans made lands first');
+select is(public.record_refund((select id from adjusted), 100000, 'TRF-ADJ-B', 'Sebagian rombongan batal', null,
+  pg_temp.proof((select id from adjusted), 'adj-b')) ->> 'result', 'recorded',
+  'then the 100000 Midtrans refunded is recorded, whatever bank transfers came before it (N16)');
 select throws_ok($$select public.apply_adjustment((select id from stuck_refund))$$, 'P0001', null,
   'so the approval no longer applies (REFUND_TOO_LARGE)');
 select is((public.reject_adjustment((select id from stuck_refund), 'Sebagian dana sudah dikembalikan lewat Midtrans')
@@ -719,6 +737,36 @@ select throws_ok($$select public.apply_adjustment((select id from stuck_move))$$
   'so the share it moves is gone (SHARE_TOO_LARGE)');
 select is((public.reject_adjustment((select id from stuck_move), 'Pemesanan sudah dikembalikan seluruhnya')
            ->> 'status'), 'rejected', 'and it is withdrawn too');
+
+-- A manual refund Midtrans carried out under its refund_key counts as one Midtrans reports (decision of the delta
+-- review).
+reset role;
+create temporary table keyed_refund on commit drop as
+  select id from public.payment_adjustments
+  where booking_id = (select id from adjusted) and type = 'manual_refund' and status = 'proposed';
+grant select on keyed_refund to authenticated;
+insert into public.payment_events (payment_id, order_id, source, event_hash, transaction_status, status_code,
+  gross_amount_raw, payload, processed_at)
+select p.id, p.order_id, 'status_api', md5('uji-keyed-refund'), 'partial_refund', '200', '300000.00',
+       jsonb_build_object('currency', 'IDR', 'refund_amount', '101000.00', 'refunds', jsonb_build_array(
+         jsonb_build_object('refund_key', 'TRF-ADJ-B', 'refund_amount', '100000.00'),
+         jsonb_build_object('refund_key', (select id from keyed_refund)::text, 'refund_amount', '1000.00'))), now()
+from public.payments p where p.id = pg_temp.payment_of((select id from adjusted));
+select pg_temp.act_as_super_b();
+select is((public.approve_adjustment((select id from keyed_refund)) ->> 'status'), 'approved',
+  'B approves a manual refund Midtrans made under the adjustment''s id');
+reset role;
+select pg_temp.act_as('superadmin_aal2');
+select is((public.apply_adjustment((select id from keyed_refund)) ->> 'status'), 'applied', 'it is applied');
+reset role;
+select is((select (payload ->> 'reported')::boolean from public.booking_events
+           where reason = 'refund_recorded' and payload ->> 'refund_reference' = 'adjustment:' || (select id from keyed_refund)),
+  true, 'and recorded under Midtrans'' word, since Midtrans reports it under that refund_key');
+select pg_temp.act_as('superadmin_aal2');
+select isnt(((public.propose_adjustment('manual_refund', (select id from adjusted),
+  pg_temp.payment_of((select id from adjusted)), 1000, 'Selisih kecil dikembalikan',
+  (select evidence_path from public.payment_adjustments where id = (select id from stuck_refund)))) ->> 'id'), null,
+  'a rejected adjustment''s evidence may back the next proposal (L2)');
 
 -- An approver who left: B deactivated after approving.
 create temporary table stuck_write_off on commit drop as

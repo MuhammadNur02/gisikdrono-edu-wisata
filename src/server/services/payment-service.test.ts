@@ -205,6 +205,7 @@ const NOTIFICATION: MidtransNotification = {
 };
 const RAW_BODY = JSON.stringify(NOTIFICATION);
 const CONFIRMED = {
+  order_id: 'GSK-7F3K9Q2M-02',
   status_code: '200',
   transaction_status: 'settlement',
   gross_amount: '600000.00',
@@ -246,6 +247,20 @@ describe('processMidtransNotification', () => {
       source: 'status_api',
       eventHash: createHash('sha256').update(`status_api\n${JSON.stringify(CONFIRMED)}`).digest('hex'),
       payload: CONFIRMED,
+    });
+  });
+
+  it('keeps no answer about another order, a 404 included, yet still hands it to apply (L3)', async () => {
+    const notFound = { status_code: '404', status_message: 'Transaction does not exist.' };
+    vi.mocked(getTransactionStatus).mockResolvedValue(notFound);
+    await processMidtransNotification(NOTIFICATION, RAW_BODY);
+    expect(svcRecordPaymentEvent).toHaveBeenCalledTimes(1);
+    expect(svcRecordPaymentEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ source: 'webhook' }));
+    expect(svcApplyPaymentEvent).toHaveBeenCalledWith(expect.anything(), {
+      eventId: 41,
+      source: 'webhook',
+      confirmed: notFound,
+      keyId: 'k1',
     });
   });
 
