@@ -109,26 +109,40 @@ async function sixWrongPasswords(page: Page, email: string, clientIp: string): P
   return answers;
 }
 
+// Other spec files reset every login:% counter in their beforeAll (resetAuthLimits), and one that starts in another
+// worker during these six tries wipes this run's count too, so the sixth then reads as an ordinary failure (#72's
+// first CI run). A run whose sixth answer is not the locked one is started again from a fresh IP, at most
+// LOCKOUT_RUNS times; a limiter that never locks fails every run, so the check keeps its teeth.
+const LOCKOUT_RUNS = 3;
+const LOCKOUT_TEST_MS = 300_000;
+
+async function lockoutRun(page: Page, email: string, ipPrefix: string): Promise<string[]> {
+  let answers: string[] = [];
+  for (let run = 1; run <= LOCKOUT_RUNS; run += 1) {
+    answers = await sixWrongPasswords(page, email, `${ipPrefix}.${String(run)}`);
+    if (answers[SIGN_IN_TRIES - 1]?.includes(copy.errors.RATE_LIMITED)) return answers;
+  }
+  return answers;
+}
+
 test('the sixth failed sign-in for an address gets the locked message, and an unknown address reads the same', async ({
   page,
 }, testInfo) => {
   test.skip(!isDesktop(testInfo.project.name), 'one run of the flow is enough');
+  // Two addresses, each up to LOCKOUT_RUNS runs of six sign-ins.
+  test.setTimeout(LOCKOUT_TEST_MS);
   const account = await createAccount('admin_rw');
   createdAccounts.push(account.id);
   const failed = copy.auth.signIn.failed;
   const locked = copy.errors.RATE_LIMITED;
 
-  const known = await sixWrongPasswords(page, account.email, '198.51.100.61');
+  const known = await lockoutRun(page, account.email, '198.51.100');
   for (const answer of known.slice(0, SIGN_IN_TRIES - 1)) expect(answer).toContain(failed);
   expect(known[SIGN_IN_TRIES - 1]).toContain(locked);
   expect(known[SIGN_IN_TRIES - 1]).not.toContain(failed);
   await expect(page.getByText(locked)).toBeVisible(AUTH_STEP);
 
-  const unknown = await sixWrongPasswords(
-    page,
-    `nobody-${randomUUID()}@example.test`,
-    '198.51.100.62',
-  );
+  const unknown = await lockoutRun(page, `nobody-${randomUUID()}@example.test`, '198.51.101');
   for (const answer of unknown.slice(0, SIGN_IN_TRIES - 1)) expect(answer).toContain(failed);
   expect(unknown[SIGN_IN_TRIES - 1]).toContain(locked);
   await expect(page).toHaveURL(/\/login/, AUTH_STEP);
