@@ -1,3 +1,4 @@
+import type { SessionSummary } from '@/lib/utils/session-summary';
 import type { ActivityPoint } from '@/types/activity-point';
 import type { GalleryItem } from '@/types/gallery';
 import type { PackageSummary } from '@/types/package';
@@ -14,4 +15,8 @@ export interface RwPageData {
   // The RW's own packages and the combos that visit it.
   packages: PackageSummary[];
   schedules: PerformanceSchedule[];
+  // The RW's visit days and session times of the coming weeks (the facts strip).
+  sessions: SessionSummary;
+  // site_settings `contact.whatsapp_number`; NULL until the kelurahan sets it, when the env number stands in.
+  whatsappNumber: string | null;
 }

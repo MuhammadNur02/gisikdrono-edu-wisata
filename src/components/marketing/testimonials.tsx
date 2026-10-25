@@ -1,10 +1,7 @@
-import { Quote } from 'lucide-react';
-
 import { Section } from '@/components/layout/section';
-import { SectionLink } from '@/components/marketing/section-link';
+import { SnapRail } from '@/components/marketing/snap-rail';
 import { ReviewCard } from '@/components/reviews/review-card';
-import { cn } from '@/lib/utils/cn';
-import { PUBLIC_PATHS } from '@/lib/utils/paths';
+import { homeCopy } from '@/lib/copy/home';
 import type { PublicReview } from '@/types/review';
 
 export interface TestimonialsProps {
@@ -12,48 +9,38 @@ export interface TestimonialsProps {
   reviews: readonly PublicReview[];
 }
 
-// From lg the first review is the large one and the others stack beside it (decision of 2026-10-23, §1.3 G7);
-// below lg they share one column. Nothing rotates or scrolls by itself (WCAG 2.2.2).
-const LEAD_ITEM = 'lg:col-span-7 lg:row-span-2';
-const SIDE_ITEM = 'lg:col-span-5';
-
-// The lead review's quote mark sits in the top-right corner beside the stars. At 32 px from 16 px down it ends
-// above the quote's first line (the card's padding, the 16 px stars row and their 16 px gap), so it never
-// overlaps the text (review of PR #36).
-function ReviewItem({ review, isLead }: { review: PublicReview; isLead: boolean }) {
-  return (
-    <div className="relative h-full">
-      {isLead ? (
-        <Quote
-          aria-hidden
-          className="absolute top-4 right-4 size-8 text-muted-foreground/40"
-          strokeWidth={1.5}
-        />
-      ) : null}
-      <ReviewCard review={review} />
-    </div>
-  );
-}
-
-// docs/PRD.md FR-PUB-05. The page leaves this section out while no review is published and featured: the
-// site never shows a sample review (§1.3 G5).
+// DESIGN-SPEC §3.1 `Ulasan` and §4: the featured reviews in a scroll-snap slider that starts in line with the content
+// and runs on past the right edge, the next card cut off by the screen. The visitor moves it (swipe, keys, or the
+// two buttons), never a timer (WCAG 2.2.2); the bars under it mark the first card in view.
 export function Testimonials({ id, reviews }: TestimonialsProps) {
+  const rowId = `${id}-baris`;
   return (
     <Section
       id={id}
       tone="muted"
-      wave={{ variant: 'gentle' }}
-      eyebrow="Ulasan pengunjung"
-      title="Kata rombongan yang sudah berkunjung"
-      headerAction={<SectionLink href={PUBLIC_PATHS.reviews} label="Lihat semua ulasan" />}
-    >
-      <ul className="grid gap-6 lg:grid-cols-12">
-        {reviews.map((review, index) => (
-          <li key={review.id} className={cn('reveal', index === 0 ? LEAD_ITEM : SIDE_ITEM)}>
-            <ReviewItem review={review} isLead={index === 0} />
-          </li>
-        ))}
-      </ul>
-    </Section>
+      eyebrow={homeCopy.reviews.eyebrow}
+      title={homeCopy.reviews.title}
+      description={homeCopy.reviews.description}
+      headerAction={
+        <SnapRail targetId={rowId} count={reviews.length} buttonsClassName="max-md:hidden" />
+      }
+      bleed={
+        <div className="space-y-10">
+          <ul
+            id={rowId}
+            tabIndex={0}
+            aria-label={homeCopy.reviews.rowLabel}
+            className="scrollbar-none flex snap-x snap-mandatory pl-container gap-4 overflow-x-auto scroll-smooth pr-container pb-1 motion-reduce:scroll-auto md:gap-6"
+          >
+            {reviews.map((review) => (
+              <li key={review.id} className="w-75 shrink-0 snap-start md:w-96">
+                <ReviewCard review={review} />
+              </li>
+            ))}
+          </ul>
+          <SnapRail targetId={rowId} count={reviews.length} barsClassName="pl-container" />
+        </div>
+      }
+    />
   );
 }

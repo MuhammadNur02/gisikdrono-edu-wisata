@@ -1,8 +1,13 @@
+import { ArrowRight } from 'lucide-react';
+import Link from 'next/link';
+
 import { Section } from '@/components/layout/section';
 import { RwTile, type RwTileSize } from '@/components/marketing/rw-tile';
 import { IMAGE_SIZES } from '@/config/images';
+import { BOOKING_CTA } from '@/config/nav';
+import type { RwId } from '@/config/rw';
+import { homeCopy } from '@/lib/copy/home';
 import { cn } from '@/lib/utils/cn';
-import { countWord, countWordAtStart } from '@/lib/utils/number-words';
 import type { RwUnitProfile } from '@/types/rw-unit';
 
 interface TileLayout {
@@ -68,19 +73,58 @@ function tileLayout(index: number, count: number): TileLayout {
 export interface RwBentoProps {
   id: string;
   units: readonly RwUnitProfile[];
+  // How many published activity points each RW has, for the badge on its tile.
+  pointCounts: ReadonlyMap<RwId, number>;
+  // The RWs with a package; the others show their profile only (FR-PUB-24) and say `Kenali`.
+  bookableRwIds: readonly RwId[];
 }
 
-// Every RW online (rw_units, sort_order). The eyebrow counts them, so it stays true as RWs go online or offline;
-// with none online the section is left out whole (docs/StyleGuide.md §6.9). The desktop header's Kampung Wisata link
-// points here. The tiles rise in one after another (05, 13, 08) as they come into view.
-export function RwBento({ id, units }: RwBentoProps) {
+interface TileWords {
+  detail: string;
+  linkLabel: string;
+}
+
+// The badge counts the RW's activity points (`RW 05 · 6 titik aktivitas`); a profile-only RW says so
+// instead. The large tile names the programme in its link (`Jelajahi RW 05 Ecowastreme`), the others only the RW.
+function tileWords(unit: RwUnitProfile, index: number, props: RwBentoProps): TileWords {
+  const isBookable = props.bookableRwIds.includes(unit.id);
+  const points = props.pointCounts.get(unit.id) ?? 0;
+  if (!isBookable) {
+    return { detail: homeCopy.kampung.profileOnly, linkLabel: homeCopy.kampung.meet(unit.label) };
+  }
+  return {
+    detail: points > 0 ? homeCopy.kampung.points(points) : unit.themeLabel,
+    linkLabel: homeCopy.kampung.explore(index === 0 ? unit.name : unit.label),
+  };
+}
+
+function CompareLink() {
+  return (
+    <Link
+      href={BOOKING_CTA.href}
+      className="group inline-flex min-h-11 items-center gap-2 rounded-md text-label-lg font-semibold text-primary-ink underline-offset-4 hover:underline"
+    >
+      {homeCopy.kampung.compare}
+      <ArrowRight aria-hidden className="size-4.5 hover-nudge" />
+    </Link>
+  );
+}
+
+// Every RW online (rw_units, sort_order), DESIGN-SPEC §3.1 `Pilih kampung`. The eyebrow and title count them, so they
+// stay true as RWs go online or offline; with none online the section is left out whole (docs/StyleGuide.md §6.9). The
+// desktop header's Kampung Wisata link points here. The tiles rise in one after another (05, 13, 08).
+export function RwBento(props: RwBentoProps) {
+  const { id, units } = props;
   if (units.length === 0) return null;
   return (
     <Section
       id={id}
       isLinkTarget
-      eyebrow={`${countWordAtStart(units.length)} kampung, ${countWord(units.length)} program`}
-      title="Pilih kampung yang ingin Anda kunjungi"
+      eyebrow={homeCopy.kampung.eyebrow(units.length)}
+      title={homeCopy.kampung.title(units.length)}
+      description={homeCopy.kampung.description}
+      headerAction={<CompareLink />}
+      className="pt-6 md:pt-10 lg:pt-12"
     >
       <ul className="grid gap-4 reveal-stagger md:gap-6 lg:grid-cols-12">
         {units.map((unit, index) => {
@@ -91,6 +135,7 @@ export function RwBento({ id, units }: RwBentoProps) {
                 unit={unit}
                 size={layout.size}
                 sizes={layout.sizes}
+                {...tileWords(unit, index, props)}
                 className={cn('w-full', layout.height)}
               />
             </li>

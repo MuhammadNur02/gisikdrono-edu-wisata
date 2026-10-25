@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, ChevronDown, ExternalLink, MapPin } from 'lucide-react';
+import { ArrowRight, ChevronDown, ExternalLink, Locate } from 'lucide-react';
 import { useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { useEffect, useId } from 'react';
@@ -17,10 +17,15 @@ export interface RwAreaListProps {
   selection: RwAreaSelection | null;
   onToggle: (rw: RwId) => void;
   onHover: (rw: RwId | null) => void;
+  // Shows a point on the map with its card open.
+  onLocate: (pointId: string) => void;
 }
 
 type AreaPoint = RwAreaSummary['points'][number];
 type AreaUnit = NonNullable<RwAreaSummary['unit']>;
+
+// `01`, `02`: the row numbers of a kampung's points.
+const ROW_NUMBER_DIGITS = 2;
 
 function buttonIdOf(rw: RwId): string {
   return `rw-area-${String(rw)}`;
@@ -30,59 +35,54 @@ function panelIdOf(rw: RwId): string {
   return `rw-area-${String(rw)}-panel`;
 }
 
-function Swatch({ area }: { area: RwAreaSummary }) {
-  const fill = area.unit ? rwAccentClasses(area.unit.accentKey).fill : NEUTRAL_ACCENT_CLASSES.fill;
-  return <span aria-hidden className={cn('size-3 shrink-0 rounded-full', fill)} />;
+interface PointRowProps {
+  point: AreaPoint;
+  index: number;
+  onLocate: RwAreaListProps['onLocate'];
 }
 
-function PointRow({ point }: { point: AreaPoint }) {
+function PointRow({ point, index, onLocate }: PointRowProps) {
   return (
-    <li className="flex min-h-11 items-center gap-2">
-      <MapPin aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+    <li className="flex min-h-13 items-center gap-3 border-t border-border py-2.5">
+      <span className="w-6 shrink-0 font-display text-body-sm font-bold text-rw tabular-nums">
+        {String(index + 1).padStart(ROW_NUMBER_DIGITS, '0')}
+      </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-body-sm font-medium">{point.name}</span>
+        <span className="block text-body-md font-semibold">{point.name}</span>
         <span className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
           {point.typeLabel}
-          {point.isEstimate ? <Badge variant="neutral">{mapCopy.estimateBadge}</Badge> : null}
+          {point.isEstimate ? (
+            <Badge variant="neutral" size="sm">
+              {mapCopy.estimateBadge}
+            </Badge>
+          ) : null}
         </span>
       </span>
       {point.routeUrl ? (
-        <a
-          href={point.routeUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={mapCopy.routeTo(point.name)}
-          className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-2 text-body-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        <button
+          type="button"
+          aria-label={mapCopy.locate(point.name)}
+          onClick={() => {
+            onLocate(point.id);
+          }}
+          className="flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-rw"
         >
-          <ExternalLink aria-hidden className="size-4" />
-          {mapCopy.route}
-        </a>
+          <Locate aria-hidden className="size-4.5" />
+        </button>
       ) : null}
     </li>
   );
 }
 
-// What an edu-tourism RW offers: its activity points, its own page and the route to it.
+// What opens under an edu-tourism RW: its own page and the route to it.
 function EduPanel({ area, unit }: { area: RwAreaSummary; unit: AreaUnit }) {
   return (
-    <div className="space-y-4">
-      <div className="space-y-1">
-        <p className="text-overline text-muted-foreground">{mapCopy.areaPoints}</p>
-        {area.points.length > 0 ? (
-          <ul>
-            {area.points.map((point) => (
-              <PointRow key={point.id} point={point} />
-            ))}
-          </ul>
-        ) : (
-          <p className="text-body-sm text-muted-foreground">{mapCopy.areaNoPoints}</p>
-        )}
-      </div>
+    <div className="space-y-3 pb-4">
       <div className="flex flex-wrap gap-2">
         <Button size="sm" asChild>
           <Link href={unit.path}>
-            <ArrowRight aria-hidden />
             {mapCopy.areaRwPage(unit.name)}
+            <ArrowRight data-icon="trailing" aria-hidden />
           </Link>
         </Button>
         <Button size="sm" variant="outline" asChild>
@@ -104,13 +104,36 @@ function EduPanel({ area, unit }: { area: RwAreaSummary; unit: AreaUnit }) {
   );
 }
 
-interface AreaItemProps extends Pick<RwAreaListProps, 'onToggle' | 'onHover'> {
+interface AreaItemProps extends Pick<RwAreaListProps, 'onToggle' | 'onHover' | 'onLocate'> {
   area: RwAreaSummary;
   isOpen: boolean;
 }
 
+// An edu-tourism RW leads with its 4 x 22 accent bar and its programme; another RW with a neutral dot and its number.
+function AreaName({ area }: { area: RwAreaSummary }) {
+  if (!area.unit) {
+    return (
+      <>
+        <span
+          aria-hidden
+          className={cn('size-2.5 shrink-0 rounded-full', NEUTRAL_ACCENT_CLASSES.fill)}
+        />
+        <span className="min-w-0 flex-1 text-body-md font-medium">{area.label}</span>
+      </>
+    );
+  }
+  return (
+    <>
+      <span aria-hidden className="h-5.5 w-1 shrink-0 rounded-full bg-rw-fill" />
+      <span className="min-w-0 flex-1 font-display text-lg font-bold">
+        {`${area.label} · ${area.unit.shortName}`}
+      </span>
+    </>
+  );
+}
+
 // A disclosure button per RW: the keyboard and screen-reader path to what clicking the area on the map shows.
-// Hovering or focusing it highlights the area on the map.
+// Hovering or focusing it highlights the area on the map. An edu-tourism RW leads with its 4 x 22 accent bar.
 function AreaButton({ area, isOpen, onToggle, onHover }: AreaItemProps) {
   const highlight = () => {
     onHover(area.rw);
@@ -131,19 +154,13 @@ function AreaButton({ area, isOpen, onToggle, onHover }: AreaItemProps) {
       onMouseLeave={clearHighlight}
       onFocus={highlight}
       onBlur={clearHighlight}
-      className="flex min-h-11 w-full items-center gap-3 rounded-xl px-4 py-2.5 text-left transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none"
+      className="flex min-h-13 w-full items-center gap-3 rounded-md py-2 text-left transition-colors hover:text-rw motion-reduce:transition-none"
     >
-      <Swatch area={area} />
-      <span className="min-w-0 flex-1">
-        <span className="block text-body font-medium">{area.label}</span>
-        {area.unit ? (
-          <span className="block text-caption text-muted-foreground">{area.unit.shortName}</span>
-        ) : null}
-      </span>
+      <AreaName area={area} />
       <ChevronDown
         aria-hidden
         className={cn(
-          'size-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none',
+          'size-4.5 shrink-0 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none',
           isOpen && 'rotate-180',
         )}
       />
@@ -151,47 +168,70 @@ function AreaButton({ area, isOpen, onToggle, onHover }: AreaItemProps) {
   );
 }
 
-function AreaItem(props: AreaItemProps) {
-  const { area, isOpen } = props;
+// An edu-tourism RW lists its points under the button, always in view; the disclosure holds its page and route.
+function AreaPoints({ area, onLocate }: Pick<AreaItemProps, 'area' | 'onLocate'>) {
+  if (area.points.length === 0) {
+    return (
+      <p className="border-t border-border py-3 text-body-sm text-muted-foreground">
+        {mapCopy.areaNoPoints}
+      </p>
+    );
+  }
   return (
-    <li>
+    <ol>
+      {area.points.map((point, index) => (
+        <PointRow key={point.id} point={point} index={index} onLocate={onLocate} />
+      ))}
+    </ol>
+  );
+}
+
+function AreaItem(props: AreaItemProps) {
+  const { area, isOpen, onLocate } = props;
+  const itemClass = area.unit
+    ? cn('rounded-xl bg-card px-5 pt-2 pb-3', rwAccentClasses(area.unit.accentKey).scope)
+    : 'rounded-lg bg-card/60 px-4';
+  return (
+    <li className={itemClass}>
       <AreaButton {...props} />
       {isOpen ? (
         <div
           id={panelIdOf(area.rw)}
           role="region"
           aria-labelledby={buttonIdOf(area.rw)}
-          className="px-4 pt-1 pb-4"
+          className="pt-1"
         >
           {area.unit ? (
             <EduPanel area={area} unit={area.unit} />
           ) : (
-            <p className="text-body-sm text-muted-foreground">{mapCopy.areaNotEdu}</p>
+            <p className="pb-3 text-body-sm text-muted-foreground">{mapCopy.areaNotEdu}</p>
           )}
         </div>
       ) : null}
+      {area.unit ? <AreaPoints area={area} onLocate={onLocate} /> : null}
     </li>
   );
 }
 
-interface AreaGroupProps extends Pick<RwAreaListProps, 'selection' | 'onToggle' | 'onHover'> {
+interface AreaGroupProps extends Pick<
+  RwAreaListProps,
+  'selection' | 'onToggle' | 'onHover' | 'onLocate'
+> {
   title: string;
   areas: readonly RwAreaSummary[];
+  listClassName: string;
 }
 
 // Each group is a list named by its heading, so a screen reader announces "Kampung eduwisata, list, 3 items".
-function AreaGroup({ title, areas, selection, ...handlers }: AreaGroupProps) {
+function AreaGroup({ title, areas, selection, listClassName, ...handlers }: AreaGroupProps) {
   const headingId = useId();
   if (areas.length === 0) return null;
   return (
-    <div className="space-y-2">
-      <h3 id={headingId} className="text-overline text-muted-foreground">
+    <div className="space-y-3">
+      <h3 id={headingId} className="text-meta-caps text-muted-foreground">
         {title}
       </h3>
-      <ul
-        aria-labelledby={headingId}
-        className="divide-y divide-border rounded-xl border border-border bg-card"
-      >
+      <ul aria-labelledby={headingId} className={listClassName}>
         {areas.map((area) => (
           <AreaItem key={area.rw} area={area} isOpen={selection?.rw === area.rw} {...handlers} />
         ))}
@@ -211,21 +251,23 @@ function useRevealMapSelection(selection: RwAreaSelection | null) {
   }, [selection, prefersReducedMotion]);
 }
 
-// docs/PRD.md FR-PUB-18: every RW of the map, the edu-tourism RWs first, each opening its programme, points, page
-// and route in place.
-export function RwAreaList({ areas, selection, onToggle, onHover }: RwAreaListProps) {
+// docs/PRD.md FR-PUB-18 and DESIGN-SPEC §3.9 `Daftar titik`: the edu-tourism RWs as columns with every point numbered
+// (each can be shown on the map), then the kelurahan's other RWs. Each RW opens its page and route in place.
+export function RwAreaList({ areas, selection, onToggle, onHover, onLocate }: RwAreaListProps) {
   useRevealMapSelection(selection);
-  const handlers = { selection, onToggle, onHover };
+  const handlers = { selection, onToggle, onHover, onLocate };
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       <AreaGroup
         title={mapCopy.areaListEdu}
         areas={areas.filter((area) => area.unit !== null)}
+        listClassName="grid items-start gap-4 md:gap-6 lg:grid-cols-3"
         {...handlers}
       />
       <AreaGroup
         title={mapCopy.areaListOther}
         areas={areas.filter((area) => area.unit === null)}
+        listClassName="grid items-start gap-2 sm:grid-cols-2 lg:grid-cols-5"
         {...handlers}
       />
     </div>

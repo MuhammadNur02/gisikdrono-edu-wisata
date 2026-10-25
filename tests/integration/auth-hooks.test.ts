@@ -110,7 +110,10 @@ describe('Auth hooks through GoTrue', () => {
 
   it('signs a staff member in with the role, RW and claims_version of their profile', async () => {
     const account = await createAccount();
-    await runSql(`insert into public.profiles (id, email, full_name, role, rw_id, is_active, claims_version)
+    // handle_new_auth_user gave the account a profile without a role (20261029080000); this one replaces it.
+    await runSql(`select set_config('app.purge', 'on', true);
+      delete from public.profiles where id = '${account.id}';
+      insert into public.profiles (id, email, full_name, role, rw_id, is_active, claims_version)
       values ('${account.id}', '${account.email}', 'Admin Uji', 'admin_rw', 5, true, 7)`);
 
     const { data, error } = await signIn(account.email, PASSWORD);

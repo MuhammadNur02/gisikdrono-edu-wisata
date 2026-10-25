@@ -50,17 +50,22 @@ export const GEO_MAX_ZOOM = 19;
 export const GEO_POINT_MARKER_RADIUS = 7;
 
 // The RW area map of /peta-kontak (src/components/map/rw-area-leaflet.tsx). The kelurahan is about twice as tall as
-// it is wide, so the frame stands upright on a phone and lies landscape from sm.
-export const RW_AREA_FRAME_CLASS = 'aspect-3/4 w-full sm:aspect-4/3';
+// it is wide; DESIGN-SPEC §3.9 frames it 552 px tall on a phone and 640 px from md.
+export const RW_AREA_FRAME_CLASS = 'h-138 w-full md:h-160';
 export const RW_AREA_FIT_PADDING_PX = 16;
 // An RW chosen in the list is framed, but never closer than a street.
 export const RW_AREA_SELECT_MAX_ZOOM = 17;
+// A point picked in the list is shown at least this close.
+export const RW_AREA_POINT_ZOOM = 17;
 // Quarter steps let the whole kelurahan fill the frame instead of falling back a whole zoom level.
 export const RW_AREA_ZOOM_SNAP = 0.25;
 // The long duration of docs/StyleGuide.md §7.2, in the seconds Leaflet takes; reduced motion jumps instead.
 export const RW_AREA_FLY_SECONDS = 0.5;
 export const RW_AREA_OFFICE_MARKER_RADIUS = 9;
 // The classes the shapes carry; src/styles/globals.css colours them from the RW palette tokens.
+// The attribute a map hotspot carries its point's id in, so the focus can go back to it when the point's card closes.
+export const HOTSPOT_ID_ATTRIBUTE = 'data-point-id';
+
 export const RW_AREA_CLASS = {
   area: 'rw-area',
   edu: 'rw-area-edu',

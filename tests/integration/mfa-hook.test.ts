@@ -86,8 +86,8 @@ async function eventsOf(userId: string): Promise<string[]> {
     .map((row) => row.event_type);
 }
 
-// Security events are append-only, so they go under the retention flag; deleting the Auth user takes its factors and
-// sessions with it.
+// Security events are append-only, so they go under the retention flag; deleting the Auth user takes its factors,
+// its sessions and its never-staff profile with it (20261029080300).
 async function removeWhatTheSuiteWrote() {
   const userIds = `'{${createdUserIds.join(',')}}'::uuid[]`;
   await runSql(`begin;
@@ -108,7 +108,7 @@ describe('MFA verification hook through GoTrue', () => {
   }, SLOW_TEST_MS);
 
   it(
-    'lets the right code through and records nothing',
+    'lets the right code through and records no failure',
     async () => {
       const account = await accountWithFactor();
       const client = await signedInClient(account.email);
@@ -119,7 +119,9 @@ describe('MFA verification hook through GoTrue', () => {
       });
 
       expect(error).toBeNull();
-      expect(await eventsOf(account.id)).toEqual([]);
+      // The enrolment verified a new factor, which is an mfa_enrolled event (20261029080200); a later sign-in
+      // with the same factor is not.
+      expect(await eventsOf(account.id)).toEqual(['mfa_enrolled']);
     },
     SLOW_TEST_MS,
   );
@@ -155,6 +157,7 @@ describe('MFA verification hook through GoTrue', () => {
       });
       expect(rightCode.error?.code).toBe('mfa_verification_rejected');
       expect(await eventsOf(account.id)).toEqual([
+        'mfa_enrolled',
         'mfa_failed',
         'mfa_failed',
         'mfa_failed',

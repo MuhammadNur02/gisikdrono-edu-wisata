@@ -132,17 +132,18 @@ select is(
 select is((select string_agg(slug, ',' order by slug) from public.umkm_vendors where slug in ('v5', 'v5i', 'v8')),
   'v5,v5i', 'sees their own RW''s vendors, inactive ones included');
 select throws_ok($$select bank_name from public.umkm_vendors$$, '42501', null, 'but no bank account');
-select lives_ok($$insert into public.umkm_vendors (rw_id, slug, name, created_by)
-  values (5, 'v5-baru', 'Vendor Baru', '00000000-0000-4000-8000-00000000f005')$$, 'adds a vendor for their RW');
+select throws_ok($$insert into public.umkm_vendors (rw_id, slug, name, created_by)
+  values (5, 'v5-baru', 'Vendor Baru', '00000000-0000-4000-8000-00000000f005')$$, '42501', null,
+  'adds no vendor, not even for their RW (the superadmin''s since 20261028080100)');
 select is(pg_temp.row_count($$update public.umkm_vendors set name = 'Diubah'
   where id = '00000000-0000-4000-8000-00000000d801'$$), 0, 'edits no RW 08 vendor');
 select is(pg_temp.row_count($$delete from public.umkm_vendors where id = '00000000-0000-4000-8000-00000000d502'$$), 0,
   'and deletes no vendor');
 select is((select string_agg(slug, ',' order by slug) from public.products_umkm where slug in ('pr5', 'pr5d', 'pr8')),
   'pr5,pr5d', 'sees their own RW''s products, drafts included');
-select lives_ok($$insert into public.products_umkm (rw_id, vendor_id, slug, name, category, price, created_by)
+select throws_ok($$insert into public.products_umkm (rw_id, vendor_id, slug, name, category, price, created_by)
   values (5, '00000000-0000-4000-8000-00000000d501', 'pr5-baru', 'Produk Baru', 'other', 10000,
-          '00000000-0000-4000-8000-00000000f005')$$, 'and adds one');
+          '00000000-0000-4000-8000-00000000f005')$$, '42501', null, 'and adds none');
 
 -- ===== admin_rw 08 =====
 reset role;

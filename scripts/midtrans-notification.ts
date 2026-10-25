@@ -35,6 +35,24 @@ export interface SimulatedNotification {
   merchantId: string;
 }
 
+// Midtrans writes its times in WIB without a zone ('2026-10-24 09:05:00'). A simulated payment happens now: a fixed
+// date made every settlement fall before the revenue-share rules a fresh database seeds with effective_from = today,
+// so from the day after, the ledger found no rule in force and stayed empty.
+const MIDTRANS_CLOCK = new Intl.DateTimeFormat('sv-SE', {
+  timeZone: 'Asia/Jakarta',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+});
+
+export function midtransTime(at: Date = new Date()): string {
+  return MIDTRANS_CLOCK.format(at);
+}
+
 export function simulatedNotification(input: SimulatedNotification): Record<string, unknown> {
   const signed = {
     order_id: input.orderId,
@@ -42,7 +60,7 @@ export function simulatedNotification(input: SimulatedNotification): Record<stri
     gross_amount: input.grossAmount,
   };
   return {
-    transaction_time: '2026-10-24 09:00:00',
+    transaction_time: midtransTime(),
     transaction_status: input.status,
     transaction_id: input.transactionId ?? randomUUID(),
     status_message: 'midtrans payment notification',
@@ -53,6 +71,6 @@ export function simulatedNotification(input: SimulatedNotification): Record<stri
     merchant_id: input.merchantId,
     fraud_status: 'accept',
     currency: 'IDR',
-    ...(input.status === 'settlement' ? { settlement_time: '2026-10-24 09:05:00' } : {}),
+    ...(input.status === 'settlement' ? { settlement_time: midtransTime() } : {}),
   };
 }
