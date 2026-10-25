@@ -168,9 +168,10 @@ on conflict do nothing;
 -- (public/map/gisikdrono-rw.geojson): a small ring around the RW's point-on-surface, and for RW 13 around Jalan
 -- Jatisari (found in OSM inside RW 13), where /seni-budaya places the Kampung Budaya & Seni. The RW centres are the
 -- point-on-surface of each polygon. The kelurahan confirms the exact spots (docs/content/konten-situs-kelurahan.md,
--- section 8). Only a row without coordinates gets one, so a position someone entered stays.
+-- section 8). Only a row without coordinates gets one, so a position someone entered stays, and it is marked
+-- location_estimated (20261028080100), which clears itself when staff move it.
 update public.activity_points as point
-set lat = estimate.lat, lng = estimate.lng
+set lat = estimate.lat, lng = estimate.lng, location_estimated = true
 from (values
   (5, 'bank-sampah-sumber-rejeki', -6.992862, 110.390212),
   (5, 'taman-toga-sumber-saras', -6.992612, 110.389779),
@@ -190,7 +191,7 @@ from (values
 where point.rw_id = estimate.rw_id and point.slug = estimate.slug and point.lat is null and point.lng is null;
 
 update public.rw_units as unit
-set map_lat = centre.lat, map_lng = centre.lng
+set map_lat = centre.lat, map_lng = centre.lng, location_estimated = true
 from (values (5, -6.993112, 110.389779), (8, -6.981301, 110.387625), (13, -6.996775, 110.386199))
   as centre(id, lat, lng)
 where unit.id = centre.id and unit.map_lat is null and unit.map_lng is null;

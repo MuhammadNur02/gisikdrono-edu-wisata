@@ -29,6 +29,9 @@ export function buildGeoMarkers(
     lng: unit.lng,
     routeUrl: googleMapsDirectionsUrl({ lat: unit.lat, lng: unit.lng }),
     isEstimate: isSeededRwCentreEstimate(unit.id, unit),
+    description: unit.tagline,
+    image: null,
+    rwPath: unit.path,
   }));
   const pointMarkers = locatedPoints(points).map((point): GeoMarker => ({
     id: point.id,
@@ -40,6 +43,9 @@ export function buildGeoMarkers(
     lng: point.lng,
     routeUrl: googleMapsDirectionsUrl({ lat: point.lat, lng: point.lng }),
     isEstimate: isSeededPointEstimate(point),
+    description: point.shortDescription,
+    image: point.image,
+    rwPath: units.find((unit) => unit.id === point.rwId)?.path ?? null,
   }));
   return [...rwMarkers, ...pointMarkers];
 }

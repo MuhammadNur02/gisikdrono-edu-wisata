@@ -1,10 +1,12 @@
+import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
 import { Section } from '@/components/layout/section';
-import { CaptionedPhoto } from '@/components/marketing/photo';
-import { SectionLink } from '@/components/marketing/section-link';
-import { SnapControls } from '@/components/marketing/snap-controls';
-import { IMAGE_SIZES } from '@/config/images';
+import { MarqueeToggle } from '@/components/marketing/marquee-toggle';
+import { PhotoFrame } from '@/components/marketing/photo';
+import { Button } from '@/components/ui/button';
+import { homeCopy } from '@/lib/copy/home';
+import { cn } from '@/lib/utils/cn';
 import type { HomeGalleryPhoto } from '@/lib/utils/home-gallery';
 import { PUBLIC_PATHS } from '@/lib/utils/paths';
 
@@ -13,49 +15,102 @@ export interface GalleryStripProps {
   photos: readonly HomeGalleryPhoto[];
 }
 
-// A full-bleed scroll-snap row of captioned photos (docs/StyleGuide.md §5.7, decision of 2026-10-23), after
-// dusunbambu.id's image slideshow but without autoplay (WCAG 2.2.2) and without a carousel library: a phone swipes,
-// a keyboard scrolls the focused row with the arrow keys, a mouse uses the buttons from md. The row starts and
-// stops in line with the container's padding, and the next photo peeks in from the edge.
-function PhotoRow({ id, photos }: GalleryStripProps) {
+// A photo 360 px tall (230 on a phone) at its own proportions, so the widths vary along the row as the design's do;
+// 360 px of height never asks a low-resolution source for more than about 500 px of width.
+const PHOTO_SIZES = '(min-width: 768px) 540px, 320px';
+
+// One lap holds at least this many photos, repeating a short set, so the track always covers a wide screen and the
+// loop never shows a gap.
+const MIN_LAP_PHOTOS = 8;
+
+interface LapPhoto {
+  key: string;
+  photo: HomeGalleryPhoto;
+  // A repeat of a photo already in the lap.
+  isRepeat: boolean;
+}
+
+function lapOf(photos: readonly HomeGalleryPhoto[]): LapPhoto[] {
+  const rounds = Math.max(1, Math.ceil(MIN_LAP_PHOTOS / photos.length));
+  return Array.from({ length: rounds }, (_, round) =>
+    photos.map((photo) => ({ key: `${String(round)}-${photo.id}`, photo, isRepeat: round > 0 })),
+  ).flat();
+}
+
+// One lap of the track. The copy and every repeat are hidden from assistive technology and out of the tab order, so
+// each photo is announced and focused once.
+function PhotoSet({ lap, isCopy }: { lap: readonly LapPhoto[]; isCopy: boolean }) {
   return (
-    <div role="region" aria-roledescription="carousel" aria-label="Galeri kegiatan">
-      <ul
-        id={id}
-        tabIndex={0}
-        className="flex snap-x snap-mandatory scroll-px-4 gap-4 overflow-x-auto scroll-smooth px-4 scrollbar-none sm:scroll-px-6 sm:px-6 lg:scroll-px-8 lg:px-8 motion-reduce:scroll-auto"
-      >
-        {photos.map((photo) => (
-          <li key={photo.id} className="shrink-0 basis-5/6 snap-start sm:basis-1/2 lg:basis-1/3">
-            <Link href={photo.href} className="block rounded-xl">
-              <CaptionedPhoto
-                image={photo.image}
-                caption={photo.caption}
-                sizes={IMAGE_SIZES.slide}
-                aspectClassName="aspect-4/3"
-              />
-            </Link>
-          </li>
-        ))}
-      </ul>
+    <ul aria-hidden={isCopy || undefined} className="flex gap-4 pr-4 md:gap-5 md:pr-5">
+      {lap.map(({ key, photo, isRepeat }) => (
+        <li key={key} aria-hidden={(!isCopy && isRepeat) || undefined} className="shrink-0">
+          <Link
+            href={photo.href}
+            tabIndex={isCopy || isRepeat ? -1 : undefined}
+            className="group block space-y-3 rounded-lg"
+          >
+            <PhotoFrame
+              image={photo.image}
+              sizes={PHOTO_SIZES}
+              className="h-57.5 w-auto md:h-90"
+              imageClassName="transition-transform duration-700 ease-out-soft motion-safe:group-hover:scale-105"
+            />
+            <span className="block max-w-80 truncate text-body-sm text-muted-foreground">
+              {photo.caption}
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function Controls({ marqueeId, className }: { marqueeId: string; className?: string }) {
+  return (
+    <div className={cn('flex gap-3', className)}>
+      <MarqueeToggle targetId={marqueeId} label={homeCopy.gallery.pause} />
+      <Button variant="outline" asChild className="max-md:flex-1">
+        <Link href={PUBLIC_PATHS.gallery}>
+          {homeCopy.gallery.open}
+          <ArrowRight data-icon="trailing" aria-hidden />
+        </Link>
+      </Button>
     </div>
   );
 }
 
+// DESIGN-SPEC §3.1 `Galeri strip` and §4: the captioned photos run right to left in a continuous marquee bleeding off
+// both edges, 60 s a lap (45 s on a phone), CSS only. It stops while pointed at or focused and with the Jeda toggle;
+// under reduced motion it does not move and scrolls by hand instead.
 export function GalleryStrip({ id, photos }: GalleryStripProps) {
-  const rowId = `${id}-baris`;
+  const marqueeId = `${id}-marquee`;
+  const lap = lapOf(photos);
+  const marquee = (
+    <div
+      id={marqueeId}
+      role="region"
+      aria-label={homeCopy.gallery.rowLabel}
+      className="marquee pl-5 md:-ml-38 md:pl-0"
+    >
+      <div className="marquee-track">
+        <PhotoSet lap={lap} isCopy={false} />
+        <PhotoSet lap={lap} isCopy />
+      </div>
+    </div>
+  );
   return (
     <Section
       id={id}
-      eyebrow="Galeri"
-      title="Suasana kegiatan di kampung"
-      headerAction={
-        <div className="flex items-center gap-4">
-          <SnapControls targetId={rowId} />
-          <SectionLink href={PUBLIC_PATHS.gallery} label="Lihat semua galeri" />
-        </div>
+      eyebrow={homeCopy.gallery.eyebrow}
+      title={homeCopy.gallery.title}
+      description={homeCopy.gallery.description}
+      headerAction={<Controls marqueeId={marqueeId} className="max-md:hidden" />}
+      bleed={
+        <>
+          {marquee}
+          <Controls marqueeId={marqueeId} className="mx-5 mt-8 md:hidden" />
+        </>
       }
-      bleed={<PhotoRow id={rowId} photos={photos} />}
     />
   );
 }
