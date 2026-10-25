@@ -1,10 +1,10 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { useState, useTransition, type ReactNode } from 'react';
 
 import { FormAlert } from '@/components/forms/form-alert';
 import { Button } from '@/components/ui/button';
+import { useRefreshAfter } from '@/hooks/use-refresh-after';
 import { formatDateLong, formatTimeRange } from '@/lib/utils/dates';
 import type { ActionResult } from '@/types/action-result';
 import type { WeatherOption } from '@/types/booking-hub';
@@ -125,7 +125,7 @@ function Outcome({ message }: { message: { tone: 'error' | 'done'; text: string 
 }
 
 function useMove(props: WeatherRescheduleProps) {
-  const router = useRouter();
+  const refresh = useRefreshAfter();
   const [message, setMessage] = useState<{ tone: 'error' | 'done'; text: string } | null>(null);
   const [isPending, startTransition] = useTransition();
   const move = (sessionId: string) => {
@@ -137,7 +137,7 @@ function useMove(props: WeatherRescheduleProps) {
         return;
       }
       setMessage({ tone: 'done', text: props.labels.moved });
-      router.refresh();
+      refresh();
     });
   };
   return { message, isPending, move };

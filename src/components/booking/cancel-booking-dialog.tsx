@@ -1,7 +1,6 @@
 'use client';
 
 import { CircleX } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { useState, useTransition, type ComponentProps, type ReactNode } from 'react';
 
 import { FormAlert } from '@/components/forms/form-alert';
@@ -16,6 +15,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { useRefreshAfter } from '@/hooks/use-refresh-after';
 import type { ActionResult } from '@/types/action-result';
 
 export type CancelBookingAction = (input: unknown) => Promise<ActionResult<null>>;
@@ -63,7 +63,7 @@ function CancelTrigger({
 }
 
 function useCancellation(props: CancelBookingDialogProps) {
-  const router = useRouter();
+  const refresh = useRefreshAfter();
   const [error, setError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -79,11 +79,11 @@ function useCancellation(props: CancelBookingDialogProps) {
       if (!result.ok) {
         setError(result.error.message);
         // A refund that moved: the page reads the new figure, and the dialog stays open to ask again.
-        if (result.error.code === 'PRICE_MISMATCH') router.refresh();
+        if (result.error.code === 'PRICE_MISMATCH') refresh();
         return;
       }
       setIsOpen(false);
-      router.refresh();
+      refresh();
     });
   };
   return { error, isOpen, setIsOpen, isPending, cancel };

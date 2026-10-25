@@ -81,11 +81,14 @@ async function moveForWeather(page: Page, bookingCode: string) {
   await expect(page.getByRole('status').filter({ hasText: 'Jadwal sudah dipindah' })).toBeVisible(
     STEP,
   );
-  // Decision of 2026-10-25 on the weather, rule 1: the rights stay open after a move, one move fewer.
-  await expect(page.getByText(/bisa dipindah 2 kali lagi/)).toBeVisible(STEP);
+  await expect(page.getByRole('button', { name: 'Pindah ke jadwal ini' })).toBeEnabled(STEP);
   expect((await hubStateOf(bookingCode))?.session_id).toBe(sessions.filled.id);
   expect(await reservedOn(sessions.booked.id)).toBe(0);
   expect(await reservedOn(sessions.filled.id)).toBeGreaterThan(0);
+  // Decision of 2026-10-25 on the weather, rule 1: the rights stay open after a move, one move fewer. Read from a
+  // fresh page, so the assertion is the server's and not the timing of the island's refresh.
+  await page.reload();
+  await expect(page.getByText(/bisa dipindah 2 kali lagi/)).toBeVisible(STEP);
 }
 
 async function cancelUnderTheTerms(page: Page, bookingCode: string) {
@@ -97,9 +100,7 @@ async function cancelUnderTheTerms(page: Page, bookingCode: string) {
   await dialog.getByRole('button', { name: 'Ya, batalkan' }).click();
   // The database first, so a refusal shows as one: the dialog keeps its error open until then.
   await expect(dialog.getByRole('alert')).toHaveCount(0);
-  await expect
-    .poll(async () => (await hubStateOf(bookingCode))?.status, STEP)
-    .toBe('cancelled');
+  await expect.poll(async () => (await hubStateOf(bookingCode))?.status, STEP).toBe('cancelled');
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Reservasi ini dibatalkan' })).toBeVisible(STEP);
   await expect(page.getByText(/Pengembalian dana Rp.* sedang diproses/)).toBeVisible();
