@@ -30,6 +30,10 @@ export interface WhatsAppCredentials {
 }
 
 type TemplateComponent =
+  | {
+      type: 'header';
+      parameters: { type: 'document'; document: { link: string; filename: string } }[];
+    }
   | { type: 'body'; parameters: { type: 'text'; text: string }[] }
   | { type: 'button'; sub_type: 'url'; index: '0'; parameters: { type: 'text'; text: string }[] };
 
@@ -45,6 +49,13 @@ function buttonFor(message: OutgoingMessage): TemplateComponent | null {
   };
 }
 
+// The ticket's PDF for a template with a document header; Meta fetches it from the signed URL.
+function headerFor(message: OutgoingMessage): TemplateComponent | null {
+  if (!message.document) return null;
+  const { url, filename } = message.document;
+  return { type: 'header', parameters: [{ type: 'document', document: { link: url, filename } }] };
+}
+
 export function whatsAppPayload(message: OutgoingMessage) {
   const body: TemplateComponent = {
     type: 'body',
@@ -54,6 +65,9 @@ export function whatsAppPayload(message: OutgoingMessage) {
     })),
   };
   const button = buttonFor(message);
+  const components = [headerFor(message), body, button].filter(
+    (component): component is TemplateComponent => component !== null,
+  );
   return {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
@@ -62,7 +76,7 @@ export function whatsAppPayload(message: OutgoingMessage) {
     template: {
       name: WHATSAPP_TEMPLATE_NAMES[message.template],
       language: { code: TEMPLATE_LANGUAGE },
-      components: button ? [body, button] : [body],
+      components,
     },
   };
 }

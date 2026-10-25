@@ -13,12 +13,16 @@ import type { ActionFailure } from '@/types/action-result';
 export type DocumentReader =
   { ok: true; reader: 'staff'; userId: string } | { ok: true; reader: 'guest' } | ActionFailure;
 
-type DocumentTable = 'quotations' | 'invoices';
+// A ticket file is the booking's own, read through the staff view of bookings (Task P3.11.05).
+type DocumentTable = 'quotations' | 'invoices' | 'v_bookings_staff';
 
 // RLS answers the scope question: a row the staff member may not see is a row that does not exist for them.
 async function staffSeesRow(table: DocumentTable, rowId: string): Promise<boolean> {
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.from(table).select('id').eq('id', rowId).maybeSingle();
+  const { data, error } =
+    table === 'v_bookings_staff'
+      ? await supabase.from('v_bookings_staff').select('id').eq('id', rowId).maybeSingle()
+      : await supabase.from(table).select('id').eq('id', rowId).maybeSingle();
   if (error) throw error;
   return data !== null;
 }

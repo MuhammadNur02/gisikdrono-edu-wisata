@@ -82,6 +82,21 @@ export const documentsCopy = {
     rateLimited: 'Terlalu banyak pemeriksaan dari jaringan Anda. Coba lagi beberapa saat lagi, ya.',
     noLongerValid: 'Dokumen ini tidak lagi berlaku; lihat statusnya di atas.',
   },
+  // The e-ticket PDF (Task P3.11.05): one page per RW of the visit, no participant names.
+  ticket: {
+    title: 'E-Tiket Kunjungan',
+    fileTitle: (bookingCode: string) => `E-Tiket ${bookingCode}`,
+    location: 'Lokasi',
+    showAtGate: 'Tunjukkan kode QR ini kepada petugas di pintu masuk.',
+    rules: [
+      'Tiket berlaku hanya pada tanggal dan sesi yang tertulis.',
+      'Satu kode QR berlaku untuk seluruh rombongan pada tiket ini.',
+      'Jangan bagikan kode QR ini kepada orang lain.',
+      'Pembatalan atau perubahan jadwal melalui halaman reservasi atau WhatsApp kelurahan.',
+    ],
+    notValid:
+      'Tiket ini tidak berlaku, jadi kode QR-nya tidak dicantumkan. Hubungi kelurahan lewat WhatsApp.',
+  },
   methods: {
     qris: 'QRIS',
     virtual_account: 'Virtual Account',

@@ -71,6 +71,7 @@ export const LOG_EVENTS = [
   'internal_error',
   'job_run',
   'payment_webhook',
+  'provider_webhook',
   'health_degraded',
 ] as const;
 

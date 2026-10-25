@@ -1,5 +1,6 @@
 import 'server-only';
 
+import type { DatabaseClient } from '@/db/rpc-result';
 import { serverEnv } from '@/lib/env';
 import { publicEnv } from '@/lib/public-env';
 import { signTicket } from '@/lib/qr/sign';
@@ -45,8 +46,11 @@ function qrOf(ticket: {
   return qrSvgPath(new URL(`/v/${token}`, publicEnv.NEXT_PUBLIC_SITE_URL).toString());
 }
 
-export async function getTicketsForBooking(bookingId: string): Promise<GuestTicket[]> {
-  const { data, error } = await createSupabaseAdminClient()
+export async function getTicketsForBooking(
+  bookingId: string,
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<GuestTicket[]> {
+  const { data, error } = await adminClient
     .from('tickets_qr')
     .select(TICKET_COLUMNS)
     .eq('booking_id', bookingId)

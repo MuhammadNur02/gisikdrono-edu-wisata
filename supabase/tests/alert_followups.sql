@@ -3,7 +3,7 @@
 -- and that raises an alert of its own, though acknowledging that one raises no further alert (20261030080200); and
 -- the project owner's break-glass reset reaches only the sole superadmin.
 begin;
-select plan(21);
+select plan(22);
 \ir helpers/rls_personas.psql
 
 -- The kelurahan's only active superadmin is the persona, whatever else this database holds.
@@ -61,6 +61,10 @@ select is((select (severity, notified_at is null)::text from public.security_ale
 update public.security_alerts set notified_at = now() - interval '25 hours'
 where fingerprint = 'alert_self_ack_sole_superadmin:00000000-0000-4000-8000-0000000fa001';
 select pg_temp.act_as('superadmin_aal2');
+select is(pg_temp.row_count(format(
+  'update public.security_alerts set acknowledged_by = %L where fingerprint = %L',
+  '00000000-0000-4000-8000-00000000f001', 'alert_self_ack_sole_superadmin:00000000-0000-4000-8000-0000000fa001')),
+  0, 'the ordinary acknowledgement refuses the self-acknowledgement alert, which names them');
 select lives_ok(
   format($$select public.acknowledge_alert_as_sole_superadmin(%L, 'Penutupan sendiri sudah dilaporkan ke Lurah')$$,
          (select id from public.security_alerts

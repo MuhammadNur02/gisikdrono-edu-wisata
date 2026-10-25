@@ -2,12 +2,13 @@ import 'server-only';
 
 import { z } from 'zod';
 
+import { renderNotificationHtml } from '@/lib/email/render';
 import { messageText } from '@/lib/notifications/message-text';
 import { sendFailure } from '@/lib/notifications/send-result';
-import type { NotificationProvider, SendResult } from '@/lib/notifications/types';
+import type { NotificationProvider, OutgoingMessage, SendResult } from '@/lib/notifications/types';
 
-// Resend for the email channel (Task P3.11.04, docs/Security.md EP-03): links only, never attachments. Plain text for
-// now; an HTML layout can replace the body later without changing this contract.
+// Resend for the email channel (Task P3.11.04, docs/Security.md EP-03): links only, never attachments. Each email goes
+// out as plain text and as the HTML layout of src/lib/email, which say the same words.
 
 const RESEND_URL = 'https://api.resend.com/emails';
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -35,6 +36,17 @@ async function resultOf(response: Response): Promise<SendResult> {
   );
 }
 
+// The worker's code for a message it could not prepare (SERVER_FAULT_ERRORS of src/server/services/service-health.ts).
+const COMPOSE_FAILED = 'compose_failed';
+
+async function htmlOf(message: OutgoingMessage): Promise<string | null> {
+  try {
+    return await renderNotificationHtml(message);
+  } catch {
+    return null;
+  }
+}
+
 export function createResendProvider(
   config: ResendConfig,
   fetcher: typeof fetch = fetch,
@@ -42,11 +54,17 @@ export function createResendProvider(
   return {
     async send(message) {
       const { subject, text } = messageText(message);
+      const html = await htmlOf(message);
+      // The layout is the server's own: it fails again on every try, so the message is dead at once and /api/health
+      // counts it as a server fault (review of PR #66, L3).
+      if (html === null) {
+        return sendFailure(COMPOSE_FAILED, 'The email layout could not be rendered', true);
+      }
       try {
         const response = await fetcher(RESEND_URL, {
           method: 'POST',
           headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from: config.from, to: [message.recipient], subject, text }),
+          body: JSON.stringify({ from: config.from, to: [message.recipient], subject, text, html }),
           cache: 'no-store',
           signal: AbortSignal.timeout(config.timeoutMs ?? DEFAULT_TIMEOUT_MS),
         });
