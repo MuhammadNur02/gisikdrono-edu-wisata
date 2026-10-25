@@ -81,55 +81,44 @@ select is(public.finance_booking('00000000-0000-4000-8000-0000000e2001') #>> '{b
 select is(public.finance_booking('00000000-0000-4000-8000-00000000ffff'), null, 'an unknown booking is null');
 
 -- ===== save_revenue_rule =====
-select throws_ok($$select public.save_revenue_rule('package', null, '00000000-0000-4000-8000-0000000e1001', null,
-  'Uji', public.today_jkt(), '[{"beneficiary": "kelurahan", "pct": 30}, {"beneficiary": "rw_treasury", "rw_id": 5,
-  "pct": 60}]')$$, 'P0001', null, 'shares that do not add up to 100 are refused');
-select throws_ok($$select public.save_revenue_rule('package', null, '00000000-0000-4000-8000-0000000e1001', null,
-  'Uji', public.today_jkt(), '[{"beneficiary": "kelurahan", "pct": 33.333}, {"beneficiary": "rw_treasury", "rw_id": 5,
-  "pct": 66.667}]')$$, 'P0001', null, 'and so are shares with three decimals');
-select throws_ok($$select public.save_revenue_rule('package', null, '00000000-0000-4000-8000-0000000e1001', null,
-  'Uji', public.today_jkt() - 1, '[{"beneficiary": "kelurahan", "pct": 100}]')$$, 'P0001', null,
+select throws_ok($$select public.save_revenue_rule('package', 'Uji', public.today_jkt(), '[{"beneficiary": "kelurahan", "pct": 30}, {"beneficiary": "rw_treasury", "rw_id": 5,
+  "pct": 60}]', null, '00000000-0000-4000-8000-0000000e1001', null)$$, 'P0001', null, 'shares that do not add up to 100 are refused');
+select throws_ok($$select public.save_revenue_rule('package', 'Uji', public.today_jkt(), '[{"beneficiary": "kelurahan", "pct": 33.333}, {"beneficiary": "rw_treasury", "rw_id": 5,
+  "pct": 66.667}]', null, '00000000-0000-4000-8000-0000000e1001', null)$$, 'P0001', null, 'and so are shares with three decimals');
+select throws_ok($$select public.save_revenue_rule('package', 'Uji', public.today_jkt() - 1, '[{"beneficiary": "kelurahan", "pct": 100}]', null, '00000000-0000-4000-8000-0000000e1001', null)$$, 'P0001', null,
   'a version never starts in the past');
-select throws_ok($$select public.save_revenue_rule('package', null, '00000000-0000-4000-8000-0000000e1001', null,
-  'Uji', public.today_jkt(), '[{"beneficiary": "umkm_vendor", "vendor_id": "bukan-uuid", "pct": 100}]')$$, 'P0001',
+select throws_ok($$select public.save_revenue_rule('package', 'Uji', public.today_jkt(), '[{"beneficiary": "umkm_vendor", "vendor_id": "bukan-uuid", "pct": 100}]', null, '00000000-0000-4000-8000-0000000e1001', null)$$, 'P0001',
   'a line names a share, a beneficiary, an RW and a vendor it can be read as',
   'a vendor that is no uuid reads as an invalid line (L7)');
-select throws_ok($$select public.save_revenue_rule('package', null, '00000000-0000-4000-8000-0000000e1001', null,
-  'Uji', public.today_jkt(), '[{"beneficiary": "lurah", "pct": 100}]')$$, 'P0001',
+select throws_ok($$select public.save_revenue_rule('package', 'Uji', public.today_jkt(), '[{"beneficiary": "lurah", "pct": 100}]', null, '00000000-0000-4000-8000-0000000e1001', null)$$, 'P0001',
   'a line names a share, a beneficiary, an RW and a vendor it can be read as', 'and so does an unknown beneficiary');
-select throws_ok($$select public.save_revenue_rule('package', null, null, null, 'Uji', public.today_jkt(),
-  '[{"beneficiary": "kelurahan", "pct": 100}]')$$, 'P0001', 'a package rule names its own target, and that target exists',
+select throws_ok($$select public.save_revenue_rule('package', 'Uji', public.today_jkt(), '[{"beneficiary": "kelurahan", "pct": 100}]', null, null, null)$$, 'P0001', 'a package rule names its own target, and that target exists',
   'a package rule without its package is refused readably');
 create temporary table first_version on commit drop as
-  select (public.save_revenue_rule('package', null, '00000000-0000-4000-8000-0000000e1001', null, 'Uji keuangan v1',
-    public.today_jkt(), '[{"beneficiary": "kelurahan", "pct": 30}, {"beneficiary": "rw_treasury", "rw_id": 5,
-    "pct": 70}]') ->> 'rule_id')::uuid as id;
+  select (public.save_revenue_rule('package', 'Uji keuangan v1', public.today_jkt(), '[{"beneficiary": "kelurahan", "pct": 30}, {"beneficiary": "rw_treasury", "rw_id": 5,
+    "pct": 70}]', null, '00000000-0000-4000-8000-0000000e1001', null) ->> 'rule_id')::uuid as id;
 reset role;
 select is((select string_agg(beneficiary::text || ':' || pct, ',' order by beneficiary)
            from public.revenue_share_rule_lines where rule_id = (select id from first_version)),
   'kelurahan:30.00,rw_treasury:70.00', 'a package''s first version starts today with its lines');
 grant select on first_version to authenticated;
 select pg_temp.act_as('superadmin_aal2');
-select throws_ok($$select public.save_revenue_rule('package', null, '00000000-0000-4000-8000-0000000e1001', null,
-  'Uji v2', public.today_jkt(), '[{"beneficiary": "kelurahan", "pct": 100}]')$$, 'P0001', null,
+select throws_ok($$select public.save_revenue_rule('package', 'Uji v2', public.today_jkt(), '[{"beneficiary": "kelurahan", "pct": 100}]', null, '00000000-0000-4000-8000-0000000e1001', null)$$, 'P0001', null,
   'a second version starting the same day is refused');
 create temporary table second_version on commit drop as
-  select public.save_revenue_rule('package', null, '00000000-0000-4000-8000-0000000e1001', null, 'Uji keuangan v2',
-    public.today_jkt() + 7, '[{"beneficiary": "kelurahan", "pct": 20}, {"beneficiary": "rw_treasury", "rw_id": 5,
-    "pct": 80}]') as reply;
+  select public.save_revenue_rule('package', 'Uji keuangan v2', public.today_jkt() + 7, '[{"beneficiary": "kelurahan", "pct": 20}, {"beneficiary": "rw_treasury", "rw_id": 5,
+    "pct": 80}]', null, '00000000-0000-4000-8000-0000000e1001', null) as reply;
 reset role;
 select is((select effective_to from public.revenue_share_rules where id = (select id from first_version)),
   public.today_jkt() + 6, 'a new version closes the one in force on the day before it starts');
 select is((select (reply ->> 'closed_rule_id')::uuid from second_version), (select id from first_version),
   'and says which one it closed');
 select pg_temp.act_as('superadmin_stale_totp');
-select throws_ok($$select public.save_revenue_rule('package', null, '00000000-0000-4000-8000-0000000e1001', null,
-  'Uji v3', public.today_jkt() + 30, '[{"beneficiary": "kelurahan", "pct": 100}]')$$, '42501', null,
+select throws_ok($$select public.save_revenue_rule('package', 'Uji v3', public.today_jkt() + 30, '[{"beneficiary": "kelurahan", "pct": 100}]', null, '00000000-0000-4000-8000-0000000e1001', null)$$, '42501', null,
   'a rule is written only with a fresh authenticator code');
 reset role;
 select pg_temp.act_as('admin_rw_05');
-select throws_ok($$select public.save_revenue_rule('package', null, '00000000-0000-4000-8000-0000000e1001', null,
-  'Uji v3', public.today_jkt() + 30, '[{"beneficiary": "kelurahan", "pct": 100}]')$$, '42501', null,
+select throws_ok($$select public.save_revenue_rule('package', 'Uji v3', public.today_jkt() + 30, '[{"beneficiary": "kelurahan", "pct": 100}]', null, '00000000-0000-4000-8000-0000000e1001', null)$$, '42501', null,
   'and never by an RW admin');
 
 -- ===== settle_revenue_entries =====

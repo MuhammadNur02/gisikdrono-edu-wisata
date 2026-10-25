@@ -358,23 +358,16 @@ select is((select string_agg(status::text, ',' order by rw_id) || ' ' || coalesc
 -- ===== Adjustments: the workflow =====
 reset role;
 select pg_temp.act_as('superadmin_aal2');
-select throws_ok($$select public.propose_adjustment('manual_refund', (select id from adjusted),
-  pg_temp.payment_of((select id from adjusted)), 50000, 'Biaya tambahan dikembalikan', 'bookings/x/adjustment.pdf')$$,
+select throws_ok($$select public.propose_adjustment('manual_refund', (select id from adjusted), 50000, 'Biaya tambahan dikembalikan', 'bookings/x/adjustment.pdf', '{}', pg_temp.payment_of((select id from adjusted)))$$,
   '22023', null, 'an adjustment without evidence under its booking is refused');
-select throws_ok($$select public.propose_adjustment('manual_mark_paid', (select id from adjusted), null, 50000,
-  'Bayar tunai di loket',
-  pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf'))$$,
+select throws_ok($$select public.propose_adjustment('manual_mark_paid', (select id from adjusted), 50000, 'Bayar tunai di loket', pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf'), '{}', null)$$,
   'P0001', null, 'manual_mark_paid is not proposed here');
 create temporary table proposal on commit drop as
-  select ((public.propose_adjustment('manual_refund', (select id from adjusted),
-    pg_temp.payment_of((select id from adjusted)), 50000, 'Biaya tambahan dikembalikan',
-    pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf')))
+  select ((public.propose_adjustment('manual_refund', (select id from adjusted), 50000, 'Biaya tambahan dikembalikan', pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf'), '{}', pg_temp.payment_of((select id from adjusted))))
     ->> 'id')::uuid as id;
 select is((select status::text from public.payment_adjustments where id = (select id from proposal)), 'proposed',
   'a manual refund is proposed with its evidence');
-select throws_ok($$select public.propose_adjustment('manual_refund', (select id from adjusted),
-  pg_temp.payment_of((select id from adjusted)), 1000, 'Satu lagi pengembalian dana',
-  pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf'))$$,
+select throws_ok($$select public.propose_adjustment('manual_refund', (select id from adjusted), 1000, 'Satu lagi pengembalian dana', pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf'), '{}', pg_temp.payment_of((select id from adjusted)))$$,
   'P0001', null, 'a second open refund of the booking is refused');
 select throws_ok($$select public.approve_adjustment((select id from proposal))$$, 'P0001', null,
   'its proposer does not approve it while another superadmin can');
@@ -460,9 +453,7 @@ select set_config('app.privileged_rpc', '', true);
 reset role;
 select pg_temp.act_as('superadmin_aal2');
 create temporary table write_off on commit drop as
-  select ((public.propose_adjustment('write_off', (select id from adjusted), null, 2500,
-    'Selisih pembulatan transfer bank',
-    pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.png')))
+  select ((public.propose_adjustment('write_off', (select id from adjusted), 2500, 'Selisih pembulatan transfer bank', pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.png'), '{}', null))
     ->> 'id')::uuid as id;
 select cmp_ok((public.approve_adjustment((select id from write_off)) ->> 'apply_not_before')::timestamptz, '>=',
   now() + interval '24 hours', 'alone, the proposer approves their own, applying 24 hours later');
@@ -503,21 +494,14 @@ grant select on shared_keys to authenticated;
 select is(array_length((select keys from shared_keys), 1) >= 2, true, 'the package line pays at least two parties');
 reset role;
 select pg_temp.act_as('superadmin_aal2');
-select throws_ok($$select public.propose_adjustment('reclassify_share', (select id from shared), null, 99999999,
-  'Bagian RW salah dicatat',
-  pg_temp.doc('bookings/' || (select id from shared) || '/adjustment-' || gen_random_uuid() || '.pdf'),
-  jsonb_build_object('line_ref', 'package', 'from_key', (select keys[1] from shared_keys),
-                     'to_key', (select keys[2] from shared_keys)))$$, 'P0001', null,
+select throws_ok($$select public.propose_adjustment('reclassify_share', (select id from shared), 99999999, 'Bagian RW salah dicatat', pg_temp.doc('bookings/' || (select id from shared) || '/adjustment-' || gen_random_uuid() || '.pdf'), jsonb_build_object('line_ref', 'package', 'from_key', (select keys[1] from shared_keys),
+                     'to_key', (select keys[2] from shared_keys)), null)$$, 'P0001', null,
   'a share is not moved beyond what it holds');
 create temporary table reclassified on commit drop as
-  select ((public.propose_adjustment('reclassify_share', (select id from shared), null, 1000,
-    'Bagian RW salah dicatat',
-    pg_temp.doc('bookings/' || (select id from shared) || '/adjustment-' || gen_random_uuid() || '.pdf'),
-    jsonb_build_object('line_ref', 'package', 'from_key', (select keys[1] from shared_keys),
-                       'to_key', (select keys[2] from shared_keys)))) ->> 'id')::uuid as id;
+  select ((public.propose_adjustment('reclassify_share', (select id from shared), 1000, 'Bagian RW salah dicatat', pg_temp.doc('bookings/' || (select id from shared) || '/adjustment-' || gen_random_uuid() || '.pdf'), jsonb_build_object('line_ref', 'package', 'from_key', (select keys[1] from shared_keys),
+                       'to_key', (select keys[2] from shared_keys)), null)) ->> 'id')::uuid as id;
 create temporary table withdrawn on commit drop as
-  select ((public.propose_adjustment('write_off', (select id from shared), null, 500, 'Selisih biaya admin bank',
-    pg_temp.doc('bookings/' || (select id from shared) || '/adjustment-' || gen_random_uuid() || '.pdf')))
+  select ((public.propose_adjustment('write_off', (select id from shared), 500, 'Selisih biaya admin bank', pg_temp.doc('bookings/' || (select id from shared) || '/adjustment-' || gen_random_uuid() || '.pdf'), '{}', null))
     ->> 'id')::uuid as id;
 select is((public.reject_adjustment((select id from withdrawn), 'Ditarik oleh pengusulnya') ->> 'status'),
   'rejected', 'a proposal may be withdrawn');
