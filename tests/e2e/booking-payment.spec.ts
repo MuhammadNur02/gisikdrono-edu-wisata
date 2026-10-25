@@ -58,7 +58,7 @@ test('pays a hold through Snap and the webhook, and the pay page says so', async
   page,
 }, testInfo) => {
   const isDesktop = testInfo.project.name === 'desktop';
-  await chooseSchedule(page, sessions, sessions.booked.time, isDesktop);
+  await chooseSchedule(page, sessions, sessions.booked.time);
   await fillBooker(page, phoneOf(isDesktop ? 2 : 3, PAYMENT_FLOW));
   await page.getByRole('button', { name: 'Lanjut' }).click();
   await readySummary(page);

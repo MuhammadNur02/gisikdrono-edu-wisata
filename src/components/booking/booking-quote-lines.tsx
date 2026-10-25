@@ -17,27 +17,29 @@ function lineDetail(line: BookingQuoteLine): string {
 export function BookingQuoteLines({ quote }: { quote: BookingQuote }) {
   return (
     <div className="space-y-4">
-      <ul className="divide-y divide-border">
+      <ul className="space-y-3">
         {quote.lines.map((line) => (
           <li
             key={line.kind === 'package' ? line.packageId : line.productId}
-            className="flex items-start justify-between gap-4 py-3"
+            className="flex items-start justify-between gap-6 text-body"
           >
-            <span className="min-w-0">
-              <span className="block text-body-sm font-medium">{line.name}</span>
-              <span className="block text-caption text-muted-foreground tabular-nums">
+            <span className="min-w-0 flex-1 md:flex md:items-baseline md:gap-6">
+              <span className="block text-foreground md:flex-1">{line.name}</span>
+              <span className="block text-body-sm text-muted-foreground tabular-nums">
                 {lineDetail(line)}
               </span>
             </span>
-            <span className="shrink-0 text-body-sm font-medium tabular-nums">
+            <span className="shrink-0 text-right font-semibold tabular-nums md:w-32">
               {formatIDR(line.lineTotal)}
             </span>
           </li>
         ))}
       </ul>
-      <p className="flex items-baseline justify-between gap-4 border-t border-border pt-4">
-        <span className="text-body font-semibold">{text.total}</span>
-        <span className="text-h2 tabular-nums">{formatIDR(quote.total)}</span>
+      <p className="flex items-baseline justify-between gap-4 border-t border-border-strong pt-4">
+        <span className="text-label-lg font-semibold text-foreground">{text.total}</span>
+        <span className="text-h2 font-display font-extrabold tabular-nums">
+          {formatIDR(quote.total)}
+        </span>
       </p>
     </div>
   );

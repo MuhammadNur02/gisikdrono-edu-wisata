@@ -5,16 +5,8 @@ const MINUTES_PER_HOUR = 60;
 
 export const bookingPaymentCopy = {
   title: 'Pembayaran',
-  description:
-    'Selesaikan pembayaran sebelum batas waktu, supaya tempat rombongan Anda tetap tersedia.',
-  bookingCode: 'Kode pesanan',
-  package: 'Paket',
-  schedule: 'Jadwal',
-  pax: 'Jumlah peserta',
   paxCount: (count: number) => `${String(count)} orang`,
   total: 'Total pembayaran',
-  onlyThroughSystem:
-    'Pembayaran hanya melalui sistem ini, dengan QRIS atau Virtual Account. Petugas kelurahan tidak pernah meminta transfer ke rekening pribadi.',
   countdown: {
     label: 'Sisa waktu pembayaran',
     // What a screen reader hears, once a minute rather than every second.

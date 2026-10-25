@@ -6,7 +6,11 @@ import type { z } from 'zod';
 
 import { ParticipantsField } from '@/components/booking/participants-field';
 import { PhoneOtpField } from '@/components/booking/phone-otp-field';
-import { WizardStepFrame, type WizardStepProps } from '@/components/booking/wizard-step-frame';
+import {
+  WizardPanel,
+  WizardStepFrame,
+  type WizardStepProps,
+} from '@/components/booking/wizard-step-frame';
 import { FormAlert } from '@/components/forms/form-alert';
 import { FormField, RequiredMark } from '@/components/forms/form-field';
 import { PostForm } from '@/components/forms/post-form';
@@ -30,6 +34,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { BOOKING_LIMITS } from '@/config/booking';
 import { DB_ENUMS, type EnumValue } from '@/db/enums';
+import { bookingLayoutCopy } from '@/lib/copy/booking-layout';
 import { copy } from '@/lib/copy/id';
 import { bookerValues, namedRows } from '@/lib/utils/booking-wizard';
 import { schemaResolver } from '@/lib/utils/schema-resolver';
@@ -39,6 +44,7 @@ import type { ParticipantRow } from '@/types/forms';
 import type { VerifiedContact } from '@/types/guest';
 
 const text = copy.booking.wizard.booker;
+const layout = bookingLayoutCopy.wizard.booker;
 
 export interface BookerFormStepProps extends WizardStepProps {
   actions: Pick<WizardActions, 'requestOtp' | 'verifyOtp'>;
@@ -149,7 +155,7 @@ function PersonFields({
   emailFromProof: string | null;
 }) {
   return (
-    <>
+    <div className="grid items-start gap-5 md:grid-cols-2 md:gap-4">
       <FormField
         control={form.control}
         name="picName"
@@ -175,8 +181,7 @@ function PersonFields({
           />
         )}
       />
-      <NotesField form={form} />
-    </>
+    </div>
   );
 }
 
@@ -236,11 +241,8 @@ function PhoneProofField(props: BookerFormStepProps & { form: BookerForm; showMi
     if (contact.email !== null) form.setValue('picEmail', contact.email, { shouldValidate: true });
   };
   return (
-    <div className="space-y-3 rounded-xl border border-border p-4">
-      <div className="space-y-1">
-        <p className="text-body-sm font-medium">{text.verifyTitle}</p>
-        <p className="text-caption text-muted-foreground">{text.verifyHint}</p>
-      </div>
+    <WizardPanel title={text.verifyTitle}>
+      <p className="-mt-3 text-body-sm text-ink-2">{text.verifyHint}</p>
       {showMissing && draft.contact === null && (
         <FormAlert tone="danger">{text.verifyFirst}</FormAlert>
       )}
@@ -253,7 +255,32 @@ function PhoneProofField(props: BookerFormStepProps & { form: BookerForm; showMi
           update({ contact: null });
         }}
       />
-    </div>
+    </WizardPanel>
+  );
+}
+
+type BookerPanelsProps = BookerFormStepProps & {
+  form: BookerForm;
+  emailFromProof: string | null;
+  showMissing: boolean;
+};
+
+function BookerPanels({ form, emailFromProof, showMissing, ...props }: BookerPanelsProps) {
+  return (
+    <>
+      <WizardPanel>
+        <BookerTypeField form={form} />
+      </WizardPanel>
+      <WizardPanel title={layout.identityTitle}>
+        <InstitutionField form={form} />
+        <PersonFields form={form} emailFromProof={emailFromProof} />
+      </WizardPanel>
+      <PhoneProofField {...props} form={form} showMissing={showMissing} />
+      <WizardPanel>
+        <NotesField form={form} />
+        <ParticipantRows form={form} pax={props.draft.pax} />
+      </WizardPanel>
+    </>
   );
 }
 
@@ -276,12 +303,19 @@ export function BookerFormStep(props: BookerFormStepProps) {
   return (
     <Form {...form}>
       <PostForm onSubmit={submit}>
-        <WizardStepFrame title={text.title} onBack={onBack}>
-          <BookerTypeField form={form} />
-          <InstitutionField form={form} />
-          <PersonFields form={form} emailFromProof={emailFromProof} />
-          <ParticipantRows form={form} pax={draft.pax} />
-          <PhoneProofField {...props} form={form} showMissing={showMissing} />
+        <WizardStepFrame
+          title={text.title}
+          description={layout.description}
+          onBack={onBack}
+          backLabel={props.backLabel}
+          nextLabel={props.nextLabel}
+        >
+          <BookerPanels
+            {...props}
+            form={form}
+            emailFromProof={emailFromProof}
+            showMissing={showMissing}
+          />
         </WizardStepFrame>
       </PostForm>
     </Form>

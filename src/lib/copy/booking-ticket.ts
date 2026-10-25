@@ -2,7 +2,6 @@
 // through copy.booking.ticket. The landing says valid or not, and nothing about the booking or its check-in.
 export const bookingTicketCopy = {
   title: 'Tiket kunjungan',
-  description: 'Tunjukkan kode QR ini kepada petugas di gerbang RW pada hari kunjungan.',
   ticketOf: (rwName: string) => `Tiket ${rwName}`,
   qrLabel: (rwName: string) => `Kode QR tiket ${rwName}`,
   code: 'Kode tiket',

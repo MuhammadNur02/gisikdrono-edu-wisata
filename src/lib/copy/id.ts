@@ -124,13 +124,9 @@ export const copy = {
     required: 'wajib',
     phone: { placeholder: '812-3456-7890' },
     stepper: { decrease: 'Kurangi', increase: 'Tambah' },
-    datePicker: {
-      placeholder: 'Pilih tanggal kunjungan',
-      busyLegend: 'Hampir penuh',
-    },
     session: {
       remaining: (remaining: number, capacity: number) =>
-        `Sisa ${String(remaining)} dari ${String(capacity)}`,
+        `Sisa ${String(remaining)} dari ${String(capacity)} kursi`,
       full: 'Penuh',
       tooSmall: 'Kuota tidak cukup untuk rombongan Anda',
     },

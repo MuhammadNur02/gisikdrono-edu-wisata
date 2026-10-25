@@ -13,18 +13,21 @@ import { requestNonce } from '@/lib/request-nonce';
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { robots: { index: false, follow: false } };
 
-// The sign-in pages are light like the public site (decision D3): the dashboard's theme starts after AAL2.
+// The sign-in pages are light like the public site (decision D3): the dashboard's theme starts after AAL2. Paper, the
+// wordmark over a hairline and the card on a faint ink kawung (DESIGN-SPEC §1.8), with no screen of their own.
 export default async function AuthLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <ThemeProvider scope="public" nonce={await requestNonce()}>
-      <div className="flex min-h-dvh flex-col bg-linear-to-b from-brand-ice to-background">
-        <Container className="py-6">
-          {/* Named by the wordmark itself: a label that differs from the visible text fails WCAG 2.5.3. */}
-          <Link href={HOME_NAV_ITEM.href} className="inline-flex rounded-lg">
-            <SiteWordmark />
-          </Link>
-        </Container>
-        <main className="flex flex-1 justify-center px-4 pt-2 pb-16 sm:items-center sm:pt-0">
+      <div className="flex min-h-dvh flex-col bg-background">
+        <header className="border-b border-border">
+          <Container className="flex h-16 items-center md:h-18">
+            {/* Named by the wordmark itself: a label that differs from the visible text fails WCAG 2.5.3. */}
+            <Link href={HOME_NAV_ITEM.href} className="inline-flex rounded-md">
+              <SiteWordmark />
+            </Link>
+          </Container>
+        </header>
+        <main className="kawung flex flex-1 justify-center px-4 pt-8 pb-16 kawung-6 kawung-ink sm:items-center sm:py-16">
           <div className="w-full max-w-md">{children}</div>
         </main>
       </div>

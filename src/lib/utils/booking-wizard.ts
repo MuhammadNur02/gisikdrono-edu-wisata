@@ -219,6 +219,42 @@ export function busyDates(legs: readonly BookableLeg[]): string[] {
     .sort();
 }
 
+// What a day cell of the wizard's calendar says (DESIGN-SPEC §2.4 Calendar day cell): the seats the group can still
+// take that day (the fewest of any RW the package visits) and its state. closed: an RW has no session that day;
+// full: no session of some RW has room for the group; busy: at least 80 % reserved; open otherwise.
+export type DayState = 'open' | 'busy' | 'full' | 'closed';
+
+export interface DayAvailability {
+  seats: number;
+  state: DayState;
+}
+
+function dayStateOf(day: { isClosed: boolean; isBookable: boolean; isBusy: boolean }): DayState {
+  if (day.isClosed) return 'closed';
+  if (!day.isBookable) return 'full';
+  return day.isBusy ? 'busy' : 'open';
+}
+
+export function dayAvailability(
+  legs: readonly BookableLeg[],
+  pax: number,
+): Map<string, DayAvailability> {
+  const busy = new Set(busyDates(legs));
+  const bookable = new Set(bookableDates(legs, pax));
+  const days = new Set(legs.flatMap((leg) => leg.sessions.map((session) => session.sessionDate)));
+  const result = new Map<string, DayAvailability>();
+  for (const day of days) {
+    const seatsPerLeg = legs.map((leg) =>
+      sessionsOn(leg, day).reduce((seats, session) => seats + session.remaining, 0),
+    );
+    const isClosed = legs.some((leg) => sessionsOn(leg, day).length === 0);
+    const seats = Math.min(...seatsPerLeg);
+    const state = dayStateOf({ isClosed, isBookable: bookable.has(day), isBusy: busy.has(day) });
+    result.set(day, { seats: isClosed ? 0 : seats, state });
+  }
+  return result;
+}
+
 // Every day from first to last that is not bookable, for the date picker to disable.
 export function unbookableDatesBetween(
   first: string,

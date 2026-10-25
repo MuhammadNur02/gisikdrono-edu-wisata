@@ -4,12 +4,11 @@ export const bookingWizardCopy = {
   title: (packageName: string) => `Pesan ${packageName}`,
   steps: {
     jadwal: 'Jadwal',
-    data: 'Data Rombongan',
+    data: 'Data',
     tambahan: 'Tambahan',
     ringkasan: 'Ringkasan',
   },
-  stepOf: (number: number, total: number, label: string) =>
-    `Langkah ${String(number)}/${String(total)} · ${label}`,
+  stepOf: (number: number, total: number) => `Langkah ${String(number)} dari ${String(total)}`,
   stepsLabel: 'Langkah pemesanan',
   stepDone: 'selesai',
   stepCurrent: 'langkah ini',
@@ -70,8 +69,6 @@ export const bookingWizardCopy = {
     title: 'Pesanan tambahan (tidak wajib)',
     description: 'Camilan dan oleh-oleh dari UMKM setempat, disiapkan untuk hari kunjungan Anda.',
     empty: 'Paket ini belum punya pesanan tambahan.',
-    vendor: (vendorName: string) => `Dari ${vendorName}`,
-    price: (price: string, unitLabel: string) => `${price} / ${unitLabel}`,
     leadTime: (days: number) => `Pesan paling lambat ${String(days)} hari sebelum kunjungan.`,
     quantityLabel: (productName: string) => `Jumlah ${productName}`,
     quantityRange: (min: number, max: number | null) =>
@@ -80,13 +77,12 @@ export const bookingWizardCopy = {
     remove: (productName: string) => `Hapus ${productName}`,
   },
   quote: {
-    title: 'Ringkasan biaya',
+    title: 'Rincian biaya',
     perPax: (price: string, quantity: number) => `${price} × ${String(quantity)} orang`,
     flatGroup: 'Harga per rombongan',
     addonLine: (price: string, quantity: number, unitLabel: string) =>
       `${price} × ${String(quantity)} ${unitLabel}`,
     total: 'Total',
-    totalShort: (total: string) => `Total ${total}`,
     loading: 'Menghitung biaya…',
     paxOutOfRange: (min: number, max: number) =>
       `Paket ini untuk ${String(min)}–${String(max)} orang. Ubah jumlah peserta di langkah Jadwal, ya.`,
@@ -98,10 +94,10 @@ export const bookingWizardCopy = {
   },
   summary: {
     title: 'Ringkasan pesanan',
-    visit: 'Kunjungan',
+    visit: 'Jadwal',
     group: 'Rombongan',
     pax: (pax: number) => `${String(pax)} orang`,
-    contact: 'Kontak',
+    contact: 'Penanggung jawab',
     edit: 'Ubah',
     privacy: 'Saya telah membaca',
     privacyLink: 'Pemberitahuan Privasi',
