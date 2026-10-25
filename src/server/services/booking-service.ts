@@ -28,9 +28,9 @@ import {
   type RefundQuote,
 } from '@/db/rpc-terms';
 import { AppError, raisedHintOf } from '@/lib/errors';
-import { createLogger } from '@/lib/logger';
 import { mintGuestLink } from '@/lib/links/mint';
 import { isCurrentLink, readGuestLink } from '@/lib/links/verify';
+import { createLogger } from '@/lib/logger';
 import { drawOtpCode, otpBrowserHash, otpCodeHash } from '@/lib/otp';
 import { refundRateLimits, withinRateLimits, type RateLimitCheck } from '@/lib/rate-limit';
 // Visitors have no session, so their codes, lookups and links run with the service role (CLAUDE.md §6.1). Every
@@ -40,7 +40,7 @@ import { refundRateLimits, withinRateLimits, type RateLimitCheck } from '@/lib/r
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 import type { SubmitReviewValues } from '@/lib/validations/review';
-import { statusHubOf } from '@/server/services/booking-hub-reads';
+import { manageRightsOf, statusHubOf } from '@/server/services/booking-hub-reads';
 import {
   bookingLimitsOf,
   bookingToCreate,
@@ -298,9 +298,8 @@ export interface StatusHubData {
   payLinkToken: string | null;
 }
 
-// A refund the terms cannot give now (a booking past its visit, a fee not yet set) is no option, not an error. Any
-// other failure is logged and the hub shows the booking without the option rather than an error page (review of PR
-// #69, L-3); the cancel itself still asks the database, which answers for itself.
+// A refund the terms cannot give now (a past visit, an unset fee) is no option; any other failure is logged and the hub
+// shows no option rather than an error page (review of PR #69, L-3). The cancel asks the database again anyway.
 async function quoteOrNull(adminClient: DatabaseClient, bookingId: string, kind: RefundKind) {
   try {
     return await svcRefundPreview(adminClient, { bookingId, kind });
@@ -319,23 +318,18 @@ async function quoteOrNull(adminClient: DatabaseClient, bookingId: string, kind:
 export async function loadStatusHub(guest: GuestAccess): Promise<StatusHubData> {
   const adminClient = createSupabaseAdminClient();
   const view = await statusHubOf(adminClient, guest.bookingId);
-  const canManage = guest.scope === 'manage';
-  const isPaid = view.booking.status === 'paid' && !view.booking.needsReview;
-  // A20: a booking whose other leg was already visited keeps the weather rights of the leg still to visit.
-  const hasWeatherRights =
-    isPaid || (view.booking.status === 'checked_in' && !view.booking.needsReview);
-  const weather =
-    canManage && hasWeatherRights ? await weatherStateOf(adminClient, guest.bookingId) : null;
+  const rights = manageRightsOf(guest, view);
+  const weather = rights.hasWeather ? await weatherStateOf(adminClient, guest.bookingId) : null;
   return {
     view,
-    cancellation:
-      canManage && isPaid ? await quoteOrNull(adminClient, guest.bookingId, 'cancellation') : null,
+    cancellation: rights.canCancelPaid
+      ? await quoteOrNull(adminClient, guest.bookingId, 'cancellation')
+      : null,
     weather,
     weatherRefund: weather ? await quoteOrNull(adminClient, guest.bookingId, 'weather') : null,
-    payLinkToken:
-      canManage && view.booking.status === 'pending_payment'
-        ? await linkFor(adminClient, guest.bookingCode, 'pay')
-        : null,
+    payLinkToken: rights.canPassPayLink
+      ? await linkFor(adminClient, guest.bookingCode, 'pay')
+      : null,
   };
 }
 
@@ -362,13 +356,12 @@ export function rescheduleGuestBooking(
 }
 
 // "Konfirmasi & Bayar" of a quotation (docs/PRD.md §9.2 quoted → pending_payment): the number the visitor just proved
-// with a code must be the booking's own; the contact itself never leaves the database side of this check.
-// The number travels in the RPC body, never in a query string (review of PR #69, L-7).
+// with a code must be the booking's own; the number travels in the RPC body, never a query string (PR #69, L-7).
 export async function isBookingPhone(bookingId: string, phone: string): Promise<boolean> {
   const { data, error } = await createSupabaseAdminClient().rpc('svc_is_booking_phone', {
     p_booking_id: bookingId,
     p_phone: phone,
   });
   if (error) throw error;
-  return data === true;
+  return data;
 }

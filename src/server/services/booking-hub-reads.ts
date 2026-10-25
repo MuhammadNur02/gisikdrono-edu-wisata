@@ -2,6 +2,7 @@ import 'server-only';
 
 import { z } from 'zod';
 
+import type { GuestLinkScope } from '@/config/guest';
 import type { DatabaseClient } from '@/db/rpc-result';
 import { paymentPageOf } from '@/server/services/payment-reads';
 import type { HubEvent, StatusHubView } from '@/types/booking-hub';
@@ -180,5 +181,17 @@ export async function statusHubOf(
     ticketCount,
     refund,
     terms,
+  };
+}
+
+// What the manage link may do now; a checked_in booking keeps the weather rights of its leg still to visit (A20).
+export function manageRightsOf(guest: { scope: GuestLinkScope }, view: StatusHubView) {
+  const canManage = guest.scope === 'manage';
+  const isClear = !view.booking.needsReview;
+  const isPaid = view.booking.status === 'paid' && isClear;
+  return {
+    canCancelPaid: canManage && isPaid,
+    hasWeather: canManage && (isPaid || (view.booking.status === 'checked_in' && isClear)),
+    canPassPayLink: canManage && view.booking.status === 'pending_payment',
   };
 }
