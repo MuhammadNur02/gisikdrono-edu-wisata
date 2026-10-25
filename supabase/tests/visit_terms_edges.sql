@@ -206,7 +206,7 @@ select is((select count(*)::int from public.notifications
 select is((select count(*)::int from public.notifications
            where booking_id = (select id from moved) and template = 'weather_disruption' and channel = 'whatsapp'), 0,
   'and not by WhatsApp while whatsapp.weather_template_approved is false');
-select is((select array_agg(channel::text order by channel) from public.notifications
+select is((select array_agg(channel::text order by channel::text) from public.notifications
            where booking_id = (select id from lapsed_va) and template = 'weather_disruption'),
   array['email', 'whatsapp'], 'once the superadmin sets it after Meta''s approval, WhatsApp goes too');
 select is((select count(*)::int from public.notifications
