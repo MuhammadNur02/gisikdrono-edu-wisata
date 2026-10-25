@@ -422,6 +422,7 @@ select is((select string_agg(status::text, ',' order by rw_id) || ' ' || coalesc
 reset role;
 create temporary table seen_order on commit drop as
   select order_id from public.payments where id = pg_temp.payment_of((select id from seen));
+grant select on seen_order to authenticated;
 select internal.apply_payment_event((internal.record_payment_event('webhook', encode(extensions.digest('uji-n9-body', 'sha256'), 'hex'),
     jsonb_build_object('order_id', (select order_id from seen_order), 'status_code', '200',
       'gross_amount', '300000.00', 'currency', 'IDR', 'transaction_status', 'partial_refund',
