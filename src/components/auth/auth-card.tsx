@@ -14,15 +14,13 @@ export function AuthCard({ title, description, children }: AuthCardProps) {
   return (
     <section
       aria-labelledby={TITLE_ID}
-      className="space-y-6 sm:rounded-2xl sm:border sm:border-border sm:bg-card sm:p-8 sm:shadow-card"
+      className="space-y-6 sm:rounded-2xl sm:border sm:border-border sm:bg-card sm:p-8 sm:shadow-panel"
     >
       <header className="space-y-2">
         <h1 id={TITLE_ID} className="text-h2 text-balance">
           {title}
         </h1>
-        {description ? (
-          <p className="text-body-sm text-pretty text-muted-foreground">{description}</p>
-        ) : null}
+        {description ? <p className="text-body text-pretty text-ink-2">{description}</p> : null}
       </header>
       {children}
     </section>
