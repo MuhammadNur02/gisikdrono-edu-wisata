@@ -66,7 +66,8 @@ test('an RW officer is refused the finance export and offered their own attendan
   expect(refused.status()).toBe(403);
 
   await page.goto('/dashboard/exports');
-  await expect(page.getByText(/rekap kehadiran RW Anda/)).toBeVisible(AUTH_STEP);
+  // The page description, in the main landmark; Next.js can hold a second, hidden copy of a streamed segment.
+  await expect(page.getByRole('main').getByText(/rekap kehadiran RW Anda/)).toBeVisible(AUTH_STEP);
   await page.getByRole('button', { name: 'Ekspor baru' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Ekspor data baru' });
   await expect(dialog.getByRole('combobox', { name: /Jenis data/ })).toHaveText('Kehadiran');
