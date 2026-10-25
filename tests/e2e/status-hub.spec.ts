@@ -81,8 +81,11 @@ async function moveForWeather(page: Page, bookingCode: string) {
   await expect(page.getByRole('status').filter({ hasText: 'Jadwal sudah dipindah' })).toBeVisible(
     STEP,
   );
-  await expect(page.getByRole('button', { name: 'Pindah ke jadwal ini' })).toBeEnabled(STEP);
-  expect((await hubStateOf(bookingCode))?.session_id).toBe(sessions.filled.id);
+  // The island clears its choice once the page re-reads the leg's new session, so the button stays disabled; the
+  // database says whether the move happened.
+  await expect
+    .poll(async () => (await hubStateOf(bookingCode))?.session_id, STEP)
+    .toBe(sessions.filled.id);
   expect(await reservedOn(sessions.booked.id)).toBe(0);
   expect(await reservedOn(sessions.filled.id)).toBeGreaterThan(0);
   // Decision of 2026-10-25 on the weather, rule 1: the rights stay open after a move, one move fewer. Read from a
