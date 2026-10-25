@@ -603,9 +603,7 @@ select is((select bool_and(held like '%=0') from unnest(pg_temp.holdings((select
 reset role;
 select pg_temp.act_as('superadmin_aal2');
 create temporary table stuck_refund on commit drop as
-  select ((public.propose_adjustment('manual_refund', (select id from adjusted),
-    pg_temp.payment_of((select id from adjusted)), 250000, 'Sisa dana dikembalikan',
-    pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf')))
+  select ((public.propose_adjustment('manual_refund', (select id from adjusted), 250000, 'Sisa dana dikembalikan', pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf'), '{}', pg_temp.payment_of((select id from adjusted))))
     ->> 'id')::uuid as id;
 reset role;
 select pg_temp.act_as_super_b();
@@ -620,9 +618,7 @@ select throws_ok($$select public.apply_adjustment((select id from stuck_refund))
   'so the approval no longer applies (REFUND_TOO_LARGE)');
 select is((public.reject_adjustment((select id from stuck_refund), 'Sebagian dana sudah dikembalikan lewat Midtrans')
            ->> 'status'), 'rejected', 'and any superadmin withdraws it, saying why (N2)');
-select isnt(((public.propose_adjustment('manual_refund', (select id from adjusted),
-  pg_temp.payment_of((select id from adjusted)), 1000, 'Selisih kecil dikembalikan',
-  pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf'))) ->> 'id'),
+select isnt(((public.propose_adjustment('manual_refund', (select id from adjusted), 1000, 'Selisih kecil dikembalikan', pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf'), '{}', pg_temp.payment_of((select id from adjusted)))) ->> 'id'),
   null,
   'which frees the booking for the next proposal of its kind');
 
@@ -634,11 +630,8 @@ create temporary table doubled_keys on commit drop as
 grant select on doubled_keys to authenticated;
 select pg_temp.act_as('superadmin_aal2');
 create temporary table stuck_move on commit drop as
-  select ((public.propose_adjustment('reclassify_share', (select id from doubled), null, 1000,
-    'Bagian RW salah dicatat',
-    pg_temp.doc('bookings/' || (select id from doubled) || '/adjustment-' || gen_random_uuid() || '.pdf'),
-    jsonb_build_object('line_ref', 'package', 'from_key', (select keys[1] from doubled_keys),
-                       'to_key', (select keys[2] from doubled_keys)))) ->> 'id')::uuid as id;
+  select ((public.propose_adjustment('reclassify_share', (select id from doubled), 1000, 'Bagian RW salah dicatat', pg_temp.doc('bookings/' || (select id from doubled) || '/adjustment-' || gen_random_uuid() || '.pdf'), jsonb_build_object('line_ref', 'package', 'from_key', (select keys[1] from doubled_keys),
+                       'to_key', (select keys[2] from doubled_keys)), null)) ->> 'id')::uuid as id;
 reset role;
 select pg_temp.act_as_super_b();
 select is((public.approve_adjustment((select id from stuck_move)) ->> 'status'), 'approved', 'a move is approved');
@@ -654,8 +647,7 @@ select is((public.reject_adjustment((select id from stuck_move), 'Pemesanan suda
 
 -- An approver who left: B deactivated after approving.
 create temporary table stuck_write_off on commit drop as
-  select ((public.propose_adjustment('write_off', (select id from combo), null, 1500, 'Selisih biaya admin bank',
-    pg_temp.doc('bookings/' || (select id from combo) || '/adjustment-' || gen_random_uuid() || '.pdf')))
+  select ((public.propose_adjustment('write_off', (select id from combo), 1500, 'Selisih biaya admin bank', pg_temp.doc('bookings/' || (select id from combo) || '/adjustment-' || gen_random_uuid() || '.pdf'), '{}', null))
     ->> 'id')::uuid as id;
 reset role;
 select pg_temp.act_as_super_b();

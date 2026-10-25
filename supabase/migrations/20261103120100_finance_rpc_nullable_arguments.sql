@@ -24,6 +24,7 @@ begin
     raise exception 'revenue rules are written by the superadmin with a fresh authenticator code'
       using errcode = '42501';
   end if;
+  perform internal.take_audit_turn();
   if p_effective_from is null or p_effective_from < today then
     raise exception 'a rule version starts today or later' using errcode = 'P0001', hint = 'RULE_START_INVALID';
   end if;
@@ -114,6 +115,10 @@ begin
     details)
   values (p_booking_id, p_payment_id, p_type, p_amount, btrim(p_reason), p_evidence_path, auth.uid(), details)
   returning * into proposed;
+  if internal.is_sole_superadmin(auth.uid()) then
+    perform internal.raise_adjustment_alert('adjustment_proposed_alone',
+                                            'Penyesuaian diusulkan oleh satu-satunya superadmin', proposed);
+  end if;
   perform internal.restore_settings(previous_settings);
   return to_jsonb(proposed);
 end;
