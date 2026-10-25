@@ -2,7 +2,7 @@
 -- from a seeded case, one open alert per rule and subject however many runs see it, an order named by its short hash
 -- only, the actors kept in the alert, the chains checked by a call of their own, and only the server runs either.
 begin;
-select plan(20);
+select plan(23);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -99,6 +99,14 @@ as $$
     and a.created_at = now();
 $$;
 
+-- Task P4.8.04 (AUTH-12): RW 08's officer has two verified authenticators, RW 13's exactly one; RW 05's has none, and the
+-- account without a role is not staff, so it is not watched (the onboarding rule comes with /onboarding).
+insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at) values
+  ('00000000-0000-4000-8000-0000000d9f01', '00000000-0000-4000-8000-00000000f008', 'HP 1', 'totp', 'verified', now(), now()),
+  ('00000000-0000-4000-8000-0000000d9f02', '00000000-0000-4000-8000-00000000f008', 'HP 2', 'totp', 'verified', now(), now()),
+  ('00000000-0000-4000-8000-0000000d9f03', '00000000-0000-4000-8000-00000000f013', 'HP', 'totp', 'verified', now(), now()),
+  ('00000000-0000-4000-8000-0000000d9f04', '00000000-0000-4000-8000-00000000f013', 'HP lama', 'totp', 'unverified', now(), now());
+
 -- ===== One run =====
 select ok((internal.run_anomaly_scan() ->> 'raised')::int >= 10, 'a run raises the seeded alerts');
 select is(pg_temp.alerted('signature_burst', internal.order_ref((select early from orders))), 1,
@@ -126,6 +134,12 @@ select is(pg_temp.alerted('new_superadmin', 'uji-superadmin'), 1, 'a new superad
 select is(pg_temp.alerted('lockout_spike'), 1, 'a spike of lockouts');
 select is(pg_temp.alerted('staff_factor_count', '00000000-0000-4000-8000-00000000f005'), 1,
   'a staff member without exactly one authenticator');
+select is(pg_temp.alerted('staff_factor_count', '00000000-0000-4000-8000-00000000f008'), 1,
+  'and one with two verified authenticators');
+select is(pg_temp.alerted('staff_factor_count', '00000000-0000-4000-8000-00000000f013'), 0,
+  'but not one with exactly one, whatever unverified factor lies beside it');
+select is(pg_temp.alerted('staff_factor_count', '00000000-0000-4000-8000-00000000f000'), 0,
+  'nor an account without a role');
 select is((select a.severity::text from public.security_alerts a
            where a.rule = 'paid_without_tickets' and a.created_at = now()),
   'critical', 'money without tickets is critical');
