@@ -49,16 +49,16 @@ async function recordSignInAnswers(page: Page, clientIp?: string): Promise<strin
   const answers: string[] = [];
   await page.route('**/login*', async (route) => {
     if (route.request().method() !== 'POST') return route.continue();
-    const headers =
+    const requestHeaders =
       clientIp === undefined ? undefined : { ...route.request().headers(), 'x-real-ip': clientIp };
-    const response = await route.fetch({ headers });
+    const response = await route.fetch({ headers: requestHeaders });
     const body = await response.text();
     answers.push(body);
     // route.fetch hands the body back decoded, so its encoding headers must not go with it.
-    const headers = Object.fromEntries(
+    const answerHeaders = Object.fromEntries(
       Object.entries(response.headers()).filter(([name]) => !ENCODING_HEADERS.has(name)),
     );
-    return route.fulfill({ status: response.status(), headers, body });
+    return route.fulfill({ status: response.status(), headers: answerHeaders, body });
   });
   return answers;
 }
