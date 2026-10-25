@@ -72,6 +72,46 @@ create trigger append_only before update or delete on public.weather_notices
 create trigger log_audit after insert or update or delete on public.weather_notices
   for each row execute function internal.log_audit();
 
+-- What a notice gives one booking (decision of 2026-10-25 on the weather, rules 1-3): the leg the weather stopped, the
+-- window (booking.weather_window_hours from the notice), the moves used of booking.weather_reschedule_max and how it
+-- ended. The rights belong to the booking and the notice, so a move keeps them: the leg may move again, or the
+-- booking take the weather refund, until the window closes. resolution: refunded (the weather refund), cancelled (an
+-- ordinary cancellation), kept (the window closed after a move), auto_refunded (the window closed with no choice, and
+-- payments-poll requested the weather refund). Written only by the weather functions.
+create table public.weather_notice_bookings (
+  id             uuid primary key default gen_random_uuid(),
+  notice_id      uuid not null references public.weather_notices(id) on delete restrict,
+  booking_id     uuid not null references public.bookings(id) on delete restrict,
+  booking_leg_id uuid not null references public.booking_legs(id) on delete restrict,
+  rw_id          smallint not null references public.rw_units(id),
+  open_until     timestamptz not null,
+  moves_used     smallint not null default 0 check (moves_used >= 0),
+  resolution     text check (resolution in ('refunded', 'cancelled', 'kept', 'auto_refunded')),
+  resolved_at    timestamptz,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now(),
+  unique (notice_id, booking_id),
+  constraint weather_notice_bookings_resolved_ok check ((resolution is null) = (resolved_at is null))
+);
+create index weather_notice_bookings_booking_idx on public.weather_notice_bookings (booking_id);
+create index weather_notice_bookings_open_idx on public.weather_notice_bookings (open_until)
+  where resolved_at is null;
+alter table public.weather_notice_bookings enable row level security;
+alter table public.weather_notice_bookings force row level security;
+revoke all on public.weather_notice_bookings from anon, authenticated;
+grant select (id, notice_id, booking_id, booking_leg_id, rw_id, open_until, moves_used, resolution, resolved_at,
+  created_at, updated_at) on public.weather_notice_bookings to authenticated;
+create policy weather_notice_bookings_staff_read on public.weather_notice_bookings for select to authenticated
+  using ((select public.is_superadmin()) or (select public.owns_rw(rw_id)));
+create policy weather_notice_bookings_aal2 on public.weather_notice_bookings as restrictive for all to authenticated
+  using ((select public.aal2()));
+create trigger set_updated_at before update on public.weather_notice_bookings
+  for each row execute function public.set_updated_at();
+create trigger guard_status_writes before update on public.weather_notice_bookings
+  for each row execute function internal.guard_status_writes('moves_used', 'resolution', 'open_until');
+create trigger log_audit after insert or update or delete on public.weather_notice_bookings
+  for each row execute function internal.log_audit();
+
 
 -- ===== Refund requests (A16, A18) =====
 

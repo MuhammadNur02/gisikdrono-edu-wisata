@@ -5,7 +5,7 @@
 -- weather refund the fee eats whole, the weather window closing, a full target session, the cap of three weather
 -- moves with the ticket sent again after each, and the same cancellation or move asked twice.
 begin;
-select plan(45);
+select plan(60);
 \ir helpers/rls_personas.psql
 \ir helpers/visit_terms.psql
 select set_config('app.qr_key_id', 'k1', true);
@@ -33,14 +33,14 @@ insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time
   ('00000000-0000-4000-8000-0000000e3015', 5, public.today_jkt() + 15, '09:00', '11:00', 'Uji tepi H-15', 200),
   ('00000000-0000-4000-8000-0000000e3016', 5, public.today_jkt() + 12, '13:00', '15:00', 'Uji tepi sempit', 3);
 
--- The superadmin's notices and Virtual Account payments come later; QRIS first.
-create function pg_temp.declare(p_session uuid) returns jsonb
+-- An RW officer's notice, as that officer at AAL2.
+create function pg_temp.declare(p_session uuid, p_persona text default 'admin_rw_05') returns jsonb
   language plpgsql
 as $$
 declare
   reply jsonb;
 begin
-  perform pg_temp.act_as('admin_rw_05');
+  perform pg_temp.act_as(p_persona);
   reply := public.declare_weather_disruption(p_session, 'Hujan deras');
   reset role;
   return reply;
@@ -178,41 +178,88 @@ select is(internal.cancel_booking((select id from va_small), null, 'Hujan', 'wea
 select is((select status::text from public.bookings where id = (select id from va_small)), 'cancelled',
   'and still cancels the booking');
 
--- ===== Weather moves =====
+-- ===== Weather moves (decision of 2026-10-25, rules 1 and 2) =====
+update public.site_settings set value = '7' where key = 'midtrans.fee_qris_permille';
+update public.site_settings set value = 'null' where key = 'midtrans.fee_va_idr';
+insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
+  ('00000000-0000-4000-8000-0000000e3010', 5, public.today_jkt() + 10, '13:00', '15:00', 'Uji tepi habis', 200),
+  ('00000000-0000-4000-8000-0000000e3011', 5, public.today_jkt() + 11, '13:00', '15:00', 'Uji tepi tanpa biaya', 200);
 create temporary table moved on commit drop as
 select pg_temp.paid('00000000-0000-4000-8000-0000000e1001', '00000000-0000-4000-8000-0000000e3009', 5,
                     '+6281300004008', false) as id;
+create temporary table lapsed on commit drop as
+select pg_temp.paid('00000000-0000-4000-8000-0000000e1001', '00000000-0000-4000-8000-0000000e3010', 5,
+                    '+6281300004010', false) as id;
+select set_config('test.payment_type', 'bank_transfer', true);
+create temporary table lapsed_va on commit drop as
+select pg_temp.paid('00000000-0000-4000-8000-0000000e1001', '00000000-0000-4000-8000-0000000e3011', 5,
+                    '+6281300004011', false) as id;
+select set_config('test.payment_type', '', true);
 select pg_temp.declare('00000000-0000-4000-8000-0000000e3009');
-update public.site_settings set value = '0' where key = 'booking.weather_window_hours';
+select pg_temp.declare('00000000-0000-4000-8000-0000000e3010');
+select pg_temp.declare('00000000-0000-4000-8000-0000000e3011');
+select is((select count(*)::int from public.notifications
+           where booking_id = (select id from moved) and template = 'weather_disruption' and channel = 'email'), 1,
+  'the notice goes out by email (rule 4)');
+select is((select count(*)::int from public.notifications
+           where booking_id = (select id from moved) and template = 'weather_disruption' and channel = 'whatsapp'), 0,
+  'and not by WhatsApp until Meta approves gsk_weather_disruption_v1');
+select is((select count(*)::int from public.notifications
+           where booking_id = (select id from moved) and template = 'booking_link' and dedupe_key like '%:weather_%'), 2,
+  'the manage link follows in a message of its own, on both channels');
+
 select throws_ok($$select internal.reschedule_for_weather((select id from moved),
-  array['00000000-0000-4000-8000-0000000e3012']::uuid[])$$, 'P0001', null, 'once the window has closed, no move');
-update public.site_settings set value = '24' where key = 'booking.weather_window_hours';
-select throws_ok($$select internal.reschedule_for_weather((select id from moved),
-  array['00000000-0000-4000-8000-0000000e3016']::uuid[])$$, 'P0001', 'session 00000000-0000-4000-8000-0000000e3016 has no room for 5 more visitors',
+  '00000000-0000-4000-8000-0000000e3016')$$, 'P0001', 'session 00000000-0000-4000-8000-0000000e3016 has no room for 5 more visitors',
   'a session without room for the group refuses the move');
-select is(internal.reschedule_for_weather((select id from moved),
-  array['00000000-0000-4000-8000-0000000e3012']::uuid[]) ->> 'moves', '1', 'the first move');
+select is(internal.reschedule_for_weather((select id from moved), '00000000-0000-4000-8000-0000000e3012') ->> 'moves',
+  '1', 'the first move');
 select throws_ok($$select internal.reschedule_for_weather((select id from moved),
-  array['00000000-0000-4000-8000-0000000e3012']::uuid[])$$, 'P0001', null, 'the same move asked again is refused');
+  '00000000-0000-4000-8000-0000000e3012')$$, 'P0001', null, 'the same move asked again is refused');
 select is((select count(*)::int from public.booking_events
            where booking_id = (select id from moved) and reason = 'weather_reschedule'), 1, 'and moves nothing twice');
 select is((select count(*)::int from public.notifications
            where booking_id = (select id from moved) and template = 'payment_received_ticket'
-             and dedupe_key like '%:weather_move_1'), 2, 'the ticket goes out again with the new day, on both channels');
-select pg_temp.declare('00000000-0000-4000-8000-0000000e3012');
-select is(internal.reschedule_for_weather((select id from moved),
-  array['00000000-0000-4000-8000-0000000e3013']::uuid[]) ->> 'moves', '2', 'a second notice, a second move');
-select pg_temp.declare('00000000-0000-4000-8000-0000000e3013');
-select is(internal.reschedule_for_weather((select id from moved),
-  array['00000000-0000-4000-8000-0000000e3014']::uuid[]) ->> 'moves', '3', 'a third');
-select pg_temp.declare('00000000-0000-4000-8000-0000000e3014');
+             and dedupe_key like '%:weather_move_%_1'), 2, 'the ticket goes out again with the new day, on both channels');
+select is(internal.reschedule_for_weather((select id from moved), '00000000-0000-4000-8000-0000000e3013') ->> 'moves',
+  '2', 'the rights stay with the booking and the notice: a second move needs no second notice');
+select is(internal.reschedule_for_weather((select id from moved), '00000000-0000-4000-8000-0000000e3014') ->> 'moves_left',
+  '0', 'a third');
 select throws_ok($$select internal.reschedule_for_weather((select id from moved),
-  array['00000000-0000-4000-8000-0000000e3015']::uuid[])$$, 'P0001', null,
+  '00000000-0000-4000-8000-0000000e3015')$$, 'P0001', null,
   'and no fourth: booking.weather_reschedule_max is 3');
 select is((select visit_date - public.today_jkt() || ':' || pg_temp.reserved('00000000-0000-4000-8000-0000000e3014')
            from public.bookings where id = (select id from moved)), '14:5', 'the booking stays on its third new day');
+select is(internal.refund_preview((select id from moved), 'weather') ->> 'amount', '148950',
+  'after moving, the weather refund is still there while the window is open');
 
--- ===== A combo whose legs fall on two days counts to the first =====
+-- The window closes for all three: payments-poll's sweep.
+select set_config('app.in_rpc', '1', true);
+update public.weather_notice_bookings set open_until = now() - interval '1 second'
+where booking_id in ((select id from moved), (select id from lapsed), (select id from lapsed_va));
+select set_config('app.in_rpc', '', true);
+select is(internal.settle_lapsed_weather_links(10), '{"auto_refunded": 1, "kept": 1, "cancelled": 0, "held": 1}'::jsonb,
+  'the sweep keeps the moved booking, refunds the one that chose nothing and holds the one without a fee');
+select is((select resolution from public.weather_notice_bookings where booking_id = (select id from moved)), 'kept',
+  'a booking that moved keeps its new day');
+select is((select b.status::text || ':' || r.kind || ':' || r.amount || ':' || r.status
+           from public.bookings b join public.refund_requests r on r.booking_id = b.id
+           where b.id = (select id from lapsed)), 'cancelled:weather:148950:requested',
+  'one that chose nothing is cancelled and its weather refund requested (rule 2)');
+select is((select severity::text from public.security_alerts
+           where fingerprint = 'weather_auto_refund:' || (select id from lapsed)), 'high',
+  'with an alert for the superadmin');
+select is((select resolution from public.weather_notice_bookings where booking_id = (select id from lapsed)),
+  'auto_refunded', 'its rights end as auto_refunded');
+select is((select status::text from public.bookings where id = (select id from lapsed_va)), 'paid',
+  'without a Virtual Account fee the booking stays paid for the superadmin');
+select is((select severity::text from public.security_alerts
+           where fingerprint = 'weather_refund_fee_unset:' || (select id from lapsed_va)), 'high',
+  'and a high alert asks them to decide');
+select is((select count(*)::int from public.weather_notice_bookings
+           where booking_id = (select id from lapsed_va) and resolved_at is null), 1,
+  'its rights wait for the next run, once the fee is set');
+
+-- ===== A combo whose legs fall on two days: H-n counts to the first, and only the stopped leg moves (rule 3) =====
 insert into public.tour_packages (id, category, slug, name, pricing_basis, price_per_pax, status) values
   ('00000000-0000-4000-8000-0000000e1003', 'combo', 'uji-tepi-kombo', 'Kombo Uji Tepi', 'per_pax', 30000, 'draft');
 insert into public.tour_package_legs (package_id, rw_id, leg_order) values
@@ -220,7 +267,8 @@ insert into public.tour_package_legs (package_id, rw_id, leg_order) values
 update public.tour_packages set status = 'published' where id = '00000000-0000-4000-8000-0000000e1003';
 insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
   ('00000000-0000-4000-8000-0000000e3105', 5, public.today_jkt() + 10, '09:00', '11:00', 'Uji tepi kombo 05', 40),
-  ('00000000-0000-4000-8000-0000000e3113', 13, public.today_jkt() + 11, '09:00', '11:00', 'Uji tepi kombo 13', 40);
+  ('00000000-0000-4000-8000-0000000e3113', 13, public.today_jkt() + 11, '09:00', '11:00', 'Uji tepi kombo 13', 40),
+  ('00000000-0000-4000-8000-0000000e3114', 13, public.today_jkt() + 12, '09:00', '11:00', 'Uji tepi kombo 13 baru', 40);
 create temporary table combo on commit drop as
 select (internal.create_booking('00000000-0000-4000-8000-0000000e1003',
   array['00000000-0000-4000-8000-0000000e3105', '00000000-0000-4000-8000-0000000e3113']::uuid[], 4,
@@ -234,6 +282,16 @@ select pg_temp.event(pg_temp.attempt((select id from combo)), 'settlement',
                      (select total_amount from public.bookings where id = (select id from combo)), null);
 select is((select (q ->> 'days_before') || ':' || (q ->> 'refund_pct') from (select internal.refund_preview(
   (select id from combo), 'cancellation') as q) as x), '10:90', 'H-n counts to the first leg''s day, not the second');
+select pg_temp.declare('00000000-0000-4000-8000-0000000e3113', 'admin_rw_13');
+select throws_ok($$select internal.reschedule_for_weather((select id from combo),
+  '00000000-0000-4000-8000-0000000e3012')$$, 'P0001', null, 'the RW 05 leg the weather did not stop does not move');
+select is(internal.reschedule_for_weather((select id from combo), '00000000-0000-4000-8000-0000000e3114') ->> 'moves',
+  '1', 'the RW 13 leg moves on its own');
+select is((select array_agg(t.valid_on - public.today_jkt() order by t.valid_on) from public.tickets_qr t
+           where t.booking_id = (select id from combo)), array[10, 12],
+  'its ticket takes the new day; the RW 05 ticket keeps its own');
+select is((select (visit_date - public.today_jkt()) || '..' || (visit_date_end - public.today_jkt())
+           from public.bookings where id = (select id from combo)), '10..12', 'the booking runs from its first leg to its last');
 
 select * from finish();
 rollback;

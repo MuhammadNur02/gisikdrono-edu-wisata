@@ -44,7 +44,7 @@ select enum_has_labels('public', 'adjustment_type', array['manual_mark_paid', 'm
 select enum_has_labels('public', 'adjustment_status', array['proposed', 'approved', 'rejected', 'applied']);
 select enum_has_labels('public', 'notification_channel', array['whatsapp', 'email']);
 select enum_has_labels('public', 'notification_status', array['queued', 'sending', 'sent', 'delivered', 'read', 'failed', 'cancelled']);
-select enum_has_labels('public', 'notification_template', array['phone_otp', 'booking_created', 'quotation_ready', 'payment_reminder', 'payment_received_ticket', 'booking_expired', 'booking_cancelled', 'visit_reminder_d1', 'checked_in_thanks', 'certificate_ready', 'review_invite', 'refund_processed', 'admin_new_paid_booking', 'admin_booking_needs_review', 'security_alert', 'booking_link']);
+select enum_has_labels('public', 'notification_template', array['phone_otp', 'booking_created', 'quotation_ready', 'payment_reminder', 'payment_received_ticket', 'booking_expired', 'booking_cancelled', 'visit_reminder_d1', 'checked_in_thanks', 'certificate_ready', 'review_invite', 'refund_processed', 'admin_new_paid_booking', 'admin_booking_needs_review', 'security_alert', 'booking_link', 'weather_disruption']);
 select enum_has_labels('public', 'document_kind', array['quotation', 'invoice', 'receipt', 'credit_note', 'certificate']);
 select enum_has_labels('public', 'otp_purpose', array['booking_phone', 'dsr_identity']);
 select enum_has_labels('public', 'export_kind', array['visits', 'attendance', 'finance', 'audit']);

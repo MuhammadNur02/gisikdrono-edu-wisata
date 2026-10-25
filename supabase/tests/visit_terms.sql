@@ -2,8 +2,8 @@
 -- booking is cancelled for free; a paid one under the refund schedule, its tickets revoked and seats released at once
 -- and its refund requested, then booked when Midtrans reports it, add-ons back in full and the kept package part split
 -- between the kelurahan and the RW only, refund + retained = paid; weather_notices and refund_requests stay behind RLS;
--- a weather notice opens a move within its window, at most three times, or the weather refund net of the fee once the
--- fee is set, which gives back the whole ledger.
+-- a weather notice opens moves within its window, or the weather refund net of the fee once the fee is set, which
+-- gives back the whole ledger. visit_terms_edges.sql has the cap, the window and the combo.
 begin;
 select plan(48);
 \ir helpers/rls_personas.psql
@@ -158,15 +158,15 @@ select is((select count(*)::int from public.refund_requests), 0, 'nor any refund
 reset role;
 
 select is(internal.reschedule_for_weather((select id from rained),
-  array['00000000-0000-4000-8000-0000000e2002']::uuid[]) ->> 'moves', '1',
+  '00000000-0000-4000-8000-0000000e2002') ->> 'moves', '1',
   'a booking on the session moves to another day');
 select is((select visit_date - public.today_jkt() || ':' || pg_temp.reserved('00000000-0000-4000-8000-0000000e2002')
            from public.bookings where id = (select id from rained)), '6:5', 'its day and its seats move together');
 select is((select valid_on - public.today_jkt() || ':' || status from public.tickets_qr
            where booking_id = (select id from rained)), '6:issued', 'its ticket keeps its code and takes the new day');
-select throws_ok($$select internal.reschedule_for_weather((select id from rained),
-  array['00000000-0000-4000-8000-0000000e2004']::uuid[])$$, 'P0001', null,
-  'the new session has no notice, so no second move for it');
+select is(internal.reschedule_for_weather((select id from rained),
+  '00000000-0000-4000-8000-0000000e2004') ->> 'moves_left', '1',
+  'the rights stay with the booking and the notice, so it may move again (decision of 2026-10-25, rule 1)');
 
 select throws_ok($$select internal.cancel_booking((select id from rained_refund), null, 'Hujan', 'weather', 148950, null)$$, 'P0001', null,
   'no weather refund while the Midtrans fee is not set');
