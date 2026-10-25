@@ -43,6 +43,7 @@ import {
   snapBookingOf,
   type PreparedSnapBooking,
 } from '@/server/services/payment-reads';
+import type { RecheckOutcome } from '@/types/finance';
 import type { OpenPaymentAttempt, PaymentPageView } from '@/types/payment';
 
 // Task P3.7.04 and P3.8.03–04 (docs/Security.md §3.2, §3.3): opening a booking's Snap page, and taking Midtrans'
@@ -238,4 +239,40 @@ export async function recordWebhookRejection(
     { name: 'webhook_rejection:ip', subject: ipBucket },
   ]);
   if (isWithinCap) await svcRecordWebhookRejection(adminClient, rejection);
+}
+
+// "Cek status Midtrans" on /dashboard/finance/reconciliation (Task P4.7.04): the superadmin asks the Status API about
+// one payment's order. An answer about that order is kept as a status_api event first (N12), which is what a held
+// payment's refund and record_refund rely on, and then applied like the poll's own; any other answer, a 404 included,
+// applies nothing. The payment id comes from a reconciliation issue the superadmin's session could read.
+export async function recheckPaymentStatus(paymentId: string): Promise<RecheckOutcome> {
+  const adminClient = createSupabaseAdminClient();
+  const { data, error } = await adminClient
+    .from('payments')
+    .select('order_id')
+    .eq('id', paymentId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new AppError('NOT_FOUND');
+  const answer = jsonValueSchema.parse(
+    await getTransactionStatus(data.order_id, WEBHOOK_STATUS_TIMEOUT_MS),
+  );
+  if (!answersFor(answer, data.order_id)) return { result: 'not_found', status: null };
+  const event = await svcRecordPaymentEvent(adminClient, {
+    source: 'status_api',
+    eventHash: sha256Hex(`status_api\n${JSON.stringify(answer)}`),
+    payload: answer,
+  });
+  if (event.isProcessed) return { result: 'unchanged', status: null };
+  const outcome = await svcApplyPaymentEvent(adminClient, {
+    eventId: event.eventId,
+    source: 'status_api',
+    confirmed: null,
+    keyId: serverEnv.QR_SIGNING_ACTIVE_KID,
+  });
+  await expireClosedOrders(outcome.closeOrders);
+  return {
+    result: outcome.result === 'applied' ? 'applied' : 'unchanged',
+    status: outcome.paymentStatus,
+  };
 }

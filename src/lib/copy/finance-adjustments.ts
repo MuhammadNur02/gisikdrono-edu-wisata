@@ -83,6 +83,9 @@ export const adjustmentsCopy = {
     LEDGER_MISSING:
       'Pemesanan ini belum punya entri bagi hasil, jadi refund sebagian belum bisa dicatat. Selesaikan pembagiannya dulu.',
     PROOF_MISSING: 'Bukti belum tersimpan. Unggah ulang lalu coba lagi.',
+    PROOF_REUSED: 'Berkas bukti ini sudah dipakai untuk refund atau penyesuaian lain. Unggah bukti yang sesuai.',
+    REFUND_NOT_AT_MIDTRANS:
+      'Midtrans belum mencatat refund sebesar itu untuk pembayaran ini. Refund lewat transfer bank dicatat sebagai penyesuaian Refund manual.',
   },
 } as const;
 
