@@ -2,19 +2,15 @@ import { expect, test } from '@playwright/test';
 import { z } from 'zod';
 
 import { paidTicketToday, removeUnbookedPackages } from './helpers/gate';
-import {
-  AUTH_STEP,
-  createRwAdmin,
-  createSuperadmin,
-  resetAuthLimits,
-  signInToDashboard,
-} from './helpers/staff';
+import { AUTH_STEP, createRwAdmin, createSuperadmin, signInToDashboard } from './helpers/staff';
 import { runSql } from '../../scripts/local-stack';
 
 // Task P4.3.02 (review of PR #75, F-75-7; docs/StyleGuide.md §6.10, docs/Security.md DATA-04, AZ-12): "Tampilkan kontak"
 // on /dashboard/bookings/[id] asks for a reason, shows the real contact and leaves a pii_revealed event under the
 // staff member's name; an RW officer opening another RW's booking gets a 404, since RLS hides the row. Each test signs
-// in as an account of its own, which stays behind with the events that name it (security_events is append-only).
+// in as an account of its own, which stays behind with the events that name it (security_events is append-only). It
+// does not reset the sign-in limits: its own accounts are fresh, and a reset from this file, running beside
+// staff-sign-in.spec.ts in another worker, would wipe the per-address count that spec's lockout test is building up.
 
 test.describe.configure({ timeout: 120_000 });
 
@@ -43,10 +39,6 @@ async function revealsOf(actorId: string, bookingId: string): Promise<number> {
   );
   return row?.count ?? 0;
 }
-
-test.beforeAll(async () => {
-  await resetAuthLimits();
-});
 
 test.afterEach(async () => {
   await removeUnbookedPackages();
