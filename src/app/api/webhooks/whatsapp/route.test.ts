@@ -6,16 +6,20 @@ import { serverEnv } from '@/lib/env';
 import {
   recordProviderReports,
   recordSignatureFailure,
-  withinWebhookLimit,
+  withinAllMetaLimit,
+  withinSenderLimit,
 } from '@/server/services/provider-reports';
 
 import { GET, POST } from './route';
 
 vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => ({}) }));
 vi.mock('@/server/services/provider-reports', () => ({
+  ALL_META_LIMIT: 'webhook_whatsapp:all',
+  SENDER_LIMIT_OF: { whatsapp: 'webhook_whatsapp:ip', resend: 'webhook_resend:ip' },
   recordProviderReports: vi.fn(),
   recordSignatureFailure: vi.fn(),
-  withinWebhookLimit: vi.fn(),
+  withinAllMetaLimit: vi.fn(),
+  withinSenderLimit: vi.fn(),
 }));
 
 const URL_BASE = 'http://localhost/api/webhooks/whatsapp';
@@ -73,11 +77,12 @@ describe('GET /api/webhooks/whatsapp', () => {
 
 describe('POST /api/webhooks/whatsapp', () => {
   beforeEach(() => {
-    vi.mocked(withinWebhookLimit).mockReset().mockResolvedValue(true);
+    vi.mocked(withinSenderLimit).mockReset().mockResolvedValue(true);
+    vi.mocked(withinAllMetaLimit).mockReset().mockResolvedValue(true);
     vi.mocked(recordSignatureFailure).mockReset().mockResolvedValue(undefined);
     vi.mocked(recordProviderReports)
       .mockReset()
-      .mockResolvedValue({ updated: 1, unchanged: 0, unknown: 0 });
+      .mockResolvedValue({ updated: 1, unchanged: 0, unknown: 0, freshUnknown: 0 });
   });
 
   it('records the statuses of a signed body and answers 200', async () => {
@@ -101,10 +106,23 @@ describe('POST /api/webhooks/whatsapp', () => {
   });
 
   it('answers 429 past the rate limit, so Meta retries, before the signature is checked', async () => {
-    vi.mocked(withinWebhookLimit).mockResolvedValue(false);
+    vi.mocked(withinSenderLimit).mockResolvedValue(false);
     const response = await post(BODY, { 'x-hub-signature-256': 'sha256=00' });
     expect(response.status).toBe(429);
     expect(recordSignatureFailure).not.toHaveBeenCalled();
+    expect(recordProviderReports).not.toHaveBeenCalled();
+  });
+
+  it("counts Meta's shared limit only once the signature verified, so a forger never uses it up", async () => {
+    await post(BODY, { 'x-hub-signature-256': signatureOf('{}') });
+    expect(withinAllMetaLimit).not.toHaveBeenCalled();
+    await post(BODY);
+    expect(withinAllMetaLimit).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers 429 past Meta's shared limit, after the signature, and records nothing", async () => {
+    vi.mocked(withinAllMetaLimit).mockResolvedValue(false);
+    expect((await post(BODY)).status).toBe(429);
     expect(recordProviderReports).not.toHaveBeenCalled();
   });
 
@@ -115,6 +133,26 @@ describe('POST /api/webhooks/whatsapp', () => {
 
   it('answers 400 to a signed body of another shape', async () => {
     expect((await post('{"object":1}')).status).toBe(400);
+  });
+
+  it('answers 503 to a status younger than five minutes for a message it does not know yet, so Meta sends it again', async () => {
+    vi.mocked(recordProviderReports).mockResolvedValue({
+      updated: 0,
+      unchanged: 0,
+      unknown: 1,
+      freshUnknown: 1,
+    });
+    expect((await post(BODY)).status).toBe(503);
+  });
+
+  it('keeps 200 for an older unknown status, which no retry will match', async () => {
+    vi.mocked(recordProviderReports).mockResolvedValue({
+      updated: 0,
+      unchanged: 0,
+      unknown: 1,
+      freshUnknown: 0,
+    });
+    expect((await post(BODY)).status).toBe(200);
   });
 
   it('answers 503 when the database is out of reach, so Meta retries', async () => {

@@ -21,18 +21,45 @@ const CHANNEL_OF: Readonly<Record<WebhookProvider, EnumValue<'notification_chann
   whatsapp: 'whatsapp',
   resend: 'email',
 };
-const LIMIT_OF = { whatsapp: 'webhook_whatsapp:ip', resend: 'webhook_resend:ip' } as const;
+export const SENDER_LIMIT_OF = {
+  whatsapp: 'webhook_whatsapp:ip',
+  resend: 'webhook_resend:ip',
+} as const;
+// Meta's reports are also counted for all its senders together (re-review of PR #66, L-C), but only once a body's
+// signature verified: counted before, one unsigned host could use up Meta's share (re-review of PR #70, M-2).
+export const ALL_META_LIMIT = 'webhook_whatsapp:all';
+const ALL_SENDERS = 'all';
 
-export type ReportCounts = Record<ProviderReportOutcome, number>;
+export type ReportCounts = Record<ProviderReportOutcome, number> & {
+  // Unknown reports younger than FRESH_REPORT_MS: most likely the status of a message whose send the outbox has not
+  // recorded yet, so the route asks the provider to send them again (re-review of PR #66, L-D).
+  freshUnknown: number;
+};
 
-export function withinWebhookLimit(
+const FRESH_REPORT_MS = 300_000;
+// A report stamped further ahead of this server's clock than this is not believed to be fresh (re-review of #70, L-1).
+const CLOCK_SKEW_MS = 60_000;
+
+function isFresh(report: ProviderReport, nowMs: number): boolean {
+  if (report.occurredAt === null) return false;
+  const ageMs = nowMs - Date.parse(report.occurredAt);
+  return ageMs >= -CLOCK_SKEW_MS && ageMs < FRESH_REPORT_MS;
+}
+
+// The sender's own IP, counted before anything else is read.
+export function withinSenderLimit(
   adminClient: DatabaseClient,
   provider: WebhookProvider,
   clientIp: string,
 ): Promise<boolean> {
   return withinRateLimits(adminClient, [
-    { name: LIMIT_OF[provider], subject: rateLimitIpBucket(clientIp) },
+    { name: SENDER_LIMIT_OF[provider], subject: rateLimitIpBucket(clientIp) },
   ]);
+}
+
+// All of Meta together, counted only for a body whose signature verified.
+export function withinAllMetaLimit(adminClient: DatabaseClient): Promise<boolean> {
+  return withinRateLimits(adminClient, [{ name: ALL_META_LIMIT, subject: ALL_SENDERS }]);
 }
 
 // A body whose signature did not verify: a security event, at most webhook_rejection:ip of them an hour per IP, so a
@@ -54,11 +81,13 @@ export async function recordProviderReports(
   adminClient: DatabaseClient,
   provider: WebhookProvider,
   reports: readonly ProviderReport[],
+  nowMs: number = Date.now(),
 ): Promise<ReportCounts> {
-  const counts: ReportCounts = { updated: 0, unchanged: 0, unknown: 0 };
+  const counts: ReportCounts = { updated: 0, unchanged: 0, unknown: 0, freshUnknown: 0 };
   for (const report of reports) {
     const outcome = await svcRecordProviderStatus(adminClient, CHANNEL_OF[provider], report);
     counts[outcome] += 1;
+    if (outcome === 'unknown' && isFresh(report, nowMs)) counts.freshUnknown += 1;
   }
   return counts;
 }
