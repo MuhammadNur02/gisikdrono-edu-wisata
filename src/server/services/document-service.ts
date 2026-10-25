@@ -14,6 +14,7 @@ import { withinRateLimits } from '@/lib/rate-limit';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { isMediaOwner } from '@/lib/uploads/paths';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
+import type { StaffContext } from '@/server/auth/guards';
 import {
   bookingDocumentPdf,
   loadBookingDocument,
@@ -22,11 +23,17 @@ import {
   type BookingDocumentKind,
 } from '@/server/services/booking-documents';
 import {
+  removeFinanceDocument,
+  storeFinanceDocument,
+  type StoredDocument,
+} from '@/server/services/finance-documents';
+import {
   keptTicketPdfPath,
   loadTicketDocument,
   ticketDocumentPdf,
   type TicketDocument,
 } from '@/server/services/ticket-documents';
+import { withinUploadLimit } from '@/server/services/upload-events';
 import type { VerifiedDocument } from '@/types/documents';
 
 type DatabaseClient = SupabaseClient<Database>;
@@ -305,4 +312,23 @@ async function removeStaleQuarantineUploads(
     else report.processed += stalePaths.length;
   }
   return report;
+}
+
+// The finance pages' proofs and evidence (Task P4.7.02, P4.7.04): the private documents bucket has no policy, so
+// only the service role writes it, at a path finance-service.ts built from a verified booking or payout id, for a
+// superadmin the action's guard has checked. Counted with the other finalizes (docs/Security.md UPL-04).
+export async function storeFinanceEvidence(
+  ctx: StaffContext,
+  quarantinePath: string,
+  destination: string,
+): Promise<StoredDocument> {
+  const adminClient = createSupabaseAdminClient();
+  if (!(await withinUploadLimit(adminClient, ctx, 'upload_finalize', null))) {
+    throw new AppError('RATE_LIMITED');
+  }
+  return storeFinanceDocument(adminClient, quarantinePath, destination);
+}
+
+export async function removeFinanceEvidence(path: string): Promise<void> {
+  await removeFinanceDocument(createSupabaseAdminClient(), path);
 }

@@ -33,6 +33,13 @@ export const ADJUSTMENT_REASON_MAX_LENGTH = 500;
 export const ISSUE_NOTE_MIN_LENGTH = 5;
 export const ISSUE_NOTE_MAX_LENGTH = 500;
 
+// reconciliation_issues.resolution (20261103120000): the cause was fixed, or it was checked and needs no action.
+export const ISSUE_RESOLUTIONS = ['resolved', 'ignored'] as const;
+
+// The uploads-quarantine path api/uploads/sign issues, and a ledger line or beneficiary key, as the forms carry them.
+export const UPLOAD_PATH_MAX_LENGTH = 200;
+export const LEDGER_KEY_MAX_LENGTH = 80;
+
 // How many rows each finance list reads at once; the kelurahan's volume is small.
 export const FINANCE_LIST_LIMIT = 50;
 export const RECONCILIATION_RUNS_LIMIT = 14;

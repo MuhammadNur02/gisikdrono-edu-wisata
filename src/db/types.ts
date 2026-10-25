@@ -2486,6 +2486,7 @@ export type Database = {
           id: string
           issue_type: string
           payment_id: string | null
+          resolution: string | null
           resolution_note: string | null
           resolved_at: string | null
           resolved_by: string | null
@@ -2499,6 +2500,7 @@ export type Database = {
           id?: string
           issue_type: string
           payment_id?: string | null
+          resolution?: string | null
           resolution_note?: string | null
           resolved_at?: string | null
           resolved_by?: string | null
@@ -2512,6 +2514,7 @@ export type Database = {
           id?: string
           issue_type?: string
           payment_id?: string | null
+          resolution?: string | null
           resolution_note?: string | null
           resolved_at?: string | null
           resolved_by?: string | null
@@ -4318,7 +4321,7 @@ export type Database = {
           p_booking_id: string
           p_details?: Json
           p_evidence_path: string
-          p_payment_id: string
+          p_payment_id?: string
           p_reason: string
           p_type: Database["public"]["Enums"]["adjustment_type"]
         }
@@ -4410,9 +4413,9 @@ export type Database = {
           p_effective_from: string
           p_lines: Json
           p_name: string
-          p_package_id: string
-          p_product_id: string
-          p_rw_id: number
+          p_package_id?: string
+          p_product_id?: string
+          p_rw_id?: number
           p_scope: Database["public"]["Enums"]["revenue_rule_scope"]
         }
         Returns: Json

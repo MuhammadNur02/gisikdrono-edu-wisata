@@ -1,3 +1,4 @@
+import type { ISSUE_RESOLUTIONS } from '@/config/finance';
 import type { EnumValue } from '@/db/enums';
 
 // The finance pages' data (Task P4.7): money in whole rupiah, days as `YYYY-MM-DD`, instants as ISO strings.
@@ -186,7 +187,6 @@ export interface ReconciliationRun {
 }
 
 // reconciliation_issues.resolution (20261103120000): the cause was fixed, or it was checked and needs no action.
-export const ISSUE_RESOLUTIONS = ['resolved', 'ignored'] as const;
 export type IssueResolution = (typeof ISSUE_RESOLUTIONS)[number];
 
 export interface ReconciliationIssue {
