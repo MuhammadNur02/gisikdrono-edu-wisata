@@ -1677,7 +1677,9 @@ select is(
   'an expired export is marked for purge-storage'
 );
 select is(
-  (select metadata ->> 'job' from public.audit_logs where action = 'purge_run' and metadata ->> 'job' = 'purge_participants'),
+  -- Only this transaction's row: the 02:00 WIB retention cron writes purge_run rows of its own while suites run.
+  (select metadata ->> 'job' from public.audit_logs where action = 'purge_run' and metadata ->> 'job' = 'purge_participants'
+     and occurred_at = now()),
   'purge_participants',
   'the run leaves one purge_run row with its counts'
 );
@@ -2893,7 +2895,8 @@ select lives_ok(
   'jobs write application events through the helper'
 );
 select is(
-  (select actor_role || ' ' || (metadata ->> 'deleted') from public.audit_logs where action = 'purge_run' and metadata ? 'deleted'),
+  (select actor_role || ' ' || (metadata ->> 'deleted') from public.audit_logs where action = 'purge_run' and metadata ? 'deleted'
+     and occurred_at = now()),
   'cron 0',
   'and the event lands with its metadata'
 );
@@ -2995,7 +2998,7 @@ select is(
 );
 select is(
   (select jsonb_build_object('id', (metadata ->> 'audit_anchor_id')::bigint, 'hash', metadata ->> 'audit_anchor_hash')
-   from public.audit_logs where action = 'purge_run' order by id desc limit 1),
+   from public.audit_logs where action = 'purge_run' and occurred_at = now() order by id desc limit 1),
   (select jsonb_build_object('id', id, 'hash', entry_hash) from old_audit_row),
   'the run keeps the last pruned row''s hash as the new anchor'
 );

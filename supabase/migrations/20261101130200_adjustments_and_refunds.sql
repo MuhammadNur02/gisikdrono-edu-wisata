@@ -365,15 +365,24 @@ revoke execute on function internal.enqueue_notification(uuid, public.notificati
   public.notification_channel, jsonb, text) from public, anon, authenticated;
 
 -- What the superadmin recorded for a payment under Midtrans' own word (re-review of PR #68, N11): the refunds of
--- record_refund, not the bank transfers of manual_refund adjustments, which Midtrans never saw.
+-- record_refund, not the bank transfers of manual_refund adjustments, which Midtrans never saw. A manual refund counts
+-- as soon as Midtrans lists it under its refund_key, whenever that answer arrives (delta review, N17): what is reported
+-- is decided when read, not frozen when the adjustment was applied.
 create function internal.midtrans_recorded(p_payment public.payments) returns bigint
-  language sql stable
+  language plpgsql stable
   set search_path = ''
 as $$
-  select coalesce(sum((e.payload ->> 'amount')::bigint), 0)::bigint
-  from public.booking_events e
-  where e.booking_id = p_payment.booking_id and e.reason = 'refund_recorded'
-    and e.payload ->> 'order_id' = p_payment.order_id and coalesce((e.payload ->> 'reported')::boolean, false);
+begin
+  return coalesce((
+    select sum((e.payload ->> 'amount')::bigint)
+    from public.booking_events e
+    where e.booking_id = p_payment.booking_id and e.reason = 'refund_recorded'
+      and e.payload ->> 'order_id' = p_payment.order_id
+      and (coalesce((e.payload ->> 'reported')::boolean, false)
+           or (e.payload ->> 'refund_reference' ~ '^adjustment:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+               and internal.midtrans_refunded_under_key(p_payment.id, substr(e.payload ->> 'refund_reference', 12),
+                                                        (e.payload ->> 'amount')::bigint)))), 0)::bigint;
+end;
 $$;
 revoke execute on function internal.midtrans_recorded(public.payments) from public, anon, authenticated, service_role;
 
@@ -671,6 +680,14 @@ begin
         using errcode = 'P0001', hint = 'STATE_INVALID';
     end if;
     return jsonb_build_object('result', 'already_recorded', 'amount', p_amount);
+  end if;
+  -- A Midtrans refund whose refund_key is an applied adjustment's id was booked by that adjustment (N17).
+  if p_reported_only and regexp_replace(reference, '^adjustment:', '') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+     and exists (select 1 from public.payment_adjustments a
+                 where a.id = regexp_replace(reference, '^adjustment:', '')::uuid and a.booking_id = p_booking_id
+                   and a.status = 'applied') then
+    raise exception 'refund % was recorded when its adjustment was applied', reference
+      using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
   perform internal.require_unused_proof(p_booking_id, p_proof_path,
                                         nullif(current_setting('app.adjustment_id', true), '')::uuid);
@@ -1005,7 +1022,10 @@ $$;
 -- Whether Midtrans itself reports a refund under this refund_key (decision of the delta review of PR #68): a
 -- manual_refund executed at Midtrans with refund_key = the adjustment's id is then recorded under Midtrans' word, like
 -- record_refund's; without such a confirmed answer it is a bank transfer.
-create function internal.midtrans_refunded_under_key(p_payment_id uuid, p_refund_key text) returns boolean
+-- Midtrans lists each refund in refunds[] with its refund_key and refund_amount (delta review, L5): the refunds under
+-- the key must add up to exactly the adjustment's amount, or the refund is not the one the adjustment recorded.
+create function internal.midtrans_refunded_under_key(p_payment_id uuid, p_refund_key text, p_amount bigint)
+  returns boolean
   language sql stable
   set search_path = ''
 as $$
@@ -1014,12 +1034,13 @@ as $$
     join public.payments p on p.id = e.payment_id and p.order_id = e.order_id
     where e.payment_id = p_payment_id and e.source in ('status_api', 'poll')
       and e.transaction_status in ('refund', 'partial_refund')
-      and (e.payload ->> 'refund_key' = p_refund_key
-           or exists (select 1 from jsonb_array_elements(case when jsonb_typeof(e.payload -> 'refunds') = 'array'
-                                                              then e.payload -> 'refunds' else '[]' end) as r
-                      where r ->> 'refund_key' = p_refund_key)));
+      and jsonb_typeof(e.payload -> 'refunds') = 'array'
+      and (select sum(split_part(r ->> 'refund_amount', '.', 1)::bigint)
+           from jsonb_array_elements(e.payload -> 'refunds') as r
+           where r ->> 'refund_key' = p_refund_key
+             and coalesce(r ->> 'refund_amount', '') ~ '^[0-9]{1,15}(\.0{1,2})?$') = p_amount);
 $$;
-revoke execute on function internal.midtrans_refunded_under_key(uuid, text)
+revoke execute on function internal.midtrans_refunded_under_key(uuid, text, bigint)
   from public, anon, authenticated, service_role;
 
 -- reclassify_share: the amount leaves one beneficiary's share of a line and joins another's, as two adjustment rows
@@ -1075,7 +1096,8 @@ begin
   if adjustment.type = 'manual_refund' then
     perform internal.record_refund_core(adjustment.booking_id, adjustment.payment_id, adjustment.amount,
                                         'adjustment:' || p_id, adjustment.reason, adjustment.evidence_path, auth.uid(),
-                                        internal.midtrans_refunded_under_key(adjustment.payment_id, p_id::text));
+                                        internal.midtrans_refunded_under_key(adjustment.payment_id, p_id::text,
+                                                                             adjustment.amount));
   elsif adjustment.type = 'reclassify_share' then
     perform internal.apply_reclassify_share(adjustment);
   else

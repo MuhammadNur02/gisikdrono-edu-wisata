@@ -8,9 +8,10 @@
 -- answer, never the webhook body (N9), what was recorded under Midtrans' word (N11), refunds[] (N13), an applied
 -- adjustment is not rejected (N14), and a proof backs one refund or adjustment. Delta review: bank transfers neither
 -- count towards nor block what Midtrans refunded (N16), a manual refund Midtrans made under its refund_key, a
--- rejected adjustment's evidence (L2), and an event judged only under its own source (L4).
+-- rejected adjustment's evidence (L2), and an event judged only under its own source (L4). Delta 2: a manual refund
+-- counts as Midtrans' once Midtrans lists its key, whenever that answer comes (N17), and only for its own amount (L5).
 begin;
-select plan(118);
+select plan(126);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: RW 05 and combo packages and two superadmins old enough to approve =====
@@ -452,6 +453,56 @@ select throws_ok($$select internal.apply_payment_event((internal.record_payment_
       'gross_amount', '300000.00', 'currency', 'IDR', 'transaction_status', 'settlement',
       'signature_key', repeat('a', 128))) ->> 'event_id')::bigint, 'poll', null, 'k1')$$, '22023', null,
   'a webhook body is never judged as the poll''s own answer (L4)');
+
+-- ===== N17: a manual refund Midtrans made under its refund_key is booked once, whenever its answer comes =====
+select pg_temp.act_as('superadmin_aal2');
+create temporary table keyed_late on commit drop as
+  select ((public.propose_adjustment('manual_refund', (select id from seen), pg_temp.payment_of((select id from seen)),
+    2000, 'Refund QRIS dari dasbor Midtrans',
+    pg_temp.doc('bookings/' || (select id from seen) || '/adjustment-' || gen_random_uuid() || '.pdf')))
+    ->> 'id')::uuid as id;
+reset role;
+select pg_temp.act_as_super_b();
+select is((public.approve_adjustment((select id from keyed_late)) ->> 'status'), 'approved',
+  'a manual refund executed at Midtrans under the adjustment''s id is approved');
+reset role;
+select pg_temp.act_as('superadmin_aal2');
+select is((public.apply_adjustment((select id from keyed_late)) ->> 'status'), 'applied',
+  'and applied before Midtrans'' answer naming its key has arrived');
+reset role;
+create temporary table keyed_answer on commit drop as
+  select jsonb_build_object('order_id', (select order_id from seen_order), 'status_code', '200',
+    'gross_amount', '300000.00', 'currency', 'IDR', 'transaction_status', 'partial_refund', 'refund_amount', '3000.00',
+    'refunds', jsonb_build_array(jsonb_build_object('refund_key', 'TRF-N9', 'refund_amount', '1000.00'),
+                                 jsonb_build_object('refund_key', (select id from keyed_late)::text,
+                                                    'refund_amount', '2000.00'))) as answer;
+select is(internal.note_refund_seen((select p from public.payments p where p.id = pg_temp.payment_of((select id from seen))),
+  'partially_refunded', (select answer from keyed_answer)) ->> 'processing_result', 'refund_awaiting_record',
+  'the confirmed answer comes first and alerts, its key not stored yet');
+insert into public.payment_events (payment_id, order_id, source, event_hash, transaction_status, status_code,
+  gross_amount_raw, payload, processed_at)
+select pg_temp.payment_of((select id from seen)), (select order_id from seen_order), 'status_api',
+       md5('uji-keyed-late'), 'partial_refund', '200', '300000.00', (select answer from keyed_answer), now();
+select pg_temp.act_as('superadmin_aal2');
+select throws_ok($$select public.record_refund((select id from seen), 2000, 'TRF-N17', 'Refund QRIS dicatat lagi', null,
+  pg_temp.proof((select id from seen), 'n17'))$$, 'P0001', null,
+  'once Midtrans lists the key, the same money cannot be recorded again (N17, REFUND_NOT_AT_MIDTRANS)');
+select throws_ok($$select public.record_refund((select id from seen), 2000, (select id from keyed_late)::text,
+  'Refund QRIS dicatat lagi', null, pg_temp.proof((select id from seen), 'n17b'))$$, 'P0001',
+  'refund ' || (select id from keyed_late) || ' was recorded when its adjustment was applied',
+  'nor under the refund_key the adjustment already booked');
+reset role;
+select internal.close_refund_alert('refund_seen:' || (select order_id from seen_order),
+  internal.midtrans_recorded((select p from public.payments p where p.id = pg_temp.payment_of((select id from seen)))),
+  '00000000-0000-4000-8000-00000000f001');
+select isnt((select acknowledged_at from public.security_alerts
+             where fingerprint = 'refund_seen:' || (select order_id from seen_order)
+             order by created_at desc limit 1), null,
+  'and what was recorded now covers the alert, which closes');
+select is(internal.midtrans_refunded_under_key(pg_temp.payment_of((select id from seen)), (select id from keyed_late)::text,
+  2000), true, 'the key''s refunds add up to the adjustment''s amount');
+select is(internal.midtrans_refunded_under_key(pg_temp.payment_of((select id from seen)), (select id from keyed_late)::text,
+  1500), false, 'and another amount under that key is not its refund (L5)');
 
 -- ===== Adjustments: the workflow =====
 reset role;
