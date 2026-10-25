@@ -28,6 +28,22 @@ insert into public.site_settings (key, value, is_public, description) values
 on conflict (key) do nothing;
 
 
+-- The placeholder check of 0008 reads a bracketed value ("[nama pejabat]") as a placeholder; the refund schedule is a
+-- JSON array, so only text values are tested now.
+create or replace function internal.placeholder_site_settings() returns setof text
+  language sql stable security definer
+  set search_path = ''
+as $$
+  select s.key from public.site_settings s
+  where jsonb_typeof(s.value) = 'string'
+    and (s.value #>> '{}' ~* 'example\.invalid'
+      or s.value #>> '{}' ~ '^\+620+$'
+      or s.value #>> '{}' ~ '^\[.*\]$'
+      or s.value #>> '{}' = 'BCA ****1234')
+  order by s.key;
+$$;
+revoke execute on function internal.placeholder_site_settings() from public, anon, authenticated, service_role;
+
 -- ===== Weather notices (A17) =====
 
 -- One notice per session: an RW admin of the session's RW or the superadmin says the weather stopped it. The bookings on
@@ -45,7 +61,8 @@ create index weather_notices_rw_idx on public.weather_notices (rw_id, declared_a
 alter table public.weather_notices enable row level security;
 alter table public.weather_notices force row level security;
 revoke all on public.weather_notices from anon, authenticated;
-grant select on public.weather_notices to authenticated;
+-- 0005 grants by column, so a column added later stays private until a migration grants it.
+grant select (id, visit_session_id, rw_id, declared_by, declared_at, reason) on public.weather_notices to authenticated;
 create policy weather_notices_staff_read on public.weather_notices for select to authenticated
   using ((select public.is_superadmin()) or (select public.owns_rw(rw_id)));
 create policy weather_notices_aal2 on public.weather_notices as restrictive for all to authenticated
@@ -102,7 +119,9 @@ create index refund_requests_open_idx on public.refund_requests (status, request
 alter table public.refund_requests enable row level security;
 alter table public.refund_requests force row level security;
 revoke all on public.refund_requests from anon, authenticated;
-grant select on public.refund_requests to authenticated;
+grant select (id, booking_id, payment_id, kind, status, method, refund_key, amount, package_refund, addon_refund,
+  fee_amount, refund_pct, days_before, requested_by, requested_at, submitted_at, recorded_at, provider_status_code,
+  failure_reason, updated_at) on public.refund_requests to authenticated;
 create policy refund_requests_super_read on public.refund_requests for select to authenticated
   using ((select public.is_superadmin()));
 create policy refund_requests_aal2 on public.refund_requests as restrictive for all to authenticated
