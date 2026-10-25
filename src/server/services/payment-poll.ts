@@ -162,8 +162,7 @@ async function retryRefunds(adminClient: DatabaseClient, deadline: number): Prom
   return retried;
 }
 
-export async function pollPayments(adminClient: DatabaseClient): Promise<PollReport> {
-  const startedAt = Date.now();
+async function pollOrders(adminClient: DatabaseClient, startedAt: number) {
   const orders = await svcPaymentsToPoll(adminClient, POLL_BATCH_SIZE);
   const report = { asked: 0, applied: 0, failed: 0 };
   for (const order of orders) {
@@ -176,13 +175,47 @@ export async function pollPayments(adminClient: DatabaseClient): Promise<PollRep
       report.failed += 1;
     }
   }
+  return report;
+}
+
+// Each step of the run stands alone (review of PR #69, L-3): one that fails is counted and the next still runs.
+async function step<T>(run: () => Promise<T>, fallback: T, failures: { count: number }): Promise<T> {
+  try {
+    return await run();
+  } catch {
+    failures.count += 1;
+    return fallback;
+  }
+}
+
+const NO_WEATHER = { auto_refunded: 0, kept: 0, cancelled: 0, held: 0 };
+const NO_ORDERS = { asked: 0, applied: 0, failed: 0 };
+const NO_HOUSEKEEPING = { suspended: 0, reminded: 0 };
+
+export async function pollPayments(adminClient: DatabaseClient): Promise<PollReport> {
+  const startedAt = Date.now();
+  const failures = { count: 0 };
+  const orders = await step(() => pollOrders(adminClient, startedAt), NO_ORDERS, failures);
   // Decision of 2026-10-25 on the weather, rule 2: closed windows first, so a weather refund they request is retried
   // with the others below once its ten minutes have passed.
-  const weather = await svcSettleLapsedWeatherLinks(adminClient, WEATHER_BATCH_SIZE);
-  const refundsRetried = await retryRefunds(adminClient, startedAt + POLL_BUDGET_MS);
-  const housekeeping = await svcPaymentsHousekeeping(adminClient);
+  const weather = await step(
+    () => svcSettleLapsedWeatherLinks(adminClient, WEATHER_BATCH_SIZE),
+    NO_WEATHER,
+    failures,
+  );
+  const refundsRetried = await step(
+    () => retryRefunds(adminClient, startedAt + POLL_BUDGET_MS),
+    0,
+    failures,
+  );
+  const housekeeping = await step(
+    () => svcPaymentsHousekeeping(adminClient),
+    NO_HOUSEKEEPING,
+    failures,
+  );
   return {
-    ...report,
+    ...orders,
+    failed: orders.failed + failures.count,
     refundsRetried,
     weatherRefunded: weather.auto_refunded,
     weatherHeld: weather.held,

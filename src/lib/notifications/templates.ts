@@ -89,6 +89,7 @@ export const templateParamsSchemas = {
     rw: label,
     date: visitDate,
     deadline: moment,
+    moves: z.int().positive(),
   }),
 } satisfies Record<NotificationTemplate, z.ZodType>;
 

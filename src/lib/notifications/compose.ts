@@ -42,6 +42,7 @@ const rowParamsSchema = z.looseObject({
   rw_name: z.string().optional(),
   session_date: z.string().optional(),
   open_until: z.string().optional(),
+  moves_max: z.number().optional(),
 });
 
 interface GuestParamsInput {
@@ -99,6 +100,7 @@ const GUEST_PARAMS: Record<GuestTemplate, (input: GuestParamsInput) => Record<st
     rw: input.queued?.rw_name,
     date: input.queued?.session_date,
     deadline: input.queued?.open_until,
+    moves: input.queued?.moves_max,
   }),
 };
 

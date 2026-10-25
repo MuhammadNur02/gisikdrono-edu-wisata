@@ -99,6 +99,10 @@ declare
   package_refund bigint := 0;
   refund bigint;
 begin
+  -- A20: a booking whose other leg was already visited is checked_in; only its stopped leg's weather refund remains.
+  if p_booking.status = 'checked_in' and p_kind = 'weather' and not p_booking.needs_review then
+    return internal.weather_leg_quote(p_booking);
+  end if;
   if p_booking.status <> 'paid' or p_booking.needs_review then
     raise exception 'booking % is not a paid booking the visit terms refund', p_booking.id
       using errcode = 'P0001', hint = 'STATE_INVALID';
@@ -154,21 +158,69 @@ $$;
 
 -- The weather refund (A18): what was paid minus the Midtrans fee of its method. STATE_INVALID while the fee is not
 -- set, never a guess. The window is the caller's to check: the hub and the visitor within it, the sweep after it.
-create function internal.weather_quote(p_payment public.payments, p_days_before integer) returns jsonb
+create function internal.weather_quote(p_payment public.payments, p_days_before integer,
+  p_base bigint default null) returns jsonb
   language plpgsql stable
   set search_path = ''
 as $$
 declare
   fee bigint := internal.midtrans_fee_of(p_payment.method, p_payment.gross_amount);
+  base bigint := coalesce(p_base, p_payment.gross_amount);
 begin
   if fee is null then
     raise exception 'the Midtrans fee of % payments is not set', p_payment.method
       using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
   return jsonb_build_object('kind', 'weather', 'days_before', p_days_before, 'refund_pct', null,
-    'package_refund', 0, 'addon_refund', 0, 'fee_amount', least(fee, p_payment.gross_amount),
-    'amount', greatest(p_payment.gross_amount - fee, 0), 'retained', 0, 'paid', p_payment.gross_amount,
+    'package_refund', 0, 'addon_refund', 0, 'fee_amount', least(fee, base),
+    'amount', greatest(base - fee, 0), 'retained', 0, 'paid', p_payment.gross_amount,
     'method', p_payment.method, 'payment_id', p_payment.id, 'order_id', p_payment.order_id);
+end;
+$$;
+
+-- A20 (decision of 2026-10-25 on M-B): what one leg of a booking was paid for, the share a weather refund gives back
+-- when the booking's other leg was already visited: the leg's part of the package after the discount (the legs share
+-- the package equally, any rupiah left over by largest remainder in leg order) and the add-ons of the leg's RW.
+create function internal.leg_share(p_booking public.bookings, p_leg_id uuid) returns bigint
+  language plpgsql stable
+  set search_path = ''
+as $$
+declare
+  legs uuid[] := array(select l.id from public.booking_legs l where l.booking_id = p_booking.id order by l.leg_order);
+  parts bigint[];
+  position integer := array_position(legs, p_leg_id);
+begin
+  if position is null then
+    raise exception 'leg % is not one of booking %', p_leg_id, p_booking.id using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  parts := internal.largest_remainder_split(p_booking.subtotal_package - p_booking.discount_amount,
+    array(select 1::numeric from unnest(legs)));
+  return parts[position] + coalesce((select sum(a.line_total) from public.booking_addons a
+                                     join public.booking_legs l on l.id = p_leg_id
+                                     where a.booking_id = p_booking.id and a.rw_id = l.rw_id), 0)::bigint;
+end;
+$$;
+
+-- A20: the weather refund of a checked_in booking's stopped leg: its share minus the Midtrans fee, never below 0.
+create function internal.weather_leg_quote(p_booking public.bookings) returns jsonb
+  language plpgsql stable
+  set search_path = ''
+as $$
+declare
+  link public.weather_notice_bookings := internal.open_weather_link(p_booking.id);
+  leg public.booking_legs;
+  payment public.payments := internal.settled_payment_of(p_booking.id);
+begin
+  select * into leg from public.booking_legs l where l.id = link.booking_leg_id;
+  if link.id is null or leg.status <> 'reserved' then
+    raise exception 'booking % has no open weather notice for a leg still to visit', p_booking.id
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  if payment.id is null then
+    raise exception 'booking % has no settled payment', p_booking.id using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  return internal.weather_quote(payment, null, internal.leg_share(p_booking, leg.id))
+    || jsonb_build_object('leg_id', leg.id);
 end;
 $$;
 
@@ -300,6 +352,14 @@ begin
       raise exception 'an unpaid booking gives nothing back' using errcode = 'P0001', hint = 'PRICE_MISMATCH';
     end if;
     outcome := internal.cancel_unpaid_booking(booking, p_actor_id, p_reason);
+  elsif booking.status = 'checked_in' and p_kind = 'weather' then
+    quote := internal.refund_quote(booking, p_kind);
+    if (quote ->> 'amount')::bigint is distinct from p_expected_amount or p_expected_pct is not null then
+      raise exception 'the refund of booking % is now %, not the % previewed', booking.id, quote ->> 'amount',
+        p_expected_amount using errcode = 'P0001', hint = 'PRICE_MISMATCH';
+    end if;
+    outcome := internal.refund_weather_leg(booking, p_actor_id, quote,
+                                           case when p_actor_id is null then 'visitor' else 'admin' end);
   elsif booking.status = 'paid' then
     quote := internal.refund_quote(booking, p_kind);
     -- The visitor confirms the figures the hub previewed; when the quote has moved since (the day turned, a fee was
@@ -314,10 +374,56 @@ begin
   else
     raise exception 'a % booking is not cancelled here', booking.status using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
-  perform internal.enqueue_notification(booking.id, 'booking_cancelled', 'whatsapp', '{}');
-  perform internal.enqueue_notification(booking.id, 'booking_cancelled', 'email', '{}');
+  if booking.status <> 'checked_in' then
+    perform internal.enqueue_notification(booking.id, 'booking_cancelled', 'whatsapp', '{}');
+    perform internal.enqueue_notification(booking.id, 'booking_cancelled', 'email', '{}');
+  end if;
   perform internal.restore_settings(previous_settings);
   return outcome;
+end;
+$$;
+
+-- A20: the weather refund of the stopped leg of a booking whose other leg was already visited. The booking stays
+-- checked_in; that leg's seats are released and its ticket revoked, the visited leg is never refunded.
+create function internal.refund_weather_leg(p_booking public.bookings, p_actor_id uuid, p_quote jsonb,
+  p_actor_type text) returns jsonb
+  language plpgsql
+  set search_path = ''
+as $$
+declare
+  leg public.booking_legs;
+  request public.refund_requests;
+  next_refund integer;
+begin
+  select * into leg from public.booking_legs l where l.id = (p_quote ->> 'leg_id')::uuid for update;
+  update public.visit_sessions set reserved_pax = greatest(reserved_pax - leg.pax_count, 0)
+  where id = leg.visit_session_id;
+  update public.booking_legs set status = 'released', quota_released_at = now() where id = leg.id;
+  update public.tickets_qr
+  set status = 'revoked', revoked_at = now(), revoked_by = p_actor_id, revoke_reason = 'weather_refund'
+  where booking_leg_id = leg.id and status in ('issued', 'suspended');
+  if (p_quote ->> 'amount')::bigint > 0 then
+    select count(*) + 1 into next_refund from public.refund_requests r
+    where r.payment_id = (p_quote ->> 'payment_id')::uuid;
+    insert into public.refund_requests (booking_id, payment_id, booking_leg_id, kind, method, refund_key, amount,
+      fee_amount, requested_by)
+    values (p_booking.id, (p_quote ->> 'payment_id')::uuid, leg.id, 'weather',
+            (p_quote ->> 'method')::public.payment_method,
+            (p_quote ->> 'order_id') || '-R' || lpad(next_refund::text, 2, '0'), (p_quote ->> 'amount')::bigint,
+            (p_quote ->> 'fee_amount')::bigint, p_actor_id)
+    returning * into request;
+    perform internal.announce_refund_request(p_booking, request);
+  end if;
+  update public.weather_notice_bookings
+  set resolution = case when p_actor_type = 'cron' then 'auto_refunded' else 'refunded' end, resolved_at = now()
+  where booking_id = p_booking.id and booking_leg_id = leg.id and resolved_at is null;
+  insert into public.booking_events (booking_id, from_status, to_status, actor_type, actor_id, reason, payload)
+  values (p_booking.id, p_booking.status, p_booking.status, p_actor_type, p_actor_id, 'weather_refund_leg',
+          p_quote - 'payment_id' - 'order_id');
+  return jsonb_build_object('result', 'cancelled', 'close_orders', '[]'::jsonb,
+    'refund', case when request.id is null then null else jsonb_build_object(
+      'request_id', request.id, 'amount', request.amount, 'method', request.method, 'refund_key', request.refund_key,
+      'order_id', p_quote ->> 'order_id') end);
 end;
 $$;
 
@@ -388,7 +494,7 @@ begin
   if request.id is not null and p_status = 'failed' then
     insert into public.security_alerts (rule, severity, fingerprint, title, details)
     values ('refund_failed', 'high', 'refund_failed:' || request.refund_key,
-            'Pengembalian dana QRIS ditolak Midtrans; selesaikan di Keuangan',
+            'Midtrans menolak pengembalian dana QRIS; transfer manual lewat penyesuaian manual_refund di Keuangan',
             jsonb_build_object('booking_id', request.booking_id, 'refund_key', request.refund_key,
                                'status_code', request.provider_status_code))
     on conflict (fingerprint) where acknowledged_at is null do update
@@ -517,6 +623,10 @@ begin
   begin
     if p_request.kind = 'cancellation' then
       ledger := internal.reverse_cancellation_share(p_request.booking_id, p_request.package_refund, p_request.refund_key);
+    elsif p_request.booking_leg_id is not null then
+      -- A20: the leg's share comes off every line in proportion, the fee included, which nobody keeps (A18).
+      ledger := internal.reverse_revenue_share(p_request.booking_id, p_request.amount + p_request.fee_amount,
+        p_request.refund_key, 'weather_refund_leg');
     else
       ledger := internal.reverse_revenue_share(p_request.booking_id,
         (select coalesce(sum(e.amount), 0)::bigint from public.revenue_share_entries e
@@ -533,15 +643,17 @@ begin
     on conflict (fingerprint) where acknowledged_at is null do update
     set last_seen_at = now(), occurrences = public.security_alerts.occurrences + 1;
   end;
+  -- A leg's refund leaves the visited leg's invoice standing; the superadmin issues its credit note (P4.7).
   update public.invoices
   set status = 'void', voided_at = now(), void_reason = case when p_request.kind = 'weather' then 'weather_refund'
                                                               else 'cancelled' end,
       credit_note_number = coalesce(credit_note_number, internal.next_document_number('credit_note', now()))
-  where booking_id = p_request.booking_id and status = 'paid';
+  where booking_id = p_request.booking_id and status = 'paid' and p_request.booking_leg_id is null;
   update public.refund_requests set status = 'recorded', recorded_at = now() where id = p_request.id;
   insert into public.booking_events (booking_id, from_status, to_status, actor_type, reason, payload)
-  values (p_request.booking_id, 'cancelled', 'cancelled', 'webhook', 'refund_recorded',
-          jsonb_build_object('refund_key', p_request.refund_key, 'amount', p_request.amount));
+  select p_request.booking_id, b.status, b.status, 'webhook', 'refund_recorded',
+          jsonb_build_object('refund_key', p_request.refund_key, 'amount', p_request.amount)
+  from public.bookings b where b.id = p_request.booking_id;
   perform internal.enqueue_notification(p_request.booking_id, 'refund_processed', 'whatsapp', '{}');
   perform internal.enqueue_notification(p_request.booking_id, 'refund_processed', 'email', '{}');
   return jsonb_build_object('result', 'applied', 'processing_result', 'refund_recorded', 'payment_status', p_target,
@@ -603,7 +715,7 @@ begin
     end if;
     return internal.settle_payment(p_booking, p_payment, p_answer, p_actor_type);
   elsif p_target in ('refunded', 'partially_refunded') then
-    if p_booking.status = 'cancelled' and p_payment.status in ('settled', 'partially_refunded') then
+    if p_booking.status in ('cancelled', 'checked_in') and p_payment.status in ('settled', 'partially_refunded') then
       booked := internal.record_requested_refund(p_payment, p_target, p_answer);
       if booked is not null then
         return booked;
@@ -756,7 +868,8 @@ begin
       insert into public.weather_notice_bookings (notice_id, booking_id, booking_leg_id, rw_id, open_until)
       select notice.id, l.booking_id, l.id, l.rw_id, notice.declared_at + make_interval(hours => window_hours)
       from public.booking_legs l join public.bookings b on b.id = l.booking_id
-      where l.visit_session_id = session.id and l.status = 'reserved' and b.status = 'paid' and not b.needs_review
+      where l.visit_session_id = session.id and l.status = 'reserved' and b.status in ('paid', 'checked_in')
+        and not b.needs_review
       returning *
     loop
       perform internal.queue_weather_messages(link, session);
@@ -804,7 +917,7 @@ begin
   if not found then
     raise exception 'booking % does not exist', p_booking_id using errcode = 'P0002';
   end if;
-  if booking.status <> 'paid' or booking.needs_review then
+  if booking.status not in ('paid', 'checked_in') or booking.needs_review then
     raise exception 'only a paid booking moves for the weather' using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
   select * into target from public.visit_sessions s where s.id = p_session_id;
@@ -818,7 +931,7 @@ begin
       using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
   select * into leg from public.booking_legs l where l.id = link.booking_leg_id for update;
-  if target.status <> 'open' or target.id = leg.visit_session_id
+  if leg.status <> 'reserved' or target.status <> 'open' or target.id = leg.visit_session_id
      or (target.session_date + target.start_time) at time zone 'Asia/Jakarta'
         < now() + make_interval(hours => coalesce(lead_hours, 0))
      or (advance_days is not null and target.session_date > public.today_jkt() + advance_days) then
@@ -897,8 +1010,33 @@ begin
     limit least(greatest(p_limit, 1), 50)
   loop
     select * into booking from public.bookings b where b.id = due.booking_id for update;
-    if booking.status <> 'paid' or booking.needs_review then
+    if booking.status = 'checked_in' and not booking.needs_review and due.moves_used = 0
+       and exists (select 1 from public.booking_legs l where l.id = due.booking_leg_id and l.status = 'reserved') then
+      payment := internal.settled_payment_of(booking.id);
+      begin
+        quote := internal.weather_quote(payment, null, internal.leg_share(booking, due.booking_leg_id))
+          || jsonb_build_object('leg_id', due.booking_leg_id);
+      exception when sqlstate 'P0001' then
+        quote := null;
+      end;
+      if quote is null then
+        insert into public.security_alerts (rule, severity, fingerprint, title, details)
+        values ('weather_refund_fee_unset', 'high', 'weather_refund_fee_unset:' || booking.id,
+                'Waktu pilih cuaca habis, biaya Midtrans belum diatur: ' || booking.booking_code,
+                jsonb_build_object('booking_id', booking.id, 'method', payment.method))
+        on conflict (fingerprint) where acknowledged_at is null do update
+        set last_seen_at = now(), occurrences = public.security_alerts.occurrences + 1;
+        counts := jsonb_set(counts, '{held}', to_jsonb((counts ->> 'held')::integer + 1));
+        continue;
+      end if;
+      perform internal.refund_weather_leg(booking, null, quote, 'cron');
+      counts := jsonb_set(counts, '{auto_refunded}', to_jsonb((counts ->> 'auto_refunded')::integer + 1));
+      continue;
+    end if;
+    if booking.status not in ('paid', 'checked_in') or booking.needs_review then
       outcome := 'cancelled';
+    elsif booking.status = 'checked_in' then
+      outcome := 'kept';
     elsif due.moves_used > 0 then
       outcome := 'kept';
     else
@@ -946,11 +1084,51 @@ as $$
   select exists (select 1 from public.bookings b where b.id = p_booking_id and b.pic_phone = p_phone);
 $$;
 
+-- A19 (decision of 2026-10-25 on M-A): a hold on a session under a weather notice that is paid later, or a booking
+-- whose review clears, gets the same rights as one paid before the notice, its 24 h counted from now, and the same
+-- messages. Fired by the booking's own status change, so every way to paid (the webhook, the poll, a superadmin) is
+-- covered.
+create function internal.grant_weather_rights_on_paid() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  link public.weather_notice_bookings;
+  session public.visit_sessions;
+  window_hours integer := (select (s.value #>> '{}')::integer from public.site_settings s
+                           where s.key = 'booking.weather_window_hours');
+begin
+  if new.status <> 'paid' or new.needs_review or (old.status = 'paid' and not old.needs_review) then
+    return new;
+  end if;
+  for link in
+    insert into public.weather_notice_bookings (notice_id, booking_id, booking_leg_id, rw_id, open_until)
+    select n.id, l.booking_id, l.id, l.rw_id, now() + make_interval(hours => window_hours)
+    from public.booking_legs l
+    join public.weather_notices n on n.visit_session_id = l.visit_session_id
+    join public.visit_sessions s on s.id = l.visit_session_id
+    where l.booking_id = new.id and l.status = 'reserved' and s.session_date >= public.today_jkt()
+    on conflict (notice_id, booking_id) do nothing
+    returning *
+  loop
+    select s.* into session from public.visit_sessions s
+    join public.booking_legs l on l.visit_session_id = s.id where l.id = link.booking_leg_id;
+    perform internal.queue_weather_messages(link, session);
+  end loop;
+  return new;
+end;
+$$;
+create trigger grant_weather_rights after update of status, needs_review on public.bookings
+  for each row execute function internal.grant_weather_rights_on_paid();
+
 revoke execute on function internal.cancel_refund_pct(integer),
+  internal.grant_weather_rights_on_paid(), internal.leg_share(public.bookings, uuid),
+  internal.weather_leg_quote(public.bookings),
+  internal.refund_weather_leg(public.bookings, uuid, jsonb, text),
   internal.package_keeper_holdings(uuid), internal.is_booking_phone(uuid, text),
   internal.midtrans_fee_of(public.payment_method, bigint), internal.settled_payment_of(uuid),
   internal.open_weather_link(uuid, smallint), internal.refund_quote(public.bookings, public.refund_request_kind),
-  internal.weather_quote(public.payments, integer),
+  internal.weather_quote(public.payments, integer, bigint),
   internal.cancel_unpaid_booking(public.bookings, uuid, text),
   internal.announce_refund_request(public.bookings, public.refund_requests),
   internal.cancel_paid_booking(public.bookings, uuid, text, public.refund_request_kind, jsonb, text),

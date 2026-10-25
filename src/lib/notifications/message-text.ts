@@ -53,7 +53,7 @@ const MESSAGE_WORDS: Record<NotificationTemplateName, Words> = {
       `Halo ${value('name')},`,
       `Kelurahan mengabarkan kunjungan pesanan ${value('booking_code')} di ${value('rw')} pada ` +
         `${value('date')} terhalang cuaca.`,
-      `Sampai ${value('deadline')} Anda bisa memindah jadwal (paling banyak 3 kali) atau meminta ` +
+      `Sampai ${value('deadline')} Anda bisa memindah jadwal (paling banyak ${value('moves')} kali) atau meminta ` +
         'pengembalian dana dikurangi biaya Midtrans. Bila tidak ada pilihan sampai batas itu, dana ' +
         'dikembalikan otomatis.',
       'Tautan untuk mengelola reservasi kami kirim dalam pesan terpisah.',

@@ -152,7 +152,7 @@ export const bookingHubCopy = {
         : `H-${String(minDays)} atau lebih awal: ${String(pct)} % paket dikembalikan`,
     addons: 'Produk tambahan dikembalikan penuh bila reservasi dibatalkan.',
     weather: (max: number, hours: number) =>
-      `Bila kunjungan terhalang cuaca, dalam ${String(hours)} jam setelah pemberitahuan rombongan boleh pindah jadwal paling banyak ${String(max)} kali atau meminta pengembalian dana dikurangi biaya Midtrans, juga setelah pindah. Bila tidak ada pilihan dalam ${String(hours)} jam, dana dikembalikan otomatis. Pada paket gabungan, hanya kunjungan di RW yang terhalang yang pindah.`,
+      `Bila kunjungan terhalang cuaca, dalam ${String(hours)} jam setelah pemberitahuan rombongan boleh pindah jadwal paling banyak ${String(max)} kali atau meminta pengembalian dana dikurangi biaya Midtrans, juga setelah pindah. Bila tidak ada pilihan dalam ${String(hours)} jam, dana dikembalikan otomatis. Pada paket gabungan, hanya kunjungan di RW yang terhalang yang pindah; bila kunjungan lainnya sudah berlangsung, hanya bagian kunjungan yang terhalang yang dikembalikan. Pembayaran yang lunas setelah pemberitahuan mendapat ${String(hours)} jam sejak lunas.`,
   },
   cancel: {
     open: 'Batalkan reservasi',
@@ -178,7 +178,7 @@ export const bookingHubCopy = {
       `Pengembalian dana ${amount} sedang diproses. Kami mengabari Anda lewat WhatsApp begitu dana dikirim.`,
     recorded: (amount: string) => `Pengembalian dana ${amount} sudah dikirim.`,
     manual:
-      'Pembayaran lewat Virtual Account dikembalikan lewat transfer oleh bendahara kelurahan.',
+      'Pengembalian dana ini diproses manual: bendahara kelurahan mentransfer dananya kepada Anda.',
   },
   weather: {
     title: 'Kunjungan terhalang cuaca',

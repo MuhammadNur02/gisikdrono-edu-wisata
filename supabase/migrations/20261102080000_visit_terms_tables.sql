@@ -157,6 +157,8 @@ create table public.refund_requests (
   id                   uuid primary key default gen_random_uuid(),
   booking_id           uuid not null references public.bookings(id) on delete restrict,
   payment_id           uuid not null references public.payments(id) on delete restrict,
+  -- The one leg a weather refund is for, when the booking's other leg was already visited (A20); null otherwise.
+  booking_leg_id       uuid references public.booking_legs(id) on delete restrict,
   kind                 public.refund_request_kind not null,
   status               public.refund_request_status not null default 'requested',
   method               public.payment_method not null,
@@ -192,7 +194,8 @@ create index refund_requests_open_idx on public.refund_requests (status, request
 alter table public.refund_requests enable row level security;
 alter table public.refund_requests force row level security;
 revoke all on public.refund_requests from anon, authenticated;
-grant select (id, booking_id, payment_id, kind, status, method, refund_key, amount, package_refund, addon_refund,
+grant select (id, booking_id, payment_id, booking_leg_id, kind, status, method, refund_key, amount, package_refund,
+  addon_refund,
   fee_amount, refund_pct, days_before, requested_by, requested_at, submitted_at, recorded_at, provider_status_code,
   failure_reason, attempts, last_attempt_at, updated_at) on public.refund_requests to authenticated;
 create policy refund_requests_super_read on public.refund_requests for select to authenticated
@@ -215,11 +218,13 @@ begin
   if tg_op = 'DELETE' then
     raise exception 'refund requests are never deleted' using errcode = '42501';
   end if;
-  if (new.booking_id, new.payment_id, new.kind, new.method, new.refund_key, new.amount, new.package_refund,
-      new.addon_refund, new.fee_amount, new.refund_pct, new.days_before, new.requested_by, new.requested_at)
+  if (new.booking_id, new.payment_id, new.booking_leg_id, new.kind, new.method, new.refund_key, new.amount,
+      new.package_refund, new.addon_refund, new.fee_amount, new.refund_pct, new.days_before, new.requested_by,
+      new.requested_at)
      is distinct from
-     (old.booking_id, old.payment_id, old.kind, old.method, old.refund_key, old.amount, old.package_refund,
-      old.addon_refund, old.fee_amount, old.refund_pct, old.days_before, old.requested_by, old.requested_at) then
+     (old.booking_id, old.payment_id, old.booking_leg_id, old.kind, old.method, old.refund_key, old.amount,
+      old.package_refund, old.addon_refund, old.fee_amount, old.refund_pct, old.days_before, old.requested_by,
+      old.requested_at) then
     raise exception 'a refund request keeps what it was written with' using errcode = '42501';
   end if;
   return new;

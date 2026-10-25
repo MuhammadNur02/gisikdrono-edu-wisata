@@ -229,3 +229,12 @@ describe('pollPayments and the weather windows (decision of 2026-10-25, rule 2)'
     expect(svcSettleLapsedWeatherLinks).toHaveBeenCalledWith(adminClient, 20);
   });
 });
+
+describe('pollPayments steps (review of PR #69, L-3)', () => {
+  it('runs the housekeeping even when the weather sweep fails, and counts the failure', async () => {
+    vi.mocked(svcPaymentsToPoll).mockResolvedValue([]);
+    vi.mocked(svcSettleLapsedWeatherLinks).mockRejectedValue(new Error('down'));
+    await expect(pollPayments(adminClient)).resolves.toMatchObject({ failed: 1, reminded: 1 });
+    expect(svcPaymentsHousekeeping).toHaveBeenCalled();
+  });
+});

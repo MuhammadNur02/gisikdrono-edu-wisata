@@ -5,7 +5,7 @@
 -- weather refund the fee eats whole, the weather window closing, a full target session, the cap of three weather
 -- moves with the ticket sent again after each, and the same cancellation or move asked twice.
 begin;
-select plan(61);
+select plan(99);
 \ir helpers/rls_personas.psql
 \ir helpers/visit_terms.psql
 select set_config('app.qr_key_id', 'k1', true);
@@ -368,6 +368,78 @@ select is((select severity::text from public.security_alerts
 select is(public.svc_is_booking_phone((select id from unconfirmed), '+6281300004013'), true,
   'the booking''s own number');
 select is(public.svc_is_booking_phone((select id from unconfirmed), '+6281300009999'), false, 'and no other');
+
+-- ===== The owner's answers of 2026-10-25 on M-A and M-B =====
+update public.site_settings set value = '7' where key = 'midtrans.fee_qris_permille';
+insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
+  ('00000000-0000-4000-8000-0000000e3030', 5, public.today_jkt() + 8, '13:00', '15:00', 'Uji tepi bayar telat', 200),
+  ('00000000-0000-4000-8000-0000000e3205', 5, public.today_jkt() + 2, '20:00', '21:30', 'Uji tepi dua hari 05', 40),
+  ('00000000-0000-4000-8000-0000000e3213', 13, public.today_jkt() + 5, '09:00', '11:00', 'Uji tepi dua hari 13', 40),
+  ('00000000-0000-4000-8000-0000000e3214', 13, public.today_jkt() + 6, '09:00', '11:00', 'Uji tepi dua hari 13 baru', 40);
+
+-- M-A (A19): a hold on a session under a notice that is paid afterwards gets the rights, its window from settlement.
+create temporary table late_hold on commit drop as
+select pg_temp.hold('00000000-0000-4000-8000-0000000e1001', '00000000-0000-4000-8000-0000000e3030', 5,
+                    '+6281300004014', false) as id;
+create temporary table late_order on commit drop as select pg_temp.attempt((select id from late_hold)) as order_id;
+select pg_temp.declare('00000000-0000-4000-8000-0000000e3030');
+select is((select count(*)::int from public.weather_notice_bookings where booking_id = (select id from late_hold)), 0,
+  'a hold not yet paid gets no rights when the notice comes');
+select pg_temp.event((select order_id from late_order), 'settlement', 150000, null);
+select is((select status::text from public.bookings where id = (select id from late_hold)), 'paid',
+  'the hold is paid after the notice');
+select ok((select open_until between now() + interval '23 hours 59 minutes' and now() + interval '24 hours 1 minute'
+           from public.weather_notice_bookings where booking_id = (select id from late_hold)),
+  'and gets the rights, its 24 h counted from the settlement (A19)');
+select is((select count(*)::int from public.notifications
+           where booking_id = (select id from late_hold) and template = 'weather_disruption'), 1,
+  'with the weather notice');
+
+-- M-B (A20): a combo on two days whose first leg was visited; only the stopped leg's share comes back.
+create temporary table visited on commit drop as
+select (internal.create_booking('00000000-0000-4000-8000-0000000e1003',
+  array['00000000-0000-4000-8000-0000000e3205', '00000000-0000-4000-8000-0000000e3213']::uuid[], 4,
+  jsonb_build_object('booker_type', 'school', 'institution_name', 'SD Uji Dua Hari', 'pic_name', 'Bu Dua',
+                     'pic_phone', '+6281300004015', 'pic_email', 'duahari@contoh.test', 'notes', null),
+  '[]', '[]', 'pay', 'web', null, pg_temp.otp('+6281300004015'), '{"version": "2026-10-18"}', null,
+  '{"ip": null, "user_agent": "pgTAP"}',
+  internal.booking_quote_hash(internal.booking_quote('00000000-0000-4000-8000-0000000e1003', 4, '[]',
+                                                     array[5, 13]::smallint[]))) ->> 'booking_id')::uuid as id;
+select pg_temp.event(pg_temp.attempt((select id from visited)), 'settlement',
+                     (select total_amount from public.bookings where id = (select id from visited)), null);
+-- The RW 05 leg checked in, as check_in_ticket leaves it.
+select set_config('app.in_rpc', '1', true);
+update public.booking_legs set status = 'checked_in', checked_in_at = now()
+where booking_id = (select id from visited) and rw_id = 5;
+update public.tickets_qr set status = 'used' where booking_id = (select id from visited) and rw_id = 5;
+update public.bookings set status = 'checked_in' where id = (select id from visited);
+select set_config('app.in_rpc', '', true);
+select is(pg_temp.declare('00000000-0000-4000-8000-0000000e3213', 'admin_rw_13') ->> 'affected_bookings', '1',
+  'the weather stopping the leg still to visit gives the checked_in booking its rights');
+select is(internal.leg_share((select b from public.bookings b where b.id = (select id from visited)),
+  (select l.id from public.booking_legs l where l.booking_id = (select id from visited) and l.rw_id = 13)), 60000::bigint,
+  'the RW 13 leg''s share is half the Rp 120.000 package');
+select is((select (q ->> 'amount') || ':' || (q ->> 'fee_amount') from (select internal.refund_preview(
+  (select id from visited), 'weather') as q) as x), '59160:840', 'its weather refund is that share minus the fee');
+select is(internal.reschedule_for_weather((select id from visited), '00000000-0000-4000-8000-0000000e3214') ->> 'moves',
+  '1', 'the stopped leg may move');
+select lives_ok($$select internal.cancel_booking((select id from visited), null, 'Hujan', 'weather', 59160, null)$$,
+  'or take its weather refund, also after moving');
+select is((select status::text from public.bookings where id = (select id from visited)), 'checked_in',
+  'the booking stays checked_in');
+select is((select array_agg(l.rw_id || ':' || l.status order by l.rw_id) from public.booking_legs l
+           where l.booking_id = (select id from visited)), array['5:checked_in', '13:released'],
+  'the visited leg stays as it was; the stopped one is released');
+select is((select array_agg(t.rw_id || ':' || t.status order by t.rw_id) from public.tickets_qr t
+           where t.booking_id = (select id from visited)), array['5:used', '13:revoked'], 'and only its ticket revoked');
+select is((select r.amount || ':' || (r.booking_leg_id is not null) from public.refund_requests r
+           where r.booking_id = (select id from visited)), '59160:true', 'the request names the leg');
+select is(pg_temp.event(pg_temp.order_of((select id from visited)), 'partial_refund', 120000, 59160)
+            ->> 'processing_result', 'refund_recorded', 'and is booked when Midtrans reports it');
+select is(pg_temp.ledger_sum((select id from visited)), 60000::bigint,
+  'the ledger gives the leg''s share back and keeps the visited leg''s');
+select is((select status::text from public.invoices where booking_id = (select id from visited)), 'paid',
+  'the invoice of the visited leg stands');
 
 select * from finish();
 rollback;

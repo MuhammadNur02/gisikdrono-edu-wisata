@@ -51,9 +51,9 @@ Sent to every paid booking on a session an RW officer or the superadmin marks as
 - Body:
 
   ```text
-  Halo {{1}}, kelurahan mengabarkan kunjungan reservasi {{2}} di {{3}} pada {{4}} terhalang cuaca. Sampai {{5}}, Anda bisa memindah jadwal (paling banyak 3 kali) atau meminta pengembalian dana dikurangi biaya Midtrans. Bila tidak ada pilihan sampai batas itu, dana dikembalikan otomatis. Tautan untuk mengelola reservasi kami kirim dalam pesan terpisah.
+  Halo {{1}}, kelurahan mengabarkan kunjungan reservasi {{2}} di {{3}} pada {{4}} terhalang cuaca. Sampai {{5}}, Anda bisa memindah jadwal (paling banyak {{6}} kali) atau meminta pengembalian dana dikurangi biaya Midtrans. Bila tidak ada pilihan sampai batas itu, dana dikembalikan otomatis. Tautan untuk mengelola reservasi kami kirim dalam pesan terpisah.
   ```
 
 - Button: none.
-- Parameters (CLAUDE.md Recipe C: no URLs and no phone-like digit runs in free text): `{{1}}` the PIC's first name, `{{2}}` the booking code (`GSK-7F3K9Q2M`), `{{3}}` the RW's name from `rw_units.name`, `{{4}}` the stopped session's day written out (`Jumat, 30 Oktober 2026`), `{{5}}` the end of the 24 h window written out (`Sabtu, 31 Oktober 2026, 09.12 WIB`).
-- Sample values for review: `Ani`, `GSK-7F3K9Q2M`, `RW 05 Ecowastreme`, `Jumat, 30 Oktober 2026`, `Sabtu, 31 Oktober 2026, 09.12 WIB`.
+- Parameters (CLAUDE.md Recipe C: no URLs and no phone-like digit runs in free text): `{{1}}` the PIC's first name, `{{2}}` the booking code (`GSK-7F3K9Q2M`), `{{3}}` the RW's name from `rw_units.name`, `{{4}}` the stopped session's day written out (`Jumat, 30 Oktober 2026`), `{{5}}` the end of the 24 h window written out (`Sabtu, 31 Oktober 2026, 09.12 WIB`), `{{6}}` the moves allowed (`booking.weather_reschedule_max`, `3`).
+- Sample values for review: `Ani`, `GSK-7F3K9Q2M`, `RW 05 Ecowastreme`, `Jumat, 30 Oktober 2026`, `Sabtu, 31 Oktober 2026, 09.12 WIB`, `3`.
