@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import { Suspense } from 'react';
 
 import { BookingTimeline } from '@/components/booking/booking-timeline';
 import { DocumentLinks } from '@/components/booking/document-links';
@@ -12,6 +13,7 @@ import {
   type HubActions,
 } from '@/components/booking/hub-manage';
 import { HubDetails, HubHelp, HubTerms } from '@/components/booking/hub-side';
+import { HubSkeleton } from '@/components/booking/hub-skeleton';
 import { HubStatusCard } from '@/components/booking/hub-status-card';
 import { GUEST_BOOKING_PATH, GUEST_LINK_PARAM } from '@/config/guest';
 import { siteConfig } from '@/config/site';
@@ -25,7 +27,11 @@ import {
 } from '@/server/actions/guest';
 import { requestPhoneOtpAction, verifyPhoneOtpAction } from '@/server/actions/otp';
 import { requireGuestToken } from '@/server/auth/guards';
-import { loadStatusHub, type StatusHubData } from '@/server/services/booking-service';
+import {
+  loadStatusHub,
+  type GuestAccess,
+  type StatusHubData,
+} from '@/server/services/booking-service';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
@@ -97,22 +103,18 @@ function SideColumn({
   );
 }
 
-// docs/PRD.md FR-BOOK-11, FR-BOOK-23..25 (Task P3.12.01, P3.12.02; DESIGN-SPEC §3.11): the booking as the database
-// has it, never as a redirect's query string says. A view link reads; a manage link also confirms, cancels, moves
-// after a weather notice and hands the treasurer the pay link. Any other visitor gets the 404 of an unknown code.
-export default async function StatusHubPage({ params }: StatusHubPageProps) {
-  const { bookingCode } = await params;
-  const guard = await requireGuestToken(bookingCode, 'view');
-  if (!guard.ok) notFound();
-  const [hub, settings] = await Promise.all([loadStatusHub(guard.guest), getPublicSiteSettings()]);
-  const canManage = guard.guest.scope === 'manage';
+async function StatusHub({ guest }: { guest: GuestAccess }) {
+  const [hub, settings] = await Promise.all([loadStatusHub(guest), getPublicSiteSettings()]);
+  const canManage = guest.scope === 'manage';
   return (
     <div className="flex w-full max-w-300 flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
       <div className="flex min-w-0 flex-1 flex-col gap-6">
         <HubStatusCard view={hub.view}>
           <ManagePanels hub={hub} canManage={canManage} />
         </HubStatusCard>
-        {hub.payLinkToken && <TreasurerCard payUrl={payUrlOf(bookingCode, hub.payLinkToken)} />}
+        {hub.payLinkToken && (
+          <TreasurerCard payUrl={payUrlOf(guest.bookingCode, hub.payLinkToken)} />
+        )}
         <BookingTimeline view={hub.view} />
       </div>
       <SideColumn
@@ -121,5 +123,20 @@ export default async function StatusHubPage({ params }: StatusHubPageProps) {
         whatsappNumber={settings.contactWhatsappNumber ?? siteConfig.whatsappContactNumber}
       />
     </div>
+  );
+}
+
+// docs/PRD.md FR-BOOK-11, FR-BOOK-23..25 (Task P3.12.01, P3.12.02; DESIGN-SPEC §3.11): the booking as the database
+// has it, never as a redirect's query string says. A view link reads; a manage link also confirms, cancels, moves
+// after a weather notice and hands the treasurer the pay link. Any other visitor gets the 404 of an unknown code,
+// decided before anything streams.
+export default async function StatusHubPage({ params }: StatusHubPageProps) {
+  const { bookingCode } = await params;
+  const guard = await requireGuestToken(bookingCode, 'view');
+  if (!guard.ok) notFound();
+  return (
+    <Suspense fallback={<HubSkeleton />}>
+      <StatusHub guest={guard.guest} />
+    </Suspense>
   );
 }

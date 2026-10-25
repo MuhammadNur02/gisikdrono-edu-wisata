@@ -64,7 +64,7 @@ async function payWhileTheHubPolls(page: Page, bookingCode: string) {
   await expect(
     page.getByRole('heading', { name: 'Selesaikan pembayaran sebelum waktu habis' }),
   ).toBeVisible(STEP);
-  await expect(page.getByText('Batas bayar')).toBeVisible();
+  await expect(page.getByText('Batas bayar', { exact: true })).toBeVisible();
   expect((await settleThroughWebhook(await orderOf(bookingCode))).status).toBe(200);
   await expect(
     page.getByRole('heading', { name: 'Pembayaran diterima. Sampai jumpa di hari kunjungan' }),

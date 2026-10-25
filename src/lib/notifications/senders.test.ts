@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 
 import { DB_ENUMS } from '@/db/enums';
+import { renderNotificationHtml } from '@/lib/email/render';
 import { createResendProvider } from '@/lib/notifications/email-resend';
 import { createMailpitProvider } from '@/lib/notifications/mailpit';
 import { messageText } from '@/lib/notifications/message-text';
@@ -10,6 +12,11 @@ import {
   isPermanentMetaError,
   whatsAppPayload,
 } from '@/lib/notifications/whatsapp-meta';
+
+vi.mock('@/lib/email/render', async (importOriginal) => {
+  const actual = await importOriginal<{ renderNotificationHtml: typeof renderNotificationHtml }>();
+  return { renderNotificationHtml: vi.fn(actual.renderNotificationHtml) };
+});
 
 const OTP: OutgoingMessage = {
   notificationId: 'n-1',
@@ -89,6 +96,27 @@ describe('WhatsApp Cloud API provider', () => {
     expect(whatsAppPayload({ ...LINK, link: null }).template.components).toHaveLength(1);
   });
 
+  it('puts a document header first when the message carries the ticket PDF', () => {
+    const payload = whatsAppPayload({
+      ...LINK,
+      template: 'payment_received_ticket',
+      document: { url: 'https://storage.example.test/t.pdf', filename: 'ticket-GSK-7F3K9Q2M.pdf' },
+    });
+    expect(payload.template.name).toBe('gsk_ticket_issued_v1');
+    expect(payload.template.components[0]).toEqual({
+      type: 'header',
+      parameters: [
+        {
+          type: 'document',
+          document: {
+            link: 'https://storage.example.test/t.pdf',
+            filename: 'ticket-GSK-7F3K9Q2M.pdf',
+          },
+        },
+      ],
+    });
+  });
+
   it('posts to the number id with the bearer token and keeps the message id', async () => {
     const { fetcher, calls } = answering(200, { messages: [{ id: 'wamid.HBg' }] });
     const result = await createWhatsAppMetaProvider(CREDENTIALS, fetcher).send(OTP);
@@ -148,6 +176,19 @@ describe('Resend provider', () => {
     expect(JSON.stringify(bodyOf(calls[0]?.init))).toContain(LINK.link?.url);
   });
 
+  it('sends the same words as HTML, the link as a button with its address beneath, and no attachment', async () => {
+    const { fetcher, calls } = answering(200, { id: 'email-2' });
+    await createResendProvider(config, fetcher).send(email);
+    const body = z
+      .looseObject({ html: z.string(), text: z.string() })
+      .parse(bodyOf(calls[0]?.init));
+    expect(body.html).toContain('<html');
+    expect(body.html).toContain('Buka tautan');
+    expect(body.html).toContain(LINK.link?.url.replaceAll('&', '&amp;') ?? '');
+    expect(body.html).toContain('Jika Anda tidak membuat pemesanan ini, abaikan pesan ini.');
+    expect(body).not.toHaveProperty('attachments');
+  });
+
   it.each([
     [422, true],
     [429, false],
@@ -158,6 +199,17 @@ describe('Resend provider', () => {
       errorCode: `http_${String(status)}`,
       isPermanent,
     });
+  });
+
+  it('gives up at once on an email whose layout does not render, as a server fault', async () => {
+    vi.mocked(renderNotificationHtml).mockRejectedValueOnce(new Error('render'));
+    const { fetcher } = answering(200, { id: 'email-3' });
+    expect(await createResendProvider(config, fetcher).send(email)).toMatchObject({
+      ok: false,
+      errorCode: 'compose_failed',
+      isPermanent: true,
+    });
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it('survives a network failure', async () => {

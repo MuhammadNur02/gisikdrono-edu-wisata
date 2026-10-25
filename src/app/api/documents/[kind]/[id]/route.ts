@@ -10,13 +10,14 @@ import { requireDocumentReader } from '@/server/auth/document-access';
 import {
   BOOKING_DOCUMENT_KINDS,
   documentFileName,
-  type BookingDocument,
   type BookingDocumentKind,
 } from '@/server/services/booking-documents';
 import {
   bookingDocumentFile,
   countBookletDownload,
   readBookingDocument,
+  readTicketDocument,
+  ticketDocumentFile,
   withinBookletDownloadLimit,
   withinDocumentLimits,
 } from '@/server/services/document-service';
@@ -28,8 +29,10 @@ export const maxDuration = 60;
 
 // Two families of documents: the public booklet of Task P2.4.08, counted and redirected to public-media, and a
 // booking's own quotation, invoice or receipt of Task P3.6.04, rendered for its authorised reader and streamed inline.
-// Certificates (Task P4.5) join the second family later.
+// The e-ticket of Task P3.11.05 is the second family's too, by the booking's own id. Certificates (Task P4.5) join it
+// later.
 const BOOKLET_KIND = 'booklet';
+const TICKET_KIND = 'ticket';
 const PUBLIC_MEDIA_DOWNLOAD_PARAM = 'download';
 const HTTP_STATUS = {
   ok: 200,
@@ -95,13 +98,13 @@ function isBookingDocumentKind(kind: string): kind is BookingDocumentKind {
   return (BOOKING_DOCUMENT_KINDS as readonly string[]).includes(kind);
 }
 
-function pdfResponse(document: BookingDocument, pdf: Buffer): Response {
+function pdfResponse(fileName: string, pdf: Buffer): Response {
   return new Response(new Uint8Array(pdf), {
     status: HTTP_STATUS.ok,
     headers: {
       ...NO_STORE_HEADERS,
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="${documentFileName(document)}"`,
+      'Content-Disposition': `inline; filename="${fileName}"`,
       'Content-Length': String(pdf.length),
     },
   });
@@ -127,19 +130,45 @@ async function bookingDocument(
   const reader = await requireDocumentReader(table, document.id, document.bookingCode);
   if (!reader.ok) return notFound();
   const readerId = reader.reader === 'staff' ? reader.userId : null;
-  return pdfResponse(document, await bookingDocumentFile(document, readerId));
+  return pdfResponse(documentFileName(document), await bookingDocumentFile(document, readerId));
+}
+
+// The same order for the e-ticket, which has no row of its own: the booking is the document, and the staff reader is
+// the one v_bookings_staff shows it to. No participant name is on it, so the guest's view link is enough.
+async function ticketDocument(
+  bookingId: string,
+  clientIp: string,
+  log: RequestLog,
+): Promise<Response> {
+  if (!(await withinDocumentLimits(clientIp, null))) return tooManyRequests('document:ip', log);
+  const document = await readTicketDocument(bookingId);
+  if (!document) return notFound();
+  if (!(await withinDocumentLimits(clientIp, document.bookingId))) {
+    log.info('rate_limited', { limit: 'document:booking' });
+    return notFound();
+  }
+  const reader = await requireDocumentReader(
+    'v_bookings_staff',
+    document.bookingId,
+    document.bookingCode,
+  );
+  if (!reader.ok) return notFound();
+  const readerId = reader.reader === 'staff' ? reader.userId : null;
+  return pdfResponse(document.fileName, await ticketDocumentFile(document, readerId));
 }
 
 export async function GET(request: Request, context: DocumentRouteContext): Promise<Response> {
   const { kind, id } = await context.params;
   const parsedId = idSchema.safeParse(id);
-  if (!parsedId.success || (kind !== BOOKLET_KIND && !isBookingDocumentKind(kind)))
-    return notFound();
+  const isKnownKind = kind === BOOKLET_KIND || kind === TICKET_KIND || isBookingDocumentKind(kind);
+  if (!parsedId.success || !isKnownKind) return notFound();
 
   const log = createLogger(requestIdFrom(request.headers));
   const clientIp = clientIpFrom(request.headers);
   try {
     if (kind === BOOKLET_KIND) return await bookletDownload(parsedId.data, clientIp, log);
+    if (kind === TICKET_KIND) return await ticketDocument(parsedId.data, clientIp, log);
+    if (!isBookingDocumentKind(kind)) return notFound();
     return await bookingDocument(kind, parsedId.data, clientIp, log);
   } catch {
     // The database and the renderer are what fails here; 503 tells the reader to try again shortly.

@@ -2,6 +2,7 @@ import 'server-only';
 
 import { resultOf, type DatabaseClient } from '@/db/rpc-result';
 import type { Database } from '@/db/types';
+import type { ProviderReport } from '@/types/provider-report';
 
 // Typed calls to the outbox worker's functions (supabase/migrations/20261021100200_notification_worker_functions.sql),
 // on the service-role client of api/jobs/process-notifications and its after() kicks.
@@ -88,4 +89,47 @@ export async function svcReleaseSecurityAlert(
   id: string,
 ): Promise<void> {
   await resultOf(adminClient.rpc('svc_release_security_alert', { p_id: id }));
+}
+
+// A provider's report on a sent message (Task P3.11.06, P3.11.09; 20261101120000): updated, unchanged (a replay, an
+// older report, a message already dead) or unknown (an id the outbox never sent on that channel).
+export type ProviderReportOutcome = 'updated' | 'unchanged' | 'unknown';
+const PROVIDER_REPORT_OUTCOMES: readonly ProviderReportOutcome[] = [
+  'updated',
+  'unchanged',
+  'unknown',
+];
+
+function isProviderReportOutcome(value: string): value is ProviderReportOutcome {
+  return (PROVIDER_REPORT_OUTCOMES as readonly string[]).includes(value);
+}
+
+export async function svcRecordProviderStatus(
+  adminClient: DatabaseClient,
+  channel: Enums['notification_channel'],
+  report: ProviderReport,
+): Promise<ProviderReportOutcome> {
+  const outcome = await resultOf(
+    adminClient.rpc('svc_record_provider_status', {
+      p_channel: channel,
+      p_provider_message_id: report.providerMessageId,
+      p_status: report.status,
+      p_error_code: report.errorCode ?? undefined,
+      p_occurred_at: report.occurredAt ?? undefined,
+    }),
+  );
+  if (!isProviderReportOutcome(outcome)) throw new Error('unexpected provider report outcome');
+  return outcome;
+}
+
+export async function svcRecordWebhookSignatureFailure(
+  adminClient: DatabaseClient,
+  failure: { provider: 'whatsapp' | 'resend'; ipBucket: string },
+): Promise<void> {
+  await resultOf(
+    adminClient.rpc('svc_record_webhook_signature_failure', {
+      p_provider: failure.provider,
+      p_ip_bucket: failure.ipBucket,
+    }),
+  );
 }

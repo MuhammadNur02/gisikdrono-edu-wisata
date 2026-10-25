@@ -581,6 +581,7 @@ export type Database = {
           status: Database["public"]["Enums"]["booking_status"]
           subtotal_addons: number
           subtotal_package: number
+          ticket_pdf_fingerprint: string | null
           ticket_pdf_path: string | null
           token_version: number
           total_amount: number
@@ -636,6 +637,7 @@ export type Database = {
           status: Database["public"]["Enums"]["booking_status"]
           subtotal_addons?: number
           subtotal_package: number
+          ticket_pdf_fingerprint?: string | null
           ticket_pdf_path?: string | null
           token_version?: number
           total_amount: number
@@ -691,6 +693,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["booking_status"]
           subtotal_addons?: number
           subtotal_package?: number
+          ticket_pdf_fingerprint?: string | null
           ticket_pdf_path?: string | null
           token_version?: number
           total_amount?: number
@@ -4864,6 +4867,25 @@ export type Database = {
         }
         Returns: undefined
       }
+      svc_record_provider_status: {
+        Args: {
+          p_channel: Database["public"]["Enums"]["notification_channel"]
+          p_error_code?: string
+          p_occurred_at?: string
+          p_provider_message_id: string
+          p_status: string
+        }
+        Returns: string
+      }
+      svc_record_ticket_pdf: {
+        Args: {
+          p_actor_id?: string
+          p_booking_id: string
+          p_fingerprint: string
+          p_path: string
+        }
+        Returns: undefined
+      }
       svc_record_webhook_rejection: {
         Args: {
           p_body_sha256?: string
@@ -4873,6 +4895,10 @@ export type Database = {
           p_status_code?: string
           p_user_agent?: string
         }
+        Returns: undefined
+      }
+      svc_record_webhook_signature_failure: {
+        Args: { p_ip_bucket: string; p_provider: string }
         Returns: undefined
       }
       svc_refund_preview: {
