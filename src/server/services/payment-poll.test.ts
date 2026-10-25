@@ -68,11 +68,13 @@ beforeEach(() => {
   });
 });
 
+// The refund reference is the order id and the refund's number (internal.cancel_paid_booking).
+const ORDER_ID = 'GSK-7F3K9Q2M-01';
 const REFUND = {
   requestId: '3f1c2a6e-5b7d-4e8f-9a0b-1c2d3e4f5a6b',
   status: 'requested' as const,
-  refundKey: 'GSK-7F3K9Q2M-01-R01',
-  orderId: 'GSK-7F3K9Q2M-01',
+  refundKey: `${ORDER_ID}-R01`,
+  orderId: ORDER_ID,
   amount: 270000,
 };
 const NOTHING_NEW = { eventId: 8, isProcessed: true };

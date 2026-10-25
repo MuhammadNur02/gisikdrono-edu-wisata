@@ -19,7 +19,7 @@ Templates not listed here are added with the task that first sends them.
 |---|---|---|---|
 | `gsk_otp_v1` | AUTHENTICATION | Not submitted | Waiting for the WhatsApp Business number (P0.1.07). The developer's test number is blocked, so `src/lib/notifications/whatsapp-meta.ts` has not yet reached a real phone (Task P3.11.03 note) |
 | `gsk_booking_link_v1` | UTILITY | Not submitted | New template, decision of 2026-10-21 (Task P3.3.03) |
-| `gsk_weather_disruption_v1` | UTILITY | Not submitted | New template, decision of 2026-10-25 on the weather (rule 4). Until it is approved the notice goes by email only: `internal.queue_weather_messages` queues no WhatsApp row for it |
+| `gsk_weather_disruption_v1` | UTILITY | Not submitted | New template, decision of 2026-10-25 on the weather (rule 4). Until it is approved the notice goes by email only: `internal.queue_weather_messages` queues a WhatsApp row only while `site_settings` `whatsapp.weather_template_approved` is true, which a superadmin sets once Meta approves the template |
 
 ## `gsk_otp_v1` (`phone_otp`)
 
@@ -46,7 +46,7 @@ Sent when a visitor asks for their booking link again at `/reservasi/cari`. It g
 
 ## `gsk_weather_disruption_v1` (`weather_disruption`)
 
-Sent to every paid booking on a session an RW officer or the superadmin marks as stopped by the weather (decision of 2026-10-25 on the weather, rule 4), once per notice and booking. It carries no link: the manage link follows in a message of its own (`gsk_booking_link_v1`). Until Meta approves this template the notice goes by email only.
+Sent to every paid booking on a session an RW officer or the superadmin marks as stopped by the weather (decision of 2026-10-25 on the weather, rule 4), once per notice and booking. It carries no link: the manage link follows in a message of its own (`gsk_booking_link_v1`). Until Meta approves this template the notice goes by email only; after the approval a superadmin sets `whatsapp.weather_template_approved` to true in `site_settings`, and WhatsApp goes too.
 
 - Body:
 

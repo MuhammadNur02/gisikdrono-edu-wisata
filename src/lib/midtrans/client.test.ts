@@ -171,9 +171,11 @@ describe('expireTransaction', () => {
 });
 
 describe('requestRefund (review of PR #69, M1)', () => {
+  // The refund reference is the order id and the refund's number (internal.cancel_paid_booking).
+  const ORDER_ID = 'GSK-7F3K9Q2M-01';
   const REFUND = {
-    orderId: 'GSK-7F3K9Q2M-01',
-    refundKey: 'GSK-7F3K9Q2M-01-R01',
+    orderId: ORDER_ID,
+    refundKey: `${ORDER_ID}-R01`,
     amount: 270000,
     reason: 'Pembatalan kunjungan',
   };
@@ -186,7 +188,7 @@ describe('requestRefund (review of PR #69, M1)', () => {
     });
     const [url, init] = fetchMock.mock.calls[0] ?? [];
     expect(url).toBe('https://api.sandbox.midtrans.com/v2/GSK-7F3K9Q2M-01/refund');
-    expect(JSON.parse(String(init?.body))).toMatchObject({
+    expect(JSON.parse(typeof init?.body === 'string' ? init.body : '')).toMatchObject({
       refund_key: REFUND.refundKey,
       amount: 270000,
     });

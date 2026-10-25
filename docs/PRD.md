@@ -1945,6 +1945,7 @@ Only the keys marked public below may have `is_public = true` (CHECK `site_setti
 | `booking.cancel_refund_schedule` | `[{min_days:3,pct:90},{2,80},{1,50},{0,0}]` | yes | Share of the package part returned on a paid cancellation by days to the visit (decision A16) |
 | `booking.weather_reschedule_max`, `booking.weather_window_hours` | `3`, `24` | yes | Weather moves per booking and notice, and the hours after a weather notice to choose (A17); a booking with no choice by then gets the weather refund (A18) |
 | `midtrans.fee_qris_permille`, `midtrans.fee_va_idr` | `null` (unset) | no | The Midtrans fee per method the weather refund deducts; the superadmin sets them and the weather refund stays closed until then (A18) |
+| `whatsapp.weather_template_approved` | `false` | no | Meta has approved `gsk_weather_disruption_v1`: while false the weather notice goes by email only, once true by WhatsApp too; the superadmin sets it after the approval (A17, decision of 2026-10-25) |
 | `rate_limit_profile` | `"normal"` | no | `normal \| strict` |
 | `checkin.grace_before_minutes`, `checkin.grace_after_minutes` | `60`, `120` | no | Scanner window |
 | `booking.hold_minutes_individual`, `booking.hold_hours_institution` | `120`, `24` | no | Hold TTL |

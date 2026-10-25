@@ -637,16 +637,19 @@ begin
 end;
 $$;
 
--- Rule 4: the weather notice to one booking, and its manage link in a message of its own. gsk_weather_disruption_v1
--- waits for Meta's approval, so the notice goes by email only until then (docs/notifications.md); the link goes on
--- both channels as booking_link, an approved template.
+-- Rule 4: the weather notice to one booking, and its manage link in a message of its own. The notice goes by email,
+-- and by WhatsApp too once the superadmin has set whatsapp.weather_template_approved after Meta approved
+-- gsk_weather_disruption_v1 (docs/notifications.md); the link goes on both channels as booking_link, an approved
+-- template.
 create function internal.queue_weather_messages(p_link public.weather_notice_bookings,
   p_session public.visit_sessions) returns void
   language plpgsql
   set search_path = ''
 as $$
 begin
-  perform internal.queue_booking_message(p_link.booking_id, 'weather_disruption', array['email']::public.notification_channel[],
+  perform internal.queue_booking_message(p_link.booking_id, 'weather_disruption',
+    case when internal.setting_is_on('whatsapp.weather_template_approved')
+         then array['whatsapp', 'email'] else array['email'] end::public.notification_channel[],
     jsonb_build_object('rw_name', (select r.name from public.rw_units r where r.id = p_session.rw_id),
                        'session_date', p_session.session_date, 'open_until', p_link.open_until),
     'notice_' || p_link.notice_id);

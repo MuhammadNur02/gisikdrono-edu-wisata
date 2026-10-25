@@ -5,7 +5,7 @@
 -- weather refund the fee eats whole, the weather window closing, a full target session, the cap of three weather
 -- moves with the ticket sent again after each, and the same cancellation or move asked twice.
 begin;
-select plan(60);
+select plan(61);
 \ir helpers/rls_personas.psql
 \ir helpers/visit_terms.psql
 select set_config('app.qr_key_id', 'k1', true);
@@ -197,13 +197,18 @@ select pg_temp.paid('00000000-0000-4000-8000-0000000e1001', '00000000-0000-4000-
 select set_config('test.payment_type', '', true);
 select pg_temp.declare('00000000-0000-4000-8000-0000000e3009');
 select pg_temp.declare('00000000-0000-4000-8000-0000000e3010');
+update public.site_settings set value = 'true' where key = 'whatsapp.weather_template_approved';
 select pg_temp.declare('00000000-0000-4000-8000-0000000e3011');
+update public.site_settings set value = 'false' where key = 'whatsapp.weather_template_approved';
 select is((select count(*)::int from public.notifications
            where booking_id = (select id from moved) and template = 'weather_disruption' and channel = 'email'), 1,
   'the notice goes out by email (rule 4)');
 select is((select count(*)::int from public.notifications
            where booking_id = (select id from moved) and template = 'weather_disruption' and channel = 'whatsapp'), 0,
-  'and not by WhatsApp until Meta approves gsk_weather_disruption_v1');
+  'and not by WhatsApp while whatsapp.weather_template_approved is false');
+select is((select array_agg(channel::text order by channel) from public.notifications
+           where booking_id = (select id from lapsed_va) and template = 'weather_disruption'),
+  array['email', 'whatsapp'], 'once the superadmin sets it after Meta''s approval, WhatsApp goes too');
 select is((select count(*)::int from public.notifications
            where booking_id = (select id from moved) and template = 'booking_link' and dedupe_key like '%:weather_%'), 2,
   'the manage link follows in a message of its own, on both channels');

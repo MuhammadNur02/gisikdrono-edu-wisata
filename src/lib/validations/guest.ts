@@ -1,6 +1,5 @@
 import { z } from 'zod';
 
-import { MAX_PACKAGE_LEGS } from '@/config/booking';
 import { OTP_CODE_LENGTH } from '@/config/guest';
 import { DB_ENUMS } from '@/db/enums';
 import { copy } from '@/lib/copy/id';

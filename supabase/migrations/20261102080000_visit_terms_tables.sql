@@ -24,7 +24,10 @@ insert into public.site_settings (key, value, is_public, description) values
   ('booking.weather_reschedule_max', '3', true, 'Paling banyak berapa kali satu reservasi dijadwal ulang karena cuaca'),
   ('booking.weather_window_hours', '24', true, 'Berapa jam setelah pemberitahuan cuaca rombongan boleh memilih jadwal baru atau pengembalian'),
   ('midtrans.fee_qris_permille', 'null', false, 'Biaya Midtrans untuk QRIS dalam permil dari nominal (diisi superadmin)'),
-  ('midtrans.fee_va_idr', 'null', false, 'Biaya Midtrans untuk Virtual Account dalam rupiah per transaksi (diisi superadmin)')
+  ('midtrans.fee_va_idr', 'null', false, 'Biaya Midtrans untuk Virtual Account dalam rupiah per transaksi (diisi superadmin)'),
+  -- Decision of 2026-10-25 on the weather, rule 4: the superadmin turns it on once Meta approves
+  -- gsk_weather_disruption_v1; until then the weather notice goes by email only.
+  ('whatsapp.weather_template_approved', 'false', false, 'Template WhatsApp pemberitahuan cuaca sudah disetujui Meta')
 on conflict (key) do nothing;
 
 

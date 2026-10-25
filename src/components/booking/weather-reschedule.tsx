@@ -84,6 +84,46 @@ function SessionChoices(props: {
   );
 }
 
+function DayChoices(props: {
+  days: string[];
+  label: string;
+  chosen: string | undefined;
+  onChoose: (day: string) => void;
+}) {
+  return (
+    <fieldset className="space-y-2.5">
+      <legend className="text-label-sm font-semibold">{props.label}</legend>
+      <div className="flex flex-wrap gap-2">
+        {props.days.map((each) => (
+          <Choice
+            key={each}
+            name="weather-day"
+            value={each}
+            isChecked={props.chosen === each}
+            onChoose={() => {
+              props.onChoose(each);
+            }}
+          >
+            {formatDateLong(each)}
+          </Choice>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+function Outcome({ message }: { message: { tone: 'error' | 'done'; text: string } }) {
+  if (message.tone === 'error') return <FormAlert tone="danger">{message.text}</FormAlert>;
+  return (
+    <p
+      role="status"
+      className="rounded-xl bg-success-soft p-3 text-body-sm text-success-soft-foreground"
+    >
+      {message.text}
+    </p>
+  );
+}
+
 function useMove(props: WeatherRescheduleProps) {
   const router = useRouter();
   const [message, setMessage] = useState<{ tone: 'error' | 'done'; text: string } | null>(null);
@@ -113,25 +153,15 @@ export function WeatherReschedule(props: WeatherRescheduleProps) {
   if (options.length === 0) return <p className="text-body-sm text-ink-2">{labels.noOptions}</p>;
   return (
     <div className="space-y-4">
-      <fieldset className="space-y-2.5">
-        <legend className="text-label-sm font-semibold">{labels.pickDay}</legend>
-        <div className="flex flex-wrap gap-2">
-          {daysOf(options).map((each) => (
-            <Choice
-              key={each}
-              name="weather-day"
-              value={each}
-              isChecked={day === each}
-              onChoose={() => {
-                setDay(each);
-                setSessionId(undefined);
-              }}
-            >
-              {formatDateLong(each)}
-            </Choice>
-          ))}
-        </div>
-      </fieldset>
+      <DayChoices
+        days={daysOf(options)}
+        label={labels.pickDay}
+        chosen={day}
+        onChoose={(each) => {
+          setDay(each);
+          setSessionId(undefined);
+        }}
+      />
       {day && (
         <SessionChoices
           options={options.filter((option) => option.sessionDate === day)}
@@ -140,15 +170,7 @@ export function WeatherReschedule(props: WeatherRescheduleProps) {
           onChoose={setSessionId}
         />
       )}
-      {message?.tone === 'error' && <FormAlert tone="danger">{message.text}</FormAlert>}
-      {message?.tone === 'done' && (
-        <p
-          role="status"
-          className="rounded-xl bg-success-soft p-3 text-body-sm text-success-soft-foreground"
-        >
-          {message.text}
-        </p>
-      )}
+      {message && <Outcome message={message} />}
       <Button
         disabled={!sessionId}
         loading={isPending}

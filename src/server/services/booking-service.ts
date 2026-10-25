@@ -40,7 +40,6 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 import type { SubmitReviewValues } from '@/lib/validations/review';
 import { statusHubOf } from '@/server/services/booking-hub-reads';
-import { sessionDaysOf, weatherStateOf } from '@/server/services/booking-weather-reads';
 import {
   bookingLimitsOf,
   bookingToCreate,
@@ -49,6 +48,7 @@ import {
   type BookingOutcome,
   type BookingRequest,
 } from '@/server/services/booking-request';
+import { sessionDaysOf, weatherStateOf } from '@/server/services/booking-weather-reads';
 import type { StatusHubView, WeatherState } from '@/types/booking-hub';
 
 // The guest side of a booking (Task P3.2, P3.3, P3.4): proving the PIC's phone with a one-time code, making the hold
