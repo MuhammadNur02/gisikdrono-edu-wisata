@@ -45,7 +45,7 @@ insert into public.payments (id, booking_id, attempt_no, provider, order_id, gro
 insert into public.payment_events (payment_id, order_id, source, event_hash, payload)
 values ('00000000-0000-4000-8000-0000aa000501', 'GSK-P5000001-01', 'webhook', 'rls-event-1', '{}');
 insert into public.webhook_rejections (provider, reason, order_id) values ('midtrans', 'signature_invalid', 'GSK-P5000001-01');
--- Adjustments are written by their RPCs (20261101080200); the fixture stands in for one.
+-- Adjustments are written by their RPCs (20261101130200); the fixture stands in for one.
 select set_config('app.in_rpc', '1', true);
 insert into public.payment_adjustments (booking_id, type, amount, reason, evidence_path, proposed_by)
 values ('00000000-0000-4000-8000-0000b5000001', 'write_off', 1000, 'Selisih pembulatan uji', 'documents/bukti.pdf',

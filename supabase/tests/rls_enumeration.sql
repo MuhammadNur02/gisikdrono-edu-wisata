@@ -72,8 +72,8 @@ select is(
 -- entry point: validate_ticket, check_in_ticket and the turn are its own (review of PR #54, M1); then the export and
 -- the figures of 20261027080100 and 20261027080200; save_package and its two parts of 20261028080100, security
 -- invoker, so the grants and policies of a direct write decide; issue_mfa_reenrolment_code of 20261029080000; and
--- acknowledge_alert_as_sole_superadmin of 20261029080400; then the finance RPCs of 20261101080000 to
--- 20261101080200.
+-- acknowledge_alert_as_sole_superadmin of 20261029080400; then the finance RPCs of 20261101130000 to
+-- 20261101130200.
 select is(
   array(
     select n.nspname || '.' || p.proname from pg_proc p
