@@ -5,8 +5,6 @@ import type { EnumValue } from '@/db/enums';
 
 type BookingStatus = EnumValue<'booking_status'>;
 
-const MINUTES_PER_HOUR = 60;
-
 export const bookingHubCopy = {
   title: 'Status reservasi',
   reservation: (bookingCode: string) => `Reservasi ${bookingCode}`,
@@ -61,10 +59,7 @@ export const bookingHubCopy = {
     seconds: 'detik',
     over: 'Waktu pembayaran sudah habis.',
     // What a screen reader hears, once a minute rather than every second.
-    spoken: (minutes: number) =>
-      minutes >= MINUTES_PER_HOUR
-        ? `Sisa waktu pembayaran ${String(Math.floor(minutes / MINUTES_PER_HOUR))} jam ${String(minutes % MINUTES_PER_HOUR)} menit`
-        : `Sisa waktu pembayaran ${String(minutes)} menit`,
+    spokenPrefix: 'Sisa waktu pembayaran',
   },
   payment: {
     method: 'Metode (dipilih di Midtrans)',
