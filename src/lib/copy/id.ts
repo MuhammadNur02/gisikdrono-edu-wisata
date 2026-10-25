@@ -120,12 +120,6 @@ export const copy = {
     exitFullscreen: 'Keluar dari layar penuh',
     keyboardHint: 'Tekan ← dan → di papan ketik untuk membalik halaman.',
   },
-  // RW page labels. An empty section has no text at all: it is left out (docs/StyleGuide.md §6.9).
-  rwPage: {
-    visionTitle: 'Visi',
-    galleryAll: (rw: string) => `Lihat semua foto ${rw}`,
-    schedulesAll: 'Lihat jadwal lengkap',
-  },
   forms: {
     required: 'wajib',
     phone: { placeholder: '812-3456-7890' },

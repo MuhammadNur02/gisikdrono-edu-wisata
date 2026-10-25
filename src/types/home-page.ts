@@ -1,5 +1,6 @@
+import type { RwId } from '@/config/rw';
 import type { HomeGalleryPhoto } from '@/lib/utils/home-gallery';
-import type { HomeStats } from '@/lib/utils/home-stats';
+import type { SessionSummary } from '@/lib/utils/session-summary';
 import type { ActivityPoint } from '@/types/activity-point';
 import type { ArticleSummary } from '@/types/article';
 import type { HeroSlideData } from '@/types/banner';
@@ -14,9 +15,7 @@ export interface HomePageData {
   slides: HeroSlideData[];
   rwUnits: RwUnitProfile[];
   featuredPackages: PackageSummary[];
-  // The Why-visit figures, counted from the rows below and the published reviews.
-  stats: HomeStats;
-  // Captioned photos of the first /galeri page: the first one is the photo band, the rest the strip.
+  // Captioned photos of the first /galeri page: one becomes the photo band, the rest the marquee.
   gallery: HomeGalleryPhoto[];
   featuredProducts: ProductSummary[];
   points: ActivityPoint[];
@@ -26,4 +25,10 @@ export interface HomePageData {
   // site_settings `seo.default_description` and `kelurahan.address`.
   description: string;
   address: string | null;
+  // site_settings `contact.whatsapp_number`; NULL until the kelurahan sets it, when the env number stands in.
+  whatsappNumber: string | null;
+  // The RWs with at least one published package; the others are profile-only (FR-PUB-24).
+  bookableRwIds: RwId[];
+  // The visit days and session times of the coming weeks, for the contact block.
+  sessions: SessionSummary;
 }

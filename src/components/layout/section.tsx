@@ -8,6 +8,7 @@ import {
   type WaveDividerProps,
   type WaveTone,
 } from '@/components/layout/wave-divider';
+import { cn } from '@/lib/utils/cn';
 
 // docs/StyleGuide.md §5.7 (DESIGN-SPEC §1.4, §3.1): one Section per idea. Pages alternate the paper and the sunken
 // paper; `night` and `forest` are the dark bands with the kawung texture; `brand` is the closing CTA band (forest,
@@ -58,6 +59,8 @@ export interface SectionShellProps {
   wave?: SectionWave;
   // Content that runs edge to edge after the container, such as a photo band or a scroll strip.
   bleed?: ReactNode;
+  // Extra classes on the section element, such as a tighter top padding where a page's rhythm asks for one.
+  className?: string;
   children: ReactNode;
 }
 
@@ -68,10 +71,15 @@ export function SectionShell({
   tone = 'default',
   wave,
   bleed,
+  className,
   children,
 }: SectionShellProps) {
   return (
-    <section id={id} aria-labelledby={labelledBy} className={sectionVariants({ tone })}>
+    <section
+      id={id}
+      aria-labelledby={labelledBy}
+      className={cn(sectionVariants({ tone }), className)}
+    >
       {wave ? <WaveDivider tone={WAVE_TONE_OF[tone]} {...wave} /> : null}
       <Container>{children}</Container>
       {bleed ? <div className="mt-10 md:mt-12">{bleed}</div> : null}
@@ -81,7 +89,7 @@ export function SectionShell({
 
 export interface SectionProps
   extends
-    Pick<SectionShellProps, 'tone' | 'wave' | 'bleed'>,
+    Pick<SectionShellProps, 'tone' | 'wave' | 'bleed' | 'className'>,
     Pick<SectionHeadingProps, 'eyebrow' | 'description' | 'size'> {
   // Also the anchor other pages link to, such as /rw-05-ecowastreme#profil.
   id: string;
@@ -117,6 +125,7 @@ export function Section({
   wave,
   bleed,
   headerAction,
+  className,
   children,
   ...heading
 }: SectionProps) {
@@ -138,6 +147,7 @@ export function Section({
       tone={tone}
       wave={wave}
       bleed={bleed}
+      className={className}
     >
       <div className="space-y-12 lg:space-y-14">
         <HeadingRow heading={headingBlock} action={headerAction} />

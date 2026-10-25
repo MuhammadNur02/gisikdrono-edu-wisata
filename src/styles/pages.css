@@ -1,0 +1,122 @@
+/* Page-level utilities of the home, RW and map pages (DESIGN-SPEC §3.1, §3.3, §3.9, §4). Imported by
+   src/styles/globals.css; the tokens it reads live there. Like motion.css, every movement runs only without a
+   reduced-motion preference, and scroll-linked ones only where scroll-driven animations exist. */
+
+/* The home hero (DESIGN-SPEC §4, Home): the statement fades and rises 24 px over the first 480 px of scroll, and a
+   dark layer over the pinned photo deepens to 35 % over the first 900 px. Nothing moves on load, so the LCP is
+   untouched; at the top of the page both sit at their start. */
+@keyframes hero-statement-out {
+  to {
+    opacity: 0;
+    translate: 0 -1.5rem;
+  }
+}
+@keyframes hero-dim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: var(--hero-dim-to, 0.35);
+  }
+}
+@utility hero-scroll-fade {
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: scroll()) {
+      animation: hero-statement-out linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0 30rem;
+    }
+  }
+}
+@utility hero-scroll-dim {
+  opacity: 0;
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: scroll()) {
+      animation: hero-dim-in linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0 56.25rem;
+    }
+  }
+}
+/* An RW hero deepens a little more, to 40 % (DESIGN-SPEC §4, RW page). */
+@utility hero-dim-rw {
+  --hero-dim-to: 0.4;
+}
+
+/* A row that starts in line with the page container and runs on to the right edge of the screen, as the reviews and
+   the package carousel do (DESIGN-SPEC §3.1): the inline start padding is the container's own gutter. */
+@utility pl-container {
+  --container-gutter: 1.25rem;
+  padding-inline-start: max(
+    var(--container-gutter),
+    calc((100% - 80rem) / 2 + var(--container-gutter))
+  );
+  scroll-padding-inline-start: max(
+    var(--container-gutter),
+    calc((100% - 80rem) / 2 + var(--container-gutter))
+  );
+  @media (width >= 48rem) {
+    --container-gutter: 2.5rem;
+  }
+}
+@utility pr-container {
+  --container-gutter-end: 1.25rem;
+  padding-inline-end: max(
+    var(--container-gutter-end),
+    calc((100% - 80rem) / 2 + var(--container-gutter-end))
+  );
+  @media (width >= 48rem) {
+    --container-gutter-end: 2.5rem;
+  }
+}
+
+/* Map pins drop into place one after another on the pin spring (DESIGN-SPEC §4, Home map pins; Peta hotspots):
+   --i numbers them. */
+@keyframes pin-drop {
+  from {
+    opacity: 0;
+    translate: 0 -0.75rem;
+  }
+}
+@utility pin-drop {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: pin-drop var(--duration-spring-pin) var(--ease-spring-pin) backwards;
+    animation-delay: calc(var(--i, 0) * var(--pin-stagger, 100ms));
+  }
+}
+
+/* The point card over the map (DESIGN-SPEC §4, Peta): 8 px up and in on desktop, the bottom sheet slides up on a
+   phone. */
+@keyframes card-in {
+  from {
+    opacity: 0;
+    translate: 0 0.5rem;
+  }
+}
+@keyframes sheet-in {
+  from {
+    translate: 0 100%;
+  }
+}
+@utility card-enter {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: card-in 240ms var(--ease-out-soft) backwards;
+    @media (width < 48rem) {
+      animation: sheet-in var(--duration-spring-sheet) var(--ease-spring-sheet) backwards;
+    }
+  }
+}
+
+/* OpenStreetMap's tiles, calmed and warmed toward the paper so the RW pins and zones read first (DESIGN-SPEC §3.1,
+   §3.9). Only the tile layer: the pins, zones and labels keep their own colours. */
+@utility map-tiles-warm {
+  & .leaflet-tile-pane {
+    filter: saturate(0.55) sepia(0.18) brightness(1.03);
+  }
+}
+
+/* An anchored section of an RW page clears the sticky header and the 64 px anchor nav under it (DESIGN-SPEC §3.3).
+   Important, because Section already carries the header-only margin. */
+@utility scroll-mt-header-nav {
+  scroll-margin-top: calc(var(--header-h) + 4rem) !important;
+}
