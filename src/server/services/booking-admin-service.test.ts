@@ -24,7 +24,7 @@ interface RecordedCall {
 }
 
 // The staff member's session client, played by a fetch that records every request and answers with `answer`.
-function sessionAnswering(answer: () => Response): RecordedCall[] {
+function sessionAnswering(answer: (path: string) => Response): RecordedCall[] {
   const calls: RecordedCall[] = [];
   const client = createClient<Database>('http://supabase.test', 'test-key', {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -38,7 +38,7 @@ function sessionAnswering(answer: () => Response): RecordedCall[] {
           search: decodeURIComponent(url.search),
           body,
         });
-        return Promise.resolve(answer());
+        return Promise.resolve(answer(url.pathname));
       },
     },
   });
@@ -74,21 +74,59 @@ describe('listBookingsForStaff', () => {
   });
 });
 
+// The booking as v_bookings_staff shows it, then the write's own answer.
+function bookingThen(booking: { is_anonymised: boolean } | null, write: Response) {
+  return sessionAnswering((path) =>
+    path.endsWith('/v_bookings_staff')
+      ? Response.json(booking === null ? null : { id: BOOKING_ID, ...booking })
+      : write,
+  );
+}
+
 describe('the staff writes', () => {
   it('store an empty note as null, and answer NOT_FOUND when RLS hides the booking', async () => {
-    const calls = sessionAnswering(() => Response.json(null));
-    await expect(saveAdminNotes({ bookingId: BOOKING_ID, adminNotes: '' })).rejects.toMatchObject({
+    const calls = bookingThen({ is_anonymised: false }, Response.json({ id: BOOKING_ID }));
+    await saveAdminNotes({ bookingId: BOOKING_ID, adminNotes: '' });
+    const write = calls.find((call) => call.method === 'PATCH');
+    expect(JSON.parse(write?.body ?? '{}')).toEqual({ admin_notes: null });
+    bookingThen(null, Response.json(null));
+    await expect(saveAdminNotes({ bookingId: BOOKING_ID, adminNotes: 'x' })).rejects.toMatchObject({
       code: 'NOT_FOUND',
     });
-    expect(calls[0]?.method).toBe('PATCH');
-    expect(JSON.parse(calls[0]?.body ?? '{}')).toEqual({ admin_notes: null });
   });
 
-  it('mark an add-on line only within the booking it names', async () => {
-    const calls = sessionAnswering(() => Response.json({ id: ADDON_ID }));
+  it('refuse both writes on an anonymised booking before writing anything (F-75-3)', async () => {
+    const calls = bookingThen({ is_anonymised: true }, Response.json({ id: ADDON_ID }));
+    await expect(saveAdminNotes({ bookingId: BOOKING_ID, adminNotes: 'x' })).rejects.toMatchObject({
+      code: 'STATE_INVALID',
+    });
+    await expect(
+      setAddonFulfillment({ bookingId: BOOKING_ID, addonId: ADDON_ID, status: 'prepared' }),
+    ).rejects.toMatchObject({ code: 'STATE_INVALID' });
+    expect(calls.some((call) => call.method === 'PATCH')).toBe(false);
+  });
+
+  it('mark an add-on line only within its booking and never a cancelled one (F-75-2)', async () => {
+    const calls = bookingThen({ is_anonymised: false }, Response.json({ id: ADDON_ID }));
     await setAddonFulfillment({ bookingId: BOOKING_ID, addonId: ADDON_ID, status: 'prepared' });
-    expect(calls[0]?.search).toContain(`booking_id=eq.${BOOKING_ID}`);
-    expect(JSON.parse(calls[0]?.body ?? '{}')).toEqual({ fulfillment_status: 'prepared' });
+    const write = calls.find((call) => call.method === 'PATCH');
+    expect(write?.search).toContain(`booking_id=eq.${BOOKING_ID}`);
+    expect(write?.search).toContain('fulfillment_status=neq.cancelled');
+    expect(JSON.parse(write?.body ?? '{}')).toEqual({ fulfillment_status: 'prepared' });
+    bookingThen({ is_anonymised: false }, Response.json(null));
+    await expect(
+      setAddonFulfillment({ bookingId: BOOKING_ID, addonId: ADDON_ID, status: 'prepared' }),
+    ).rejects.toMatchObject({ code: 'STATE_INVALID' });
+  });
+});
+
+describe('listBookingsForStaff past the last page', () => {
+  it('answers an empty page instead of failing on PGRST103 (F-75-5)', async () => {
+    sessionAnswering(() => Response.json({ code: 'PGRST103', message: 'x' }, { status: 416 }));
+    await expect(listBookingsForStaff(query({ page: '99' }), null, null)).resolves.toEqual({
+      rows: [],
+      total: 0,
+    });
   });
 });
 

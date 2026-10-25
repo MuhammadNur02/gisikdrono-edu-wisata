@@ -206,7 +206,7 @@ function isMachineReason(reason: string): reason is keyof typeof text.reasons {
   return Object.hasOwn(text.reasons, reason);
 }
 
-export function reasonText(reason: string): string {
+function reasonText(reason: string): string {
   return isMachineReason(reason) ? text.reasons[reason] : reason;
 }
 

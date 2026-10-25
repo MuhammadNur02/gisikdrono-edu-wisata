@@ -18,6 +18,7 @@ import {
   searchPattern,
   type ListQuery,
 } from '@/lib/utils/list-query';
+import { rowPageOf } from '@/lib/utils/paged-rows';
 import type {
   AddonFulfillmentValues,
   AdminNotesValues,
@@ -47,6 +48,8 @@ const LIST_COLUMNS =
 const ADDON_COLUMNS =
   'id, rw_id, product_name_snapshot, qty, unit_price, line_total, fulfillment_status, created_at';
 const EVENT_COLUMNS = 'id, from_status, to_status, actor_type, reason, occurred_at';
+
+type ServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
 
 const INSUFFICIENT_PRIVILEGE = '42501';
 const NO_DATA_FOUND = 'P0002';
@@ -80,13 +83,13 @@ export async function listBookingsForStaff(
   if (visitDate !== null)
     request = request.lte('visit_date', visitDate).gte('visit_date_end', visitDate);
   if (order !== null) request = request.order(order.column, { ascending: order.ascending });
-  const { data, error, count } = await request.order('id').range(from, to);
-  if (error) throw error;
-  const rows = data.flatMap((row) => {
+  // A `?page=` past the last row is an empty page, not PostgREST's 416 (review of PR #75, F-75-5).
+  const page = rowPageOf(await request.order('id').range(from, to));
+  const rows = page.rows.flatMap((row) => {
     const mapped = toBookingListRow(row);
     return mapped ? [mapped] : [];
   });
-  return { rows, total: count ?? rows.length };
+  return { rows, total: page.count ?? rows.length };
 }
 
 // One booking with its legs, payments, tickets and invoices; null when RLS does not show it to this staff member.
@@ -184,9 +187,23 @@ export async function getBookingParticipants(bookingId: string): Promise<Partici
   }));
 }
 
+// An anonymised booking keeps no note and no kitchen step any more (review of PR #75, F-75-3): its contact and its
+// free text went with the retention run. NOT_FOUND when RLS does not show the booking at all.
+async function assertWritableBooking(supabase: ServerClient, bookingId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('v_bookings_staff')
+    .select('id, is_anonymised')
+    .eq('id', bookingId)
+    .maybeSingle();
+  if (error) throw error;
+  if (data === null) throw new AppError('NOT_FOUND');
+  if (data.is_anonymised === true) throw new AppError('STATE_INVALID');
+}
+
 // admin_notes is the one column staff write on a booking (0005, bookings_staff_notes). No row back means RLS hid it.
 export async function saveAdminNotes(values: AdminNotesValues): Promise<void> {
   const supabase = await createSupabaseServerClient();
+  await assertWritableBooking(supabase, values.bookingId);
   const { data, error } = await supabase
     .from('bookings')
     .update({ admin_notes: values.adminNotes === '' ? null : values.adminNotes })
@@ -198,15 +215,19 @@ export async function saveAdminNotes(values: AdminNotesValues): Promise<void> {
 }
 
 // The kitchen of the line's own RW marks it (booking_addons_staff_fulfil); the line must belong to the booking named.
+// A cancelled line is never brought back from here (review of PR #75, F-75-2; addon_fulfillment_guard holds the same
+// line in the database): no row back means the line was cancelled, or is not this staff member's.
 export async function setAddonFulfillment(values: AddonFulfillmentValues): Promise<void> {
   const supabase = await createSupabaseServerClient();
+  await assertWritableBooking(supabase, values.bookingId);
   const { data, error } = await supabase
     .from('booking_addons')
     .update({ fulfillment_status: values.status })
     .eq('id', values.addonId)
     .eq('booking_id', values.bookingId)
+    .neq('fulfillment_status', 'cancelled')
     .select('id')
     .maybeSingle();
   if (error) throw error;
-  if (data === null) throw new AppError('NOT_FOUND');
+  if (data === null) throw new AppError('STATE_INVALID');
 }

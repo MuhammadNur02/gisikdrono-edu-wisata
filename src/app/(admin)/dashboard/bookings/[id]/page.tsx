@@ -60,7 +60,11 @@ function MainColumn({ booking, addons }: { booking: BookingDetail; addons: Booki
     <div className="flex flex-col gap-6 lg:col-span-2">
       <BookingSummary booking={booking} />
       <BookingLegs booking={booking} />
-      <AddonLines bookingId={booking.id} lines={addons} action={setAddonFulfillmentAction} />
+      <AddonLines
+        bookingId={booking.id}
+        lines={addons}
+        action={booking.isAnonymised ? null : setAddonFulfillmentAction}
+      />
       <BookingTickets booking={booking} />
       <BookingPayments booking={booking} />
       <BookingInvoices booking={booking} />
@@ -83,11 +87,13 @@ function SideColumn({
         revealAction={revealBookingContactAction}
       />
       <ParticipantsPanel bookingId={booking.id} action={loadBookingParticipantsAction} />
-      <AdminNotesForm
-        bookingId={booking.id}
-        adminNotes={booking.adminNotes}
-        action={saveAdminNotesAction}
-      />
+      {booking.isAnonymised ? null : (
+        <AdminNotesForm
+          bookingId={booking.id}
+          adminNotes={booking.adminNotes}
+          action={saveAdminNotesAction}
+        />
+      )}
       <BookingTimeline events={timeline} />
     </div>
   );

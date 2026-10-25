@@ -68,6 +68,33 @@ function FulfillmentSelect({
   );
 }
 
+function AddonLineItem({
+  bookingId,
+  line,
+  action,
+}: {
+  bookingId: string;
+  line: BookingAddonLine;
+  action: FulfillmentAction | null;
+}) {
+  return (
+    <li className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <span className="space-y-0.5">
+        <span className="block text-body-sm font-medium">{line.productName}</span>
+        <span className="block text-caption text-muted-foreground tabular-nums">
+          {text.quantity(line.qty)} {formatIDR(line.unitPrice)} = {formatIDR(line.lineTotal)} ·{' '}
+          {rwLabel(line.rwId)}
+        </span>
+      </span>
+      {line.fulfillmentStatus === 'cancelled' || action === null ? (
+        <StatusBadge kind="addon_fulfillment_status" value={line.fulfillmentStatus} />
+      ) : (
+        <FulfillmentSelect bookingId={bookingId} line={line} action={action} />
+      )}
+    </li>
+  );
+}
+
 // docs/PRD.md FR-ADMIN-05: the add-on lines this staff member's RLS shows (their own RW's), each marked prepared or
 // handed over by its kitchen. A cancelled line shows its status only: it changes through an adjustment (P4.7.03).
 export function AddonLines({
@@ -77,32 +104,20 @@ export function AddonLines({
 }: {
   bookingId: string;
   lines: readonly BookingAddonLine[];
-  action: FulfillmentAction;
+  // null on an anonymised booking: its lines are shown, not marked (review of PR #75, F-75-3).
+  action: FulfillmentAction | null;
 }) {
   return (
-    <DetailCard title={text.addons} description={lines.length > 0 ? text.addonsHint : undefined}>
+    <DetailCard
+      title={text.addons}
+      description={lines.length > 0 && action !== null ? text.addonsHint : undefined}
+    >
       {lines.length === 0 ? (
         <EmptyLine>{text.addonsEmpty}</EmptyLine>
       ) : (
         <ul className="divide-y divide-border">
           {lines.map((line) => (
-            <li
-              key={line.id}
-              className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <span className="space-y-0.5">
-                <span className="block text-body-sm font-medium">{line.productName}</span>
-                <span className="block text-caption text-muted-foreground tabular-nums">
-                  {text.quantity(line.qty)} {formatIDR(line.unitPrice)} ={' '}
-                  {formatIDR(line.lineTotal)} · {rwLabel(line.rwId)}
-                </span>
-              </span>
-              {line.fulfillmentStatus === 'cancelled' ? (
-                <StatusBadge kind="addon_fulfillment_status" value={line.fulfillmentStatus} />
-              ) : (
-                <FulfillmentSelect bookingId={bookingId} line={line} action={action} />
-              )}
-            </li>
+            <AddonLineItem key={line.id} bookingId={bookingId} line={line} action={action} />
           ))}
         </ul>
       )}

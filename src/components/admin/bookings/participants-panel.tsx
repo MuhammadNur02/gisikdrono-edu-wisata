@@ -14,11 +14,15 @@ const text = bookingsAdminCopy.participants;
 
 type ParticipantsAction = (values: unknown) => Promise<ActionResult<ParticipantEntry[]>>;
 
-// What the panel shows: the button, the list once opened, or why it could not be opened.
-type PanelState =
-  | { step: 'closed' }
-  | { step: 'open'; participants: ParticipantEntry[] }
-  | { step: 'refused'; message: string };
+// What the panel holds: the list once it was loaded (kept, so showing it again costs no second reveal, review of
+// PR #75, F-75-4), whether it is shown, and why it could not be loaded.
+interface PanelState {
+  participants: ParticipantEntry[] | null;
+  isVisible: boolean;
+  refusal: string | null;
+}
+
+const CLOSED: PanelState = { participants: null, isVisible: false, refusal: null };
 
 function isKnownRole(value: string): value is keyof typeof text.roles {
   return Object.hasOwn(text.roles, value);
@@ -66,26 +70,27 @@ function ParticipantTable({ participants }: { participants: readonly Participant
   );
 }
 
-// Opens the list through the action: the list, or why the window or the cap refused it.
+// Loads the list through the action the first time only; afterwards it only shows or hides what it holds.
 function useParticipants(bookingId: string, action: ParticipantsAction) {
-  const [state, setState] = useState<PanelState>({ step: 'closed' });
+  const [state, setState] = useState<PanelState>(CLOSED);
   const [isLoading, startTransition] = useTransition();
   const open = () => {
+    if (state.participants !== null) {
+      setState({ ...state, isVisible: true });
+      return;
+    }
     startTransition(async () => {
       const result = await action({ bookingId });
       if (result.ok) {
-        setState({ step: 'open', participants: result.data });
+        setState({ participants: result.data, isVisible: true, refusal: null });
         return;
       }
       const isOutsideWindow = result.error.code === 'FORBIDDEN';
-      setState({
-        step: 'refused',
-        message: isOutsideWindow ? text.outsideWindow : result.error.message,
-      });
+      setState({ ...CLOSED, refusal: isOutsideWindow ? text.outsideWindow : result.error.message });
     });
   };
   const close = () => {
-    setState({ step: 'closed' });
+    setState({ ...state, isVisible: false });
   };
   return { state, isLoading, open, close };
 }
@@ -118,9 +123,13 @@ export function ParticipantsPanel({
   action: ParticipantsAction;
 }) {
   const { state, isLoading, open, close } = useParticipants(bookingId, action);
+  const isShown = state.isVisible && state.participants !== null;
   return (
-    <DetailCard title={text.title} description={state.step === 'closed' ? text.hint : undefined}>
-      {state.step === 'closed' ? (
+    <DetailCard title={text.title} description={isShown ? undefined : text.hint}>
+      {state.refusal ? <FormAlert tone="info">{state.refusal}</FormAlert> : null}
+      {isShown && state.participants ? (
+        <OpenList participants={state.participants} onClose={close} />
+      ) : (
         <Button
           type="button"
           variant="outline"
@@ -131,11 +140,7 @@ export function ParticipantsPanel({
           <Users aria-hidden />
           {text.show}
         </Button>
-      ) : null}
-      {state.step === 'refused' ? <FormAlert tone="info">{state.message}</FormAlert> : null}
-      {state.step === 'open' ? (
-        <OpenList participants={state.participants} onClose={close} />
-      ) : null}
+      )}
     </DetailCard>
   );
 }
