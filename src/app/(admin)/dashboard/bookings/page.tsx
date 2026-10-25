@@ -1,0 +1,57 @@
+import type { Metadata } from 'next';
+
+import { BookingTable } from '@/components/admin/bookings/booking-table';
+import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
+import { FormAlert } from '@/components/forms/form-alert';
+import { BOOKING_STATUS } from '@/config/status';
+import { DB_ENUMS } from '@/db/enums';
+import { bookingsAdminCopy } from '@/lib/copy/bookings-admin';
+import { visitDateFilterOf } from '@/lib/utils/booking-list';
+import { listFacets, rwFacet } from '@/lib/utils/facets';
+import { loadListQuery } from '@/lib/utils/list-query';
+import { effectiveRw } from '@/server/auth/content-owner';
+import { requireDashboardStaff } from '@/server/auth/session';
+import { listBookingsForStaff } from '@/server/services/booking-admin-service';
+import { listRwUnitsForStaff } from '@/server/services/rw-unit-service';
+import type { ListFacet } from '@/types/data-table';
+
+const text = bookingsAdminCopy.list;
+
+export const metadata: Metadata = { title: text.title };
+
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+const STATUS_FACET: ListFacet = {
+  param: 'status',
+  title: text.facets.status,
+  options: DB_ENUMS.booking_status.map((status) => ({
+    value: status,
+    label: BOOKING_STATUS[status].label,
+  })),
+};
+
+// Task P4.3.02, docs/PRD.md FR-ADMIN-05: the bookings from `?q=&sort=&page=&status=&rw=&date=` through
+// v_bookings_staff. An RW admin reads their own RW's bookings inside the view's window, whatever the URL says; the
+// superadmin every booking, narrowed to the RW they pick.
+export default async function BookingsPage({ searchParams }: { searchParams: SearchParams }) {
+  const ctx = await requireDashboardStaff();
+  if (!ctx) return null;
+  const query = await loadListQuery(searchParams);
+  const isSuperadmin = ctx.role === 'superadmin';
+  const [rw, rwUnits] = await Promise.all([effectiveRw(ctx, query.rw), listRwUnitsForStaff()]);
+  if (!isSuperadmin && rw === null) return null;
+  const visitDate = visitDateFilterOf(query.date);
+  const result = await listBookingsForStaff(query, rw, visitDate);
+  const facets = listFacets(isSuperadmin, {
+    status: STATUS_FACET,
+    rw: rwFacet(text.facets.rw, rwUnits),
+  });
+
+  return (
+    <>
+      <DashboardPageHeader title={text.title} description={text.description} />
+      {isSuperadmin ? null : <FormAlert tone="info">{text.windowNotice}</FormAlert>}
+      <BookingTable rows={result.rows} total={result.total} facets={facets} visitDate={visitDate} />
+    </>
+  );
+}

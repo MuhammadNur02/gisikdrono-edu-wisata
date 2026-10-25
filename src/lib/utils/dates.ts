@@ -55,6 +55,11 @@ function formatSessionTime(time: string): string {
   return `${match[1] ?? ''}.${match[2] ?? ''}`;
 }
 
+// A session's start alone: '08.00 WIB'.
+export function formatSessionStart(time: string): string {
+  return `${formatSessionTime(time)} WIB`;
+}
+
 // Session times are Postgres `time` values ('08:00:00'); Indonesian writes them '08.00–10.00 WIB'.
 export function formatTimeRange(start: string, end: string): string {
   return `${formatSessionTime(start)}–${formatSessionTime(end)} WIB`;
