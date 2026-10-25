@@ -6,16 +6,20 @@ import { serverEnv } from '@/lib/env';
 import {
   recordProviderReports,
   recordSignatureFailure,
-  withinWebhookLimit,
+  withinAllMetaLimit,
+  withinSenderLimit,
 } from '@/server/services/provider-reports';
 
 import { GET, POST } from './route';
 
 vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => ({}) }));
 vi.mock('@/server/services/provider-reports', () => ({
+  ALL_META_LIMIT: 'webhook_whatsapp:all',
+  SENDER_LIMIT_OF: { whatsapp: 'webhook_whatsapp:ip', resend: 'webhook_resend:ip' },
   recordProviderReports: vi.fn(),
   recordSignatureFailure: vi.fn(),
-  withinWebhookLimit: vi.fn(),
+  withinAllMetaLimit: vi.fn(),
+  withinSenderLimit: vi.fn(),
 }));
 
 const URL_BASE = 'http://localhost/api/webhooks/whatsapp';
@@ -73,7 +77,8 @@ describe('GET /api/webhooks/whatsapp', () => {
 
 describe('POST /api/webhooks/whatsapp', () => {
   beforeEach(() => {
-    vi.mocked(withinWebhookLimit).mockReset().mockResolvedValue(true);
+    vi.mocked(withinSenderLimit).mockReset().mockResolvedValue(true);
+    vi.mocked(withinAllMetaLimit).mockReset().mockResolvedValue(true);
     vi.mocked(recordSignatureFailure).mockReset().mockResolvedValue(undefined);
     vi.mocked(recordProviderReports)
       .mockReset()
@@ -101,10 +106,23 @@ describe('POST /api/webhooks/whatsapp', () => {
   });
 
   it('answers 429 past the rate limit, so Meta retries, before the signature is checked', async () => {
-    vi.mocked(withinWebhookLimit).mockResolvedValue(false);
+    vi.mocked(withinSenderLimit).mockResolvedValue(false);
     const response = await post(BODY, { 'x-hub-signature-256': 'sha256=00' });
     expect(response.status).toBe(429);
     expect(recordSignatureFailure).not.toHaveBeenCalled();
+    expect(recordProviderReports).not.toHaveBeenCalled();
+  });
+
+  it("counts Meta's shared limit only once the signature verified, so a forger never uses it up", async () => {
+    await post(BODY, { 'x-hub-signature-256': signatureOf('{}') });
+    expect(withinAllMetaLimit).not.toHaveBeenCalled();
+    await post(BODY);
+    expect(withinAllMetaLimit).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers 429 past Meta's shared limit, after the signature, and records nothing", async () => {
+    vi.mocked(withinAllMetaLimit).mockResolvedValue(false);
+    expect((await post(BODY)).status).toBe(429);
     expect(recordProviderReports).not.toHaveBeenCalled();
   });
 

@@ -6,16 +6,17 @@ import { serverEnv } from '@/lib/env';
 import {
   recordProviderReports,
   recordSignatureFailure,
-  withinWebhookLimit,
+  withinSenderLimit,
 } from '@/server/services/provider-reports';
 
 import { POST } from './route';
 
 vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => ({}) }));
 vi.mock('@/server/services/provider-reports', () => ({
+  SENDER_LIMIT_OF: { whatsapp: 'webhook_whatsapp:ip', resend: 'webhook_resend:ip' },
   recordProviderReports: vi.fn(),
   recordSignatureFailure: vi.fn(),
-  withinWebhookLimit: vi.fn(),
+  withinSenderLimit: vi.fn(),
 }));
 
 const URL_BASE = 'http://localhost/api/webhooks/resend';
@@ -53,7 +54,7 @@ function post(body: string, headers: Record<string, string> = {}) {
 describe('POST /api/webhooks/resend', () => {
   beforeEach(() => {
     vi.useFakeTimers({ now: NOW, toFake: ['Date'] });
-    vi.mocked(withinWebhookLimit).mockReset().mockResolvedValue(true);
+    vi.mocked(withinSenderLimit).mockReset().mockResolvedValue(true);
     vi.mocked(recordSignatureFailure).mockReset().mockResolvedValue(undefined);
     vi.mocked(recordProviderReports)
       .mockReset()
@@ -95,7 +96,7 @@ describe('POST /api/webhooks/resend', () => {
   });
 
   it('answers 429 past the rate limit, so Resend retries', async () => {
-    vi.mocked(withinWebhookLimit).mockResolvedValue(false);
+    vi.mocked(withinSenderLimit).mockResolvedValue(false);
     expect((await post(BOUNCE)).status).toBe(429);
     expect(recordProviderReports).not.toHaveBeenCalled();
   });

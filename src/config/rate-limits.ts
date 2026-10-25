@@ -47,8 +47,8 @@ export const RATE_LIMITS = {
   'webhook_midtrans:all': { limit: 600, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   'webhook_rejection:ip': { limit: 20, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
   // docs/Security.md §8.3 (Task P3.11.06, P3.11.09; review of PR #66, L4, and its re-review, L-C): Meta's and Resend's
-  // delivery reports, per sender IP and, for Meta, for all senders together as the Midtrans webhook counts them, before
-  // the signature is checked. Past either limit a report is answered 429, which only makes its sender try it again
+  // delivery reports, per sender IP before the signature is checked and, for Meta, for all senders together only once a
+  // body verified, so an unsigned host never uses up Meta's share (re-review of PR #70, M-2). Past either limit a report is answered 429, which only makes its sender try it again
   // later, so the caps follow what this site sends, a few hundred messages a day, not Meta's own throughput.
   'webhook_whatsapp:ip': { limit: 600, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   'webhook_whatsapp:all': { limit: 600, windowSeconds: 60, whenUnavailable: 'fail-closed' },

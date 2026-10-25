@@ -14,7 +14,8 @@ import { readJsonText } from '@/lib/utils/json-body';
 import {
   recordProviderReports,
   recordSignatureFailure,
-  withinWebhookLimit,
+  SENDER_LIMIT_OF,
+  withinSenderLimit,
 } from '@/server/services/provider-reports';
 
 export const runtime = 'nodejs';
@@ -62,8 +63,8 @@ function svixHeadersOf(headers: Headers) {
 async function receive(request: Request, log: Log): Promise<Response> {
   const adminClient = createSupabaseAdminClient();
   const clientIp = clientIpFrom(request.headers);
-  if (!(await withinWebhookLimit(adminClient, PROVIDER, clientIp))) {
-    log.info('rate_limited', { limit: 'webhook_resend:ip' });
+  if (!(await withinSenderLimit(adminClient, PROVIDER, clientIp))) {
+    log.info('rate_limited', { limit: SENDER_LIMIT_OF[PROVIDER] });
     return empty(HTTP_STATUS.tooManyRequests);
   }
   const body = await readJsonText(request, WEBHOOK_BODY_LIMIT_BYTES);

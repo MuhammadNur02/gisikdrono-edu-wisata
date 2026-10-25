@@ -73,9 +73,14 @@ select is((select (event_type, severity, details ->> 'provider', details ->> 'ip
 select throws_ok($$select public.svc_record_webhook_signature_failure('meta', '203.0.113.9')$$, '22023', null,
   'an unknown provider is refused');
 
+-- Granted for this transaction only, so the call gets past the schema and reaches the function's own first check.
+grant usage on schema internal to authenticated;
+grant execute on function internal.record_provider_status(public.notification_channel, text, text, text, timestamptz)
+  to authenticated;
 set local role authenticated;
 select throws_ok($$select internal.record_provider_status('whatsapp', 'wamid.UJI1', 'read', null, now())$$,
-  '42501', null, 'no API role reaches the function itself');
+  '42501', 'record_provider_status is reserved for the server',
+  'even with execute, a signed-in session is no server caller');
 reset role;
 
 select ok(not has_function_privilege('anon',

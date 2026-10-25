@@ -5,7 +5,8 @@ import { withinRateLimits } from '@/lib/rate-limit';
 import {
   recordProviderReports,
   recordSignatureFailure,
-  withinWebhookLimit,
+  withinAllMetaLimit,
+  withinSenderLimit,
 } from '@/server/services/provider-reports';
 
 import { clientAnswering } from '../../../tests/fixtures/postgrest-client';
@@ -31,14 +32,20 @@ describe('provider reports', () => {
     vi.mocked(svcRecordProviderStatus).mockReset();
   });
 
-  it('counts each sender IP against its provider limit, and Meta also for all its senders', async () => {
-    await withinWebhookLimit(client, 'resend', '203.0.113.9');
+  it('counts each sender IP against its own provider limit only', async () => {
+    await withinSenderLimit(client, 'resend', '203.0.113.9');
     expect(withinRateLimits).toHaveBeenLastCalledWith(client, [
       { name: 'webhook_resend:ip', subject: '203.0.113.9' },
     ]);
-    await withinWebhookLimit(client, 'whatsapp', '203.0.113.9');
+    await withinSenderLimit(client, 'whatsapp', '203.0.113.9');
     expect(withinRateLimits).toHaveBeenLastCalledWith(client, [
       { name: 'webhook_whatsapp:ip', subject: '203.0.113.9' },
+    ]);
+  });
+
+  it('counts Meta as a whole on a limit of its own', async () => {
+    await withinAllMetaLimit(client);
+    expect(withinRateLimits).toHaveBeenLastCalledWith(client, [
       { name: 'webhook_whatsapp:all', subject: 'all' },
     ]);
   });
@@ -53,10 +60,13 @@ describe('provider reports', () => {
         { ...report('a'), occurredAt: '2026-10-25T03:06:00Z' },
         { ...report('b'), occurredAt: '2026-10-25T03:04:59Z' },
         report('c'),
+        { ...report('d'), occurredAt: '2026-10-25T03:10:59Z' },
+        { ...report('e'), occurredAt: '2026-10-25T03:11:01Z' },
       ],
       now,
     );
-    expect(counts).toEqual({ updated: 0, unchanged: 0, unknown: 3, freshUnknown: 1 });
+    // Up to a minute ahead of this clock is skew; further ahead is not believed (re-review of PR #70, L-1).
+    expect(counts).toEqual({ updated: 0, unchanged: 0, unknown: 5, freshUnknown: 2 });
   });
 
   it('records a signature failure while the IP is within its rejection limit only', async () => {
