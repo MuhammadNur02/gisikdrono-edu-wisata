@@ -29,6 +29,11 @@ export function formatDateLong(value: Date | string): string {
   return format(inJakarta(value), 'EEEE, d MMMM yyyy', { locale: indonesian });
 }
 
+// '18 Oktober 2026', as a letter or a certificate is dated
+export function formatDateWritten(value: Date | string): string {
+  return format(inJakarta(value), 'd MMMM yyyy', { locale: indonesian });
+}
+
 // '18 Okt 2026', the short form used in tables
 export function formatDateShort(value: Date | string): string {
   return format(inJakarta(value), 'd MMM yyyy', { locale: indonesian });

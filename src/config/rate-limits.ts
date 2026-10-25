@@ -34,6 +34,9 @@ export const RATE_LIMITS = {
   // visitor IP and per booking, counted before the row is looked up, so guessing ids costs the same as reading.
   'document:ip': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   'document:booking': { limit: 20, windowSeconds: 600, whenUnavailable: 'fail-closed' },
+  // Task P4.5.03 (review of PR #71, L3): "Render ulang PDF" renders a whole class at once, so each staff member may run
+  // it five times an hour.
+  'certificate_rerender:user': { limit: 5, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
   // Task P3.6.05: the public verify page, per visitor IP.
   'verify:code': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   // Task P3.6.06: "Minta Surat Penawaran", per visitor IP, on top of the booking limits.
