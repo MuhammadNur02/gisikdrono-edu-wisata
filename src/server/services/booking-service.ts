@@ -306,7 +306,11 @@ async function quoteOrNull(adminClient: DatabaseClient, bookingId: string, kind:
     return await svcRefundPreview(adminClient, { bookingId, kind });
   } catch (error) {
     if (raisedHintOf(error) !== 'STATE_INVALID') {
-      createLogger(randomUUID()).error('internal_error', { step: 'refund_preview', bookingId, kind });
+      createLogger(randomUUID()).error('internal_error', {
+        step: 'refund_preview',
+        bookingId,
+        kind,
+      });
     }
     return null;
   }
@@ -318,7 +322,8 @@ export async function loadStatusHub(guest: GuestAccess): Promise<StatusHubData> 
   const canManage = guest.scope === 'manage';
   const isPaid = view.booking.status === 'paid' && !view.booking.needsReview;
   // A20: a booking whose other leg was already visited keeps the weather rights of the leg still to visit.
-  const hasWeatherRights = isPaid || (view.booking.status === 'checked_in' && !view.booking.needsReview);
+  const hasWeatherRights =
+    isPaid || (view.booking.status === 'checked_in' && !view.booking.needsReview);
   const weather =
     canManage && hasWeatherRights ? await weatherStateOf(adminClient, guest.bookingId) : null;
   return {

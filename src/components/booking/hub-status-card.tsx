@@ -188,9 +188,10 @@ function RefundNote({ view }: { view: StatusHubView }) {
           : text.refund.requested(amount)}
       </p>
       {/* A Virtual Account refund, or a QRIS refund Midtrans refused (a partial one), is a manual transfer. */}
-      {refund.status !== 'recorded' && (refund.method === 'virtual_account' || refund.status === 'failed') && (
-        <p>{text.refund.manual}</p>
-      )}
+      {refund.status !== 'recorded' &&
+        (refund.method === 'virtual_account' || refund.status === 'failed') && (
+          <p>{text.refund.manual}</p>
+        )}
     </div>
   );
 }

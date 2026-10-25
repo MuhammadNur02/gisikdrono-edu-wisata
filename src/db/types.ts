@@ -2613,6 +2613,7 @@ export type Database = {
           amount: number
           attempts: number
           booking_id: string
+          booking_leg_id: string | null
           days_before: number | null
           failure_reason: string | null
           fee_amount: number
@@ -2637,6 +2638,7 @@ export type Database = {
           amount: number
           attempts?: number
           booking_id: string
+          booking_leg_id?: string | null
           days_before?: number | null
           failure_reason?: string | null
           fee_amount?: number
@@ -2661,6 +2663,7 @@ export type Database = {
           amount?: number
           attempts?: number
           booking_id?: string
+          booking_leg_id?: string | null
           days_before?: number | null
           failure_reason?: string | null
           fee_amount?: number
@@ -2708,6 +2711,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_revenue_recap_by_booking"
             referencedColumns: ["booking_id"]
+          },
+          {
+            foreignKeyName: "refund_requests_booking_leg_id_fkey"
+            columns: ["booking_leg_id"]
+            isOneToOne: false
+            referencedRelation: "booking_legs"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "refund_requests_payment_id_fkey"
@@ -4866,6 +4876,10 @@ export type Database = {
       svc_increment_booklet_download: {
         Args: { p_booklet_id: string }
         Returns: undefined
+      }
+      svc_is_booking_phone: {
+        Args: { p_booking_id: string; p_phone: string }
+        Returns: boolean
       }
       svc_issue_first_quotation: {
         Args: { p_booking_id: string }

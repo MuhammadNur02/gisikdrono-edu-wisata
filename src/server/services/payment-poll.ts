@@ -179,7 +179,11 @@ async function pollOrders(adminClient: DatabaseClient, startedAt: number) {
 }
 
 // Each step of the run stands alone (review of PR #69, L-3): one that fails is counted and the next still runs.
-async function step<T>(run: () => Promise<T>, fallback: T, failures: { count: number }): Promise<T> {
+async function step<T>(
+  run: () => Promise<T>,
+  fallback: T,
+  failures: { count: number },
+): Promise<T> {
   try {
     return await run();
   } catch {
