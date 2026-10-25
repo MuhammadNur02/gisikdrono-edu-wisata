@@ -13,6 +13,7 @@ import {
   SUPERADMIN,
 } from './helpers/staff';
 import { totpCode } from '../../scripts/dev-accounts';
+import { copy } from '../../src/lib/copy/id';
 
 // Task P2.8 (docs/Security.md §5, AUTH-03, AUTH-06, APP-05): staff reach the dashboard only with a password and a
 // TOTP code, and the shell shows each role its own part. The flows run on the desktop project; the phone project
@@ -32,6 +33,9 @@ test.afterAll(async () => {
 });
 
 const isDesktop = (projectName: string) => projectName === 'desktop';
+// The RW switch renders the whole dashboard again, figures and all, which a loaded CI runner takes longer for.
+const SWITCH_STEP = { timeout: 60_000 };
+const HTTP_OK = 200;
 
 const ENCODING_HEADERS = new Set(['content-encoding', 'content-length']);
 
@@ -115,11 +119,29 @@ test('the superadmin sees every group and the RwSwitcher, and signing out ends t
   const rw05 = page.getByRole('group', { name: 'Tampilkan data' }).getByRole('button', {
     name: 'RW 05',
   });
-  // A click can land before the switcher has hydrated; choosing the same scope again changes nothing.
-  await expect(async () => {
-    await rw05.click();
-    await expect(rw05).toHaveAttribute('aria-pressed', 'true', { timeout: 5_000 });
-  }).toPass(AUTH_STEP);
+  // The switch's Server Action answers with the whole dashboard rendered again for RW 05, and its button stays
+  // disabled until that render has arrived, the overview's figures included. Clicking while the first figures were
+  // still streaming, then re-clicking a button that was only waiting, timed out under CI load. So: the first
+  // overview in full, the page settled (hydrated), one click, and the action's own answer before the state.
+  await expect(page.getByRole('region', { name: copy.dashboard.overview.kpiLabel })).toBeVisible(
+    AUTH_STEP,
+  );
+  await page.waitForLoadState('networkidle');
+  const switchAnswer = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.request().headers()['next-action'] !== undefined,
+    SWITCH_STEP,
+  );
+  const clickedAt = Date.now();
+  await rw05.click();
+  const answer = await switchAnswer;
+  testInfo.annotations.push({
+    type: 'rw-switch',
+    description: `HTTP ${String(answer.status())} after ${String(Date.now() - clickedAt)} ms`,
+  });
+  expect(answer.status()).toBe(HTTP_OK);
+  await expect(rw05).toHaveAttribute('aria-pressed', 'true', SWITCH_STEP);
 
   await page.getByRole('button', { name: 'Keluar' }).click();
   await expect(page).toHaveURL('/login', AUTH_STEP);

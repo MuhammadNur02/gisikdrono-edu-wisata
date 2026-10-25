@@ -103,6 +103,8 @@ begin
   if not found then
     raise exception 'booking % does not exist', p_booking_id using errcode = 'P0002';
   end if;
+  -- Under the booking's lock, so two proposals naming one file cannot both pass (L2 c).
+  perform internal.require_unused_proof(p_booking_id, p_evidence_path, null);
   perform internal.check_adjustment_terms(p_type, p_booking_id, p_payment_id, p_amount, details);
   if exists (select 1 from public.payment_adjustments a
              where a.booking_id = p_booking_id and a.type = p_type and a.status in ('proposed', 'approved')) then
