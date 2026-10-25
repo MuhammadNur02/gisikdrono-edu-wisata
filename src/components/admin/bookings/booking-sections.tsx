@@ -202,6 +202,14 @@ export function BookingInvoices({ booking }: { booking: BookingDetail }) {
   );
 }
 
+function isMachineReason(reason: string): reason is keyof typeof text.reasons {
+  return Object.hasOwn(text.reasons, reason);
+}
+
+export function reasonText(reason: string): string {
+  return isMachineReason(reason) ? text.reasons[reason] : reason;
+}
+
 export function BookingTimeline({ events }: { events: readonly BookingTimelineEvent[] }) {
   return (
     <DetailCard title={text.timeline}>
@@ -221,7 +229,7 @@ export function BookingTimeline({ events }: { events: readonly BookingTimelineEv
                   {formatDateTimeShort(event.occurredAt)} · {text.actors[event.actorType]}
                 </span>
               </span>
-              {event.reason ? <p className="text-body-sm">{event.reason}</p> : null}
+              {event.reason ? <p className="text-body-sm">{reasonText(event.reason)}</p> : null}
             </li>
           ))}
         </ol>

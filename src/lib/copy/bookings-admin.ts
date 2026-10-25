@@ -85,6 +85,22 @@ export const bookingsAdminCopy = {
     adminNotesHint: 'Hanya terlihat oleh petugas. Jangan tulis nomor telepon, alamat, atau tautan.',
     adminNotesSave: 'Simpan catatan',
     adminNotesSaved: 'Catatan petugas disimpan.',
+    // The machine reasons the database functions write into booking_events.reason (review of PR #75, F-75-1); a staff
+    // member's own reason is shown as they wrote it.
+    reasons: {
+      booking_created: 'Reservasi dibuat',
+      payment_settled: 'Pembayaran diterima',
+      revived_late_settlement: 'Pembayaran terlambat diterima, kuota sesi dipesan ulang',
+      paid_after_expiry_no_quota:
+        'Pembayaran diterima setelah batas waktu, kuota sesi sudah tidak tersedia',
+      hold_lapsed: 'Batas waktu pembayaran terlewati',
+      quotation_issued: 'Surat penawaran diterbitkan',
+      quotation_confirmed: 'Surat penawaran dikonfirmasi',
+      quotation_lapsed: 'Masa berlaku surat penawaran habis',
+      duplicate_settlement: 'Tercatat pembayaran ganda',
+      split_error: 'Bagi hasil belum bisa dihitung',
+      undo_check_in: 'Check-in dibatalkan',
+    },
   },
   contact: {
     title: 'Kontak pemesan',
