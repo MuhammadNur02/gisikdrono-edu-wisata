@@ -95,6 +95,12 @@ async function cancelUnderTheTerms(page: Page, bookingCode: string) {
   // The visit is three days ahead: H-3 gives 90 % of the package back (docs/PRD.md §13.1 A16).
   await expect(dialog.getByText(/90 % paket/)).toBeVisible();
   await dialog.getByRole('button', { name: 'Ya, batalkan' }).click();
+  // The database first, so a refusal shows as one: the dialog keeps its error open until then.
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  await expect
+    .poll(async () => (await hubStateOf(bookingCode))?.status, STEP)
+    .toBe('cancelled');
+  await page.reload();
   await expect(page.getByRole('heading', { name: 'Reservasi ini dibatalkan' })).toBeVisible(STEP);
   await expect(page.getByText(/Pengembalian dana Rp.* sedang diproses/)).toBeVisible();
   const state = await hubStateOf(bookingCode);

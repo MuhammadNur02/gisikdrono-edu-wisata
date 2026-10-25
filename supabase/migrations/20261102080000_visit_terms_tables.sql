@@ -30,6 +30,31 @@ insert into public.site_settings (key, value, is_public, description) values
   ('whatsapp.weather_template_approved', 'false', false, 'Template WhatsApp pemberitahuan cuaca sudah disetujui Meta')
 on conflict (key) do nothing;
 
+-- The shapes the visit-terms functions read (review of PR #69, L-3): a superadmin's typo in /dashboard/settings or
+-- the SQL editor is refused at the row rather than failing a cast inside a cancellation, a refund or the weather
+-- sweep: whole numbers where the functions count, a fee of 0-1000 ‰ or whole rupiah (or unset), a boolean switch,
+-- and a schedule of {min_days, pct} entries with whole days and whole percentages of 0-100. Built-in operators only,
+-- so the check needs no function the API roles would have to be granted; the type is tested before any cast.
+alter table public.site_settings add constraint site_settings_visit_terms_values check (
+  case
+    when key = 'booking.cancel_refund_schedule' then
+      case when jsonb_typeof(value) = 'array' then jsonb_array_length(value) > 0
+        and not jsonb_path_exists(value, '$[*] ? (!(@.min_days.type() == "number" && @.min_days >= 0
+          && @.min_days == @.min_days.floor() && @.pct.type() == "number" && @.pct >= 0 && @.pct <= 100
+          && @.pct == @.pct.floor()))')
+      else false end
+    when key = 'whatsapp.weather_template_approved' then jsonb_typeof(value) = 'boolean'
+    when key in ('midtrans.fee_qris_permille', 'midtrans.fee_va_idr') and value = 'null'::jsonb then true
+    when key in ('booking.weather_reschedule_max', 'booking.weather_window_hours', 'midtrans.fee_qris_permille',
+                 'midtrans.fee_va_idr') then
+      case when jsonb_typeof(value) <> 'number' then false
+           when key = 'midtrans.fee_qris_permille' then (value #>> '{}')::numeric between 0 and 1000
+           else (value #>> '{}')::numeric = trunc((value #>> '{}')::numeric)
+                and (value #>> '{}')::numeric >= case when key = 'booking.weather_window_hours' then 1 else 0 end
+      end
+    else true
+  end);
+
 
 -- The placeholder check of 0008 reads a bracketed value ("[nama pejabat]") as a placeholder; the refund schedule is a
 -- JSON array, so only text values are tested now.

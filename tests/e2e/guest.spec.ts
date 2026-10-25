@@ -45,9 +45,11 @@ test('opens the hub only with a genuine, current link of its own scope', async (
   const stranger = await browser.newContext();
   const visitor = await stranger.newPage();
 
-  const tampered = guestLink(bookingCode, 'view', version).replace(/.$/, (last) =>
-    last === 'A' ? 'B' : 'A',
-  );
+  // The signature's first character: its last one partly encodes padding bits, which a change may leave the same.
+  const genuine = guestLink(bookingCode, 'view', version);
+  const signatureAt = genuine.lastIndexOf('.') + 1;
+  const flipped = genuine.charAt(signatureAt) === 'A' ? 'B' : 'A';
+  const tampered = genuine.slice(0, signatureAt) + flipped + genuine.slice(signatureAt + 1);
   expect((await visitor.goto(tampered))?.status()).toBe(404);
   const expired = guestLink(bookingCode, 'view', version, ONE_HOUR_AGO);
   expect((await visitor.goto(expired))?.status()).toBe(404);

@@ -110,7 +110,7 @@ select is((select count(*)::int from public.notifications
            where booking_id = (select id from paid) and template = 'refund_processed'), 2,
   'refund_processed goes out on both channels');
 select is(pg_temp.event(pg_temp.order_of((select id from paid)), 'partial_refund', 330000, 300000) ->> 'processing_result',
-  'refund_awaiting_record', 'the same refund reported again books nothing twice');
+  'refund_already_recorded', 'the same refund reported again books nothing twice');
 select is(pg_temp.ledger_sum((select id from paid)), 30000::bigint, 'the ledger keeps the retained part');
 
 -- ===== Odd amounts at H-1: rounded down, the rest by largest remainder =====

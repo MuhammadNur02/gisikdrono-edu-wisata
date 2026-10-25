@@ -298,5 +298,76 @@ select is((select array_agg(t.valid_on - public.today_jkt() order by t.valid_on)
 select is((select (visit_date - public.today_jkt()) || '..' || (visit_date_end - public.today_jkt())
            from public.bookings where id = (select id from combo)), '10..12', 'the booking runs from its first leg to its last');
 
+-- ===== Review of PR #69, second round =====
+
+-- M-C: a package rule with a vendor line leaves the kelurahan and RW treasury less than a cancellation may keep.
+insert into public.tour_packages (id, rw_id, category, slug, name, pricing_basis, price_per_pax, status) values
+  ('00000000-0000-4000-8000-0000000e1004', 5, 'student', 'uji-tepi-vendor-paket', 'Paket Uji Vendor', 'per_pax', 30000,
+   'published');
+insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
+  ('00000000-0000-4000-8000-0000000e3020', 5, public.today_jkt() + 20, '09:00', '11:00', 'Uji tepi vendor', 200);
+with rule as (
+  insert into public.revenue_share_rules (scope, package_id, name, effective_from)
+  values ('package', '00000000-0000-4000-8000-0000000e1004', 'Aturan uji vendor', public.today_jkt() - 1)
+  returning id)
+insert into public.revenue_share_rule_lines (rule_id, beneficiary, rw_id, vendor_id, pct)
+select rule.id, line.beneficiary::public.revenue_beneficiary, line.rw_id, line.vendor_id, line.pct
+from rule, (values ('kelurahan', null::smallint, null::uuid, 10::numeric),
+                   ('rw_treasury', 5::smallint, null::uuid, 10::numeric),
+                   ('umkm_vendor', null::smallint, '00000000-0000-4000-8000-0000000e1051'::uuid, 80::numeric))
+  as line(beneficiary, rw_id, vendor_id, pct);
+create temporary table vendor_rule on commit drop as
+select pg_temp.paid('00000000-0000-4000-8000-0000000e1004', '00000000-0000-4000-8000-0000000e3020', 10,
+                    '+6281300004012', false) as id;
+select is(internal.package_keeper_holdings((select id from vendor_rule)), 60000::bigint,
+  'the kelurahan and the RW hold Rp 60.000 of the Rp 300.000 package');
+update public.bookings set visit_date = public.today_jkt() where id = (select id from vendor_rule);
+select throws_ok($$select internal.refund_preview((select id from vendor_rule), 'cancellation')$$, 'P0001', null,
+  'keeping the whole package on the visit day is refused before any money moves (M-C)');
+update public.bookings set visit_date = public.today_jkt() + 20 where id = (select id from vendor_rule);
+select is(internal.refund_preview((select id from vendor_rule), 'cancellation') ->> 'amount', '270000',
+  'keeping 10 % at H-20 fits what they hold');
+select lives_ok($$select internal.cancel_booking((select id from vendor_rule), null, 'Batal', 'cancellation', 270000,
+  90::smallint)$$, 'so the cancellation goes through');
+-- The ledger moves on before the refund comes back (a superadmin's correction), so the reversal no longer fits.
+select internal.reverse_revenue_share((select id from vendor_rule), 280000, 'uji-koreksi', 'manual_correction');
+select is(pg_temp.event(pg_temp.order_of((select id from vendor_rule)), 'partial_refund', 300000, 270000)
+            ->> 'processing_result', 'refund_recorded',
+  'the refund Midtrans paid out is still recorded, never refused inside the event');
+select is((select severity::text from public.security_alerts
+           where fingerprint = 'refund_ledger_unbalanced:' || (pg_temp.request_of((select id from vendor_rule))).refund_key),
+  'high', 'and the ledger it could not reverse raises a high alert');
+
+-- L-2: the same refund reported again after it was recorded alerts nobody.
+select is(pg_temp.event(pg_temp.order_of((select id from vendor_rule)), 'partial_refund', 300000, 270000)
+            ->> 'processing_result', 'refund_already_recorded', 'a repeat of a recorded refund changes nothing');
+
+-- L-3: the visit-terms settings keep their shapes.
+select throws_ok($$update public.site_settings set value = '"tiga"' where key = 'booking.weather_reschedule_max'$$,
+  '23514', null, 'the weather cap is a whole number');
+select throws_ok($$update public.site_settings set value = '[{"min_days": 3, "pct": 120}]'
+  where key = 'booking.cancel_refund_schedule'$$, '23514', null, 'a refund percentage stays within 0-100');
+select throws_ok($$update public.site_settings set value = '2.5' where key = 'midtrans.fee_va_idr'$$, '23514', null,
+  'the Virtual Account fee is whole rupiah');
+select lives_ok($$update public.site_settings set value = '7.5' where key = 'midtrans.fee_qris_permille'$$,
+  'a QRIS fee may be a fraction of a permille');
+
+-- L-5: a refund Midtrans took whose notification never arrives raises a high alert after six looks.
+create temporary table unconfirmed on commit drop as
+select pg_temp.paid('00000000-0000-4000-8000-0000000e1001', '00000000-0000-4000-8000-0000000e3020', 4,
+                    '+6281300004013', false) as id;
+select internal.cancel_booking((select id from unconfirmed), null, 'Batal', 'cancellation',
+  (internal.refund_preview((select id from unconfirmed), 'cancellation') ->> 'amount')::bigint, 90::smallint);
+select internal.mark_refund_request((pg_temp.request_of((select id from unconfirmed))).id, 'submitted', '200', null)
+from generate_series(1, 6);
+select is((select severity::text from public.security_alerts
+           where fingerprint = 'refund_unconfirmed:' || (pg_temp.request_of((select id from unconfirmed))).refund_key),
+  'high', 'six looks without Midtrans'' notification raise refund_unconfirmed');
+
+-- L-7: the phone check answers yes or no.
+select is(public.svc_is_booking_phone((select id from unconfirmed), '+6281300004013'), true,
+  'the booking''s own number');
+select is(public.svc_is_booking_phone((select id from unconfirmed), '+6281300009999'), false, 'and no other');
+
 select * from finish();
 rollback;
