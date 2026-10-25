@@ -162,16 +162,25 @@ const MESSAGE_WORDS: Record<NotificationTemplateName, Words> = {
   }),
 };
 
-export function messageText(message: OutgoingMessage): MessageText {
+export function isStaffTemplate(template: NotificationTemplateName): boolean {
+  return template.startsWith('admin_') || template === 'security_alert';
+}
+
+export interface MessageLines {
+  subject: string;
+  // The paragraphs in order, the sign-off included; a link stands on its own line after its label.
+  lines: string[];
+}
+
+// The words of a message as paragraphs, for the plain-text body and the HTML layout of src/lib/email alike.
+export function messageLines(message: OutgoingMessage): MessageLines {
   const value = (name: string) => message.bodyParams[name] ?? '';
   const { subject, lines } = MESSAGE_WORDS[message.template](value, message.link?.url ?? '');
-  const isStaffMessage =
-    message.template.startsWith('admin_') || message.template === 'security_alert';
-  return {
-    subject,
-    text: [
-      ...lines,
-      ...(isStaffMessage || message.template === 'phone_otp' ? [] : [SIGN_OFF]),
-    ].join('\n\n'),
-  };
+  const hasSignOff = !isStaffTemplate(message.template) && message.template !== 'phone_otp';
+  return { subject, lines: hasSignOff ? [...lines, SIGN_OFF] : lines };
+}
+
+export function messageText(message: OutgoingMessage): MessageText {
+  const { subject, lines } = messageLines(message);
+  return { subject, text: lines.join('\n\n') };
 }

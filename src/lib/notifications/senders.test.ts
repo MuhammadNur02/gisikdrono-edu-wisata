@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 
 import { DB_ENUMS } from '@/db/enums';
 import { createResendProvider } from '@/lib/notifications/email-resend';
@@ -167,6 +168,19 @@ describe('Resend provider', () => {
       subject: 'Tautan reservasi GSK-7F3K9Q2M',
     });
     expect(JSON.stringify(bodyOf(calls[0]?.init))).toContain(LINK.link?.url);
+  });
+
+  it('sends the same words as HTML, the link as a button with its address beneath, and no attachment', async () => {
+    const { fetcher, calls } = answering(200, { id: 'email-2' });
+    await createResendProvider(config, fetcher).send(email);
+    const body = z
+      .looseObject({ html: z.string(), text: z.string() })
+      .parse(bodyOf(calls[0]?.init));
+    expect(body.html).toContain('<html');
+    expect(body.html).toContain('Buka tautan');
+    expect(body.html).toContain(LINK.link?.url.replaceAll('&', '&amp;') ?? '');
+    expect(body.html).toContain('Jika Anda tidak membuat pemesanan ini, abaikan pesan ini.');
+    expect(body).not.toHaveProperty('attachments');
   });
 
   it.each([
