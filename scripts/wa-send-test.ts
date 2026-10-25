@@ -3,6 +3,14 @@ import { parseArgs, parseEnv } from 'node:util';
 
 import { z } from 'zod';
 
+import {
+  isOwnDocumentUrl,
+  SIGNED_DOCUMENTS_PATH,
+  testEnvironmentOf,
+  testNumbersOf,
+  type ScriptEnv,
+} from './wa-send-test-guards';
+
 // pnpm wa:send-test -- --to +6281234567890 --template payment_received_ticket [--document-url https://...]
 //   [--file .env.local] [--dry-run]   (Task P3.11.03, CLAUDE.md §10.1)
 // Sends one approved WhatsApp template to a test number with sample parameters, through the same payload builder and
@@ -12,10 +20,11 @@ import { z } from 'zod';
 // printed carries the access token; the answer is Meta's message id or the server's own error code. --dry-run prints
 // the template and its parts without sending.
 //
-// Guards (review of PR #66, M1): the env file must not be production's (VERCEL_ENV=production or
-// MIDTRANS_IS_PRODUCTION=true are refused), and its Supabase must be this machine's or the staging project named by
-// STAGING_PROJECT_REF in the same file; and a message goes only to a number listed in the git-ignored
-// .wa-test-numbers, one E.164 number a line (lines starting with # are comments).
+// Guards (review of PR #66, M1, and its re-review; scripts/wa-send-test-guards.ts): the env file must not be
+// production's (VERCEL_ENV=production, or MIDTRANS_IS_PRODUCTION read as a boolean the way src/lib/env.ts reads it),
+// and its Supabase must be this machine's or the staging project named by STAGING_PROJECT_REF in the same file; a
+// message goes only to a number listed in the git-ignored .wa-test-numbers, one E.164 number a line (lines starting
+// with # are comments).
 
 const DEFAULT_ENV_FILE = '.env.local';
 const TICKET_TEMPLATE = 'payment_received_ticket';
@@ -28,8 +37,6 @@ const DAYS_AHEAD = 7;
 const ISO_DATE_LENGTH = 10;
 const SAMPLE_OTP = '123456';
 const TEST_NUMBERS_FILE = '.wa-test-numbers';
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
-const SIGNED_DOCUMENTS_PATH = '/storage/v1/object/sign/documents/';
 
 const SENDABLE = [
   'phone_otp',
@@ -51,40 +58,10 @@ const SENDABLE = [
 const argsSchema = z.object({
   to: z.string().regex(/^\+62[0-9]{8,13}$/, 'an Indonesian E.164 number, +62…'),
   template: z.enum(SENDABLE),
-  'document-url': z.url({ protocol: /^https?$/ }).optional(),
+  'document-url': z.string().optional(),
   file: z.string().default(DEFAULT_ENV_FILE),
   'dry-run': z.boolean().default(false),
 });
-
-const envSchema = z.object({
-  WHATSAPP_ACCESS_TOKEN: z.string().min(1),
-  WHATSAPP_PHONE_NUMBER_ID: z.string().min(1),
-  NEXT_PUBLIC_SUPABASE_URL: z.url(),
-  VERCEL_ENV: z.string().optional(),
-  MIDTRANS_IS_PRODUCTION: z.string().optional(),
-  STAGING_PROJECT_REF: z
-    .string()
-    .regex(/^[a-z]{20}$/)
-    .optional(),
-});
-type ScriptEnv = z.infer<typeof envSchema>;
-
-// Only this machine's stack, or the staging project the file itself names, never production.
-function readTestEnv(file: string): ScriptEnv {
-  const env = envSchema.parse(parseEnv(readFileSync(file, 'utf8')));
-  if (env.VERCEL_ENV === 'production' || env.MIDTRANS_IS_PRODUCTION === 'true') {
-    throw new Error('wa:send-test refuses production settings');
-  }
-  const host = new URL(env.NEXT_PUBLIC_SUPABASE_URL).hostname;
-  const isStaging =
-    env.STAGING_PROJECT_REF !== undefined && host === `${env.STAGING_PROJECT_REF}.supabase.co`;
-  if (!LOOPBACK_HOSTS.has(host) && !isStaging) {
-    throw new Error(
-      'wa:send-test runs against this machine or the staging project named by STAGING_PROJECT_REF only',
-    );
-  }
-  return env;
-}
 
 function assertTestNumber(to: string): void {
   if (!existsSync(TEST_NUMBERS_FILE)) {
@@ -92,19 +69,16 @@ function assertTestNumber(to: string): void {
       `List the test numbers in ${TEST_NUMBERS_FILE} (git-ignored), one E.164 number a line`,
     );
   }
-  const numbers = readFileSync(TEST_NUMBERS_FILE, 'utf8')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line !== '' && !line.startsWith('#'));
+  const numbers = testNumbersOf(readFileSync(TEST_NUMBERS_FILE, 'utf8'));
   if (!numbers.includes(to)) throw new Error(`${to} is not in ${TEST_NUMBERS_FILE}`);
 }
 
 function assertOwnDocumentUrl(url: string | undefined, env: ScriptEnv): void {
-  if (url === undefined) return;
+  if (url === undefined || isOwnDocumentUrl(url, env.NEXT_PUBLIC_SUPABASE_URL)) return;
   const ownPrefix = new URL(SIGNED_DOCUMENTS_PATH, env.NEXT_PUBLIC_SUPABASE_URL).toString();
-  if (!url.startsWith(ownPrefix)) {
-    throw new Error(`--document-url must be a signed URL of our documents bucket (${ownPrefix}…)`);
-  }
+  throw new Error(
+    `--document-url must be a signed URL of our documents bucket (${ownPrefix}…?token=…)`,
+  );
 }
 
 function readArgs() {
@@ -159,7 +133,7 @@ async function sampleParams(template: (typeof SENDABLE)[number]): Promise<Record
 
 async function main(): Promise<void> {
   const args = readArgs();
-  const env = readTestEnv(args.file);
+  const env = testEnvironmentOf(parseEnv(readFileSync(args.file, 'utf8')));
   assertOwnDocumentUrl(args['document-url'], env);
   if (!args['dry-run']) assertTestNumber(args.to);
   // The modules below read NEXT_PUBLIC_SITE_URL as they load, so the env file goes into the process first.
@@ -186,8 +160,7 @@ async function main(): Promise<void> {
     const { template } = whatsAppPayload(message);
     const parts = template.components.map((component) => component.type).join(', ');
     const names = Object.keys(message.bodyParams).join(', ');
-    process.stdout.write(`Would send ${template.name} (${parts}) with ${names}
-`);
+    process.stdout.write(`Would send ${template.name} (${parts}) with ${names}\n`);
     return;
   }
   const result = await createWhatsAppMetaProvider({

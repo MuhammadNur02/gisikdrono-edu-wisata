@@ -90,6 +90,16 @@ describe('isKeepable', () => {
   });
 });
 
+describe('ticketsFingerprint', () => {
+  it('changes with the tickets and the letterhead address', () => {
+    const base = ticketsFingerprint([ticket()], 'Jl. Contoh 1');
+    expect(ticketsFingerprint([ticket()], 'Jl. Contoh 1')).toBe(base);
+    expect(ticketsFingerprint([ticket({ paxCount: 21 })], 'Jl. Contoh 1')).not.toBe(base);
+    expect(ticketsFingerprint([ticket()], 'Jl. Contoh 2')).not.toBe(base);
+    expect(ticketsFingerprint([ticket()], null)).not.toBe(base);
+  });
+});
+
 describe('ticketDocumentPdf', () => {
   const context = { kelurahanAddress: null, readerId: null };
 
@@ -103,14 +113,17 @@ describe('ticketDocumentPdf', () => {
     expect(svcRecordTicketPdf).toHaveBeenCalledWith(client, {
       bookingId: BOOKING_ID,
       path: PATH,
-      fingerprint: ticketsFingerprint([ticket()]),
+      fingerprint: ticketsFingerprint([ticket()], null),
       readerId: null,
     });
   });
 
   it('serves the kept file while it still shows these tickets', async () => {
     const { client, upload } = fakeClient(null);
-    const kept = documentWith({ pdfPath: PATH, pdfFingerprint: ticketsFingerprint([ticket()]) });
+    const kept = documentWith({
+      pdfPath: PATH,
+      pdfFingerprint: ticketsFingerprint([ticket()], null),
+    });
     const pdf = await ticketDocumentPdf(client, kept, context);
     expect(pdf.equals(STORED)).toBe(true);
     expect(renderTicketPdf).not.toHaveBeenCalled();
@@ -121,14 +134,14 @@ describe('ticketDocumentPdf', () => {
     const { client, upload } = fakeClient(null);
     const stale = documentWith({
       pdfPath: PATH,
-      pdfFingerprint: ticketsFingerprint([ticket()]),
+      pdfFingerprint: ticketsFingerprint([ticket()], null),
       tickets: [ticket({ startTime: '13:00:00', endTime: '14:00:00', paxCount: 22 })],
     });
     await expect(ticketDocumentPdf(client, stale, context)).resolves.toBe(RENDERED);
     expect(upload).toHaveBeenCalledTimes(1);
     expect(svcRecordTicketPdf).toHaveBeenCalledWith(
       client,
-      expect.objectContaining({ fingerprint: ticketsFingerprint(stale.tickets) }),
+      expect.objectContaining({ fingerprint: ticketsFingerprint(stale.tickets, null) }),
     );
   });
 
@@ -144,7 +157,7 @@ describe('keptTicketPdfPath', () => {
   it('names the recorded file without rendering it again while it shows these tickets', async () => {
     const { client } = fakeClient({
       ticket_pdf_path: PATH,
-      ticket_pdf_fingerprint: ticketsFingerprint([ticket()]),
+      ticket_pdf_fingerprint: ticketsFingerprint([ticket()], null),
     });
     await expect(keptTicketPdfPath(client, BOOKING_ID, null)).resolves.toBe(PATH);
     expect(renderTicketPdf).not.toHaveBeenCalled();
