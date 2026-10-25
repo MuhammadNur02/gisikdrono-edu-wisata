@@ -1,5 +1,6 @@
 import { Check, X } from 'lucide-react';
 
+import { WEATHER_RESCHEDULE_REASON } from '@/config/booking';
 import { bookingHubCopy } from '@/lib/copy/booking-hub';
 import { cn } from '@/lib/utils/cn';
 import { formatDateLong, formatDateTimeShort, formatTimeRange } from '@/lib/utils/dates';
@@ -45,11 +46,15 @@ function stateOf(isDone: boolean, isCurrent: boolean): StepState {
   return isCurrent ? 'current' : 'next';
 }
 
-// The road a booking takes (DESIGN-SPEC §3.11 "Perjalanan reservasi"): what happened, with when, what is happening
-// now, and what comes next; a booking that stopped (cancelled, expired, refunded, no show) ends at that step.
-function stepsOf(view: StatusHubView): TimelineStep[] {
+function visitStepHint(view: StatusHubView): string {
+  const wasMoved = view.events.some((event) => event.reason === WEATHER_RESCHEDULE_REASON);
+  return wasMoved ? `${visitHint(view)} · ${text.rescheduled}` : visitHint(view);
+}
+
+// Made, quoted, waiting for the money, paid: the steps every booking passes or stops at.
+function paymentSteps(view: StatusHubView, isPaid: boolean): TimelineStep[] {
   const status = view.booking.status;
-  const isPaid = PAID_OR_LATER.has(status) || view.paidAt !== null;
+  const deadline = view.booking.expiresAt;
   const steps: TimelineStep[] = [
     { title: text.created, hint: formatDateTimeShort(view.createdAt), state: 'done' },
   ];
@@ -57,7 +62,6 @@ function stepsOf(view: StatusHubView): TimelineStep[] {
     steps.push({ title: text.quoted, hint: null, state: status === 'quoted' ? 'current' : 'done' });
   }
   if (status !== 'quoted') {
-    const deadline = view.booking.expiresAt;
     steps.push({
       title: text.pending,
       hint: deadline && !isPaid ? text.pendingUntil(formatDateTimeShort(deadline)) : null,
@@ -69,26 +73,26 @@ function stepsOf(view: StatusHubView): TimelineStep[] {
     hint: view.paidAt ? formatDateTimeShort(view.paidAt) : text.paidHint,
     state: stateOf(isPaid, false),
   });
+  return steps;
+}
+
+// The road a booking takes (DESIGN-SPEC §3.11 "Perjalanan reservasi"): what happened, with when, what is happening
+// now, and what comes next; a booking that stopped (cancelled, expired, refunded, no show) ends at that step.
+function stepsOf(view: StatusHubView): TimelineStep[] {
+  const status = view.booking.status;
+  const steps = paymentSteps(view, PAID_OR_LATER.has(status) || view.paidAt !== null);
   const stopped = STOPPED[status];
   if (stopped) {
-    return [
-      ...steps.filter((step) => step.state === 'done'),
-      { title: stopped, hint: eventTime(view, status), state: 'stopped' },
-    ];
+    const reached = steps.filter((step) => step.state === 'done');
+    return [...reached, { title: stopped, hint: eventTime(view, status), state: 'stopped' }];
   }
-  steps.push(
-    {
-      title: text.visit,
-      hint: visitHint(view),
-      state: stateOf(VISITED.has(status), status === 'paid'),
-    },
-    {
-      title: text.certificate,
-      hint: text.certificateHint,
-      state: stateOf(status === 'completed', status === 'checked_in'),
-    },
-  );
-  return steps;
+  const visit = stateOf(VISITED.has(status), status === 'paid');
+  const certificate = stateOf(status === 'completed', status === 'checked_in');
+  return [
+    ...steps,
+    { title: text.visit, hint: visitStepHint(view), state: visit },
+    { title: text.certificate, hint: text.certificateHint, state: certificate },
+  ];
 }
 
 const MARKER: Record<StepState, string> = {
@@ -116,6 +120,35 @@ function Marker({ state }: { state: StepState }) {
 
 const STATE_WORD: Partial<Record<StepState, string>> = { done: text.done, current: text.current };
 
+function StepItem({ step, hasRail }: { step: TimelineStep; hasRail: boolean }) {
+  return (
+    <li className="relative flex gap-4 pb-6 last:pb-0">
+      {hasRail && (
+        <span
+          aria-hidden
+          className={cn(
+            'absolute top-6 bottom-0 left-2.75 w-0.5',
+            step.state === 'done' ? 'bg-success' : 'bg-border-strong',
+          )}
+        />
+      )}
+      <Marker state={step.state} />
+      <div className="min-w-0 space-y-0.5">
+        <p
+          className={cn(
+            'text-label leading-snug',
+            step.state === 'next' ? 'text-ink-2' : 'font-semibold text-foreground',
+          )}
+        >
+          {step.title}
+          {STATE_WORD[step.state] && <span className="sr-only"> ({STATE_WORD[step.state]})</span>}
+        </p>
+        {step.hint && <p className="text-caption text-muted-foreground">{step.hint}</p>}
+      </div>
+    </li>
+  );
+}
+
 // DESIGN-SPEC §2.6 Timeline: 24 px dots on a 2 px rail; done green with a check, current amber with a dot, next an
 // outlined paper circle. Not animated (§4 Reservasi, Timeline).
 export function BookingTimeline({ view }: { view: StatusHubView }) {
@@ -130,32 +163,7 @@ export function BookingTimeline({ view }: { view: StatusHubView }) {
       </h2>
       <ol className="space-y-0">
         {steps.map((step, index) => (
-          <li key={step.title} className="relative flex gap-4 pb-6 last:pb-0">
-            {index < steps.length - 1 && (
-              <span
-                aria-hidden
-                className={cn(
-                  'absolute top-6 bottom-0 left-2.75 w-0.5',
-                  step.state === 'done' ? 'bg-success' : 'bg-border-strong',
-                )}
-              />
-            )}
-            <Marker state={step.state} />
-            <div className="min-w-0 space-y-0.5">
-              <p
-                className={cn(
-                  'text-label leading-snug',
-                  step.state === 'next' ? 'text-ink-2' : 'font-semibold text-foreground',
-                )}
-              >
-                {step.title}
-                {STATE_WORD[step.state] && (
-                  <span className="sr-only"> ({STATE_WORD[step.state]})</span>
-                )}
-              </p>
-              {step.hint && <p className="text-caption text-muted-foreground">{step.hint}</p>}
-            </div>
-          </li>
+          <StepItem key={step.title} step={step} hasRail={index < steps.length - 1} />
         ))}
       </ol>
     </section>

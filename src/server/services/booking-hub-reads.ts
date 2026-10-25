@@ -2,6 +2,7 @@ import 'server-only';
 
 import { z } from 'zod';
 
+import { WEATHER_RESCHEDULE_REASON } from '@/config/booking';
 import type { DatabaseClient } from '@/db/rpc-result';
 import { sessionStartsAt, toVisitDate } from '@/lib/utils/dates';
 import { paymentPageOf } from '@/server/services/payment-reads';
@@ -239,7 +240,7 @@ async function weatherMovesOf(adminClient: DatabaseClient, bookingId: string): P
     .from('booking_events')
     .select('id', { count: 'exact', head: true })
     .eq('booking_id', bookingId)
-    .eq('reason', 'weather_reschedule');
+    .eq('reason', WEATHER_RESCHEDULE_REASON);
   if (error) throw error;
   return count ?? 0;
 }

@@ -11,13 +11,15 @@ import type { StatusHubView } from '@/types/booking-hub';
 
 const text = bookingHubCopy.documents;
 
-function DocumentRow(props: {
+interface DocumentRowProps {
   icon: ReactNode;
   title: string;
   detail: string;
   href: string | null;
-}) {
-  const body = (
+}
+
+function DocumentRowBody(props: DocumentRowProps) {
+  return (
     <>
       <span aria-hidden className="text-ink-2">
         {props.icon}
@@ -36,6 +38,10 @@ function DocumentRow(props: {
       {props.href && <Download aria-hidden className="size-4.5 shrink-0 text-primary-ink" />}
     </>
   );
+}
+
+function DocumentRow(props: DocumentRowProps) {
+  const body = <DocumentRowBody {...props} />;
   if (!props.href) {
     return <li className="flex min-h-14 items-center gap-3 rounded-xl px-3 py-2.5">{body}</li>;
   }

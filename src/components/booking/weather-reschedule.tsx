@@ -152,18 +152,14 @@ export function WeatherReschedule(props: WeatherRescheduleProps) {
   const [chosen, setChosen] = useState<Record<number, string>>({});
   const sessionIds = legs.map((_, index) => chosen[index]);
   const { message, isPending, move } = useMove(props, sessionIds);
+  const pickDay = (each: string) => {
+    setDay(each);
+    setChosen({});
+  };
   if (days.length === 0) return <p className="text-body-sm text-ink-2">{labels.noOptions}</p>;
   return (
     <div className="space-y-4">
-      <DayChoices
-        days={days}
-        day={day}
-        label={labels.pickDay}
-        onChoose={(each) => {
-          setDay(each);
-          setChosen({});
-        }}
-      />
+      <DayChoices days={days} day={day} label={labels.pickDay} onChoose={pickDay} />
       {day &&
         legs.map((leg, index) => (
           <SessionChoices
@@ -179,12 +175,7 @@ export function WeatherReschedule(props: WeatherRescheduleProps) {
           />
         ))}
       {message && <Outcome message={message} />}
-      <Button
-        type="button"
-        disabled={day === undefined || !sessionIds.every(Boolean)}
-        loading={isPending}
-        onClick={move}
-      >
+      <Button disabled={!day || !sessionIds.every(Boolean)} loading={isPending} onClick={move}>
         {labels.move}
       </Button>
     </div>

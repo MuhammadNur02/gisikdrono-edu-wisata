@@ -4,6 +4,7 @@ import { Lock } from 'lucide-react';
 import { useState, useTransition } from 'react';
 
 import { PhoneOtpField } from '@/components/booking/phone-otp-field';
+import { FormAlert } from '@/components/forms/form-alert';
 import { Button } from '@/components/ui/button';
 import type { PhoneOtpActions } from '@/hooks/use-phone-otp';
 import type { ActionResult } from '@/types/action-result';
@@ -49,10 +50,7 @@ export function QuotationConfirm({
   const [isVerified, setIsVerified] = useState(false);
   const { error, isBusy, isRedirecting, confirm } = useConfirm(bookingCode, confirmAction);
   return (
-    <section
-      aria-labelledby="hub-confirm"
-      className="space-y-4 rounded-2xl border border-border bg-muted/50 p-5"
-    >
+    <section aria-labelledby="hub-confirm" className="space-y-4 rounded-2xl bg-muted/50 p-5">
       <div className="space-y-1">
         <h2 id="hub-confirm" className="text-h4 font-bold">
           {labels.title}
@@ -68,16 +66,8 @@ export function QuotationConfirm({
           setIsVerified(false);
         }}
       />
-      {error && (
-        <p
-          role="alert"
-          className="rounded-xl bg-danger-soft p-3 text-body-sm text-danger-soft-foreground"
-        >
-          {error}
-        </p>
-      )}
+      {error && <FormAlert tone="danger">{error}</FormAlert>}
       <Button
-        type="button"
         size="lg"
         className="w-full"
         disabled={!isVerified}

@@ -4,6 +4,7 @@ import { CircleX } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition, type ComponentProps, type ReactNode } from 'react';
 
+import { FormAlert } from '@/components/forms/form-alert';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -92,14 +93,7 @@ export function CancelBookingDialog(props: CancelBookingDialogProps) {
           <AlertDialogTitle>{props.title}</AlertDialogTitle>
           <AlertDialogDescription>{props.body}</AlertDialogDescription>
         </AlertDialogHeader>
-        {error && (
-          <p
-            role="alert"
-            className="rounded-xl bg-danger-soft p-3 text-body-sm text-danger-soft-foreground"
-          >
-            {error}
-          </p>
-        )}
+        {error && <FormAlert tone="danger">{error}</FormAlert>}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isPending}>{props.keep}</AlertDialogCancel>
           <Button variant="destructive" loading={isPending} onClick={cancel}>

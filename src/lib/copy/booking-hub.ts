@@ -7,6 +7,7 @@ type BookingStatus = EnumValue<'booking_status'>;
 
 export const bookingHubCopy = {
   title: 'Status reservasi',
+  manageTitle: 'Kelola reservasi',
   reservation: (bookingCode: string) => `Reservasi ${bookingCode}`,
   copy: 'Salin',
   copied: 'Disalin',
@@ -218,6 +219,19 @@ export const bookingHubCopy = {
   },
   revoke: {
     open: 'Cabut semua tautan',
+    title: 'Cabut semua tautan reservasi ini?',
+    confirm: 'Ya, cabut',
+    keep: 'Tidak jadi',
     hint: 'Semua tautan reservasi ini berhenti bekerja, termasuk di peramban ini. Tautan baru bisa diminta di Cari reservasi.',
   },
 };
+
+// The hub's error boundary is a client component, so it takes only these lines, not the whole hub copy.
+export const bookingHubErrorCopy = {
+  title: 'Status reservasi belum bisa dimuat',
+  body: 'Koneksi atau server sedang bermasalah. Coba muat ulang sebentar lagi.',
+  retry: 'Coba lagi',
+  find: 'Cari reservasi',
+};
+
+export const bookingHubLoadingCopy = 'Memuat status reservasi…';
