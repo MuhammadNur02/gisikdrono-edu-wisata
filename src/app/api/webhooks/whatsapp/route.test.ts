@@ -77,7 +77,7 @@ describe('POST /api/webhooks/whatsapp', () => {
     vi.mocked(recordSignatureFailure).mockReset().mockResolvedValue(undefined);
     vi.mocked(recordProviderReports)
       .mockReset()
-      .mockResolvedValue({ updated: 1, unchanged: 0, unknown: 0 });
+      .mockResolvedValue({ updated: 1, unchanged: 0, unknown: 0, freshUnknown: 0 });
   });
 
   it('records the statuses of a signed body and answers 200', async () => {
@@ -115,6 +115,26 @@ describe('POST /api/webhooks/whatsapp', () => {
 
   it('answers 400 to a signed body of another shape', async () => {
     expect((await post('{"object":1}')).status).toBe(400);
+  });
+
+  it('answers 503 to a status younger than five minutes for a message it does not know yet, so Meta sends it again', async () => {
+    vi.mocked(recordProviderReports).mockResolvedValue({
+      updated: 0,
+      unchanged: 0,
+      unknown: 1,
+      freshUnknown: 1,
+    });
+    expect((await post(BODY)).status).toBe(503);
+  });
+
+  it('keeps 200 for an older unknown status, which no retry will match', async () => {
+    vi.mocked(recordProviderReports).mockResolvedValue({
+      updated: 0,
+      unchanged: 0,
+      unknown: 1,
+      freshUnknown: 0,
+    });
+    expect((await post(BODY)).status).toBe(200);
   });
 
   it('answers 503 when the database is out of reach, so Meta retries', async () => {

@@ -57,7 +57,7 @@ describe('POST /api/webhooks/resend', () => {
     vi.mocked(recordSignatureFailure).mockReset().mockResolvedValue(undefined);
     vi.mocked(recordProviderReports)
       .mockReset()
-      .mockResolvedValue({ updated: 1, unchanged: 0, unknown: 0 });
+      .mockResolvedValue({ updated: 1, unchanged: 0, unknown: 0, freshUnknown: 0 });
   });
 
   afterEach(() => {
@@ -103,6 +103,23 @@ describe('POST /api/webhooks/resend', () => {
   it('answers 400 to a signed body of another shape and 413 to one over 64 KB', async () => {
     expect((await post('{"type":"email.bounced"}')).status).toBe(400);
     expect((await post(' '.repeat(65_537))).status).toBe(413);
+  });
+
+  it('answers 503 to a fresh report for an email it does not know yet, 200 to an older one', async () => {
+    vi.mocked(recordProviderReports).mockResolvedValueOnce({
+      updated: 0,
+      unchanged: 0,
+      unknown: 1,
+      freshUnknown: 1,
+    });
+    expect((await post(BOUNCE)).status).toBe(503);
+    vi.mocked(recordProviderReports).mockResolvedValueOnce({
+      updated: 0,
+      unchanged: 0,
+      unknown: 1,
+      freshUnknown: 0,
+    });
+    expect((await post(BOUNCE)).status).toBe(200);
   });
 
   it('answers 503 when the database is out of reach, so Resend retries', async () => {

@@ -24,7 +24,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 15;
 
 // Task P3.11.06 (docs/Security.md §10.1, EP-01): Meta's subscription handshake and delivery reports. Outside the auth
-// middleware (src/middleware.ts matcher). 200 for processed and unknown reports; 400, 413 and 415 for a malformed
+// middleware (src/middleware.ts matcher). 200 for processed reports and for unknown ones older than five minutes, 503
+// for an unknown one younger than that, whose send the outbox may not have recorded yet; 400, 413 and 415 for a malformed
 // body; 403 for a bad signature and for a wrong verify token (CLAUDE.md §5.4); 429 past the rate limit and 503 while
 // the database is out of reach or the app secret is not set, so Meta retries. Nothing here touches a booking or money.
 
@@ -87,7 +88,8 @@ async function receive(request: Request, log: Log): Promise<Response> {
   if (webhook === null) return empty(HTTP_STATUS.badRequest);
   const counts = await recordProviderReports(adminClient, PROVIDER, metaReportsOf(webhook));
   log.info('provider_webhook', { provider: PROVIDER, ...counts });
-  return empty(HTTP_STATUS.ok);
+  // A status that arrived before the outbox recorded its message id: Meta sends it again after a 503.
+  return empty(counts.freshUnknown > 0 ? HTTP_STATUS.unavailable : HTTP_STATUS.ok);
 }
 
 export async function POST(request: Request): Promise<Response> {

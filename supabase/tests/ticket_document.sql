@@ -1,7 +1,7 @@
 -- Task P3.11.05 (20261101120100): the e-ticket file of a booking is recorded by internal.record_ticket_pdf: only for a
 -- booking with tickets, only under its own name, with the fingerprint of the tickets it shows, replaced when they change.
 begin;
-select plan(8);
+select plan(10);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -73,6 +73,14 @@ select is((select (b.ticket_pdf_path = (select path from files where id = (selec
 select lives_ok(
   format($$select internal.record_ticket_pdf(%L, %L, %L, null)$$, (select paid from cases), (select path from files where id = (select paid from cases)), repeat('b', 64)),
   'a fresh file of changed tickets replaces it');
+create temporary table audit_before on commit drop as
+select count(*) as rows from public.audit_logs where entity_id = (select paid from cases)::text;
+select lives_ok(
+  format($$select internal.record_ticket_pdf(%L, %L, %L, null)$$, (select paid from cases),
+         (select path from files where id = (select paid from cases)), repeat('b', 64)),
+  'the same file with the same fingerprint again is accepted');
+select is((select count(*) from public.audit_logs where entity_id = (select paid from cases)::text),
+  (select rows from audit_before), 'and changes nothing, not even an audit row');
 select is((select b.ticket_pdf_fingerprint from public.bookings b where b.id = (select paid from cases)), repeat('b', 64),
   'and records their fingerprint');
 select throws_ok(
@@ -80,6 +88,7 @@ select throws_ok(
          (select path from files where id = (select unpaid from cases)), repeat('a', 64)),
   'P0002', null, 'a booking without tickets has no ticket file');
 select ok(not has_function_privilege('authenticated', 'public.svc_record_ticket_pdf(uuid, text, text, uuid)', 'execute')
+          and not has_function_privilege('anon', 'public.svc_record_ticket_pdf(uuid, text, text, uuid)', 'execute')
           and has_function_privilege('service_role', 'public.svc_record_ticket_pdf(uuid, text, text, uuid)', 'execute'),
   'only the server records a ticket file');
 

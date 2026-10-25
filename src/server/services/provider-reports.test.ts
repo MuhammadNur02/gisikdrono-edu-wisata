@@ -31,11 +31,32 @@ describe('provider reports', () => {
     vi.mocked(svcRecordProviderStatus).mockReset();
   });
 
-  it('counts each sender IP against its provider limit', async () => {
+  it('counts each sender IP against its provider limit, and Meta also for all its senders', async () => {
     await withinWebhookLimit(client, 'resend', '203.0.113.9');
-    expect(withinRateLimits).toHaveBeenCalledWith(client, [
+    expect(withinRateLimits).toHaveBeenLastCalledWith(client, [
       { name: 'webhook_resend:ip', subject: '203.0.113.9' },
     ]);
+    await withinWebhookLimit(client, 'whatsapp', '203.0.113.9');
+    expect(withinRateLimits).toHaveBeenLastCalledWith(client, [
+      { name: 'webhook_whatsapp:ip', subject: '203.0.113.9' },
+      { name: 'webhook_whatsapp:all', subject: 'all' },
+    ]);
+  });
+
+  it('counts an unknown report younger than five minutes as fresh, an older or undated one not', async () => {
+    const now = Date.parse('2026-10-25T03:10:00Z');
+    vi.mocked(svcRecordProviderStatus).mockResolvedValue('unknown');
+    const counts = await recordProviderReports(
+      client,
+      'whatsapp',
+      [
+        { ...report('a'), occurredAt: '2026-10-25T03:06:00Z' },
+        { ...report('b'), occurredAt: '2026-10-25T03:04:59Z' },
+        report('c'),
+      ],
+      now,
+    );
+    expect(counts).toEqual({ updated: 0, unchanged: 0, unknown: 3, freshUnknown: 1 });
   });
 
   it('records a signature failure while the IP is within its rejection limit only', async () => {
@@ -59,7 +80,7 @@ describe('provider reports', () => {
       report('b'),
       report('c'),
     ]);
-    expect(counts).toEqual({ updated: 1, unchanged: 1, unknown: 1 });
+    expect(counts).toEqual({ updated: 1, unchanged: 1, unknown: 1, freshUnknown: 0 });
     expect(
       vi
         .mocked(svcRecordProviderStatus)

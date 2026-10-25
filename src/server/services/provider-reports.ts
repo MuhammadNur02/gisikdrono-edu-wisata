@@ -22,17 +22,34 @@ const CHANNEL_OF: Readonly<Record<WebhookProvider, EnumValue<'notification_chann
   resend: 'email',
 };
 const LIMIT_OF = { whatsapp: 'webhook_whatsapp:ip', resend: 'webhook_resend:ip' } as const;
+// Meta's reports are also counted for all its senders together (re-review of PR #66, L-C).
+const ALL_SENDERS = 'all';
 
-export type ReportCounts = Record<ProviderReportOutcome, number>;
+export type ReportCounts = Record<ProviderReportOutcome, number> & {
+  // Unknown reports younger than FRESH_REPORT_MS: most likely the status of a message whose send the outbox has not
+  // recorded yet, so the route asks the provider to send them again (re-review of PR #66, L-D).
+  freshUnknown: number;
+};
+
+const FRESH_REPORT_MS = 300_000;
+
+function isFresh(report: ProviderReport, nowMs: number): boolean {
+  if (report.occurredAt === null) return false;
+  return nowMs - Date.parse(report.occurredAt) < FRESH_REPORT_MS;
+}
 
 export function withinWebhookLimit(
   adminClient: DatabaseClient,
   provider: WebhookProvider,
   clientIp: string,
 ): Promise<boolean> {
-  return withinRateLimits(adminClient, [
-    { name: LIMIT_OF[provider], subject: rateLimitIpBucket(clientIp) },
-  ]);
+  const perIp = { name: LIMIT_OF[provider], subject: rateLimitIpBucket(clientIp) };
+  return withinRateLimits(
+    adminClient,
+    provider === 'whatsapp'
+      ? [perIp, { name: 'webhook_whatsapp:all' as const, subject: ALL_SENDERS }]
+      : [perIp],
+  );
 }
 
 // A body whose signature did not verify: a security event, at most webhook_rejection:ip of them an hour per IP, so a
@@ -54,11 +71,13 @@ export async function recordProviderReports(
   adminClient: DatabaseClient,
   provider: WebhookProvider,
   reports: readonly ProviderReport[],
+  nowMs: number = Date.now(),
 ): Promise<ReportCounts> {
-  const counts: ReportCounts = { updated: 0, unchanged: 0, unknown: 0 };
+  const counts: ReportCounts = { updated: 0, unchanged: 0, unknown: 0, freshUnknown: 0 };
   for (const report of reports) {
     const outcome = await svcRecordProviderStatus(adminClient, CHANNEL_OF[provider], report);
     counts[outcome] += 1;
+    if (outcome === 'unknown' && isFresh(report, nowMs)) counts.freshUnknown += 1;
   }
   return counts;
 }
