@@ -1058,6 +1058,8 @@ export type Database = {
           deleted_at: string | null
           downloaded_at: string | null
           expires_at: string
+          failed_at: string | null
+          failure_reason: string | null
           filters: Json
           format: string
           id: string
@@ -1074,6 +1076,8 @@ export type Database = {
           deleted_at?: string | null
           downloaded_at?: string | null
           expires_at: string
+          failed_at?: string | null
+          failure_reason?: string | null
           filters?: Json
           format: string
           id?: string
@@ -1090,6 +1094,8 @@ export type Database = {
           deleted_at?: string | null
           downloaded_at?: string | null
           expires_at?: string
+          failed_at?: string | null
+          failure_reason?: string | null
           filters?: Json
           format?: string
           id?: string
@@ -4508,6 +4514,10 @@ export type Database = {
         Returns: string
       }
       svc_expire_stale_bookings: { Args: never; Returns: Json }
+      svc_fail_export: {
+        Args: { p_actor_id: string; p_export_id: string; p_reason: string }
+        Returns: boolean
+      }
       svc_fail_notification: {
         Args: {
           p_error: string

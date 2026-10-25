@@ -1134,7 +1134,8 @@ select columns_are('public', 'security_alerts', array[
 ]);
 select columns_are('public', 'exports', array[
   'id', 'kind', 'format', 'requested_by', 'rw_id', 'filters', 'reason', 'row_count',
-  'storage_path', 'watermark', 'expires_at', 'downloaded_at', 'deleted_at', 'created_at'
+  'storage_path', 'watermark', 'expires_at', 'downloaded_at', 'deleted_at', 'created_at', 'failed_at',
+  'failure_reason'
 ]);
 select columns_are('public', 'dsr_requests', array[
   'id', 'request_type', 'phone', 'email', 'booking_code', 'message', 'otp_id', 'verified_at',
