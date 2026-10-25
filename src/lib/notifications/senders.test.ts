@@ -89,6 +89,27 @@ describe('WhatsApp Cloud API provider', () => {
     expect(whatsAppPayload({ ...LINK, link: null }).template.components).toHaveLength(1);
   });
 
+  it('puts a document header first when the message carries the ticket PDF', () => {
+    const payload = whatsAppPayload({
+      ...LINK,
+      template: 'payment_received_ticket',
+      document: { url: 'https://storage.example.test/t.pdf', filename: 'ticket-GSK-7F3K9Q2M.pdf' },
+    });
+    expect(payload.template.name).toBe('gsk_ticket_issued_v1');
+    expect(payload.template.components[0]).toEqual({
+      type: 'header',
+      parameters: [
+        {
+          type: 'document',
+          document: {
+            link: 'https://storage.example.test/t.pdf',
+            filename: 'ticket-GSK-7F3K9Q2M.pdf',
+          },
+        },
+      ],
+    });
+  });
+
   it('posts to the number id with the bearer token and keeps the message id', async () => {
     const { fetcher, calls } = answering(200, { messages: [{ id: 'wamid.HBg' }] });
     const result = await createWhatsAppMetaProvider(CREDENTIALS, fetcher).send(OTP);

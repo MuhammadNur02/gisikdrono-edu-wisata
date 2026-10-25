@@ -50,7 +50,7 @@ export async function svcIssueFirstQuotation(
   };
 }
 
-export type KeptDocumentKind = 'quotation' | 'invoice' | 'receipt';
+export type KeptDocumentKind = 'quotation' | 'invoice' | 'receipt' | 'ticket';
 
 // The file a rendered document was kept in, recorded on its row under the reader's name: readerId is the staff member
 // who opened it, or null for the visitor (review of PR #33, finding 1).

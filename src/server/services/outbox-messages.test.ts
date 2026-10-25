@@ -1,11 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { OutboxRow } from '@/db/rpc-outbox';
 import type { DatabaseClient } from '@/db/rpc-result';
 import { readGuestLink } from '@/lib/links/verify';
 import type { OutgoingMessage } from '@/lib/notifications/types';
+import { ticketWhatsAppDocument } from '@/server/services/document-service';
 
 import { composeMessage } from './outbox-messages';
+
+vi.mock('@/server/services/document-service', () => ({ ticketWhatsAppDocument: vi.fn() }));
+
+const TICKET_DOCUMENT = {
+  url: 'https://storage.example.test/signed/ticket.pdf?token=x',
+  filename: 'ticket-GSK-7F3K9Q2M.pdf',
+};
+
+beforeEach(() => {
+  vi.mocked(ticketWhatsAppDocument).mockReset().mockResolvedValue(TICKET_DOCUMENT);
+});
 
 const NOW = 1_790_000_000;
 const SITE = 'http://127.0.0.1:3000';
@@ -146,6 +158,42 @@ describe('composeMessage for a guest', () => {
     });
     expect(review.link?.buttonSuffix?.startsWith(`${CODE}/ulasan?t=`)).toBe(true);
     await expect(scopeOf(review)).resolves.toBe('review');
+  });
+
+  it('carries the ticket PDF in the WhatsApp document header, signed as it is sent', async () => {
+    const ticket = await messageFor({
+      template: 'payment_received_ticket',
+      params: { link_scope: 'view' },
+    });
+    expect(ticket.document).toEqual(TICKET_DOCUMENT);
+    expect(ticketWhatsAppDocument).toHaveBeenCalledWith(
+      expect.anything(),
+      '0192f3a4-5b6c-7d8e-9f01-23456789abcd',
+    );
+  });
+
+  it('sends the ticket email with its link only, never a file', async () => {
+    const email = await messageFor({
+      template: 'payment_received_ticket',
+      channel: 'email',
+      recipient: 'ani@contoh.test',
+      params: { link_scope: 'view' },
+    });
+    expect(email.document).toBeUndefined();
+    expect(ticketWhatsAppDocument).not.toHaveBeenCalled();
+  });
+
+  it('waits for the next try while the ticket file cannot be made', async () => {
+    vi.mocked(ticketWhatsAppDocument).mockResolvedValue(null);
+    const composed = await composeMessage(
+      clientWith(),
+      row({ template: 'payment_received_ticket', params: { link_scope: 'view' } }),
+      NOW,
+    );
+    expect(composed).toMatchObject({
+      ok: false,
+      failure: { errorCode: 'ticket_pdf_unavailable', isPermanent: false },
+    });
   });
 
   it('names each leg of a combo in its session, and the first RW as the gate', async () => {

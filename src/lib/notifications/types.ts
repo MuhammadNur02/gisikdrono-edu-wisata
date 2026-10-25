@@ -14,6 +14,13 @@ export interface MessageLink {
   buttonSuffix: string | null;
 }
 
+// The PDF a WhatsApp template carries in its document header (gsk_ticket_issued_v1): a signed URL minted as the message
+// is sent, which Meta fetches and nothing stores (CLAUDE.md §6.6). Email never carries one: it links to the page.
+export interface MessageDocument {
+  url: string;
+  filename: string;
+}
+
 export interface OutgoingMessage {
   notificationId: string;
   channel: NotificationChannel;
@@ -23,6 +30,7 @@ export interface OutgoingMessage {
   // The template's body parameters by name, as the message shows them, in the order WhatsApp numbers them.
   bodyParams: Record<string, string>;
   link: MessageLink | null;
+  document?: MessageDocument;
 }
 
 // errorCode and error are the server's own short words: a provider's text may repeat the recipient.

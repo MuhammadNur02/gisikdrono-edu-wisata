@@ -21,6 +21,12 @@ import {
   type BookingDocument,
   type BookingDocumentKind,
 } from '@/server/services/booking-documents';
+import {
+  keptTicketPdfPath,
+  loadTicketDocument,
+  ticketDocumentPdf,
+  type TicketDocument,
+} from '@/server/services/ticket-documents';
 import type { VerifiedDocument } from '@/types/documents';
 
 type DatabaseClient = SupabaseClient<Database>;
@@ -153,6 +159,46 @@ export async function bookingDocumentFile(
     siteUrl: publicEnv.NEXT_PUBLIC_SITE_URL,
     readerId,
   });
+}
+
+// A booking's e-ticket PDF (Task P3.11.05), by the booking id the route was given; the route authorises the reader
+// against the booking's code before anything is rendered.
+export function readTicketDocument(
+  bookingId: string,
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<TicketDocument | null> {
+  return loadTicketDocument(adminClient, bookingId);
+}
+
+export async function ticketDocumentFile(
+  document: TicketDocument,
+  readerId: string | null,
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<Buffer> {
+  const settings = await getPublicSiteSettings();
+  return ticketDocumentPdf(adminClient, document, {
+    kelurahanAddress: settings.kelurahanAddress,
+    readerId,
+  });
+}
+
+export interface WhatsAppDocument {
+  url: string;
+  filename: string;
+}
+
+// The document header of gsk_ticket_issued_v1 (Task P3.11.03): a signed URL of 60 minutes to the kept ticket file,
+// minted as the message is sent and handed to Meta only, never stored (CLAUDE.md §6.6); null when the booking has no
+// ticket file that may be kept.
+export async function ticketWhatsAppDocument(
+  adminClient: DatabaseClient,
+  bookingId: string,
+): Promise<WhatsAppDocument | null> {
+  const settings = await getPublicSiteSettings();
+  const path = await keptTicketPdfPath(adminClient, bookingId, settings.kelurahanAddress);
+  if (path === null) return null;
+  const url = await createDocumentSignedUrl(adminClient, path, 'whatsapp_document_header');
+  return { url, filename: path.slice(path.lastIndexOf('/') + 1) };
 }
 
 export type VerifyCodeAnswer =
