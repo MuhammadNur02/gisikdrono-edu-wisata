@@ -1,6 +1,5 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { useTransition } from 'react';
 import { toast } from 'sonner';
 
@@ -21,19 +20,20 @@ export interface RwSwitcherProps {
 }
 
 // docs/StyleGuide.md §6.1: the superadmin's `Semua · RW 05 · RW 08 · …`, a row of toggle buttons. The layout renders it
-// for the superadmin only; the choice lives in the rw_scope cookie and the page re-reads through the server.
+// for the superadmin only; the choice lives in the rw_scope cookie and the page re-reads through the server. Setting the
+// cookie in setRwScopeAction already makes Next.js render the page and its layouts again in the action's answer, so a
+// router.refresh() on top only rendered the dashboard a second time inside the same transition, which kept the
+// buttons disabled for twice as long and could leave the transition pending (e2e staff-sign-in, review of PR #58).
 export function RwSwitcher({ scope, rws, action }: RwSwitcherProps) {
   const options: { scope: RwScope; label: string }[] = [
     { scope: RW_SCOPE_ALL, label: text.all },
     ...rws.map((rw) => ({ scope: rw.id, label: rw.label })),
   ];
-  const router = useRouter();
   const [isSaving, startTransition] = useTransition();
   const choose = (next: RwScope) => {
     startTransition(async () => {
       const result = await action({ scope: next });
-      if (result.ok) router.refresh();
-      else toast.error(result.error.message);
+      if (!result.ok) toast.error(result.error.message);
     });
   };
   return (
