@@ -13,12 +13,15 @@ select is(
 );
 select is(
   array(select key || ':' || is_public from public.site_settings order by key collate "C"),
-  array['booking.hold_hours_institution:false', 'booking.hold_minutes_individual:false', 'booking.max_advance_days:true',
+  array['booking.cancel_refund_schedule:true', 'booking.hold_hours_institution:false',
+        'booking.hold_minutes_individual:false', 'booking.max_advance_days:true',
         'booking.max_pax:true', 'booking.min_lead_hours:true', 'booking.quotation_valid_days:false',
+        'booking.weather_reschedule_max:true', 'booking.weather_window_hours:true',
         'booking_enabled:true', 'certificate.template_version:false', 'checkin.grace_after_minutes:false',
         'checkin.grace_before_minutes:false', 'contact.email:true', 'contact.whatsapp_number:true',
         'email_enabled:false', 'finance.expected_payout_account_masked:false', 'kelurahan.address:true',
         'kelurahan.signatory_name:false', 'kelurahan.signatory_title:false', 'maintenance_mode:true',
+        'midtrans.fee_qris_permille:false', 'midtrans.fee_va_idr:false',
         'pii_retention_months:false', 'pricing.min_price_per_pax:false', 'privacy.dpo_email:true',
         'privacy.dpo_name:true', 'rate_limit_profile:false',
         'seo.default_description:true', 'whatsapp_enabled:false'],

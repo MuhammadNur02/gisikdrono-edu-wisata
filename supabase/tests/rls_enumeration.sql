@@ -80,7 +80,7 @@ select is(
     order by 1
   ),
   array['public.aal2', 'public.app_role', 'public.app_rw_id', 'public.cancel_staff_mfa_reset',
-        'public.cancel_superadmin_promotion', 'public.find_manual_ticket', 'public.fresh_totp',
+        'public.cancel_superadmin_promotion', 'public.declare_weather_disruption', 'public.find_manual_ticket', 'public.fresh_totp',
         'public.generate_visit_sessions', 'public.invite_superadmin', 'public.is_admin_rw', 'public.is_staff',
         'public.is_superadmin', 'public.issue_certificates', 'public.owns_any_rw', 'public.owns_rw',
         'public.reset_staff_mfa', 'public.revenue_recap', 'public.revoke_certificate', 'public.rpc_create_export',

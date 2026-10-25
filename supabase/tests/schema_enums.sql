@@ -1,11 +1,11 @@
 -- Structure test for 0002_enums and the migrations that add to it: public holds exactly the 42 enums of
 -- docs/PRD.md §8.3, each with exactly its values in the same order.
 begin;
-select plan(43);
+select plan(45);
 
 select enums_are(
   'public',
-  array['app_role', 'content_status', 'session_status', 'package_category', 'pricing_basis', 'product_category', 'booker_type', 'booking_channel', 'booking_status', 'booking_leg_status', 'addon_fulfillment_status', 'payment_provider', 'payment_method', 'payment_status', 'quotation_status', 'invoice_status', 'ticket_status', 'scan_phase', 'scan_result', 'certificate_kind', 'certificate_status', 'review_status', 'gallery_category', 'media_type', 'article_category', 'booklet_kind', 'activity_point_type', 'schedule_type', 'revenue_rule_scope', 'revenue_beneficiary', 'revenue_entry_type', 'adjustment_type', 'adjustment_status', 'notification_channel', 'notification_status', 'notification_template', 'document_kind', 'otp_purpose', 'export_kind', 'alert_severity', 'rw_accent', 'rw_icon'],
+  array['app_role', 'content_status', 'session_status', 'package_category', 'pricing_basis', 'product_category', 'booker_type', 'booking_channel', 'booking_status', 'booking_leg_status', 'addon_fulfillment_status', 'payment_provider', 'payment_method', 'payment_status', 'quotation_status', 'invoice_status', 'ticket_status', 'scan_phase', 'scan_result', 'certificate_kind', 'certificate_status', 'review_status', 'gallery_category', 'media_type', 'article_category', 'booklet_kind', 'activity_point_type', 'schedule_type', 'revenue_rule_scope', 'revenue_beneficiary', 'revenue_entry_type', 'adjustment_type', 'adjustment_status', 'notification_channel', 'notification_status', 'notification_template', 'document_kind', 'otp_purpose', 'export_kind', 'alert_severity', 'rw_accent', 'rw_icon', 'refund_request_kind', 'refund_request_status'],
   'public has exactly the enums of PRD §8.3'
 );
 
@@ -51,6 +51,8 @@ select enum_has_labels('public', 'export_kind', array['visits', 'attendance', 'f
 select enum_has_labels('public', 'alert_severity', array['info', 'medium', 'high', 'critical']);
 select enum_has_labels('public', 'rw_accent', array['leaf', 'terracotta', 'mulberry', 'teal', 'violet']);
 select enum_has_labels('public', 'rw_icon', array['recycle', 'drama', 'heart_handshake', 'landmark', 'users']);
+select enum_has_labels('public', 'refund_request_kind', array['cancellation', 'weather']);
+select enum_has_labels('public', 'refund_request_status', array['requested', 'submitted', 'failed', 'recorded']);
 
 select * from finish();
 rollback;
