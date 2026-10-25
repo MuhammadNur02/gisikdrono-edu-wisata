@@ -619,7 +619,7 @@ select columns_are('public', 'reconciliation_runs', array[
 ]);
 select columns_are('public', 'reconciliation_issues', array[
   'id', 'run_id', 'booking_id', 'payment_id', 'issue_type', 'severity', 'details', 'resolved_at',
-  'resolved_by', 'resolution_note', 'created_at'
+  'resolved_by', 'resolution_note', 'created_at', 'resolution'
 ]);
 select columns_are('public', 'quotations', array[
   'id', 'booking_id', 'quotation_number', 'verify_code', 'version', 'status', 'issued_at',
