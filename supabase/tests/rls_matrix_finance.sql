@@ -183,12 +183,12 @@ select is((select count(*)::int from public.v_revenue_recap_by_booking where pg_
   'and the recap per booking');
 select throws_ok($$select day from public.v_finance_daily$$, '42501', null,
   'but reads the payment totals through the finance RPC of P4.7.01, not this view');
-select lives_ok($$insert into public.payout_batches (beneficiary_key, period_from, period_to, total_amount, created_by)
-  values ('rw:5', public.today_jkt() - 7, public.today_jkt(), 5000, '00000000-0000-4000-8000-00000000f001')$$,
-  'records a payout in their own name');
+-- Review of PR #68, M3: a payout is written by settle_revenue_entries alone, which stamps the ledger rows it pays.
 select throws_ok($$insert into public.payout_batches (beneficiary_key, period_from, period_to, total_amount, created_by)
-  values ('rw:5', public.today_jkt() - 7, public.today_jkt(), 5000, '00000000-0000-4000-8000-00000000f005')$$,
-  '42501', null, 'never in someone else''s');
+  values ('rw:5', public.today_jkt() - 7, public.today_jkt(), 5000, '00000000-0000-4000-8000-00000000f001')$$,
+  '42501', null, 'writes no payout of their own, only through settle_revenue_entries');
+select throws_ok($$update public.payout_batches set reference = 'diubah' where reference = 'rls-payout'$$,
+  '42501', null, 'and changes none afterwards');
 select lives_ok($$insert into public.revenue_share_rules (scope, product_id, name, created_by)
   values ('product', '00000000-0000-4000-8000-00000000e501', 'Kompos RW 05', '00000000-0000-4000-8000-00000000f001')$$,
   'and writes a rule');
