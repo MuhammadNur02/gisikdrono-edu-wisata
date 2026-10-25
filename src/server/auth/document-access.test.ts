@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { rpcGetParticipants } from '@/db/rpc';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { requireDocumentReader } from '@/server/auth/document-access';
+import { requireCertificateReader, requireDocumentReader } from '@/server/auth/document-access';
 import { requireGuestToken, requireUser } from '@/server/auth/guards';
 
+vi.mock('@/db/rpc', () => ({ rpcGetParticipants: vi.fn() }));
 vi.mock('@/lib/supabase/server', () => ({ createSupabaseServerClient: vi.fn() }));
 vi.mock('@/server/auth/guards', () => ({ requireUser: vi.fn(), requireGuestToken: vi.fn() }));
 
@@ -101,5 +103,57 @@ describe('requireDocumentReader', () => {
     vi.mocked(requireUser).mockResolvedValue(NOBODY);
     await expect(requireDocumentReader('quotations', ROW_ID, CODE)).resolves.toEqual(NOT_FOUND);
     expect(createSupabaseServerClient).not.toHaveBeenCalled();
+  });
+});
+
+describe('requireCertificateReader', () => {
+  const BOOKING_ID = '0192f3a4-5b6c-7d8e-9f01-0000000000bb';
+
+  it('lets an RW officer whose RLS shows the certificate read a group certificate without a reveal', async () => {
+    vi.mocked(requireUser).mockResolvedValue(STAFF);
+    const from = serverClientSeeing({ id: ROW_ID });
+    await expect(requireCertificateReader(ROW_ID, BOOKING_ID, false)).resolves.toEqual({
+      ok: true,
+      reader: 'staff',
+      userId: STAFF.ctx.userId,
+    });
+    expect(from).toHaveBeenCalledWith('certificates');
+    expect(rpcGetParticipants).not.toHaveBeenCalled();
+  });
+
+  it('passes a named certificate only through the personal-data gate, whose refusal is a 404', async () => {
+    vi.mocked(requireUser).mockResolvedValue(SUPERADMIN);
+    serverClientSeeing({ id: ROW_ID });
+    vi.mocked(rpcGetParticipants).mockResolvedValueOnce([]);
+    await expect(requireCertificateReader(ROW_ID, BOOKING_ID, true)).resolves.toMatchObject({
+      ok: true,
+    });
+    expect(rpcGetParticipants).toHaveBeenCalledWith(expect.anything(), BOOKING_ID);
+    vi.mocked(rpcGetParticipants).mockRejectedValueOnce({ code: '42501' });
+    await expect(requireCertificateReader(ROW_ID, BOOKING_ID, true)).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'NOT_FOUND' },
+    });
+    vi.mocked(rpcGetParticipants).mockRejectedValueOnce({ code: 'P0001', hint: 'RATE_LIMITED' });
+    await expect(requireCertificateReader(ROW_ID, BOOKING_ID, true)).resolves.toMatchObject({
+      ok: false,
+    });
+  });
+
+  it('answers NOT_FOUND to a visitor, an AAL1 session and a certificate RLS hides', async () => {
+    vi.mocked(requireUser).mockResolvedValue(NOBODY);
+    await expect(requireCertificateReader(ROW_ID, BOOKING_ID, false)).resolves.toMatchObject({
+      ok: false,
+    });
+    vi.mocked(requireUser).mockResolvedValue({ ...STAFF, ctx: { ...STAFF.ctx, isAal2: false } });
+    await expect(requireCertificateReader(ROW_ID, BOOKING_ID, false)).resolves.toMatchObject({
+      ok: false,
+    });
+    vi.mocked(requireUser).mockResolvedValue(STAFF);
+    serverClientSeeing(null);
+    await expect(requireCertificateReader(ROW_ID, BOOKING_ID, false)).resolves.toMatchObject({
+      ok: false,
+    });
+    expect(requireGuestToken).not.toHaveBeenCalled();
   });
 });

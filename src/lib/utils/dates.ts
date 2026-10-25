@@ -29,6 +29,11 @@ export function formatDateLong(value: Date | string): string {
   return format(inJakarta(value), 'EEEE, d MMMM yyyy', { locale: indonesian });
 }
 
+// '18 Oktober 2026', as a letter or a certificate is dated
+export function formatDateWritten(value: Date | string): string {
+  return format(inJakarta(value), 'd MMMM yyyy', { locale: indonesian });
+}
+
 // '18 Okt 2026', the short form used in tables
 export function formatDateShort(value: Date | string): string {
   return format(inJakarta(value), 'd MMM yyyy', { locale: indonesian });
@@ -53,6 +58,11 @@ function formatSessionTime(time: string): string {
   const match = SESSION_TIME_PATTERN.exec(time);
   if (!match) throw new RangeError(`Not a session time: ${time}`);
   return `${match[1] ?? ''}.${match[2] ?? ''}`;
+}
+
+// A session's start alone: '08.00 WIB'.
+export function formatSessionStart(time: string): string {
+  return `${formatSessionTime(time)} WIB`;
 }
 
 // Session times are Postgres `time` values ('08:00:00'); Indonesian writes them '08.00–10.00 WIB'.

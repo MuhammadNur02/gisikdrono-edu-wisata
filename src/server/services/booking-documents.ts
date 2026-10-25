@@ -239,10 +239,12 @@ export async function bookingDocumentPdf(
 const QUOTATION_VERIFY_COLUMNS =
   'quotation_number, version, valid_until, status, bookings!inner(institution_name)';
 const CERTIFICATE_VERIFY_COLUMNS =
-  'certificate_number, recipient_name, institution_name, visit_date, status';
+  'recipient_name, institution_name, visit_date, status, purged_at';
 
 // A document by its verify code (docs/PRD.md FR-PUB-20): the quotation or certificate the code names, or null. The
-// code is random and unique across both tables (internal.new_verify_code), so a quotation is tried first.
+// code is random and unique across both tables (internal.new_verify_code), so a quotation is tried first. A certificate
+// still held back for unpaid people has gone out to nobody, so its code names nothing yet (Task P4.5.03); a purged
+// participant certificate keeps its number and status but no name (docs/PRD.md FR-POST-08).
 export async function lookupVerifyCode(
   adminClient: DatabaseClient,
   code: string,
@@ -267,13 +269,13 @@ export async function lookupVerifyCode(
     .from('certificates')
     .select(CERTIFICATE_VERIFY_COLUMNS)
     .eq('verify_code', code)
+    .not('released_at', 'is', null)
     .maybeSingle();
   if (certificate.error) throw certificate.error;
   if (!certificate.data) return null;
   return {
     kind: 'certificate',
-    number: certificate.data.certificate_number,
-    recipientName: certificate.data.recipient_name,
+    recipientName: certificate.data.purged_at === null ? certificate.data.recipient_name : null,
     institutionName: certificate.data.institution_name,
     visitDate: certificate.data.visit_date,
     status: certificate.data.status,

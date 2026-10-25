@@ -113,7 +113,7 @@ describe('GET /api/documents/quotation/[id]', () => {
   });
 
   it('answers 404 for a kind it does not serve', async () => {
-    const response = await fetchDocument('certificate', QUOTATION_ID);
+    const response = await fetchDocument('credit_note', QUOTATION_ID);
     expect(response.status).toBe(404);
     expect(withinDocumentLimits).not.toHaveBeenCalled();
   });

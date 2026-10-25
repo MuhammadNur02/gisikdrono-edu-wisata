@@ -192,6 +192,40 @@ describe('lookupVerifyCode', () => {
     });
   });
 
+  it('names a released certificate by its recipient, institution, date and status, and no name once purged', async () => {
+    const searches: string[] = [];
+    const certificateRow = (purgedAt: string | null) => ({
+      recipient_name: purgedAt === null ? 'Ani Murid' : '[dihapus]',
+      institution_name: 'SD Negeri Gisikdrono 01',
+      visit_date: '2026-11-06',
+      status: 'revoked',
+      purged_at: purgedAt,
+    });
+    const clientAnswering = (purgedAt: string | null) =>
+      createClient<Database>('http://supabase.test', 'test-key', {
+        auth: { persistSession: false, autoRefreshToken: false },
+        global: {
+          fetch: (input) => {
+            const url = new URL(input instanceof Request ? input.url : input.toString());
+            searches.push(decodeURIComponent(url.search));
+            const isCertificate = url.pathname.endsWith('/certificates');
+            return Promise.resolve(Response.json(isCertificate ? certificateRow(purgedAt) : null));
+          },
+        },
+      });
+    await expect(lookupVerifyCode(clientAnswering(null), '7F3K9Q2M4A')).resolves.toEqual({
+      kind: 'certificate',
+      recipientName: 'Ani Murid',
+      institutionName: 'SD Negeri Gisikdrono 01',
+      visitDate: '2026-11-06',
+      status: 'revoked',
+    });
+    expect(searches.at(-1)).toContain('released_at=not.is.null');
+    await expect(
+      lookupVerifyCode(clientAnswering('2027-02-04T19:00:00+00:00'), '7F3K9Q2M4A'),
+    ).resolves.toMatchObject({ recipientName: null });
+  });
+
   it('answers null for a code no document carries, after asking both tables', async () => {
     const { client, calls } = fakeStack({ row: null });
     await expect(lookupVerifyCode(client, 'ZZZZZZZZZZ')).resolves.toBeNull();
