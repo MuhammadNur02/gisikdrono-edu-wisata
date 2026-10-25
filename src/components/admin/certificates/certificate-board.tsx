@@ -1,7 +1,7 @@
 'use client';
 
 import type { ColumnDef } from '@tanstack/react-table';
-import { Award, Eye, FilePlus2, RefreshCw } from 'lucide-react';
+import { Award, Eye, FilePlus2, RefreshCw, type LucideIcon } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useCallback, useState } from 'react';
 
@@ -13,6 +13,7 @@ import {
 import { ContentBoard, type BoardControls } from '@/components/admin/cms/content-board';
 import { actionsColumn } from '@/components/admin/cms/content-columns';
 import { ColumnHeader } from '@/components/admin/data-table/column-header';
+import type { RowActionItem } from '@/components/admin/data-table/row-actions';
 import { EmptyState } from '@/components/admin/shell/empty-state';
 import { StatusBadge } from '@/components/admin/status/status-badge';
 import { Badge } from '@/components/ui/badge';
@@ -110,11 +111,40 @@ function describedColumns(): ColumnDef<CertificateBooking>[] {
   ];
 }
 
+// A booking-wide step confirmed in the board's dialog first: issuing again, rendering again.
+function confirmedItem(
+  booking: CertificateBooking,
+  confirm: BoardControls<CertificateBooking>['confirm'],
+  step: { label: string; icon: LucideIcon; hint: string; done: string; action: BookingAction },
+): RowActionItem {
+  return {
+    label: step.label,
+    icon: step.icon,
+    onSelect: () => {
+      confirm({
+        run: () => step.action({ bookingId: booking.id }),
+        title: `${step.label}: ${bookingTitle(booking)}`,
+        consequence: step.hint,
+        confirmLabel: step.label,
+        done: step.done,
+        destructive: false,
+      });
+    },
+  };
+}
+
 function certificateColumns(
   controls: BoardControls<CertificateBooking>,
   open: (booking: CertificateBooking) => void,
   actions: { issue: BookingAction; rerender: BookingAction },
 ): ColumnDef<CertificateBooking>[] {
+  const issue = { label: text.issue, icon: FilePlus2, hint: text.issueHint, done: text.issued };
+  const rerender = {
+    label: text.rerender,
+    icon: RefreshCw,
+    hint: text.rerenderHint,
+    done: text.rerendered,
+  };
   return [
     ...describedColumns(),
     actionsColumn<CertificateBooking>(bookingTitle, (booking) => [
@@ -125,34 +155,8 @@ function certificateColumns(
           open(booking);
         },
       },
-      {
-        label: text.issue,
-        icon: FilePlus2,
-        onSelect: () => {
-          controls.confirm({
-            run: () => actions.issue({ bookingId: booking.id }),
-            title: `${text.issue}: ${bookingTitle(booking)}`,
-            consequence: text.issueHint,
-            confirmLabel: text.issue,
-            done: text.issued,
-            destructive: false,
-          });
-        },
-      },
-      {
-        label: text.rerender,
-        icon: RefreshCw,
-        onSelect: () => {
-          controls.confirm({
-            run: () => actions.rerender({ bookingId: booking.id }),
-            title: `${text.rerender}: ${bookingTitle(booking)}`,
-            consequence: text.rerenderHint,
-            confirmLabel: text.rerender,
-            done: text.rerendered,
-            destructive: false,
-          });
-        },
-      },
+      confirmedItem(booking, controls.confirm, { ...issue, action: actions.issue }),
+      confirmedItem(booking, controls.confirm, { ...rerender, action: actions.rerender }),
     ]),
   ];
 }
