@@ -97,7 +97,7 @@ select is((select a.actor_role from public.audit_logs a
 select throws_ok($$select internal.record_document_pdf('quotation', (select id from version_two),
   'bookings/00000000-0000-4000-8000-000000000000/quotation-SP-GSK-2026-10-0001.pdf', null)$$, '22023', null,
   'a file of another booking''s folder is refused');
-select throws_ok($$select internal.record_document_pdf('certificate', (select id from version_two), (select path from version_two),
+select throws_ok($$select internal.record_document_pdf('credit_note', (select id from version_two), (select path from version_two),
   null)$$, '22023', null, 'and so is a kind this does not keep');
 
 -- The re-review of PR #33, finding 3: the row's own file, set once.

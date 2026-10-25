@@ -1001,6 +1001,8 @@ Signed URLs are never persisted, logged or placed in messages; `document.signed_
 | Manual check-ins; check-ins before the session date; > 20 check-ins per officer per hour; `unpaid_pax > 0` on > 2 bookings/week per RW | any | medium |
 | `pii_revealed` > 50/day per user; participants read for past sessions | any | high |
 | Exports; new superadmin; `mfa_enrolled`; `role_changed` | any | high |
+| `staff_factor_count`: an active staff profile without exactly one verified TOTP factor (AUTH-12; 20261029080200), except an officer waiting for their re-enrolment code with no factor at all (20261103130000) | any | high |
+| `staff_reenrolment_overdue`: an officer still waiting for their re-enrolment code, with no factor, 7 days after the reset completed or break-glass ran, or with neither on record (R24; 20261103130000) | any | medium |
 | Login lockout spike (where the password hook runs, §5.5) | ≥ 10 `login_locked` in 15 min | medium |
 | Failed sign-ins and TOTP codes read from the Auth logs, because Pro runs no attempt hook (§5.5; P4.10.01) | ≥ 5 failed password grants for one address or ≥ 5 failed `/factors/{id}/verify` for one account within 15 min; ≥ 30 failures project-wide within 15 min | high; medium |
 | TOTP lockout, where the MFA hook runs: `mfa_locked` (the MFA hook writes its own `security_alerts` row `mfa_locked:<user>`, no scan needed; attempts during the lock raise its `occurrences`) | any | high |

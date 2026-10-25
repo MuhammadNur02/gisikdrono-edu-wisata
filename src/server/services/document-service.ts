@@ -23,6 +23,12 @@ import {
   type BookingDocumentKind,
 } from '@/server/services/booking-documents';
 import {
+  certificatePdf,
+  loadCertificate,
+  rerenderBookingCertificates,
+} from '@/server/services/certificate-documents';
+import type { CertificateRow } from '@/server/services/certificate-pages';
+import {
   removeFinanceDocument,
   storeFinanceDocument,
   type StoredDocument,
@@ -191,6 +197,43 @@ export async function ticketDocumentFile(
   return ticketDocumentPdf(adminClient, document, {
     kelurahanAddress: settings.kelurahanAddress,
     readerId,
+  });
+}
+
+// A certificate's PDF (Task P4.5.02), by the certificate id the route was given; the route authorises the reader
+// against the certificate's own row before anything is rendered, and the site's address builds the verify URL.
+export function readCertificateDocument(
+  certificateId: string,
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<CertificateRow | null> {
+  return loadCertificate(adminClient, certificateId);
+}
+
+export function certificateDocumentFile(
+  certificate: CertificateRow,
+  readerId: string | null,
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<Buffer> {
+  return certificatePdf(adminClient, certificate, {
+    siteUrl: publicEnv.NEXT_PUBLIC_SITE_URL,
+    readerId,
+  });
+}
+
+// /dashboard/certificates "Render ulang" (FR-ADMIN-07): the caller has checked that the staff member may act on the
+// booking's certificates; the files are rewritten under their name, within the staff member's hourly limit.
+export async function rerenderCertificateFiles(
+  bookingId: string,
+  staffId: string,
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<number> {
+  const isWithinLimit = await withinRateLimits(adminClient, [
+    { name: 'certificate_rerender:user', subject: staffId },
+  ]);
+  if (!isWithinLimit) throw new AppError('RATE_LIMITED');
+  return rerenderBookingCertificates(adminClient, bookingId, {
+    siteUrl: publicEnv.NEXT_PUBLIC_SITE_URL,
+    readerId: staffId,
   });
 }
 

@@ -28,8 +28,7 @@ function rowsOf(document: VerifiedDocument): { label: string; value: string }[] 
     ];
   }
   return [
-    { label: text.number, value: document.number },
-    { label: text.recipient, value: document.recipientName },
+    { label: text.recipient, value: document.recipientName ?? text.recipientRemoved },
     institution,
     { label: text.visitDate, value: formatDateLong(document.visitDate) },
   ];
