@@ -38,8 +38,8 @@ select is(
 select is(
   (select string_agg(key || '=' || value, ', ' order by key)
    from public.site_settings where key in ('booking_enabled', 'maintenance_mode', 'rate_limit_profile')),
-  'booking_enabled=false, maintenance_mode=false, rate_limit_profile="normal"',
-  'booking stays closed until the guest pages exist (review of PR #27, N1), with the normal rate-limit profile and no maintenance notice'
+  'booking_enabled=true, maintenance_mode=false, rate_limit_profile="normal"',
+  'booking is open now the pay page and the status hub exist (20261102080200), with the normal rate-limit profile and no maintenance notice'
 );
 
 -- ===== Revenue-share defaults (A4) =====

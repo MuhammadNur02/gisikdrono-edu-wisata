@@ -166,6 +166,15 @@ function PaidBody({ view }: { view: StatusHubView }) {
   );
 }
 
+// The certificate and the review come by WhatsApp with their own links (FR-POST-*); the hub says when.
+function AfterVisitNote({ status }: { status: 'checked_in' | 'completed' }) {
+  return (
+    <p className="rounded-2xl bg-muted/60 p-4 text-body-sm text-ink-2">
+      {status === 'checked_in' ? text.links.certificate : text.links.review}
+    </p>
+  );
+}
+
 function RefundNote({ view }: { view: StatusHubView }) {
   const refund = view.refund;
   if (!refund) return null;
@@ -202,6 +211,7 @@ function StateBody({ view, children }: { view: StatusHubView; children?: ReactNo
       )}
       {status === 'pending_payment' && <PendingPayment view={view} />}
       {status === 'paid' && <PaidBody view={view} />}
+      {(status === 'checked_in' || status === 'completed') && <AfterVisitNote status={status} />}
       {(status === 'cancelled' || status === 'refunded') && <RefundNote view={view} />}
       {children}
     </div>
