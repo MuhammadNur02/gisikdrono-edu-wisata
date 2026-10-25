@@ -2423,28 +2423,36 @@ select lives_ok(
 );
 select set_config('app.purge', '', true);
 
+-- payment_adjustments_workflow lets only the adjustment RPCs write (the app.in_rpc fence) and wants an approver who
+-- meets REC-16: an account of at least 7 days and an authenticator verified before the proposal.
+update public.profiles set created_at = now() - interval '40 days' where id = '00000000-0000-4000-8000-000000000001';
+insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at) values
+  (gen_random_uuid(), '00000000-0000-4000-8000-000000000001', 'uji-fungsi', 'totp', 'verified',
+   now() - interval '39 days', now());
+select set_config('app.in_rpc', '1', true);
 insert into public.payment_adjustments (id, booking_id, type, amount, reason, evidence_path, proposed_by)
 values ('00000000-0000-4000-8000-000000000c01', '00000000-0000-4000-8000-0000000000e1', 'write_off', 1000,
         'selisih pembulatan transfer bank', 'documents/bookings/e1/payment-proof-1.jpg', '00000000-0000-4000-8000-000000000002');
 select throws_ok(
   $$update public.payment_adjustments set amount = 900000 where id = '00000000-0000-4000-8000-000000000c01'$$,
-  '42501', 'the proposal of an adjustment never changes; only its approval workflow moves',
-  'the approver approves exactly what was proposed'
+  '42501', null, 'the approver approves exactly what was proposed'
 );
 select lives_ok(
   $$update public.payment_adjustments set status = 'approved', approved_by = '00000000-0000-4000-8000-000000000001',
-      approved_at = now() where id = '00000000-0000-4000-8000-000000000c01'$$,
+      approved_at = now(), apply_not_before = now() where id = '00000000-0000-4000-8000-000000000c01'$$,
   'the approval moves it'
 );
-update public.payment_adjustments set status = 'applied', applied_at = now() where id = '00000000-0000-4000-8000-000000000c01';
+update public.payment_adjustments set status = 'applied', applied_at = now(),
+  applied_by = '00000000-0000-4000-8000-000000000001' where id = '00000000-0000-4000-8000-000000000c01';
 select throws_ok(
   $$update public.payment_adjustments set rejected_reason = 'dibatalkan' where id = '00000000-0000-4000-8000-000000000c01'$$,
-  '42501', 'an applied adjustment is final', 'an applied adjustment is final'
+  '42501', null, 'an applied adjustment is final'
 );
 select throws_ok(
   $$delete from public.payment_adjustments where id = '00000000-0000-4000-8000-000000000c01'$$,
   '42501', 'payment_adjustments are never deleted', 'and never deleted'
 );
+select set_config('app.in_rpc', '', true);
 
 select is(
   (select bool_or(has_table_privilege(api_role, 'public.' || log_table, privilege))

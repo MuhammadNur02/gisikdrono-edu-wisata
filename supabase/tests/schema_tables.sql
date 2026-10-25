@@ -609,7 +609,7 @@ select columns_are('public', 'webhook_rejections', array[
 select columns_are('public', 'payment_adjustments', array[
   'id', 'booking_id', 'payment_id', 'type', 'status', 'amount', 'reason', 'evidence_path',
   'proposed_by', 'proposed_at', 'approved_by', 'approved_at', 'rejected_reason',
-  'apply_not_before', 'applied_at'
+  'apply_not_before', 'applied_at', 'details', 'applied_by'
 ]);
 select columns_are('public', 'reconciliation_runs', array[
   'id', 'run_date', 'source', 'started_at', 'finished_at', 'payments_checked', 'issues_found',
@@ -690,16 +690,25 @@ select throws_ok(
   '23514', null, 'webhook rejections use a known reason'
 );
 
+-- An adjustment starts as proposed (payment_adjustments_workflow); the 24 h rule applies when it is approved. The
+-- approver meets REC-16: an account of at least 7 days and an authenticator verified before the proposal.
+update public.profiles set created_at = now() - interval '40 days' where id = '00000000-0000-4000-8000-000000000001';
+insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at) values
+  (gen_random_uuid(), '00000000-0000-4000-8000-000000000001', 'uji-tabel', 'totp', 'verified',
+   now() - interval '39 days', now());
+insert into public.payment_adjustments (id, booking_id, type, amount, reason, evidence_path, proposed_by)
+values ('00000000-0000-4000-8000-000000000c11', '00000000-0000-4000-8000-0000000000e1', 'manual_refund', 100000,
+        'Refund karena hujan deras', 'documents/x.pdf', '00000000-0000-4000-8000-000000000001');
 select throws_ok(
-  $$insert into public.payment_adjustments (booking_id, type, amount, reason, evidence_path, proposed_by, approved_by)
-    values ('00000000-0000-4000-8000-0000000000e1', 'manual_refund', 100000, 'Refund karena hujan deras',
-            'documents/x.pdf', '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001')$$,
-  '23514', null, 'a superadmin approving their own adjustment needs the 24 h delay'
+  $$update public.payment_adjustments set status = 'approved', approved_by = '00000000-0000-4000-8000-000000000001',
+      approved_at = now(), apply_not_before = now() where id = '00000000-0000-4000-8000-000000000c11'$$,
+  'P0001', 'a proposer approving their own adjustment waits 24 hours before it applies',
+  'a superadmin approving their own adjustment needs the 24 h delay'
 );
 select lives_ok(
-  $$insert into public.payment_adjustments (booking_id, type, amount, reason, evidence_path, proposed_by, approved_by, apply_not_before)
-    values ('00000000-0000-4000-8000-0000000000e1', 'manual_refund', 100000, 'Refund karena hujan deras',
-            'documents/x.pdf', '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', now() + interval '24 hours')$$,
+  $$update public.payment_adjustments set status = 'approved', approved_by = '00000000-0000-4000-8000-000000000001',
+      approved_at = now(), apply_not_before = now() + interval '24 hours'
+    where id = '00000000-0000-4000-8000-000000000c11'$$,
   'self-approval with the 24 h delay is accepted'
 );
 select throws_ok(

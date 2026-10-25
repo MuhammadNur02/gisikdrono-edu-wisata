@@ -147,7 +147,7 @@ begin
         using errcode = '42501';
     end if;
     if not exists (select 1 from public.payments p
-                   where p.booking_id = new.id and p.status in ('settled', 'partially_refunded')) then
+                   where p.booking_id = new.id and p.status = any (array['settled', 'partially_refunded']::public.payment_status[])) then
       raise exception 'a booking is refunded only while it has a settled payment'
         using errcode = 'P0001', hint = 'STATE_INVALID';
     end if;
