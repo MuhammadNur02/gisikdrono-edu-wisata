@@ -19,15 +19,21 @@ import { runSql } from '../../scripts/local-stack';
 test.describe.configure({ timeout: 120_000 });
 
 const REASON = 'Konfirmasi jadwal kedatangan rombongan';
-const bookingIdRowsSchema = z.array(z.object({ id: z.uuid() }));
+const bookingRowsSchema = z.array(
+  z.object({ id: z.uuid(), pic_phone: z.string(), phone_masked: z.string() }),
+);
 const countRowsSchema = z.array(z.object({ count: z.coerce.number() }));
 
-async function bookingIdOf(bookingCode: string): Promise<string> {
-  const [row] = bookingIdRowsSchema.parse(
-    await runSql(`select b.id from public.bookings b where b.booking_code = '${bookingCode}'`),
+// The booking behind the paid ticket, with its real phone and the mask v_bookings_staff shows (left 6, '••••', right 2;
+// 0004_functions.sql). The helper books the visit 8 to 29 days after the database's own today_jkt(), so it lies inside
+// the reveal window whatever the clock says.
+async function bookingOf(bookingCode: string) {
+  const [row] = bookingRowsSchema.parse(
+    await runSql(`select b.id, b.pic_phone, b.phone_masked from public.bookings b
+      where b.booking_code = '${bookingCode}'`),
   );
   if (!row) throw new Error('the paid booking is gone');
-  return row.id;
+  return { id: row.id, phone: row.pic_phone, masked: row.phone_masked };
 }
 
 async function revealsOf(actorId: string, bookingId: string): Promise<number> {
@@ -50,7 +56,8 @@ test('revealing a booker’s contact asks for a reason and leaves a pii_revealed
   page,
 }, testInfo) => {
   const ticket = await paidTicketToday(5, testInfo);
-  const bookingId = await bookingIdOf(ticket.bookingCode);
+  const booking = await bookingOf(ticket.bookingCode);
+  const bookingId = booking.id;
   const superadmin = await createSuperadmin();
   await signInToDashboard(page, superadmin.email);
 
@@ -58,7 +65,8 @@ test('revealing a booker’s contact asks for a reason and leaves a pii_revealed
   await expect(page.getByRole('heading', { name: ticket.bookingCode, level: 1 })).toBeVisible(
     AUTH_STEP,
   );
-  await expect(page.getByText(ticket.phoneLastDigits).first()).toBeVisible();
+  await expect(page.getByText(booking.masked).first()).toBeVisible();
+  await expect(page.getByText(booking.phone)).toHaveCount(0);
   expect(await revealsOf(superadmin.id, bookingId)).toBe(0);
 
   await page.getByRole('button', { name: 'Tampilkan kontak' }).click();
@@ -67,12 +75,14 @@ test('revealing a booker’s contact asks for a reason and leaves a pii_revealed
   await dialog.getByRole('button', { name: 'Tampilkan' }).click();
 
   await expect(page.getByText('Siti Gerbang')).toBeVisible(AUTH_STEP);
+  await expect(page.getByText(booking.phone).first()).toBeVisible();
   expect(await revealsOf(superadmin.id, bookingId)).toBe(1);
 });
 
 test('an RW officer cannot open a booking of another RW', async ({ page }, testInfo) => {
   const ticket = await paidTicketToday(5, testInfo);
-  const bookingId = await bookingIdOf(ticket.bookingCode);
+  const booking = await bookingOf(ticket.bookingCode);
+  const bookingId = booking.id;
   const officer = await createRwAdmin(13);
   await signInToDashboard(page, officer.email);
 
