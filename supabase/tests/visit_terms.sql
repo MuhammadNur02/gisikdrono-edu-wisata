@@ -24,7 +24,7 @@ insert into public.products_umkm (id, rw_id, vendor_id, slug, name, category, pr
 insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
   ('00000000-0000-4000-8000-0000000e2001', 5, public.today_jkt() + 5, '09:00', '11:00', 'Uji syarat H-5', 200),
   ('00000000-0000-4000-8000-0000000e2002', 5, public.today_jkt() + 6, '09:00', '11:00', 'Uji syarat H-6', 200),
-  ('00000000-0000-4000-8000-0000000e2003', 5, public.today_jkt() + 1, '09:00', '11:00', 'Uji syarat H-1', 200),
+  ('00000000-0000-4000-8000-0000000e2003', 5, public.today_jkt() + 1, '20:00', '21:30', 'Uji syarat H-1', 200),
   ('00000000-0000-4000-8000-0000000e2004', 5, public.today_jkt() + 7, '09:00', '11:00', 'Uji syarat H-7', 200);
 
 \ir helpers/visit_terms.psql
