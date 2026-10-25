@@ -11,9 +11,9 @@ import {
   BookingLegs,
   BookingPayments,
   BookingSummary,
-  BookingTickets,
   BookingTimeline,
 } from '@/components/admin/bookings/booking-sections';
+import { BookingTickets } from '@/components/admin/bookings/booking-tickets';
 import { ContactPanel } from '@/components/admin/bookings/contact-panel';
 import { ParticipantsPanel } from '@/components/admin/bookings/participants-panel';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
@@ -24,12 +24,14 @@ import { bookingsAdminCopy } from '@/lib/copy/bookings-admin';
 import {
   loadBookingParticipantsAction,
   revealBookingContactAction,
+  revokeTicketAction,
   saveAdminNotesAction,
   setAddonFulfillmentAction,
 } from '@/server/actions/booking-admin';
 import { requireDashboardStaff } from '@/server/auth/session';
 import {
   getBookingDetail,
+  listAddonNotes,
   listBookingAddons,
   listBookingTimeline,
 } from '@/server/services/booking-admin-service';
@@ -55,7 +57,15 @@ function BackLink() {
   );
 }
 
-function MainColumn({ booking, addons }: { booking: BookingDetail; addons: BookingAddonLine[] }) {
+interface MainColumnProps {
+  booking: BookingDetail;
+  addons: BookingAddonLine[];
+  // The visitor's notes on the lines, by line id, as rpc_get_addon_notes returned them.
+  addonNotes: Record<string, string>;
+  isSuperadmin: boolean;
+}
+
+function MainColumn({ booking, addons, addonNotes, isSuperadmin }: MainColumnProps) {
   return (
     <div className="flex flex-col gap-6 lg:col-span-2">
       <BookingSummary booking={booking} />
@@ -63,9 +73,10 @@ function MainColumn({ booking, addons }: { booking: BookingDetail; addons: Booki
       <AddonLines
         bookingId={booking.id}
         lines={addons}
+        notes={addonNotes}
         action={booking.isAnonymised ? null : setAddonFulfillmentAction}
       />
-      <BookingTickets booking={booking} />
+      <BookingTickets booking={booking} revokeAction={isSuperadmin ? revokeTicketAction : null} />
       <BookingPayments booking={booking} />
       <BookingInvoices booking={booking} />
     </div>
@@ -99,6 +110,19 @@ function SideColumn({
   );
 }
 
+// The booking with its lines, history and the notes of those lines; null when RLS does not show the booking. The notes
+// are an audited read, so they are asked for only when there are lines to show them on.
+async function loadBooking(bookingId: string) {
+  const [booking, addons, timeline] = await Promise.all([
+    getBookingDetail(bookingId),
+    listBookingAddons(bookingId),
+    listBookingTimeline(bookingId),
+  ]);
+  if (booking === null) return null;
+  const notes = addons.length > 0 ? await listAddonNotes(bookingId) : new Map<string, string>();
+  return { booking, addons, timeline, addonNotes: Object.fromEntries(notes) };
+}
+
 // Task P4.3.02, docs/PRD.md FR-ADMIN-05: one booking through v_booking_admin. RLS answers the scope: a booking outside
 // an RW admin's RW or window, or an id that names nothing, is the same 404 (docs/Security.md AZ-12).
 export default async function BookingDetailPage({ params }: BookingPageProps) {
@@ -106,12 +130,9 @@ export default async function BookingDetailPage({ params }: BookingPageProps) {
   if (!ctx) return null;
   const parsedId = idSchema.safeParse((await params).id);
   if (!parsedId.success) notFound();
-  const [booking, addons, timeline] = await Promise.all([
-    getBookingDetail(parsedId.data),
-    listBookingAddons(parsedId.data),
-    listBookingTimeline(parsedId.data),
-  ]);
-  if (booking === null) notFound();
+  const loaded = await loadBooking(parsedId.data);
+  if (loaded === null) notFound();
+  const { booking, addons, timeline, addonNotes } = loaded;
 
   return (
     <div className="flex flex-col gap-6">
@@ -124,7 +145,12 @@ export default async function BookingDetailPage({ params }: BookingPageProps) {
         action={<StatusBadge kind="booking_status" value={booking.status} />}
       />
       <div className="grid gap-6 lg:grid-cols-3">
-        <MainColumn booking={booking} addons={addons} />
+        <MainColumn
+          booking={booking}
+          addons={addons}
+          addonNotes={addonNotes}
+          isSuperadmin={ctx.role === 'superadmin'}
+        />
         <SideColumn booking={booking} timeline={timeline} />
       </div>
     </div>

@@ -6,6 +6,7 @@ import { requireRole, type StaffContext } from '@/server/auth/guards';
 import {
   getBookingParticipants,
   revealBookingContact,
+  revokeBookingTicket,
   saveAdminNotes,
   setAddonFulfillment,
 } from '@/server/services/booking-admin-service';
@@ -13,6 +14,7 @@ import {
 import {
   loadBookingParticipantsAction,
   revealBookingContactAction,
+  revokeTicketAction,
   saveAdminNotesAction,
   setAddonFulfillmentAction,
 } from './booking-admin';
@@ -23,6 +25,7 @@ vi.mock('@/server/auth/guards', () => ({ requireRole: vi.fn() }));
 vi.mock('@/server/services/booking-admin-service', () => ({
   getBookingParticipants: vi.fn(),
   revealBookingContact: vi.fn(),
+  revokeBookingTicket: vi.fn(),
   saveAdminNotes: vi.fn(),
   setAddonFulfillment: vi.fn(),
 }));
@@ -84,5 +87,36 @@ describe('the booking detail actions', () => {
       revealBookingContactAction({ bookingId: BOOKING_ID, reason: '' }),
     ).resolves.toMatchObject({ error: { code: 'VALIDATION' } });
     expect(revealBookingContact).not.toHaveBeenCalled();
+  });
+});
+
+describe('revokeTicketAction', () => {
+  const input = { bookingId: BOOKING_ID, ticketCode: 'GSK-7F3K9Q2M-05', reason: 'Salah cetak' };
+
+  it('is for the superadmin alone, at AAL2', async () => {
+    vi.mocked(requireRole).mockResolvedValueOnce(fail('FORBIDDEN'));
+    await expect(revokeTicketAction(input)).resolves.toMatchObject({
+      error: { code: 'FORBIDDEN' },
+    });
+    expect(requireRole).toHaveBeenCalledWith('superadmin');
+    expect(revokeBookingTicket).not.toHaveBeenCalled();
+  });
+
+  it('revokes with the reason and refreshes the booking', async () => {
+    vi.mocked(requireRole).mockResolvedValueOnce({
+      ok: true,
+      ctx: { ...OFFICER, role: 'superadmin', rwId: null },
+    });
+    await expect(revokeTicketAction(input)).resolves.toEqual({ ok: true, data: null });
+    expect(revokeBookingTicket).toHaveBeenCalledWith(input);
+    expect(revalidatePath).toHaveBeenCalledWith(`/dashboard/bookings/${BOOKING_ID}`);
+  });
+
+  it('refuses a code that is no ticket code', async () => {
+    await expect(
+      revokeTicketAction({ ...input, ticketCode: 'GSK-7F3K9Q2M' }),
+    ).resolves.toMatchObject({
+      error: { code: 'VALIDATION' },
+    });
   });
 });

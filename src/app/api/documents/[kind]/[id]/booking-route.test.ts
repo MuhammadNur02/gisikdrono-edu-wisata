@@ -5,7 +5,9 @@ import type { BookingDocument } from '@/server/services/booking-documents';
 import {
   bookingDocumentFile,
   readBookingDocument,
+  restrictedBookingDocumentFile,
   withinDocumentLimits,
+  withinRestrictedDocumentLimit,
 } from '@/server/services/document-service';
 
 import { GET } from './route';
@@ -19,6 +21,8 @@ vi.mock('@/server/services/document-service', () => ({
   withinDocumentLimits: vi.fn(),
   readBookingDocument: vi.fn(),
   bookingDocumentFile: vi.fn(),
+  restrictedBookingDocumentFile: vi.fn(),
+  withinRestrictedDocumentLimit: vi.fn(),
 }));
 
 const QUOTATION_ID = '0192f3a4-5b6c-7d8e-9f01-0000000000cc';
@@ -64,7 +68,9 @@ describe('GET /api/documents/quotation/[id]', () => {
     );
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(Buffer.from(await response.arrayBuffer())).toEqual(PDF);
-    expect(requireDocumentReader).toHaveBeenCalledWith('quotations', QUOTATION_ID, 'GSK-7F3K9Q2M');
+    expect(requireDocumentReader).toHaveBeenCalledWith('quotations', QUOTATION_ID, 'GSK-7F3K9Q2M', {
+      allowsRestricted: true,
+    });
     expect(bookingDocumentFile).toHaveBeenCalledWith(QUOTATION, null);
   });
 
@@ -122,5 +128,37 @@ describe('GET /api/documents/quotation/[id]', () => {
     vi.mocked(bookingDocumentFile).mockRejectedValue(new Error('font missing'));
     const response = await fetchDocument('receipt', QUOTATION_ID);
     expect(response.status).toBe(503);
+  });
+});
+
+describe('an RW admin and a booking document', () => {
+  const RESTRICTED = Buffer.from('%PDF-1.7 restricted');
+
+  beforeEach(() => {
+    vi.mocked(requireDocumentReader).mockResolvedValue({
+      ok: true,
+      reader: 'restricted',
+      userId: 'rw-1',
+    });
+    vi.mocked(withinRestrictedDocumentLimit).mockResolvedValue(true);
+    vi.mocked(restrictedBookingDocumentFile).mockResolvedValue(RESTRICTED);
+  });
+
+  it('gets the header-only copy under its own name and never the kept document', async () => {
+    const response = await fetchDocument('quotation', QUOTATION_ID);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-disposition')).toBe(
+      'inline; filename="quotation-SP-GSK-2026-10-0007-terbatas.pdf"',
+    );
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(RESTRICTED);
+    expect(withinRestrictedDocumentLimit).toHaveBeenCalledWith('rw-1');
+    expect(bookingDocumentFile).not.toHaveBeenCalled();
+  });
+
+  it('is limited per staff member after the per-booking limit', async () => {
+    vi.mocked(withinRestrictedDocumentLimit).mockResolvedValueOnce(false);
+    expect((await fetchDocument('quotation', QUOTATION_ID)).status).toBe(429);
+    expect(withinDocumentLimits).toHaveBeenCalledWith('203.0.113.7', BOOKING_ID);
+    expect(restrictedBookingDocumentFile).not.toHaveBeenCalled();
   });
 });

@@ -55,6 +55,14 @@ export const bookingsAdminCopy = {
     fulfillmentSaved: (product: string) => `Status pesanan "${product}" disimpan.`,
     quantity: (qty: number) => `${String(qty)} ×`,
     tickets: 'Tiket',
+    revokeTicket: 'Cabut tiket',
+    revokeTicketTitle: (code: string) => `Cabut tiket ${code}`,
+    revokeTicketDescription:
+      'Tiket yang dicabut tidak bisa dipakai di pintu masuk. Status reservasi tidak berubah; jika semua tiket dicabut, pemesan diberi tahu bahwa reservasinya batal.',
+    revokeTicketReasonHint:
+      'Tiga sampai 300 karakter. Alasan tersimpan pada tiket dan di log audit.',
+    ticketRevoked: (code: string) => `Tiket ${code} dicabut.`,
+    addonNote: (note: string) => `Catatan: ${note}`,
     ticketsEmpty: 'Belum ada tiket; tiket terbit setelah pembayaran lunas.',
     checkedIn: (checkedIn: number, unpaid: number) =>
       unpaid > 0

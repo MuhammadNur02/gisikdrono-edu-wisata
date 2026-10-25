@@ -8,12 +8,17 @@ import type { ActionFailure } from '@/types/action-result';
 
 // Who may read a booking's document (Task P3.6.04; docs/Security.md §10.3, DOC-01): the superadmin, at AAL2, whose
 // RLS lets them see the row, or the visitor holding the booking's own link cookie with at least the view scope.
-// Everything else is one NOT_FOUND, like every guest refusal. An RW admin is not a staff reader yet: the documents
-// print the whole snapshot (a combo's other RW, the add-ons, a discount), which 0005 withholds from them (STAFF-02),
-// so their redacted view comes with the booking detail of Task P4.3.02 (decision of 2026-10-23, review of PR #33).
+// Everything else is one NOT_FOUND, like every guest refusal. The documents print the whole snapshot (a combo's other
+// RW, the add-ons, a discount), which 0005 withholds from an RW admin (STAFF-02), so an RW admin at AAL2 whose RLS
+// shows the row reads the header-only copy alone (Task P4.3.02, decisions of 2026-10-23 on PR #33 and of 2026-10-26).
 
+// `restricted`: an RW admin, who is shown the header-only copy of a quotation, invoice or receipt (Task P4.3.02,
+// decision of 2026-10-26), never the full document.
 export type DocumentReader =
-  { ok: true; reader: 'staff'; userId: string } | { ok: true; reader: 'guest' } | ActionFailure;
+  | { ok: true; reader: 'staff'; userId: string }
+  | { ok: true; reader: 'restricted'; userId: string }
+  | { ok: true; reader: 'guest' }
+  | ActionFailure;
 
 // A ticket file is the booking's own, read through the staff view of bookings (Task P3.11.05); a certificate is its
 // own row (Task P4.5.02).
@@ -30,16 +35,35 @@ async function staffSeesRow(table: DocumentTable, rowId: string): Promise<boolea
   return data !== null;
 }
 
+// The kind of staff reader a role makes: the superadmin reads the document itself, an RW admin its header-only copy
+// where the route allows that; anyone else is no staff reader here.
+function staffReaderKind(role: string, allowsRestricted: boolean): 'staff' | 'restricted' | null {
+  if (role === 'superadmin') return 'staff';
+  return role === 'admin_rw' && allowsRestricted ? 'restricted' : null;
+}
+
+async function staffReaderOf(
+  table: DocumentTable,
+  rowId: string,
+  allowsRestricted: boolean,
+): Promise<DocumentReader | null> {
+  const staff = await requireUser();
+  if (!staff.ok || !staff.ctx.isAal2) return null;
+  const reader = staffReaderKind(staff.ctx.role, allowsRestricted);
+  if (reader === null || !(await staffSeesRow(table, rowId))) return null;
+  return { ok: true, reader, userId: staff.ctx.userId };
+}
+
+// `allowsRestricted`: the booking documents, which an RW admin may read as their header-only copy; the e-ticket keeps
+// its own rule (superadmin or the guest link).
 export async function requireDocumentReader(
   table: DocumentTable,
   rowId: string,
   bookingCode: string,
+  { allowsRestricted = false }: { allowsRestricted?: boolean } = {},
 ): Promise<DocumentReader> {
-  const staff = await requireUser();
-  const isSuperadmin = staff.ok && staff.ctx.role === 'superadmin' && staff.ctx.isAal2;
-  if (isSuperadmin && (await staffSeesRow(table, rowId))) {
-    return { ok: true, reader: 'staff', userId: staff.ctx.userId };
-  }
+  const staffReader = await staffReaderOf(table, rowId, allowsRestricted);
+  if (staffReader) return staffReader;
   const guest = await requireGuestToken(bookingCode, 'view');
   return guest.ok ? { ok: true, reader: 'guest' } : guest;
 }

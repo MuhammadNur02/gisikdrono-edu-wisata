@@ -9,6 +9,7 @@ import {
 import type { RwId } from '@/config/rw';
 import { DB_ENUMS } from '@/db/enums';
 import { rpcGetParticipants, rpcRevealBookingContact } from '@/db/rpc';
+import { revokeTicket, rpcGetAddonNotes } from '@/db/rpc-booking-admin';
 import { AppError, raisedHintOf } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import {
@@ -23,6 +24,7 @@ import type {
   AddonFulfillmentValues,
   AdminNotesValues,
   RevealContactValues,
+  RevokeTicketValues,
 } from '@/lib/validations/booking-admin';
 import { toBookingDetail, toBookingListRow } from '@/server/services/booking-admin-rows';
 import type {
@@ -148,8 +150,9 @@ export async function listBookingTimeline(bookingId: string): Promise<BookingTim
   }));
 }
 
-// What a refusal of the personal-data functions means to the officer; anything else is thrown on for mapError.
-function personalDataRefusal(error: unknown): AppError | null {
+// What a refusal of the staff RPCs means to the officer; anything else (STATE_INVALID among them) is thrown on for
+// mapError.
+function staffRpcRefusal(error: unknown): AppError | null {
   const code =
     typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
   if (code === INSUFFICIENT_PRIVILEGE) return new AppError('FORBIDDEN');
@@ -159,11 +162,11 @@ function personalDataRefusal(error: unknown): AppError | null {
   return null;
 }
 
-async function asPersonalDataStep<T>(run: () => Promise<T>): Promise<T> {
+async function asStaffRpcStep<T>(run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {
-    throw personalDataRefusal(error) ?? error;
+    throw staffRpcRefusal(error) ?? error;
   }
 }
 
@@ -171,14 +174,14 @@ async function asPersonalDataStep<T>(run: () => Promise<T>): Promise<T> {
 // daily cap of 50.
 export async function revealBookingContact(values: RevealContactValues): Promise<RevealedContact> {
   const supabase = await createSupabaseServerClient();
-  return asPersonalDataStep(() =>
+  return asStaffRpcStep(() =>
     rpcRevealBookingContact(supabase, { bookingId: values.bookingId, reason: values.reason }),
   );
 }
 
 export async function getBookingParticipants(bookingId: string): Promise<ParticipantEntry[]> {
   const supabase = await createSupabaseServerClient();
-  const participants = await asPersonalDataStep(() => rpcGetParticipants(supabase, bookingId));
+  const participants = await asStaffRpcStep(() => rpcGetParticipants(supabase, bookingId));
   return participants.map((participant) => ({
     seqNo: participant.seq_no,
     fullName: participant.full_name,
@@ -230,4 +233,31 @@ export async function setAddonFulfillment(values: AddonFulfillmentValues): Promi
     .maybeSingle();
   if (error) throw error;
   if (data === null) throw new AppError('STATE_INVALID');
+}
+
+// revoke_ticket (FR-ADMIN-26): the ticket of this booking with this code, as RLS shows it, then the superadmin's RPC,
+// which checks their role, AAL2 and the ticket's state again. The booking's own status is left as it is.
+export async function revokeBookingTicket(values: RevokeTicketValues): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('tickets_qr')
+    .select('id')
+    .eq('booking_id', values.bookingId)
+    .eq('ticket_code', values.ticketCode)
+    .maybeSingle();
+  if (error) throw error;
+  if (data === null) throw new AppError('NOT_FOUND');
+  await asStaffRpcStep(() => revokeTicket(supabase, { ticketId: data.id, reason: values.reason }));
+}
+
+// The visitor's notes on the caller's own RW's add-on lines, by line id (rpc_get_addon_notes, audited). Outside the
+// booking window the function refuses, and the lines are shown without their notes.
+export async function listAddonNotes(bookingId: string): Promise<Map<string, string>> {
+  const supabase = await createSupabaseServerClient();
+  try {
+    return await asStaffRpcStep(() => rpcGetAddonNotes(supabase, bookingId));
+  } catch (error) {
+    if (error instanceof AppError && error.code === 'FORBIDDEN') return new Map();
+    throw error;
+  }
 }

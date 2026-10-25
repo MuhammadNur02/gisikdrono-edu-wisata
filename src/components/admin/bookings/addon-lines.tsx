@@ -71,10 +71,12 @@ function FulfillmentSelect({
 function AddonLineItem({
   bookingId,
   line,
+  note,
   action,
 }: {
   bookingId: string;
   line: BookingAddonLine;
+  note: string | undefined;
   action: FulfillmentAction | null;
 }) {
   return (
@@ -85,6 +87,9 @@ function AddonLineItem({
           {text.quantity(line.qty)} {formatIDR(line.unitPrice)} = {formatIDR(line.lineTotal)} ·{' '}
           {rwLabel(line.rwId)}
         </span>
+        {note ? (
+          <span className="block text-body-sm whitespace-pre-line">{text.addonNote(note)}</span>
+        ) : null}
       </span>
       {line.fulfillmentStatus === 'cancelled' || action === null ? (
         <StatusBadge kind="addon_fulfillment_status" value={line.fulfillmentStatus} />
@@ -100,10 +105,13 @@ function AddonLineItem({
 export function AddonLines({
   bookingId,
   lines,
+  notes,
   action,
 }: {
   bookingId: string;
   lines: readonly BookingAddonLine[];
+  // The visitor's note on each line, by line id (rpc_get_addon_notes): the caller's own RW's lines, inside the window.
+  notes: Readonly<Record<string, string>>;
   // null on an anonymised booking: its lines are shown, not marked (review of PR #75, F-75-3).
   action: FulfillmentAction | null;
 }) {
@@ -117,7 +125,13 @@ export function AddonLines({
       ) : (
         <ul className="divide-y divide-border">
           {lines.map((line) => (
-            <AddonLineItem key={line.id} bookingId={bookingId} line={line} action={action} />
+            <AddonLineItem
+              key={line.id}
+              bookingId={bookingId}
+              line={line}
+              note={notes[line.id]}
+              action={action}
+            />
           ))}
         </ul>
       )}

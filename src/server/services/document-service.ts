@@ -21,6 +21,7 @@ import {
   type BookingDocument,
   type BookingDocumentKind,
 } from '@/server/services/booking-documents';
+import { restrictedDocumentPdf } from '@/server/services/booking-documents-restricted';
 import {
   certificatePdf,
   loadCertificate,
@@ -170,6 +171,20 @@ export async function bookingDocumentFile(
     siteUrl: publicEnv.NEXT_PUBLIC_SITE_URL,
     readerId,
   });
+}
+
+// An RW admin's header-only copy of a quotation, invoice or receipt (Task P4.3.02, decision of 2026-10-26): within
+// the staff member's own limit, rendered from the header facts alone and never kept.
+export function withinRestrictedDocumentLimit(
+  staffId: string,
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<boolean> {
+  return withinRateLimits(adminClient, [{ name: 'document_restricted:user', subject: staffId }]);
+}
+
+export async function restrictedBookingDocumentFile(document: BookingDocument): Promise<Buffer> {
+  const settings = await getPublicSiteSettings();
+  return restrictedDocumentPdf(document, settings.kelurahanAddress);
 }
 
 // A booking's e-ticket PDF (Task P3.11.05), by the booking id the route was given; the route authorises the reader

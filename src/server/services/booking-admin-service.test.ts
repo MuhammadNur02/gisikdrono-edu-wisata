@@ -5,8 +5,10 @@ import type { Database } from '@/db/types';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { loadListQuery } from '@/lib/utils/list-query';
 import {
+  listAddonNotes,
   listBookingsForStaff,
   revealBookingContact,
+  revokeBookingTicket,
   saveAdminNotes,
   setAddonFulfillment,
 } from '@/server/services/booking-admin-service';
@@ -140,5 +142,46 @@ describe('revealBookingContact', () => {
       Response.json({ code: 'P0001', hint: 'RATE_LIMITED', message: 'x' }, { status: 400 }),
     );
     await expect(revealBookingContact(values)).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+  });
+});
+
+describe('revokeBookingTicket', () => {
+  const TICKET_ID = '0192f3a4-5b6c-7d8e-9f01-0000000000dd';
+  const values = { bookingId: BOOKING_ID, ticketCode: 'GSK-7F3K9Q2M-05', reason: 'Salah cetak' };
+
+  it('finds the ticket of this booking by its code, then calls revoke_ticket with the reason', async () => {
+    const calls = sessionAnswering((path) =>
+      path.endsWith('/tickets_qr')
+        ? Response.json({ id: TICKET_ID })
+        : new Response(null, { status: 204 }),
+    );
+    await revokeBookingTicket(values);
+    expect(calls[0]?.search).toContain(`booking_id=eq.${BOOKING_ID}`);
+    expect(calls[0]?.search).toContain('ticket_code=eq.GSK-7F3K9Q2M-05');
+    expect(calls[1]?.path).toBe('/rest/v1/rpc/revoke_ticket');
+    expect(JSON.parse(calls[1]?.body ?? '{}')).toEqual({
+      p_ticket_id: TICKET_ID,
+      p_reason: 'Salah cetak',
+    });
+  });
+
+  it('answers NOT_FOUND for a code the booking has not and FORBIDDEN for an RW admin', async () => {
+    sessionAnswering(() => Response.json(null));
+    await expect(revokeBookingTicket(values)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    sessionAnswering((path) =>
+      path.endsWith('/tickets_qr')
+        ? Response.json({ id: TICKET_ID })
+        : Response.json({ code: '42501', message: 'x' }, { status: 403 }),
+    );
+    await expect(revokeBookingTicket(values)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});
+
+describe('listAddonNotes', () => {
+  it('reads the notes by line id, and none outside the booking window', async () => {
+    sessionAnswering(() => Response.json([{ addon_id: 'a-1', notes: 'Dibungkus' }]));
+    await expect(listAddonNotes(BOOKING_ID)).resolves.toEqual(new Map([['a-1', 'Dibungkus']]));
+    sessionAnswering(() => Response.json({ code: '42501', message: 'x' }, { status: 403 }));
+    await expect(listAddonNotes(BOOKING_ID)).resolves.toEqual(new Map());
   });
 });

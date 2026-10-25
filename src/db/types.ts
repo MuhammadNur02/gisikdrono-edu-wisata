@@ -4301,6 +4301,10 @@ export type Database = {
         Args: { p_certificate_id: string; p_reason: string }
         Returns: undefined
       }
+      revoke_ticket: {
+        Args: { p_reason: string; p_ticket_id: string }
+        Returns: undefined
+      }
       rpc_create_export: {
         Args: {
           p_filters: Json
@@ -4309,6 +4313,13 @@ export type Database = {
           p_reason: string
         }
         Returns: Json
+      }
+      rpc_get_addon_notes: {
+        Args: { p_booking_id: string }
+        Returns: {
+          addon_id: string
+          notes: string
+        }[]
       }
       rpc_get_participants: {
         Args: { p_booking_id: string }
