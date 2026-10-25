@@ -6,16 +6,17 @@ import { serverEnv } from '@/lib/env';
 import {
   recordProviderReports,
   recordSignatureFailure,
-  withinWebhookLimit,
+  withinSenderLimit,
 } from '@/server/services/provider-reports';
 
 import { POST } from './route';
 
 vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => ({}) }));
 vi.mock('@/server/services/provider-reports', () => ({
+  SENDER_LIMIT_OF: { whatsapp: 'webhook_whatsapp:ip', resend: 'webhook_resend:ip' },
   recordProviderReports: vi.fn(),
   recordSignatureFailure: vi.fn(),
-  withinWebhookLimit: vi.fn(),
+  withinSenderLimit: vi.fn(),
 }));
 
 const URL_BASE = 'http://localhost/api/webhooks/resend';
@@ -53,11 +54,11 @@ function post(body: string, headers: Record<string, string> = {}) {
 describe('POST /api/webhooks/resend', () => {
   beforeEach(() => {
     vi.useFakeTimers({ now: NOW, toFake: ['Date'] });
-    vi.mocked(withinWebhookLimit).mockReset().mockResolvedValue(true);
+    vi.mocked(withinSenderLimit).mockReset().mockResolvedValue(true);
     vi.mocked(recordSignatureFailure).mockReset().mockResolvedValue(undefined);
     vi.mocked(recordProviderReports)
       .mockReset()
-      .mockResolvedValue({ updated: 1, unchanged: 0, unknown: 0 });
+      .mockResolvedValue({ updated: 1, unchanged: 0, unknown: 0, freshUnknown: 0 });
   });
 
   afterEach(() => {
@@ -95,7 +96,7 @@ describe('POST /api/webhooks/resend', () => {
   });
 
   it('answers 429 past the rate limit, so Resend retries', async () => {
-    vi.mocked(withinWebhookLimit).mockResolvedValue(false);
+    vi.mocked(withinSenderLimit).mockResolvedValue(false);
     expect((await post(BOUNCE)).status).toBe(429);
     expect(recordProviderReports).not.toHaveBeenCalled();
   });
@@ -103,6 +104,23 @@ describe('POST /api/webhooks/resend', () => {
   it('answers 400 to a signed body of another shape and 413 to one over 64 KB', async () => {
     expect((await post('{"type":"email.bounced"}')).status).toBe(400);
     expect((await post(' '.repeat(65_537))).status).toBe(413);
+  });
+
+  it('answers 503 to a fresh report for an email it does not know yet, 200 to an older one', async () => {
+    vi.mocked(recordProviderReports).mockResolvedValueOnce({
+      updated: 0,
+      unchanged: 0,
+      unknown: 1,
+      freshUnknown: 1,
+    });
+    expect((await post(BOUNCE)).status).toBe(503);
+    vi.mocked(recordProviderReports).mockResolvedValueOnce({
+      updated: 0,
+      unchanged: 0,
+      unknown: 1,
+      freshUnknown: 0,
+    });
+    expect((await post(BOUNCE)).status).toBe(200);
   });
 
   it('answers 503 when the database is out of reach, so Resend retries', async () => {

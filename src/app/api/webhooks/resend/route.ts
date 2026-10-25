@@ -14,7 +14,8 @@ import { readJsonText } from '@/lib/utils/json-body';
 import {
   recordProviderReports,
   recordSignatureFailure,
-  withinWebhookLimit,
+  SENDER_LIMIT_OF,
+  withinSenderLimit,
 } from '@/server/services/provider-reports';
 
 export const runtime = 'nodejs';
@@ -22,8 +23,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 15;
 
 // Task P3.11.09 (docs/Security.md §10.2, EP-03, APP-12; decision OD-4): Resend's bounce and complaint reports, signed
-// the Svix way, informational only. Outside the auth middleware. 200 for processed, replayed, ignored and unknown
-// reports; 400, 413 and 415 for a malformed body; 403 for a missing, invalid or stale signature (CLAUDE.md §5.4); 429
+// the Svix way, informational only. Outside the auth middleware. 200 for processed, replayed and ignored reports and
+// for unknown ones older than five minutes, 503 for an unknown one younger than that; 400, 413 and 415 for a malformed body; 403 for a missing, invalid or stale signature (CLAUDE.md §5.4); 429
 // past the rate limit and 503 while the database is out of reach or the secret is not set, so Resend retries.
 
 const WEBHOOK_BODY_LIMIT_BYTES = 65_536;
@@ -62,8 +63,8 @@ function svixHeadersOf(headers: Headers) {
 async function receive(request: Request, log: Log): Promise<Response> {
   const adminClient = createSupabaseAdminClient();
   const clientIp = clientIpFrom(request.headers);
-  if (!(await withinWebhookLimit(adminClient, PROVIDER, clientIp))) {
-    log.info('rate_limited', { limit: 'webhook_resend:ip' });
+  if (!(await withinSenderLimit(adminClient, PROVIDER, clientIp))) {
+    log.info('rate_limited', { limit: SENDER_LIMIT_OF[PROVIDER] });
     return empty(HTTP_STATUS.tooManyRequests);
   }
   const body = await readJsonText(request, WEBHOOK_BODY_LIMIT_BYTES);
@@ -88,7 +89,8 @@ async function receive(request: Request, log: Log): Promise<Response> {
     report === null ? [] : [report],
   );
   log.info('provider_webhook', { provider: PROVIDER, ...counts });
-  return empty(HTTP_STATUS.ok);
+  // A status that arrived before the outbox recorded its message id: Resend sends it again after a 503.
+  return empty(counts.freshUnknown > 0 ? HTTP_STATUS.unavailable : HTTP_STATUS.ok);
 }
 
 export async function POST(request: Request): Promise<Response> {

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Request, type Response } from '@playwright/test';
 
 import {
   ADMIN_RW05,
@@ -15,6 +15,7 @@ import {
   SUPERADMIN,
 } from './helpers/staff';
 import { totpCode } from '../../scripts/dev-accounts';
+import { RW_SCOPE_COOKIE } from '../../src/config/dashboard';
 import { copy } from '../../src/lib/copy/id';
 
 // Task P2.8 (docs/Security.md §5, AUTH-03, AUTH-06, APP-05): staff reach the dashboard only with a password and a
@@ -26,8 +27,10 @@ test.describe.configure({ timeout: 120_000 });
 
 const createdAccounts: string[] = [];
 
-test.beforeAll(async () => {
-  await resetAuthLimits();
+// Only the desktop project resets the counters: every flow here runs there alone, and the phone-360 worker's reset
+// of this same file, landing in the middle of the lockout test, wiped its count (F-72-2 of the review of PR #72).
+test.beforeAll(async ({}, testInfo) => {
+  if (isDesktop(testInfo.project.name)) await resetAuthLimits();
 });
 
 test.afterAll(async () => {
@@ -37,6 +40,15 @@ test.afterAll(async () => {
 const isDesktop = (projectName: string) => projectName === 'desktop';
 // login:ip+email allows five tries in fifteen minutes; the sixth is refused before Supabase Auth is asked.
 const SIGN_IN_TRIES = 6;
+// The RW switch renders the whole dashboard again, figures and all, which a loaded CI runner takes longer for.
+const SWITCH_STEP = { timeout: 90_000 };
+// F-74-3: each wait has its own bound, and together they stay inside the test's own timeout (SWITCH_TEST_MS).
+const SETTLE_STEP = { timeout: 20_000 };
+// From before the click, so it covers the click's own wait for an enabled button (SETTLE_STEP) as well.
+const NO_POST_WAIT = { timeout: 30_000 };
+const SWITCH_TEST_MS = 240_000;
+const SWITCH_CLICKS = 2;
+const HTTP_OK = 200;
 
 const ENCODING_HEADERS = new Set(['content-encoding', 'content-length']);
 
@@ -109,40 +121,26 @@ async function sixWrongPasswords(page: Page, email: string, clientIp: string): P
   return answers;
 }
 
-// Other spec files reset every login:% counter in their beforeAll (resetAuthLimits), and one that starts in another
-// worker during these six tries wipes this run's count too, so the sixth then reads as an ordinary failure (#72's
-// first CI run). A run whose sixth answer is not the locked one is started again from a fresh IP, at most
-// LOCKOUT_RUNS times; a limiter that never locks fails every run, so the check keeps its teeth.
-const LOCKOUT_RUNS = 3;
-const LOCKOUT_TEST_MS = 300_000;
-
-async function lockoutRun(page: Page, email: string, ipPrefix: string): Promise<string[]> {
-  let answers: string[] = [];
-  for (let run = 1; run <= LOCKOUT_RUNS; run += 1) {
-    answers = await sixWrongPasswords(page, email, `${ipPrefix}.${String(run)}`);
-    if (answers[SIGN_IN_TRIES - 1]?.includes(copy.errors.RATE_LIMITED)) return answers;
-  }
-  return answers;
-}
+// Two addresses, six sign-ins each.
+const LOCKOUT_TEST_MS = 180_000;
 
 test('the sixth failed sign-in for an address gets the locked message, and an unknown address reads the same', async ({
   page,
 }, testInfo) => {
   test.skip(!isDesktop(testInfo.project.name), 'one run of the flow is enough');
-  // Two addresses, each up to LOCKOUT_RUNS runs of six sign-ins.
   test.setTimeout(LOCKOUT_TEST_MS);
   const account = await createAccount('admin_rw');
   createdAccounts.push(account.id);
   const failed = copy.auth.signIn.failed;
   const locked = copy.errors.RATE_LIMITED;
 
-  const known = await lockoutRun(page, account.email, '198.51.100');
+  const known = await sixWrongPasswords(page, account.email, '198.51.100.1');
   for (const answer of known.slice(0, SIGN_IN_TRIES - 1)) expect(answer).toContain(failed);
   expect(known[SIGN_IN_TRIES - 1]).toContain(locked);
   expect(known[SIGN_IN_TRIES - 1]).not.toContain(failed);
   await expect(page.getByText(locked)).toBeVisible(AUTH_STEP);
 
-  const unknown = await lockoutRun(page, `nobody-${randomUUID()}@example.test`, '198.51.101');
+  const unknown = await sixWrongPasswords(page, `nobody-${randomUUID()}@example.test`, '198.51.101.1');
   for (const answer of unknown.slice(0, SIGN_IN_TRIES - 1)) expect(answer).toContain(failed);
   expect(unknown[SIGN_IN_TRIES - 1]).toContain(locked);
   await expect(page).toHaveURL(/\/login/, AUTH_STEP);
@@ -165,10 +163,44 @@ test('a password alone opens nothing: the AAL1 session is sent to the TOTP step'
   await expect(page).toHaveURL('/dashboard/profile', AUTH_STEP);
 });
 
+// The switch's own answer is the Server Action response that sets the rw_scope cookie, so another action on the page
+// (F-74-2 of the review of PR #74) never stands in for it.
+function isRwScopeAnswer(response: Response): Promise<boolean> | boolean {
+  if (response.request().method() !== 'POST') return false;
+  if (response.request().headers()['next-action'] === undefined) return false;
+  return response
+    .headerValue('set-cookie')
+    .then((cookie) => cookie?.includes(`${RW_SCOPE_COOKIE}=`) ?? false);
+}
+
+function isServerActionPost(request: Request): boolean {
+  return request.method() === 'POST' && request.headers()['next-action'] !== undefined;
+}
+
+// A click that lands before the button hydrated sends nothing (F-74-1), so a click no POST followed within
+// NO_POST_WAIT is made once more, at most SWITCH_CLICKS in all. A POST that was sent is only waited for.
+async function switchRw(page: Page, button: Locator): Promise<{ answer: Response; clicks: number }> {
+  const answer = page.waitForResponse(isRwScopeAnswer, SWITCH_STEP);
+  // Awaited below; this only keeps a timeout during the clicks from reading as an unhandled rejection.
+  answer.catch(() => undefined);
+  let clicks = 0;
+  while (clicks < SWITCH_CLICKS) {
+    const sent = page.waitForRequest(isServerActionPost, NO_POST_WAIT).then(
+      () => true,
+      () => false,
+    );
+    await button.click(SETTLE_STEP);
+    clicks += 1;
+    if (await sent) break;
+  }
+  return { answer: await answer, clicks };
+}
+
 test('the superadmin sees every group and the RwSwitcher, and signing out ends the session', async ({
   page,
 }, testInfo) => {
   test.skip(!isDesktop(testInfo.project.name), 'one run of the flow is enough');
+  test.setTimeout(SWITCH_TEST_MS);
   await signInToDashboard(page, SUPERADMIN);
   const sidebar = page.getByRole('navigation', { name: 'Menu dasbor' });
 
@@ -178,11 +210,22 @@ test('the superadmin sees every group and the RwSwitcher, and signing out ends t
   const rw05 = page.getByRole('group', { name: 'Tampilkan data' }).getByRole('button', {
     name: 'RW 05',
   });
-  // A click can land before the switcher has hydrated; choosing the same scope again changes nothing.
-  await expect(async () => {
-    await rw05.click();
-    await expect(rw05).toHaveAttribute('aria-pressed', 'true', { timeout: 5_000 });
-  }).toPass(AUTH_STEP);
+  // The switch's Server Action answers with the whole dashboard rendered again for RW 05, and its button stays
+  // disabled until that render has arrived, the overview's figures included. Clicking while the first figures were
+  // still streaming, then re-clicking a button that was only waiting, timed out under CI load. So: the first
+  // overview in full, the page settled (hydrated), a click, and the action's own answer before the state.
+  await expect(page.getByRole('region', { name: copy.dashboard.overview.kpiLabel })).toBeVisible(
+    AUTH_STEP,
+  );
+  await page.waitForLoadState('networkidle', SETTLE_STEP);
+  const clickedAt = Date.now();
+  const { answer, clicks } = await switchRw(page, rw05);
+  testInfo.annotations.push({
+    type: 'rw-switch',
+    description: `HTTP ${String(answer.status())} after ${String(Date.now() - clickedAt)} ms, ${String(clicks)} click(s)`,
+  });
+  expect(answer.status()).toBe(HTTP_OK);
+  await expect(rw05).toHaveAttribute('aria-pressed', 'true', AUTH_STEP);
 
   await page.getByRole('button', { name: 'Keluar' }).click();
   await expect(page).toHaveURL('/login', AUTH_STEP);
