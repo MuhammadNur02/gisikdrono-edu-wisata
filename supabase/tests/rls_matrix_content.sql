@@ -2,7 +2,7 @@
 -- reviews and v_public_reviews (docs/PRD.md §8.5.2, Task P1.4.02, P1.4.03, P1.4.06, P1.9.02). Every check runs as
 -- an API role.
 begin;
-select plan(42);
+select plan(44);
 \ir helpers/rls_personas.psql
 
 insert into public.galleries (id, rw_id, category, storage_path, alt_text, caption, status) values
@@ -118,7 +118,10 @@ select throws_ok($$insert into public.galleries (rw_id, category, storage_path, 
 select throws_ok($$insert into public.galleries (rw_id, category, storage_path, alt_text, uploaded_by)
   values (8, 'activity', 'rw-08/gallery/baru.webp', 'Foto baru', '00000000-0000-4000-8000-00000000f005')$$,
   '42501', null, 'nor uploaded to RW 08');
-select is(pg_temp.row_count($$delete from public.galleries where caption = 'g5d'$$), 1, 'and removes their own gallery item');
+select is(pg_temp.row_count($$update public.galleries set status = 'archived' where caption = 'g5d'$$), 1,
+  'archives their own gallery item');
+select is(pg_temp.row_count($$delete from public.galleries where caption = 'g5d'$$), 1,
+  'and removes it once archived (20261028080100)');
 select is((select string_agg(slug, ',' order by slug) from public.articles where pg_temp.is_fixture_content(id)),
   'a5,a5d', 'their own RW''s articles');
 select lives_ok($$insert into public.articles (rw_id, slug, title, status, author_id)
@@ -136,8 +139,10 @@ select is((select count(*)::int from public.hero_banners where title in ('On', '
   'sees no hero banner, which is the superadmin''s');
 select throws_ok($$insert into public.hero_banners (title, image_path, created_by)
   values ('Milik RW', 'kelurahan/hero/h.webp', '00000000-0000-4000-8000-00000000f005')$$, '42501', null, 'nor adds one');
+select is(pg_temp.row_count($$update public.activity_points set status = 'archived' where slug = 'ap5'$$), 1,
+  'archives their own activity point');
 select is(pg_temp.row_count($$delete from public.activity_points where slug = 'ap5'$$), 1,
-  'removes their own activity point');
+  'and removes it once archived (20261028080100)');
 select is((select count(*)::int from public.performance_schedules where title in ('Lokakarya RW 05', 'Tari RW 08')), 1,
   'sees their own RW''s schedule only');
 select lives_ok($$insert into public.performance_schedules (rw_id, title, schedule_type, starts_at, ends_at, package_id,

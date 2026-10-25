@@ -1,16 +1,13 @@
 import 'server-only';
 
 import type { RwId } from '@/config/rw';
+import { savePackage } from '@/db/rpc-catalog';
 import type { Json } from '@/db/types';
 import { packagesCopy } from '@/lib/copy/packages';
 import { AppError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { planTierWrites, tiersOverlap, type StoredTier } from '@/lib/utils/package-tiers';
-import type {
-  PackageValues,
-  PriceTierValues,
-  UpdatePackageValues,
-} from '@/lib/validations/package';
+import { tiersOverlap } from '@/lib/utils/package-tiers';
+import type { PackageValues, UpdatePackageValues } from '@/lib/validations/package';
 import type { StaffContext } from '@/server/auth/guards';
 import { rowOrNotFound } from '@/server/services/content-errors';
 import { removeFilesOrLog } from '@/server/services/content-files';
@@ -19,14 +16,12 @@ import { keepRowPhotos } from '@/server/services/upload-service';
 import type { CleanedUp } from '@/types/cms';
 import type { PackageAdmin } from '@/types/package';
 
-// Package writes through the session client (Task P4.3.05, docs/PRD.md FR-ADMIN-05, REC-13, REC-14). The triggers
-// write an RW package's single leg, keep a combo the superadmin's and off sale until it visits two RWs, hold the price
-// floor and record every price change. A combo's legs are not written here: 0005 grants no API role the columns an
-// upsert of a leg sets, so they wait for the save_package RPC (Task P4.3.11), which also makes a save atomic. Until
-// then the tiers go first, in an order that never trips the exclusion index, and the package columns after them.
-// Prices are integer rupiah as typed; nothing here computes a total (CLAUDE.md §7.1).
-
-type Supabase = Awaited<ReturnType<typeof createSupabaseServerClient>>;
+// Package writes through save_package (Task P4.3.05, P4.3.11; docs/PRD.md FR-ADMIN-05, REC-13, REC-14): the package,
+// its tiers and its status in one transaction on the session client, so the grants, policies and triggers decide as
+// they did for the direct writes before it: an RW package keeps its single leg, a combo stays the superadmin's and off
+// sale until it visits two RWs, the price floor holds and every price change is recorded. A combo's legs are kept as
+// they are until the legs editor sends them (legRwIds null). Prices are integer rupiah as typed; nothing here computes
+// a total (CLAUDE.md §7.1).
 
 function itineraryJson(values: PackageValues): Json {
   return values.itinerary.map((step, index) => ({
@@ -38,8 +33,10 @@ function itineraryJson(values: PackageValues): Json {
   }));
 }
 
-function columnsOf(values: PackageValues, updatedBy: string) {
+// Every field save_package takes but rw_id, which only a new package names.
+function fieldsOf(values: PackageValues & { category: string }): Record<string, Json> {
   return {
+    category: values.category,
     slug: values.slug,
     name: values.name,
     tagline: values.tagline,
@@ -59,48 +56,27 @@ function columnsOf(values: PackageValues, updatedBy: string) {
     sort_order: values.sortOrder,
     valid_from: values.validFrom,
     valid_to: values.validTo,
-    updated_by: updatedBy,
   };
 }
 
-function tierColumns(tier: { minPax: number; maxPax: number | null; pricePerPax: number }) {
-  return { min_pax: tier.minPax, max_pax: tier.maxPax, price_per_pax: tier.pricePerPax };
-}
-
-async function updateTier(supabase: Supabase, packageId: string, tier: StoredTier) {
-  const { error } = await supabase
-    .from('tour_package_price_tiers')
-    .update(tierColumns(tier))
-    .eq('id', tier.id)
-    .eq('package_id', packageId)
-    .select('id')
-    .single();
-  if (error) throw packageErrorOr(error);
-}
-
-// Deletes, then narrowed tiers, then widened ones and new ones (planTierWrites), so a valid final set never overlaps
-// mid-way. The set is checked first, before anything is written.
-async function syncTiers(
-  packageId: string,
-  tiers: PriceTierValues[],
-  stored: readonly StoredTier[],
-) {
-  if (tiersOverlap(tiers)) throw new AppError('CONFLICT', packagesCopy.errors.tierOverlap);
-  const plan = planTierWrites(stored, tiers);
-  const supabase = await createSupabaseServerClient();
-  for (const id of plan.deletes) {
-    const { error } = await supabase
-      .from('tour_package_price_tiers')
-      .delete()
-      .eq('id', id)
-      .eq('package_id', packageId);
-    if (error) throw packageErrorOr(error);
+async function save(
+  packageId: string | null,
+  fields: Record<string, Json>,
+  values: PackageValues,
+): Promise<string> {
+  if (tiersOverlap(values.priceTiers)) {
+    throw new AppError('CONFLICT', packagesCopy.errors.tierOverlap);
   }
-  for (const tier of [...plan.shrinks, ...plan.grows]) await updateTier(supabase, packageId, tier);
-  for (const tier of plan.inserts) {
-    const row = { package_id: packageId, ...tierColumns(tier) };
-    const { error } = await supabase.from('tour_package_price_tiers').insert(row);
-    if (error) throw packageErrorOr(error);
+  try {
+    const supabase = await createSupabaseServerClient();
+    return await savePackage(supabase, {
+      packageId,
+      fields,
+      legRwIds: null,
+      tiers: values.priceTiers,
+    });
+  } catch (error) {
+    throw error instanceof Error ? packageErrorOr(error) : error;
   }
 }
 
@@ -116,40 +92,21 @@ async function keepOnlyPackagePhotos(
   return { value: pkg, filesRemoved };
 }
 
-// owner: the RW of an RW package, null for a combo (tour_packages_owner_ok). The row needs its id before its tiers.
+// owner: the RW of an RW package, null for a combo (tour_packages_owner_ok).
 export async function createPackage(
-  ctx: StaffContext,
   owner: RwId | null,
   values: PackageValues,
 ): Promise<PackageAdmin> {
-  if (tiersOverlap(values.priceTiers)) {
-    throw new AppError('CONFLICT', packagesCopy.errors.tierOverlap);
-  }
-  const row = {
-    rw_id: owner,
-    category: values.category,
-    created_by: ctx.userId,
-    ...columnsOf(values, ctx.userId),
-  };
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.from('tour_packages').insert(row).select('id').single();
-  if (error) throw packageErrorOr(error);
-  await syncTiers(data.id, values.priceTiers, []);
-  return rowOrNotFound(await readPackageForStaff(data.id));
+  const id = await save(null, { ...fieldsOf(values), rw_id: owner }, values);
+  return rowOrNotFound(await readPackageForStaff(id));
 }
 
-// Tiers first: a refused tier leaves the package's own columns and price as they were.
+// The category travels with the other columns (a combo stays the superadmin's, trigger).
 export async function updatePackage(
   ctx: StaffContext,
-  current: PackageAdmin,
   values: UpdatePackageValues,
 ): Promise<CleanedUp<PackageAdmin>> {
-  await syncTiers(values.id, values.priceTiers, current.priceTiers);
-  // Every column is named by columnsOf; the category travels with them (a combo stays the superadmin's, trigger).
-  const columns = { category: values.category, ...columnsOf(values, ctx.userId) };
-  const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.from('tour_packages').update(columns).eq('id', values.id);
-  if (error) throw packageErrorOr(error);
+  await save(values.id, fieldsOf(values), values);
   return keepOnlyPackagePhotos(ctx, rowOrNotFound(await readPackageForStaff(values.id)));
 }
 

@@ -2,7 +2,6 @@
 // module because src/lib/copy/id.ts is at the 300-line cap of CLAUDE.md §4; the same rules apply (Indonesian, one
 // key per string).
 export const mapCopy = {
-  planTitle: 'Denah kampung',
   // Spoken for the plan as a whole; each hotspot carries its own name.
   planLabel: 'Denah titik aktivitas Kelurahan Gisikdrono',
   // Under the plan until the kelurahan's own drawing replaces the schematic (open decision D2).
@@ -15,29 +14,20 @@ export const mapCopy = {
   planEmptyTitle: 'Titik aktivitas belum ditambahkan',
   planEmptyDescription:
     'Denah titik aktivitas akan tampil di sini setelah pengelola kampung menambahkan titik aktivitasnya.',
-  pointsTitle: 'Daftar titik aktivitas',
   gallery: 'Lihat di galeri',
   route: 'Rute',
   // The route link of a point in the list, named for a screen reader.
   routeTo: (name: string) => `Rute ke ${name}`,
   routeToOffice: 'Rute di Google Maps',
   // The RW area map of /peta-kontak, drawn from the kelurahan's "Peta RW Wilayah Gisikdrono 2024".
-  areaTitle: 'Peta wilayah RW',
-  areaDescription:
-    'Tiga belas RW Kelurahan Gisikdrono. Kampung eduwisata diberi warna; pilih wilayah di peta atau di daftar untuk melihat program dan titik aktivitasnya.',
   areaLabel: 'Peta wilayah RW Kelurahan Gisikdrono',
   areaListEdu: 'Kampung eduwisata',
   areaListOther: 'RW lainnya',
   areaRwPage: (name: string) => `Buka halaman ${name}`,
   areaRouteTo: (label: string) => `Rute ke ${label} di Google Maps`,
-  areaPoints: 'Titik aktivitas',
   areaNoPoints: 'Titik aktivitas RW ini belum ditambahkan.',
   areaNotEdu: 'Wilayah ini belum memiliki program kunjungan edukasi di situs ini.',
   legendLabel: 'Keterangan peta',
-  legendOtherRw: 'RW lain',
-  legendBoundary: 'Batas kelurahan',
-  legendOffice: 'Kantor kelurahan',
-  legendPoint: 'Titik aktivitas (warna mengikuti RW)',
   // The credit the kelurahan's map needs wherever its boundaries are drawn (scripts/convert-rw-kml.ts).
   areaSource: 'Batas RW: Peta RW Wilayah Gisikdrono 2024, Kelurahan Gisikdrono',
   // Under the map while a drawn point still holds its estimated position (src/lib/utils/map-estimates.ts), and the
@@ -49,16 +39,36 @@ export const mapCopy = {
   geoZoomOut: 'Perkecil peta',
   geoReset: 'Tampilkan seluruh kelurahan',
   // The OpenStreetMap tiles need their credit next to the map (OSM tile usage policy).
-  osmCredit: 'Peta',
   osmContributors: 'kontributor OpenStreetMap',
+  googleEyebrow: 'Lokasi',
   googleTitle: 'Lokasi di Google Maps',
   showGoogle: 'Tampilkan Google Maps',
   // Pressing the button loads Google's frame, so the visitor knows whose it is before it loads.
   googleHint: 'Peta dari Google dimuat setelah tombol ditekan.',
   googleFrame: 'Peta Google Maps Kelurahan Gisikdrono',
-  contactTitle: 'Hubungi kami',
-  contactWhatsApp: 'WhatsApp',
-  contactEmail: 'Email',
-  contactAddress: 'Alamat kantor',
-  allRws: 'Halaman kampung',
+  // The redesigned /peta-kontak (DESIGN-SPEC §3.9).
+  pageLead:
+    'Tiga kampung edukasi di Kelurahan Gisikdrono, Semarang Barat. Lihat titik aktivitas, rute, dan cara menghubungi pengelola.',
+  viewLabel: 'Tampilan peta',
+  viewAreas: 'Peta wilayah',
+  viewPlan: 'Denah aktivitas',
+  rwPage: (label: string) => `Halaman ${label}`,
+  legendPoints: (label: string, count: number) => `${label} · ${String(count)} titik`,
+  pointsListEyebrow: 'Daftar titik aktivitas',
+  pointsListTitle: 'Semua titik, tanpa harus membuka peta',
+  pointsListDescription: 'Posisi di peta masih perkiraan dan menunggu konfirmasi kelurahan.',
+  locate: (name: string) => `Tunjukkan ${name} di peta`,
+  addressTitle: 'Alamat & arah',
+  artsStreet: (shortName: string, street: string, label: string) =>
+    `${shortName}: ${street}, ${label}`,
+  meetingPoint: 'Titik kumpul rombongan tercantum di tiket QR.',
+  openGoogle: 'Buka di Google Maps',
+  chatTitle: 'Chat pengelola edu wisata',
+  chatBody:
+    'Tanya jadwal, rombongan besar, atau kebutuhan khusus peserta. Pesan pembuka sudah disiapkan:',
+  sessionsTitle: 'Sesi kunjungan',
+  sessionDays: 'Hari',
+  sessionCapacity: 'Kapasitas',
+  sessionCapacityValue: (seats: number) => `${String(seats)} orang per sesi`,
+  sessionsNote: 'Sesi tutup pada hari libur yang diumumkan pengelola.',
 } as const;

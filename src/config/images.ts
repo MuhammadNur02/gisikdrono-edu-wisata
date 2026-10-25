@@ -21,8 +21,6 @@ export const IMAGE_SIZES = {
   prose: '(min-width: 768px) 680px, 100vw',
   // Edge to edge, past the container: the home hero and the photo band (decision of 2026-10-23).
   bleed: '100vw',
-  // A photo of the home gallery strip: a third of the row from lg, half from sm, most of a phone's width below.
-  slide: '(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 85vw',
   // The large first tile of the home RW mosaic, seven of the twelve columns from lg.
   bento: '(min-width: 1024px) 58vw, 100vw',
   // The small photo of a dashboard list row or card (Task P4.3.03), size-16 in the StyleGuide's scale.

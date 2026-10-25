@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { DB_ENUMS, type EnumValue } from '@/db/enums';
 import { resultOf, type DatabaseClient } from '@/db/rpc-result';
 
-// Typed calls to the visit-terms functions (supabase/migrations/20261030080100_visit_terms_functions.sql; docs/PRD.md
+// Typed calls to the visit-terms functions (supabase/migrations/20261102080100_visit_terms_functions.sql; docs/PRD.md
 // §13.1 A16–A18), on the service-role client booking-service.ts and payment-service.ts hand in (CLAUDE.md §6.1). Every
 // amount is integer rupiah.
 

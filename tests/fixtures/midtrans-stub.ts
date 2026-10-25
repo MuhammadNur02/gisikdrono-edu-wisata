@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
+import { midtransTime } from '../../scripts/midtrans-notification';
+
 // A stand-in for Midtrans on this machine (decision of 2026-10-24, Q3): the integration and e2e runs point
 // MIDTRANS_LOCAL_STUB_URL here, since their sandbox keys are fake and a simulated settlement must pass the Status API
 // re-check. It serves what src/lib/midtrans/client.ts calls (Snap's transactions, an order's status, its expiry) and a
@@ -63,8 +65,8 @@ export function statusBodyOf(order: StubOrder): Record<string, unknown> {
     currency: 'IDR',
     payment_type: order.paymentType ?? 'bank_transfer',
     va_numbers: [{ bank: 'bca', va_number: '12345678901' }],
-    transaction_time: '2026-10-24 09:00:00',
-    ...(status === 'settlement' ? { settlement_time: '2026-10-24 09:05:00' } : {}),
+    transaction_time: midtransTime(),
+    ...(status === 'settlement' ? { settlement_time: midtransTime() } : {}),
     ...(order.refundAmount === undefined
       ? {}
       : { refund_amount: String(order.refundAmount) + '.00' }),

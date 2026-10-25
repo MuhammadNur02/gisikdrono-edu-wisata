@@ -1,3 +1,4 @@
+import { ArrowRight, MapPin } from 'lucide-react';
 import Link from 'next/link';
 
 import { KawungDivider } from '@/components/layout/kawung-divider';
@@ -5,74 +6,79 @@ import { SectionShell } from '@/components/layout/section';
 import { Button } from '@/components/ui/button';
 import { BOOKING_CTA } from '@/config/nav';
 import { siteConfig } from '@/config/site';
-import type { HeroBanner } from '@/types/banner';
+import { homeCopy } from '@/lib/copy/home';
 
 const HEADING_ID = 'tentang-gisikdrono-judul';
-// Shown until the kelurahan uploads a banner, whose title then heads the introduction.
-const FALLBACK_HEADING = 'Kampung yang menjadi ruang belajar';
-const SECONDARY_CTA_LABEL = 'Lihat Paket';
-// The first line of the address block, as dusunbambu.id puts its region above the street.
-const REGION_LINE = `${siteConfig.locality.city}, Indonesia`;
-
-// What a first-time visitor needs before choosing a kampung (docs/PRD.md §1): the three programmes and who books them.
-const INTRO_PARAGRAPHS = [
-  'Gisikdrono adalah kelurahan di Semarang Barat yang menjadikan kampungnya ruang belajar terbuka. Di RW 05 Ecowastreme, Anda melihat langsung cara warga memilah sampah di Bank Sampah, mengolahnya menjadi kompos dan pakan maggot, lalu menghidupkan kebun sayur dan kerajinan daur ulang karya ibu-ibu PKK.',
-  'Di RW 13 Kampung Budaya & Seni, sanggar anak menghadirkan tari tradisional dan dolanan, permainan anak khas Jawa, yang bisa Anda coba bersama mereka. RW 08 Kampung Inklusif & Ramah Anak memperkenalkan Semar Cakep, layanan inklusif bagi kelompok rentan dan penyandang disabilitas. Sekolah, kampus, instansi, maupun keluarga dapat memilih paket kunjungan yang sesuai, lalu memesannya langsung di sini.',
-] as const;
+// `SEMARANG BARAT · KOTA SEMARANG · JAWA TENGAH`: the region over the address (DESIGN-SPEC §3.1).
+const REGION_LINE = [
+  siteConfig.locality.district.replace('Kecamatan ', ''),
+  siteConfig.locality.city,
+  siteConfig.locality.province,
+].join(' · ');
 
 export interface HomeIntroProps {
   id: string;
-  // The first hero banner: its title heads the section and its button, when set, is the primary action.
-  banner?: HeroBanner;
   // Where `Lihat Paket` scrolls to; left out when the page has no featured packages.
   packagesAnchor?: string;
   // site_settings `kelurahan.address`; NULL while it is still the seeded sample.
   address: string | null;
 }
 
-function IntroActions({
-  banner,
-  packagesAnchor,
-}: Pick<HomeIntroProps, 'banner' | 'packagesAnchor'>) {
-  const primary =
-    banner?.ctaLabel && banner.ctaHref
-      ? { label: banner.ctaLabel, href: banner.ctaHref }
-      : { label: BOOKING_CTA.label, href: BOOKING_CTA.href };
-  // Below md the pair stacks at full width, the one place a button may (docs/StyleGuide.md §5.1).
+// Below sm the pair stacks at full width (DESIGN-SPEC §3.1).
+function IntroActions({ packagesAnchor }: Pick<HomeIntroProps, 'packagesAnchor'>) {
   return (
-    <div className="flex flex-col gap-3 pt-2 md:flex-row md:flex-wrap">
-      <Button size="xl" asChild>
-        <Link href={primary.href}>{primary.label}</Link>
+    <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:flex-wrap">
+      <Button size="lg" asChild>
+        <Link href={BOOKING_CTA.href}>
+          {BOOKING_CTA.label}
+          <ArrowRight data-icon="trailing" aria-hidden />
+        </Link>
       </Button>
       {packagesAnchor ? (
-        <Button size="xl" variant="outline" asChild>
-          <Link href={`#${packagesAnchor}`}>{SECONDARY_CTA_LABEL}</Link>
+        <Button size="lg" variant="outline" asChild>
+          <Link href={`#${packagesAnchor}`}>{homeCopy.intro.secondaryCta}</Link>
         </Button>
       ) : null}
     </div>
   );
 }
 
-// The introduction under the hero (redesign of 2026-10-24, after dusunbambu.id): the photo carries one statement
-// only, and the words about the place, where it is and the two buttons follow here. Its arc is painted over the
-// photo's lower edge. Nothing reveals: it sits in the first screen.
-export function HomeIntro({ id, banner, packagesAnchor, address }: HomeIntroProps) {
+function IntroLocation({ address }: Pick<HomeIntroProps, 'address'>) {
+  return (
+    <address className="reveal space-y-2 border-t border-border pt-5 not-italic">
+      <p className="text-meta-caps text-rw05">{REGION_LINE}</p>
+      <p className="flex gap-2 text-body-md text-ink-2">
+        <MapPin aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        {address ?? siteConfig.ownerName}
+      </p>
+    </address>
+  );
+}
+
+// The introduction under the hero (DESIGN-SPEC §3.1): the heading on the left; the two paragraphs, the location and
+// the buttons on the right; then the batik divider. Its arc is painted over the photo's lower edge. The parts fade up
+// one after another as they come into view.
+export function HomeIntro({ id, packagesAnchor, address }: HomeIntroProps) {
   return (
     <SectionShell id={id} labelledBy={HEADING_ID} wave={{ variant: 'arc' }}>
-      <div className="max-w-4xl space-y-6">
-        <h2 id={HEADING_ID} className="text-h2 text-balance">
-          {banner?.title ?? FALLBACK_HEADING}
-        </h2>
-        {INTRO_PARAGRAPHS.map((paragraph) => (
-          <p key={paragraph} className="text-body-lg text-pretty">
-            {paragraph}
+      <div className="-mt-8 grid gap-6 md:-mt-10 lg:-mt-18 lg:grid-cols-2 lg:gap-x-24">
+        <div className="space-y-4 reveal-stagger">
+          <p className="flex reveal items-center gap-3 text-eyebrow text-primary-ink">
+            <span aria-hidden className="h-0.5 w-7 bg-primary" />
+            {homeCopy.intro.eyebrow}
           </p>
-        ))}
-        <address className="space-y-1 pt-2 text-body font-semibold not-italic">
-          <p>{REGION_LINE}</p>
-          <p>{address ?? siteConfig.ownerName}</p>
-        </address>
-        <IntroActions banner={banner} packagesAnchor={packagesAnchor} />
+          <h2 id={HEADING_ID} className="reveal text-intro">
+            {homeCopy.intro.title}
+          </h2>
+        </div>
+        <div className="space-y-5 reveal-stagger lg:pt-3">
+          <p className="reveal text-body-lg text-pretty text-ink-2">{homeCopy.intro.lead}</p>
+          <p className="reveal text-body text-pretty text-ink-2">{homeCopy.intro.body}</p>
+          <IntroLocation address={address} />
+          <div className="reveal">
+            <IntroActions packagesAnchor={packagesAnchor} />
+          </div>
+        </div>
       </div>
       <KawungDivider className="mt-14 md:mt-18" />
     </SectionShell>

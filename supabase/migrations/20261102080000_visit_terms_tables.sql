@@ -1,6 +1,6 @@
 -- Task P3.12.01–P3.12.02 with the owner's visit terms (docs/PRD.md §13.1 A16–A18, FR-BOOK-23..25; decisions of
 -- 2026-10-25): the rows a paid cancellation, a weather notice and a weather refund leave behind, and the settings their
--- rules read. The functions that write them follow in 20261030080100.
+-- rules read. The functions that write them follow in 20261102080100.
 
 
 -- ===== Settings (CLAUDE.md §4 rule 3: tunable values live in site_settings) =====
