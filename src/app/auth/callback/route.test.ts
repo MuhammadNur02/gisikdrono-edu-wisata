@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { openRecoverySession } from '@/server/services/auth-service';
+import { openEmailLinkSession } from '@/server/services/auth-service';
 import { withinAuthCallbackLimit } from '@/server/services/staff-service';
 
 import { GET } from './route';
 
-vi.mock('@/server/services/auth-service', () => ({ openRecoverySession: vi.fn() }));
+vi.mock('@/server/services/auth-service', () => ({ openEmailLinkSession: vi.fn() }));
 vi.mock('@/server/services/staff-service', () => ({ withinAuthCallbackLimit: vi.fn() }));
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
@@ -21,7 +21,7 @@ function open(query: string): Promise<Response> {
 }
 
 beforeEach(() => {
-  vi.mocked(openRecoverySession).mockReset().mockResolvedValue(true);
+  vi.mocked(openEmailLinkSession).mockReset().mockResolvedValue(true);
   vi.mocked(withinAuthCallbackLimit).mockReset().mockResolvedValue(true);
 });
 
@@ -31,12 +31,21 @@ describe('GET auth/callback', () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get('Location')).toBe('/reset-password');
-    expect(openRecoverySession).toHaveBeenCalledWith('pkce_abc123');
+    expect(openEmailLinkSession).toHaveBeenCalledWith('recovery', 'pkce_abc123');
     expect(withinAuthCallbackLimit).toHaveBeenCalledWith('203.0.113.7');
   });
 
+  // Task P4.8.01: an invite link opens the mailbox's session and goes to /onboarding, never to a page the link names.
+  it('opens the session of an invite link and goes on to onboarding', async () => {
+    const response = await open('?token_hash=invite_abc123&type=invite&next=%2Fdashboard');
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get('Location')).toBe('/onboarding');
+    expect(openEmailLinkSession).toHaveBeenCalledWith('invite', 'invite_abc123');
+  });
+
   it('sends a used or expired link back to sign in', async () => {
-    vi.mocked(openRecoverySession).mockResolvedValue(false);
+    vi.mocked(openEmailLinkSession).mockResolvedValue(false);
 
     expect((await open('?token_hash=abc&type=recovery')).headers.get('Location')).toBe(
       LINK_EXPIRED,
@@ -49,14 +58,14 @@ describe('GET auth/callback', () => {
     vi.mocked(withinAuthCallbackLimit).mockResolvedValue(false);
 
     expect((await open('?token_hash=abc&type=recovery')).headers.get('Location')).toBe(TRY_LATER);
-    expect(openRecoverySession).not.toHaveBeenCalled();
+    expect(openEmailLinkSession).not.toHaveBeenCalled();
   });
 
   it('asks Supabase Auth nothing when the limiter cannot be reached (fail-closed)', async () => {
     vi.mocked(withinAuthCallbackLimit).mockRejectedValue(new Error('database unavailable'));
 
     expect((await open('?token_hash=abc&type=recovery')).headers.get('Location')).toBe(TRY_LATER);
-    expect(openRecoverySession).not.toHaveBeenCalled();
+    expect(openEmailLinkSession).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -67,7 +76,7 @@ describe('GET auth/callback', () => {
     ['an old PKCE code', '?code=abc'],
   ])('verifies and counts nothing for %s', async (_case, query) => {
     expect((await open(query)).headers.get('Location')).toBe(LINK_EXPIRED);
-    expect(openRecoverySession).not.toHaveBeenCalled();
+    expect(openEmailLinkSession).not.toHaveBeenCalled();
     expect(withinAuthCallbackLimit).not.toHaveBeenCalled();
   });
 });

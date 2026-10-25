@@ -18,13 +18,18 @@ import type {
   SetStaffStatusValues,
 } from '@/lib/validations/staff';
 import type { StaffContext } from '@/server/auth/guards';
-import { readStaffAuthStates, setStaffAuthBan } from '@/server/services/staff-service';
+import {
+  readStaffAuthStates,
+  releaseRevokedInviteAccount,
+  sendStaffInviteEmail,
+  setStaffAuthBan,
+} from '@/server/services/staff-service';
 import type { IssuedInvite, StaffRoleChange, StaffStatusChange } from '@/types/staff';
 
 // The superadmin's changes on /dashboard/users (Task P4.8.02). Every write goes through the superadmin's session
 // client: the staff RPCs of 0004 and 0005 check the fresh TOTP, refuse the caller's own row and keep the last active
-// superadmin, and the restrictive fresh_totp() policies guard staff_invites. The only service-role step is the Auth
-// ban in staff-service.ts.
+// superadmin, and the restrictive fresh_totp() policies guard staff_invites. The service-role steps live in
+// staff-service.ts: the Auth ban, and the invite email and the release of a revoked invite's Auth user (Task P4.8.01).
 
 const MS_PER_SECOND = 1000;
 const UNIQUE_VIOLATION = '23505';
@@ -72,7 +77,7 @@ async function insertRwAdminInvite(ctx: StaffContext, input: InviteStaffValues, 
   const supabase = await createSupabaseServerClient();
   const expiresAt = new Date(Date.now() + INVITE_EXPIRY_SECONDS * MS_PER_SECOND).toISOString();
   // Only the id comes back: the hash is written once and read by no API role (0005).
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('staff_invites')
     .insert({
       email: input.email,
@@ -85,30 +90,51 @@ async function insertRwAdminInvite(ctx: StaffContext, input: InviteStaffValues, 
     .select('id')
     .single();
   if (error) throw error;
-  return expiresAt;
+  return { inviteId: data.id, expiresAt };
 }
 
-// docs/Security.md §5.1: the code exists in plain only in this answer, for the superadmin to read out once.
+type StoredInvite = Omit<IssuedInvite, 'inviteCode' | 'isEmailSent'> & { inviteId: string };
+
+async function storeInvite(
+  ctx: StaffContext,
+  input: InviteStaffValues,
+  hash: string,
+): Promise<StoredInvite> {
+  if (input.role === 'superadmin') {
+    const supabase = await createSupabaseServerClient();
+    const invite = await inviteSuperadmin(supabase, { email: input.email, inviteCodeHash: hash });
+    return {
+      inviteId: invite.inviteId,
+      expiresAt: invite.lapsesAfter,
+      acceptableAfter: invite.completesAfter,
+    };
+  }
+  const invite = await insertRwAdminInvite(ctx, input, hash);
+  return { ...invite, acceptableAfter: null };
+}
+
+// docs/Security.md §5.1: the code exists in plain only in this answer, for the superadmin to read out once. The
+// invite email goes out as soon as the invite exists (Task P4.8.01); its link alone opens nothing but /onboarding.
 export async function createStaffInvite(
   ctx: StaffContext,
   input: InviteStaffValues,
+  requestId: string,
 ): Promise<IssuedInvite> {
   await assertNoStaffAccount(input.email);
   const inviteCode = drawInviteCode();
-  const hash = inviteCodeHash(inviteCode);
-  return asStaffChange(async () => {
-    if (input.role === 'superadmin') {
-      const supabase = await createSupabaseServerClient();
-      const invite = await inviteSuperadmin(supabase, { email: input.email, inviteCodeHash: hash });
-      return { inviteCode, expiresAt: invite.lapsesAfter, acceptableAfter: invite.completesAfter };
-    }
-    const expiresAt = await insertRwAdminInvite(ctx, input, hash);
-    return { inviteCode, expiresAt, acceptableAfter: null };
-  });
+  const stored = await asStaffChange(() => storeInvite(ctx, input, inviteCodeHash(inviteCode)));
+  const isEmailSent = await sendStaffInviteEmail(input.email, stored.inviteId, requestId);
+  return {
+    inviteCode,
+    expiresAt: stored.expiresAt,
+    acceptableAfter: stored.acceptableAfter,
+    isEmailSent,
+  };
 }
 
-// Revoking is final (staff_invites_guard); an invite already accepted or revoked is left as it is.
-export async function revokeStaffInvite(inviteId: string): Promise<void> {
+// Revoking is final (staff_invites_guard); an invite already accepted or revoked is left as it is. The Auth user the
+// invite email made goes with it (finding 4 of the onboarding review), or with the nightly purge if Auth failed now.
+export async function revokeStaffInvite(inviteId: string, requestId: string): Promise<void> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('staff_invites')
@@ -119,6 +145,7 @@ export async function revokeStaffInvite(inviteId: string): Promise<void> {
     .select('id');
   if (error) throw staffRefusal(error) ?? error;
   if (data.length === 0) throw new AppError('NOT_FOUND', staffCopy.notFound);
+  await releaseRevokedInviteAccount(inviteId, requestId);
 }
 
 function roleChangeOf(stage: StaffChangeStage): StaffRoleChange {

@@ -42,6 +42,8 @@ export interface IssuedInvite {
   expiresAt: string;
   // Set for a superadmin invite, which can be accepted only 24 hours after it was made (invite_superadmin).
   acceptableAfter: string | null;
+  // Whether Supabase Auth sent the invite email (Task P4.8.01); when not, the superadmin revokes and invites again.
+  isEmailSent: boolean;
 }
 
 // What set_staff_role answers: applied at once, or, for a promotion to superadmin, requested and due later.

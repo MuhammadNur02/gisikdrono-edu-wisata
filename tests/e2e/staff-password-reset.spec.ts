@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { expect, test, type Page, type Response } from '@playwright/test';
 
-import { waitForRecoveryLink } from './helpers/mailbox';
+import { waitForAuthLink } from './helpers/mailbox';
 import {
   ADMIN_RW05,
   AUTH_STEP,
@@ -74,7 +74,7 @@ test('a staff address and an unknown one get the same answer, and the link works
   expect(await unknown.headerValue('set-cookie')).toBeNull();
   expect(await headerShape(staff)).toEqual(await headerShape(unknown));
 
-  const link = await waitForRecoveryLink(ADMIN_RW05, askedAt);
+  const link = await waitForAuthLink(ADMIN_RW05, askedAt);
   const elsewhere = await browser.newContext();
   const otherPage = await elsewhere.newPage();
   await otherPage.goto(link);
@@ -93,7 +93,7 @@ test('an account without an authenticator is sent to the superadmin, not to a ne
 
   const askedAt = new Date(Date.now() - 2_000);
   await askForReset(page, account.email);
-  await page.goto(await waitForRecoveryLink(account.email, askedAt));
+  await page.goto(await waitForAuthLink(account.email, askedAt));
 
   await expect(page).toHaveURL(/\/reset-password$/, AUTH_STEP);
   await expect(page.getByText('Hubungi superadmin untuk memulihkan akun.')).toBeVisible();

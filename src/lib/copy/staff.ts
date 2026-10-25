@@ -99,8 +99,9 @@ export const staffCopy = {
     superadminWait: (after: string) =>
       `Undangan superadmin baru bisa diterima setelah ${after}. Kepala kelurahan sudah diberi tahu.`,
     done: 'Selesai',
-    onboardingPending:
-      'Halaman pendaftaran petugas (onboarding) belum tersedia, jadi undangan ini belum bisa dipakai. Email undangan juga belum dikirim.',
+    emailSent:
+      'Email undangan sudah dikirim. Tautannya berlaku 10 menit; petugas membukanya, lalu menulis kode di atas.',
+    emailFailed: 'Email undangan gagal dikirim. Cabut undangan ini, lalu buat undangan baru.',
   },
   invites: {
     title: 'Undangan terbuka',
