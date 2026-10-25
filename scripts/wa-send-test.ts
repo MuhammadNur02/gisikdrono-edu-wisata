@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { parseArgs, parseEnv } from 'node:util';
 
 import { z } from 'zod';
@@ -7,9 +7,15 @@ import { z } from 'zod';
 //   [--file .env.local] [--dry-run]   (Task P3.11.03, CLAUDE.md §10.1)
 // Sends one approved WhatsApp template to a test number with sample parameters, through the same payload builder and
 // provider the outbox uses, so a template's approval and the credentials can be tried before the first real message.
-// The ticket template carries a document header, so it needs --document-url, a PDF Meta can fetch. Staff templates go
-// by email only and are refused. Nothing printed carries the access token; the answer is Meta's message id or the
-// server's own error code. --dry-run prints the template and its parts without sending.
+// The ticket template carries a document header, so it needs --document-url: a signed URL of our own documents
+// bucket, as the outbox mints it, never any other address. Staff templates go by email only and are refused. Nothing
+// printed carries the access token; the answer is Meta's message id or the server's own error code. --dry-run prints
+// the template and its parts without sending.
+//
+// Guards (review of PR #66, M1): the env file must not be production's (VERCEL_ENV=production or
+// MIDTRANS_IS_PRODUCTION=true are refused), and its Supabase must be this machine's or the staging project named by
+// STAGING_PROJECT_REF in the same file; and a message goes only to a number listed in the git-ignored
+// .wa-test-numbers, one E.164 number a line (lines starting with # are comments).
 
 const DEFAULT_ENV_FILE = '.env.local';
 const TICKET_TEMPLATE = 'payment_received_ticket';
@@ -21,6 +27,9 @@ const HOUR_MS = 3_600_000;
 const DAYS_AHEAD = 7;
 const ISO_DATE_LENGTH = 10;
 const SAMPLE_OTP = '123456';
+const TEST_NUMBERS_FILE = '.wa-test-numbers';
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+const SIGNED_DOCUMENTS_PATH = '/storage/v1/object/sign/documents/';
 
 const SENDABLE = [
   'phone_otp',
@@ -42,15 +51,61 @@ const SENDABLE = [
 const argsSchema = z.object({
   to: z.string().regex(/^\+62[0-9]{8,13}$/, 'an Indonesian E.164 number, +62…'),
   template: z.enum(SENDABLE),
-  'document-url': z.url({ protocol: /^https$/ }).optional(),
+  'document-url': z.url({ protocol: /^https?$/ }).optional(),
   file: z.string().default(DEFAULT_ENV_FILE),
   'dry-run': z.boolean().default(false),
 });
 
-const credentialsSchema = z.object({
+const envSchema = z.object({
   WHATSAPP_ACCESS_TOKEN: z.string().min(1),
   WHATSAPP_PHONE_NUMBER_ID: z.string().min(1),
+  NEXT_PUBLIC_SUPABASE_URL: z.url(),
+  VERCEL_ENV: z.string().optional(),
+  MIDTRANS_IS_PRODUCTION: z.string().optional(),
+  STAGING_PROJECT_REF: z
+    .string()
+    .regex(/^[a-z]{20}$/)
+    .optional(),
 });
+type ScriptEnv = z.infer<typeof envSchema>;
+
+// Only this machine's stack, or the staging project the file itself names, never production.
+function readTestEnv(file: string): ScriptEnv {
+  const env = envSchema.parse(parseEnv(readFileSync(file, 'utf8')));
+  if (env.VERCEL_ENV === 'production' || env.MIDTRANS_IS_PRODUCTION === 'true') {
+    throw new Error('wa:send-test refuses production settings');
+  }
+  const host = new URL(env.NEXT_PUBLIC_SUPABASE_URL).hostname;
+  const isStaging =
+    env.STAGING_PROJECT_REF !== undefined && host === `${env.STAGING_PROJECT_REF}.supabase.co`;
+  if (!LOOPBACK_HOSTS.has(host) && !isStaging) {
+    throw new Error(
+      'wa:send-test runs against this machine or the staging project named by STAGING_PROJECT_REF only',
+    );
+  }
+  return env;
+}
+
+function assertTestNumber(to: string): void {
+  if (!existsSync(TEST_NUMBERS_FILE)) {
+    throw new Error(
+      `List the test numbers in ${TEST_NUMBERS_FILE} (git-ignored), one E.164 number a line`,
+    );
+  }
+  const numbers = readFileSync(TEST_NUMBERS_FILE, 'utf8')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !line.startsWith('#'));
+  if (!numbers.includes(to)) throw new Error(`${to} is not in ${TEST_NUMBERS_FILE}`);
+}
+
+function assertOwnDocumentUrl(url: string | undefined, env: ScriptEnv): void {
+  if (url === undefined) return;
+  const ownPrefix = new URL(SIGNED_DOCUMENTS_PATH, env.NEXT_PUBLIC_SUPABASE_URL).toString();
+  if (!url.startsWith(ownPrefix)) {
+    throw new Error(`--document-url must be a signed URL of our documents bucket (${ownPrefix}…)`);
+  }
+}
 
 function readArgs() {
   const { values } = parseArgs({
@@ -104,7 +159,9 @@ async function sampleParams(template: (typeof SENDABLE)[number]): Promise<Record
 
 async function main(): Promise<void> {
   const args = readArgs();
-  const credentials = credentialsSchema.parse(parseEnv(readFileSync(args.file, 'utf8')));
+  const env = readTestEnv(args.file);
+  assertOwnDocumentUrl(args['document-url'], env);
+  if (!args['dry-run']) assertTestNumber(args.to);
   // The modules below read NEXT_PUBLIC_SITE_URL as they load, so the env file goes into the process first.
   process.loadEnvFile(args.file);
   const { templateParamsSchemas } = await import('../src/lib/notifications/templates');
@@ -128,14 +185,14 @@ async function main(): Promise<void> {
   if (args['dry-run']) {
     const { template } = whatsAppPayload(message);
     const parts = template.components.map((component) => component.type).join(', ');
-    process.stdout
-      .write(`Would send ${template.name} (${parts}) with ${Object.keys(message.bodyParams).join(', ')}
+    const names = Object.keys(message.bodyParams).join(', ');
+    process.stdout.write(`Would send ${template.name} (${parts}) with ${names}
 `);
     return;
   }
   const result = await createWhatsAppMetaProvider({
-    accessToken: credentials.WHATSAPP_ACCESS_TOKEN,
-    phoneNumberId: credentials.WHATSAPP_PHONE_NUMBER_ID,
+    accessToken: env.WHATSAPP_ACCESS_TOKEN,
+    phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,
   }).send(message);
   if (!result.ok) throw new Error(`Meta did not accept it: ${result.errorCode}`);
   process.stdout.write(`Sent ${args.template} as ${result.providerMessageId}\n`);

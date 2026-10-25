@@ -87,16 +87,16 @@ describe('POST /api/webhooks/resend', () => {
     ['a missing signature', { 'svix-signature': '' }],
     ['an invalid signature', { 'svix-signature': 'v1,AAAA' }],
     ['a stale timestamp', { 'svix-timestamp': String(Number(NOW_SECONDS) - 301) }],
-  ])('answers 401 to %s and records the failure', async (_case, headers) => {
+  ])('answers 403 to %s and records the failure', async (_case, headers) => {
     const response = await post(BOUNCE, headers);
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(403);
     expect(recordSignatureFailure).toHaveBeenCalledWith({}, 'resend', 'unknown');
     expect(recordProviderReports).not.toHaveBeenCalled();
   });
 
-  it('drops a report past the rate limit with 200', async () => {
+  it('answers 429 past the rate limit, so Resend retries', async () => {
     vi.mocked(withinWebhookLimit).mockResolvedValue(false);
-    expect((await post(BOUNCE)).status).toBe(200);
+    expect((await post(BOUNCE)).status).toBe(429);
     expect(recordProviderReports).not.toHaveBeenCalled();
   });
 

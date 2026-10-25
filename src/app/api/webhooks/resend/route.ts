@@ -23,8 +23,8 @@ export const maxDuration = 15;
 
 // Task P3.11.09 (docs/Security.md §10.2, EP-03, APP-12; decision OD-4): Resend's bounce and complaint reports, signed
 // the Svix way, informational only. Outside the auth middleware. 200 for processed, replayed, ignored and unknown
-// reports and for one dropped by the rate limit; 400, 413 and 415 for a malformed body; 401 for a missing, invalid or
-// stale signature; 503 while the database is out of reach or the secret is not set, so Resend retries.
+// reports; 400, 413 and 415 for a malformed body; 403 for a missing, invalid or stale signature (CLAUDE.md §5.4); 429
+// past the rate limit and 503 while the database is out of reach or the secret is not set, so Resend retries.
 
 const WEBHOOK_BODY_LIMIT_BYTES = 65_536;
 const PROVIDER = 'resend';
@@ -33,7 +33,8 @@ const MS_PER_SECOND = 1000;
 const HTTP_STATUS = {
   ok: 200,
   badRequest: 400,
-  unauthorized: 401,
+  forbidden: 403,
+  tooManyRequests: 429,
   unavailable: 503,
 } as const;
 
@@ -63,7 +64,7 @@ async function receive(request: Request, log: Log): Promise<Response> {
   const clientIp = clientIpFrom(request.headers);
   if (!(await withinWebhookLimit(adminClient, PROVIDER, clientIp))) {
     log.info('rate_limited', { limit: 'webhook_resend:ip' });
-    return empty(HTTP_STATUS.ok);
+    return empty(HTTP_STATUS.tooManyRequests);
   }
   const body = await readJsonText(request, WEBHOOK_BODY_LIMIT_BYTES);
   if (!body.ok) return empty(body.status);
@@ -76,7 +77,7 @@ async function receive(request: Request, log: Log): Promise<Response> {
   if (!hasValidSvixSignature(svixHeadersOf(request.headers), body.text, secret, nowSeconds)) {
     log.warn('webhook_signature_invalid', { provider: PROVIDER });
     await recordSignatureFailure(adminClient, PROVIDER, clientIp);
-    return empty(HTTP_STATUS.unauthorized);
+    return empty(HTTP_STATUS.forbidden);
   }
   const event = parseEvent(body.text);
   if (event === null) return empty(HTTP_STATUS.badRequest);

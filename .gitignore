@@ -40,3 +40,6 @@ supabase/snippets/
 public/sw.js
 public/sw.js.map
 public/swe-worker-*.js
+
+# wa:send-test recipients (scripts/wa-send-test.ts), one E.164 number a line
+.wa-test-numbers

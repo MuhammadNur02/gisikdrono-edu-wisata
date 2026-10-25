@@ -581,6 +581,7 @@ export type Database = {
           status: Database["public"]["Enums"]["booking_status"]
           subtotal_addons: number
           subtotal_package: number
+          ticket_pdf_fingerprint: string | null
           ticket_pdf_path: string | null
           token_version: number
           total_amount: number
@@ -636,6 +637,7 @@ export type Database = {
           status: Database["public"]["Enums"]["booking_status"]
           subtotal_addons?: number
           subtotal_package: number
+          ticket_pdf_fingerprint?: string | null
           ticket_pdf_path?: string | null
           token_version?: number
           total_amount: number
@@ -691,6 +693,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["booking_status"]
           subtotal_addons?: number
           subtotal_package?: number
+          ticket_pdf_fingerprint?: string | null
           ticket_pdf_path?: string | null
           token_version?: number
           total_amount?: number
@@ -4624,6 +4627,15 @@ export type Database = {
           p_status: string
         }
         Returns: string
+      }
+      svc_record_ticket_pdf: {
+        Args: {
+          p_actor_id?: string
+          p_booking_id: string
+          p_fingerprint: string
+          p_path: string
+        }
+        Returns: undefined
       }
       svc_record_webhook_rejection: {
         Args: {

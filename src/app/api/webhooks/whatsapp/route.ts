@@ -24,9 +24,9 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 15;
 
 // Task P3.11.06 (docs/Security.md §10.1, EP-01): Meta's subscription handshake and delivery reports. Outside the auth
-// middleware (src/middleware.ts matcher). 200 for processed, unknown and dropped reports; 400, 413 and 415 for a
-// malformed body; 401 for a bad signature; 403 for a wrong verify token; 503 while the database is out of reach or
-// the app secret is not set, so Meta retries. Nothing here touches a booking or money.
+// middleware (src/middleware.ts matcher). 200 for processed and unknown reports; 400, 413 and 415 for a malformed
+// body; 403 for a bad signature and for a wrong verify token (CLAUDE.md §5.4); 429 past the rate limit and 503 while
+// the database is out of reach or the app secret is not set, so Meta retries. Nothing here touches a booking or money.
 
 const WEBHOOK_BODY_LIMIT_BYTES = 65_536;
 const PROVIDER = 'whatsapp';
@@ -34,8 +34,8 @@ const PROVIDER = 'whatsapp';
 const HTTP_STATUS = {
   ok: 200,
   badRequest: 400,
-  unauthorized: 401,
   forbidden: 403,
+  tooManyRequests: 429,
   unavailable: 503,
 } as const;
 
@@ -69,7 +69,7 @@ async function receive(request: Request, log: Log): Promise<Response> {
   const clientIp = clientIpFrom(request.headers);
   if (!(await withinWebhookLimit(adminClient, PROVIDER, clientIp))) {
     log.info('rate_limited', { limit: 'webhook_whatsapp:ip' });
-    return empty(HTTP_STATUS.ok);
+    return empty(HTTP_STATUS.tooManyRequests);
   }
   const body = await readJsonText(request, WEBHOOK_BODY_LIMIT_BYTES);
   if (!body.ok) return empty(body.status);
@@ -81,7 +81,7 @@ async function receive(request: Request, log: Log): Promise<Response> {
   if (!hasValidMetaSignature(body.text, request.headers.get('x-hub-signature-256'), appSecret)) {
     log.warn('webhook_signature_invalid', { provider: PROVIDER });
     await recordSignatureFailure(adminClient, PROVIDER, clientIp);
-    return empty(HTTP_STATUS.unauthorized);
+    return empty(HTTP_STATUS.forbidden);
   }
   const webhook = parseWebhook(body.text);
   if (webhook === null) return empty(HTTP_STATUS.badRequest);

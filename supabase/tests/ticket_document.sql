@@ -1,7 +1,7 @@
--- Task P3.11.05 (20261030080100): the e-ticket file of a booking is recorded by internal.record_document_pdf like the
--- other booking documents: only for a booking with tickets, only under its own name, and once.
+-- Task P3.11.05 (20261030080100): the e-ticket file of a booking is recorded by internal.record_ticket_pdf: only for a
+-- booking with tickets, only under its own name, with the fingerprint of the tickets it shows, replaced when they change.
 begin;
-select plan(5);
+select plan(8);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -59,23 +59,29 @@ select b.id, 'bookings/' || b.id || '/ticket-' || b.booking_code || '.pdf' as pa
 from public.bookings b where b.id in (select paid from cases union select unpaid from cases);
 
 select throws_ok(
-  format($$select internal.record_document_pdf('ticket', %L, %L, null)$$,
-         (select paid from cases), (select path from files where id = (select paid from cases)) || '.x'),
+  format($$select internal.record_ticket_pdf(%L, %L, %L, null)$$, (select paid from cases), (select path from files where id = (select paid from cases)) || '.x', repeat('a', 64)),
   '22023', null, 'a ticket file is named after its own booking code');
-select lives_ok(
-  format($$select internal.record_document_pdf('ticket', %L, %L, null)$$,
-         (select paid from cases), (select path from files where id = (select paid from cases))),
-  'a paid booking records its ticket file');
-select is((select b.ticket_pdf_path from public.bookings b where b.id = (select paid from cases)),
-  (select path from files where id = (select paid from cases)), 'under bookings.ticket_pdf_path');
-select lives_ok(
-  format($$select internal.record_document_pdf('ticket', %L, %L, null)$$,
-         (select paid from cases), (select path from files where id = (select paid from cases))),
-  'recording the same file again changes nothing');
 select throws_ok(
-  format($$select internal.record_document_pdf('ticket', %L, %L, null)$$,
-         (select unpaid from cases), (select path from files where id = (select unpaid from cases))),
+  format($$select internal.record_ticket_pdf(%L, %L, %L, null)$$, (select paid from cases), (select path from files where id = (select paid from cases)), 'not-a-fingerprint'),
+  '22023', null, 'and kept with the fingerprint of its tickets');
+select lives_ok(
+  format($$select internal.record_ticket_pdf(%L, %L, %L, null)$$, (select paid from cases), (select path from files where id = (select paid from cases)), repeat('a', 64)),
+  'a paid booking records its ticket file');
+select is((select (b.ticket_pdf_path = (select path from files where id = (select paid from cases)), b.ticket_pdf_fingerprint = repeat('a', 64))::text
+           from public.bookings b where b.id = (select paid from cases)),
+  '(t,t)', 'under bookings.ticket_pdf_path, with its fingerprint');
+select lives_ok(
+  format($$select internal.record_ticket_pdf(%L, %L, %L, null)$$, (select paid from cases), (select path from files where id = (select paid from cases)), repeat('b', 64)),
+  'a fresh file of changed tickets replaces it');
+select is((select b.ticket_pdf_fingerprint from public.bookings b where b.id = (select paid from cases)), repeat('b', 64),
+  'and records their fingerprint');
+select throws_ok(
+  format($$select internal.record_ticket_pdf(%L, %L, %L, null)$$, (select unpaid from cases),
+         (select path from files where id = (select unpaid from cases)), repeat('a', 64)),
   'P0002', null, 'a booking without tickets has no ticket file');
+select ok(not has_function_privilege('authenticated', 'public.svc_record_ticket_pdf(uuid, text, text, uuid)', 'execute')
+          and has_function_privilege('service_role', 'public.svc_record_ticket_pdf(uuid, text, text, uuid)', 'execute'),
+  'only the server records a ticket file');
 
 select * from finish();
 rollback;

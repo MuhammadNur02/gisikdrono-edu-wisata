@@ -29,6 +29,7 @@ const TICKETS: TicketDocument = {
   bookingCode: 'GSK-7F3K9Q2M',
   fileName: 'ticket-GSK-7F3K9Q2M.pdf',
   pdfPath: null,
+  pdfFingerprint: null,
   tickets: [],
 };
 const NOT_FOUND = { ok: false as const, error: { code: 'NOT_FOUND' as const, message: 'x' } };

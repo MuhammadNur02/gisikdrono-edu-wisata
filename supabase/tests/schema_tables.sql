@@ -431,7 +431,9 @@ select columns_are('public', 'bookings', array[
   -- added by 0004: anonymisation stamp and the stored masks the staff view reads
   'pii_purged_at', 'phone_masked', 'email_masked', 'pic_first_name',
   -- added by 20261022140000: when the guardians' consent to the participant list was attested
-  'guardian_consented_at'
+  'guardian_consented_at',
+  -- added by 20261030080100: the fingerprint of the tickets the kept ticket file shows
+  'ticket_pdf_fingerprint'
 ]);
 select columns_are('public', 'booking_legs', array[
   'id', 'booking_id', 'rw_id', 'visit_session_id', 'leg_order', 'pax_count', 'status',

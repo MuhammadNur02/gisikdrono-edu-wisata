@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { DB_ENUMS } from '@/db/enums';
+import { renderNotificationHtml } from '@/lib/email/render';
 import { createResendProvider } from '@/lib/notifications/email-resend';
 import { createMailpitProvider } from '@/lib/notifications/mailpit';
 import { messageText } from '@/lib/notifications/message-text';
@@ -11,6 +12,11 @@ import {
   isPermanentMetaError,
   whatsAppPayload,
 } from '@/lib/notifications/whatsapp-meta';
+
+vi.mock('@/lib/email/render', async (importOriginal) => {
+  const actual = await importOriginal<{ renderNotificationHtml: typeof renderNotificationHtml }>();
+  return { renderNotificationHtml: vi.fn(actual.renderNotificationHtml) };
+});
 
 const OTP: OutgoingMessage = {
   notificationId: 'n-1',
@@ -193,6 +199,17 @@ describe('Resend provider', () => {
       errorCode: `http_${String(status)}`,
       isPermanent,
     });
+  });
+
+  it('gives up at once on an email whose layout does not render, as a server fault', async () => {
+    vi.mocked(renderNotificationHtml).mockRejectedValueOnce(new Error('render'));
+    const { fetcher } = answering(200, { id: 'email-3' });
+    expect(await createResendProvider(config, fetcher).send(email)).toMatchObject({
+      ok: false,
+      errorCode: 'compose_failed',
+      isPermanent: true,
+    });
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it('survives a network failure', async () => {

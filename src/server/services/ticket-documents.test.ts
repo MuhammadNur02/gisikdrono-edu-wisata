@@ -1,18 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { svcRecordDocumentPdf } from '@/db/rpc-documents';
+import { svcRecordTicketPdf } from '@/db/rpc-documents';
 import type { DatabaseClient } from '@/db/rpc-result';
 import { renderTicketPdf } from '@/lib/pdf/ticket';
 import {
   isKeepable,
   keptTicketPdfPath,
   ticketDocumentPdf,
+  ticketsFingerprint,
   type TicketDocument,
 } from '@/server/services/ticket-documents';
 import { getTicketsForBooking } from '@/server/services/ticket-service';
 import type { GuestTicket } from '@/types/ticket';
 
-vi.mock('@/db/rpc-documents', () => ({ svcRecordDocumentPdf: vi.fn() }));
+vi.mock('@/db/rpc-documents', () => ({ svcRecordTicketPdf: vi.fn() }));
 vi.mock('@/lib/pdf/ticket', () => ({ renderTicketPdf: vi.fn() }));
 vi.mock('@/server/services/ticket-service', () => ({ getTicketsForBooking: vi.fn() }));
 
@@ -38,12 +39,15 @@ const documentWith = (overrides: Partial<TicketDocument> = {}): TicketDocument =
   bookingCode: 'GSK-7F3K9Q2M',
   fileName: 'ticket-GSK-7F3K9Q2M.pdf',
   pdfPath: null,
+  pdfFingerprint: null,
   tickets: [ticket()],
   ...overrides,
 });
 
 // A service-role client whose storage keeps what is uploaded, and whose bookings row is the one given.
-function fakeClient(row: { ticket_pdf_path: string | null } | null) {
+function fakeClient(
+  row: { ticket_pdf_path: string | null; ticket_pdf_fingerprint?: string | null } | null,
+) {
   const upload = vi.fn(() => Promise.resolve({ data: { path: PATH }, error: null }));
   const download = vi.fn(() =>
     Promise.resolve({ data: new Blob([new Uint8Array(STORED)]), error: null }),
@@ -53,7 +57,12 @@ function fakeClient(row: { ticket_pdf_path: string | null } | null) {
     eq: () => query,
     maybeSingle: () =>
       Promise.resolve({
-        data: row && { id: BOOKING_ID, booking_code: 'GSK-7F3K9Q2M', ...row },
+        data: row && {
+          id: BOOKING_ID,
+          booking_code: 'GSK-7F3K9Q2M',
+          ticket_pdf_fingerprint: null,
+          ...row,
+        },
         error: null,
       }),
   };
@@ -66,7 +75,7 @@ function fakeClient(row: { ticket_pdf_path: string | null } | null) {
 
 beforeEach(() => {
   vi.mocked(renderTicketPdf).mockReset().mockResolvedValue(RENDERED);
-  vi.mocked(svcRecordDocumentPdf).mockReset().mockResolvedValue(undefined);
+  vi.mocked(svcRecordTicketPdf).mockReset().mockResolvedValue(undefined);
   vi.mocked(getTicketsForBooking).mockReset().mockResolvedValue([ticket()]);
 });
 
@@ -91,20 +100,36 @@ describe('ticketDocumentPdf', () => {
       contentType: 'application/pdf',
       upsert: true,
     });
-    expect(svcRecordDocumentPdf).toHaveBeenCalledWith(client, {
-      kind: 'ticket',
-      documentId: BOOKING_ID,
+    expect(svcRecordTicketPdf).toHaveBeenCalledWith(client, {
+      bookingId: BOOKING_ID,
       path: PATH,
+      fingerprint: ticketsFingerprint([ticket()]),
       readerId: null,
     });
   });
 
-  it('serves the kept file after that', async () => {
+  it('serves the kept file while it still shows these tickets', async () => {
     const { client, upload } = fakeClient(null);
-    const pdf = await ticketDocumentPdf(client, documentWith({ pdfPath: PATH }), context);
+    const kept = documentWith({ pdfPath: PATH, pdfFingerprint: ticketsFingerprint([ticket()]) });
+    const pdf = await ticketDocumentPdf(client, kept, context);
     expect(pdf.equals(STORED)).toBe(true);
     expect(renderTicketPdf).not.toHaveBeenCalled();
     expect(upload).not.toHaveBeenCalled();
+  });
+
+  it('renders and keeps it again once a ticket on it changed, a moved session or a corrected group', async () => {
+    const { client, upload } = fakeClient(null);
+    const stale = documentWith({
+      pdfPath: PATH,
+      pdfFingerprint: ticketsFingerprint([ticket()]),
+      tickets: [ticket({ startTime: '13:00:00', endTime: '14:00:00', paxCount: 22 })],
+    });
+    await expect(ticketDocumentPdf(client, stale, context)).resolves.toBe(RENDERED);
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(svcRecordTicketPdf).toHaveBeenCalledWith(
+      client,
+      expect.objectContaining({ fingerprint: ticketsFingerprint(stale.tickets) }),
+    );
   });
 
   it('renders a file with a ticket no longer valid as it stands, and keeps nothing', async () => {
@@ -116,16 +141,22 @@ describe('ticketDocumentPdf', () => {
 });
 
 describe('keptTicketPdfPath', () => {
-  it('names the recorded file without rendering it again', async () => {
-    const { client } = fakeClient({ ticket_pdf_path: PATH });
+  it('names the recorded file without rendering it again while it shows these tickets', async () => {
+    const { client } = fakeClient({
+      ticket_pdf_path: PATH,
+      ticket_pdf_fingerprint: ticketsFingerprint([ticket()]),
+    });
     await expect(keptTicketPdfPath(client, BOOKING_ID, null)).resolves.toBe(PATH);
     expect(renderTicketPdf).not.toHaveBeenCalled();
   });
 
-  it('renders and keeps the file when none is recorded yet', async () => {
-    const { client } = fakeClient({ ticket_pdf_path: null });
+  it('renders and keeps the file when none is recorded yet, or the recorded one is stale', async () => {
+    const { client } = fakeClient({
+      ticket_pdf_path: PATH,
+      ticket_pdf_fingerprint: 'a'.repeat(64),
+    });
     await expect(keptTicketPdfPath(client, BOOKING_ID, null)).resolves.toBe(PATH);
-    expect(svcRecordDocumentPdf).toHaveBeenCalledTimes(1);
+    expect(svcRecordTicketPdf).toHaveBeenCalledTimes(1);
   });
 
   it('gives no file for a booking without tickets, or with one no longer valid', async () => {

@@ -50,7 +50,7 @@ export async function svcIssueFirstQuotation(
   };
 }
 
-export type KeptDocumentKind = 'quotation' | 'invoice' | 'receipt' | 'ticket';
+export type KeptDocumentKind = 'quotation' | 'invoice' | 'receipt';
 
 // The file a rendered document was kept in, recorded on its row under the reader's name: readerId is the staff member
 // who opened it, or null for the visitor (review of PR #33, finding 1).
@@ -63,6 +63,22 @@ export function svcRecordDocumentPdf(
       p_kind: kept.kind,
       p_document_id: kept.documentId,
       p_path: kept.path,
+      p_actor_id: kept.readerId ?? undefined,
+    }),
+  );
+}
+
+// The kept e-ticket file of a booking with the fingerprint of the tickets it shows (Task P3.11.05, 20261030080100),
+// under the reader's name as svcRecordDocumentPdf records the others.
+export function svcRecordTicketPdf(
+  adminClient: DatabaseClient,
+  kept: { bookingId: string; path: string; fingerprint: string; readerId: string | null },
+): Promise<void> {
+  return resultOf(
+    adminClient.rpc('svc_record_ticket_pdf', {
+      p_booking_id: kept.bookingId,
+      p_path: kept.path,
+      p_fingerprint: kept.fingerprint,
       p_actor_id: kept.readerId ?? undefined,
     }),
   );

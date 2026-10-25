@@ -93,17 +93,17 @@ describe('POST /api/webhooks/whatsapp', () => {
     ]);
   });
 
-  it('answers 401 to a wrong signature, records the failure and reads nothing', async () => {
+  it('answers 403 to a wrong signature, records the failure and reads nothing', async () => {
     const response = await post(BODY, { 'x-hub-signature-256': signatureOf('{}') });
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(403);
     expect(recordSignatureFailure).toHaveBeenCalledWith({}, 'whatsapp', 'unknown');
     expect(recordProviderReports).not.toHaveBeenCalled();
   });
 
-  it('drops a report past the rate limit with 200, before the signature is checked', async () => {
+  it('answers 429 past the rate limit, so Meta retries, before the signature is checked', async () => {
     vi.mocked(withinWebhookLimit).mockResolvedValue(false);
     const response = await post(BODY, { 'x-hub-signature-256': 'sha256=00' });
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(429);
     expect(recordSignatureFailure).not.toHaveBeenCalled();
     expect(recordProviderReports).not.toHaveBeenCalled();
   });
