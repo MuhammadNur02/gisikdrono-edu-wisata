@@ -77,7 +77,8 @@ create trigger log_audit after insert or update or delete on public.weather_noti
 
 create type public.refund_request_kind as enum ('cancellation', 'weather');
 -- requested: written by the cancellation; a Virtual Account refund waits here for the treasurer's transfer.
--- submitted: Midtrans accepted the refund call (QRIS). failed: Midtrans refused it; the superadmin takes over.
+-- submitted: Midtrans accepted the refund call (QRIS). failed: Midtrans refused it in so many words; the superadmin
+-- takes over. A call that timed out or reached nobody leaves the request requested, for payments-poll to ask again.
 -- recorded: the refund is booked (the refund notification, or record_refund for a transfer).
 create type public.refund_request_status as enum ('requested', 'submitted', 'failed', 'recorded');
 
@@ -104,6 +105,10 @@ create table public.refund_requests (
   recorded_at          timestamptz,
   provider_status_code text check (provider_status_code is null or provider_status_code ~ '^[0-9]{3}$'),
   failure_reason       text check (failure_reason is null or length(failure_reason) <= 200),
+  -- Calls to Midtrans' refund API so far and when the last one was made: payments-poll asks again for a QRIS request
+  -- no answer came for (review of PR #69, H1, M1).
+  attempts             smallint not null default 0 check (attempts >= 0),
+  last_attempt_at      timestamptz,
   updated_at           timestamptz not null default now(),
   constraint refund_requests_parts_ok check (
     (kind = 'cancellation' and amount = package_refund + addon_refund and fee_amount = 0)
@@ -121,7 +126,7 @@ alter table public.refund_requests force row level security;
 revoke all on public.refund_requests from anon, authenticated;
 grant select (id, booking_id, payment_id, kind, status, method, refund_key, amount, package_refund, addon_refund,
   fee_amount, refund_pct, days_before, requested_by, requested_at, submitted_at, recorded_at, provider_status_code,
-  failure_reason, updated_at) on public.refund_requests to authenticated;
+  failure_reason, attempts, last_attempt_at, updated_at) on public.refund_requests to authenticated;
 create policy refund_requests_super_read on public.refund_requests for select to authenticated
   using ((select public.is_superadmin()));
 create policy refund_requests_aal2 on public.refund_requests as restrictive for all to authenticated
@@ -161,7 +166,8 @@ create trigger refund_requests_immutable_guard before update or delete on public
 -- superadmin's own policies decide what it shows.
 create view public.v_refund_requests_open with (security_invoker = true) as
 select r.id, r.booking_id, b.booking_code, r.kind, r.status, r.method, r.amount, r.package_refund, r.addon_refund,
-       r.fee_amount, r.refund_pct, r.days_before, r.requested_at, r.submitted_at, r.failure_reason
+       r.fee_amount, r.refund_pct, r.days_before, r.requested_at, r.submitted_at, r.failure_reason, r.attempts,
+       r.last_attempt_at
 from public.refund_requests r
 join public.bookings b on b.id = r.booking_id
 where r.status <> 'recorded';

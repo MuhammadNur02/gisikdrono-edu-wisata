@@ -27,104 +27,7 @@ insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time
   ('00000000-0000-4000-8000-0000000e2003', 5, public.today_jkt() + 1, '09:00', '11:00', 'Uji syarat H-1', 200),
   ('00000000-0000-4000-8000-0000000e2004', 5, public.today_jkt() + 7, '09:00', '11:00', 'Uji syarat H-7', 200);
 
-create function pg_temp.otp(p_phone text) returns uuid
-  language sql
-as $$
-  insert into public.guest_otps (purpose, phone, code_hash, browser_hash, expires_at, verified_at, created_at)
-  values ('booking_phone', p_phone, repeat('a', 64), repeat('b', 64), now() + interval '5 minutes',
-          now() - interval '1 minute', now() - interval '2 minutes')
-  returning id;
-$$;
-
--- A hold of p_pax on p_session, with two bags of compost when p_addons.
-create function pg_temp.hold(p_package uuid, p_session uuid, p_pax integer, p_phone text, p_addons boolean)
-  returns uuid
-  language sql
-as $$
-  select (internal.create_booking(p_package, array[p_session]::uuid[], p_pax,
-    jsonb_build_object('booker_type', 'school', 'institution_name', 'SD Uji Syarat', 'pic_name', 'Bu Syarat',
-                       'pic_phone', p_phone, 'pic_email', 'syarat@contoh.test', 'notes', null),
-    case when p_addons then '[{"product_id": "00000000-0000-4000-8000-0000000e1a01", "qty": 2}]' else '[]' end::jsonb,
-    '[]', 'pay', 'web', null, pg_temp.otp(p_phone), '{"version": "2026-10-18"}', null,
-    '{"ip": null, "user_agent": "pgTAP"}',
-    internal.booking_quote_hash(internal.booking_quote(p_package, p_pax,
-      case when p_addons then '[{"product_id": "00000000-0000-4000-8000-0000000e1a01", "qty": 2}]' else '[]' end::jsonb,
-      array[5]::smallint[]))) ->> 'booking_id')::uuid;
-$$;
-
-create function pg_temp.attempt(p_booking uuid) returns text
-  language plpgsql
-as $$
-declare
-  reply jsonb := internal.create_payment_attempt(p_booking, null, null);
-begin
-  perform internal.attach_snap_token((reply ->> 'payment_id')::uuid, 'token-' || (reply ->> 'order_id'),
-                                     'https://app.sandbox.midtrans.com/snap/v4/redirection/' || (reply ->> 'order_id'));
-  return reply ->> 'order_id';
-end;
-$$;
-
-create function pg_temp.answer(p_order text, p_status text, p_gross bigint) returns jsonb
-  language sql
-as $$
-  select jsonb_build_object('order_id', p_order, 'status_code', '200', 'gross_amount', p_gross || '.00',
-    'signature_key', repeat('a', 128), 'transaction_status', p_status, 'transaction_id', 'txn-' || p_order,
-    'payment_type', 'qris', 'currency', 'IDR', 'fraud_status', 'accept',
-    'settlement_time', to_char(now() at time zone 'Asia/Jakarta', 'YYYY-MM-DD HH24:MI:SS'));
-$$;
-
--- A webhook event of p_status, confirmed by the Status API, with p_refunded rupiah refunded so far when given.
-create function pg_temp.event(p_order text, p_status text, p_gross bigint, p_refunded bigint) returns jsonb
-  language sql
-as $$
-  select internal.apply_payment_event((internal.record_payment_event('webhook',
-    encode(extensions.digest(p_order || p_status || clock_timestamp()::text, 'sha256'), 'hex'),
-    pg_temp.answer(p_order, p_status, p_gross)) ->> 'event_id')::bigint, 'webhook',
-    pg_temp.answer(p_order, p_status, p_gross)
-      || case when p_refunded is null then '{}'::jsonb
-              else jsonb_build_object('refund_amount', p_refunded || '.00') end, 'k1');
-$$;
-
--- A paid booking: hold, attempt, settlement.
-create function pg_temp.paid(p_package uuid, p_session uuid, p_pax integer, p_phone text, p_addons boolean)
-  returns uuid
-  language plpgsql
-as $$
-declare
-  booking_id uuid := pg_temp.hold(p_package, p_session, p_pax, p_phone, p_addons);
-  order_id text := pg_temp.attempt(booking_id);
-begin
-  perform pg_temp.event(order_id, 'settlement', (select b.total_amount from public.bookings b where b.id = booking_id),
-                        null);
-  return booking_id;
-end;
-$$;
-
-create function pg_temp.order_of(p_booking uuid) returns text
-  language sql
-as $$ select p.order_id from public.payments p where p.booking_id = p_booking order by p.attempt_no desc limit 1; $$;
-
-create function pg_temp.reserved(p_session uuid) returns integer
-  language sql
-as $$ select s.reserved_pax from public.visit_sessions s where s.id = p_session; $$;
-
--- What each ledger row of a booking still holds, by beneficiary and line.
-create function pg_temp.held(p_booking uuid) returns text[]
-  language sql
-as $$
-  select array_agg(x.label order by x.label) from (
-    select case when s.line_ref = 'package' then 'package' else 'addon' end || ':' || split_part(s.beneficiary_key, ':', 1)
-           || '=' || (s.amount + coalesce((select sum(r.amount) from public.revenue_share_entries r
-                                            where r.booking_id = s.booking_id and r.entry_type = 'reversal'
-                                              and r.line_ref = s.line_ref and r.beneficiary_key = s.beneficiary_key), 0))
-             as label
-    from public.revenue_share_entries s
-    where s.booking_id = p_booking and s.entry_type = 'settlement') as x;
-$$;
-
-create function pg_temp.ledger_sum(p_booking uuid) returns bigint
-  language sql
-as $$ select coalesce(sum(e.amount), 0) from public.revenue_share_entries e where e.booking_id = p_booking; $$;
+\ir helpers/visit_terms.psql
 
 -- ===== The schedule =====
 select is(array[internal.cancel_refund_pct(9), internal.cancel_refund_pct(3), internal.cancel_refund_pct(2),
@@ -138,7 +41,7 @@ select pg_temp.hold('00000000-0000-4000-8000-0000000e1001', '00000000-0000-4000-
 create temporary table unpaid_order on commit drop as select pg_temp.attempt((select id from unpaid)) as order_id;
 select is(pg_temp.reserved('00000000-0000-4000-8000-0000000e2004'), 4, 'the hold takes its four seats');
 create temporary table unpaid_outcome on commit drop as
-select internal.cancel_booking((select id from unpaid), null, 'Rencana berubah', 'cancellation') as reply;
+select internal.cancel_booking((select id from unpaid), null, 'Rencana berubah', 'cancellation', 0, null) as reply;
 select is((select reply -> 'close_orders' from unpaid_outcome), jsonb_build_array((select order_id from unpaid_order)),
   'the visitor''s cancellation names the open order for Midtrans to end');
 select is((select status::text from public.bookings where id = (select id from unpaid)), 'cancelled',
@@ -151,7 +54,7 @@ select is((select count(*)::int from public.refund_requests where booking_id = (
 select is((select count(*)::int from public.notifications
            where booking_id = (select id from unpaid) and template = 'booking_cancelled'), 2,
   'booking_cancelled goes out on both channels');
-select throws_ok($$select internal.cancel_booking((select id from unpaid), null, 'lagi', 'cancellation')$$,
+select throws_ok($$select internal.cancel_booking((select id from unpaid), null, 'lagi', 'cancellation', 0, null)$$,
   'P0001', null, 'a cancelled booking is not cancelled again');
 
 -- ===== A paid booking five days ahead: Rp 300.000 package and Rp 30.000 add-ons =====
@@ -169,7 +72,7 @@ select throws_ok($$select internal.refund_preview((select id from paid), 'weathe
   'no weather refund without a weather notice');
 
 create temporary table paid_outcome on commit drop as
-select internal.cancel_booking((select id from paid), null, 'Sekolah libur', 'cancellation') as reply;
+select internal.cancel_booking((select id from paid), null, 'Sekolah libur', 'cancellation', 300000, 90::smallint) as reply;
 select is((select status::text from public.bookings where id = (select id from paid)), 'cancelled',
   'the paid booking is cancelled at once');
 select is((select array_agg(distinct status::text) from public.tickets_qr where booking_id = (select id from paid)),
@@ -215,7 +118,7 @@ create temporary table odd on commit drop as
 select pg_temp.paid('00000000-0000-4000-8000-0000000e1002', '00000000-0000-4000-8000-0000000e2003', 3,
                     '+6281300003003', false) as id;
 create temporary table odd_outcome on commit drop as
-select internal.cancel_booking((select id from odd), null, 'Sakit', 'cancellation') as reply;
+select internal.cancel_booking((select id from odd), null, 'Sakit', 'cancellation', 50005, 50::smallint) as reply;
 select is((select amount || ':' || refund_pct from public.refund_requests where booking_id = (select id from odd)),
   '50005:50', 'half of Rp 100.011 is Rp 50.005, rounded down');
 select is(pg_temp.event(pg_temp.order_of((select id from odd)), 'partial_refund', 100011, 50005) ->> 'processing_result',
@@ -265,10 +168,10 @@ select throws_ok($$select internal.reschedule_for_weather((select id from rained
   array['00000000-0000-4000-8000-0000000e2004']::uuid[])$$, 'P0001', null,
   'the new session has no notice, so no second move for it');
 
-select throws_ok($$select internal.cancel_booking((select id from rained_refund), null, 'Hujan', 'weather')$$, 'P0001', null,
+select throws_ok($$select internal.cancel_booking((select id from rained_refund), null, 'Hujan', 'weather', 148950, null)$$, 'P0001', null,
   'no weather refund while the Midtrans fee is not set');
 update public.site_settings set value = '7' where key = 'midtrans.fee_qris_permille';
-select is(internal.cancel_booking((select id from rained_refund), null, 'Hujan', 'weather') -> 'refund' ->> 'amount',
+select is(internal.cancel_booking((select id from rained_refund), null, 'Hujan', 'weather', 148950, null) -> 'refund' ->> 'amount',
   '148950', 'the weather refund is Rp 150.000 minus the 0.7 % fee of Rp 1.050');
 select is(pg_temp.event(pg_temp.order_of((select id from rained_refund)), 'partial_refund', 150000, 148950)
             ->> 'processing_result', 'refund_recorded', 'which is booked when it comes back');
