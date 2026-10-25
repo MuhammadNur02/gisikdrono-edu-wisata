@@ -236,6 +236,14 @@ describe('composeMessage for a guest', () => {
     expect(refund.link).toBeNull();
   });
 
+  it('says the amount of the one refund a message was queued for', async () => {
+    const refund = await messageFor({
+      template: 'refund_processed',
+      params: { refund_amount: 40_000 },
+    });
+    expect(refund.bodyParams.amount).toMatch(/^Rp\s?40\.000$/);
+  });
+
   it('points an expired booking at the catalogue, a fixed button with no suffix', async () => {
     const message = await messageFor({ template: 'booking_expired', params: {} });
     expect(message.link).toEqual({ url: `${SITE}/paket-wisata`, buttonSuffix: null });

@@ -39,7 +39,8 @@ export const BOOKING_TRANSITIONS: Readonly<Record<BookingStatus, ActorsByStatus>
     paid: [...CONFIRMED_SETTLEMENT, 'admin_rw'],
     expired: CRON,
     cancelled: VISITOR_OR_STAFF,
-    // Money that arrived while the booking was under review goes back through record_refund.
+    // Money that arrived while the booking was under review goes back, whole, through record_refund once Midtrans has
+    // confirmed the held payment settled (internal.midtrans_confirmed_settled; review of PR #68, M5).
     refunded: SUPERADMIN,
   },
   expired: {
