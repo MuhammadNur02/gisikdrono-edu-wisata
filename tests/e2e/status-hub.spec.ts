@@ -76,12 +76,13 @@ async function moveForWeather(page: Page, bookingCode: string) {
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Kunjungan terhalang cuaca' })).toBeVisible(STEP);
   await page.locator(`input[name="weather-day"][value="${sessions.visitDate}"]`).check();
-  await page.locator(`input[value="${sessions.filled.id}"]`).check();
+  await page.locator(`input[name="weather-session"][value="${sessions.filled.id}"]`).check();
   await page.getByRole('button', { name: 'Pindah ke jadwal ini' }).click();
-  await expect(page.getByRole('heading', { name: 'Kunjungan terhalang cuaca' })).toHaveCount(
-    0,
+  await expect(page.getByRole('status').filter({ hasText: 'Jadwal sudah dipindah' })).toBeVisible(
     STEP,
   );
+  // Decision of 2026-10-25 on the weather, rule 1: the rights stay open after a move, one move fewer.
+  await expect(page.getByText(/bisa dipindah 2 kali lagi/)).toBeVisible(STEP);
   expect((await hubStateOf(bookingCode))?.session_id).toBe(sessions.filled.id);
   expect(await reservedOn(sessions.booked.id)).toBe(0);
   expect(await reservedOn(sessions.filled.id)).toBeGreaterThan(0);
