@@ -60,8 +60,16 @@ export function ticketStoragePath(document: TicketDocument): string {
   return `bookings/${document.bookingId}/${document.fileName}`;
 }
 
-// Everything a ticket page prints, in ticket order: when any of it changes, the kept file no longer tells the truth.
-export function ticketsFingerprint(tickets: readonly GuestTicket[]): string {
+// Raise it with any change to src/lib/pdf/ticket.tsx or its copy, so every kept file is rendered again on its next
+// read (re-review of PR #66, L-E).
+export const TICKET_LAYOUT_VERSION = 1;
+
+// Everything a ticket page prints, in ticket order, with the letterhead's address and the layout's version: when any
+// of it changes, the kept file no longer tells the truth.
+export function ticketsFingerprint(
+  tickets: readonly GuestTicket[],
+  kelurahanAddress: string | null,
+): string {
   const printed = [...tickets]
     .sort((left, right) => left.ticketCode.localeCompare(right.ticketCode))
     .map((ticket) => [
@@ -74,7 +82,9 @@ export function ticketsFingerprint(tickets: readonly GuestTicket[]): string {
       ticket.rwName,
       ticket.qr?.path ?? null,
     ]);
-  return createHash('sha256').update(JSON.stringify(printed)).digest('hex');
+  return createHash('sha256')
+    .update(JSON.stringify({ layout: TICKET_LAYOUT_VERSION, kelurahanAddress, printed }))
+    .digest('hex');
 }
 
 // A file is kept only while every ticket in it may still be scanned and has its QR: a suspended, revoked or retired
@@ -85,10 +95,11 @@ export function isKeepable(document: TicketDocument): boolean {
   );
 }
 
-// The kept file still shows these very tickets.
-function isKeptFileCurrent(document: TicketDocument): boolean {
+// The kept file still shows these very tickets, under this letterhead and layout.
+function isKeptFileCurrent(document: TicketDocument, kelurahanAddress: string | null): boolean {
   return (
-    document.pdfPath !== null && document.pdfFingerprint === ticketsFingerprint(document.tickets)
+    document.pdfPath !== null &&
+    document.pdfFingerprint === ticketsFingerprint(document.tickets, kelurahanAddress)
   );
 }
 
@@ -102,7 +113,7 @@ async function keepPdf(
   adminClient: DatabaseClient,
   document: TicketDocument,
   pdf: Buffer,
-  readerId: string | null,
+  context: TicketPdfContext,
 ): Promise<string> {
   const path = ticketStoragePath(document);
   const upload = await adminClient.storage
@@ -112,8 +123,8 @@ async function keepPdf(
   await svcRecordTicketPdf(adminClient, {
     bookingId: document.bookingId,
     path,
-    fingerprint: ticketsFingerprint(document.tickets),
-    readerId,
+    fingerprint: ticketsFingerprint(document.tickets, context.kelurahanAddress),
+    readerId: context.readerId,
   });
   return path;
 }
@@ -139,12 +150,13 @@ export async function ticketDocumentPdf(
   context: TicketPdfContext,
 ): Promise<Buffer> {
   const keepable = isKeepable(document);
-  if (keepable && document.pdfPath !== null && isKeptFileCurrent(document)) {
+  const isCurrent = isKeptFileCurrent(document, context.kelurahanAddress);
+  if (keepable && document.pdfPath !== null && isCurrent) {
     const stored = await storedPdf(adminClient, document.pdfPath);
     if (stored) return stored;
   }
   const pdf = await render(document, context.kelurahanAddress);
-  if (keepable) await keepPdf(adminClient, document, pdf, context.readerId);
+  if (keepable) await keepPdf(adminClient, document, pdf, context);
   return pdf;
 }
 
@@ -158,6 +170,9 @@ export async function keptTicketPdfPath(
   const document = await loadTicketDocument(adminClient, bookingId);
   if (document === null || !isKeepable(document)) return null;
   // A recorded path names a file that was uploaded first; the retention run clears the path with the file.
-  if (document.pdfPath !== null && isKeptFileCurrent(document)) return document.pdfPath;
-  return keepPdf(adminClient, document, await render(document, kelurahanAddress), null);
+  if (document.pdfPath !== null && isKeptFileCurrent(document, kelurahanAddress)) {
+    return document.pdfPath;
+  }
+  const pdf = await render(document, kelurahanAddress);
+  return keepPdf(adminClient, document, pdf, { kelurahanAddress, readerId: null });
 }
