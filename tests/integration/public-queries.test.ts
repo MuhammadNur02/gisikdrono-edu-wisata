@@ -229,8 +229,8 @@ describe('public queries as a visitor', () => {
   it('reads the public settings and hides the seeded sample contacts', async () => {
     const settings = await getPublicSiteSettings();
 
-    // Booking stays closed until the guest pages exist (review of PR #27, N1).
-    expect(settings).toMatchObject({ bookingEnabled: false, maxPax: 500, contactEmail: null });
+    // Booking is open again now the pay page and the status hub exist (20261102080200).
+    expect(settings).toMatchObject({ bookingEnabled: true, maxPax: 500, contactEmail: null });
     expect(settings.kelurahanAddress).toContain('Gisikdrono');
   });
 
