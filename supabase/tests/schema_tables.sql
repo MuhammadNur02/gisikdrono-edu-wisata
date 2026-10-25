@@ -70,6 +70,8 @@ select columns_are('public', 'rw_units', array[
   'sort_order', 'created_at', 'updated_at',
   -- added by 20261021120000 so the pages, menu and colours of an RW come from its row
   'short_name', 'accent_key', 'icon_key', 'schedule_enabled',
+  -- added by 20261028080100: a centre given by estimate (P2.5.04)
+  'location_estimated',
   -- added by 20261021130000, the heading of the RW page's product section
   'products_heading'
 ]);
@@ -77,7 +79,13 @@ select columns_are('public', 'profiles', array[
   'id', 'email', 'full_name', 'phone', 'role', 'rw_id', 'is_active', 'mfa_required',
   'claims_version', 'avatar_path', 'last_login_at', 'created_by', 'created_at', 'updated_at',
   -- added by 0004 for the delayed staff changes (MFA reset, promotion to superadmin)
-  'mfa_reset_requested_at', 'mfa_reset_requested_by', 'promotion_requested_at', 'promotion_requested_by'
+  'mfa_reset_requested_at', 'mfa_reset_requested_by', 'promotion_requested_at', 'promotion_requested_by',
+  -- added by 20261029080000: the one-time re-enrolment code after an MFA reset (P4.8.05)
+  'mfa_reenrol_code_hash', 'mfa_reenrol_expires_at',
+  -- added by 20261029080200: set by a completed MFA reset, cleared by the re-enrolment code
+  'reenrolment_required',
+  -- added by 20261029080400: the ten minutes the used code opens for the new authenticator
+  'reenrolment_window_until'
 ]);
 select columns_are('public', 'staff_invites', array[
   'id', 'email', 'role', 'rw_id', 'invite_code_hash', 'expires_at', 'accepted_at',
@@ -909,7 +917,9 @@ select columns_are('public', 'hero_banners', array[
 select columns_are('public', 'activity_points', array[
   'id', 'rw_id', 'slug', 'name', 'point_type', 'short_description', 'body_md', 'image_path',
   'map_x', 'map_y', 'svg_hotspot_id', 'lat', 'lng', 'sort_order', 'status', 'created_at',
-  'updated_at'
+  'updated_at',
+  -- added by 20261028080100: a position given by estimate (P2.5.04)
+  'location_estimated'
 ]);
 select columns_are('public', 'performance_schedules', array[
   'id', 'rw_id', 'title', 'schedule_type', 'description_md', 'starts_at', 'ends_at', 'venue',
