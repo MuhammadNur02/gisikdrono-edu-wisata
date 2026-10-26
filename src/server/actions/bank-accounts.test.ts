@@ -73,6 +73,20 @@ describe('the bank account actions', () => {
     expect(getMaskedBankAccount).toHaveBeenCalledTimes(1);
   });
 
+  // Review of PR #79, L-5: an RW admin or a role-less session stops at the role, before any code is asked for.
+  it('refuse a reveal and a change to anyone but the superadmin, before the service is called', async () => {
+    vi.mocked(requireRole).mockResolvedValue(fail('FORBIDDEN'));
+    await expect(
+      revealBankAccountAction({ target: RW_TARGET, reason: 'Cek transfer' }),
+    ).resolves.toMatchObject({ error: { code: 'FORBIDDEN' } });
+    await expect(setBankAccountAction(ACCOUNT)).resolves.toMatchObject({
+      error: { code: 'FORBIDDEN' },
+    });
+    expect(requireFreshTotp).not.toHaveBeenCalled();
+    expect(revealBankAccountNumber).not.toHaveBeenCalled();
+    expect(setBankAccount).not.toHaveBeenCalled();
+  });
+
   it('reveal and change only with a fresh authenticator code', async () => {
     vi.mocked(requireFreshTotp).mockResolvedValue(fail('FORBIDDEN'));
     await expect(

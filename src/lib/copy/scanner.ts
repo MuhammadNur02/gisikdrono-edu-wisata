@@ -13,8 +13,10 @@ export const scannerCopy = {
   cameraIdle: 'Kamera mati. Ketuk "Nyalakan kamera" untuk mulai.',
   // Task P4.4.04: the beep per result on this device; reduced motion silences it and the vibration anyway.
   sound: 'Bunyi hasil pindai',
-  soundOn: 'Bunyi aktif',
-  soundOff: 'Bunyi mati',
+  soundOn: 'aktif',
+  soundOff: 'mati',
+  soundSilenced:
+    'Bunyi dan getar hasil pindai mati karena pengaturan "Kurangi gerakan" di perangkat ini.',
   torchOn: 'Nyalakan senter',
   torchOff: 'Matikan senter',
   cameraLabel: 'Tampilan kamera',

@@ -23,7 +23,11 @@ function point(id: string, mapX: number | null, mapY: number | null): ActivityPo
 
 describe('placedHotspots', () => {
   it('leaves out a point without a full position', () => {
-    const hotspots = placedHotspots([point('a', 10, 10), point('b', 10, null), point('c', null, 10)]);
+    const hotspots = placedHotspots([
+      point('a', 10, 10),
+      point('b', 10, null),
+      point('c', null, 10),
+    ]);
     expect(hotspots.map((hotspot) => hotspot.id)).toEqual(['a']);
   });
 

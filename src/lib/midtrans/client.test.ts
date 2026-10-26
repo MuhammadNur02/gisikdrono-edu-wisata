@@ -5,6 +5,7 @@ import {
   expireTransaction,
   getTransactionStatus,
   MidtransError,
+  requestRefund,
 } from '@/lib/midtrans/client';
 import type { SnapPayload } from '@/lib/midtrans/snap';
 
@@ -166,5 +167,47 @@ describe('expireTransaction', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       'https://api.sandbox.midtrans.com/v2/GSK-7F3K9Q2M-01/expire',
     );
+  });
+});
+
+describe('requestRefund (review of PR #69, M1)', () => {
+  // The refund reference is the order id and the refund's number (internal.cancel_paid_booking).
+  const ORDER_ID = 'GSK-7F3K9Q2M-01';
+  const REFUND = {
+    orderId: ORDER_ID,
+    refundKey: `${ORDER_ID}-R01`,
+    amount: 270000,
+    reason: 'Pembatalan kunjungan',
+  };
+
+  it('is accepted on the 200 of Midtrans', async () => {
+    fetchMock.mockResolvedValue(answer(200, { status_code: '200' }));
+    await expect(requestRefund(REFUND)).resolves.toEqual({
+      outcome: 'accepted',
+      statusCode: '200',
+    });
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toBe('https://api.sandbox.midtrans.com/v2/GSK-7F3K9Q2M-01/refund');
+    expect(JSON.parse(typeof init?.body === 'string' ? init.body : '')).toMatchObject({
+      refund_key: REFUND.refundKey,
+      amount: 270000,
+    });
+  });
+
+  it('is refused on a 4xx of Midtrans itself', async () => {
+    fetchMock.mockResolvedValue(answer(200, { status_code: '412' }));
+    await expect(requestRefund(REFUND)).resolves.toEqual({ outcome: 'refused', statusCode: '412' });
+  });
+
+  it('is unknown on a server error, a refused key, a foreign body or no answer', async () => {
+    fetchMock.mockResolvedValueOnce(answer(500, { status_code: '500' }));
+    await expect(requestRefund(REFUND)).resolves.toMatchObject({ outcome: 'unknown' });
+    fetchMock.mockResolvedValueOnce(answer(401, { status_code: '401' }));
+    await expect(requestRefund(REFUND)).resolves.toMatchObject({ outcome: 'unknown' });
+    fetchMock.mockResolvedValueOnce(new Response('<html>', { status: 502 }));
+    await expect(requestRefund(REFUND)).resolves.toMatchObject({ outcome: 'unknown' });
+    fetchMock.mockReset();
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+    await expect(requestRefund(REFUND)).resolves.toEqual({ outcome: 'unknown', statusCode: null });
   });
 });

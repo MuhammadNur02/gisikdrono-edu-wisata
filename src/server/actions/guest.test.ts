@@ -28,6 +28,11 @@ vi.mock('@/server/services/booking-service', () => ({
   revokeGuestLinks: vi.fn(),
   withinGuestLimits: vi.fn(),
 }));
+vi.mock('@/server/services/payment-service', () => ({
+  settleCancellation: vi.fn(),
+  startPayment: vi.fn(),
+}));
+vi.mock('@/server/auth/guest-cookies', () => ({ readPhoneProofCookie: vi.fn() }));
 
 const LOOKUP = {
   bookingCode: 'gsk 7f3k-9q2m',

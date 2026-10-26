@@ -6,10 +6,7 @@ import {
   svcRecordPaymentFailure,
 } from '@/db/rpc-payments';
 import { copy } from '@/lib/copy/id';
-import {
-  createSnapTransaction,
-  expireTransaction,
-} from '@/lib/midtrans/client';
+import { createSnapTransaction, expireTransaction } from '@/lib/midtrans/client';
 import { openAttemptOf, snapBookingOf } from '@/server/services/payment-reads';
 import { startPayment } from '@/server/services/payment-service';
 
@@ -184,4 +181,3 @@ describe('startPayment', () => {
     expect(svcAttachSnapToken).not.toHaveBeenCalled();
   });
 });
-

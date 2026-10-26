@@ -141,7 +141,11 @@ describe('findPublicEnvProblems and NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS', () => {
 
   it('refuses images without the transformer on production', () => {
     expect(
-      findPublicEnvProblems({ ...values, VERCEL_ENV: 'production', NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS: 'off' }),
+      findPublicEnvProblems({
+        ...values,
+        VERCEL_ENV: 'production',
+        NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS: 'off',
+      }),
     ).toEqual([
       'NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS=off is for a Free-plan staging project; production resizes images',
     ]);
@@ -150,7 +154,11 @@ describe('findPublicEnvProblems and NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS', () => {
   it('lets production keep the transformer, by default or explicitly', () => {
     for (const NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS of [undefined, 'on'] as const) {
       expect(
-        findPublicEnvProblems({ ...values, VERCEL_ENV: 'production', NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS }),
+        findPublicEnvProblems({
+          ...values,
+          VERCEL_ENV: 'production',
+          NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS,
+        }),
       ).toEqual([]);
     }
   });

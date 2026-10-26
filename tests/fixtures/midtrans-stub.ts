@@ -18,6 +18,8 @@ export interface StubOrder {
   transactionStatus?: string;
   fraudStatus?: string;
   paymentType?: string;
+  // What refund calls took back so far, in whole rupiah (QRIS only, as at Midtrans).
+  refundAmount?: number;
 }
 
 export interface MidtransStub {
@@ -65,6 +67,9 @@ export function statusBodyOf(order: StubOrder): Record<string, unknown> {
     va_numbers: [{ bank: 'bca', va_number: '12345678901' }],
     transaction_time: midtransTime(),
     ...(status === 'settlement' ? { settlement_time: midtransTime() } : {}),
+    ...(order.refundAmount === undefined
+      ? {}
+      : { refund_amount: String(order.refundAmount) + '.00' }),
   };
 }
 
@@ -104,7 +109,30 @@ function expireOrder(order: StubOrder | undefined) {
 type StubAnswer = { status: number; body: unknown };
 
 const CONTROL_PATH = /^\/__stub\/orders\/([^/]+)$/;
-const CORE_API_PATH = /^\/v2\/([^/]+)\/(status|expire)$/;
+const CORE_API_PATH = /^\/v2\/([^/]+)\/(status|expire|refund)$/;
+const REFUNDABLE = new Set(['settlement', 'partial_refund']);
+
+// Midtrans refunds a settled QRIS payment through the API and refuses a Virtual Account (412), as the real one does.
+function refundOrder(order: StubOrder | undefined, body: Record<string, unknown>): StubAnswer {
+  if (!order?.transactionStatus) return { status: 404, body: UNKNOWN_ORDER };
+  const amount = typeof body.amount === 'number' ? body.amount : Number.NaN;
+  const gross = Number.parseInt(order.grossAmount, 10);
+  const total = (order.refundAmount ?? 0) + amount;
+  const isRefundable =
+    REFUNDABLE.has(order.transactionStatus) &&
+    order.paymentType === 'qris' &&
+    amount > 0 &&
+    total <= gross;
+  if (!isRefundable) {
+    return {
+      status: 412,
+      body: { status_code: '412', status_message: 'Transaction status cannot be updated' },
+    };
+  }
+  order.refundAmount = total;
+  order.transactionStatus = total === gross ? 'refund' : 'partial_refund';
+  return { status: 200, body: { ...statusBodyOf(order), refund_key: body.refund_key } };
+}
 
 // The tests' own path: how an order stands, and a change to it.
 async function answerControl(
@@ -116,8 +144,13 @@ async function answerControl(
   return { status: 200, body: order };
 }
 
-function answerCoreApi(action: string | undefined, order: StubOrder | undefined): StubAnswer {
+async function answerCoreApi(
+  request: IncomingMessage,
+  action: string | undefined,
+  order: StubOrder | undefined,
+): Promise<StubAnswer> {
   if (action === 'expire') return expireOrder(order);
+  if (action === 'refund') return refundOrder(order, await readBody(request));
   return order?.transactionStatus
     ? { status: 200, body: statusBodyOf(order) }
     : { status: 404, body: UNKNOWN_ORDER };
@@ -150,7 +183,7 @@ async function answerMerchantApi(
   }
   const coreApi = CORE_API_PATH.exec(path);
   return coreApi
-    ? answerCoreApi(coreApi[2], orders.get(decodeURIComponent(coreApi[1] ?? '')))
+    ? answerCoreApi(request, coreApi[2], orders.get(decodeURIComponent(coreApi[1] ?? '')))
     : { status: 404, body: UNKNOWN_ORDER };
 }
 

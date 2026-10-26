@@ -9,6 +9,12 @@ export function buildWhatsAppChatUrl(phoneE164: string, message: string): string
   return `${WHATSAPP_CHAT_BASE_URL}${digits}?text=${encodeURIComponent(message)}`;
 }
 
+// A message the visitor sends to a contact of their own choosing, such as the treasurer: wa.me with no number opens
+// the contact picker.
+export function buildWhatsAppShareUrl(message: string): string {
+  return `${WHATSAPP_CHAT_BASE_URL}?text=${encodeURIComponent(message)}`;
+}
+
 // The page title carries the site name after the template's separator; the greeting names the page alone.
 export function pageTopicFromTitle(documentTitle: string, siteName: string): string {
   const topic = documentTitle.split(' | ')[0]?.trim() ?? '';

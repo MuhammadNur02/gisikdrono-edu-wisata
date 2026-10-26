@@ -71,30 +71,35 @@ function usePayloadGate(run: (attempt: ScanAttempt) => Promise<void>, stage: Sca
 }
 
 export function useScanner() {
-  const { signal, isSoundOn, toggleSound } = useScanFeedback();
+  const { signal, isSoundOn, toggleSound, prime, isReducedMotion } = useScanFeedback();
   const { state, dispatch, recent, run } = useAttemptRunner(signal);
   const submitPayload = usePayloadGate(run, state.stage);
   const submitManual = useCallback(
     (bookingCode: string, phoneLastDigits: string) => {
+      prime();
       void run(previewOf({ kind: 'manual', bookingCode, phoneLastDigits }));
     },
-    [run],
+    [run, prime],
   );
   const confirm = useCallback(
     (attendeeCount: number, overrideReason?: string) => {
-      if (state.stage === 'result')
-        void run(commitOf(state.attempt, attendeeCount, overrideReason));
+      if (state.stage !== 'result') return;
+      prime();
+      void run(commitOf(state.attempt, attendeeCount, overrideReason));
     },
-    [run, state],
+    [run, state, prime],
   );
   const retry = useCallback(() => {
-    if (state.stage === 'problem') void run(state.attempt);
-  }, [run, state]);
+    if (state.stage !== 'problem') return;
+    prime();
+    void run(state.attempt);
+  }, [run, state, prime]);
   const close = useCallback(() => {
     dispatch({ type: 'closed' });
   }, [dispatch]);
   const isBusy = state.stage === 'checking';
-  const sound = { isOn: isSoundOn, toggle: toggleSound };
+  // prime wakes the beep inside a tap the hook does not see (the camera's Scan, a photo chosen).
+  const sound = { isOn: isSoundOn, toggle: toggleSound, prime, isSilenced: isReducedMotion };
   return { state, recent, isBusy, sound, submitPayload, submitManual, confirm, retry, close };
 }
 

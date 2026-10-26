@@ -1,4 +1,4 @@
--- Task P4.3.06 (20261104120000_bank_account_rpcs.sql; docs/Security.md STAFF-02, PAY-16, REC-10): the superadmin's
+-- Task P4.3.06 (20261104120000_bank_account_rpcs.sql; docs/Security.md STAFF-02, PAY-16): the superadmin's
 -- view and edit of a vendor's bank account and an RW's treasury account. Masked by default; a reveal needs a fresh
 -- TOTP and a reason, is audited, and is capped at 20 a day with a medium alert at the 20th; a write needs a fresh TOTP
 -- and is audited by the row's trigger; a changed treasury account raises the high alert payout_account_changed.

@@ -4,6 +4,8 @@ import {
   articlePath,
   bookingPath,
   bookletPath,
+  guestDocumentPath,
+  guestDocumentRewriteFor,
   isPathUnder,
   isRwSlug,
   packagePath,
@@ -105,4 +107,21 @@ describe('visitorPathFor', () => {
       expect(visitorPathFor(pathname)).toBe(pathname);
     },
   );
+});
+
+describe('guest document addresses', () => {
+  const id = '0192f3a4-5b6c-7d8e-9f01-000000000001';
+
+  it('builds the address under the booking and rewrites it to the API route', () => {
+    const path = guestDocumentPath('GSK-7F3K9Q2M', 'invoice', id);
+    expect(path).toBe(`/reservasi/GSK-7F3K9Q2M/dokumen/invoice/${id}`);
+    expect(guestDocumentRewriteFor(path)).toBe(`/api/documents/invoice/${id}`);
+  });
+
+  it('leaves every other address alone', () => {
+    expect(guestDocumentRewriteFor(`/reservasi/GSK-7F3K9Q2M/dokumen/booklet/${id}`)).toBeNull();
+    expect(guestDocumentRewriteFor(`/reservasi/bukan-kode/dokumen/invoice/${id}`)).toBeNull();
+    expect(guestDocumentRewriteFor('/reservasi/GSK-7F3K9Q2M/dokumen/invoice/../../x')).toBeNull();
+    expect(guestDocumentRewriteFor('/reservasi/GSK-7F3K9Q2M')).toBeNull();
+  });
 });

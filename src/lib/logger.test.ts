@@ -83,6 +83,24 @@ describe('logger redaction', () => {
     }
   });
 
+  // Review of PR #79, L-10.
+  it('never prints a bank account number, in any of its spellings', () => {
+    const { lines, logger } = captureLogLines();
+    logger.error('internal_error', {
+      accountNumber: '9753186401',
+      values: { accountNumber: '9753186402' },
+      account_number: '9753186403',
+      row: { account_number: '9753186404' },
+      p_account_number: '9753186405',
+      rpc: { p_account_number: '9753186406' },
+    });
+
+    const output = lines.join('');
+    for (let digit = 1; digit <= 6; digit += 1) {
+      expect(output).not.toContain(`975318640${String(digit)}`);
+    }
+  });
+
   it('writes one JSON line with the event, level and request id', () => {
     const { lines, logger } = captureLogLines();
     logger.info('job_run', { job: 'expire-bookings', processed: 3, failed: 0 });
