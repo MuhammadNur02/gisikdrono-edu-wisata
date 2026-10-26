@@ -38,6 +38,7 @@ const CODE_BY_POSTGRES_HINT: Record<string, ActionErrorCode> = {
   PRICE_MISMATCH: 'PRICE_MISMATCH',
   RATE_LIMITED: 'RATE_LIMITED',
   CONTACT_UNVERIFIED: 'STATE_INVALID',
+  WEATHER_FEE_UNSET: 'STATE_INVALID',
 };
 
 export class AppError extends Error {
