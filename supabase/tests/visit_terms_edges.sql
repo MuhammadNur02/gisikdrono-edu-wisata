@@ -444,8 +444,8 @@ select is((select array_agg(x.label order by x.label) from (
                 and r.beneficiary_key = s.beneficiary_key), 0)) as label
     from public.revenue_share_entries s
     where s.booking_id = (select id from visited) and s.entry_type = 'settlement') as x),
-  array['kelurahan=12000', 'rw:13=0', 'rw:5=48000'],
-  'only the stopped leg''s lines give back: RW 13 its whole share, the kelurahan half of its own; RW 05 keeps all');
+  array['kelurahan=4000', 'rw:13=8000', 'rw:5=48000'],
+  'the leg''s Rp 60.000 comes back from the kelurahan and RW 13 by what each holds (1:2); RW 05 keeps all');
 select is((select status::text from public.invoices where booking_id = (select id from visited)), 'paid',
   'the invoice of the visited leg stands');
 
@@ -566,7 +566,7 @@ begin
   perform internal.cancel_booking(booking_id, null, 'Batal', 'cancellation',
     (internal.refund_preview(booking_id, 'cancellation') ->> 'amount')::bigint, 90::smallint);
   perform internal.mark_refund_request((pg_temp.request_of(booking_id)).id, 'submitted', '200', null);
-  return booking_id;
+  return new_booking;
 end;
 $fn$;
 create function pg_temp.day_without_refund(p_booking uuid) returns void
@@ -644,7 +644,7 @@ create function pg_temp.visited_combo(p_package uuid, p_session_13 uuid, p_pax i
   language plpgsql
 as $$
 declare
-  booking_id uuid := (internal.create_booking(p_package,
+  new_booking uuid := (internal.create_booking(p_package,
     array['00000000-0000-4000-8000-0000000e3206', p_session_13]::uuid[], p_pax,
     jsonb_build_object('booker_type', 'school', 'institution_name', 'SD Uji Asimetris', 'pic_name', 'Bu Asimetris',
                        'pic_phone', p_phone, 'pic_email', 'asimetris@contoh.test', 'notes', null),
@@ -653,20 +653,20 @@ declare
     internal.booking_quote_hash(internal.booking_quote(p_package, p_pax, '[]', array[5, 13]::smallint[])))
     ->> 'booking_id')::uuid;
 begin
-  perform pg_temp.event(pg_temp.attempt(booking_id), 'settlement',
-                        (select b.total_amount from public.bookings b where b.id = booking_id), null);
+  perform pg_temp.event(pg_temp.attempt(new_booking), 'settlement',
+                        (select b.total_amount from public.bookings b where b.id = new_booking), null);
   perform set_config('app.in_rpc', '1', true);
   update public.booking_legs set status = 'checked_in', checked_in_at = now()
-  where booking_legs.booking_id = visited_combo.booking_id and rw_id = 5;
-  update public.bookings set status = 'checked_in' where id = visited_combo.booking_id;
+  where booking_legs.booking_id = new_booking and rw_id = 5;
+  update public.bookings set status = 'checked_in' where id = new_booking;
   perform set_config('app.in_rpc', '', true);
   perform pg_temp.declare(p_session_13, 'admin_rw_13');
-  perform internal.cancel_booking(booking_id, null, 'Hujan', 'weather',
-    (internal.refund_preview(booking_id, 'weather') ->> 'amount')::bigint, null);
-  perform pg_temp.event(pg_temp.order_of(booking_id), 'partial_refund',
-    (select b.total_amount from public.bookings b where b.id = booking_id),
-    (select r.amount from public.refund_requests r where r.booking_id = visited_combo.booking_id));
-  return booking_id;
+  perform internal.cancel_booking(new_booking, null, 'Hujan', 'weather',
+    (internal.refund_preview(new_booking, 'weather') ->> 'amount')::bigint, null);
+  perform pg_temp.event(pg_temp.order_of(new_booking), 'partial_refund',
+    (select b.total_amount from public.bookings b where b.id = new_booking),
+    (select r.amount from public.refund_requests r where r.booking_id = new_booking));
+  return new_booking;
 end;
 $$;
 
