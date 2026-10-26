@@ -111,12 +111,13 @@ describe('POST auth/callback', () => {
     expect(openEmailLinkSession).not.toHaveBeenCalled();
   });
 
-  // I77-4 of the review of PR #77: a body without a declared length is read only up to the cap.
+  // I77-4 of the review of PR #77, made to fail without the cap (L1 of its delta2 review): a valid link padded past
+  // the cap, with no declared length, is refused, where reading it whole would verify the link.
   it('reads no more than its cap of a body that declares no length', async () => {
     const response = await POST(
       new Request(CALLBACK, {
         method: 'POST',
-        body: `token_hash=${'a'.repeat(4096)}&type=recovery`,
+        body: `token_hash=abc&type=recovery&pad=${'a'.repeat(4096)}`,
         headers: {
           'content-type': 'application/x-www-form-urlencoded',
           origin: 'http://127.0.0.1:3000',
@@ -126,6 +127,54 @@ describe('POST auth/callback', () => {
     );
 
     expect(response.headers.get('Location')).toBe(LINK_EXPIRED);
+    expect(openEmailLinkSession).not.toHaveBeenCalled();
+  });
+
+  it('stops reading a body that never ends and cancels it', async () => {
+    let isCancelled = false;
+    const chunk = new TextEncoder().encode('a'.repeat(512));
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        isCancelled = true;
+      },
+    });
+    const response = await POST(
+      new Request(CALLBACK, {
+        method: 'POST',
+        body: endless,
+        duplex: 'half',
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          origin: 'http://127.0.0.1:3000',
+          host: '127.0.0.1:3000',
+        },
+      } as RequestInit & { duplex: 'half' }),
+    );
+
+    expect(response.headers.get('Location')).toBe(LINK_EXPIRED);
+    expect(isCancelled).toBe(true);
+    expect(openEmailLinkSession).not.toHaveBeenCalled();
+  });
+
+  // L2 of the delta2 review of PR #77: a POST without our Origin, or with the `Origin: null` a no-referrer page would
+  // send, is refused before anything is read.
+  it.each([
+    ['no Origin', undefined],
+    ['Origin: null', 'null'],
+  ])('refuses a press with %s', async (_case, origin) => {
+    const headers: Record<string, string> = {
+      'content-type': 'application/x-www-form-urlencoded',
+      host: '127.0.0.1:3000',
+    };
+    if (origin !== undefined) headers.origin = origin;
+    const response = await POST(
+      new Request(CALLBACK, { method: 'POST', body: 'token_hash=abc&type=recovery', headers }),
+    );
+
+    expect(response.status).toBe(403);
     expect(openEmailLinkSession).not.toHaveBeenCalled();
   });
 
