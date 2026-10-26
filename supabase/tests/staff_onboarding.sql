@@ -267,7 +267,9 @@ select is((select count(*)::int from public.profiles where id = '00000000-0000-4
 select throws_ok($$delete from auth.users where id = '00000000-0000-4000-8000-0000000e0001'$$, '23503', null,
   'one whose profile ever held a role is not: it is deactivated, and the audit trail keeps naming it');
 -- L3 of the delta2 review of PR #77 (20261103131600): the rule is internal.is_never_staff, so became_staff_at decides,
--- not is_active or claims_version.
+-- not is_active or claims_version. The profiles are written by hand, so the Auth trigger waits again (it was made
+-- immediate above).
+set constraints auth.handle_new_auth_user deferred;
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000e0005', 'aktif-tanpa-peran@example.test'),
   ('00000000-0000-4000-8000-0000000e0006', 'mantan-petugas@example.test');
