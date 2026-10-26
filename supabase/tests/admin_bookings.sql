@@ -54,6 +54,9 @@ create function pg_temp.book(p_package uuid, p_sessions uuid[], p_pax integer, p
 as $$
   select public.create_admin_booking(p_package, p_sessions, p_pax, p_booker, p_key, '2026-10-18', p_hash);
 $$;
+-- Functions are executable by nobody by default here; the personas call these two.
+grant execute on function pg_temp.booker(text, boolean, boolean),
+  pg_temp.book(uuid, uuid[], integer, jsonb, text, text) to authenticated;
 
 -- ===== Who books =====
 select pg_temp.act_as('admin_rw_08');
@@ -183,6 +186,7 @@ as $$
   select public.mark_booking_paid_manually((select id from bookings_to_pay where name = p_name), p_method, p_amount,
                                            'k1', 'Kuitansi 001');
 $$;
+grant execute on function pg_temp.pay(text, public.payment_method, bigint) to authenticated;
 
 reset role;
 select pg_temp.act_as('superadmin_stale_totp');
