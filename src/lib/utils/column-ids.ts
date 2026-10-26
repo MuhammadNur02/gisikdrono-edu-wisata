@@ -1,9 +1,4 @@
-import {
-  createTable,
-  getCoreRowModel,
-  type ColumnDef,
-  type RowData,
-} from '@tanstack/react-table';
+import { createTable, getCoreRowModel, type ColumnDef, type RowData } from '@tanstack/react-table';
 
 function ignoreStateChange(): void {
   // The table below only answers which columns sort; it never holds state.

@@ -84,7 +84,7 @@ export const packagesCopy = {
     rowTitle: (row: number) => `Tingkat ${String(row)}`,
   },
   legs: {
-    hint: 'RW yang dikunjungi rombongan, berurutan dari pemberhentian pertama. Paket gabungan baru bisa ditayangkan setelah rutenya mengunjungi minimal dua RW.',
+    hint: 'RW yang dikunjungi rombongan, berurutan dari pemberhentian pertama. Paket gabungan baru bisa ditayangkan setelah rutenya mengunjungi minimal dua RW, dan mengunjungi paling banyak empat RW.',
     empty: 'Belum ada RW di rute ini.',
     add: 'Tambah RW ke rute',
     addPlaceholder: 'Pilih RW',
@@ -92,6 +92,10 @@ export const packagesCopy = {
     moveUp: (rw: string) => `Pindahkan ${rw} ke atas`,
     moveDown: (rw: string) => `Pindahkan ${rw} ke bawah`,
     remove: (rw: string) => `Hapus ${rw} dari rute`,
+    // Announced to a screen reader after each change (review of PR #79, L-9).
+    moved: (rw: string, position: number) => `${rw} dipindah ke pemberhentian ${String(position)}.`,
+    added: (rw: string) => `${rw} ditambahkan ke rute.`,
+    removed: (rw: string) => `${rw} dihapus dari rute.`,
   },
   itinerary: {
     hint: 'Urutan kegiatan yang tampil di halaman paket.',
@@ -124,6 +128,8 @@ export const packagesCopy = {
     legsNotCombo: 'Paket RW mengunjungi RW-nya sendiri; rute hanya untuk paket gabungan.',
     legsRepeated: 'Setiap RW cukup dikunjungi sekali dalam rute.',
     legsTooFew: 'Paket gabungan baru bisa ditayangkan setelah rutenya mengunjungi minimal dua RW.',
+    legsEmpty: 'Sisakan minimal satu RW di rute paket gabungan.',
+    legsTooMany: (max: number) => `Paket gabungan mengunjungi paling banyak ${String(max)} RW.`,
     pricePerPax: 'Isi harga per orang untuk dasar harga per orang.',
     flatPrice: 'Isi harga per rombongan untuk dasar harga per rombongan.',
     maxBelowMin: 'Rombongan maksimal harus sama atau lebih besar dari minimal.',

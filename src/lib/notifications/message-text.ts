@@ -47,6 +47,18 @@ const MESSAGE_WORDS: Record<NotificationTemplateName, Words> = {
       'Jika Anda tidak memintanya, abaikan pesan ini.',
     ],
   }),
+  weather_disruption: (value) => ({
+    subject: `Kunjungan ${value('booking_code')} terhalang cuaca`,
+    lines: [
+      `Halo ${value('name')},`,
+      `Kelurahan mengabarkan kunjungan pesanan ${value('booking_code')} di ${value('rw')} pada ` +
+        `${value('date')} terhalang cuaca.`,
+      `Sampai ${value('deadline')} Anda bisa memindah jadwal (paling banyak ${value('moves')} kali) atau meminta ` +
+        'pengembalian dana dikurangi biaya Midtrans. Bila tidak ada pilihan sampai batas itu, dana ' +
+        'dikembalikan otomatis.',
+      'Tautan untuk mengelola reservasi kami kirim dalam pesan terpisah.',
+    ],
+  }),
   booking_created: (value, link) => ({
     subject: `Pesanan ${value('booking_code')} menunggu pembayaran`,
     lines: [

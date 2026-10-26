@@ -40,6 +40,11 @@ const rowParamsSchema = z.looseObject({
   valid_until: z.string().optional(),
   // record_refund queues each refund with its own amount (review of PR #68, L4).
   refund_amount: z.number().int().positive().optional(),
+  // The weather notice of the row (internal.queue_weather_messages): its RW, its session's day, the window's end.
+  rw_name: z.string().optional(),
+  session_date: z.string().optional(),
+  open_until: z.string().optional(),
+  moves_max: z.number().optional(),
 });
 
 interface GuestParamsInput {
@@ -95,6 +100,13 @@ const GUEST_PARAMS: Record<GuestTemplate, (input: GuestParamsInput) => Record<st
   booking_cancelled: named,
   certificate_ready: named,
   booking_link: named,
+  weather_disruption: (input) => ({
+    ...named(input),
+    rw: input.queued?.rw_name,
+    date: input.queued?.session_date,
+    deadline: input.queued?.open_until,
+    moves: input.queued?.moves_max,
+  }),
 };
 
 // The named parameters of a guest template, before its schema checks them.

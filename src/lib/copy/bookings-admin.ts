@@ -119,6 +119,12 @@ export const bookingsAdminCopy = {
       payment_expired: 'Batas waktu pembayaran habis',
       refund_recorded: 'Pengembalian dana dicatat',
       write_off: 'Tagihan dihapuskan',
+      // The visit terms (20261104080200, docs/PRD.md §13.1 A16–A20).
+      cancelled_unpaid: 'Dibatalkan pemesan sebelum membayar',
+      cancelled_paid: 'Dibatalkan pemesan, pengembalian dana diminta',
+      weather_refund: 'Dibatalkan karena cuaca, pengembalian dana diminta',
+      weather_refund_leg: 'Kunjungan satu RW dibatalkan karena cuaca, pengembalian dana diminta',
+      weather_reschedule: 'Jadwal dipindah karena cuaca',
     },
   },
   contact: {
