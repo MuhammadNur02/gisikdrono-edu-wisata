@@ -9,7 +9,6 @@ import {
   approveAdjustment,
   proposeAdjustment,
   rejectAdjustment,
-  type AdjustmentReply,
 } from '@/db/rpc-adjustments';
 import { AppError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
@@ -19,7 +18,7 @@ import type { ProposeAdjustmentValues } from '@/lib/validations/finance';
 import type { StaffContext } from '@/server/auth/guards';
 import { removeFinanceEvidence, storeFinanceEvidence } from '@/server/services/document-service';
 import { asFinanceWrite } from '@/server/services/finance-errors';
-import type { Adjustment } from '@/types/finance';
+import type { Adjustment, AdjustmentReply } from '@/types/finance';
 
 // /dashboard/finance/adjustments (Task P4.7.04; docs/Security.md §3.8, REC-09, REC-16): the dual-controlled money
 // adjustments, read under RLS (payment_adjustments_super_read) and written only through their RPCs, which check the
@@ -53,17 +52,29 @@ type AdjustmentRow = z.infer<typeof adjustmentRowSchema>;
 const ADJUSTMENT_COLUMNS =
   'id, booking_id, payment_id, type, status, amount, reason, details, proposed_by, proposed_at, approved_by, approved_at, apply_not_before, applied_at, rejected_reason';
 
-async function namesOf(table: 'profiles' | 'bookings', ids: readonly string[]): Promise<Map<string, string>> {
+async function namesOf(
+  table: 'profiles' | 'bookings',
+  ids: readonly string[],
+): Promise<Map<string, string>> {
   if (ids.length === 0) return new Map();
   const supabase = await createSupabaseServerClient();
   const column = table === 'profiles' ? 'full_name' : 'booking_code';
-  const { data, error } = await supabase.from(table).select(`id, ${column}`).in('id', [...new Set(ids)]);
+  const { data, error } = await supabase
+    .from(table)
+    .select(`id, ${column}`)
+    .in('id', [...new Set(ids)]);
   if (error) throw error;
   const rows = z.array(z.record(z.string(), z.string().nullable())).parse(data);
-  return new Map(rows.flatMap((row) => (row.id && row[column] ? [[row.id, row[column]] as const] : [])));
+  return new Map(
+    rows.flatMap((row) => (row.id && row[column] ? [[row.id, row[column]] as const] : [])),
+  );
 }
 
-function adjustmentOf(row: AdjustmentRow, people: Map<string, string>, codes: Map<string, string>): Adjustment {
+function adjustmentOf(
+  row: AdjustmentRow,
+  people: Map<string, string>,
+  codes: Map<string, string>,
+): Adjustment {
   return {
     id: row.id,
     bookingId: row.booking_id,
@@ -73,7 +84,11 @@ function adjustmentOf(row: AdjustmentRow, people: Map<string, string>, codes: Ma
     status: row.status,
     amount: row.amount,
     reason: row.reason,
-    details: { lineRef: row.details.line_ref, fromKey: row.details.from_key, toKey: row.details.to_key },
+    details: {
+      lineRef: row.details.line_ref,
+      fromKey: row.details.from_key,
+      toKey: row.details.to_key,
+    },
     proposedBy: row.proposed_by,
     proposedByName: people.get(row.proposed_by) ?? null,
     proposedAt: row.proposed_at,
@@ -96,13 +111,21 @@ export async function listAdjustments(): Promise<Adjustment[]> {
   const rows = z.array(adjustmentRowSchema).parse(data);
   const people = await namesOf(
     'profiles',
-    rows.flatMap((row) => (row.approved_by ? [row.proposed_by, row.approved_by] : [row.proposed_by])),
+    rows.flatMap((row) =>
+      row.approved_by ? [row.proposed_by, row.approved_by] : [row.proposed_by],
+    ),
   );
-  const codes = await namesOf('bookings', rows.map((row) => row.booking_id));
+  const codes = await namesOf(
+    'bookings',
+    rows.map((row) => row.booking_id),
+  );
   return rows.map((row) => adjustmentOf(row, people, codes));
 }
 
-export async function propose(ctx: StaffContext, values: ProposeAdjustmentValues): Promise<AdjustmentReply> {
+export async function propose(
+  ctx: StaffContext,
+  values: ProposeAdjustmentValues,
+): Promise<AdjustmentReply> {
   const destination = `bookings/${values.bookingId}/adjustment-${createUuidV7()}`;
   const stored = await storeFinanceEvidence(ctx, values.evidenceUpload, destination);
   if (!stored.ok) throw new AppError('VALIDATION', failureFor(stored.problem).error.message);
@@ -118,7 +141,11 @@ export async function propose(ctx: StaffContext, values: ProposeAdjustmentValues
         evidencePath: stored.path,
         details:
           values.type === 'reclassify_share'
-            ? { lineRef: values.lineRef ?? undefined, fromKey: values.fromKey ?? undefined, toKey: values.toKey ?? undefined }
+            ? {
+                lineRef: values.lineRef ?? undefined,
+                fromKey: values.fromKey ?? undefined,
+                toKey: values.toKey ?? undefined,
+              }
             : {},
       }),
     );

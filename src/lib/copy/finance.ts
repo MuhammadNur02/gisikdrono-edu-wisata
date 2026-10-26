@@ -30,7 +30,8 @@ export const financeCopy = {
     net: 'Bersih',
     netHint: 'Lunas dikurangi refund',
     methods: 'Metode pembayaran',
-    methodsHint: (qris: number, va: number) => `QRIS ${String(qris)} · Virtual Account ${String(va)}`,
+    methodsHint: (qris: number, va: number) =>
+      `QRIS ${String(qris)} · Virtual Account ${String(va)}`,
     chartTitle: 'Pendapatan bersih per hari',
     chartDescription: 'Pembayaran lunas dikurangi refund, per hari Semarang.',
     chartSeries: 'Bersih',
@@ -43,6 +44,13 @@ export const financeCopy = {
       `Buku besar cocok: ${String(bookings)} pemesanan yang lunas dalam periode ini tercatat utuh.`,
     invariantBroken: (mismatched: number) =>
       `${String(mismatched)} pemesanan belum cocok dengan buku besar. Periksa di Rekonsiliasi atau Penyesuaian.`,
+    invariantLines: {
+      label: 'Rincian kecocokan buku besar',
+      weatherRefundFees: 'Biaya Midtrans refund cuaca',
+      expected: 'Seharusnya di buku besar',
+      expectedHint: 'Lunas dikurangi refund dan biaya Midtrans refund cuaca',
+      ledger: 'Tercatat di buku besar',
+    },
     partiesTitle: 'Saldo per pihak',
     partiesDescription:
       'Yang menjadi hak setiap pihak, yang sudah dibayarkan, dan sisanya. Bagian periode dihitung dari buku besar.',
@@ -145,7 +153,8 @@ export const financeCopy = {
       paidAt: 'Dicatat',
     },
     submit: 'Catat pembayaran',
-    saved: (amount: string) => `Pembayaran ${amount} dicatat dan entri buku besarnya ditandai lunas.`,
+    saved: (amount: string) =>
+      `Pembayaran ${amount} dicatat dan entri buku besarnya ditandai lunas.`,
     errors: {
       PAYOUT_EMPTY: 'Tidak ada entri yang belum dibayar untuk penerima ini dalam periode tersebut.',
       PROOF_MISSING: 'Bukti transfer belum tersimpan. Unggah ulang lalu coba lagi.',

@@ -50,7 +50,8 @@ export const adjustmentsCopy = {
     toKey: 'Ke pihak',
     evidence: 'Bukti (PDF atau foto)',
   },
-  paymentOption: (orderId: string, refundable: string) => `${orderId} · bisa dikembalikan ${refundable}`,
+  paymentOption: (orderId: string, refundable: string) =>
+    `${orderId} · bisa dikembalikan ${refundable}`,
   lineOption: (line: string, key: string, amount: string) => `${line} · ${key} · ${amount}`,
   submitPropose: 'Kirim usulan',
   proposed: 'Usulan penyesuaian dikirim. Superadmin lain perlu menyetujuinya.',
@@ -69,6 +70,8 @@ export const adjustmentsCopy = {
   applyDescription:
     'Penyesuaian dijalankan sekarang: refund dicatat, bagian dipindah, atau selisih dihapus. Tindakan ini tidak bisa dibatalkan.',
   applied: 'Penyesuaian diterapkan.',
+  overtaken:
+    'Penyesuaian tidak diterapkan dan kini berstatus ditolak: Midtrans sudah mengembalikan dana permintaan refund ini, jadi transfer bank tidak dicatat lagi. Pengunjung mungkin menerima dana dua kali; ikuti panduan selisih pembayaran untuk meminta kelebihannya kembali.',
   appliesFrom: (date: string) => `Bisa diterapkan mulai ${date}`,
   errors: {
     ADJUSTMENT_TYPE_UNSUPPORTED: 'Jenis penyesuaian ini belum bisa diusulkan di sini.',
@@ -83,7 +86,8 @@ export const adjustmentsCopy = {
     LEDGER_MISSING:
       'Pemesanan ini belum punya entri bagi hasil, jadi refund sebagian belum bisa dicatat. Selesaikan pembagiannya dulu.',
     PROOF_MISSING: 'Bukti belum tersimpan. Unggah ulang lalu coba lagi.',
-    PROOF_REUSED: 'Berkas bukti ini sudah dipakai untuk refund atau penyesuaian lain. Unggah bukti yang sesuai.',
+    PROOF_REUSED:
+      'Berkas bukti ini sudah dipakai untuk refund atau penyesuaian lain. Unggah bukti yang sesuai.',
     REFUND_KEY_MISMATCH:
       'Midtrans mencatat refund penyesuaian ini dengan jumlah lain. Periksa refund di dasbor Midtrans sebelum mencatat refund berikutnya.',
     REFUND_LIST_MISSING:
@@ -106,12 +110,16 @@ export const reconciliationCopy = {
     issues: 'Temuan',
     chains: 'Rantai audit dan buku besar',
   },
-  sources: { nightly: 'Harian', manual: 'Manual', csv_import: 'Impor CSV' } as Record<string, string>,
+  sources: { nightly: 'Harian', manual: 'Manual', csv_import: 'Impor CSV' } as Record<
+    string,
+    string
+  >,
   chainOk: 'Utuh',
   chainBroken: 'Rusak',
   chainUnknown: 'Belum diperiksa',
   chainTitle: 'Rantai audit dan buku besar',
-  chainDescription: 'Periksa bahwa log audit dan buku besar tidak diubah sejak ditulis. Paling banyak 6 kali per jam.',
+  chainDescription:
+    'Periksa bahwa log audit dan buku besar tidak diubah sejak ditulis. Paling banyak 6 kali per jam.',
   chainCheck: 'Periksa rantai',
   chainResult: (audit: string, ledger: string) => `Log audit: ${audit}. Buku besar: ${ledger}.`,
   chainState: (ok: boolean, checked: number) =>

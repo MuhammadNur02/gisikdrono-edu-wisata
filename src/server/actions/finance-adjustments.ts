@@ -3,9 +3,9 @@
 import { revalidatePath } from 'next/cache';
 
 import { ADJUSTMENTS_PATH, FINANCE_PATH } from '@/config/finance';
-import type { AdjustmentReply } from '@/db/rpc-adjustments';
 import { adjustmentsCopy } from '@/lib/copy/finance-adjustments';
 import { fail, mapError, ok } from '@/lib/errors';
+import { applyOutcomeOf } from '@/lib/utils/finance-display';
 import {
   adjustmentIdSchema,
   bookingLookupSchema,
@@ -17,7 +17,7 @@ import { requireAal2, requireRole } from '@/server/auth/guards';
 import { apply, approve, propose, reject } from '@/server/services/adjustment-service';
 import { findFinanceBooking } from '@/server/services/finance-service';
 import type { ActionResult } from '@/types/action-result';
-import type { FinanceBooking } from '@/types/finance';
+import type { AdjustmentReply, AppliedAdjustment, FinanceBooking } from '@/types/finance';
 
 // /dashboard/finance/adjustments (Task P4.7.04; docs/Security.md §3.8, REC-16): finding the booking an adjustment is
 // for, then proposing, approving, rejecting (or withdrawing an approval) and applying it. Every write carries the
@@ -28,7 +28,9 @@ function revalidateAdjustments(): void {
   revalidatePath(FINANCE_PATH);
 }
 
-export async function findFinanceBookingAction(input: unknown): Promise<ActionResult<FinanceBooking>> {
+export async function findFinanceBookingAction(
+  input: unknown,
+): Promise<ActionResult<FinanceBooking>> {
   const parsed = bookingLookupSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
   const superadmin = await requireRole('superadmin');
@@ -44,7 +46,9 @@ export async function findFinanceBookingAction(input: unknown): Promise<ActionRe
   }
 }
 
-export async function proposeAdjustmentAction(input: unknown): Promise<ActionResult<AdjustmentReply>> {
+export async function proposeAdjustmentAction(
+  input: unknown,
+): Promise<ActionResult<AdjustmentReply>> {
   const parsed = proposeAdjustmentSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
   const superadmin = await requireRole('superadmin');
@@ -61,7 +65,9 @@ export async function proposeAdjustmentAction(input: unknown): Promise<ActionRes
   }
 }
 
-export async function approveAdjustmentAction(input: unknown): Promise<ActionResult<AdjustmentReply>> {
+export async function approveAdjustmentAction(
+  input: unknown,
+): Promise<ActionResult<AdjustmentReply>> {
   const parsed = adjustmentIdSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
   const superadmin = await requireRole('superadmin');
@@ -78,7 +84,9 @@ export async function approveAdjustmentAction(input: unknown): Promise<ActionRes
   }
 }
 
-export async function rejectAdjustmentAction(input: unknown): Promise<ActionResult<AdjustmentReply>> {
+export async function rejectAdjustmentAction(
+  input: unknown,
+): Promise<ActionResult<AdjustmentReply>> {
   const parsed = rejectAdjustmentSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
   const superadmin = await requireRole('superadmin');
@@ -95,7 +103,11 @@ export async function rejectAdjustmentAction(input: unknown): Promise<ActionResu
   }
 }
 
-export async function applyAdjustmentAction(input: unknown): Promise<ActionResult<AdjustmentReply>> {
+// A transfer Midtrans overtook comes back rejected rather than applied (ApplyOutcome 'overtaken'): the database has
+// committed that rejection and its alert, so it is a result for the page to explain, not an error.
+export async function applyAdjustmentAction(
+  input: unknown,
+): Promise<ActionResult<AppliedAdjustment>> {
   const parsed = adjustmentIdSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
   const superadmin = await requireRole('superadmin');
@@ -106,7 +118,7 @@ export async function applyAdjustmentAction(input: unknown): Promise<ActionResul
   try {
     const applied = await apply(parsed.data.adjustmentId);
     revalidateAdjustments();
-    return ok(applied);
+    return ok({ ...applied, outcome: applyOutcomeOf(applied.status) });
   } catch (error) {
     return mapError(error);
   }

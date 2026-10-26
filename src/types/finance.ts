@@ -28,11 +28,13 @@ export interface FinanceTotals {
 }
 
 // docs/PRD.md §10.3: for the bookings paid in the period, what the ledger holds against what they were paid less
-// what was refunded.
+// what was refunded less the Midtrans fees of their weather refunds (20261104080200, A18: the visitor bears the fee,
+// the parties keep nothing), which the recap shows as its own line.
 export interface LedgerInvariant {
   bookings: number;
   expected: number;
   ledger: number;
+  weatherRefundFees: number;
   mismatchedBookings: number;
 }
 
@@ -218,4 +220,19 @@ export interface ChainStatus {
 export interface RecheckOutcome {
   result: 'applied' | 'unchanged' | 'not_found';
   status: string | null;
+}
+
+// What an adjustment RPC answers (20261101130200): the row's id, its status and when it may apply.
+export interface AdjustmentReply {
+  id: string;
+  status: EnumValue<'adjustment_status'>;
+  applyNotBefore: string | null;
+}
+
+// apply_adjustment (20261104080200, review of PR #69, M-2) answers a bank transfer whose visit-terms request Midtrans
+// refunded meanwhile with the row rejected, not an error, so its refund_paid_twice_detected alert stays: 'overtaken'.
+export type ApplyOutcome = 'applied' | 'overtaken';
+
+export interface AppliedAdjustment extends AdjustmentReply {
+  outcome: ApplyOutcome;
 }

@@ -44,7 +44,13 @@ const totalsSchema = z.object({
 const overviewSchema = z.object({
   daily: z.array(financeDaySchema),
   totals: totalsSchema,
-  invariant: z.object({ bookings: count, expected: money, ledger: money, mismatched_bookings: count }),
+  invariant: z.object({
+    bookings: count,
+    expected: money,
+    ledger: money,
+    weather_refund_fees: money,
+    mismatched_bookings: count,
+  }),
 });
 
 function totalsOf(row: z.infer<typeof totalsSchema>) {
@@ -73,6 +79,7 @@ export async function financeOverview(
       bookings: parsed.invariant.bookings,
       expected: parsed.invariant.expected,
       ledger: parsed.invariant.ledger,
+      weatherRefundFees: parsed.invariant.weather_refund_fees,
       mismatchedBookings: parsed.invariant.mismatched_bookings,
     },
   };
@@ -109,7 +116,9 @@ export async function revenueRecap(
   client: DatabaseClient,
   period: FinancePeriod,
 ): Promise<RevenueRecap> {
-  const reply = await resultOf(client.rpc('revenue_recap', { p_from: period.from, p_to: period.to }));
+  const reply = await resultOf(
+    client.rpc('revenue_recap', { p_from: period.from, p_to: period.to }),
+  );
   const parsed = recapSchema.parse(reply);
   return {
     shares: parsed.by_beneficiary.map((row) => ({
@@ -181,7 +190,10 @@ export interface RuleToSave {
 
 const savedRuleSchema = z.object({ rule_id: z.uuid(), closed_rule_id: z.uuid().nullable() });
 
-export async function saveRevenueRule(client: DatabaseClient, rule: RuleToSave): Promise<SavedRule> {
+export async function saveRevenueRule(
+  client: DatabaseClient,
+  rule: RuleToSave,
+): Promise<SavedRule> {
   const lines = rule.lines.map((line) => ({
     beneficiary: line.beneficiary,
     rw_id: line.rwId,
@@ -253,7 +265,11 @@ export async function settleRevenueEntries(
   return payoutBatchOf(batchSchema.parse(reply));
 }
 
-const chainSchema = z.object({ ok: z.boolean(), checked: count, first_broken_id: z.number().int().nullable() });
+const chainSchema = z.object({
+  ok: z.boolean(),
+  checked: count,
+  first_broken_id: z.number().int().nullable(),
+});
 const chainsSchema = z.object({ audit: chainSchema, ledger: chainSchema });
 
 // verify_audit_chain: the superadmin at AAL2, six times an hour at most (RATE_LIMITED beyond).

@@ -4,7 +4,14 @@ import type { ReactNode } from 'react';
 import { EmptyState } from '@/components/admin/shell/empty-state';
 import { StatusBadge } from '@/components/admin/status/status-badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { adjustmentsCopy } from '@/lib/copy/finance-adjustments';
 import { formatIDR } from '@/lib/utils/currency';
 import { formatDateTimeShort } from '@/lib/utils/dates';
@@ -23,15 +30,24 @@ export interface AdjustmentsTableProps {
 function AdjustmentRow({ adjustment, actions }: { adjustment: Adjustment; actions: ReactNode }) {
   return (
     <TableRow>
-      <TableCell className="whitespace-nowrap tabular-nums">{formatDateTimeShort(adjustment.proposedAt)}</TableCell>
+      <TableCell className="whitespace-nowrap tabular-nums">
+        {formatDateTimeShort(adjustment.proposedAt)}
+      </TableCell>
       <TableCell className="font-medium">{adjustment.bookingCode ?? '–'}</TableCell>
       <TableCell>
         <p>{text.types[adjustment.type]}</p>
-        <p className="line-clamp-2 max-w-72 text-caption text-muted-foreground">{adjustment.reason}</p>
+        <p className="line-clamp-2 max-w-72 text-caption text-muted-foreground">
+          {adjustment.reason}
+        </p>
       </TableCell>
       <TableCell className="text-right tabular-nums">{formatIDR(adjustment.amount)}</TableCell>
       <TableCell>
         <StatusBadge kind="adjustment_status" value={adjustment.status} />
+        {adjustment.status === 'rejected' && adjustment.rejectedReason ? (
+          <p className="mt-1 line-clamp-2 max-w-60 text-caption text-muted-foreground">
+            {adjustment.rejectedReason}
+          </p>
+        ) : null}
       </TableCell>
       <TableCell className="text-body-sm">
         {text.by(adjustment.proposedByName ?? '–', adjustment.approvedByName)}
@@ -42,9 +58,20 @@ function AdjustmentRow({ adjustment, actions }: { adjustment: Adjustment; action
 }
 
 // Task P4.7.04: the adjustments newest first, with who proposed and approved each and what it can do next.
-export function AdjustmentsTable({ adjustments, actionsFor, proposeAction }: AdjustmentsTableProps) {
+export function AdjustmentsTable({
+  adjustments,
+  actionsFor,
+  proposeAction,
+}: AdjustmentsTableProps) {
   if (adjustments.length === 0) {
-    return <EmptyState icon={Scale} title={text.empty} description={text.emptyHint} action={proposeAction} />;
+    return (
+      <EmptyState
+        icon={Scale}
+        title={text.empty}
+        description={text.emptyHint}
+        action={proposeAction}
+      />
+    );
   }
   return (
     <Card>
@@ -65,7 +92,11 @@ export function AdjustmentsTable({ adjustments, actionsFor, proposeAction }: Adj
           </TableHeader>
           <TableBody>
             {adjustments.map((adjustment) => (
-              <AdjustmentRow key={adjustment.id} adjustment={adjustment} actions={actionsFor(adjustment)} />
+              <AdjustmentRow
+                key={adjustment.id}
+                adjustment={adjustment}
+                actions={actionsFor(adjustment)}
+              />
             ))}
           </TableBody>
         </Table>

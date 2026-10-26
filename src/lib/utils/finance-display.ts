@@ -1,7 +1,13 @@
 import { KELURAHAN_KEY, RW_KEY_PREFIX, VENDOR_KEY_PREFIX } from '@/config/finance';
 import { financeCopy } from '@/lib/copy/finance';
 import type { DailyValue } from '@/lib/utils/kpi';
-import type { FinanceDay, FinancePeriod, RevenueRule } from '@/types/finance';
+import type {
+  AdjustmentReply,
+  ApplyOutcome,
+  FinanceDay,
+  FinancePeriod,
+  RevenueRule,
+} from '@/types/finance';
 
 // What the finance pages show of their figures (Task P4.7): a beneficiary's name, a rule version's state, the days of a
 // period and the net series of the recap chart. Pure, so the pages and their tests read the same thing.
@@ -17,13 +23,17 @@ export function partyLabel(key: string, name: string | null): string {
     const rw = key.slice(RW_KEY_PREFIX.length).padStart(RW_PAD, '0');
     return financeCopy.parties.rw(name ?? `RW ${rw}`);
   }
-  if (key.startsWith(VENDOR_KEY_PREFIX)) return financeCopy.parties.vendor(name ?? financeCopy.parties.unknown);
+  if (key.startsWith(VENDOR_KEY_PREFIX))
+    return financeCopy.parties.vendor(name ?? financeCopy.parties.unknown);
   return name ?? financeCopy.parties.unknown;
 }
 
 export type RuleState = 'inForce' | 'upcoming' | 'closed';
 
-export function ruleState(rule: Pick<RevenueRule, 'effectiveFrom' | 'effectiveTo'>, today: string): RuleState {
+export function ruleState(
+  rule: Pick<RevenueRule, 'effectiveFrom' | 'effectiveTo'>,
+  today: string,
+): RuleState {
   if (rule.effectiveFrom > today) return 'upcoming';
   if (rule.effectiveTo !== null && rule.effectiveTo < today) return 'closed';
   return 'inForce';
@@ -47,4 +57,11 @@ export function netSeries(daily: readonly FinanceDay[], period: FinancePeriod): 
 // A select's value as a number, or null for its empty option ("every RW", "the RWs of each visit").
 export function numberOrNull(value: string): number | null {
   return value === '' ? null : Number(value);
+}
+
+// What apply_adjustment came to: applied, or rejected because Midtrans refunded the request the transfer answered
+// (20261104080200, refund_paid_twice_detected). Any other status after an apply is the overtaken rejection too, since
+// the RPC raises rather than answer one.
+export function applyOutcomeOf(status: AdjustmentReply['status']): ApplyOutcome {
+  return status === 'applied' ? 'applied' : 'overtaken';
 }
