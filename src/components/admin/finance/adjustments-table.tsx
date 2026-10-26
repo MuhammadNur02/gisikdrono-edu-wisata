@@ -57,6 +57,24 @@ function AdjustmentRow({ adjustment, actions }: { adjustment: Adjustment; action
   );
 }
 
+function AdjustmentsHeader() {
+  return (
+    <TableHeader>
+      <TableRow>
+        <TableHead>{text.columns.proposedAt}</TableHead>
+        <TableHead>{text.columns.booking}</TableHead>
+        <TableHead>{text.columns.type}</TableHead>
+        <TableHead className="text-right">{text.columns.amount}</TableHead>
+        <TableHead>{text.columns.status}</TableHead>
+        <TableHead>{text.columns.people}</TableHead>
+        <TableHead>
+          <span className="sr-only">{text.columns.action}</span>
+        </TableHead>
+      </TableRow>
+    </TableHeader>
+  );
+}
+
 // Task P4.7.04: the adjustments newest first, with who proposed and approved each and what it can do next.
 export function AdjustmentsTable({
   adjustments,
@@ -77,19 +95,7 @@ export function AdjustmentsTable({
     <Card>
       <CardContent className="overflow-x-auto pt-6">
         <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{text.columns.proposedAt}</TableHead>
-              <TableHead>{text.columns.booking}</TableHead>
-              <TableHead>{text.columns.type}</TableHead>
-              <TableHead className="text-right">{text.columns.amount}</TableHead>
-              <TableHead>{text.columns.status}</TableHead>
-              <TableHead>{text.columns.people}</TableHead>
-              <TableHead>
-                <span className="sr-only">{text.columns.action}</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
+          <AdjustmentsHeader />
           <TableBody>
             {adjustments.map((adjustment) => (
               <AdjustmentRow

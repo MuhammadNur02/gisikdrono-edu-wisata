@@ -76,41 +76,29 @@ function StepButtons({
   onStep: (step: Exclude<Step, null>) => void;
 }) {
   const waits = adjustment.applyNotBefore !== null && adjustment.applyNotBefore > nowIso;
+  const buttons = [
+    { step: 'approve', label: text.approve, isShown: adjustment.status === 'proposed' },
+    { step: 'apply', label: text.apply, isShown: adjustment.status === 'approved' },
+    { step: 'reject', label: text.reject, isShown: true },
+  ] as const;
   return (
     <div className="flex flex-wrap justify-end gap-2">
-      {adjustment.status === 'proposed' ? (
-        <Button
-          type="button"
-          size="sm"
-          onClick={() => {
-            onStep('approve');
-          }}
-        >
-          {text.approve}
-        </Button>
-      ) : null}
-      {adjustment.status === 'approved' ? (
-        <Button
-          type="button"
-          size="sm"
-          disabled={waits}
-          onClick={() => {
-            onStep('apply');
-          }}
-        >
-          {text.apply}
-        </Button>
-      ) : null}
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        onClick={() => {
-          onStep('reject');
-        }}
-      >
-        {text.reject}
-      </Button>
+      {buttons
+        .filter((button) => button.isShown)
+        .map((button) => (
+          <Button
+            key={button.step}
+            type="button"
+            size="sm"
+            variant={button.step === 'reject' ? 'outline' : 'default'}
+            disabled={button.step === 'apply' && waits}
+            onClick={() => {
+              onStep(button.step);
+            }}
+          >
+            {button.label}
+          </Button>
+        ))}
       {waits && adjustment.applyNotBefore ? (
         <p className="w-full text-right text-caption text-muted-foreground">
           {text.appliesFrom(formatDateTimeShort(adjustment.applyNotBefore))}
@@ -159,13 +147,43 @@ function ApplyDialog({
   );
 }
 
+// "Tolak" and "Setujui": each answers only whether it worked, so a success toast and the page's refresh follow.
+function DecisionDialog({
+  step,
+  adjustmentId,
+  actions,
+  onClose,
+  onDone,
+}: {
+  step: 'approve' | 'reject';
+  adjustmentId: string;
+  actions: Pick<AdjustmentActionsProps, 'approveAction' | 'rejectAction' | 'stepUpAction'>;
+  onClose: () => void;
+  onDone: (message: string) => () => void;
+}) {
+  const approveById = () => actions.approveAction({ adjustmentId });
+  return (
+    <StepDialog step={step} onClose={onClose}>
+      {step === 'reject' ? (
+        <RejectForm
+          adjustmentId={adjustmentId}
+          submit={withStepUp(actions.stepUpAction, actions.rejectAction)}
+          onDone={onDone(text.rejected)}
+        />
+      ) : (
+        <CodeConfirmForm
+          submitLabel={text.approve}
+          isDestructive={false}
+          submit={withoutData(withStepUp(actions.stepUpAction, approveById))}
+          onDone={onDone(text.approved)}
+        />
+      )}
+    </StepDialog>
+  );
+}
+
 // Task P4.7.04: what an open adjustment can do next, each step behind the authenticator code (docs/Security.md §5.3).
-export function AdjustmentActions({
-  adjustment,
-  nowIso,
-  stepUpAction,
-  ...actions
-}: AdjustmentActionsProps) {
+export function AdjustmentActions({ adjustment, nowIso, ...actions }: AdjustmentActionsProps) {
   const [step, setStep] = useState<Step>(null);
   const router = useRouter();
   if (adjustment.status !== 'proposed' && adjustment.status !== 'approved') return null;
@@ -180,34 +198,23 @@ export function AdjustmentActions({
     toast.success(message);
     refreshAfter();
   };
-  const byId = (action: IdAction) => () => action({ adjustmentId: adjustment.id });
   return (
     <>
       <StepButtons adjustment={adjustment} nowIso={nowIso} onStep={setStep} />
-      {step === 'reject' ? (
-        <StepDialog step="reject" onClose={close}>
-          <RejectForm
-            adjustmentId={adjustment.id}
-            submit={withStepUp(stepUpAction, actions.rejectAction)}
-            onDone={done(text.rejected)}
-          />
-        </StepDialog>
-      ) : null}
-      {step === 'approve' ? (
-        <StepDialog step="approve" onClose={close}>
-          <CodeConfirmForm
-            submitLabel={text.approve}
-            isDestructive={false}
-            submit={withoutData(withStepUp(stepUpAction, byId(actions.approveAction)))}
-            onDone={done(text.approved)}
-          />
-        </StepDialog>
+      {step === 'approve' || step === 'reject' ? (
+        <DecisionDialog
+          step={step}
+          adjustmentId={adjustment.id}
+          actions={actions}
+          onClose={close}
+          onDone={done}
+        />
       ) : null}
       {step === 'apply' ? (
         <ApplyDialog
           adjustmentId={adjustment.id}
           applyAction={actions.applyAction}
-          stepUpAction={stepUpAction}
+          stepUpAction={actions.stepUpAction}
           onClose={close}
           onApplied={refreshAfter}
         />
