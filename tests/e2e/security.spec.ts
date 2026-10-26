@@ -203,7 +203,7 @@ test.describe('security headers (docs/Security.md §8.2)', () => {
     });
   }
 
-  test('the API, a ticket landing and an unknown booking are private and noindex too', async ({
+  test('the API, a ticket landing, an unknown booking and an email link are private and noindex too', async ({
     request,
   }) => {
     expectPrivateAndNoIndex(await request.post(JOB_PATHS[0] ?? '', NO_REDIRECTS));
@@ -212,6 +212,14 @@ test.describe('security headers (docs/Security.md §8.2)', () => {
       expectPrivateAndNoIndex(response);
       expect(response.headers()['referrer-policy']).toBe('no-referrer');
     }
+    // An email link's continue page hides its token_hash from other sites but keeps its own POST's Origin, which
+    // no-referrer would send as null (L2 of the delta2 review of PR #77).
+    const link = await request.get(
+      '/auth/continue?token_hash=abcdef0123&type=invite',
+      NO_REDIRECTS,
+    );
+    expectPrivateAndNoIndex(link);
+    expect(link.headers()['referrer-policy']).toBe('same-origin');
   });
 
   test('the camera opens on the scanner only', async ({ request }) => {
