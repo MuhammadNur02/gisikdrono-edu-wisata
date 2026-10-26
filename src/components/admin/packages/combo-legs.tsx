@@ -116,7 +116,7 @@ function RwChoice({
 }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="min-h-11 w-full sm:w-64" aria-label={text.add}>
+      <SelectTrigger className="min-h-11 w-full sm:w-64" aria-label={text.add} data-leg-add>
         <SelectValue placeholder={text.addPlaceholder} />
       </SelectTrigger>
       <SelectContent>
@@ -172,17 +172,15 @@ interface RouteHandlers {
 function LegList({
   legs,
   rwOptions,
-  listRef,
   handlers,
 }: {
   legs: readonly RwId[];
   rwOptions: readonly RwOption[];
-  listRef: RefObject<HTMLOListElement | null>;
   handlers: RouteHandlers;
 }) {
   if (legs.length === 0) return <p className="text-body-sm text-muted-foreground">{text.empty}</p>;
   return (
-    <ol ref={listRef} className="divide-y divide-border">
+    <ol className="divide-y divide-border">
       {legs.map((rwId, index) => (
         <LegRow
           key={rwId}
@@ -205,29 +203,37 @@ function LegList({
 
 type FocusTarget = { rwId: RwId; action: 'up' | 'down' } | 'first' | null;
 
-function enabledButton(list: HTMLOListElement, selector: string): HTMLButtonElement | null {
-  return list.querySelector<HTMLButtonElement>(`${selector}:not(:disabled)`);
+function enabled(container: HTMLElement, selector: string): HTMLElement | null {
+  return container.querySelector<HTMLElement>(`${selector}:not(:disabled)`);
 }
 
-// Review of PR #79, L-9: after a move, focus stays on the moved RW's button of the same direction, or on the other
-// direction once that one is disabled at the end of the route; after a removal it goes to the first button left.
-function useRouteFocus(listRef: RefObject<HTMLOListElement | null>, legs: readonly RwId[]) {
+// Where focus goes once the route has changed.
+function focusTargetIn(
+  container: HTMLElement,
+  target: Exclude<FocusTarget, null>,
+): HTMLElement | null {
+  if (target === 'first') {
+    return enabled(container, '[data-leg-action]') ?? enabled(container, '[data-leg-add]');
+  }
+  const row = `[data-leg="${String(target.rwId)}"]`;
+  const other = target.action === 'up' ? 'down' : 'up';
+  return (
+    enabled(container, `${row} [data-leg-action="${target.action}"]`) ??
+    enabled(container, `${row} [data-leg-action="${other}"]`)
+  );
+}
+
+// Review of PR #79, L-9, and of PR #85, L-c: after a move, focus stays on the moved RW's button of the same direction,
+// or on the other direction once that one is disabled at the end of the route; after a removal it goes to the first
+// button left, or to the Add control once the route is empty. The target is cleared every time.
+function useRouteFocus(containerRef: RefObject<HTMLDivElement | null>, legs: readonly RwId[]) {
   const [target, setTarget] = useState<FocusTarget>(null);
   useEffect(() => {
-    const list = listRef.current;
-    if (target === null || list === null) return;
-    if (target === 'first') {
-      enabledButton(list, '[data-leg-action]')?.focus();
-    } else {
-      const row = `[data-leg="${String(target.rwId)}"]`;
-      const other = target.action === 'up' ? 'down' : 'up';
-      (
-        enabledButton(list, `${row} [data-leg-action="${target.action}"]`) ??
-        enabledButton(list, `${row} [data-leg-action="${other}"]`)
-      )?.focus();
-    }
+    if (target === null) return;
+    const container = containerRef.current;
+    if (container !== null) focusTargetIn(container, target)?.focus();
     setTarget(null);
-  }, [target, legs, listRef]);
+  }, [target, legs, containerRef]);
   return setTarget;
 }
 
@@ -237,9 +243,9 @@ function useRouteEditor(
   rwOptions: readonly RwOption[],
   onChange: (legs: RwId[]) => void,
 ) {
-  const listRef = useRef<HTMLOListElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [announcement, setAnnouncement] = useState('');
-  const focusOn = useRouteFocus(listRef, legs);
+  const focusOn = useRouteFocus(containerRef, legs);
   const handlers: RouteHandlers = {
     move: (index, offset) => {
       const rwId = legs[index];
@@ -258,7 +264,7 @@ function useRouteEditor(
       setAnnouncement(text.added(nameOf(rwId, rwOptions)));
     },
   };
-  return { listRef, announcement, handlers };
+  return { containerRef, announcement, handlers };
 }
 
 // docs/PRD.md FR-ADMIN-05 (Task P4.3.05, P4.3.11): a combo's route, the RWs it visits in order, which save_package
@@ -274,14 +280,18 @@ export function ComboLegsEditor({
 }) {
   const { field, fieldState } = useController({ control, name: 'legRwIds' });
   const legs = field.value;
-  const { listRef, announcement, handlers } = useRouteEditor(legs, rwOptions, field.onChange);
+  const { containerRef, announcement, handlers } = useRouteEditor(legs, rwOptions, field.onChange);
   const remaining = rwOptions.map((option) => option.id).filter((id) => !legs.includes(id));
   const canAdd = remaining.length > 0 && legs.length < MAX_PACKAGE_LEGS;
   return (
     <FormSection title={packagesCopy.sections.legs}>
       <p className="text-body-sm text-muted-foreground">{text.hint}</p>
-      <LegList legs={legs} rwOptions={rwOptions} listRef={listRef} handlers={handlers} />
-      {canAdd ? <AddLeg remaining={remaining} rwOptions={rwOptions} onAdd={handlers.add} /> : null}
+      <div ref={containerRef} className="space-y-3">
+        <LegList legs={legs} rwOptions={rwOptions} handlers={handlers} />
+        {canAdd ? (
+          <AddLeg remaining={remaining} rwOptions={rwOptions} onAdd={handlers.add} />
+        ) : null}
+      </div>
       <p aria-live="polite" className="sr-only">
         {announcement}
       </p>
