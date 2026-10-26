@@ -2,7 +2,9 @@
 -- the payments_poll flake on PR #82): internal.payments_to_poll (each of its two kinds), internal.claim_notifications
 -- and internal.claim_security_alerts. Each claim runs under the default planner and under settings that force a nested
 -- loop whose inner side is the locking sub-select, rescanned for every outer row: a rescan meets the rows this very
--- statement already updated, LockRows skips them, and LIMIT hands out the next ones.
+-- statement already updated, LockRows skips them, and LIMIT hands out the next ones. Before 20261104150000 the
+-- nested_no_unique planner made payments_to_poll(1) ask about 8 open attempts and claim_notifications(1) claim 38 of
+-- 40 messages (CI run 40329134693).
 begin;
 select plan(28);
 select set_config('app.qr_key_id', 'k1', true);
@@ -165,28 +167,6 @@ select pg_temp.planner('default');
 select is((select count(*)::int from public.security_alerts
            where fingerprint like 'uji:klaim:%' and delivery_claimed_at is not null),
   16, 'and exactly the alerts it answered are leased');
-
--- PROBE (removed with the fix): the plan of claim_security_alerts' update under each planner.
-create function pg_temp.alert_plan(p_planner text) returns text
-  language plpgsql
-as $p$
-declare
-  line text;
-  lines text := '';
-begin
-  perform pg_temp.planner(p_planner);
-  for line in execute $q$explain (costs off) update public.security_alerts a set delivery_claimed_at = now()
-    where a.id in (select due.id from public.security_alerts due
-                   where due.severity in ('high', 'critical') and due.acknowledged_at is null and due.notified_at is null
-                   order by due.last_seen_at limit 1 for update skip locked)$q$ loop
-    lines := lines || E'
-' || line;
-  end loop;
-  return p_planner || ':' || lines;
-end;
-$p$;
-select diag(pg_temp.alert_plan(name)) from planners order by name;
-select pg_temp.planner('default');
 
 -- ===== Every planner answered =====
 select is((select count(*)::int from planners), 4, 'four planners were tried');
