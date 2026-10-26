@@ -192,7 +192,9 @@ select is((select count(*)::int from public.notifications where dedupe_key like 
 -- ===== claim_security_alerts =====
 update public.security_alerts set notified_at = now() where notified_at is null;
 insert into public.security_alerts (rule, severity, fingerprint, title, last_seen_at)
-select 'uji_klaim', 'high', 'uji:klaim:' || n, 'Uji klaim', now() - n * interval '1 second'
+-- Oldest first, in the order they are written: a sequential scan of the table then meets each candidate as the claim's
+-- own order hands it out, which is the order in which the old shape over-claims.
+select 'uji_klaim', 'high', 'uji:klaim:' || n, 'Uji klaim', now() - interval '1 hour' + n * interval '1 second'
 from generate_series(1, 40) n;
 analyze public.security_alerts;
 -- The old claim of 20261024120200, run once and rolled back, as above.
