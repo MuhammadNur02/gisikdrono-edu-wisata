@@ -98,11 +98,11 @@ describe('readRevenueDays', () => {
 });
 
 describe('countUpcomingVisits', () => {
-  it('counts the paid bookings that visit the RW from today to 30 days ahead', async () => {
+  it('counts the paid bookings that visit the RW from tomorrow to 30 days ahead', async () => {
     const bodies = sessionAnswering([bucket(0, '2026-11-01'), bucket(0, '2026-12-01')]);
     await expect(countUpcomingVisits(8, '2026-11-18')).resolves.toBe(6);
     expect(bodies).toEqual([
-      { p_from: '2026-11-18', p_to: '2026-12-18', p_granularity: 'month', p_rw_id: 8 },
+      { p_from: '2026-11-19', p_to: '2026-12-18', p_granularity: 'month', p_rw_id: 8 },
     ]);
   });
 });

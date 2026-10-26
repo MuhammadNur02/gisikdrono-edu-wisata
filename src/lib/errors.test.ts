@@ -2,7 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { copy } from '@/lib/copy/id';
-import { AppError, fail, mapError, ok, raisedHintOf, resultResponse } from '@/lib/errors';
+import {
+  AppError,
+  fail,
+  mapError,
+  ok,
+  postgresCodeOf,
+  raisedHintOf,
+  resultResponse,
+} from '@/lib/errors';
 
 vi.mock('next/headers', () => ({
   headers: () => Promise.reject(new Error('outside a request')),
@@ -83,5 +91,15 @@ describe('raisedHintOf', () => {
     expect(raisedHintOf({ code: 'P0001', hint: null })).toBeUndefined();
     expect(raisedHintOf({ code: '23505', hint: 'CONTACT_UNVERIFIED' })).toBeUndefined();
     expect(raisedHintOf(new Error('CONTACT_UNVERIFIED'))).toBeUndefined();
+  });
+});
+
+describe('postgresCodeOf', () => {
+  it('reads the code of a PostgREST or Postgres error, and of nothing else', () => {
+    expect(postgresCodeOf({ code: '57014', message: 'canceling statement' })).toBe('57014');
+    expect(postgresCodeOf({ code: 'PGRST103' })).toBe('PGRST103');
+    expect(postgresCodeOf(new Error('57014'))).toBeUndefined();
+    expect(postgresCodeOf({ code: 57014 })).toBeUndefined();
+    expect(postgresCodeOf(null)).toBeUndefined();
   });
 });
