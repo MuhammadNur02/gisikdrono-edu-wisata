@@ -135,10 +135,18 @@ test.describe('the dashboard as the superadmin: headers, cookies and the CSP (HD
     await removeAccounts(superadmin ? [superadmin.id] : []);
   });
 
-  test('/dashboard and the scanner carry the baseline headers, an enforced CSP and no-store', async ({
+  // One sign-in for both checks: a second sign-in of the same account within a TOTP window is refused as a replay.
+  test('/dashboard and the scanner carry the baseline headers, an enforced CSP and no-store, and the session cookies stay out of reach of page scripts', async ({
     page,
+    context,
   }) => {
     await signInToDashboard(page, superadmin?.email ?? '');
+    const cookies = await context.cookies();
+    const sessionCookies = cookies.filter((cookie) => cookie.name.startsWith('sb-'));
+    expect(sessionCookies.length).toBeGreaterThan(0);
+    for (const cookie of sessionCookies) expect(cookie.httpOnly, cookie.name).toBe(true);
+    expect(await page.evaluate(() => document.cookie)).not.toMatch(/(^|;\s*)sb-/);
+
     for (const path of ['/dashboard', SCANNER_PATH]) {
       const response = await page.request.get(path, NO_REDIRECTS);
       expect(response.status(), path).toBe(200);
@@ -155,15 +163,6 @@ test.describe('the dashboard as the superadmin: headers, cookies and the CSP (HD
       );
       expectPrivateAndNoIndex(response);
     }
-  });
-
-  test('the session cookies are out of reach of page scripts', async ({ page, context }) => {
-    await signInToDashboard(page, superadmin?.email ?? '');
-    const cookies = await context.cookies();
-    const sessionCookies = cookies.filter((cookie) => cookie.name.startsWith('sb-'));
-    expect(sessionCookies.length).toBeGreaterThan(0);
-    for (const cookie of sessionCookies) expect(cookie.httpOnly, cookie.name).toBe(true);
-    expect(await page.evaluate(() => document.cookie)).not.toMatch(/(^|;\s*)sb-/);
   });
 });
 
