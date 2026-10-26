@@ -10,8 +10,10 @@ import { requireCertificateReader, requireDocumentReader } from '@/server/auth/d
 import {
   BOOKING_DOCUMENT_KINDS,
   documentFileName,
+  type BookingDocument,
   type BookingDocumentKind,
 } from '@/server/services/booking-documents';
+import { restrictedFileName } from '@/server/services/booking-documents-restricted';
 import {
   certificateFileName,
   isServable,
@@ -24,9 +26,11 @@ import {
   readBookingDocument,
   readCertificateDocument,
   readTicketDocument,
+  restrictedBookingDocumentFile,
   ticketDocumentFile,
   withinBookletDownloadLimit,
   withinDocumentLimits,
+  withinRestrictedDocumentLimit,
 } from '@/server/services/document-service';
 
 export const runtime = 'nodejs';
@@ -135,10 +139,25 @@ async function bookingDocument(
     return notFound();
   }
   const table = kind === 'quotation' ? 'quotations' : 'invoices';
-  const reader = await requireDocumentReader(table, document.id, document.bookingCode);
+  const reader = await requireDocumentReader(table, document.id, document.bookingCode, {
+    allowsRestricted: true,
+  });
   if (!reader.ok) return notFound();
+  if (reader.reader === 'restricted') return restrictedDocument(document, reader.userId, log);
   const readerId = reader.reader === 'staff' ? reader.userId : null;
   return pdfResponse(documentFileName(document), await bookingDocumentFile(document, readerId));
+}
+
+// An RW admin's header-only copy (Task P4.3.02, decision of 2026-10-26), within their own limit; never kept.
+async function restrictedDocument(
+  document: BookingDocument,
+  staffId: string,
+  log: RequestLog,
+): Promise<Response> {
+  if (!(await withinRestrictedDocumentLimit(staffId))) {
+    return tooManyRequests('document_restricted:user', log);
+  }
+  return pdfResponse(restrictedFileName(document), await restrictedBookingDocumentFile(document));
 }
 
 // The same order for the e-ticket, which has no row of its own: the booking is the document, and the staff reader is

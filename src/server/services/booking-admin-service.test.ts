@@ -2,11 +2,14 @@ import { createClient } from '@supabase/supabase-js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Database } from '@/db/types';
+import { bookingsAdminCopy } from '@/lib/copy/bookings-admin';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { loadListQuery } from '@/lib/utils/list-query';
 import {
+  getAddonNotes,
   listBookingsForStaff,
   revealBookingContact,
+  revokeBookingTicket,
   saveAdminNotes,
   setAddonFulfillment,
 } from '@/server/services/booking-admin-service';
@@ -24,7 +27,7 @@ interface RecordedCall {
 }
 
 // The staff member's session client, played by a fetch that records every request and answers with `answer`.
-function sessionAnswering(answer: () => Response): RecordedCall[] {
+function sessionAnswering(answer: (path: string) => Response): RecordedCall[] {
   const calls: RecordedCall[] = [];
   const client = createClient<Database>('http://supabase.test', 'test-key', {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -38,7 +41,7 @@ function sessionAnswering(answer: () => Response): RecordedCall[] {
           search: decodeURIComponent(url.search),
           body,
         });
-        return Promise.resolve(answer());
+        return Promise.resolve(answer(url.pathname));
       },
     },
   });
@@ -74,21 +77,59 @@ describe('listBookingsForStaff', () => {
   });
 });
 
+// The booking as v_bookings_staff shows it, then the write's own answer.
+function bookingThen(booking: { is_anonymised: boolean } | null, write: Response) {
+  return sessionAnswering((path) =>
+    path.endsWith('/v_bookings_staff')
+      ? Response.json(booking === null ? null : { id: BOOKING_ID, ...booking })
+      : write,
+  );
+}
+
 describe('the staff writes', () => {
   it('store an empty note as null, and answer NOT_FOUND when RLS hides the booking', async () => {
-    const calls = sessionAnswering(() => Response.json(null));
-    await expect(saveAdminNotes({ bookingId: BOOKING_ID, adminNotes: '' })).rejects.toMatchObject({
+    const calls = bookingThen({ is_anonymised: false }, Response.json({ id: BOOKING_ID }));
+    await saveAdminNotes({ bookingId: BOOKING_ID, adminNotes: '' });
+    const write = calls.find((call) => call.method === 'PATCH');
+    expect(JSON.parse(write?.body ?? '{}')).toEqual({ admin_notes: null });
+    bookingThen(null, Response.json(null));
+    await expect(saveAdminNotes({ bookingId: BOOKING_ID, adminNotes: 'x' })).rejects.toMatchObject({
       code: 'NOT_FOUND',
     });
-    expect(calls[0]?.method).toBe('PATCH');
-    expect(JSON.parse(calls[0]?.body ?? '{}')).toEqual({ admin_notes: null });
   });
 
-  it('mark an add-on line only within the booking it names', async () => {
-    const calls = sessionAnswering(() => Response.json({ id: ADDON_ID }));
+  it('refuse both writes on an anonymised booking before writing anything (F-75-3)', async () => {
+    const calls = bookingThen({ is_anonymised: true }, Response.json({ id: ADDON_ID }));
+    await expect(saveAdminNotes({ bookingId: BOOKING_ID, adminNotes: 'x' })).rejects.toMatchObject({
+      code: 'STATE_INVALID',
+    });
+    await expect(
+      setAddonFulfillment({ bookingId: BOOKING_ID, addonId: ADDON_ID, status: 'prepared' }),
+    ).rejects.toMatchObject({ code: 'STATE_INVALID' });
+    expect(calls.some((call) => call.method === 'PATCH')).toBe(false);
+  });
+
+  it('mark an add-on line only within its booking and never a cancelled one (F-75-2)', async () => {
+    const calls = bookingThen({ is_anonymised: false }, Response.json({ id: ADDON_ID }));
     await setAddonFulfillment({ bookingId: BOOKING_ID, addonId: ADDON_ID, status: 'prepared' });
-    expect(calls[0]?.search).toContain(`booking_id=eq.${BOOKING_ID}`);
-    expect(JSON.parse(calls[0]?.body ?? '{}')).toEqual({ fulfillment_status: 'prepared' });
+    const write = calls.find((call) => call.method === 'PATCH');
+    expect(write?.search).toContain(`booking_id=eq.${BOOKING_ID}`);
+    expect(write?.search).toContain('fulfillment_status=neq.cancelled');
+    expect(JSON.parse(write?.body ?? '{}')).toEqual({ fulfillment_status: 'prepared' });
+    bookingThen({ is_anonymised: false }, Response.json(null));
+    await expect(
+      setAddonFulfillment({ bookingId: BOOKING_ID, addonId: ADDON_ID, status: 'prepared' }),
+    ).rejects.toMatchObject({ code: 'STATE_INVALID' });
+  });
+});
+
+describe('listBookingsForStaff past the last page', () => {
+  it('answers an empty page instead of failing on PGRST103 (F-75-5)', async () => {
+    sessionAnswering(() => Response.json({ code: 'PGRST103', message: 'x' }, { status: 416 }));
+    await expect(listBookingsForStaff(query({ page: '99' }), null, null)).resolves.toEqual({
+      rows: [],
+      total: 0,
+    });
   });
 });
 
@@ -102,5 +143,58 @@ describe('revealBookingContact', () => {
       Response.json({ code: 'P0001', hint: 'RATE_LIMITED', message: 'x' }, { status: 400 }),
     );
     await expect(revealBookingContact(values)).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+  });
+});
+
+describe('revokeBookingTicket', () => {
+  const TICKET_ID = '0192f3a4-5b6c-7d8e-9f01-0000000000dd';
+  const values = { bookingId: BOOKING_ID, ticketCode: 'GSK-7F3K9Q2M-05', reason: 'Salah cetak' };
+
+  it('finds the ticket of this booking by its code, then calls revoke_ticket with the reason', async () => {
+    const calls = sessionAnswering((path) =>
+      path.endsWith('/tickets_qr')
+        ? Response.json({ id: TICKET_ID })
+        : new Response(null, { status: 204 }),
+    );
+    await revokeBookingTicket(values);
+    expect(calls[0]?.search).toContain(`booking_id=eq.${BOOKING_ID}`);
+    expect(calls[0]?.search).toContain('ticket_code=eq.GSK-7F3K9Q2M-05');
+    expect(calls[1]?.path).toBe('/rest/v1/rpc/revoke_ticket');
+    expect(JSON.parse(calls[1]?.body ?? '{}')).toEqual({
+      p_ticket_id: TICKET_ID,
+      p_reason: 'Salah cetak',
+    });
+  });
+
+  it('answers NOT_FOUND for a code the booking has not and FORBIDDEN for an RW admin', async () => {
+    sessionAnswering(() => Response.json(null));
+    await expect(revokeBookingTicket(values)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    sessionAnswering((path) =>
+      path.endsWith('/tickets_qr')
+        ? Response.json({ id: TICKET_ID })
+        : Response.json({ code: '42501', message: 'x' }, { status: 403 }),
+    );
+    await expect(revokeBookingTicket(values)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});
+
+describe('getAddonNotes', () => {
+  it('reads the notes by line id, and says why outside the booking window', async () => {
+    sessionAnswering(() => Response.json([{ addon_id: 'a-1', notes: 'Dibungkus' }]));
+    await expect(getAddonNotes(BOOKING_ID)).resolves.toEqual({ 'a-1': 'Dibungkus' });
+    sessionAnswering(() =>
+      Response.json({ code: '42501', message: 'x', hint: 'OUTSIDE_WINDOW' }, { status: 403 }),
+    );
+    await expect(getAddonNotes(BOOKING_ID)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      userMessage: bookingsAdminCopy.detail.outsideWindow,
+    });
+  });
+
+  it('keeps any other refusal generic', async () => {
+    sessionAnswering(() => Response.json({ code: '42501', message: 'x' }, { status: 403 }));
+    const refusal: unknown = await getAddonNotes(BOOKING_ID).catch((error: unknown) => error);
+    expect(refusal).toMatchObject({ code: 'FORBIDDEN' });
+    expect(refusal).not.toMatchObject({ userMessage: bookingsAdminCopy.detail.outsideWindow });
   });
 });

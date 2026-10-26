@@ -4,15 +4,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fail } from '@/lib/errors';
 import { requireRole, type StaffContext } from '@/server/auth/guards';
 import {
+  getAddonNotes,
   getBookingParticipants,
   revealBookingContact,
+  revokeBookingTicket,
   saveAdminNotes,
   setAddonFulfillment,
 } from '@/server/services/booking-admin-service';
 
 import {
+  loadAddonNotesAction,
   loadBookingParticipantsAction,
   revealBookingContactAction,
+  revokeTicketAction,
   saveAdminNotesAction,
   setAddonFulfillmentAction,
 } from './booking-admin';
@@ -21,8 +25,10 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
 vi.mock('@/server/auth/guards', () => ({ requireRole: vi.fn() }));
 vi.mock('@/server/services/booking-admin-service', () => ({
+  getAddonNotes: vi.fn(),
   getBookingParticipants: vi.fn(),
   revealBookingContact: vi.fn(),
+  revokeBookingTicket: vi.fn(),
   saveAdminNotes: vi.fn(),
   setAddonFulfillment: vi.fn(),
 }));
@@ -79,10 +85,54 @@ describe('the booking detail actions', () => {
     expect(revalidatePath).toHaveBeenCalledWith(`/dashboard/bookings/${BOOKING_ID}`);
   });
 
+  it('load the add-on notes only on request, at AAL2', async () => {
+    vi.mocked(getAddonNotes).mockResolvedValue({ [ADDON_ID]: 'Dibungkus' });
+    await expect(loadAddonNotesAction({ bookingId: BOOKING_ID })).resolves.toEqual({
+      ok: true,
+      data: { [ADDON_ID]: 'Dibungkus' },
+    });
+    vi.mocked(requireRole).mockResolvedValueOnce({ ok: true, ctx: { ...OFFICER, isAal2: false } });
+    await expect(loadAddonNotesAction({ bookingId: BOOKING_ID })).resolves.toMatchObject({
+      error: { code: 'FORBIDDEN' },
+    });
+    expect(getAddonNotes).toHaveBeenCalledTimes(1);
+  });
+
   it('refuse a reveal without a reason', async () => {
     await expect(
       revealBookingContactAction({ bookingId: BOOKING_ID, reason: '' }),
     ).resolves.toMatchObject({ error: { code: 'VALIDATION' } });
     expect(revealBookingContact).not.toHaveBeenCalled();
+  });
+});
+
+describe('revokeTicketAction', () => {
+  const input = { bookingId: BOOKING_ID, ticketCode: 'GSK-7F3K9Q2M-05', reason: 'Salah cetak' };
+
+  it('is for the superadmin alone, at AAL2', async () => {
+    vi.mocked(requireRole).mockResolvedValueOnce(fail('FORBIDDEN'));
+    await expect(revokeTicketAction(input)).resolves.toMatchObject({
+      error: { code: 'FORBIDDEN' },
+    });
+    expect(requireRole).toHaveBeenCalledWith('superadmin');
+    expect(revokeBookingTicket).not.toHaveBeenCalled();
+  });
+
+  it('revokes with the reason and refreshes the booking', async () => {
+    vi.mocked(requireRole).mockResolvedValueOnce({
+      ok: true,
+      ctx: { ...OFFICER, role: 'superadmin', rwId: null },
+    });
+    await expect(revokeTicketAction(input)).resolves.toEqual({ ok: true, data: null });
+    expect(revokeBookingTicket).toHaveBeenCalledWith(input);
+    expect(revalidatePath).toHaveBeenCalledWith(`/dashboard/bookings/${BOOKING_ID}`);
+  });
+
+  it('refuses a code that is no ticket code', async () => {
+    await expect(
+      revokeTicketAction({ ...input, ticketCode: 'GSK-7F3K9Q2M' }),
+    ).resolves.toMatchObject({
+      error: { code: 'VALIDATION' },
+    });
   });
 });
