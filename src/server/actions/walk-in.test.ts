@@ -168,9 +168,9 @@ describe('createAdminBookingAction', () => {
 
   it('says what to do when the session is taken or the price moved', async () => {
     vi.mocked(createWalkInBooking).mockRejectedValueOnce(new AppError('STATE_INVALID'));
-    await expect(createAdminBookingAction(BOOKING)).resolves.toMatchObject({
-      error: { code: 'STATE_INVALID', message: expect.stringContaining('Bayar tunai sekarang') },
-    });
+    const refused = await createAdminBookingAction(BOOKING);
+    expect(refused).toMatchObject({ error: { code: 'STATE_INVALID' } });
+    expect(refused.ok ? '' : refused.error.message).toContain('Bayar tunai sekarang');
     vi.mocked(createWalkInBooking).mockRejectedValueOnce(new AppError('PRICE_MISMATCH'));
     await expect(createAdminBookingAction(BOOKING)).resolves.toMatchObject({
       error: { code: 'PRICE_MISMATCH' },

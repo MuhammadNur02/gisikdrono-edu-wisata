@@ -61,16 +61,19 @@ select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000ab001',
     array['00000000-0000-4000-8000-0000000ab203']::uuid[], 4, pg_temp.booker('+447700900123', true, true), 'loket-x',
     (select hash from quotes where name = 'rw05_4'))$$,
   '42501', 'only an officer of the package''s RW books for a group', 'an RW 08 officer books no RW 05 package');
+reset role;
 select pg_temp.act_as('admin_rw_05_aal1');
 select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000ab001',
     array['00000000-0000-4000-8000-0000000ab203']::uuid[], 4, pg_temp.booker('+447700900123', true, true), 'loket-x',
     (select hash from quotes where name = 'rw05_4'))$$,
   '42501', 'only an officer at AAL2 books for a group', 'nor does their own officer before AAL2');
+reset role;
 select pg_temp.act_as('none');
 select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000ab001',
     array['00000000-0000-4000-8000-0000000ab203']::uuid[], 4, pg_temp.booker('+447700900123', true, true), 'loket-x',
     (select hash from quotes where name = 'rw05_4'))$$,
   '42501', null, 'nor an account without a role');
+reset role;
 select pg_temp.act_as('admin_rw_05');
 select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000ab002',
     array['00000000-0000-4000-8000-0000000ab203', '00000000-0000-4000-8000-0000000ab213']::uuid[], 3,
@@ -181,15 +184,19 @@ as $$
                                            'k1', 'Kuitansi 001');
 $$;
 
+reset role;
 select pg_temp.act_as('superadmin_stale_totp');
 select throws_ok($$select pg_temp.pay('walk_in', 'cash', 120000)$$, '42501',
   'confirm with a fresh authenticator code first', 'cash needs a fresh authenticator code');
+reset role;
 select pg_temp.act_as('superadmin_aal2');
 select throws_ok($select pg_temp.pay('walk_in', 'cash', 120000)$, 'P0002', null,
   'A9: cash is the RW admin''s, not the superadmin''s');
+reset role;
 select pg_temp.act_as('admin_rw_08');
 select throws_ok($select pg_temp.pay('walk_in', 'cash', 120000)$, 'P0002', null,
   'an RW 08 officer does not see the RW 05 booking');
+reset role;
 select pg_temp.act_as('admin_rw_05');
 select throws_ok($$select pg_temp.pay('combo', 'cash', 120000)$$, 'P0002', null,
   'nor does the RW 05 officer take the combo''s cash');
