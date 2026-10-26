@@ -22,7 +22,9 @@ import { copy } from '../../src/lib/copy/id';
 // hashes the tests cannot single out, so a reset that landed in the middle of these tries wiped their count and the
 // sixth read as an ordinary failure (#72, #69). Alone at the end, nothing resets them under it.
 
-test.describe.configure({ timeout: 180_000 });
+// Two addresses, six sign-ins each (I78-2 of the review of PR #78: the bound the test had in staff-sign-in.spec.ts).
+const LOCKOUT_TEST_MS = 180_000;
+test.describe.configure({ timeout: LOCKOUT_TEST_MS });
 
 // login:ip+email allows five tries in fifteen minutes; the sixth is refused before Supabase Auth is asked.
 const SIGN_IN_TRIES = 6;

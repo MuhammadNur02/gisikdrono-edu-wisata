@@ -99,14 +99,15 @@ async function createVerifiedStaff(
 ): Promise<{ id: string; email: string }> {
   const account = await createAccount('none');
   const fullName = role === 'superadmin' ? 'Superadmin Uji E2E' : 'Admin RW Uji E2E';
+  // The role first: a factor of an account that never was staff is verified only under a claimed invite (20261103131000).
   await runSql(`begin;
-    insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at, secret)
-      values (gen_random_uuid(), '${account.id}', 'DEV-ONLY authenticator', 'totp', 'verified', now(), now(),
-              '${DEV_ONLY_TOTP_SECRET}');
     select set_config('app.purge', 'on', true);
     delete from public.profiles where id = '${account.id}';
     insert into public.profiles (id, email, full_name, role, rw_id, is_active, claims_version)
       values ('${account.id}', '${account.email}', '${fullName}', '${role}', ${rwId === null ? 'null' : String(rwId)}, true, 1);
+    insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at, secret)
+      values (gen_random_uuid(), '${account.id}', 'DEV-ONLY authenticator', 'totp', 'verified', now(), now(),
+              '${DEV_ONLY_TOTP_SECRET}');
     commit;`);
   return account;
 }
@@ -120,6 +121,7 @@ export async function removeAccounts(userIds: readonly string[]): Promise<void> 
     select set_config('app.purge', 'on', true);
     delete from public.login_attempts where user_id = any(${ids});
     delete from public.security_events where actor_id = any(${ids});
+    delete from public.staff_invites where created_by = any(${ids}) or accepted_user_id = any(${ids});
     delete from public.profiles where id = any(${ids});
     commit;`);
   for (const userId of userIds) {

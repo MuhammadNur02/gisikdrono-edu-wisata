@@ -85,11 +85,15 @@ select columns_are('public', 'profiles', array[
   -- added by 20261029080200: set by a completed MFA reset, cleared by the re-enrolment code
   'reenrolment_required',
   -- added by 20261029080400: the ten minutes the used code opens for the new authenticator
-  'reenrolment_window_until'
+  'reenrolment_window_until',
+  -- added by 20261103131500: when the profile first held a role (onboarding finished)
+  'became_staff_at'
 ]);
 select columns_are('public', 'staff_invites', array[
   'id', 'email', 'role', 'rw_id', 'invite_code_hash', 'expires_at', 'accepted_at',
-  'accepted_user_id', 'revoked_at', 'created_by', 'created_at'
+  'accepted_user_id', 'revoked_at', 'created_by', 'created_at',
+  -- 20261103131000: the onboarding claim.
+  'claimed_user_id', 'claimed_session_id', 'claimed_at'
 ]);
 select columns_are('public', 'site_settings', array[
   'key', 'value', 'is_public', 'description', 'updated_by', 'updated_at'

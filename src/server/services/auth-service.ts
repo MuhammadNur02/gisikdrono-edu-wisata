@@ -2,10 +2,15 @@ import 'server-only';
 
 import { isAuthApiError, type AuthError } from '@supabase/supabase-js';
 
-import { TOTP_ISSUER } from '@/config/auth';
+import { TOTP_ISSUER, type EmailLinkType } from '@/config/auth';
+import { readOnboardingState, type OnboardingState } from '@/db/rpc-onboarding';
 import { AppError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import type { StaffSession } from '@/server/auth/guards';
+import {
+  readOnboardingContext,
+  type OnboardingGuardResult,
+} from '@/server/auth/onboarding-context';
 
 // Staff sign-in through Supabase Auth with the session client (src/lib/supabase/server.ts): every call acts as
 // whoever's cookies came with the request, and the session it opens or lifts is written back into those cookies.
@@ -184,12 +189,16 @@ export async function changePasswordAfterRecovery(
   return signedOut.error ? 'changed_sessions_remain' : 'changed';
 }
 
-// The token_hash of a recovery email (docs/Security.md §5.1). It opens a session whose verified token names
-// `recovery` in amr, as /reset-password checks. False when the link is used or expired; an outage is thrown on, so it
-// never reads as an expired link.
-export async function openRecoverySession(tokenHash: string): Promise<boolean> {
+// The token_hash of a recovery or invite email (docs/Security.md §5.1). A recovery link opens a session whose verified
+// token names `otp` in amr, as /reset-password checks; an invite link (Task P4.8.01) opens one for the mailbox, which
+// /onboarding takes no further without the invite code. False when the link is used or expired; an outage is thrown
+// on, so it never reads as an expired link.
+export async function openEmailLinkSession(
+  type: EmailLinkType,
+  tokenHash: string,
+): Promise<boolean> {
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.auth.verifyOtp({ type: 'recovery', token_hash: tokenHash });
+  const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
   if (error && !isRefusal(error)) throw error;
   return error === null;
 }
@@ -201,4 +210,68 @@ export async function signOutEverywhere(): Promise<boolean> {
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.auth.signOut({ scope: 'global' });
   return error === null;
+}
+
+export type OnboardingFactorCheck = TotpCheck | 'no_factor';
+export type OnboardingPassword = 'set' | 'weak';
+
+// /onboarding (Task P4.8.01): the account's one factor, verified if it already is (an onboarding that stopped after
+// this step), else the one this session just enrolled. Its code lifts the session to AAL2; for a pending factor it
+// is also the code that verifies it, which the database allows only under the session's claim (20261103131000).
+async function verifyOnboardingFactor(
+  supabase: SessionClient,
+  code: string,
+): Promise<OnboardingFactorCheck> {
+  const { data, error } = await supabase.auth.mfa.listFactors();
+  if (error) throw error;
+  const totpFactors = data.all.filter((factor) => factor.factor_type === 'totp');
+  const verified = totpFactors.filter((factor) => factor.status === 'verified');
+  const [newestPending] = totpFactors
+    .filter((factor) => factor.status === 'unverified')
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const factor =
+    verified.length === 0 ? newestPending : verified.length === 1 ? verified[0] : undefined;
+  if (!factor) return 'no_factor';
+  const result = await supabase.auth.mfa.challengeAndVerify({ factorId: factor.id, code });
+  return totpCheck(result.error);
+}
+
+// Only at AAL2, after the factor (code, then factor, then password: docs/Security.md §5.1). The password an earlier,
+// interrupted onboarding of this account already set reads as set.
+async function setOnboardingPassword(
+  supabase: SessionClient,
+  password: string,
+): Promise<OnboardingPassword> {
+  const { error } = await supabase.auth.updateUser({ password });
+  if (!error || error.code === SAME_PASSWORD) return 'set';
+  if (!isRefusal(error)) throw error;
+  return 'weak';
+}
+
+export interface OnboardingCompletion {
+  verifyFactor: (code: string) => Promise<OnboardingFactorCheck>;
+  // The session as the token lifted by verifyFactor says, read through the same client.
+  readSession: () => Promise<OnboardingGuardResult>;
+  setPassword: (password: string) => Promise<OnboardingPassword>;
+  // accept_staff_invite ended every session of the account in the database; this clears this browser's cookies,
+  // which auth-js does whatever Supabase Auth answers about a session that no longer exists.
+  end: () => Promise<void>;
+}
+
+// One session client for every step, so each reads the token the step before it wrote.
+export async function startOnboardingCompletion(): Promise<OnboardingCompletion> {
+  const supabase = await createSupabaseServerClient();
+  return {
+    verifyFactor: (code) => verifyOnboardingFactor(supabase, code),
+    readSession: () => readOnboardingContext(supabase),
+    setPassword: (password) => setOnboardingPassword(supabase, password),
+    end: async () => {
+      await supabase.auth.signOut({ scope: 'local' });
+    },
+  };
+}
+
+// What /onboarding shows (onboarding_state(), 20261103131200): booleans about the signed-in account only.
+export async function readOnboardingStateOfSession(): Promise<OnboardingState> {
+  return readOnboardingState(await createSupabaseServerClient());
 }

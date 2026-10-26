@@ -73,7 +73,7 @@ select is(
 -- the figures of 20261027080100 and 20261027080200; save_package and its two parts of 20261028080100, security
 -- invoker, so the grants and policies of a direct write decide; issue_mfa_reenrolment_code of 20261029080000; and
 -- acknowledge_alert_as_sole_superadmin of 20261029080400; then the finance RPCs of 20261101130000 to
--- 20261101130200.
+-- 20261101130200; and onboarding_state of 20261103131200, booleans about the caller's own onboarding only.
 select is(
   array(
     select n.nspname || '.' || p.proname from pg_proc p
@@ -88,6 +88,7 @@ select is(
         'public.find_manual_ticket', 'public.fresh_totp', 'public.generate_visit_sessions',
         'public.invite_superadmin', 'public.is_admin_rw', 'public.is_staff', 'public.is_superadmin',
         'public.issue_certificates', 'public.issue_mfa_reenrolment_code', 'public.mark_refund_request_failed',
+        'public.onboarding_state',
         'public.owns_any_rw', 'public.owns_rw',
         'public.propose_adjustment', 'public.record_refund', 'public.reject_adjustment', 'public.reset_staff_mfa',
         'public.revenue_recap', 'public.revoke_certificate', 'public.revoke_ticket', 'public.rpc_create_export',

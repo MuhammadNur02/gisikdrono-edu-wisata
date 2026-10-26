@@ -5,11 +5,12 @@ import { AuthCard } from '@/components/auth/auth-card';
 import { MfaEnrolForm } from '@/components/auth/mfa-enrol-form';
 import { NoAccessNotice } from '@/components/auth/no-access-notice';
 import { SignOutButton } from '@/components/auth/sign-out-button';
-import { LOGIN_PATH, MFA_VERIFY_PATH } from '@/config/auth';
+import { LOGIN_PATH, MFA_VERIFY_PATH, ONBOARDING_PATH } from '@/config/auth';
 import { copy } from '@/lib/copy/id';
 import { pathWithNext, singleSearchValue, staffNextPath } from '@/lib/utils/staff-paths';
 import { confirmMfaEnrolmentAction, startMfaEnrolmentAction } from '@/server/actions/mfa';
 import { readStaffSession } from '@/server/auth/guards';
+import { readOnboardingStateOfSession } from '@/server/services/auth-service';
 
 const text = copy.auth.mfa;
 
@@ -25,7 +26,11 @@ export default async function MfaEnrollPage({ searchParams }: MfaEnrollPageProps
   const next = singleSearchValue((await searchParams).next);
   const session = await readStaffSession();
   if (!session) redirect(pathWithNext(LOGIN_PATH, next));
-  if (session.ctx.role === 'none') return <NoAccessNotice />;
+  // O4 of the onboarding review: an account still being onboarded goes on there, where its invite code comes first.
+  if (session.ctx.role === 'none') {
+    if ((await readOnboardingStateOfSession()).isInviteOpen) redirect(ONBOARDING_PATH);
+    return <NoAccessNotice />;
+  }
   if (session.hasVerifiedTotp) {
     redirect(session.ctx.isAal2 ? staffNextPath(next) : pathWithNext(MFA_VERIFY_PATH, next));
   }

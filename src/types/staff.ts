@@ -24,6 +24,9 @@ export interface StaffMember {
   promotionRequestedAt: string | null;
   mfaResetRequestedAt: string | null;
   isSelf: boolean;
+  // An invited account still being onboarded (M1 of the review of PR #77), and its open invite if any.
+  isAwaitingOnboarding: boolean;
+  pendingInvite: StaffInviteSummary | null;
 }
 
 // An invite that can still be accepted: neither accepted nor revoked nor expired. Never its code or its hash.
@@ -42,6 +45,8 @@ export interface IssuedInvite {
   expiresAt: string;
   // Set for a superadmin invite, which can be accepted only 24 hours after it was made (invite_superadmin).
   acceptableAfter: string | null;
+  // Whether Supabase Auth sent the invite email (Task P4.8.01); when not, the superadmin revokes and invites again.
+  isEmailSent: boolean;
 }
 
 // What set_staff_role answers: applied at once, or, for a promotion to superadmin, requested and due later.

@@ -11,3 +11,7 @@ export interface TotpEnrolment {
   secret: string;
   qr: { size: number; path: string };
 }
+
+// /onboarding after the invite code was claimed (Task P4.8.01): the QR code of a new factor, or, when the account
+// already verified one in an earlier, interrupted onboarding, only the code from that authenticator.
+export type OnboardingFactorStep = { kind: 'enrol'; enrolment: TotpEnrolment } | { kind: 'verify' };
