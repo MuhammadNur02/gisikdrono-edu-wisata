@@ -1266,10 +1266,10 @@ select is(
   array[
     'certificates.participant_id:n', 'dsr_requests.otp_id:n', 'galleries.booking_id:n',
     'hero_banners.product_id:n', 'package_price_history.tier_id:n', 'performance_schedules.package_id:n',
-    'revenue_share_rule_lines.rule_id:c', 'revenue_share_rules.package_id:c', 'revenue_share_rules.product_id:c',
+    'refund_requests.last_checked_event_id:n', 'revenue_share_rule_lines.rule_id:c', 'revenue_share_rules.package_id:c', 'revenue_share_rules.product_id:c',
     'tour_package_legs.package_id:c', 'tour_package_price_tiers.package_id:c', 'visit_sessions.template_id:n'
   ],
-  'only the PRD catalogue, rule and media links cascade or set null; every other reference refuses deletes'
+  'only the PRD catalogue, rule and media links and a refund request''s last look (pruned with its event) cascade or set null; every other reference refuses deletes'
 );
 
 select * from finish();
