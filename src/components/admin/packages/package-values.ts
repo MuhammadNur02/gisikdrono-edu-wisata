@@ -30,6 +30,7 @@ export function blankPackage(category: EnumValue<'package_category'>): PackageIn
     validFrom: null,
     validTo: null,
     priceTiers: [],
+    legRwIds: [],
   };
 }
 
@@ -61,5 +62,7 @@ export function packageValues(pkg: PackageAdmin): PackageInput {
     validFrom: pkg.validFrom,
     validTo: pkg.validTo,
     priceTiers: pkg.priceTiers.map((tier) => ({ ...tier })),
+    // A combo names its route; an RW package's single leg is the database's.
+    legRwIds: pkg.category === 'combo' ? [...pkg.rwIds] : [],
   };
 }

@@ -55,7 +55,7 @@ export default async function EditPackagePage({ params }: EditPackagePageProps) 
           <PackageForm
             initial={packageValues(pkg)}
             action={updatePackageAction}
-            stored={{ id: pkg.id, owner: pkg.rwId, rwIds: pkg.rwIds }}
+            stored={{ id: pkg.id, owner: pkg.rwId }}
             categories={isCombo ? ['combo'] : RW_CATEGORIES}
             rwOptions={rwUnits.map((unit) => ({ id: unit.id, name: unit.name }))}
             readOnly={!canWriteFor(ctx, pkg.rwId)}

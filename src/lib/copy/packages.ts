@@ -84,11 +84,14 @@ export const packagesCopy = {
     rowTitle: (row: number) => `Tingkat ${String(row)}`,
   },
   legs: {
-    // Decision on PR #35: a combo's route waits for the save_package RPC (Task P4.3.11).
-    deferred: 'Pengaturan rute paket gabungan menyusul.',
-    deferredHint:
-      'Paket gabungan bisa disimpan sebagai draf sekarang. Paket baru bisa ditayangkan setelah rutenya mengunjungi minimal dua RW.',
-    visits: (rws: string) => `Rute tersimpan: ${rws}.`,
+    hint: 'RW yang dikunjungi rombongan, berurutan dari pemberhentian pertama. Paket gabungan baru bisa ditayangkan setelah rutenya mengunjungi minimal dua RW.',
+    empty: 'Belum ada RW di rute ini.',
+    add: 'Tambah RW ke rute',
+    addPlaceholder: 'Pilih RW',
+    stop: (position: number) => `Pemberhentian ${String(position)}`,
+    moveUp: (rw: string) => `Pindahkan ${rw} ke atas`,
+    moveDown: (rw: string) => `Pindahkan ${rw} ke bawah`,
+    remove: (rw: string) => `Hapus ${rw} dari rute`,
   },
   itinerary: {
     hint: 'Urutan kegiatan yang tampil di halaman paket.',
@@ -118,6 +121,9 @@ export const packagesCopy = {
     unknown: 'Dasar harga atau jumlah rombongan berubah',
   },
   validation: {
+    legsNotCombo: 'Paket RW mengunjungi RW-nya sendiri; rute hanya untuk paket gabungan.',
+    legsRepeated: 'Setiap RW cukup dikunjungi sekali dalam rute.',
+    legsTooFew: 'Paket gabungan baru bisa ditayangkan setelah rutenya mengunjungi minimal dua RW.',
     pricePerPax: 'Isi harga per orang untuk dasar harga per orang.',
     flatPrice: 'Isi harga per rombongan untuk dasar harga per rombongan.',
     maxBelowMin: 'Rombongan maksimal harus sama atau lebih besar dari minimal.',

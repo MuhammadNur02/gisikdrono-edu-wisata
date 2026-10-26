@@ -29,3 +29,13 @@ export function tiersOverlap(tiers: readonly TierRange[]): boolean {
 export function comboMayPublish(legRwIds: readonly number[]): boolean {
   return new Set(legRwIds).size >= MIN_COMBO_RWS;
 }
+
+// One step of the list moved up or down, the others kept in order.
+export function moveLeg<T>(legs: readonly T[], index: number, offset: -1 | 1): T[] {
+  const target = index + offset;
+  if (target < 0 || target >= legs.length) return [...legs];
+  const moved = [...legs];
+  const [leg] = moved.splice(index, 1);
+  if (leg !== undefined) moved.splice(target, 0, leg);
+  return moved;
+}
