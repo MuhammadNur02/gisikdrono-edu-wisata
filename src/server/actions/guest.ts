@@ -1,6 +1,8 @@
 'use server';
 
 import { revalidateTag } from 'next/cache';
+import { randomUUID } from 'node:crypto';
+
 import { cookies, headers } from 'next/headers';
 import { after } from 'next/server';
 import { z } from 'zod';
@@ -15,6 +17,7 @@ import {
 import { bookingHubCopy } from '@/lib/copy/booking-hub';
 import { copy } from '@/lib/copy/id';
 import { fail, mapError, ok, raisedHintOf } from '@/lib/errors';
+import { createLogger } from '@/lib/logger';
 import { guestLinkCookieNames } from '@/lib/links/token';
 import { TAGS } from '@/lib/queries/tags';
 import { verifyTurnstile } from '@/lib/turnstile';
@@ -32,6 +35,7 @@ import { readPhoneProofCookie } from '@/server/auth/guest-cookies';
 import {
   bookingSessionDays,
   cancelGuestBooking,
+  flagCancellationForSuperadmin,
   isBookingPhone,
   rescheduleGuestBooking,
   resendBookingLink,
@@ -115,6 +119,15 @@ function revalidateBooking(bookingId: string, days: { rwId: number; sessionDate:
   }
 }
 
+// D-6: the alert never costs the visitor the answer; a failure to raise it is logged.
+async function flagForSuperadmin(bookingCode: string, bookingId: string): Promise<void> {
+  try {
+    await flagCancellationForSuperadmin(bookingId);
+  } catch {
+    createLogger(randomUUID()).error('internal_error', { step: 'flag_cancellation', bookingCode });
+  }
+}
+
 function isRaised(error: unknown, hint: string): boolean {
   return raisedHintOf(error) === hint;
 }
@@ -150,6 +163,7 @@ export async function cancelBookingAction(input: unknown): Promise<ActionResult<
       return fail('PRICE_MISMATCH', undefined, hubText.cancel.changed);
     }
     if (isRaised(error, 'CANCEL_NEEDS_SUPERADMIN')) {
+      await flagForSuperadmin(parsed.data.bookingCode, guard.guest.bookingId);
       return fail('STATE_INVALID', undefined, hubText.cancel.needsSuperadmin);
     }
     return mapError(error);

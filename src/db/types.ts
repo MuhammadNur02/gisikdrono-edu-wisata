@@ -4641,6 +4641,10 @@ export type Database = {
         Args: { p_code_hash: string; p_user_id: string }
         Returns: string
       }
+      mark_refund_request_failed: {
+        Args: { p_reason: string; p_request_id: string }
+        Returns: Json
+      }
       owns_any_rw: { Args: { p_rw_ids: number[] }; Returns: boolean }
       owns_rw: { Args: { p_rw_id: number }; Returns: boolean }
       propose_adjustment: {
@@ -4934,6 +4938,10 @@ export type Database = {
       svc_expire_stale_bookings: { Args: never; Returns: Json }
       svc_fail_export: {
         Args: { p_actor_id: string; p_export_id: string; p_reason: string }
+        Returns: boolean
+      }
+      svc_fail_unconfirmed_refund: {
+        Args: { p_request_id: string }
         Returns: boolean
       }
       svc_fail_notification: {

@@ -31,6 +31,7 @@ vi.mock('@/server/services/payment-service', () => ({
 vi.mock('@/server/services/booking-service', () => ({
   bookingSessionDays: vi.fn(),
   cancelGuestBooking: vi.fn(),
+  flagCancellationForSuperadmin: vi.fn(),
   isBookingPhone: vi.fn(),
   rescheduleGuestBooking: vi.fn(),
   resendBookingLink: vi.fn(),

@@ -12,6 +12,7 @@ import {
 import type { DatabaseClient } from '@/db/rpc-result';
 import {
   svcClaimRefundRetry,
+  svcFailUnconfirmedRefund,
   svcMarkRefundRequest,
   svcRefundRequestsToRetry,
   svcSettleLapsedWeatherLinks,
@@ -28,6 +29,7 @@ vi.mock('@/db/rpc-payments', () => ({
 }));
 vi.mock('@/db/rpc-terms', () => ({
   svcClaimRefundRetry: vi.fn(),
+  svcFailUnconfirmedRefund: vi.fn(),
   svcMarkRefundRequest: vi.fn(),
   svcRefundRequestsToRetry: vi.fn(),
   svcSettleLapsedWeatherLinks: vi.fn(),
@@ -63,6 +65,7 @@ beforeEach(() => {
   vi.mocked(svcPaymentsHousekeeping).mockResolvedValue({ suspended: 0, reminded: 1 });
   vi.mocked(svcRefundRequestsToRetry).mockResolvedValue([]);
   vi.mocked(svcClaimRefundRetry).mockResolvedValue(true);
+  vi.mocked(svcFailUnconfirmedRefund).mockResolvedValue(false);
   vi.mocked(svcSettleLapsedWeatherLinks).mockResolvedValue({
     auto_refunded: 0,
     kept: 0,
@@ -250,6 +253,19 @@ describe('a refund retry claims its request first (final review of PR #69, M-1)'
     vi.mocked(svcClaimRefundRetry).mockResolvedValue(false);
     await pollPayments(adminClient);
     expect(svcClaimRefundRetry).toHaveBeenCalledWith(adminClient, REFUND.requestId);
+    expect(requestRefund).not.toHaveBeenCalled();
+  });
+});
+
+describe('a submitted refund Midtrans never paid out (delta review of PR #69, D-2)', () => {
+  it('is failed by the poll and asked of nobody again', async () => {
+    vi.mocked(svcPaymentsToPoll).mockResolvedValue([]);
+    vi.mocked(svcRefundRequestsToRetry).mockResolvedValue([{ ...REFUND, status: 'submitted' }]);
+    vi.mocked(svcRecordPaymentEvent).mockResolvedValue(NOTHING_NEW);
+    vi.mocked(svcFailUnconfirmedRefund).mockResolvedValue(true);
+    await pollPayments(adminClient);
+    expect(svcFailUnconfirmedRefund).toHaveBeenCalledWith(adminClient, REFUND.requestId);
+    expect(svcMarkRefundRequest).not.toHaveBeenCalled();
     expect(requestRefund).not.toHaveBeenCalled();
   });
 });

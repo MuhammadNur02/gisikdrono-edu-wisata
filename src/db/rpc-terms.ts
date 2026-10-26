@@ -265,3 +265,16 @@ export async function svcFlagCancellationForSuperadmin(
     adminClient.rpc('svc_flag_cancellation_for_superadmin', { p_booking_id: bookingId }),
   );
 }
+
+// Delta review of PR #69, D-2: a submitted QRIS request Midtrans has shown unpaid for 24 h is marked failed, opening
+// the bank-transfer path with the refund_failed alert. True when it was marked.
+export async function svcFailUnconfirmedRefund(
+  adminClient: DatabaseClient,
+  requestId: string,
+): Promise<boolean> {
+  return z
+    .boolean()
+    .parse(
+      await resultOf(adminClient.rpc('svc_fail_unconfirmed_refund', { p_request_id: requestId })),
+    );
+}

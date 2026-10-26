@@ -5,7 +5,7 @@
 -- weather refund the fee eats whole, the weather window closing, a full target session, the cap of three weather
 -- moves with the ticket sent again after each, and the same cancellation or move asked twice.
 begin;
-select plan(99);
+select plan(115);
 \ir helpers/rls_personas.psql
 \ir helpers/visit_terms.psql
 select set_config('app.qr_key_id', 'k1', true);
@@ -521,6 +521,185 @@ select set_config('app.in_rpc', '', true);
 select is((select count(*)::int from public.weather_notice_bookings w join public.booking_legs l on l.id = w.booking_leg_id
            where w.booking_id = (select id from reviewed) and l.rw_id = 13), 1,
   'once its review clears, its leg still to visit gets them (P-4)');
+
+-- ===== The delta review of PR #69 =====
+
+-- D-1: while a QRIS request is open at Midtrans, a manual refund of any amount is refused when proposed.
+create temporary table qris_open on commit drop as
+select pg_temp.paid('00000000-0000-4000-8000-0000000e1001', '00000000-0000-4000-8000-0000000e3020', 3,
+                    '+6281300004019', false) as id;
+select internal.cancel_booking((select id from qris_open), null, 'Batal', 'cancellation',
+  (internal.refund_preview((select id from qris_open), 'cancellation') ->> 'amount')::bigint, 90::smallint);
+select throws_ok($$select internal.check_adjustment_terms('manual_refund', (select id from qris_open),
+  (select p.id from public.payments p where p.booking_id = (select id from qris_open) and p.status = 'settled'),
+  90000, '{}')$$, 'P0001', null,
+  'a manual refund of the whole payment is refused while the QRIS request is open (REFUND_PENDING_AT_MIDTRANS)');
+select internal.mark_refund_request((pg_temp.request_of((select id from qris_open))).id, 'failed', '412', 'refused');
+select throws_ok($$select internal.check_adjustment_terms('manual_refund', (select id from qris_open),
+  (select p.id from public.payments p where p.booking_id = (select id from qris_open) and p.status = 'settled'),
+  1000, '{}')$$, 'P0001', null, 'a failed request is finished only by a refund of exactly its amount');
+select lives_ok($$select internal.check_adjustment_terms('manual_refund', (select id from qris_open),
+  (select p.id from public.payments p where p.booking_id = (select id from qris_open) and p.status = 'settled'),
+  (pg_temp.request_of((select id from qris_open))).amount, '{}')$$, 'its exact amount is accepted');
+
+-- D-1: the payment's refunded amount is what was refunded, after an earlier bank transfer too.
+select set_config('app.in_rpc', '1', true);
+update public.payments set refunded_amount = 1000
+where booking_id = (select id from qris_open) and status = 'settled';
+select set_config('app.in_rpc', '', true);
+select is(pg_temp.event(pg_temp.order_of((select id from qris_open)), 'partial_refund', 90000,
+                        (pg_temp.request_of((select id from qris_open))).amount) ->> 'processing_result',
+  'refund_recorded', 'Midtrans'' refund of the request is booked after an earlier transfer');
+select is((select refunded_amount from public.payments where booking_id = (select id from qris_open)
+           and status = 'partially_refunded'), 1000 + (pg_temp.request_of((select id from qris_open))).amount,
+  'and the payment shows the transfer plus the request, not Midtrans'' running total');
+
+-- D-2: a submitted request Midtrans never paid out is failed 24 h after its submission, once a newer confirmed answer
+-- lists no refund under its key: by payments-poll on its own, or by a superadmin with a fresh code.
+create function pg_temp.stuck(p_phone text) returns uuid
+  language plpgsql
+as $fn$
+declare
+  booking_id uuid := pg_temp.paid('00000000-0000-4000-8000-0000000e1001', '00000000-0000-4000-8000-0000000e3020', 2,
+                                  p_phone, false);
+begin
+  perform internal.cancel_booking(booking_id, null, 'Batal', 'cancellation',
+    (internal.refund_preview(booking_id, 'cancellation') ->> 'amount')::bigint, 90::smallint);
+  perform internal.mark_refund_request((pg_temp.request_of(booking_id)).id, 'submitted', '200', null);
+  return booking_id;
+end;
+$fn$;
+create function pg_temp.day_without_refund(p_booking uuid) returns void
+  language plpgsql
+as $fn$
+begin
+  update public.refund_requests set submitted_at = now() - interval '25 hours' where booking_id = p_booking;
+  insert into public.payment_events (payment_id, order_id, source, event_hash, transaction_status, payload)
+  select p.id, p.order_id, 'poll', md5('stuck' || p.order_id), 'settlement',
+         jsonb_build_object('order_id', p.order_id, 'transaction_status', 'settlement')
+  from public.payments p where p.booking_id = p_booking and p.status = 'settled';
+end;
+$fn$;
+create temporary table qris_stuck on commit drop as select pg_temp.stuck('+6281300004020') as id;
+select is(internal.fail_unconfirmed_refund_by_poll((pg_temp.request_of((select id from qris_stuck))).id), false,
+  'a request submitted just now is not failed');
+select pg_temp.day_without_refund((select id from qris_stuck));
+select is(internal.fail_unconfirmed_refund_by_poll((pg_temp.request_of((select id from qris_stuck))).id), true,
+  'a day after its submission, with Midtrans showing no refund under its key, the poll fails it');
+select is((select severity::text from public.security_alerts
+           where fingerprint = 'refund_failed:' || (pg_temp.request_of((select id from qris_stuck))).refund_key),
+  'high', 'and raises refund_failed for the transfer');
+create temporary table qris_stuck_staff on commit drop as select pg_temp.stuck('+6281300004023') as id;
+select pg_temp.day_without_refund((select id from qris_stuck_staff));
+create temporary table stuck_request on commit drop as
+select (pg_temp.request_of((select id from qris_stuck_staff))).id as id;
+grant select on stuck_request to authenticated;
+select pg_temp.act_as('superadmin_stale_totp');
+select throws_ok($$select public.mark_refund_request_failed((select id from stuck_request), 'Midtrans tidak membayar')$$,
+  '42501', null, 'a superadmin without a fresh code cannot mark it');
+reset role;
+select pg_temp.act_as('superadmin_aal2');
+select is(public.mark_refund_request_failed((select id from stuck_request), 'Midtrans tidak membayar') ->> 'result',
+  'failed', 'a superadmin with a fresh code marks it failed');
+reset role;
+select is((select status::text from public.refund_requests where id = (select id from stuck_request)), 'failed',
+  'which opens the transfer path');
+
+-- D-3: what a leg's refund reverses is exactly its share, on an asymmetric rule with an odd amount and on a vendor line.
+insert into public.tour_packages (id, category, slug, name, pricing_basis, price_per_pax, status) values
+  ('00000000-0000-4000-8000-0000000e1005', 'combo', 'uji-tepi-kombo-ganjil', 'Kombo Uji Ganjil', 'per_pax', 246900,
+   'draft'),
+  ('00000000-0000-4000-8000-0000000e1006', 'combo', 'uji-tepi-kombo-vendor', 'Kombo Uji Vendor', 'per_pax', 30000,
+   'draft');
+insert into public.tour_package_legs (package_id, rw_id, leg_order) values
+  ('00000000-0000-4000-8000-0000000e1005', 5, 1), ('00000000-0000-4000-8000-0000000e1005', 13, 2),
+  ('00000000-0000-4000-8000-0000000e1006', 5, 1), ('00000000-0000-4000-8000-0000000e1006', 13, 2);
+update public.tour_packages set status = 'published'
+where id in ('00000000-0000-4000-8000-0000000e1005', '00000000-0000-4000-8000-0000000e1006');
+with rule as (
+  insert into public.revenue_share_rules (scope, package_id, name, effective_from)
+  values ('package', '00000000-0000-4000-8000-0000000e1005', 'Aturan uji 30/40/30', public.today_jkt() - 1)
+  returning id)
+insert into public.revenue_share_rule_lines (rule_id, beneficiary, rw_id, vendor_id, pct)
+select rule.id, line.beneficiary::public.revenue_beneficiary, line.rw_id, null, line.pct
+from rule, (values ('kelurahan', null::smallint, 30::numeric), ('rw_treasury', 5::smallint, 40::numeric),
+                   ('rw_treasury', 13::smallint, 30::numeric)) as line(beneficiary, rw_id, pct);
+with rule as (
+  insert into public.revenue_share_rules (scope, package_id, name, effective_from)
+  values ('package', '00000000-0000-4000-8000-0000000e1006', 'Aturan uji vendor kombo', public.today_jkt() - 1)
+  returning id)
+insert into public.revenue_share_rule_lines (rule_id, beneficiary, rw_id, vendor_id, pct)
+select rule.id, line.beneficiary::public.revenue_beneficiary, line.rw_id, line.vendor_id, line.pct
+from rule, (values ('kelurahan', null::smallint, null::uuid, 20::numeric),
+                   ('rw_treasury', 5::smallint, null::uuid, 35::numeric),
+                   ('rw_treasury', 13::smallint, null::uuid, 35::numeric),
+                   ('umkm_vendor', null::smallint, '00000000-0000-4000-8000-0000000e1051'::uuid, 10::numeric))
+  as line(beneficiary, rw_id, vendor_id, pct);
+insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
+  ('00000000-0000-4000-8000-0000000e3206', 5, public.today_jkt() + 2, '18:00', '19:30', 'Uji tepi ganjil 05', 40),
+  ('00000000-0000-4000-8000-0000000e3216', 13, public.today_jkt() + 5, '15:00', '16:00', 'Uji tepi ganjil 13', 40),
+  ('00000000-0000-4000-8000-0000000e3217', 13, public.today_jkt() + 5, '16:30', '17:30', 'Uji tepi vendor 13', 40);
+
+create function pg_temp.visited_combo(p_package uuid, p_session_13 uuid, p_pax integer, p_phone text) returns uuid
+  language plpgsql
+as $$
+declare
+  booking_id uuid := (internal.create_booking(p_package,
+    array['00000000-0000-4000-8000-0000000e3206', p_session_13]::uuid[], p_pax,
+    jsonb_build_object('booker_type', 'school', 'institution_name', 'SD Uji Asimetris', 'pic_name', 'Bu Asimetris',
+                       'pic_phone', p_phone, 'pic_email', 'asimetris@contoh.test', 'notes', null),
+    '[]', '[]', 'pay', 'web', null, pg_temp.otp(p_phone), '{"version": "2026-10-18"}', null,
+    '{"ip": null, "user_agent": "pgTAP"}',
+    internal.booking_quote_hash(internal.booking_quote(p_package, p_pax, '[]', array[5, 13]::smallint[])))
+    ->> 'booking_id')::uuid;
+begin
+  perform pg_temp.event(pg_temp.attempt(booking_id), 'settlement',
+                        (select b.total_amount from public.bookings b where b.id = booking_id), null);
+  perform set_config('app.in_rpc', '1', true);
+  update public.booking_legs set status = 'checked_in', checked_in_at = now()
+  where booking_legs.booking_id = visited_combo.booking_id and rw_id = 5;
+  update public.bookings set status = 'checked_in' where id = visited_combo.booking_id;
+  perform set_config('app.in_rpc', '', true);
+  perform pg_temp.declare(p_session_13, 'admin_rw_13');
+  perform internal.cancel_booking(booking_id, null, 'Hujan', 'weather',
+    (internal.refund_preview(booking_id, 'weather') ->> 'amount')::bigint, null);
+  perform pg_temp.event(pg_temp.order_of(booking_id), 'partial_refund',
+    (select b.total_amount from public.bookings b where b.id = booking_id),
+    (select r.amount from public.refund_requests r where r.booking_id = visited_combo.booking_id));
+  return booking_id;
+end;
+$$;
+
+-- The per-party balance after the refund, as beneficiary_key=amount.
+create function pg_temp.balances(p_booking uuid) returns text[]
+  language sql
+as $$
+  select array_agg(x.label order by x.label) from (
+    select s.beneficiary_key || '=' || (s.amount + coalesce((select sum(r.amount) from public.revenue_share_entries r
+              where r.booking_id = s.booking_id and r.entry_type = 'reversal' and r.line_ref = s.line_ref
+                and r.beneficiary_key = s.beneficiary_key), 0)) as label
+    from public.revenue_share_entries s
+    where s.booking_id = p_booking and s.entry_type = 'settlement') as x;
+$$;
+
+create temporary table odd_combo on commit drop as
+select pg_temp.visited_combo('00000000-0000-4000-8000-0000000e1005', '00000000-0000-4000-8000-0000000e3216', 5,
+                             '+6281300004021') as id;
+select is(pg_temp.balances((select id from odd_combo)), array['kelurahan=61725', 'rw:13=61725', 'rw:5=493800'],
+  'on a 30/40/30 rule of Rp 1.234.500 the leg''s Rp 617.250 comes from the kelurahan and RW 13; RW 05 keeps its 40 %');
+select is(pg_temp.ledger_sum((select id from odd_combo)), 617250::bigint, 'exactly the package part the leg refunded');
+select is((select count(*)::int from public.security_alerts
+           where fingerprint like 'refund_ledger_unbalanced:%' and details ->> 'booking_id' = (select id from odd_combo)::text),
+  0, 'with no unbalanced ledger');
+
+create temporary table vendor_combo on commit drop as
+select pg_temp.visited_combo('00000000-0000-4000-8000-0000000e1006', '00000000-0000-4000-8000-0000000e3217', 4,
+                             '+6281300004022') as id;
+select is(pg_temp.ledger_sum((select id from vendor_combo)), 60000::bigint,
+  'with a vendor line the leg''s Rp 60.000 still comes back exactly');
+select ok((select bool_and(x.label like 'rw:5=42000' or x.label not like 'rw:5=%')
+           from unnest(pg_temp.balances((select id from vendor_combo))) as x(label)),
+  'and the visited RW 05 keeps its whole Rp 42.000');
 
 select * from finish();
 rollback;

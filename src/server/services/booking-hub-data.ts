@@ -3,12 +3,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 
 import type { DatabaseClient } from '@/db/rpc-result';
-import {
-  svcFlagCancellationForSuperadmin,
-  svcRefundPreview,
-  type RefundKind,
-  type RefundQuote,
-} from '@/db/rpc-terms';
+import { svcRefundPreview, type RefundKind, type RefundQuote } from '@/db/rpc-terms';
 import { raisedHintOf } from '@/lib/errors';
 import { createLogger } from '@/lib/logger';
 import { manageRightsOf, statusHubOf } from '@/server/services/booking-hub-reads';
@@ -36,7 +31,7 @@ type QuoteAnswer = { quote: RefundQuote | null; needsSuperadmin: boolean };
 const NO_QUOTE: QuoteAnswer = { quote: null, needsSuperadmin: false };
 
 // A refund the terms cannot give now (a past visit, an unset fee) is no option. One the kelurahan and RW shares cannot
-// keep (CANCEL_NEEDS_SUPERADMIN) raises the superadmin's alert and says so; any other failure is logged and the hub
+// keep (CANCEL_NEEDS_SUPERADMIN) is said so, and the cancel action raises the superadmin's alert (D-6); any other failure is logged and the hub
 // shows no option rather than an error page (review of PR #69, L-3). The cancel asks the database again anyway.
 async function quoteOf(
   adminClient: DatabaseClient,
@@ -50,10 +45,7 @@ async function quoteOf(
     };
   } catch (error) {
     const hint = raisedHintOf(error);
-    if (hint === 'CANCEL_NEEDS_SUPERADMIN') {
-      await svcFlagCancellationForSuperadmin(adminClient, bookingId);
-      return { quote: null, needsSuperadmin: true };
-    }
+    if (hint === 'CANCEL_NEEDS_SUPERADMIN') return { quote: null, needsSuperadmin: true };
     if (hint !== 'STATE_INVALID') {
       createLogger(randomUUID()).error('internal_error', {
         step: 'refund_preview',

@@ -20,6 +20,7 @@ import {
 import type { DatabaseClient } from '@/db/rpc-result';
 import {
   svcCancelBooking,
+  svcFlagCancellationForSuperadmin,
   svcIsBookingPhone,
   svcRescheduleForWeather,
   type CancellationOutcome,
@@ -303,6 +304,11 @@ export function bookingSessionDays(
   bookingId: string,
 ): Promise<{ rwId: number; sessionDate: string }[]> {
   return sessionDaysOf(createSupabaseAdminClient(), bookingId);
+}
+
+// Delta review of PR #69, D-6: the cancellation the visitor asked for is the superadmin's to finish.
+export function flagCancellationForSuperadmin(bookingId: string): Promise<void> {
+  return svcFlagCancellationForSuperadmin(createSupabaseAdminClient(), bookingId);
 }
 
 export function rescheduleGuestBooking(

@@ -13,6 +13,7 @@ import {
 import type { DatabaseClient } from '@/db/rpc-result';
 import {
   svcClaimRefundRetry,
+  svcFailUnconfirmedRefund,
   svcMarkRefundRequest,
   svcRefundRequestsToRetry,
   svcSettleLapsedWeatherLinks,
@@ -137,6 +138,8 @@ async function retryRefund(adminClient: DatabaseClient, refund: RefundToRetry): 
   const isBooked = await applyCurrentStatus(adminClient, refund.orderId).catch(() => false);
   if (isBooked) return;
   if (refund.status === 'submitted') {
+    // Midtrans took it but has shown no refund under its key for 24 h: it failed (delta review of PR #69, D-2).
+    if (await svcFailUnconfirmedRefund(adminClient, refund.requestId)) return;
     await svcMarkRefundRequest(adminClient, {
       requestId: refund.requestId,
       status: 'submitted',
