@@ -698,7 +698,7 @@ Static headers in `next.config.ts` `headers()`; the CSP and the per-route `Permi
 Strict-Transport-Security: max-age=63072000; includeSubDomains      (+ preload after the domain decision A11)
 X-Content-Type-Options: nosniff
 X-Frame-Options: DENY
-Referrer-Policy: strict-origin-when-cross-origin                     (no-referrer on /reservasi/*, /v/*)
+Referrer-Policy: strict-origin-when-cross-origin                     (no-referrer on /reservasi/*, /v/*; same-origin on /auth/*)
 Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Resource-Policy: same-origin
 X-DNS-Prefetch-Control: off
