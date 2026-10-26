@@ -18,6 +18,8 @@ export const VENDOR_KEY_PREFIX = 'vendor:';
 export const RULE_MAX_LINES = 10;
 export const RULE_TOTAL_PCT = 100;
 export const RULE_PCT_DECIMALS = 2;
+// Shares are compared in hundredths of a percent, so no float rounding decides.
+export const RULE_PCT_SCALE = 100;
 export const RULE_NAME_MAX_LENGTH = 100;
 
 // settle_revenue_entries: a reference of 3 to 100 characters; the last four digits of the payout account.
@@ -33,7 +35,7 @@ export const ADJUSTMENT_REASON_MAX_LENGTH = 500;
 export const ISSUE_NOTE_MIN_LENGTH = 5;
 export const ISSUE_NOTE_MAX_LENGTH = 500;
 
-// reconciliation_issues.resolution (20261103150000): the cause was fixed, or it was checked and needs no action.
+// reconciliation_issues.resolution (20261104100000): the cause was fixed, or it was checked and needs no action.
 export const ISSUE_RESOLUTIONS = ['resolved', 'ignored'] as const;
 
 // The uploads-quarantine path api/uploads/sign issues, and a ledger line or beneficiary key, as the forms carry them.

@@ -10,7 +10,7 @@
 -- count towards nor block what Midtrans refunded (N16), a manual refund Midtrans made under its refund_key, a
 -- rejected adjustment's evidence (L2), and an event judged only under its own source (L4). Delta 2: a manual refund
 -- counts as Midtrans' once Midtrans lists its key, whenever that answer comes (N17), and only for its own amount (L5).
--- Delta 3 (20261103150200): a key listed with another amount (L6), a reference however written (L7), the notice of a
+-- Delta 3 (20261104100200): a key listed with another amount (L6), a reference however written (L7), the notice of a
 -- recorded refund closing its alert (I1), and an answer without refunds[] (I2).
 begin;
 select plan(131);

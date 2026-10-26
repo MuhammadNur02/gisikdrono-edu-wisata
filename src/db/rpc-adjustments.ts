@@ -6,7 +6,7 @@ import { DB_ENUMS } from '@/db/enums';
 import { resultOf, type DatabaseClient } from '@/db/rpc-result';
 import type { AdjustmentDetails } from '@/types/finance';
 
-// The adjustment and refund RPCs of Task P4.7.03 (20261101130200, 20261103150100) on the superadmin's session client.
+// The adjustment and refund RPCs of Task P4.7.03 (20261101130200, 20261104100100) on the superadmin's session client.
 // Each one checks the fresh TOTP itself and answers with the adjustment row (or the refund's outcome) as jsonb.
 
 const adjustmentReplySchema = z.looseObject({

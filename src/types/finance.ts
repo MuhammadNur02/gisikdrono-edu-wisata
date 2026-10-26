@@ -186,7 +186,7 @@ export interface ReconciliationRun {
   auditChainOk: boolean | null;
 }
 
-// reconciliation_issues.resolution (20261103150000): the cause was fixed, or it was checked and needs no action.
+// reconciliation_issues.resolution (20261104100000): the cause was fixed, or it was checked and needs no action.
 export type IssueResolution = (typeof ISSUE_RESOLUTIONS)[number];
 
 export interface ReconciliationIssue {

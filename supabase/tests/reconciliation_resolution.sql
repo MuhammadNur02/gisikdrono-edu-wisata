@@ -1,4 +1,4 @@
--- Task P4.7.04 (20261103150000; docs/Security.md REC-01, REC-09): the superadmin closes a reconciliation issue as
+-- Task P4.7.04 (20261104100000; docs/Security.md REC-01, REC-09): the superadmin closes a reconciliation issue as
 -- resolved or ignored, in their own name and with a note; a closed issue stays closed and what the run found never
 -- changes; an RW admin closes nothing.
 begin;
