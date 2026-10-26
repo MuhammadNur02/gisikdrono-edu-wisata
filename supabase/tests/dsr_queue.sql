@@ -144,9 +144,10 @@ select is(pg_temp.step(format($$select public.dsr_record_export(%L, %L, %L, 'Dat
   '{"stage": "completed", "notified": true}', 'the export finishes the request and the guest hears of it');
 select is(pg_temp.request((select id from requests where kind = 'access')), '(completed,exported,t,t)',
   'completed as exported');
+-- By the request's own dedupe key: every row of this transaction shares one created_at.
 select is((select n.params ->> 'link_scope' from public.notifications n
            where n.booking_id = '00000000-0000-4000-8000-0000000d5b01' and n.template = 'booking_link'
-           order by n.created_at desc, n.id desc limit 1),
+             and n.dedupe_key like '%dsr:' || (select id from requests where kind = 'access') || ':completed%'),
   'view', 'with a view link to the same page');
 select throws_ok(format($$select pg_temp.step('select public.dsr_acknowledge(''%s'')::text::jsonb')$$,
                         (select id from requests where kind = 'access')),
