@@ -100,7 +100,5 @@ export const productsCopy = {
       isActive: 'Aktif dan tampil di situs',
     },
     phone: 'Tulis nomor dengan format +62, misalnya +6281234567890.',
-    bankDeferred:
-      'Rekening bank UMKM belum bisa diubah di sini; menunggu fungsi khusus superadmin (P4.3.06).',
   },
 } as const;

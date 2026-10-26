@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { comboMayPublish, tiersOverlap } from './package-tiers';
+import { comboMayPublish, moveLeg, tiersOverlap } from './package-tiers';
 
 const STORED = [
   { id: 'small', minPax: 1, maxPax: 19, pricePerPax: 25_000 },
@@ -31,5 +31,17 @@ describe('comboMayPublish', () => {
     expect(comboMayPublish([])).toBe(false);
     expect(comboMayPublish([5, 5])).toBe(false);
     expect(comboMayPublish([5, 8])).toBe(true);
+  });
+});
+
+describe('moveLeg', () => {
+  it('moves one stop up or down and keeps the rest in order', () => {
+    expect(moveLeg([5, 8, 13], 2, -1)).toEqual([5, 13, 8]);
+    expect(moveLeg([5, 8, 13], 0, 1)).toEqual([8, 5, 13]);
+  });
+
+  it('leaves the route as it is past either end', () => {
+    expect(moveLeg([5, 8], 0, -1)).toEqual([5, 8]);
+    expect(moveLeg([5, 8], 1, 1)).toEqual([5, 8]);
   });
 });

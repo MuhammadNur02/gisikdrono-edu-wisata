@@ -57,4 +57,6 @@ export interface RwOverview {
   checkInsToday: number | null;
   checkIns: DailyValue[] | null;
   todaySessions: TodaySession[] | null;
+  // The add-on units of this month's paid visits, from visit_stats.
+  productsSold: number | null;
 }

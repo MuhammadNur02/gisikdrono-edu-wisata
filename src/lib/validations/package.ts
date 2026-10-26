@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
 import { PACKAGE_LIMITS } from '@/config/packages';
-import { DB_ENUMS } from '@/db/enums';
+import { DB_ENUMS, type EnumValue } from '@/db/enums';
 import { packagesCopy } from '@/lib/copy/packages';
 import { sessionsCopy } from '@/lib/copy/sessions';
-import { tiersOverlap } from '@/lib/utils/package-tiers';
+import { comboMayPublish, tiersOverlap } from '@/lib/utils/package-tiers';
 import {
   contentText,
   imagePathSchema,
@@ -19,9 +19,9 @@ import { clockTimeSchema } from '@/lib/validations/session';
 
 // /dashboard/packages (Task P4.3.05, docs/PRD.md FR-ADMIN-05): one schema for the form and its Server Actions. Money
 // is integer rupiah (CLAUDE.md §7.1); the owner RW of an RW package is never part of the form (the action takes the
-// admin's own, or the one the superadmin's RwSwitcher points at), and a combo belongs to the kelurahan. The form
-// names no legs: an RW package's single leg is the database's, and a combo's legs wait for the save_package RPC
-// (Task P4.3.11), since 0005 grants no API role the columns an upsert of a leg writes.
+// admin's own, or the one the superadmin's RwSwitcher points at), and a combo belongs to the kelurahan. An RW
+// package names no legs (its single leg is the database's); a combo names the RWs it visits, in order, which
+// save_package writes (Task P4.3.11), and combo_legs_on_sale keeps a published combo at two RWs at least.
 
 const messages = packagesCopy.validation;
 const VISIT_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -113,9 +113,13 @@ const packageFields = {
   validFrom: optionalDateSchema,
   validTo: optionalDateSchema,
   priceTiers: z.array(priceTierSchema).max(PACKAGE_LIMITS.tiers),
+  legRwIds: z.array(rwIdSchema).max(PACKAGE_LIMITS.comboLegs),
 };
 
 type PackageRules = {
+  category: EnumValue<'package_category'>;
+  status: EnumValue<'content_status'>;
+  legRwIds: readonly number[];
   pricingBasis: 'per_pax' | 'flat_group';
   pricePerPax: number | null;
   flatPrice: number | null;
@@ -139,9 +143,21 @@ function checkPricing(pkg: PackageRules, context: z.RefinementCtx): void {
   if (tiersOverlap(pkg.priceTiers)) issue(context, 'priceTiers', messages.tierOverlap);
 }
 
+// save_package_legs: a combo visits each of its RWs once; an RW package names none.
+function checkLegs(pkg: PackageRules, context: z.RefinementCtx): void {
+  if (pkg.category !== 'combo' && pkg.legRwIds.length > 0)
+    issue(context, 'legRwIds', messages.legsNotCombo);
+  if (new Set(pkg.legRwIds).size !== pkg.legRwIds.length)
+    issue(context, 'legRwIds', messages.legsRepeated);
+  if (pkg.category === 'combo' && pkg.status === 'published' && !comboMayPublish(pkg.legRwIds)) {
+    issue(context, 'legRwIds', messages.legsTooFew);
+  }
+}
+
 // The group size and the validity window, checked here first so the form can point at the field.
 function checkPackage(pkg: PackageRules, context: z.RefinementCtx): void {
   checkPricing(pkg, context);
+  checkLegs(pkg, context);
   if (pkg.maxPax < pkg.minPax) issue(context, 'maxPax', messages.maxBelowMin);
   if (pkg.validFrom !== null && pkg.validTo !== null && pkg.validTo < pkg.validFrom)
     issue(context, 'validTo', messages.validity);

@@ -5,8 +5,8 @@ import { useForm, useWatch, type Control } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import { CheckboxField, TextField } from '@/components/admin/cms/fields';
+import { SaveButton } from '@/components/admin/cms/save-button';
 import { withRowId } from '@/components/admin/cms/schedule-values';
-import { SaveButton } from '@/components/admin/packages/package-form';
 import { FormAlert } from '@/components/forms/form-alert';
 import { FormField } from '@/components/forms/form-field';
 import { PostForm } from '@/components/forms/post-form';
@@ -86,7 +86,8 @@ function VendorFields({ control }: { control: Control<VendorInput> }) {
   );
 }
 
-// Task P4.3.06: one UMKM vendor, superadmin only (decision of 2026-10-24). Its bank columns wait for their RPCs.
+// Task P4.3.06: one UMKM vendor, superadmin only (decision of 2026-10-24). Its bank account is edited beside this form,
+// with its own authenticator code (VendorBankAccount).
 export function VendorForm({ initial, action, vendorId, onSaved }: VendorFormProps) {
   const form = useForm({ resolver: zodResolver(createVendorSchema), defaultValues: initial });
   const send: VendorAction = vendorId ? (values) => action(withRowId(values, vendorId)) : action;
@@ -104,7 +105,6 @@ export function VendorForm({ initial, action, vendorId, onSaved }: VendorFormPro
       <PostForm onSubmit={submit}>
         {failure ? <FormAlert tone="danger">{failure}</FormAlert> : null}
         <VendorFields control={form.control} />
-        <FormAlert tone="info">{text.bankDeferred}</FormAlert>
         <SaveButton isSubmitting={form.formState.isSubmitting} />
       </PostForm>
     </Form>

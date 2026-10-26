@@ -4,6 +4,8 @@ import { Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
+import type { BankAccountActions } from '@/components/admin/bank-accounts/bank-account-forms';
+import { BankAccountPanel } from '@/components/admin/bank-accounts/bank-account-panel';
 import { BackButton } from '@/components/admin/products/back-button';
 import { blankVendor, vendorValues } from '@/components/admin/products/product-values';
 import { VendorForm } from '@/components/admin/products/vendor-form';
@@ -11,6 +13,7 @@ import type { VendorSheetProps } from '@/components/admin/products/vendor-sheet'
 import { ResponsiveSheet } from '@/components/admin/shell/responsive-sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { bankAccountsCopy } from '@/lib/copy/bank-accounts';
 import { copy } from '@/lib/copy/id';
 import { productsCopy } from '@/lib/copy/products';
 import type { VendorAdmin } from '@/types/vendor';
@@ -18,6 +21,28 @@ import type { VendorAdmin } from '@/types/vendor';
 const text = productsCopy.vendors;
 
 type Editing = { vendor: VendorAdmin | null } | null;
+
+// A saved vendor's bank account, beside its form and outside it: it is saved with its own authenticator code.
+function VendorBankAccount({
+  vendorId,
+  actions,
+}: {
+  vendorId: string;
+  actions: BankAccountActions;
+}) {
+  return (
+    <section
+      className="space-y-3 border-t border-border pt-4"
+      aria-labelledby="vendor-bank-account"
+    >
+      <h3 id="vendor-bank-account" className="text-h4">
+        {bankAccountsCopy.title}
+      </h3>
+      <p className="text-body-sm text-muted-foreground">{bankAccountsCopy.vendorHint}</p>
+      <BankAccountPanel target={{ kind: 'vendor', vendorId }} initial={null} actions={actions} />
+    </section>
+  );
+}
 
 function VendorRow({
   vendor,
@@ -117,6 +142,13 @@ function SheetBody({ rwName, vendors, actions }: VendorSheetProps) {
           router.refresh();
         }}
       />
+      {editing.vendor ? (
+        <VendorBankAccount
+          key={editing.vendor.id}
+          vendorId={editing.vendor.id}
+          actions={actions.bank}
+        />
+      ) : null}
     </div>
   );
 }
