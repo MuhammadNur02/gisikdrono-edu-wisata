@@ -1154,7 +1154,9 @@ select columns_are('public', 'exports', array[
 ]);
 select columns_are('public', 'dsr_requests', array[
   'id', 'request_type', 'phone', 'email', 'booking_code', 'message', 'otp_id', 'verified_at',
-  'status', 'due_at', 'handled_by', 'handled_at', 'resolution_note', 'created_at'
+  'status', 'due_at', 'handled_by', 'handled_at', 'resolution_note', 'created_at',
+  -- added by 20261104140100: the queue of P4.10.03
+  'booking_id', 'acknowledged_at', 'fulfil_due_at', 'outcome', 'export_json_path', 'export_pdf_path'
 ]);
 select columns_are('public', 'audit_logs', array[
   'id', 'occurred_at', 'actor_id', 'actor_role', 'actor_ip', 'request_id', 'action', 'entity_type',

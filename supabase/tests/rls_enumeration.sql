@@ -73,7 +73,8 @@ select is(
 -- the figures of 20261027080100 and 20261027080200; save_package and its two parts of 20261028080100, security
 -- invoker, so the grants and policies of a direct write decide; issue_mfa_reenrolment_code of 20261029080000; and
 -- acknowledge_alert_as_sole_superadmin of 20261029080400; then the finance RPCs of 20261101130000 to
--- 20261101130200; and onboarding_state of 20261103131200, booleans about the caller's own onboarding only.
+-- 20261101130200; onboarding_state of 20261103131200, booleans about the caller's own onboarding only; and the
+-- superadmin's data-request queue of 20261104140100 (dsr_*).
 select is(
   array(
     select n.nspname || '.' || p.proname from pg_proc p
@@ -84,7 +85,9 @@ select is(
   ),
   array['public.aal2', 'public.acknowledge_alert_as_sole_superadmin', 'public.app_role', 'public.app_rw_id',
         'public.apply_adjustment', 'public.approve_adjustment', 'public.cancel_staff_mfa_reset',
-        'public.cancel_superadmin_promotion', 'public.finance_booking', 'public.finance_overview',
+        'public.cancel_superadmin_promotion', 'public.dsr_acknowledge', 'public.dsr_anonymise_booking',
+        'public.dsr_close', 'public.dsr_delete_participants', 'public.dsr_open', 'public.dsr_record_export',
+        'public.finance_booking', 'public.finance_overview',
         'public.find_manual_ticket', 'public.fresh_totp', 'public.generate_visit_sessions',
         'public.invite_superadmin', 'public.is_admin_rw', 'public.is_staff', 'public.is_superadmin',
         'public.issue_certificates', 'public.issue_mfa_reenrolment_code', 'public.onboarding_state',
