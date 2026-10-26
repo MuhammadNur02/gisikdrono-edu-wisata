@@ -2,8 +2,15 @@ import 'server-only';
 
 import { randomUUID } from 'node:crypto';
 
+import { after } from 'next/server';
+
 import type { DatabaseClient } from '@/db/rpc-result';
-import { svcRefundPreview, type RefundKind, type RefundQuote } from '@/db/rpc-terms';
+import {
+  svcFlagCancellationForSuperadmin,
+  svcRefundPreview,
+  type RefundKind,
+  type RefundQuote,
+} from '@/db/rpc-terms';
 import { raisedHintOf } from '@/lib/errors';
 import { createLogger } from '@/lib/logger';
 import { manageRightsOf, statusHubOf } from '@/server/services/booking-hub-reads';
@@ -30,9 +37,22 @@ type QuoteAnswer = { quote: RefundQuote | null; needsSuperadmin: boolean };
 
 const NO_QUOTE: QuoteAnswer = { quote: null, needsSuperadmin: false };
 
-// A refund the terms cannot give now (a past visit, an unset fee) is no option. One the kelurahan and RW shares cannot
-// keep (CANCEL_NEEDS_SUPERADMIN) is said so, and the cancel action raises the superadmin's alert (D-6); any other failure is logged and the hub
-// shows no option rather than an error page (review of PR #69, L-3). The cancel asks the database again anyway.
+// Re-review of PR #69, M-1: the hub offers no cancel button for such a booking, so it raises the superadmin's alert
+// itself, after the page is answered and outside the refused preview; the alert is one per booking, so every visit
+// raises it at most once. A failure to raise it is logged, never shown.
+function flagForSuperadmin(adminClient: DatabaseClient, bookingId: string): void {
+  after(async () => {
+    try {
+      await svcFlagCancellationForSuperadmin(adminClient, bookingId);
+    } catch {
+      createLogger(randomUUID()).error('internal_error', { step: 'flag_cancellation', bookingId });
+    }
+  });
+}
+
+// A refund the terms cannot give now (a past visit, an unset fee) is no option. One the shares cannot fund
+// (CANCEL_NEEDS_SUPERADMIN) is said so and flagged for the superadmin; any other failure is logged and the hub shows
+// no option rather than an error page (review of PR #69, L-3). The cancel asks the database again anyway.
 async function quoteOf(
   adminClient: DatabaseClient,
   bookingId: string,
@@ -45,7 +65,10 @@ async function quoteOf(
     };
   } catch (error) {
     const hint = raisedHintOf(error);
-    if (hint === 'CANCEL_NEEDS_SUPERADMIN') return { quote: null, needsSuperadmin: true };
+    if (hint === 'CANCEL_NEEDS_SUPERADMIN') {
+      flagForSuperadmin(adminClient, bookingId);
+      return { quote: null, needsSuperadmin: true };
+    }
     if (hint !== 'STATE_INVALID') {
       createLogger(randomUUID()).error('internal_error', {
         step: 'refund_preview',

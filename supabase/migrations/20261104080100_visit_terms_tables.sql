@@ -181,6 +181,10 @@ create table public.refund_requests (
   -- no answer came for (review of PR #69, H1, M1).
   attempts             smallint not null default 0 check (attempts >= 0),
   last_attempt_at      timestamptz,
+  -- The server's last successful Status API look at the order and the payment_events row it stored, a duplicate
+  -- answer included: what a submitted request is failed on (re-review of PR #69, M-2, M-3).
+  last_checked_at      timestamptz,
+  last_checked_event_id bigint references public.payment_events(id) on delete restrict,
   updated_at           timestamptz not null default now(),
   constraint refund_requests_parts_ok check (
     (kind = 'cancellation' and amount = package_refund + addon_refund and fee_amount = 0)
@@ -199,7 +203,8 @@ revoke all on public.refund_requests from anon, authenticated;
 grant select (id, booking_id, payment_id, booking_leg_id, kind, status, method, refund_key, amount, package_refund,
   addon_refund,
   fee_amount, refund_pct, days_before, requested_by, requested_at, submitted_at, recorded_at, provider_status_code,
-  failure_reason, attempts, last_attempt_at, updated_at) on public.refund_requests to authenticated;
+  failure_reason, attempts, last_attempt_at, last_checked_at, last_checked_event_id, updated_at)
+  on public.refund_requests to authenticated;
 create policy refund_requests_super_read on public.refund_requests for select to authenticated
   using ((select public.is_superadmin()));
 create policy refund_requests_aal2 on public.refund_requests as restrictive for all to authenticated

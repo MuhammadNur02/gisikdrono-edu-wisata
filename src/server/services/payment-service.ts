@@ -13,12 +13,14 @@ import {
   type PaymentEventOutcome,
   type WebhookRejection,
 } from '@/db/rpc-payments';
+import { markRefundRequestFailed } from '@/db/rpc-refunds';
 import type { DatabaseClient } from '@/db/rpc-result';
 import type { CancellationOutcome } from '@/db/rpc-terms';
 import type { Json } from '@/db/types';
 import { copy } from '@/lib/copy/id';
+import { staffCopy } from '@/lib/copy/staff';
 import { serverEnv } from '@/lib/env';
-import { AppError } from '@/lib/errors';
+import { AppError, privilegeHintOf } from '@/lib/errors';
 import { createLogger } from '@/lib/logger';
 import { isSameAmount } from '@/lib/midtrans/amount';
 import {
@@ -37,7 +39,9 @@ import { withinRateLimits, type RateLimitCheck } from '@/lib/rate-limit';
 // an order id inside a notification whose signature passed (the webhook). Status and money columns are written only by
 // the internal.* functions behind the svc_* wrappers.
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { jsonValueSchema } from '@/lib/validations/json-value';
+import type { MarkRefundFailedValues } from '@/lib/validations/refund-request';
 import { askMidtransForRefund } from '@/server/services/payment-poll';
 import {
   openAttemptOf,
@@ -45,6 +49,7 @@ import {
   snapBookingOf,
   type PreparedSnapBooking,
 } from '@/server/services/payment-reads';
+import { lookAtRefundRequest } from '@/server/services/refund-looks';
 import type { OpenPaymentAttempt, PaymentPageView } from '@/types/payment';
 
 // Task P3.7.04 and P3.8.03–04 (docs/Security.md §3.2, §3.3): opening a booking's Snap page, and taking Midtrans'
@@ -252,4 +257,21 @@ export async function settleCancellation(outcome: CancellationOutcome): Promise<
   const refund = outcome.refund;
   if (refund?.method !== 'qris') return;
   await askMidtransForRefund(createSupabaseAdminClient(), refund);
+}
+
+// Re-review of PR #69, M-3: the superadmin marks a submitted QRIS refund failed on a Status API look the server takes
+// right now (refund-looks.ts), then through their own session, so mark_refund_request_failed checks their AAL2 and
+// fresh code itself.
+export async function markRefundRequestFailedByStaff(
+  values: MarkRefundFailedValues,
+): Promise<void> {
+  const eventId = await lookAtRefundRequest(createSupabaseAdminClient(), values.requestId);
+  const supabase = await createSupabaseServerClient();
+  try {
+    await markRefundRequestFailed(supabase, { ...values, eventId });
+  } catch (error) {
+    if (privilegeHintOf(error) === 'FRESH_TOTP')
+      throw new AppError('FORBIDDEN', staffCopy.notFresh);
+    throw error;
+  }
 }

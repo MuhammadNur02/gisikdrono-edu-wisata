@@ -9,10 +9,10 @@ import {
   svcPaymentsToPoll,
   svcRecordPaymentEvent,
 } from '@/db/rpc-payments';
+import { svcFailUnconfirmedRefundByPoll, svcRecordRefundLook } from '@/db/rpc-refunds';
 import type { DatabaseClient } from '@/db/rpc-result';
 import {
   svcClaimRefundRetry,
-  svcFailUnconfirmedRefund,
   svcMarkRefundRequest,
   svcRefundRequestsToRetry,
   svcSettleLapsedWeatherLinks,
@@ -27,9 +27,12 @@ vi.mock('@/db/rpc-payments', () => ({
   svcPaymentsToPoll: vi.fn(),
   svcRecordPaymentEvent: vi.fn(),
 }));
+vi.mock('@/db/rpc-refunds', () => ({
+  svcFailUnconfirmedRefundByPoll: vi.fn(),
+  svcRecordRefundLook: vi.fn(),
+}));
 vi.mock('@/db/rpc-terms', () => ({
   svcClaimRefundRetry: vi.fn(),
-  svcFailUnconfirmedRefund: vi.fn(),
   svcMarkRefundRequest: vi.fn(),
   svcRefundRequestsToRetry: vi.fn(),
   svcSettleLapsedWeatherLinks: vi.fn(),
@@ -65,7 +68,8 @@ beforeEach(() => {
   vi.mocked(svcPaymentsHousekeeping).mockResolvedValue({ suspended: 0, reminded: 1 });
   vi.mocked(svcRefundRequestsToRetry).mockResolvedValue([]);
   vi.mocked(svcClaimRefundRetry).mockResolvedValue(true);
-  vi.mocked(svcFailUnconfirmedRefund).mockResolvedValue(false);
+  vi.mocked(svcFailUnconfirmedRefundByPoll).mockResolvedValue(false);
+  vi.mocked(svcRecordRefundLook).mockResolvedValue(true);
   vi.mocked(svcSettleLapsedWeatherLinks).mockResolvedValue({
     auto_refunded: 0,
     kept: 0,
@@ -257,15 +261,59 @@ describe('a refund retry claims its request first (final review of PR #69, M-1)'
   });
 });
 
-describe('a submitted refund Midtrans never paid out (delta review of PR #69, D-2)', () => {
-  it('is failed by the poll and asked of nobody again', async () => {
+describe('a submitted refund Midtrans never paid out (delta review of PR #69, D-2; re-review, M-2, M-3)', () => {
+  beforeEach(() => {
     vi.mocked(svcPaymentsToPoll).mockResolvedValue([]);
     vi.mocked(svcRefundRequestsToRetry).mockResolvedValue([{ ...REFUND, status: 'submitted' }]);
+  });
+
+  it('is failed on the look the poll just took, a duplicate answer included', async () => {
     vi.mocked(svcRecordPaymentEvent).mockResolvedValue(NOTHING_NEW);
-    vi.mocked(svcFailUnconfirmedRefund).mockResolvedValue(true);
+    vi.mocked(svcFailUnconfirmedRefundByPoll).mockResolvedValue(true);
     await pollPayments(adminClient);
-    expect(svcFailUnconfirmedRefund).toHaveBeenCalledWith(adminClient, REFUND.requestId);
+    expect(svcFailUnconfirmedRefundByPoll).toHaveBeenCalledWith(adminClient, {
+      requestId: REFUND.requestId,
+      eventId: NOTHING_NEW.eventId,
+    });
     expect(svcMarkRefundRequest).not.toHaveBeenCalled();
     expect(requestRefund).not.toHaveBeenCalled();
+  });
+
+  it('is never failed when the Status API does not answer', async () => {
+    vi.mocked(getTransactionStatus).mockRejectedValue(new Error('timeout'));
+    await expect(pollPayments(adminClient)).resolves.toMatchObject({ refundsRetried: 0 });
+    expect(svcFailUnconfirmedRefundByPoll).not.toHaveBeenCalled();
+    expect(svcMarkRefundRequest).not.toHaveBeenCalled();
+  });
+
+  it('is never failed on an order Midtrans does not know', async () => {
+    vi.mocked(getTransactionStatus).mockResolvedValue({ ...SETTLED, status_code: '404' });
+    await pollPayments(adminClient);
+    expect(svcFailUnconfirmedRefundByPoll).not.toHaveBeenCalled();
+    expect(svcMarkRefundRequest).toHaveBeenCalledWith(
+      adminClient,
+      expect.objectContaining({ status: 'submitted' }),
+    );
+  });
+
+  it('is booked, not failed, when the answer shows the refund', async () => {
+    await pollPayments(adminClient);
+    expect(svcApplyPaymentEvent).toHaveBeenCalled();
+    expect(svcFailUnconfirmedRefundByPoll).not.toHaveBeenCalled();
+  });
+});
+
+describe('the look at a requested refund is stored (re-review of PR #69, M-3)', () => {
+  it('stores the look with the request before the refund API is called again', async () => {
+    vi.mocked(svcPaymentsToPoll).mockResolvedValue([]);
+    vi.mocked(svcRefundRequestsToRetry).mockResolvedValue([REFUND]);
+    vi.mocked(svcRecordPaymentEvent).mockResolvedValue(NOTHING_NEW);
+    vi.mocked(requestRefund).mockResolvedValue({ outcome: 'accepted', statusCode: '200' });
+    await pollPayments(adminClient);
+    expect(svcRecordRefundLook).toHaveBeenCalledWith(adminClient, {
+      requestId: REFUND.requestId,
+      eventId: NOTHING_NEW.eventId,
+    });
+    expect(requestRefund).toHaveBeenCalled();
   });
 });

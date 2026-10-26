@@ -10,10 +10,10 @@ import {
   svcRecordPaymentEvent,
   type OrderToPoll,
 } from '@/db/rpc-payments';
+import { svcFailUnconfirmedRefundByPoll, svcRecordRefundLook } from '@/db/rpc-refunds';
 import type { DatabaseClient } from '@/db/rpc-result';
 import {
   svcClaimRefundRetry,
-  svcFailUnconfirmedRefund,
   svcMarkRefundRequest,
   svcRefundRequestsToRetry,
   svcSettleLapsedWeatherLinks,
@@ -66,23 +66,31 @@ async function expireOrders(orderIds: readonly string[]): Promise<void> {
   await Promise.allSettled(orderIds.map((orderId) => expireTransaction(orderId)));
 }
 
-// What Midtrans says of one order now, stored and applied as a poll event; true when it changed something (a
-// settlement, or a refund the order's refund request is booked by).
-export async function applyCurrentStatus(
+export interface OrderLook {
+  // The payment_events row the answer is stored as, a duplicate answer's earlier row included; null when Midtrans
+  // has no transaction for the order yet.
+  eventId: number | null;
+  // The answer changed something: a settlement, or a refund the order's refund request is booked by.
+  isBooked: boolean;
+}
+
+// What Midtrans says of one order now, stored and applied as a poll event. Throws when the Status API cannot be
+// reached, so no caller ever acts on an older answer instead (re-review of PR #69, M-2).
+export async function lookAtOrder(
   adminClient: DatabaseClient,
   orderId: string,
-): Promise<boolean> {
+): Promise<OrderLook> {
   const keyId = serverEnv.QR_SIGNING_ACTIVE_KID;
   const answer = await getTransactionStatus(orderId, STATUS_TIMEOUT_MS);
   // Midtrans has no transaction for a Snap page nobody chose a method on: nothing to apply yet.
-  if (answer.status_code === UNKNOWN_ORDER_CODE) return false;
+  if (answer.status_code === UNKNOWN_ORDER_CODE) return { eventId: null, isBooked: false };
   const payload = jsonValueSchema.parse(answer);
   const event = await svcRecordPaymentEvent(adminClient, {
     source: 'poll',
     eventHash: eventHashOf(JSON.stringify(payload)),
     payload,
   });
-  if (event.isProcessed) return false;
+  if (event.isProcessed) return { eventId: event.eventId, isBooked: false };
   const outcome = await svcApplyPaymentEvent(adminClient, {
     eventId: event.eventId,
     source: 'poll',
@@ -90,7 +98,14 @@ export async function applyCurrentStatus(
     keyId,
   });
   await expireOrders(outcome.closeOrders);
-  return outcome.result === 'applied';
+  return { eventId: event.eventId, isBooked: outcome.result === 'applied' };
+}
+
+export async function applyCurrentStatus(
+  adminClient: DatabaseClient,
+  orderId: string,
+): Promise<boolean> {
+  return (await lookAtOrder(adminClient, orderId)).isBooked;
 }
 
 async function pollOrder(adminClient: DatabaseClient, order: OrderToPoll): Promise<boolean> {
@@ -132,25 +147,50 @@ export async function askMidtransForRefund(
   return answer.outcome;
 }
 
-// A request Midtrans took but whose refund notification never came is only asked of the Status API; one no answer
-// came for is asked of the refund API again, with the same refund_key, unless the Status API shows it done.
-async function retryRefund(adminClient: DatabaseClient, refund: RefundToRetry): Promise<void> {
-  const isBooked = await applyCurrentStatus(adminClient, refund.orderId).catch(() => false);
-  if (isBooked) return;
-  if (refund.status === 'submitted') {
-    // Midtrans took it but has shown no refund under its key for 24 h: it failed (delta review of PR #69, D-2).
-    if (await svcFailUnconfirmedRefund(adminClient, refund.requestId)) return;
-    await svcMarkRefundRequest(adminClient, {
+// A request Midtrans took but whose refund notification never came is only asked of the Status API. With no answer
+// the run leaves it for the next one; an answer is stored with the request, and one that still shows the refund unpaid
+// 24 h after the submission fails it (delta review of PR #69, D-2; re-review, M-2, M-3).
+async function retrySubmittedRefund(
+  adminClient: DatabaseClient,
+  refund: RefundToRetry,
+): Promise<void> {
+  const look = await lookAtOrder(adminClient, refund.orderId);
+  if (look.isBooked) return;
+  if (look.eventId !== null) {
+    const failed = await svcFailUnconfirmedRefundByPoll(adminClient, {
       requestId: refund.requestId,
-      status: 'submitted',
-      statusCode: null,
-      reason: null,
+      eventId: look.eventId,
     });
-    return;
+    if (failed) return;
+  }
+  await svcMarkRefundRequest(adminClient, {
+    requestId: refund.requestId,
+    status: 'submitted',
+    statusCode: null,
+    reason: null,
+  });
+}
+
+// One no answer came for is asked of the refund API again, with the same refund_key, unless the Status API shows it
+// done; a Status API out of reach does not stop the call, which Midtrans answers once per refund_key.
+async function retryRequestedRefund(
+  adminClient: DatabaseClient,
+  refund: RefundToRetry,
+): Promise<void> {
+  const look = await lookAtOrder(adminClient, refund.orderId).catch(() => null);
+  if (look?.isBooked) return;
+  if (look !== null && look.eventId !== null) {
+    await svcRecordRefundLook(adminClient, { requestId: refund.requestId, eventId: look.eventId });
   }
   // A superadmin's transfer may have recorded it meanwhile (final review of PR #69, M-1).
   if (!(await svcClaimRefundRetry(adminClient, refund.requestId))) return;
   await askMidtransForRefund(adminClient, refund);
+}
+
+function retryRefund(adminClient: DatabaseClient, refund: RefundToRetry): Promise<void> {
+  return refund.status === 'submitted'
+    ? retrySubmittedRefund(adminClient, refund)
+    : retryRequestedRefund(adminClient, refund);
 }
 
 async function retryRefunds(adminClient: DatabaseClient, deadline: number): Promise<number> {

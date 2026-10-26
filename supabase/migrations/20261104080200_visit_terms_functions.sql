@@ -180,6 +180,24 @@ begin
 end;
 $$;
 
+-- A leg's part of the package after the discount: the legs share it equally, one part per leg (per visit day in a
+-- multi-day combo), the rupiah left over by largest remainder in leg order (P-1, confirmed by the owner on 2026-10-26).
+create function internal.leg_package_part(p_booking public.bookings, p_leg_id uuid) returns bigint
+  language plpgsql stable
+  set search_path = ''
+as $$
+declare
+  legs uuid[] := array(select l.id from public.booking_legs l where l.booking_id = p_booking.id order by l.leg_order);
+  position integer := array_position(legs, p_leg_id);
+begin
+  if position is null then
+    raise exception 'leg % is not one of booking %', p_leg_id, p_booking.id using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  return (internal.largest_remainder_split(p_booking.subtotal_package - p_booking.discount_amount,
+    array(select 1::numeric from unnest(legs))))[position];
+end;
+$$;
+
 -- A20 (decision of 2026-10-25 on M-B): what one leg of a booking was paid for, the share a weather refund gives back
 -- when the booking's other leg was already visited: the leg's part of the package after the discount (the legs share
 -- the package equally, any rupiah left over by largest remainder in leg order) and the add-ons of the leg's RW.
@@ -187,20 +205,28 @@ create function internal.leg_share(p_booking public.bookings, p_leg_id uuid) ret
   language plpgsql stable
   set search_path = ''
 as $$
-declare
-  legs uuid[] := array(select l.id from public.booking_legs l where l.booking_id = p_booking.id order by l.leg_order);
-  parts bigint[];
-  position integer := array_position(legs, p_leg_id);
 begin
-  if position is null then
-    raise exception 'leg % is not one of booking %', p_leg_id, p_booking.id using errcode = 'P0001', hint = 'STATE_INVALID';
-  end if;
-  parts := internal.largest_remainder_split(p_booking.subtotal_package - p_booking.discount_amount,
-    array(select 1::numeric from unnest(legs)));
-  return parts[position] + coalesce((select sum(a.line_total) from public.booking_addons a
-                                     join public.booking_legs l on l.id = p_leg_id
-                                     where a.booking_id = p_booking.id and a.rw_id = l.rw_id), 0)::bigint;
+  return internal.leg_package_part(p_booking, p_leg_id)
+    + coalesce((select sum(a.line_total) from public.booking_addons a
+                join public.booking_legs l on l.id = p_leg_id
+                where a.booking_id = p_booking.id and a.rw_id = l.rw_id), 0)::bigint;
 end;
+$$;
+
+-- Re-review of PR #69, L-1: whether the parties reverse_leg_share draws a leg's package part from (the stopped RW's
+-- treasury, the kelurahan, the package's vendor lines) still hold less than it, as package_keeper_holdings is for a
+-- cancellation: such a refund is the superadmin's (CANCEL_NEEDS_SUPERADMIN), refused before any money moves.
+create function internal.leg_pool_short(p_booking public.bookings, p_leg public.booking_legs) returns boolean
+  language sql stable
+  set search_path = ''
+as $$
+  select internal.leg_package_part(p_booking, p_leg.id) > coalesce(sum(greatest(s.amount + coalesce(
+           (select sum(r.amount) from public.revenue_share_entries r
+            where r.booking_id = s.booking_id and r.entry_type in ('reversal', 'adjustment')
+              and r.line_ref = s.line_ref and r.beneficiary_key = s.beneficiary_key), 0), 0)), 0)
+  from public.revenue_share_entries s
+  where s.booking_id = p_booking.id and s.entry_type = 'settlement' and s.line_ref = 'package'
+    and (s.beneficiary <> 'rw_treasury' or s.rw_id = p_leg.rw_id);
 $$;
 
 -- A20: the weather refund of a checked_in booking's stopped leg: its share minus the Midtrans fee, never below 0.
@@ -220,6 +246,10 @@ begin
   end if;
   if payment.id is null then
     raise exception 'booking % has no settled payment', p_booking.id using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  if internal.leg_pool_short(p_booking, leg) then
+    raise exception 'the shares of booking % outside its visited RWs hold less than its leg refunds; the superadmin refunds it by hand',
+      p_booking.id using errcode = 'P0001', hint = 'CANCEL_NEEDS_SUPERADMIN';
   end if;
   return internal.weather_quote(payment, null, internal.leg_share(p_booking, leg.id))
     || jsonb_build_object('leg_id', leg.id);
@@ -576,10 +606,81 @@ end;
 $$;
 
 
--- Delta review of PR #69, D-2: a QRIS request Midtrans took (submitted) but never paid out stays open forever unless
--- someone says it failed. It may be marked failed, opening the bank-transfer path with the refund_failed alert, when it
--- was submitted at least 24 h ago and a confirmed Midtrans answer (Status API or poll) newer than the submission lists no refund
--- under its refund_key. True when it was marked.
+-- Re-review of PR #69, M-2, M-3: one successful Status API look at a refund request's order, stored with the request,
+-- a duplicate answer (the same payment_events row as an earlier look) included. The event must be a Status API or poll
+-- answer about the request's own order. True when the look was stored.
+create function internal.note_refund_look(p_request_id uuid, p_event_id bigint) returns boolean
+  language plpgsql
+  set search_path = ''
+as $$
+declare
+  noted uuid;
+begin
+  update public.refund_requests r set last_checked_at = now(), last_checked_event_id = p_event_id
+  where r.id = p_request_id and r.status in ('requested', 'submitted', 'failed')
+    and exists (select 1 from public.payment_events e join public.payments p on p.order_id = e.order_id
+                where e.id = p_event_id and p.id = r.payment_id and e.source in ('status_api', 'poll'))
+  returning r.id into noted;
+  return noted is not null;
+end;
+$$;
+
+-- The server stores its look: payments-poll for a request still requested, the superadmin's server action right before
+-- mark_refund_request_failed.
+create function internal.record_refund_look(p_request_id uuid, p_event_id bigint) returns boolean
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  previous_settings jsonb;
+  noted boolean;
+begin
+  perform internal.require_server_caller('record_refund_look');
+  perform internal.take_audit_turn();
+  previous_settings := internal.push_settings('{"app.in_rpc": "1", "app.actor_role": "cron"}');
+  noted := internal.note_refund_look(p_request_id, p_event_id);
+  perform internal.restore_settings(previous_settings);
+  return noted;
+end;
+$$;
+
+-- Whether the answer of a request's last look shows its refund not paid out (M-2): no refunds[] entry under its
+-- refund_key, and no more refunded in all than Midtrans' own refunds recorded so far. An answer that states only a
+-- refund_amount counts as one that shows a refund; a whole refund (transaction_status refund) shows the gross.
+create function internal.look_shows_refund_unpaid(p_request public.refund_requests) returns boolean
+  language plpgsql stable
+  set search_path = ''
+as $$
+declare
+  answer public.payment_events;
+  payment public.payments;
+  answer_total bigint;
+begin
+  select * into payment from public.payments p where p.id = p_request.payment_id;
+  select * into answer from public.payment_events e
+  where e.id = p_request.last_checked_event_id and e.order_id = payment.order_id and e.source in ('status_api', 'poll');
+  if answer.id is null then
+    return false;
+  end if;
+  if exists (select 1 from jsonb_array_elements(case when jsonb_typeof(answer.payload -> 'refunds') = 'array'
+                                                     then answer.payload -> 'refunds' else '[]'::jsonb end) as x(refund)
+             where x.refund ->> 'refund_key' = p_request.refund_key) then
+    return false;
+  end if;
+  answer_total := case
+    when answer.transaction_status = 'refund' then payment.gross_amount
+    else greatest(coalesce(internal.midtrans_refund_total(answer.payload), 0),
+                  coalesce(internal.midtrans_refund_total(answer.payload - 'refunds'), 0)) end;
+  return answer_total <= internal.midtrans_recorded(payment);
+end;
+$$;
+
+-- Delta review of PR #69, D-2, and its re-review, M-2, M-3: a QRIS request Midtrans took (submitted) but never paid out
+-- stays open forever unless someone says it failed. It may be marked failed, opening the bank-transfer path with the
+-- refund_failed alert, on the server's own look of the last five minutes, taken at least 24 h after the submission,
+-- whose answer shows the refund unpaid (look_shows_refund_unpaid). The look counts from when it was asked, not from
+-- when Midtrans first gave that answer, so an identical answer before and after the submission still counts. True
+-- when it was marked.
 create function internal.fail_unconfirmed_refund(p_request_id uuid, p_actor_id uuid, p_reason text) returns boolean
   language plpgsql
   set search_path = ''
@@ -588,15 +689,10 @@ declare
   request public.refund_requests;
 begin
   select * into request from public.refund_requests r where r.id = p_request_id for update;
-  if request.id is null or request.status <> 'submitted'
-     or coalesce(request.submitted_at, request.requested_at) > now() - interval '24 hours'
-     or not exists (
-       select 1 from public.payment_events e
-       where e.payment_id = request.payment_id and e.source in ('status_api', 'poll')
-         and e.received_at > coalesce(request.submitted_at, request.requested_at)
-         and not exists (select 1 from jsonb_array_elements(case when jsonb_typeof(e.payload -> 'refunds') = 'array'
-                                                                then e.payload -> 'refunds' else '[]'::jsonb end) as x(refund)
-                         where x.refund ->> 'refund_key' = request.refund_key)) then
+  if request.id is null or request.status <> 'submitted' or request.last_checked_at is null
+     or request.last_checked_at < now() - interval '5 minutes'
+     or request.last_checked_at < request.submitted_at + interval '24 hours'
+     or not internal.look_shows_refund_unpaid(request) then
     return false;
   end if;
   update public.refund_requests
@@ -606,15 +702,16 @@ begin
   values ('refund_failed', 'high', 'refund_failed:' || request.refund_key,
           'Midtrans tidak mengembalikan dana QRIS; transfer manual lewat penyesuaian manual_refund di Keuangan',
           jsonb_build_object('booking_id', request.booking_id, 'refund_key', request.refund_key,
-                             'marked_by', p_actor_id))
+                             'marked_by', p_actor_id, 'event_id', request.last_checked_event_id))
   on conflict (fingerprint) where acknowledged_at is null do update
   set last_seen_at = now(), occurrences = public.security_alerts.occurrences + 1, notified_at = null;
   return true;
 end;
 $$;
 
--- D-2's staff RPC: a superadmin at AAL2 with a fresh TOTP marks one such request failed, under the same conditions.
-create function public.mark_refund_request_failed(p_request_id uuid, p_reason text) returns jsonb
+-- D-2's staff RPC: a superadmin at AAL2 with a fresh TOTP marks one such request failed, with a reason, on the look
+-- the server action took just before the call (p_event_id, the event that look stored).
+create function public.mark_refund_request_failed(p_request_id uuid, p_event_id bigint, p_reason text) returns jsonb
   language plpgsql security definer
   set search_path = ''
 as $$
@@ -622,11 +719,19 @@ declare
   previous_settings jsonb;
   marked boolean;
 begin
-  if not (public.is_superadmin() and public.aal2() and public.fresh_totp()) then
-    raise exception 'only a superadmin with a fresh code marks a refund failed' using errcode = '42501';
+  if not (public.is_superadmin() and public.aal2()) then
+    raise exception 'only a superadmin marks a refund failed' using errcode = '42501';
+  end if;
+  if not public.fresh_totp() then
+    raise exception 'confirm with a fresh authenticator code first' using errcode = '42501', hint = 'FRESH_TOTP';
   end if;
   if length(btrim(coalesce(p_reason, ''))) < 10 then
     raise exception 'say why in at least 10 characters' using errcode = '22023';
+  end if;
+  if not exists (select 1 from public.refund_requests r
+                 where r.id = p_request_id and r.last_checked_event_id = p_event_id) then
+    raise exception 'refund request % was not just looked up at Midtrans', p_request_id
+      using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
   perform internal.take_audit_turn();
   previous_settings := internal.push_settings(jsonb_build_object('app.in_rpc', '1')
@@ -641,19 +746,22 @@ begin
 end;
 $$;
 
--- D-2 for payments-poll: the same, on its own, after its Status API look (the high alert is refund_failed's).
-create function internal.fail_unconfirmed_refund_by_poll(p_request_id uuid) returns boolean
+-- D-2 for payments-poll: its look stored, then the same check on its own (the high alert is refund_failed's). Called
+-- only after a look that succeeded, with the event it stored (M-2).
+create function internal.fail_unconfirmed_refund_by_poll(p_request_id uuid, p_event_id bigint) returns boolean
   language plpgsql security definer
   set search_path = ''
 as $$
 declare
   previous_settings jsonb;
-  marked boolean;
+  marked boolean := false;
 begin
   perform internal.require_server_caller('fail_unconfirmed_refund_by_poll');
   perform internal.take_audit_turn();
   previous_settings := internal.push_settings('{"app.in_rpc": "1", "app.actor_role": "cron"}');
-  marked := internal.fail_unconfirmed_refund(p_request_id, null, 'midtrans_never_refunded');
+  if internal.note_refund_look(p_request_id, p_event_id) then
+    marked := internal.fail_unconfirmed_refund(p_request_id, null, 'midtrans_never_refunded');
+  end if;
   perform internal.restore_settings(previous_settings);
   return marked;
 end;
@@ -737,11 +845,11 @@ $$;
 
 -- ===== The ledger of a leg's weather refund =====
 
--- A20, decided in the final review of PR #69 (M-2) and its delta review (D-3, D-7): a weather refund of one leg gives
--- back exactly what leg_share refunded, by construction. Its package part comes from the parties that are not a
--- visited leg's: the kelurahan, the stopped RW's treasury and the package's vendor lines, by what each still holds;
--- its RW's add-on lines come back whole. A visited RW's treasury gives back nothing. A total that does not match
--- raises, so book_refund_request records the refund with refund_ledger_unbalanced. One set of rows per reference.
+-- A20 (the owner's rule of the M-2 decision on PR #69: the leg refund reverses only the stopped leg's lines; re-review,
+-- M-4): the reversal of one leg's weather refund, exactly its share (leg_share). The leg's package part comes back
+-- from the stopped RW's treasury first, then from the kelurahan, then from the package's vendor lines pro rata to what
+-- each still holds, by largest remainder; a visited RW's treasury gives back nothing. The stopped RW's add-on lines
+-- come back whole, every beneficiary of them (D-7). One set of reversal rows per refund reference.
 create function internal.reverse_leg_share(p_booking_id uuid, p_leg_id uuid, p_reference text) returns jsonb
   language plpgsql
   set search_path = ''
@@ -749,12 +857,15 @@ as $$
 declare
   booking public.bookings;
   leg public.booking_legs;
-  legs uuid[];
   package_part bigint;
-  package_ids bigint[];
-  package_held numeric[];
-  package_total bigint;
-  parts bigint[];
+  still_owed bigint;
+  keeper record;
+  taken bigint;
+  back_ids bigint[] := '{}';
+  back_amounts bigint[] := '{}';
+  vendor_ids bigint[];
+  vendor_held numeric[];
+  vendor_total bigint;
   written bigint;
 begin
   if exists (select 1 from public.revenue_share_entries e
@@ -767,31 +878,44 @@ begin
   if leg.id is null then
     raise exception 'leg % is not one of booking %', p_leg_id, p_booking_id using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
-  -- The leg's package part exactly as leg_share refunds it.
-  legs := array(select l.id from public.booking_legs l where l.booking_id = p_booking_id order by l.leg_order);
-  package_part := (internal.largest_remainder_split(booking.subtotal_package - booking.discount_amount,
-                     array(select 1::numeric from unnest(legs))))[array_position(legs, p_leg_id)];
+  package_part := internal.leg_package_part(booking, p_leg_id);
 
   create temporary table leg_held on commit drop as
   select s.id, s.line_ref, s.beneficiary, s.rw_id, s.booking_addon_id,
-         s.amount + coalesce((select sum(r.amount) from public.revenue_share_entries r
-                              where r.booking_id = s.booking_id and r.entry_type in ('reversal', 'adjustment')
-                                and r.line_ref = s.line_ref and r.beneficiary_key = s.beneficiary_key), 0) as remaining
+         greatest(s.amount + coalesce((select sum(r.amount) from public.revenue_share_entries r
+                                       where r.booking_id = s.booking_id and r.entry_type in ('reversal', 'adjustment')
+                                         and r.line_ref = s.line_ref and r.beneficiary_key = s.beneficiary_key), 0),
+                  0) as remaining
   from public.revenue_share_entries s
   where s.booking_id = p_booking_id and s.entry_type = 'settlement';
-  -- The package part comes from every party but the visited legs' RW treasuries: the kelurahan, the stopped RW's
-  -- treasury and the package's vendors, split by what each still holds, by largest remainder.
-  select array_agg(h.id order by h.id), array_agg(greatest(h.remaining, 0) order by h.id),
-         coalesce(sum(greatest(h.remaining, 0)), 0)
-    into package_ids, package_held, package_total
-  from leg_held h
-  where h.line_ref = 'package' and (h.beneficiary <> 'rw_treasury' or h.rw_id = leg.rw_id);
-  if package_ids is null or package_total < package_part then
-    drop table leg_held;
-    raise exception 'booking % holds % of its package outside the visited RWs, not the % its leg refunds',
-      p_booking_id, coalesce(package_total, 0), package_part using errcode = 'P0001', hint = 'STATE_INVALID';
+
+  still_owed := package_part;
+  for keeper in
+    select h.id, h.remaining from leg_held h
+    where h.line_ref = 'package'
+      and (h.beneficiary = 'kelurahan' or (h.beneficiary = 'rw_treasury' and h.rw_id = leg.rw_id))
+    order by h.beneficiary = 'kelurahan', h.id
+  loop
+    taken := least(keeper.remaining, still_owed);
+    if taken > 0 then
+      back_ids := back_ids || keeper.id;
+      back_amounts := back_amounts || taken;
+      still_owed := still_owed - taken;
+    end if;
+  end loop;
+  if still_owed > 0 then
+    select array_agg(h.id order by h.id), array_agg(h.remaining::numeric order by h.id),
+           coalesce(sum(h.remaining), 0)
+      into vendor_ids, vendor_held, vendor_total
+    from leg_held h where h.line_ref = 'package' and h.beneficiary = 'umkm_vendor';
+    if coalesce(vendor_total, 0) < still_owed then
+      drop table leg_held;
+      raise exception 'booking % holds too little of its package outside the visited RWs for the % its leg refunds',
+        p_booking_id, package_part using errcode = 'P0001', hint = 'STATE_INVALID';
+    end if;
+    back_ids := back_ids || vendor_ids;
+    back_amounts := back_amounts || internal.largest_remainder_split(still_owed, vendor_held);
   end if;
-  parts := internal.largest_remainder_split(package_part, package_held);
 
   insert into public.revenue_share_entries (booking_id, payment_id, entry_type, line_ref, booking_addon_id, rule_id,
     rule_version, beneficiary, beneficiary_key, rw_id, vendor_id, base_amount, pct, amount)
@@ -799,9 +923,8 @@ begin
          s.rule_version || jsonb_build_object('reason', 'weather_refund_leg', 'refund_reference', p_reference),
          s.beneficiary, s.beneficiary_key, s.rw_id, s.vendor_id, -back.amount, s.pct, -back.amount
   from (
-    select part.id, part.amount from unnest(package_ids, parts) as part(id, amount)
+    select part.id, part.amount from unnest(back_ids, back_amounts) as part(id, amount)
     union all
-    -- D-7: the stopped RW's add-on lines come back whole, every beneficiary of them.
     select h.id, h.remaining from leg_held h
     join public.booking_addons a on a.id = h.booking_addon_id
     where h.line_ref <> 'package' and a.rw_id = leg.rw_id
@@ -1459,45 +1582,12 @@ begin
 end;
 $$;
 
--- Final review of PR #69, L-2: a booking whose visit day closed (no_show, completed) while its weather window was still
--- open and unanswered gets the weather refund all the same. Its status stays; the request is booked like any other.
-create function internal.request_late_weather_refund(p_booking public.bookings, p_quote jsonb) returns void
-  language plpgsql
-  set search_path = ''
-as $$
-declare
-  request public.refund_requests;
-  next_refund integer;
-  event_payload jsonb := p_quote - 'payment_id' - 'order_id';
-begin
-  if (p_quote ->> 'amount')::bigint > 0 then
-    select count(*) + 1 into next_refund from public.refund_requests r
-    where r.payment_id = (p_quote ->> 'payment_id')::uuid;
-    insert into public.refund_requests (booking_id, payment_id, kind, method, refund_key, amount, fee_amount)
-    values (p_booking.id, (p_quote ->> 'payment_id')::uuid, 'weather', (p_quote ->> 'method')::public.payment_method,
-            (p_quote ->> 'order_id') || '-R' || lpad(next_refund::text, 2, '0'), (p_quote ->> 'amount')::bigint,
-            (p_quote ->> 'fee_amount')::bigint)
-    returning * into request;
-    perform internal.announce_refund_request(p_booking, request);
-  end if;
-  update public.weather_notice_bookings set resolution = 'auto_refunded', resolved_at = now()
-  where booking_id = p_booking.id and resolved_at is null;
-  insert into public.booking_events (booking_id, from_status, to_status, actor_type, reason, payload)
-  values (p_booking.id, p_booking.status, p_booking.status, 'cron', 'weather_refund',
-          event_payload);
-  insert into public.security_alerts (rule, severity, fingerprint, title, details)
-  values ('weather_auto_refund', 'high', 'weather_auto_refund:' || p_booking.id,
-          'Pengembalian dana cuaca otomatis: ' || p_booking.booking_code,
-          jsonb_build_object('booking_id', p_booking.id, 'amount', p_quote -> 'amount', 'method', p_quote -> 'method'))
-  on conflict (fingerprint) where acknowledged_at is null do nothing;
-end;
-$$;
-
 -- Rule 2, run by payments-poll every five minutes: the weather rights whose window has closed. A booking no longer
 -- paid ends them as cancelled; one that moved keeps its new day (kept); one that chose nothing is cancelled and the
 -- weather refund requested (auto_refunded), with a superadmin alert, and its QRIS refund is asked of Midtrans by the
--- same job's refund retries. While the method's Midtrans fee is not set the booking stays paid and a high alert asks
--- the superadmin to decide; the next run tries again. A batch at a time, oldest first.
+-- same job's refund retries; a checked_in booking's stopped leg gets its own weather refund (A20). While the method's
+-- Midtrans fee is not set the booking stays paid and a high alert asks the superadmin to decide; the next run tries
+-- again. A batch at a time, oldest first.
 create function internal.settle_lapsed_weather_links(p_limit integer) returns jsonb
   language plpgsql security definer
   set search_path = ''
@@ -1523,11 +1613,17 @@ begin
     limit least(greatest(p_limit, 1), 50)
   loop
     select * into booking from public.bookings b where b.id = due.booking_id for update;
-    if booking.status in ('checked_in', 'no_show') and not booking.needs_review and due.moves_used = 0
-       and (booking.status = 'checked_in'
-            or (select count(*) from public.booking_legs l where l.booking_id = booking.id) > 1)
+    -- A20: a checked_in booking whose stopped leg is still to visit gets that leg's weather refund. A paid booking
+    -- never reaches no_show or completed with its window open: close_past_bookings waits for this sweep (final review
+    -- of PR #69, L-2), so no other status is refunded here (re-review, L-5).
+    if booking.status = 'checked_in' and not booking.needs_review and due.moves_used = 0
        and exists (select 1 from public.booking_legs l where l.id = due.booking_leg_id and l.status = 'reserved') then
       payment := internal.settled_payment_of(booking.id);
+      if internal.leg_pool_short(booking, (select l from public.booking_legs l where l.id = due.booking_leg_id)) then
+        perform internal.flag_cancellation_for_superadmin(booking.id);
+        counts := jsonb_set(counts, '{held}', to_jsonb((counts ->> 'held')::integer + 1));
+        continue;
+      end if;
       begin
         quote := internal.weather_quote(payment, null, internal.leg_share(booking, due.booking_leg_id))
           || jsonb_build_object('leg_id', due.booking_leg_id);
@@ -1545,31 +1641,6 @@ begin
         continue;
       end if;
       perform internal.refund_weather_leg(booking, null, quote, 'cron');
-      counts := jsonb_set(counts, '{auto_refunded}', to_jsonb((counts ->> 'auto_refunded')::integer + 1));
-      continue;
-    end if;
-    -- Delta review of PR #69, D-5: a single-leg booking closed as no_show with its leg still reserved; a combo's
-    -- stopped leg goes by leg_share like a checked_in one.
-    if booking.status = 'no_show' and not booking.needs_review and due.moves_used = 0
-       and (select count(*) from public.booking_legs l where l.booking_id = booking.id) = 1
-       and exists (select 1 from public.booking_legs l where l.id = due.booking_leg_id and l.status = 'reserved') then
-      payment := internal.settled_payment_of(booking.id);
-      begin
-        quote := internal.weather_quote(payment, null);
-      exception when sqlstate 'P0001' then
-        quote := null;
-      end;
-      if quote is null then
-        insert into public.security_alerts (rule, severity, fingerprint, title, details)
-        values ('weather_refund_fee_unset', 'high', 'weather_refund_fee_unset:' || booking.id,
-                'Waktu pilih cuaca habis, biaya Midtrans belum diatur: ' || booking.booking_code,
-                jsonb_build_object('booking_id', booking.id, 'method', payment.method))
-        on conflict (fingerprint) where acknowledged_at is null do update
-        set last_seen_at = now(), occurrences = public.security_alerts.occurrences + 1;
-        counts := jsonb_set(counts, '{held}', to_jsonb((counts ->> 'held')::integer + 1));
-        continue;
-      end if;
-      perform internal.request_late_weather_refund(booking, quote);
       counts := jsonb_set(counts, '{auto_refunded}', to_jsonb((counts ->> 'auto_refunded')::integer + 1));
       continue;
     end if;
@@ -1668,12 +1739,163 @@ $$;
 create trigger grant_weather_rights after update of status, needs_review on public.bookings
   for each row execute function internal.grant_weather_rights_on_paid();
 
+-- ===== A bank transfer Midtrans overtook; the recap of a weather refund =====
+
+-- Re-review of PR #69, M-2: the visit-terms request a manual_refund adjustment was proposed against, booked under
+-- Midtrans' own word since: open when the adjustment was proposed, recorded after it, with Midtrans reporting it.
+-- NULL when there is none.
+create function internal.request_refunded_by_midtrans_since(p_adjustment public.payment_adjustments)
+  returns public.refund_requests
+  language sql stable
+  set search_path = ''
+as $$
+  select r.* from public.refund_requests r
+  where r.payment_id = p_adjustment.payment_id and r.status = 'recorded'
+    and r.requested_at <= p_adjustment.proposed_at and r.recorded_at >= p_adjustment.proposed_at
+    and exists (select 1 from public.booking_events e
+                where e.booking_id = r.booking_id and e.reason = 'refund_recorded'
+                  and e.payload ->> 'refund_key' = r.refund_key and coalesce((e.payload ->> 'reported')::boolean, false))
+  order by r.recorded_at desc
+  limit 1;
+$$;
+
+-- Replaces the 20261101130200 version (re-review of PR #69, M-2): a manual_refund whose visit-terms request Midtrans
+-- refunded meanwhile is not applied, or the visitor would be paid twice; the adjustment is rejected with a high
+-- refund_paid_twice_prevented alert instead of an error, so the alert stays. Everything else is unchanged.
+create or replace function public.apply_adjustment(p_id uuid) returns jsonb
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  adjustment public.payment_adjustments;
+  overtaken public.refund_requests;
+  previous_settings jsonb;
+begin
+  perform internal.require_finance_writer();
+  perform internal.take_audit_turn();
+  adjustment := internal.open_adjustment(p_id, 'approved');
+  if now() < adjustment.apply_not_before then
+    raise exception 'this adjustment applies from %', adjustment.apply_not_before
+      using errcode = 'P0001', hint = 'APPLY_TOO_EARLY';
+  end if;
+  if adjustment.type = 'manual_refund' then
+    overtaken := internal.request_refunded_by_midtrans_since(adjustment);
+    if overtaken.id is not null then
+      return internal.reject_overtaken_refund(adjustment, overtaken);
+    end if;
+  end if;
+  perform internal.check_adjustment_terms(adjustment.type, adjustment.booking_id, adjustment.payment_id,
+                                          adjustment.amount, adjustment.details);
+
+  previous_settings := internal.push_settings(jsonb_build_object('app.in_rpc', '1', 'app.adjustment_id', p_id::text));
+  if adjustment.type = 'manual_refund' then
+    perform internal.record_refund_core(adjustment.booking_id, adjustment.payment_id, adjustment.amount,
+                                        'adjustment:' || p_id, adjustment.reason, adjustment.evidence_path, auth.uid(),
+                                        internal.midtrans_refunded_under_key(adjustment.payment_id, p_id::text,
+                                                                             adjustment.amount));
+  elsif adjustment.type = 'reclassify_share' then
+    perform internal.apply_reclassify_share(adjustment);
+  else
+    insert into public.booking_events (booking_id, from_status, to_status, actor_type, actor_id, reason, payload)
+    select b.id, b.status, b.status, 'admin', auth.uid(), 'write_off',
+           jsonb_build_object('adjustment_id', p_id, 'amount', adjustment.amount)
+    from public.bookings b where b.id = adjustment.booking_id;
+  end if;
+  update public.payment_adjustments set status = 'applied', applied_at = now(), applied_by = auth.uid()
+  where id = p_id
+  returning * into adjustment;
+  if adjustment.approved_by = adjustment.proposed_by then
+    perform internal.raise_adjustment_alert('adjustment_self_applied',
+                                            'Penyesuaian yang disetujui sendiri telah diterapkan', adjustment);
+  end if;
+  perform internal.restore_settings(previous_settings);
+  return to_jsonb(adjustment);
+end;
+$$;
+
+-- M-2: the adjustment Midtrans overtook is rejected, with the request it would have paid again named in the alert
+-- and the audit log.
+create function internal.reject_overtaken_refund(p_adjustment public.payment_adjustments,
+  p_request public.refund_requests) returns jsonb
+  language plpgsql
+  set search_path = ''
+as $$
+declare
+  adjustment public.payment_adjustments;
+  previous_settings jsonb;
+begin
+  previous_settings := internal.push_settings('{"app.in_rpc": "1"}');
+  update public.payment_adjustments
+  set status = 'rejected', rejected_reason = 'Midtrans sudah mengembalikan dana ' || p_request.refund_key
+  where id = p_adjustment.id
+  returning * into adjustment;
+  insert into public.security_alerts (rule, severity, fingerprint, title, details)
+  values ('refund_paid_twice_prevented', 'high', 'refund_paid_twice_prevented:' || adjustment.id,
+          'Transfer manual tidak diterapkan: Midtrans sudah mengembalikan dana ' || p_request.refund_key,
+          jsonb_build_object('adjustment_id', adjustment.id, 'booking_id', adjustment.booking_id,
+                             'refund_key', p_request.refund_key, 'amount', adjustment.amount))
+  on conflict (fingerprint) where acknowledged_at is null do nothing;
+  perform internal.log_audit('adjustment.rejected', 'payment_adjustments', adjustment.id::text,
+    jsonb_build_object('reason', 'refunded_by_midtrans', 'refund_key', p_request.refund_key));
+  perform internal.restore_settings(previous_settings);
+  return to_jsonb(adjustment);
+end;
+$$;
+
+-- Re-review of PR #69, M-5 (A18: the parties keep nothing of a weather refund and the visitor bears the Midtrans fee):
+-- the ledger of a booking gives back a weather refund's whole share while the payment returns that share less the
+-- fee, so the fee of each recorded weather refund leaves the ledger too.
+create function internal.weather_refund_fees(p_booking_id uuid) returns bigint
+  language sql stable
+  set search_path = ''
+as $$
+  select coalesce(sum(r.fee_amount), 0)::bigint from public.refund_requests r
+  where r.booking_id = p_booking_id and r.kind = 'weather' and r.status = 'recorded';
+$$;
+
+-- Replaces the 20261101130000 version (M-5): for the bookings paid in the period, the ledger holds what they were paid
+-- less what was refunded less the Midtrans fees of their weather refunds ('weather_refund_fees', the recap's own line
+-- "Biaya Midtrans refund cuaca"). Everything else is unchanged.
+create or replace function internal.recap_invariant(p_from date, p_to date) returns jsonb
+  language sql stable
+  set search_path = ''
+as $$
+  with paid as (
+    select b.id, b.total_amount,
+           coalesce((select sum(p.refunded_amount) from public.payments p
+                     where p.booking_id = b.id
+                       and (p.id in (select e.payment_id from public.revenue_share_entries e
+                                     where e.booking_id = b.id and e.entry_type = 'settlement')
+                            or (p.status <> 'duplicate'
+                                and not exists (select 1 from public.revenue_share_entries e
+                                                where e.booking_id = b.id and e.entry_type = 'settlement')))), 0)
+             as refunded,
+           internal.weather_refund_fees(b.id) as weather_fees,
+           coalesce((select sum(e.amount) from public.revenue_share_entries e where e.booking_id = b.id), 0) as ledger
+    from public.bookings b
+    where b.paid_at is not null
+      and (b.paid_at at time zone 'Asia/Jakarta')::date between p_from and p_to
+  )
+  select jsonb_build_object(
+    'bookings', count(*),
+    'expected', coalesce(sum(total_amount - refunded - weather_fees), 0)::bigint,
+    'ledger', coalesce(sum(ledger), 0)::bigint,
+    'weather_refund_fees', coalesce(sum(weather_fees), 0)::bigint,
+    'mismatched_bookings', count(*) filter (where ledger <> total_amount - refunded - weather_fees))
+  from paid;
+$$;
+revoke execute on function internal.recap_invariant(date, date) from public, anon, authenticated, service_role;
+
 revoke execute on function internal.cancel_refund_pct(integer),
   internal.reverse_leg_share(uuid, uuid, text), internal.claim_refund_retry(uuid),
   internal.check_refund_against_requests(uuid, bigint, boolean), internal.fail_unconfirmed_refund(uuid, uuid, text),
-  internal.fail_unconfirmed_refund_by_poll(uuid),
+  internal.fail_unconfirmed_refund_by_poll(uuid, bigint), internal.note_refund_look(uuid, bigint),
+  internal.record_refund_look(uuid, bigint), internal.look_shows_refund_unpaid(public.refund_requests),
+  internal.leg_package_part(public.bookings, uuid), internal.leg_pool_short(public.bookings, public.booking_legs),
+  internal.request_refunded_by_midtrans_since(public.payment_adjustments),
+  internal.reject_overtaken_refund(public.payment_adjustments, public.refund_requests),
+  internal.weather_refund_fees(uuid),
   internal.flag_cancellation_for_superadmin(uuid),
-  internal.request_late_weather_refund(public.bookings, jsonb),
   internal.grant_weather_rights_on_paid(), internal.leg_share(public.bookings, uuid),
   internal.weather_leg_quote(public.bookings),
   internal.refund_weather_leg(public.bookings, uuid, jsonb, text),
@@ -1696,9 +1918,11 @@ revoke execute on function internal.cancel_refund_pct(integer),
   internal.reschedule_for_weather(uuid, uuid),
   internal.settle_lapsed_weather_links(integer)
   from public, anon, authenticated;
-revoke execute on function public.declare_weather_disruption(uuid, text), public.mark_refund_request_failed(uuid, text)
+revoke execute on function public.declare_weather_disruption(uuid, text),
+  public.mark_refund_request_failed(uuid, bigint, text)
   from public, anon, service_role;
-grant execute on function public.declare_weather_disruption(uuid, text), public.mark_refund_request_failed(uuid, text)
+grant execute on function public.declare_weather_disruption(uuid, text),
+  public.mark_refund_request_failed(uuid, bigint, text)
   to authenticated;
 
 
@@ -1717,10 +1941,15 @@ create function public.svc_flag_cancellation_for_superadmin(p_booking_id uuid) r
   set search_path = ''
 as $$ select internal.flag_cancellation_for_superadmin(p_booking_id); $$;
 
-create function public.svc_fail_unconfirmed_refund(p_request_id uuid) returns boolean
+create function public.svc_fail_unconfirmed_refund_by_poll(p_request_id uuid, p_event_id bigint) returns boolean
   language sql security definer
   set search_path = ''
-as $$ select internal.fail_unconfirmed_refund_by_poll(p_request_id); $$;
+as $$ select internal.fail_unconfirmed_refund_by_poll(p_request_id, p_event_id); $$;
+
+create function public.svc_record_refund_look(p_request_id uuid, p_event_id bigint) returns boolean
+  language sql security definer
+  set search_path = ''
+as $$ select internal.record_refund_look(p_request_id, p_event_id); $$;
 
 create function public.svc_claim_refund_retry(p_request_id uuid) returns boolean
   language sql security definer
@@ -1762,7 +1991,8 @@ as $$ select internal.reschedule_for_weather(p_booking_id, p_session_id); $$;
 revoke execute on function public.svc_cancel_booking(uuid, text, public.refund_request_kind, bigint, smallint, uuid),
   public.svc_refund_requests_to_retry(integer),
   public.svc_claim_refund_retry(uuid),
-  public.svc_fail_unconfirmed_refund(uuid),
+  public.svc_fail_unconfirmed_refund_by_poll(uuid, bigint),
+  public.svc_record_refund_look(uuid, bigint),
   public.svc_flag_cancellation_for_superadmin(uuid),
   public.svc_settle_lapsed_weather_links(integer),
   public.svc_is_booking_phone(uuid, text),
@@ -1773,7 +2003,8 @@ revoke execute on function public.svc_cancel_booking(uuid, text, public.refund_r
 grant execute on function public.svc_cancel_booking(uuid, text, public.refund_request_kind, bigint, smallint, uuid),
   public.svc_refund_requests_to_retry(integer),
   public.svc_claim_refund_retry(uuid),
-  public.svc_fail_unconfirmed_refund(uuid),
+  public.svc_fail_unconfirmed_refund_by_poll(uuid, bigint),
+  public.svc_record_refund_look(uuid, bigint),
   public.svc_flag_cancellation_for_superadmin(uuid),
   public.svc_settle_lapsed_weather_links(integer),
   public.svc_is_booking_phone(uuid, text),

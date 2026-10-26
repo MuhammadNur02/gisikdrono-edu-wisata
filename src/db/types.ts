@@ -2636,6 +2636,8 @@ export type Database = {
           id: string
           kind: Database["public"]["Enums"]["refund_request_kind"]
           last_attempt_at: string | null
+          last_checked_at: string | null
+          last_checked_event_id: number | null
           method: Database["public"]["Enums"]["payment_method"]
           package_refund: number
           payment_id: string
@@ -2661,6 +2663,8 @@ export type Database = {
           id?: string
           kind: Database["public"]["Enums"]["refund_request_kind"]
           last_attempt_at?: string | null
+          last_checked_at?: string | null
+          last_checked_event_id?: number | null
           method: Database["public"]["Enums"]["payment_method"]
           package_refund?: number
           payment_id: string
@@ -2686,6 +2690,8 @@ export type Database = {
           id?: string
           kind?: Database["public"]["Enums"]["refund_request_kind"]
           last_attempt_at?: string | null
+          last_checked_at?: string | null
+          last_checked_event_id?: number | null
           method?: Database["public"]["Enums"]["payment_method"]
           package_refund?: number
           payment_id?: string
@@ -2733,6 +2739,13 @@ export type Database = {
             columns: ["booking_leg_id"]
             isOneToOne: false
             referencedRelation: "booking_legs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "refund_requests_last_checked_event_id_fkey"
+            columns: ["last_checked_event_id"]
+            isOneToOne: false
+            referencedRelation: "payment_events"
             referencedColumns: ["id"]
           },
           {
@@ -4654,7 +4667,7 @@ export type Database = {
         Returns: string
       }
       mark_refund_request_failed: {
-        Args: { p_reason: string; p_request_id: string }
+        Args: { p_event_id: number; p_reason: string; p_request_id: string }
         Returns: Json
       }
       onboarding_state: {
@@ -4992,8 +5005,8 @@ export type Database = {
         }
         Returns: undefined
       }
-      svc_fail_unconfirmed_refund: {
-        Args: { p_request_id: string }
+      svc_fail_unconfirmed_refund_by_poll: {
+        Args: { p_event_id: number; p_request_id: string }
         Returns: boolean
       }
       svc_flag_cancellation_for_superadmin: {
@@ -5120,6 +5133,10 @@ export type Database = {
           p_status: string
         }
         Returns: string
+      }
+      svc_record_refund_look: {
+        Args: { p_event_id: number; p_request_id: string }
+        Returns: boolean
       }
       svc_record_ticket_pdf: {
         Args: {

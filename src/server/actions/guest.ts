@@ -120,11 +120,11 @@ function revalidateBooking(bookingId: string, days: { rwId: number; sessionDate:
 }
 
 // D-6: the alert never costs the visitor the answer; a failure to raise it is logged.
-async function flagForSuperadmin(bookingCode: string, bookingId: string): Promise<void> {
+async function flagForSuperadmin(bookingId: string): Promise<void> {
   try {
     await flagCancellationForSuperadmin(bookingId);
   } catch {
-    createLogger(randomUUID()).error('internal_error', { step: 'flag_cancellation', bookingCode });
+    createLogger(randomUUID()).error('internal_error', { step: 'flag_cancellation', bookingId });
   }
 }
 
@@ -163,7 +163,7 @@ export async function cancelBookingAction(input: unknown): Promise<ActionResult<
       return fail('PRICE_MISMATCH', undefined, hubText.cancel.changed);
     }
     if (isRaised(error, 'CANCEL_NEEDS_SUPERADMIN')) {
-      await flagForSuperadmin(parsed.data.bookingCode, guard.guest.bookingId);
+      await flagForSuperadmin(guard.guest.bookingId);
       return fail('STATE_INVALID', undefined, hubText.cancel.needsSuperadmin);
     }
     return mapError(error);
