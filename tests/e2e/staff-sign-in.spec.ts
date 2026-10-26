@@ -1,7 +1,6 @@
-import { randomUUID } from 'node:crypto';
-
 import { expect, test, type Locator, type Page, type Response } from '@playwright/test';
 
+import { recordSignInAnswers } from './helpers/sign-in-answers';
 import {
   ADMIN_RW05,
   AUTH_STEP,
@@ -27,8 +26,8 @@ test.describe.configure({ timeout: 120_000 });
 
 const createdAccounts: string[] = [];
 
-// Only the desktop project resets the counters: every flow here runs there alone, and the phone-360 worker's reset
-// of this same file, landing in the middle of the lockout test, wiped its count (F-72-2 of the review of PR #72).
+// Only the desktop project resets the counters: every flow here runs there alone. The lockout test lives in
+// staff-lockout.spec.ts, which runs after every other file, so no reset can land in the middle of it.
 test.beforeAll(async ({}, testInfo) => {
   if (isDesktop(testInfo.project.name)) await resetAuthLimits();
 });
@@ -38,8 +37,6 @@ test.afterAll(async () => {
 });
 
 const isDesktop = (projectName: string) => projectName === 'desktop';
-// login:ip+email allows five tries in fifteen minutes; the sixth is refused before Supabase Auth is asked.
-const SIGN_IN_TRIES = 6;
 // The RW switch renders the whole dashboard again, figures and all, which a loaded CI runner takes longer for.
 const SWITCH_STEP = { timeout: 90_000 };
 // F-74-3: each wait has its own bound, and together they stay inside the test's own timeout (SWITCH_TEST_MS).
@@ -49,31 +46,6 @@ const CLICK_TAKEN_WAIT = { timeout: 10_000 };
 const SWITCH_TEST_MS = 240_000;
 const SWITCH_CLICKS = 2;
 const HTTP_OK = 200;
-
-const ENCODING_HEADERS = new Set(['content-encoding', 'content-length']);
-
-// The bodies of the sign-in answers in order, read on their way to the page: the form keeps its last alert when a new
-// submit never reaches the action, so only the answers show what the server said each time (RV-L4 of the independent
-// review of PR #17). The browser keeps no copy of a streamed Server Action answer to read afterwards.
-// A clientIp makes the sign-ins come from that address (x-real-ip, which the local server trusts as Vercel's would),
-// on this site's own requests only, so the Turnstile widget's requests are left as they are.
-async function recordSignInAnswers(page: Page, clientIp?: string): Promise<string[]> {
-  const answers: string[] = [];
-  await page.route('**/login*', async (route) => {
-    if (route.request().method() !== 'POST') return route.continue();
-    const requestHeaders =
-      clientIp === undefined ? undefined : { ...route.request().headers(), 'x-real-ip': clientIp };
-    const response = await route.fetch({ headers: requestHeaders });
-    const body = await response.text();
-    answers.push(body);
-    // route.fetch hands the body back decoded, so its encoding headers must not go with it.
-    const answerHeaders = Object.fromEntries(
-      Object.entries(response.headers()).filter(([name]) => !ENCODING_HEADERS.has(name)),
-    );
-    return route.fulfill({ status: response.status(), headers: answerHeaders, body });
-  });
-  return answers;
-}
 
 test('a visitor opening the dashboard is sent to sign in, and the page is kept for later', async ({
   page,
@@ -103,50 +75,6 @@ test('a wrong password and an unknown address get the same answer', async ({ pag
   expect(wrongPassword).toContain(message);
   expect(unknownAddress).toBe(wrongPassword);
   await expect(page.getByText(message, { exact: false })).toBeVisible(AUTH_STEP);
-  await expect(page).toHaveURL(/\/login/, AUTH_STEP);
-});
-
-// Task P4.8.04 (docs/Security.md §5.1, §8.3; AUTH-06, RL-02): five wrong passwords for one address get the generic
-// answer, the sixth the locked one (login:ip+email, 5 in 15 minutes), and an address with no account reads the same at
-// every step. Each run signs in from an IP of its own, so these twelve tries never use up the shared login:ip limit of
-// the other specs' sign-ins.
-async function sixWrongPasswords(page: Page, email: string, clientIp: string): Promise<string[]> {
-  await page.unroute('**/login*');
-  const answers = await recordSignInAnswers(page, clientIp);
-  await page.goto('/login');
-  for (let attempt = 1; attempt <= SIGN_IN_TRIES; attempt += 1) {
-    await submitPassword(page, email, 'Wrong-Password-123!');
-    await expect.poll(() => answers.length, AUTH_STEP).toBe(attempt);
-  }
-  return answers;
-}
-
-// Two addresses, six sign-ins each.
-const LOCKOUT_TEST_MS = 180_000;
-
-test('the sixth failed sign-in for an address gets the locked message, and an unknown address reads the same', async ({
-  page,
-}, testInfo) => {
-  test.skip(!isDesktop(testInfo.project.name), 'one run of the flow is enough');
-  test.setTimeout(LOCKOUT_TEST_MS);
-  const account = await createAccount('admin_rw');
-  createdAccounts.push(account.id);
-  const failed = copy.auth.signIn.failed;
-  const locked = copy.errors.RATE_LIMITED;
-
-  const known = await sixWrongPasswords(page, account.email, '198.51.100.1');
-  for (const answer of known.slice(0, SIGN_IN_TRIES - 1)) expect(answer).toContain(failed);
-  expect(known[SIGN_IN_TRIES - 1]).toContain(locked);
-  expect(known[SIGN_IN_TRIES - 1]).not.toContain(failed);
-  await expect(page.getByText(locked)).toBeVisible(AUTH_STEP);
-
-  const unknown = await sixWrongPasswords(
-    page,
-    `nobody-${randomUUID()}@example.test`,
-    '198.51.101.1',
-  );
-  for (const answer of unknown.slice(0, SIGN_IN_TRIES - 1)) expect(answer).toContain(failed);
-  expect(unknown[SIGN_IN_TRIES - 1]).toContain(locked);
   await expect(page).toHaveURL(/\/login/, AUTH_STEP);
 });
 
