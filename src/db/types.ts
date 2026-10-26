@@ -4723,12 +4723,7 @@ export type Database = {
       }
       reset_staff_mfa: { Args: { p_user_id: string }; Returns: Json }
       resolve_weather_link: {
-        Args: {
-          p_adjustment_id?: string
-          p_link_id: string
-          p_outcome: string
-          p_reason: string
-        }
+        Args: { p_link_id: string; p_outcome: string; p_reason: string }
         Returns: Json
       }
       revenue_recap: {

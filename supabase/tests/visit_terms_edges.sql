@@ -1065,7 +1065,7 @@ create temporary table va_manual on commit drop as
 select pg_temp.approved_refund((select id from lapsed_va), 146000, 'va-manual',
                                jsonb_build_object('weather_link_id', (select id from va_link))) as id;
 create temporary table va_again on commit drop as
-select pg_temp.approved_refund((select id from lapsed_va), 146000, 'va-again',
+select pg_temp.approved_refund((select id from lapsed_va), 1000, 'va-again',
                                jsonb_build_object('weather_link_id', (select id from va_link))) as id;
 grant select on va_short, va_manual, va_again to authenticated;
 select pg_temp.act_as('superadmin_aal2');
