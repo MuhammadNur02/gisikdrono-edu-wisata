@@ -57,9 +57,11 @@ const FIELDS = [
   'legRwIds',
 ] as const;
 
-// The legs editor loads only for a combo, outside the package pages' first load (admin budget).
-const ComboLegsEditor = dynamic(() =>
-  import('@/components/admin/packages/combo-legs').then((module) => module.ComboLegsEditor),
+// The legs editor loads in the browser and only for a combo, outside the package pages' first load (admin budget):
+// a chunk rendered on the server counts toward that load, one loaded after hydration does not.
+const ComboLegsEditor = dynamic(
+  () => import('@/components/admin/packages/combo-legs').then((module) => module.ComboLegsEditor),
+  { ssr: false },
 );
 
 type PackageAction = (values: unknown) => Promise<ActionResult<PackageAdmin>>;

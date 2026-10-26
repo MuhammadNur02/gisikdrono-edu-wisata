@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
-import dynamic from 'next/dynamic';
 
 import { OwnerNotice } from '@/components/admin/cms/owner-notice';
+import { PackageForm } from '@/components/admin/packages/package-form';
 import { blankPackage } from '@/components/admin/packages/package-values';
 import { BackLink } from '@/components/admin/shell/back-link';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
@@ -13,12 +13,6 @@ import { createPackageAction } from '@/server/actions/packages';
 import { ownerOfNewContent, readRwScope } from '@/server/auth/content-owner';
 import { requireDashboardStaff } from '@/server/auth/session';
 import { listRwUnitsForStaff } from '@/server/services/rw-unit-service';
-
-// The form and its sections load as their own chunk, outside the shared first load (admin budget, as on
-// /dashboard/settings).
-const PackageForm = dynamic(() =>
-  import('@/components/admin/packages/package-form').then((module) => module.PackageForm),
-);
 
 const text = packagesCopy;
 
