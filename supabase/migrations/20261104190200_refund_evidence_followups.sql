@@ -11,6 +11,11 @@
 --   I2  while the latest answer lists no refunds[] and an applied manual_refund of the payment is not yet counted as
 --       Midtrans', record_refund cannot tell what Midtrans' total holds, and refuses (REFUND_LIST_MISSING)
 --
+-- Review of PR #80, L-1 (owner decision): an L6 block is released by the superadmin acknowledging that adjustment's
+-- refund_key_mismatch alert with a note of at least 10 characters and a fresh TOTP (release_refund_key_mismatch).
+-- From then on record_refund books Midtrans' figure as the one that counts; each such record is audited and raises
+-- the high refund_key_mismatch_overridden alert. A released mismatch raises no new refund_key_mismatch alert.
+--
 -- The three-argument note_refund_seen is made again from its 20261101130200 version, the latest, and record_refund_core
 -- from its 20261104080200 version (PR #69, the visit-terms refund requests), the latest, with these changes; everything
 -- else in them is unchanged. apply_payment_status, apply_adjustment and recap_invariant keep their 20261104080200
@@ -53,8 +58,21 @@ $$;
 revoke execute on function internal.latest_refund_answer(public.payments, jsonb)
   from public, anon, authenticated, service_role;
 
--- L6: an applied manual_refund of the payment whose refund_key the latest answer lists with another amount.
-create function internal.refund_key_mismatch(p_payment public.payments, p_answer jsonb) returns uuid
+-- L-1: whether the superadmin released an adjustment's L6 block, acknowledging its alert with a note.
+create function internal.refund_key_mismatch_released(p_adjustment_id uuid) returns boolean
+  language sql stable
+  set search_path = ''
+as $$
+  select exists (select 1 from public.security_alerts s
+                 where s.fingerprint = 'refund_key_mismatch:' || p_adjustment_id and s.acknowledged_at is not null
+                   and length(btrim(coalesce(s.details ->> 'release_note', ''))) >= 10);
+$$;
+revoke execute on function internal.refund_key_mismatch_released(uuid) from public, anon, authenticated, service_role;
+
+-- L6: an applied manual_refund of the payment whose refund_key the latest answer lists with another amount; with
+-- p_released, only one whose block the superadmin released (L-1), else only one still blocking.
+create function internal.refund_key_mismatch(p_payment public.payments, p_answer jsonb, p_released boolean default false)
+  returns uuid
   language sql stable
   set search_path = ''
 as $$
@@ -62,6 +80,7 @@ as $$
   select a.id
   from public.payment_adjustments a, answer
   where a.payment_id = p_payment.id and a.type = 'manual_refund' and a.status = 'applied'
+    and internal.refund_key_mismatch_released(a.id) = p_released
     and jsonb_typeof(answer.body -> 'refunds') = 'array'
     and exists (select 1 from jsonb_array_elements(answer.body -> 'refunds') as r where r ->> 'refund_key' = a.id::text)
     and coalesce((select sum(split_part(r ->> 'refund_amount', '.', 1)::bigint)
@@ -71,7 +90,7 @@ as $$
   order by a.applied_at, a.id
   limit 1;
 $$;
-revoke execute on function internal.refund_key_mismatch(public.payments, jsonb)
+revoke execute on function internal.refund_key_mismatch(public.payments, jsonb, boolean)
   from public, anon, authenticated, service_role;
 
 -- I2: the latest answer lists no refunds[] while an applied manual_refund of the payment is not yet counted as
@@ -150,11 +169,73 @@ end;
 $$;
 
 
--- ===== record_refund_core (L6, L7, I2) =====
+-- ===== L-1: releasing an L6 block =====
+
+-- A refund recorded under Midtrans' word while a released mismatch stands: Midtrans' figure is the one that counts,
+-- so the record is audited and the high refund_key_mismatch_overridden alert names it.
+create function internal.note_key_mismatch_override(p_payment public.payments, p_reference text, p_amount bigint,
+  p_actor uuid) returns void
+  language plpgsql
+  set search_path = ''
+as $$
+declare
+  released uuid := internal.refund_key_mismatch(p_payment, null, true);
+begin
+  if released is null then
+    return;
+  end if;
+  perform internal.log_audit('refund.recorded_over_key_mismatch', 'payment_adjustments', released::text,
+    jsonb_build_object('order_id', p_payment.order_id, 'refund_reference', p_reference, 'amount', p_amount));
+  insert into public.security_alerts (rule, severity, fingerprint, title, details)
+  values ('refund_key_mismatch_overridden', 'high', 'refund_key_mismatch_overridden:' || p_payment.order_id || ':' || p_reference,
+          'Refund dicatat menurut angka Midtrans meski kunci refund penyesuaian tidak cocok',
+          jsonb_build_object('adjustment_id', released, 'booking_id', p_payment.booking_id, 'order_id', p_payment.order_id,
+                             'amount', p_amount, 'actor_id', p_actor))
+  on conflict (fingerprint) where acknowledged_at is null do nothing;
+end;
+$$;
+revoke execute on function internal.note_key_mismatch_override(public.payments, text, bigint, uuid)
+  from public, anon, authenticated, service_role;
+
+-- The superadmin, with a fresh code, acknowledges the open refund_key_mismatch alert of an applied manual refund with a
+-- note of 10 to 300 characters; the release is audited with the note.
+create function public.release_refund_key_mismatch(p_adjustment_id uuid, p_note text) returns jsonb
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  alert public.security_alerts;
+  note text := btrim(coalesce(p_note, ''));
+begin
+  perform internal.require_finance_writer();
+  if length(note) not between 10 and 300 then
+    raise exception 'a release says why in 10 to 300 characters' using errcode = '22023';
+  end if;
+  perform internal.take_audit_turn();
+  select s.* into alert from public.security_alerts s
+  where s.fingerprint = 'refund_key_mismatch:' || p_adjustment_id and s.acknowledged_at is null
+  for update;
+  if alert.id is null then
+    raise exception 'adjustment % has no open refund_key_mismatch alert', p_adjustment_id
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  update public.security_alerts
+  set acknowledged_by = auth.uid(), details = jsonb_build_object('release_note', note, 'released_by', auth.uid())
+  where id = alert.id;
+  perform internal.log_audit('refund.key_mismatch_released', 'payment_adjustments', p_adjustment_id::text,
+    jsonb_build_object('alert_id', alert.id, 'note', note));
+  return jsonb_build_object('result', 'released', 'adjustment_id', p_adjustment_id);
+end;
+$$;
+revoke execute on function public.release_refund_key_mismatch(uuid, text) from public, anon, service_role;
+grant execute on function public.release_refund_key_mismatch(uuid, text) to authenticated;
+
+
+-- ===== record_refund_core (L6, L7, I2, L-1) =====
 
 -- Replaces the 20261104080200 version (review of PR #69, H1, D-1, M-1, L-1: the open visit-terms request decides and
--- is booked through book_refund_request; check_refund_against_requests; REFUND_PENDING_AT_MIDTRANS), with L6, L7 and
--- I2 added; everything else in it is unchanged.
+-- is booked through book_refund_request; check_refund_against_requests; REFUND_PENDING_AT_MIDTRANS), with L6, L7,
+-- I2 and the L-1 override added; everything else in it is unchanged.
 create or replace function internal.record_refund_core(p_booking_id uuid, p_payment_id uuid, p_amount bigint, p_reference text,
   p_reason text, p_proof_path text, p_actor uuid, p_reported_only boolean) returns jsonb
   language plpgsql
@@ -219,6 +300,9 @@ begin
   if p_reported_only and internal.refund_list_missing(payment, null) then
     raise exception 'Midtrans'' latest answer for order % lists no refunds, while a manual refund is not yet counted',
       payment.order_id using errcode = 'P0001', hint = 'REFUND_LIST_MISSING';
+  end if;
+  if p_reported_only then
+    perform internal.note_key_mismatch_override(payment, reference, p_amount, p_actor);
   end if;
   -- Review of PR #69, H1, and its delta review, D-1: while a visit-terms refund request is open for the payment, it
   -- decides. A bank transfer of any amount waits while Midtrans may still pay a QRIS request out; one that Midtrans

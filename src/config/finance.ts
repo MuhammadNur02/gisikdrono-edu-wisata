@@ -45,3 +45,32 @@ export const LEDGER_KEY_MAX_LENGTH = 80;
 // How many rows each finance list reads at once; the kelurahan's volume is small.
 export const FINANCE_LIST_LIMIT = 50;
 export const RECONCILIATION_RUNS_LIMIT = 14;
+
+// Review of PR #80, M-1: the hints the finance RPCs raise as P0001 that the pages answer with a sentence of their own
+// (finance-errors.ts). finance-errors.test.ts reads the migrations and fails on a hint that is in neither this list
+// nor the shared mapping of mapError.
+export const FINANCE_REFUSAL_HINTS = [
+  'RULE_LINES_INVALID',
+  'RULE_START_INVALID',
+  'RULE_OVERLAP',
+  'RULE_TARGET_INVALID',
+  'PAYOUT_EMPTY',
+  'PAYOUT_TOTAL_MISMATCH',
+  'PROOF_MISSING',
+  'PROOF_REUSED',
+  'ADJUSTMENT_TYPE_UNSUPPORTED',
+  'ADJUSTMENT_OPEN',
+  'ADJUSTMENT_STATE',
+  'APPROVER_INELIGIBLE',
+  'APPLY_TOO_EARLY',
+  'REFUND_NO_PAYMENT',
+  'REFUND_TOO_LARGE',
+  'SHARE_TOO_LARGE',
+  'LEDGER_MISSING',
+  'REFUND_NOT_AT_MIDTRANS',
+  'REFUND_KEY_MISMATCH',
+  'REFUND_LIST_MISSING',
+  'REFUND_PENDING_AT_MIDTRANS',
+  'REFUND_REQUEST_MISMATCH',
+] as const;
+export type FinanceRefusalHint = (typeof FINANCE_REFUSAL_HINTS)[number];

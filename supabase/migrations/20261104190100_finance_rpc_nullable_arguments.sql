@@ -2,7 +2,9 @@
 -- through the typed supabase-js client, whose generated arguments are required unless the function gives them a
 -- default. A package_default rule names no package and a write_off no payment, so those arguments are NULL, which a
 -- required argument cannot be. Both functions are made again with their nullable arguments last, each defaulting to
--- NULL; the bodies are those of 20261101130100 and 20261101130200, unchanged.
+-- NULL; the bodies are those of 20261101130100 and 20261101130200, unchanged but for one key: a manual_refund keeps
+-- details.weather_link_id, a validated uuid and nothing else, which PR #90 reads to make a weather manual refund
+-- explicit (review of PR #80; the server side of that key is #90's).
 
 drop function public.save_revenue_rule(public.revenue_rule_scope, smallint, uuid, uuid, text, date, jsonb);
 drop function public.propose_adjustment(public.adjustment_type, uuid, uuid, bigint, text, text, jsonb);
@@ -87,8 +89,15 @@ declare
                         then jsonb_build_object('line_ref', p_details ->> 'line_ref', 'from_key', p_details ->> 'from_key',
                                                 'to_key', p_details ->> 'to_key')
                         else '{}' end;
+  weather_link text := btrim(coalesce(p_details ->> 'weather_link_id', ''));
 begin
   perform internal.require_finance_writer();
+  if p_type = 'manual_refund' and weather_link <> '' then
+    if weather_link !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+      raise exception 'details.weather_link_id names a weather link by its id' using errcode = '22023';
+    end if;
+    details := jsonb_build_object('weather_link_id', weather_link);
+  end if;
   if p_evidence_path is null
      or p_evidence_path !~ ('^bookings/' || p_booking_id
                             || '/adjustment-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'

@@ -157,6 +157,9 @@ export const financeCopy = {
       `Pembayaran ${amount} dicatat dan entri buku besarnya ditandai lunas.`,
     errors: {
       PAYOUT_EMPTY: 'Tidak ada entri yang belum dibayar untuk penerima ini dalam periode tersebut.',
+      FUTURE_DAY: 'Pembayaran hanya untuk hari yang sudah lewat; tanggal akhir paling lambat hari ini.',
+      PAYOUT_TOTAL_MISMATCH:
+        'Total bagian periode ini menurut buku besar tidak sama dengan jumlah yang Anda transfer. Periksa pratinjau, lalu catat pembayaran sebesar yang benar-benar ditransfer.',
       PROOF_MISSING: 'Bukti transfer belum tersimpan. Unggah ulang lalu coba lagi.',
       ACCOUNT_MISMATCH:
         'Rekening payout di dasbor Midtrans tidak sama dengan rekening yang diharapkan. Jangan lanjutkan; periksa akun Midtrans bersama Lurah.',

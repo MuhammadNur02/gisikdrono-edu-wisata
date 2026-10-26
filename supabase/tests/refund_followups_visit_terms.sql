@@ -5,7 +5,7 @@
 -- and recap_invariant are still in force, and that #80's own L6, L7, I1 and I2 hold on a payment whose refund came
 -- from a visit-terms request.
 begin;
-select plan(29);
+select plan(32);
 \ir helpers/rls_personas.psql
 \ir helpers/visit_terms.psql
 select set_config('app.qr_key_id', 'k1', true);
@@ -112,6 +112,20 @@ select is(internal.record_refund_core((select id from qris_open), null,
   (pg_temp.request_of((select id from qris_open))).amount, 'transfer-a3', 'Transfer bank uji lanjutan',
   (select path from qris_proof), '00000000-0000-4000-8000-00000000f001', false) ->> 'result', 'already_recorded',
   'and recording the same transfer again changes nothing');
+
+-- Review of PR #80, L-3: a disputed (or duplicate) payment is not refunded through its request, which would drop its
+-- flag (final review of PR #69, L-1).
+create temporary table disputed on commit drop as select pg_temp.cancelled('+6281300007104') as id;
+select internal.mark_refund_request((pg_temp.request_of((select id from disputed))).id, 'failed', '412', 'refused');
+create temporary table disputed_payment on commit drop as select (pg_temp.payment_row((select id from disputed))).id as id;
+select set_config('app.in_rpc', '1', true);
+update public.payments set status = 'disputed' where id = (select id from disputed_payment);
+select set_config('app.in_rpc', '', true);
+create temporary table disputed_proof on commit drop as select pg_temp.proof((select id from disputed), 'd1') as path;
+select is(pg_temp.hint_of($$select internal.record_refund_core((select id from disputed), (select id from disputed_payment),
+  (pg_temp.request_of((select id from disputed))).amount, 'transfer-d1', 'Transfer bank uji sengketa',
+  (select path from disputed_proof), '00000000-0000-4000-8000-00000000f001', false)$$), 'STATE_INVALID',
+  'a disputed payment''s request is not booked by a transfer (#69 L-1)');
 
 -- ===== #69 through apply_adjustment: a manual_refund books the refused request =====
 create temporary table adjusted on commit drop as select pg_temp.cancelled('+6281300007102') as id;
@@ -236,6 +250,25 @@ select is((select (value #>> '{invariant,weather_refund_fees}')::bigint from ove
   'finance_overview hands the recap its weather_refund_fees line ("Biaya Midtrans refund cuaca")');
 select cmp_ok((select (value #>> '{invariant,weather_refund_fees}')::bigint from overview), '>=',
   internal.weather_refund_fees((select id from weather)), 'which counts this booking''s fee');
+
+-- ===== PR #90's key: a manual_refund keeps details.weather_link_id, a uuid, and nothing else =====
+insert into storage.objects (bucket_id, name)
+values ('documents', 'bookings/' || (select id from weather) || '/adjustment-' || md5('weather-link')::uuid || '.pdf');
+create temporary table weather_link on commit drop as
+select w.id from public.weather_notice_bookings w where w.booking_id = (select id from weather) limit 1;
+create temporary table weather_payment on commit drop as select (pg_temp.payment_row((select id from weather))).id as id;
+grant select on weather, weather_link, weather_payment to authenticated;
+select pg_temp.act_as('superadmin_aal2');
+select is(public.propose_adjustment('manual_refund', (select id from weather), 100, 'Refund cuaca manual uji',
+  'bookings/' || (select id from weather) || '/adjustment-' || md5('weather-link')::uuid || '.pdf',
+  jsonb_build_object('weather_link_id', (select id from weather_link), 'line_ref', 'package'),
+  (select id from weather_payment)) -> 'details',
+  jsonb_build_object('weather_link_id', (select id from weather_link)::text),
+  'a manual refund keeps the weather link it answers, and no other detail');
+select throws_ok($$select public.propose_adjustment('manual_refund', (select id from weather), 100,
+  'Refund cuaca manual uji', 'bookings/x', '{"weather_link_id": "bukan-uuid"}', (select id from weather_payment))$$,
+  '22023', null, 'and only as a uuid');
+reset role;
 
 select * from finish();
 rollback;

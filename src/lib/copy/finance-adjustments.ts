@@ -73,6 +73,8 @@ export const adjustmentsCopy = {
   overtaken:
     'Penyesuaian tidak diterapkan dan kini berstatus ditolak: Midtrans sudah mengembalikan dana permintaan refund ini, jadi transfer bank tidak dicatat lagi. Pengunjung mungkin menerima dana dua kali; ikuti panduan selisih pembayaran untuk meminta kelebihannya kembali.',
   appliesFrom: (date: string) => `Bisa diterapkan mulai ${date}`,
+  refundKeyMismatchOf: (adjustmentRef: string) =>
+    `Midtrans mencatat refund penyesuaian ${adjustmentRef} (yang sudah diterapkan) dengan jumlah lain. Periksa refund di dasbor Midtrans, lalu lepaskan blokirnya di tabel penyesuaian bila angka Midtrans yang benar.`,
   errors: {
     ADJUSTMENT_TYPE_UNSUPPORTED: 'Jenis penyesuaian ini belum bisa diusulkan di sini.',
     ADJUSTMENT_OPEN: 'Pemesanan ini sudah punya usulan penyesuaian sejenis yang belum selesai.',
@@ -89,9 +91,13 @@ export const adjustmentsCopy = {
     PROOF_REUSED:
       'Berkas bukti ini sudah dipakai untuk refund atau penyesuaian lain. Unggah bukti yang sesuai.',
     REFUND_KEY_MISMATCH:
-      'Midtrans mencatat refund penyesuaian ini dengan jumlah lain. Periksa refund di dasbor Midtrans sebelum mencatat refund berikutnya.',
+      'Midtrans mencatat refund sebuah penyesuaian yang sudah diterapkan dengan jumlah lain. Periksa refund di dasbor Midtrans, lalu lepaskan blokirnya di tabel penyesuaian bila angka Midtrans yang benar.',
     REFUND_LIST_MISSING:
-      'Jawaban terakhir Midtrans tidak merinci refund-nya, padahal ada refund manual yang belum terhitung. Tekan Cek status Midtrans lalu coba lagi.',
+      'Jawaban terakhir Midtrans tidak merinci refund-nya, padahal ada refund manual yang belum terhitung, jadi refund ini belum bisa dicatat. Coba lagi setelah Midtrans memberi jawaban status yang merinci refund.',
+    REFUND_PENDING_AT_MIDTRANS:
+      'Pembayaran ini punya permintaan refund pembatalan yang masih diproses Midtrans, dan permintaan itulah yang menentukan. Tunggu hasilnya; transfer bank baru bisa dicatat setelah Midtrans menolak permintaan refund tersebut.',
+    REFUND_REQUEST_MISMATCH:
+      'Pembayaran ini punya permintaan refund terbuka, dan permintaan itulah yang menentukan: transfer bank hanya bisa dicatat sebesar jumlah permintaan refund tersebut.',
     REFUND_NOT_AT_MIDTRANS:
       'Midtrans belum mencatat refund sebesar itu untuk pembayaran ini. Refund lewat transfer bank dicatat sebagai penyesuaian Refund manual.',
   },

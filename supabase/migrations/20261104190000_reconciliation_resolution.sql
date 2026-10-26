@@ -2,6 +2,8 @@
 -- ways, resolved (the cause was fixed) or ignored (checked and no action is needed), always with a note. The note and
 -- the superadmin's own id were already the row's (reconciliation_issues_super_resolve, 0005); what kind of closing it
 -- was is new, and a closed issue stays closed: a second look is a new issue from the next run, not an edited one.
+-- Review of PR #80, L-4: the closing's time is the database's own now(), never the caller's clock, and every write
+-- of an issue is in audit_logs.
 
 
 -- A text column with its CHECK rather than an enum: the two values are this page's own, not part of the enum
@@ -23,7 +25,7 @@ grant select (resolution) on public.reconciliation_issues to authenticated;
 grant update (resolution) on public.reconciliation_issues to authenticated;
 
 
--- ===== A closed issue stays closed =====
+-- ===== A closed issue stays closed, closed at the database's time =====
 
 create function internal.reconciliation_issue_closed_once() returns trigger
   language plpgsql
@@ -38,6 +40,9 @@ begin
      (old.run_id, old.booking_id, old.payment_id, old.issue_type, old.severity, old.details, old.created_at) then
     raise exception 'what a run found never changes; only its closing is written' using errcode = '42501';
   end if;
+  if new.resolution is not null or new.resolved_by is not null then
+    new.resolved_at := now();
+  end if;
   return new;
 end;
 $$;
@@ -45,3 +50,6 @@ revoke execute on function internal.reconciliation_issue_closed_once() from publ
 
 create trigger reconciliation_issue_closed_once before update on public.reconciliation_issues
   for each row execute function internal.reconciliation_issue_closed_once();
+
+create trigger log_audit after insert or update or delete on public.reconciliation_issues
+  for each row execute function internal.log_audit();
