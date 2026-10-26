@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { svcRecordJobRun } from '@/db/rpc';
 import { serverEnv } from '@/lib/env';
-import { purgeMarkedFiles } from '@/server/services/document-service';
+import { purgeMarkedFiles } from '@/server/services/storage-purge';
 
 import { POST } from './route';
 
 vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => ({}) }));
-vi.mock('@/server/services/document-service', () => ({ purgeMarkedFiles: vi.fn() }));
+vi.mock('@/server/services/storage-purge', () => ({ purgeMarkedFiles: vi.fn() }));
 vi.mock('@/db/rpc', () => ({ svcRecordJobRun: vi.fn() }));
 
 const JOB_URL = 'http://localhost/api/jobs/purge-storage';

@@ -7,7 +7,7 @@ import { createLogger, requestIdFrom } from '@/lib/logger';
 // the files the retention runs marked (CLAUDE.md §6.1).
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { hasValidCronSecret } from '@/server/auth/cron-secret';
-import { purgeMarkedFiles } from '@/server/services/document-service';
+import { purgeMarkedFiles } from '@/server/services/storage-purge';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
