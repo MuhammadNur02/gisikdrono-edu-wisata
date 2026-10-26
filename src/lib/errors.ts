@@ -27,6 +27,7 @@ const HTTP_STATUS_BY_CODE = {
 const HTTP_OK = 200;
 const UNIQUE_VIOLATION = '23505';
 const RAISED_EXCEPTION = 'P0001';
+const INSUFFICIENT_PRIVILEGE = '42501';
 
 // internal.* functions raise P0001 with one of these hints; each one is a business outcome, not a bug.
 // CONTACT_UNVERIFIED is the booking's own (review of PR #27, M1): booking-service.ts answers it by asking for a new
@@ -83,6 +84,13 @@ function isPostgresError(error: unknown): error is PostgresError {
 // The hint of a P0001 an internal.* function raised, for a service that answers one refusal itself.
 export function raisedHintOf(error: unknown): string | undefined {
   if (!isPostgresError(error) || error.code !== RAISED_EXCEPTION) return undefined;
+  return error.hint ?? undefined;
+}
+
+// The hint of a 42501 a staff RPC raised (review of PR #76, F-76-7): why the caller may not, when it is not plainly
+// their role (FRESH_TOTP, OUTSIDE_WINDOW).
+export function privilegeHintOf(error: unknown): string | undefined {
+  if (!isPostgresError(error) || error.code !== INSUFFICIENT_PRIVILEGE) return undefined;
   return error.hint ?? undefined;
 }
 

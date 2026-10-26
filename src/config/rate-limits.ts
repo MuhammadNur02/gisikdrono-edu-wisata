@@ -37,6 +37,9 @@ export const RATE_LIMITS = {
   // Task P4.5.03 (review of PR #71, L3): "Render ulang PDF" renders a whole class at once, so each staff member may run
   // it five times an hour.
   'certificate_rerender:user': { limit: 5, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  // Task P4.3.02 (decision of 2026-10-26): an RW admin's header-only copy of a booking document, per staff member, on
+  // top of document:ip and document:booking.
+  'document_restricted:user': { limit: 30, windowSeconds: 600, whenUnavailable: 'fail-closed' },
   // Task P3.6.05: the public verify page, per visitor IP.
   'verify:code': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   // Task P3.6.06: "Minta Surat Penawaran", per visitor IP, on top of the booking limits.

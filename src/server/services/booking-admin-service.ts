@@ -9,7 +9,10 @@ import {
 import type { RwId } from '@/config/rw';
 import { DB_ENUMS } from '@/db/enums';
 import { rpcGetParticipants, rpcRevealBookingContact } from '@/db/rpc';
-import { AppError, raisedHintOf } from '@/lib/errors';
+import { revokeTicket, rpcGetAddonNotes } from '@/db/rpc-booking-admin';
+import { bookingsAdminCopy } from '@/lib/copy/bookings-admin';
+import { staffCopy } from '@/lib/copy/staff';
+import { AppError, privilegeHintOf, raisedHintOf } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import {
   allowedValues,
@@ -18,10 +21,12 @@ import {
   searchPattern,
   type ListQuery,
 } from '@/lib/utils/list-query';
+import { rowPageOf } from '@/lib/utils/paged-rows';
 import type {
   AddonFulfillmentValues,
   AdminNotesValues,
   RevealContactValues,
+  RevokeTicketValues,
 } from '@/lib/validations/booking-admin';
 import { toBookingDetail, toBookingListRow } from '@/server/services/booking-admin-rows';
 import type {
@@ -47,6 +52,8 @@ const LIST_COLUMNS =
 const ADDON_COLUMNS =
   'id, rw_id, product_name_snapshot, qty, unit_price, line_total, fulfillment_status, created_at';
 const EVENT_COLUMNS = 'id, from_status, to_status, actor_type, reason, occurred_at';
+
+type ServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
 
 const INSUFFICIENT_PRIVILEGE = '42501';
 const NO_DATA_FOUND = 'P0002';
@@ -80,13 +87,13 @@ export async function listBookingsForStaff(
   if (visitDate !== null)
     request = request.lte('visit_date', visitDate).gte('visit_date_end', visitDate);
   if (order !== null) request = request.order(order.column, { ascending: order.ascending });
-  const { data, error, count } = await request.order('id').range(from, to);
-  if (error) throw error;
-  const rows = data.flatMap((row) => {
+  // A `?page=` past the last row is an empty page, not PostgREST's 416 (review of PR #75, F-75-5).
+  const page = rowPageOf(await request.order('id').range(from, to));
+  const rows = page.rows.flatMap((row) => {
     const mapped = toBookingListRow(row);
     return mapped ? [mapped] : [];
   });
-  return { rows, total: count ?? rows.length };
+  return { rows, total: page.count ?? rows.length };
 }
 
 // One booking with its legs, payments, tickets and invoices; null when RLS does not show it to this staff member.
@@ -145,22 +152,32 @@ export async function listBookingTimeline(bookingId: string): Promise<BookingTim
   }));
 }
 
-// What a refusal of the personal-data functions means to the officer; anything else is thrown on for mapError.
-function personalDataRefusal(error: unknown): AppError | null {
+// What a refusal of the staff RPCs means to the officer; anything else (STATE_INVALID among them) is thrown on for
+// mapError.
+// A 42501 says why with its hint (review of PR #76, F-76-7): the booking window, a stale authenticator code, or
+// plainly no right to it, which keeps the generic text.
+function privilegeRefusal(hint: string | undefined): AppError {
+  if (hint === 'OUTSIDE_WINDOW')
+    return new AppError('FORBIDDEN', bookingsAdminCopy.detail.outsideWindow);
+  if (hint === 'FRESH_TOTP') return new AppError('FORBIDDEN', staffCopy.notFresh);
+  return new AppError('FORBIDDEN');
+}
+
+function staffRpcRefusal(error: unknown): AppError | null {
   const code =
     typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
-  if (code === INSUFFICIENT_PRIVILEGE) return new AppError('FORBIDDEN');
+  if (code === INSUFFICIENT_PRIVILEGE) return privilegeRefusal(privilegeHintOf(error));
   if (code === NO_DATA_FOUND) return new AppError('NOT_FOUND');
   if (code === INVALID_PARAMETER) return new AppError('VALIDATION');
   if (raisedHintOf(error) === 'RATE_LIMITED') return new AppError('RATE_LIMITED');
   return null;
 }
 
-async function asPersonalDataStep<T>(run: () => Promise<T>): Promise<T> {
+async function asStaffRpcStep<T>(run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {
-    throw personalDataRefusal(error) ?? error;
+    throw staffRpcRefusal(error) ?? error;
   }
 }
 
@@ -168,14 +185,14 @@ async function asPersonalDataStep<T>(run: () => Promise<T>): Promise<T> {
 // daily cap of 50.
 export async function revealBookingContact(values: RevealContactValues): Promise<RevealedContact> {
   const supabase = await createSupabaseServerClient();
-  return asPersonalDataStep(() =>
+  return asStaffRpcStep(() =>
     rpcRevealBookingContact(supabase, { bookingId: values.bookingId, reason: values.reason }),
   );
 }
 
 export async function getBookingParticipants(bookingId: string): Promise<ParticipantEntry[]> {
   const supabase = await createSupabaseServerClient();
-  const participants = await asPersonalDataStep(() => rpcGetParticipants(supabase, bookingId));
+  const participants = await asStaffRpcStep(() => rpcGetParticipants(supabase, bookingId));
   return participants.map((participant) => ({
     seqNo: participant.seq_no,
     fullName: participant.full_name,
@@ -184,9 +201,23 @@ export async function getBookingParticipants(bookingId: string): Promise<Partici
   }));
 }
 
+// An anonymised booking keeps no note and no kitchen step any more (review of PR #75, F-75-3): its contact and its
+// free text went with the retention run. NOT_FOUND when RLS does not show the booking at all.
+async function assertWritableBooking(supabase: ServerClient, bookingId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('v_bookings_staff')
+    .select('id, is_anonymised')
+    .eq('id', bookingId)
+    .maybeSingle();
+  if (error) throw error;
+  if (data === null) throw new AppError('NOT_FOUND');
+  if (data.is_anonymised === true) throw new AppError('STATE_INVALID');
+}
+
 // admin_notes is the one column staff write on a booking (0005, bookings_staff_notes). No row back means RLS hid it.
 export async function saveAdminNotes(values: AdminNotesValues): Promise<void> {
   const supabase = await createSupabaseServerClient();
+  await assertWritableBooking(supabase, values.bookingId);
   const { data, error } = await supabase
     .from('bookings')
     .update({ admin_notes: values.adminNotes === '' ? null : values.adminNotes })
@@ -198,15 +229,42 @@ export async function saveAdminNotes(values: AdminNotesValues): Promise<void> {
 }
 
 // The kitchen of the line's own RW marks it (booking_addons_staff_fulfil); the line must belong to the booking named.
+// A cancelled line is never brought back from here (review of PR #75, F-75-2; addon_fulfillment_guard holds the same
+// line in the database): no row back means the line was cancelled, or is not this staff member's.
 export async function setAddonFulfillment(values: AddonFulfillmentValues): Promise<void> {
   const supabase = await createSupabaseServerClient();
+  await assertWritableBooking(supabase, values.bookingId);
   const { data, error } = await supabase
     .from('booking_addons')
     .update({ fulfillment_status: values.status })
     .eq('id', values.addonId)
     .eq('booking_id', values.bookingId)
+    .neq('fulfillment_status', 'cancelled')
     .select('id')
     .maybeSingle();
   if (error) throw error;
+  if (data === null) throw new AppError('STATE_INVALID');
+}
+
+// revoke_ticket (FR-ADMIN-26): the ticket of this booking with this code, as RLS shows it, then the superadmin's RPC,
+// which checks their role, AAL2 and the ticket's state again. The booking's own status is left as it is.
+export async function revokeBookingTicket(values: RevokeTicketValues): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('tickets_qr')
+    .select('id')
+    .eq('booking_id', values.bookingId)
+    .eq('ticket_code', values.ticketCode)
+    .maybeSingle();
+  if (error) throw error;
   if (data === null) throw new AppError('NOT_FOUND');
+  await asStaffRpcStep(() => revokeTicket(supabase, { ticketId: data.id, reason: values.reason }));
+}
+
+// The visitor's notes on the caller's own RW's add-on lines, by line id (rpc_get_addon_notes, audited), read only when
+// the staff member asks for them (review of PR #76, F-76-5). Outside the booking window the refusal says why.
+export async function getAddonNotes(bookingId: string): Promise<Record<string, string>> {
+  const supabase = await createSupabaseServerClient();
+  const notes = await asStaffRpcStep(() => rpcGetAddonNotes(supabase, bookingId));
+  return Object.fromEntries(notes);
 }

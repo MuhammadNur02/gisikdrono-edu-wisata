@@ -28,6 +28,8 @@ const text = certificatesCopy.dashboard;
 export interface SuperadminCertificateActions {
   waive: (values: unknown) => Promise<ActionResult<number>>;
   revoke: (values: unknown) => Promise<ActionResult<null>>;
+  // verifyStaffTotpAction: a revocation needs a fresh authenticator code (docs/Security.md §5.3).
+  stepUp: (values: unknown) => Promise<ActionResult<null>>;
 }
 
 export interface CertificateDialogProps {
@@ -237,6 +239,7 @@ export function CertificateDialog({ booking, actions, onClose }: CertificateDial
           <RevokeForm
             certificateId={view.certificate.id}
             action={actions.revoke}
+            stepUpAction={actions.stepUp}
             onDone={done(text.revoked)}
           />
         </div>

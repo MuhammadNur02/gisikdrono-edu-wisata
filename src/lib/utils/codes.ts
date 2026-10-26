@@ -7,6 +7,9 @@ export const BOOKING_CODE_PATTERN = /^GSK-[0-9A-HJKMNP-TV-Z]{8}$/;
 // Mirrors the payments.order_id CHECK: the booking code and the payment attempt in two digits, 'GSK-7F3K9Q2M-01'.
 const ORDER_ID_PATTERN = /^GSK-[0-9A-HJKMNP-TV-Z]{8}-[0-9]{2}$/;
 
+// A ticket code is the booking code and its RW in two digits, 'GSK-7F3K9Q2M-05' (CLAUDE.md Appendix A.1).
+export const TICKET_CODE_PATTERN = /^GSK-[0-9A-HJKMNP-TV-Z]{8}-[0-9]{2}$/;
+
 const BOOKING_CODE_PREFIX = 'GSK';
 
 // Crockford base32 reads look-alike letters as the digit people meant.
