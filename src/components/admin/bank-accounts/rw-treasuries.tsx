@@ -32,11 +32,17 @@ export function RwTreasuries({
             {treasuries.map((treasury) => (
               <li key={treasury.rwId} className="space-y-3 py-4 first:pt-0 last:pb-0">
                 <h3 className="text-body font-semibold">{treasury.rwName}</h3>
-                <BankAccountPanel
-                  target={{ kind: 'rw', rwId: treasury.rwId }}
-                  initial={treasury.account}
-                  actions={actions}
-                />
+                {treasury.account === null ? (
+                  <p className="text-body-sm text-muted-foreground">
+                    <span className="font-medium">{text.unavailable}</span>. {text.unavailableHint}
+                  </p>
+                ) : (
+                  <BankAccountPanel
+                    target={{ kind: 'rw', rwId: treasury.rwId }}
+                    initial={treasury.account}
+                    actions={actions}
+                  />
+                )}
               </li>
             ))}
           </ul>

@@ -14,13 +14,15 @@ export const bankAccountsCopy = {
   accountHolder: 'Nama pemilik rekening',
   notSet: 'Belum diisi',
   loading: 'Memuat rekening…',
+  unavailable: 'Belum tersedia',
+  unavailableHint: 'Rekening ini gagal dimuat. Muat ulang halaman untuk mencoba lagi.',
   reveal: 'Tampilkan nomor',
   hide: 'Sembunyikan nomor',
   revealReason: 'Alasan membuka nomor rekening',
   revealHint:
     'Tiga sampai 300 karakter. Setiap pembukaan tercatat di log audit, dengan batas 20 kali per hari.',
   revealSubmit: 'Tampilkan',
-  revealedNote: 'Nomor ini hanya tampil sampai Anda menyembunyikannya atau menutup halaman.',
+  revealedNote: 'Nomor ini tampil 5 menit, lalu disembunyikan lagi.',
   edit: 'Ubah rekening',
   editTitle: (owner: string) => `Ubah rekening ${owner}`,
   editHint:

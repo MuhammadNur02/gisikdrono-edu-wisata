@@ -8,5 +8,8 @@ export const BANK_ACCOUNT_LIMITS = {
 
 export const BANK_ACCOUNT_NUMBER = /^[0-9]{5,20}$/;
 
+// A revealed number hides itself again after this long (review of PR #79), as a hidden participant list is dropped.
+export const REVEALED_NUMBER_VISIBLE_MS = 5 * 60 * 1000;
+
 // The page that lists the RW treasuries, refreshed after a change to one.
 export const RW_TREASURIES_PATH = '/dashboard/settings';

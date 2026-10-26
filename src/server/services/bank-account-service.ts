@@ -86,14 +86,19 @@ export async function setBankAccount(values: SetBankAccountValues): Promise<void
   );
 }
 
-// /dashboard/settings: every RW's treasury, masked.
+// /dashboard/settings: every RW's treasury, masked. One that fails to load is null, so the others still show (review
+// of PR #79, L-6).
 export async function listRwTreasuryAccounts(): Promise<RwTreasuryAccount[]> {
   const units = await listRwUnitsForStaff();
-  return Promise.all(
-    units.map(async (unit) => ({
+  const accounts = await Promise.allSettled(
+    units.map((unit) => getMaskedBankAccount({ kind: 'rw', rwId: unit.id })),
+  );
+  return units.map((unit, index) => {
+    const read = accounts[index];
+    return {
       rwId: unit.id,
       rwName: unit.name,
-      account: await getMaskedBankAccount({ kind: 'rw', rwId: unit.id }),
-    })),
-  );
+      account: read?.status === 'fulfilled' ? read.value : null,
+    };
+  });
 }
