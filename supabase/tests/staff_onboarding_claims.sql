@@ -6,7 +6,7 @@
 -- claims_version; a revoked or lapsed invite takes its Auth user with it; an inviter who loses their standing loses
 -- their open invites; the invited address cannot change; onboarding_state() answers booleans about the caller only.
 begin;
-select plan(50);
+select plan(55);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures =====
@@ -139,6 +139,17 @@ select is((select (p.role::text, p.rw_id, p.is_active, p.claims_version)::text f
   '(admin_rw,5,t,2)', 'the account is active with its role, and its claims_version moved on');
 select is((select count(*)::int from auth.sessions s where s.user_id = '00000000-0000-4000-8000-0000000c0001'), 0,
   'every session of the account ended with it');
+-- L77-1 (20261103131500): finishing onboarding is what makes an account staff, for good.
+select ok((select p.became_staff_at = now() from public.profiles p where p.id = '00000000-0000-4000-8000-0000000c0001'),
+  'the acceptance records when the account became staff');
+update public.profiles set became_staff_at = null where id = '00000000-0000-4000-8000-0000000c0001';
+select ok((select p.became_staff_at is not null from public.profiles p where p.id = '00000000-0000-4000-8000-0000000c0001'),
+  'and nothing takes it back');
+set local role service_role;
+select throws_ok($$insert into public.profiles (id, email, full_name, role, rw_id, is_active, became_staff_at)
+    values (gen_random_uuid(), 'palsu@example.test', 'Palsu', 'none', null, false, now())$$,
+  '42501', 'became_staff_at is written by the database alone', 'no API role writes it on a new profile');
+reset role;
 select is((select (i.accepted_user_id, i.accepted_at is not null)::text from public.staff_invites i
            where i.id = '00000000-0000-4000-8000-0000000c0b01'),
   ('00000000-0000-4000-8000-0000000c0001'::uuid, true)::text, 'the code is consumed');
@@ -210,9 +221,14 @@ select is(pg_temp.state_of('00000000-0000-4000-8000-0000000c0005', '00000000-000
 -- role (20261103131300); only accept_staff_invite does.
 select pg_temp.act_as('superadmin_aal2');
 select throws_ok($$select public.set_staff_status('00000000-0000-4000-8000-0000000c0005', true, 'Bantu petugas baru')$$,
-  'P0001', null, 'the superadmin does not reactivate a half-onboarded account');
+  'P0001', 'an invited account becomes staff only by finishing onboarding', 'the superadmin does not reactivate a half-onboarded account');
 select throws_ok($$select public.set_staff_role('00000000-0000-4000-8000-0000000c0005', 'admin_rw', 5::smallint)$$,
-  'P0001', null, 'nor gives it a role');
+  'P0001', 'an invited account becomes staff only by finishing onboarding', 'nor gives it a role');
+-- L77-1 (20261103131500): nor resets its MFA, in either stage, or issues it a re-enrolment code.
+select throws_ok($$select public.reset_staff_mfa('00000000-0000-4000-8000-0000000c0005')$$,
+  'P0001', 'an invited account becomes staff only by finishing onboarding', 'nor resets its MFA');
+select throws_ok($$select public.issue_mfa_reenrolment_code('00000000-0000-4000-8000-0000000c0005', repeat('e', 64))$$,
+  'P0001', 'an invited account becomes staff only by finishing onboarding', 'nor issues it a re-enrolment code');
 reset role;
 select set_config('request.jwt.claims', '', true);
 

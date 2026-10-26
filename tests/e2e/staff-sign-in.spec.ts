@@ -171,6 +171,14 @@ test('the superadmin sees every group and the RwSwitcher, and signing out ends t
   await expect(page.getByRole('region', { name: copy.dashboard.overview.kpiLabel })).toBeVisible(
     SWITCH_STEP,
   );
+  // I78-1 of the review of PR #78: the choice is RW 05's and the server keeps it, not only the button's state.
+  const scope = (await page.context().cookies()).find((cookie) => cookie.name === RW_SCOPE_COOKIE);
+  expect(scope?.value).toBe('5');
+  await page.reload();
+  await expect(rw05).toHaveAttribute('aria-pressed', 'true', SWITCH_STEP);
+  await expect(
+    page.getByRole('group', { name: 'Tampilkan data' }).getByRole('button', { name: 'Semua' }),
+  ).toHaveAttribute('aria-pressed', 'false');
 
   await page.getByRole('button', { name: 'Keluar' }).click();
   await expect(page).toHaveURL('/login', AUTH_STEP);

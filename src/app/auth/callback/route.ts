@@ -10,6 +10,7 @@ import {
 import { createLogger, requestIdFrom } from '@/lib/logger';
 import { clientIpFrom } from '@/lib/utils/client-ip';
 import { emailLinkQuery, parseEmailLink, type EmailLink } from '@/lib/utils/email-link';
+import { readUpTo } from '@/lib/utils/json-body';
 import { isSameOriginRequest } from '@/lib/utils/same-origin';
 import { seeOther } from '@/lib/utils/see-other';
 import { openEmailLinkSession } from '@/server/services/auth-service';
@@ -59,13 +60,14 @@ export function GET(request: Request): Response {
   return seeOther(`${EMAIL_LINK_CONTINUE_PATH}?${emailLinkQuery(link)}`);
 }
 
+// I77-4 of the review of PR #77: the body is read only up to its cap, whatever length it declares or leaves out.
 async function postedLink(request: Request): Promise<EmailLink | null> {
-  const length = Number(request.headers.get('content-length') ?? '0');
-  if (!request.headers.get('content-type')?.startsWith('application/x-www-form-urlencoded'))
+  if (!request.headers.get('content-type')?.startsWith('application/x-www-form-urlencoded')) {
     return null;
-  if (!Number.isFinite(length) || length > FORM_BODY_MAX_BYTES) return null;
-  const body = await request.text();
-  if (body.length > FORM_BODY_MAX_BYTES) return null;
+  }
+  if (Number(request.headers.get('content-length') ?? 0) > FORM_BODY_MAX_BYTES) return null;
+  const body = await readUpTo(request, FORM_BODY_MAX_BYTES);
+  if (body === null) return null;
   const form = new URLSearchParams(body);
   return parseEmailLink(form.get('token_hash'), form.get('type'));
 }

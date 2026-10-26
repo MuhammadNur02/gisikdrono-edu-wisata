@@ -2281,6 +2281,7 @@ export type Database = {
       profiles: {
         Row: {
           avatar_path: string | null
+          became_staff_at: string | null
           claims_version: number
           created_at: string
           created_by: string | null
@@ -2305,6 +2306,7 @@ export type Database = {
         }
         Insert: {
           avatar_path?: string | null
+          became_staff_at?: string | null
           claims_version?: number
           created_at?: string
           created_by?: string | null
@@ -2329,6 +2331,7 @@ export type Database = {
         }
         Update: {
           avatar_path?: string | null
+          became_staff_at?: string | null
           claims_version?: number
           created_at?: string
           created_by?: string | null

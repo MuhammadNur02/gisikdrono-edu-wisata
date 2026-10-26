@@ -654,6 +654,7 @@ create table public.profiles (
   is_active      boolean not null default true,
   mfa_required   boolean not null default true,
   claims_version integer not null default 1,        -- bumped on every role/RW/status change; copied into the JWT
+  became_staff_at timestamptz,                      -- 20261103131500: the first time the profile held a role; never changes
   avatar_path    text,
   last_login_at  timestamptz,
   mfa_reset_requested_at timestamptz,                        -- 0004: pending reset_staff_mfa (24 h – 7 days); NULL on insert, written only by its RPCs

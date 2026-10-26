@@ -37,8 +37,9 @@ const privateNoIndexHeaders = [{ key: 'Cache-Control', value: 'private, no-store
 // `/x/:path*` also matches `/x` itself.
 const privateRoutes = [...PRIVATE_ROUTE_PREFIXES, '/api'].map((prefix) => `${prefix}/:path*`);
 
-// Ticket and booking URLs carry a code or token, so they should not leak through the Referer header.
-const noReferrerRoutes = ['/reservasi/:path*', '/v/:path*'];
+// Ticket and booking URLs carry a code or token, so they should not leak through the Referer header; so do the email
+// links of /auth/callback and /auth/continue, whose token_hash opens a session (I77-2 of the review of PR #77).
+const noReferrerRoutes = ['/reservasi/:path*', '/v/:path*', '/auth/:path*'];
 
 // The scanner's service worker is checked for an update on every registration, never served from a cache.
 const serviceWorkerHeaders = [

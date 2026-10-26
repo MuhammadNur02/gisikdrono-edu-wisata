@@ -16,14 +16,14 @@ select plan(58);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: two accounts without a role =====
--- Both held a role once (claims_version moved on), so they enrol the way a reactivated officer does; an account that
+-- Both held a role once (became_staff_at, claims_version moved on), so they enrol the way a reactivated officer does; an account that
 -- never was staff verifies a factor only under a claimed invite (20261103131000, staff_onboarding_claims.sql).
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000e0001', 'baru-satu@example.test'),
   ('00000000-0000-4000-8000-0000000e0002', 'baru-dua@example.test');
-insert into public.profiles (id, email, full_name, role, rw_id, is_active, claims_version) values
-  ('00000000-0000-4000-8000-0000000e0001', 'baru-satu@example.test', 'Baru Satu', 'none', null, false, 2),
-  ('00000000-0000-4000-8000-0000000e0002', 'baru-dua@example.test', 'Baru Dua', 'none', null, false, 2);
+insert into public.profiles (id, email, full_name, role, rw_id, is_active, claims_version, became_staff_at) values
+  ('00000000-0000-4000-8000-0000000e0001', 'baru-satu@example.test', 'Baru Satu', 'none', null, false, 2, now()),
+  ('00000000-0000-4000-8000-0000000e0002', 'baru-dua@example.test', 'Baru Dua', 'none', null, false, 2, now());
 -- The superadmin who invites keeps their own authenticator (inviter_in_good_standing, 20261103131000).
 insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at)
 values ('00000000-0000-4000-8000-0000000e0f01', '00000000-0000-4000-8000-00000000f001', 'HP Super', 'totp', 'verified',

@@ -111,6 +111,24 @@ describe('POST auth/callback', () => {
     expect(openEmailLinkSession).not.toHaveBeenCalled();
   });
 
+  // I77-4 of the review of PR #77: a body without a declared length is read only up to the cap.
+  it('reads no more than its cap of a body that declares no length', async () => {
+    const response = await POST(
+      new Request(CALLBACK, {
+        method: 'POST',
+        body: `token_hash=${'a'.repeat(4096)}&type=recovery`,
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          origin: 'http://127.0.0.1:3000',
+          host: '127.0.0.1:3000',
+        },
+      }),
+    );
+
+    expect(response.headers.get('Location')).toBe(LINK_EXPIRED);
+    expect(openEmailLinkSession).not.toHaveBeenCalled();
+  });
+
   // RV-M1 of the independent review of PR #17: every verification reaches Supabase Auth from this server's IP, so a
   // flood of links from one visitor would use up Auth's per-IP verification limit for every staff member.
   it("asks Supabase Auth nothing once the visitor's IP is past its limit", async () => {

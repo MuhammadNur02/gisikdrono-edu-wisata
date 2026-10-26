@@ -33,7 +33,7 @@ type ProfileRow = {
   is_active: boolean;
   promotion_requested_at: string | null;
   mfa_reset_requested_at: string | null;
-  claims_version: number;
+  became_staff_at: string | null;
 };
 
 // One status narrows the list; both, or none, keep every account.
@@ -48,7 +48,7 @@ async function readProfiles(query: StaffListQuery): Promise<ProfileRow[]> {
   let request = supabase
     .from('profiles')
     .select(
-      'id, email, full_name, role, rw_id, is_active, promotion_requested_at, mfa_reset_requested_at, claims_version',
+      'id, email, full_name, role, rw_id, is_active, promotion_requested_at, mfa_reset_requested_at, became_staff_at',
     )
     .order('full_name')
     .limit(STAFF_LIST_MAX_ROWS);
@@ -72,12 +72,12 @@ function matchingRows(rows: ProfileRow[], query: StaffListQuery): ProfileRow[] {
   return order?.ascending === false ? [...found].reverse() : found;
 }
 
-// M1 of the security review of PR #77: an account the invite email made that never became staff (no role, inactive,
-// claims_version never bumped; internal.is_never_staff) is still being onboarded. Only accept_staff_invite gives it
-// access, so the list offers it no role and no reactivation, only its invite's revoke (set_staff_status and
-// set_staff_role refuse it too, 20261103131300).
+// M1 of the security review of PR #77: an account the invite email made that never became staff (no role and no
+// profiles.became_staff_at, which only finishing onboarding sets; internal.is_never_staff) is still being onboarded.
+// Only accept_staff_invite gives it access, so the list offers it no role and no reactivation, only its invite's
+// revoke (set_staff_status and set_staff_role refuse it too, 20261103131300).
 function isAwaitingOnboarding(row: ProfileRow): boolean {
-  return row.role === 'none' && !row.is_active && row.claims_version <= 1;
+  return row.role === 'none' && row.became_staff_at === null;
 }
 
 export async function listStaffMembers(
