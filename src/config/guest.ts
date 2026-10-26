@@ -61,3 +61,13 @@ export const LOOKUP_MIN_RESPONSE_MS = 1200;
 // The address the local Mailpit of `supabase start` listens on (supabase/config.toml [inbucket]). Only the local
 // notification provider talks to it.
 export const LOCAL_MAILPIT_URL = 'http://127.0.0.1:54324';
+
+// The guest certificate page (Task P4.5.03; docs/Security.md §6.7, DOC-02): a certificate that prints a person's name
+// opens only after the visitor types the last four digits of the PIC's verified WhatsApp number, which this browser then
+// remembers for half an hour under the certificate page alone. The page answers until 90 days after the last visit day,
+// when internal.purge_participants removes the names and their files.
+export const CERTIFICATE_PROOF_COOKIE_SUFFIX = '_certificate_phone';
+export const CERTIFICATE_PROOF_TTL_SECONDS = 30 * 60;
+export const CERTIFICATE_PAGE = 'sertifikat';
+export const CERTIFICATE_RETENTION_DAYS = 90;
+export const PHONE_LAST_DIGITS = 4;

@@ -37,6 +37,9 @@ export const RATE_LIMITS = {
   // Task P4.5.03 (review of PR #71, L3): "Render ulang PDF" renders a whole class at once, so each staff member may run
   // it five times an hour.
   'certificate_rerender:user': { limit: 5, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  // Task P4.5.03 (docs/Security.md §6.7, DOC-02): the last four digits of the PIC's number typed on the certificate
+  // page, five tries per booking a day; the first refusal raises certificate_phone_locked for the superadmin.
+  'certificate_phone:booking': { limit: 5, windowSeconds: 86400, whenUnavailable: 'fail-closed' },
   // Task P4.3.02 (decision of 2026-10-26): an RW admin's header-only copy of a booking document, per staff member, on
   // top of document:ip and document:booking.
   'document_restricted:user': { limit: 30, windowSeconds: 600, whenUnavailable: 'fail-closed' },

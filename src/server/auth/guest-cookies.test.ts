@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ensureOtpBrowserId,
   forgetPhoneProof,
+  hasCertificateProof,
   readOtpBrowserCookie,
   readPhoneProofCookie,
+  rememberCertificateProof,
   rememberGuestLink,
   rememberPhoneProof,
 } from '@/server/auth/guest-cookies';
@@ -113,5 +115,28 @@ describe('the gsk_otp_browser cookie', () => {
     const browserId = await ensureOtpBrowserId();
     expect(jar.get('gsk_otp_browser')?.value).not.toBe('forged.value');
     await expect(readOtpBrowserCookie()).resolves.toBe(browserId);
+  });
+});
+
+// Task P4.5.03 (docs/Security.md DOC-02): the last-4 step-up of the certificate page.
+describe("the certificate page's phone proof", () => {
+  it("is kept for half an hour under that booking's certificate page alone", async () => {
+    await rememberCertificateProof('GSK-7F3K9Q2M');
+    expect(jar.get('bk_GSK-7F3K9Q2M_certificate_phone')?.options).toEqual({
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      path: '/reservasi/GSK-7F3K9Q2M/sertifikat',
+      maxAge: 1800,
+    });
+    await expect(hasCertificateProof('GSK-7F3K9Q2M')).resolves.toBe(true);
+  });
+
+  it("is missing until the digits are typed, and never opens another booking's", async () => {
+    await expect(hasCertificateProof('GSK-7F3K9Q2M')).resolves.toBe(false);
+    await rememberCertificateProof('GSK-7F3K9Q2M');
+    const kept = jar.get('bk_GSK-7F3K9Q2M_certificate_phone');
+    if (kept) jar.set('bk_GSK-7F3K9Q2N_certificate_phone', kept);
+    await expect(hasCertificateProof('GSK-7F3K9Q2N')).resolves.toBe(false);
   });
 });
