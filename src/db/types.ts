@@ -4044,6 +4044,8 @@ export type Database = {
           booking_id: string
           booking_leg_id: string
           created_at: string
+          held_at: string | null
+          held_reason: string | null
           id: string
           moves_used: number
           notice_id: string
@@ -4057,6 +4059,8 @@ export type Database = {
           booking_id: string
           booking_leg_id: string
           created_at?: string
+          held_at?: string | null
+          held_reason?: string | null
           id?: string
           moves_used?: number
           notice_id: string
@@ -4070,6 +4074,8 @@ export type Database = {
           booking_id?: string
           booking_leg_id?: string
           created_at?: string
+          held_at?: string | null
+          held_reason?: string | null
           id?: string
           moves_used?: number
           notice_id?: string
@@ -4717,7 +4723,12 @@ export type Database = {
       }
       reset_staff_mfa: { Args: { p_user_id: string }; Returns: Json }
       resolve_weather_link: {
-        Args: { p_link_id: string; p_outcome: string; p_reason: string }
+        Args: {
+          p_adjustment_id?: string
+          p_link_id: string
+          p_outcome: string
+          p_reason: string
+        }
         Returns: Json
       }
       revenue_recap: {
