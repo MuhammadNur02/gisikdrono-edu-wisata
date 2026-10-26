@@ -56,18 +56,18 @@ export const dashboardCopy = {
     trendNew: 'Baru',
     trendFlat: 'Tetap',
     unavailable: 'Belum tersedia',
-    unavailableHint: 'Datanya terlalu banyak untuk dihitung di sini; menunggu ringkasan statistik.',
+    unavailableHint: 'Belum bisa dihitung; coba muat ulang halaman.',
     chartUnavailable: {
       title: 'Belum tersedia',
-      description: 'Datanya terlalu banyak untuk digambar di sini; menunggu ringkasan statistik.',
+      description: 'Datanya gagal dimuat; coba muat ulang halaman.',
     },
     superadmin: {
       revenue: 'Pendapatan bulan ini',
       revenueHint: 'Bersih dari buku besar bagi hasil.',
       paidBookings: 'Reservasi lunas',
-      paidBookingsHint: 'Dibayar bulan ini.',
+      paidBookingsHint: 'Lunas, berkunjung bulan ini s.d. hari ini.',
       checkedIn: 'Pengunjung check-in',
-      checkedInHint: 'Orang yang masuk bulan ini.',
+      checkedInHint: 'Orang yang masuk, kunjungan bulan ini.',
       rating: 'Rating rata-rata',
       ratingHint: (count: number) =>
         count === 0 ? 'Belum ada ulasan terbit.' : `Dari ${String(count)} ulasan terbit.`,

@@ -40,3 +40,24 @@ export async function rpcVisitStats(
   );
   return z.array(bucketSchema).parse(answer);
 }
+
+// public.revenue_recap (Task P4.2.01, REC-07): the ledger of a period by day and beneficiary, from v_revenue_recap_daily
+// under the same scope as visit_stats. The overview reads the days only.
+const recapDaySchema = z.object({ day: z.string(), net_amount: z.number() });
+const recapSchema = z.object({ daily: z.array(recapDaySchema) });
+
+export type RevenueRecapDay = z.infer<typeof recapDaySchema>;
+
+export async function rpcRevenueRecapDays(
+  client: DatabaseClient,
+  query: Omit<VisitStatsQuery, 'granularity'>,
+): Promise<RevenueRecapDay[]> {
+  const answer = await resultOf(
+    client.rpc('revenue_recap', {
+      p_from: query.from,
+      p_to: query.to,
+      ...(query.rwId === null ? {} : { p_rw_id: query.rwId }),
+    }),
+  );
+  return recapSchema.parse(answer).daily;
+}

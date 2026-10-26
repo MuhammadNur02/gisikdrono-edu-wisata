@@ -105,11 +105,6 @@ export function hasAnyValue(series: readonly DailyValue[]): boolean {
   return series.some((point) => point.value !== 0);
 }
 
-// The Semarang day an instant falls on, for bucketing check-ins by the day they happened.
-export function jakartaDayOf(instant: string): string {
-  return format(jakartaNow(new Date(instant)), VISIT_DATE_FORMAT);
-}
-
 function midnightInJakarta(visitDate: string): TZDate {
   const [year = Number.NaN, month = Number.NaN, day = Number.NaN] = visitDate
     .split('-')
