@@ -15,7 +15,9 @@ declare global {
   }
 }
 
-async function watchCspViolations(page: Page): Promise<string[]> {
+// Installed before the page loads: every securitypolicyviolation the document fires lands in window.cspViolations,
+// and the returned list collects Chromium's console errors naming the CSP.
+export async function watchCspViolations(page: Page): Promise<string[]> {
   const fromConsole: string[] = [];
   page.on('console', (message) => {
     if (/Content Security Policy/i.test(message.text())) fromConsole.push(message.text());

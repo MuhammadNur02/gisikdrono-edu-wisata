@@ -162,7 +162,9 @@ jobs:
     name: e2e (booking, payment, QR, scanner changes)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # The suite takes about 8 minutes; pulling the Supabase images has taken up to 13 when Docker Hub rate-limits the
+    # runner, which ran out the old 20 and cancelled green runs.
+    timeout-minutes: 30
     env:
       NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3000
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
