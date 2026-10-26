@@ -1,13 +1,14 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
 
+import { SaveButton } from '@/components/admin/cms/save-button';
 import { withRowId } from '@/components/admin/cms/schedule-values';
-import { ComboLegsEditor } from '@/components/admin/packages/combo-legs';
 import {
   BasicsFields,
   PublishFields,
@@ -19,13 +20,11 @@ import { PhotosSection } from '@/components/admin/packages/package-photos';
 import { PricingSection, type RwOption } from '@/components/admin/packages/package-tiers';
 import { FormAlert } from '@/components/forms/form-alert';
 import { PostForm } from '@/components/forms/post-form';
-import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { PACKAGE_PATHS } from '@/config/packages';
 import type { RwId } from '@/config/rw';
 import type { EnumValue } from '@/db/enums';
 import { useActionForm } from '@/hooks/use-action-form';
-import { copy } from '@/lib/copy/id';
 import { packagesCopy } from '@/lib/copy/packages';
 import { comboMayPublish } from '@/lib/utils/package-tiers';
 import { createPackageSchema, type PackageInput } from '@/lib/validations/package';
@@ -57,6 +56,11 @@ const FIELDS = [
   'priceTiers',
   'legRwIds',
 ] as const;
+
+// The legs editor loads only for a combo, outside the package pages' first load (admin budget).
+const ComboLegsEditor = dynamic(() =>
+  import('@/components/admin/packages/combo-legs').then((module) => module.ComboLegsEditor),
+);
 
 type PackageAction = (values: unknown) => Promise<ActionResult<PackageAdmin>>;
 
@@ -134,14 +138,6 @@ function useSavedNavigation(stored: StoredPackage | null) {
     toast.success(text.saved);
     router.refresh();
   };
-}
-
-export function SaveButton({ isSubmitting }: { isSubmitting: boolean }) {
-  return (
-    <Button type="submit" loading={isSubmitting} className="w-full sm:w-auto">
-      {copy.cms.common.save}
-    </Button>
-  );
 }
 
 // Task P4.3.05, docs/PRD.md FR-ADMIN-05: a package on its own page, section by section. Prices are integer rupiah

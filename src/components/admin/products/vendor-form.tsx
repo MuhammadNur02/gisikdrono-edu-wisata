@@ -5,8 +5,8 @@ import { useForm, useWatch, type Control } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import { CheckboxField, TextField } from '@/components/admin/cms/fields';
+import { SaveButton } from '@/components/admin/cms/save-button';
 import { withRowId } from '@/components/admin/cms/schedule-values';
-import { SaveButton } from '@/components/admin/packages/package-form';
 import { FormAlert } from '@/components/forms/form-alert';
 import { FormField } from '@/components/forms/form-field';
 import { PostForm } from '@/components/forms/post-form';
