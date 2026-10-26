@@ -204,5 +204,6 @@ export const resolveIssueSchema = z
   })
   .strict();
 export type ResolveIssueValues = z.output<typeof resolveIssueSchema>;
+export const resolveIssueFormSchema = resolveIssueSchema.extend(stepUpField);
 
 export const recheckPaymentSchema = z.object({ paymentId: z.uuid() }).strict();
