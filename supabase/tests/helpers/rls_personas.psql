@@ -34,12 +34,14 @@ insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-00000000f008', 'rls-admin08@example.test'),
   ('00000000-0000-4000-8000-00000000f013', 'rls-admin13@example.test'),
   ('00000000-0000-4000-8000-00000000f00f', 'rls-onboarding@example.test');
-insert into public.profiles (id, email, full_name, role, rw_id) values
-  ('00000000-0000-4000-8000-00000000f000', 'rls-none@example.test', 'Tanpa Peran', 'none', null),
-  ('00000000-0000-4000-8000-00000000f001', 'rls-super@example.test', 'Super RLS', 'superadmin', null),
-  ('00000000-0000-4000-8000-00000000f005', 'rls-admin05@example.test', 'Admin RLS 05', 'admin_rw', 5),
-  ('00000000-0000-4000-8000-00000000f008', 'rls-admin08@example.test', 'Admin RLS 08', 'admin_rw', 8),
-  ('00000000-0000-4000-8000-00000000f013', 'rls-admin13@example.test', 'Admin RLS 13', 'admin_rw', 13);
+-- none is an officer reactivated without a role yet: active, and staff once (became_staff_at, which an active
+-- profile must have since 20261104140000).
+insert into public.profiles (id, email, full_name, role, rw_id, became_staff_at) values
+  ('00000000-0000-4000-8000-00000000f000', 'rls-none@example.test', 'Tanpa Peran', 'none', null, now()),
+  ('00000000-0000-4000-8000-00000000f001', 'rls-super@example.test', 'Super RLS', 'superadmin', null, null),
+  ('00000000-0000-4000-8000-00000000f005', 'rls-admin05@example.test', 'Admin RLS 05', 'admin_rw', 5, null),
+  ('00000000-0000-4000-8000-00000000f008', 'rls-admin08@example.test', 'Admin RLS 08', 'admin_rw', 8, null),
+  ('00000000-0000-4000-8000-00000000f013', 'rls-admin13@example.test', 'Admin RLS 13', 'admin_rw', 13, null);
 -- none_aal2_factor: inactive like every invited account, its superadmin invite (no RW, so no RW counts it) claimed by
 -- its session, its factor verified.
 insert into public.profiles (id, email, full_name, role, rw_id, is_active)

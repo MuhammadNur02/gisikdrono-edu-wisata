@@ -377,8 +377,8 @@ select throws_ok(
 );
 select lives_ok(
   $$insert into public.profiles (id, email, full_name, role, is_active)
-    values ('00000000-0000-4000-8000-000000000005', 'baru@example.test', 'Orang Baru', 'none', true)$$,
-  'only a profile without a role'
+    values ('00000000-0000-4000-8000-000000000005', 'baru@example.test', 'Orang Baru', 'none', false)$$,
+  'only a profile without a role, inactive until it becomes staff (20261104140000)'
 );
 select set_config('app.actor_id', '', true);
 reset role;
