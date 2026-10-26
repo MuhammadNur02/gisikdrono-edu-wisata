@@ -4,10 +4,12 @@
 --   F-1  apply_adjustment: a manual refund Midtrans made under the adjustment's own key while the visit-terms request
 --        was refunded too is applied, with refund_paid_twice_detected, only when Midtrans refunded both; otherwise it
 --        is the request's own refund, rejected as already recorded, audited, with no alert.
---   F-2  a weather refund the superadmin makes by hand: a manual_refund that names a held link in
---        details.weather_link_id moves exactly that link's weather refund (the share less the payment's Midtrans
---        fee, A18), is booked as a weather refund request (the fee leaves the ledger; A20: only the stopped leg's
---        share for a visited combo), and closes the booking and the link in the same transaction (#90, H-1, M-1, M-2).
+--   F-2  a weather refund the superadmin makes by hand, only for a link held because the shares cannot fund it
+--        (shares_short; a link held for an unset fee is refunded by the sweep itself once the fee is set, #90 delta,
+--        M-A): a manual_refund that names it in details.weather_link_id moves exactly that link's weather refund (the
+--        share less the payment's Midtrans fee, A18), is booked as a weather refund request (the fee leaves the
+--        ledger; A20: only the stopped leg's share for a visited combo), and closes the booking and the link in the
+--        same transaction (#90, H-1, M-1, M-2). The sweep leaves a link alone while an open manual_refund names it.
 --   F-3  a held link carries its own marker (held_at, held_reason) and its own alert, weather_link_held:<link id>,
 --        closed when the link is resolved (#90, L-3).
 --   F-4  an answer without a transaction_status never fails a refund request.
@@ -46,9 +48,11 @@ begin
   end if;
   insert into public.security_alerts (rule, severity, fingerprint, title, details)
   values ('weather_link_held', 'high', 'weather_link_held:' || p_link.id,
-          case p_reason when 'fee_unset' then 'Waktu pilih cuaca habis, biaya Midtrans belum diatur: '
-                        else 'Waktu pilih cuaca habis, bagi hasil tidak cukup untuk pengembalian dana: ' end
-            || p_booking.booking_code,
+          case p_reason
+            when 'fee_unset' then 'Waktu pilih cuaca habis, biaya Midtrans belum diatur: ' || p_booking.booking_code
+                                  || '. Atur biaya Midtrans; refund cuaca berjalan otomatis. Jangan transfer manual.'
+            else 'Waktu pilih cuaca habis, bagi hasil tidak cukup untuk pengembalian dana: ' || p_booking.booking_code
+                 || '. Transfer manual lewat penyesuaian manual_refund yang menyebut tautan ini.' end,
           jsonb_build_object('booking_id', p_booking.id, 'link_id', p_link.id, 'reason', p_reason))
   on conflict (fingerprint) where acknowledged_at is null do nothing;
 end;
@@ -66,20 +70,38 @@ as $$
   where fingerprint = 'weather_link_held:' || p_link_id and acknowledged_at is null;
 $$;
 
--- L-3: the links the sweep held before this migration, told by the alerts it raised for them then, are marked once,
--- so the superadmin may resolve them without waiting for a sweep.
-select set_config('app.in_rpc', '1', true), set_config('app.actor_role', 'cron', true);
-update public.weather_notice_bookings w
-set held_at = now(),
-    held_reason = case when exists (select 1 from public.security_alerts a
-                                    where a.fingerprint = 'weather_refund_fee_unset:' || w.booking_id)
-                       then 'fee_unset' else 'shares_short' end
+-- L-3 (and the delta review of PR #90, L-c): the links the sweep held before this migration, told by the alerts it
+-- raised for them then, are marked once, dated by the first of those alerts, given the alert of their own, and the
+-- old alerts closed in favour of it, so the superadmin may resolve them without waiting for a sweep.
+create temporary table weather_holds_before on commit drop as
+select w.id as link_id, w.booking_id, min(a.first_seen_at) as held_since,
+       case when bool_or(a.fingerprint like 'weather_refund_fee_unset:%') then 'fee_unset' else 'shares_short' end
+         as reason
+from public.weather_notice_bookings w
+join public.security_alerts a
+  on a.fingerprint in ('weather_refund_fee_unset:' || w.booking_id, 'cancellation_needs_superadmin:' || w.booking_id)
 where w.resolved_at is null and w.open_until <= now() and w.held_at is null
-  and exists (select 1 from public.security_alerts a
-              where a.fingerprint in ('weather_refund_fee_unset:' || w.booking_id,
-                                      'cancellation_needs_superadmin:' || w.booking_id));
+group by w.id, w.booking_id;
+select set_config('app.in_rpc', '1', true), set_config('app.actor_role', 'cron', true);
+update public.weather_notice_bookings w set held_at = h.held_since, held_reason = h.reason
+from weather_holds_before h where w.id = h.link_id;
+insert into public.security_alerts (rule, severity, fingerprint, title, details, first_seen_at)
+select 'weather_link_held', 'high', 'weather_link_held:' || h.link_id,
+       case h.reason
+         when 'fee_unset' then 'Waktu pilih cuaca habis, biaya Midtrans belum diatur: ' || b.booking_code
+                               || '. Atur biaya Midtrans; refund cuaca berjalan otomatis. Jangan transfer manual.'
+         else 'Waktu pilih cuaca habis, bagi hasil tidak cukup untuk pengembalian dana: ' || b.booking_code
+              || '. Transfer manual lewat penyesuaian manual_refund yang menyebut tautan ini.' end,
+       jsonb_build_object('booking_id', h.booking_id, 'link_id', h.link_id, 'reason', h.reason), h.held_since
+from weather_holds_before h join public.bookings b on b.id = h.booking_id
+on conflict (fingerprint) where acknowledged_at is null do nothing;
+update public.security_alerts a
+set acknowledged_at = now(), details = a.details || jsonb_build_object('closed', 'replaced_by_weather_link_held')
+from weather_holds_before h
+where a.fingerprint in ('weather_refund_fee_unset:' || h.booking_id, 'cancellation_needs_superadmin:' || h.booking_id)
+  and a.acknowledged_at is null;
 select set_config('app.in_rpc', '', true), set_config('app.actor_role', '', true);
-
+drop table weather_holds_before;
 
 -- ===== The hub: the weather fee unset is the superadmin's =====
 
@@ -130,6 +152,10 @@ begin
   for due in
     select w.* from public.weather_notice_bookings w
     where w.resolved_at is null and w.open_until <= now()
+      -- Review of PR #90 (delta, M-A): a refund by hand is under way for this link, so the sweep must not pay again.
+      and not exists (select 1 from public.payment_adjustments a
+                      where a.type = 'manual_refund' and a.status in ('proposed', 'approved')
+                        and a.details ->> 'weather_link_id' = w.id::text)
     order by w.held_at is not null, w.open_until
     limit least(greatest(p_limit, 1), 50)
   loop
@@ -238,8 +264,9 @@ $$;
 
 -- ===== F-2: a weather refund made by hand (review of PR #90, H-1, M-1, M-2) =====
 
--- The held link a manual_refund names in details.weather_link_id, held on the booking's settled payment (the one
--- settled_payment_of gives, so never a duplicate or disputed one). An adjustment that names no link is no weather
+-- The held link a manual_refund names in details.weather_link_id, held because the shares cannot fund it
+-- (shares_short), on the booking's settled payment (the one settled_payment_of gives, so never a duplicate or
+-- disputed one). An adjustment that names no link is no weather
 -- refund (null); one that names a link it may not refund is refused, so a weather refund is never booked by mistake
 -- as an ordinary one or the other way round.
 create function internal.named_weather_link(p_booking_id uuid, p_payment_id uuid, p_details jsonb)
@@ -264,6 +291,11 @@ begin
     raise exception 'weather link % is not held on the booking''s settled payment', p_details ->> 'weather_link_id'
       using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
+  -- M-A: a link held for an unset fee is refunded by the sweep once the fee is set; a transfer by hand would pay twice.
+  if link.held_reason is distinct from 'shares_short' then
+    raise exception 'Atur biaya Midtrans; refund cuaca berjalan otomatis. Jangan transfer manual.'
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
   return link;
 end;
 $$;
@@ -282,6 +314,14 @@ declare
                        else p_payment.gross_amount end;
   fee bigint := internal.midtrans_fee_of(p_payment.method, p_payment.gross_amount);
 begin
+  -- The delta review of PR #90, L-a: only a booking the sweep itself would refund, paid or checked_in, not under
+  -- review, its link never moved, and for a visited combo its stopped leg still to visit.
+  if p_booking.status not in ('paid', 'checked_in') or p_booking.needs_review or p_link.moves_used <> 0
+     or (p_booking.status = 'checked_in'
+         and not exists (select 1 from public.booking_legs l where l.id = p_link.booking_leg_id and l.status = 'reserved')) then
+    raise exception 'booking % has no weather refund for this link', p_booking.id
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
   if fee is null then
     raise exception 'the Midtrans fee of % payments is not set', p_payment.method
       using errcode = 'P0001', hint = 'WEATHER_FEE_UNSET';
