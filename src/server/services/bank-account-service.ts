@@ -3,7 +3,7 @@ import 'server-only';
 import { rpcGetBankAccount, rpcSetBankAccount, type BankAccountRow } from '@/db/rpc-bank-accounts';
 import { bankAccountsCopy } from '@/lib/copy/bank-accounts';
 import { staffCopy } from '@/lib/copy/staff';
-import { AppError, raisedHintOf } from '@/lib/errors';
+import { AppError, privilegeHintOf, raisedHintOf } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import type {
   BankAccountTarget,
@@ -27,13 +27,9 @@ function codeOf(error: unknown): unknown {
   return typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
 }
 
-function hintOf(error: unknown): unknown {
-  return typeof error === 'object' && error !== null && 'hint' in error ? error.hint : undefined;
-}
-
 function bankRefusal(error: unknown): AppError | null {
   if (codeOf(error) === INSUFFICIENT_PRIVILEGE) {
-    const isStale = hintOf(error) === 'FRESH_TOTP';
+    const isStale = privilegeHintOf(error) === 'FRESH_TOTP';
     return new AppError('FORBIDDEN', isStale ? staffCopy.notFresh : undefined);
   }
   if (codeOf(error) === NO_DATA_FOUND) return new AppError('NOT_FOUND');
