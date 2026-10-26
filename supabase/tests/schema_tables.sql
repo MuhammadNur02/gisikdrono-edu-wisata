@@ -161,8 +161,8 @@ select lives_ok(
   'an admin_rw profile with RW 05 is accepted'
 );
 select throws_ok(
-  $$insert into public.profiles (id, email, full_name)
-    values ('00000000-0000-4000-8000-000000000003', 'SuperAdmin@Example.test', 'Copy')$$,
+  $$insert into public.profiles (id, email, full_name, is_active)
+    values ('00000000-0000-4000-8000-000000000003', 'SuperAdmin@Example.test', 'Copy', false)$$,
   '23505', null, 'profile emails are unique regardless of case (citext)'
 );
 
