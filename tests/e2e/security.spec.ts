@@ -1,6 +1,14 @@
-import { expect, test, type APIResponse } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 import { cspViolationsOn } from './helpers/csp';
+import {
+  directive,
+  enforcedPolicyOf,
+  expectedHeadersFor,
+  expectPrivateAndNoIndex,
+  NO_REDIRECTS,
+  SCANNER_PATH,
+} from './helpers/security-headers';
 import {
   createSuperadmin,
   removeAccounts,
@@ -28,8 +36,6 @@ const MOVED_RW_PATH = '/rw-08-kampung-seni-budaya';
 const SEEDED_PACKAGE_SLUG = 'paket-eduwisata-ecowastreme';
 // A well-formed RW filter (src/config/gallery.ts) for an RW the gallery does not know: only the page can refuse it.
 const OFFLINE_RW_FILTER = 'rw99';
-// The response itself is under test, so a redirect must come back as one.
-const NO_REDIRECTS = { maxRedirects: 0 };
 
 const NOT_FOUND_PATHS = [
   `/paket-wisata/${UNKNOWN_SLUG}`,
@@ -107,53 +113,12 @@ const SEEDED_WIZARD_PATH = `/pesan/${SEEDED_PACKAGE_SLUG}?step=jadwal`;
 const UNKNOWN_BOOKING_CODE = 'GSK-7F3K9Q2Z';
 const PUBLIC_PAGES = ['/', `/paket-wisata/${SEEDED_PACKAGE_SLUG}`];
 const PRIVATE_PAGES = [SEEDED_WIZARD_PATH, '/login', '/reservasi/cari'];
-const SCANNER_PATH = '/dashboard/scanner';
 const JOB_PATHS = [
   '/api/jobs/expire-bookings',
   '/api/jobs/process-notifications',
   '/api/jobs/purge-storage',
 ];
 const FOREIGN_ORIGIN = 'https://evil.example';
-
-const BASELINE_HEADERS: Record<string, string> = {
-  'strict-transport-security': 'max-age=63072000; includeSubDomains',
-  'x-content-type-options': 'nosniff',
-  'x-frame-options': 'DENY',
-  'referrer-policy': 'strict-origin-when-cross-origin',
-  'cross-origin-opener-policy': 'same-origin',
-  'cross-origin-resource-policy': 'same-origin',
-};
-// docs/Security.md §8.2: booking and ticket addresses carry a code or token, so they send no Referer at all.
-const NO_REFERRER_PREFIXES = ['/reservasi', '/v'];
-
-function expectedHeadersFor(path: string): Record<string, string> {
-  const pathname = new URL(path, 'http://localhost').pathname;
-  const sendsNoReferrer = NO_REFERRER_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
-  return sendsNoReferrer
-    ? { ...BASELINE_HEADERS, 'referrer-policy': 'no-referrer' }
-    : BASELINE_HEADERS;
-}
-
-function directive(policy: string, name: string): string | undefined {
-  return policy.split('; ').find((part) => part === name || part.startsWith(`${name} `));
-}
-
-function enforcedPolicyOf(response: APIResponse): string {
-  const headers = response.headers();
-  expect(headers['content-security-policy-report-only']).toBeUndefined();
-  const policy = headers['content-security-policy'];
-  expect(policy).toBeDefined();
-  return policy ?? '';
-}
-
-function expectPrivateAndNoIndex(response: APIResponse) {
-  const headers = response.headers();
-  expect(headers['cache-control']).toMatch(/\bprivate\b/);
-  expect(headers['cache-control']).toMatch(/\bno-store\b/);
-  expect(headers['x-robots-tag']).toMatch(/\bnoindex\b/);
-}
 
 test.describe('security headers (docs/Security.md §8.2)', () => {
   for (const path of [...PUBLIC_PAGES, ...PRIVATE_PAGES]) {
