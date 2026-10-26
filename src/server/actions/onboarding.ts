@@ -22,7 +22,7 @@ import type { NextStep, OnboardingFactorStep } from '@/types/auth';
 // /onboarding (Task P4.8.01, docs/Security.md §5.1, §5.2): the invite code first, claimed for this session before any
 // QR code; then the authenticator, which lifts the session to AAL2; then the password, at AAL2; then the acceptance,
 // which consumes the code and ends every session. Every refusal of the code reads the same, whatever the database
-// found, and an outage reads as one: nothing from mapError's STATE_INVALID path reaches this page. The code is never
+// found, and so does an outage: nothing from mapError's STATE_INVALID path reaches this page. The code is never
 // logged.
 
 const text = copy.auth.onboarding;
@@ -31,13 +31,12 @@ function refused(message: string): ActionFailure {
   return fail('FORBIDDEN', undefined, message);
 }
 
-async function logFailure(source: string, userId: string, error: unknown): Promise<ActionFailure> {
+async function logFailure(source: string, userId: string, error: unknown): Promise<void> {
   createLogger(requestIdFrom(await headers())).error('internal_error', {
     source,
     userId,
     errorName: error instanceof Error ? error.name : typeof error,
   });
-  return fail('INTERNAL');
 }
 
 async function factorStepFor(ctx: OnboardingContext): Promise<OnboardingFactorStep> {
@@ -73,7 +72,9 @@ export async function claimInviteAction(
     createLogger(requestIdFrom(await headers())).info('invite_claimed', { userId: session.userId });
     return ok(await factorStepFor(guard.ctx));
   } catch (error) {
-    return logFailure('onboarding_claim', session.userId, error);
+    // L3 of the review of PR #77: an outage reads like any refusal, so the page says nothing about why.
+    await logFailure('onboarding_claim', session.userId, error);
+    return refused(text.claimFailed);
   }
 }
 

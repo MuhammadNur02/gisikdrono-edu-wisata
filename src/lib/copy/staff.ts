@@ -14,7 +14,7 @@ export const staffCopy = {
     rwNotAllowed: 'Superadmin Kelurahan tidak terikat pada satu RW.',
   },
   facets: { status: 'Status', rw: 'RW' },
-  statuses: { active: 'Aktif', inactive: 'Nonaktif' },
+  statuses: { active: 'Aktif', inactive: 'Nonaktif', awaitingOnboarding: 'Menunggu orientasi' },
   roles: { superadmin: 'Superadmin Kelurahan', admin_rw: 'Admin RW', none: 'Belum ada peran' },
   columns: {
     name: 'Nama',
@@ -35,6 +35,7 @@ export const staffCopy = {
     reactivate: 'Aktifkan lagi',
     cancelPromotion: 'Batalkan jadi superadmin',
     auditTrail: 'Lihat catatan aktivitas',
+    revokeInvite: 'Cabut undangan',
   },
   stepUp: {
     hint: 'Tulis kode yang sedang tampil di aplikasi autentikator Anda untuk mengonfirmasi.',

@@ -94,6 +94,9 @@ async function openInviteLink(browser: Browser, email: string, since: Date): Pro
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto(link);
+  // /auth/continue first: only its button uses the link, so a mail scanner cannot (L2 of the review of PR #77).
+  await expect(page).toHaveURL(/\/auth\/continue\?/, AUTH_STEP);
+  await page.getByRole('button', { name: 'Lanjutkan' }).click();
   return page;
 }
 

@@ -17,6 +17,12 @@ export const MFA_ENROLL_PATH = '/mfa/enroll';
 export const ONBOARDING_PATH = '/onboarding';
 // The only address in the Supabase Auth redirect allow-list (docs/Security.md APP-13).
 export const AUTH_CALLBACK_PATH = '/auth/callback';
+// L2 of the review of PR #77: an email link opens this page first, whose POST button is what uses the link, so a
+// mail scanner that follows the GET leaves it unused.
+export const EMAIL_LINK_CONTINUE_PATH = '/auth/continue';
+// The kinds of Supabase Auth email link this site sends (supabase/templates/).
+export const EMAIL_LINK_TYPES = ['recovery', 'invite'] as const;
+export type EmailLinkType = (typeof EMAIL_LINK_TYPES)[number];
 export const SIGN_OUT_PATH = '/auth/signout';
 
 // What /login says above the form after a flow that ended there.

@@ -78,6 +78,8 @@ test('a staff address and an unknown one get the same answer, and the link works
   const elsewhere = await browser.newContext();
   const otherPage = await elsewhere.newPage();
   await otherPage.goto(link);
+  // The link opens /auth/continue first; its button uses the link (L2 of the review of PR #77).
+  await otherPage.getByRole('button', { name: 'Lanjutkan' }).click();
   await expect(otherPage).toHaveURL(/\/reset-password$/, AUTH_STEP);
   await expect(otherPage.getByLabel('Kode autentikator')).toBeVisible();
   await elsewhere.close();
@@ -94,6 +96,7 @@ test('an account without an authenticator is sent to the superadmin, not to a ne
   const askedAt = new Date(Date.now() - 2_000);
   await askForReset(page, account.email);
   await page.goto(await waitForAuthLink(account.email, askedAt));
+  await page.getByRole('button', { name: 'Lanjutkan' }).click();
 
   await expect(page).toHaveURL(/\/reset-password$/, AUTH_STEP);
   await expect(page.getByText('Hubungi superadmin untuk memulihkan akun.')).toBeVisible();

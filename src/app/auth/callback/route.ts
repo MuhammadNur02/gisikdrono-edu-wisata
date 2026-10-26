@@ -1,23 +1,39 @@
 import {
+  EMAIL_LINK_CONTINUE_PATH,
   LOGIN_NOTICE_PARAM,
   LOGIN_PATH,
   ONBOARDING_PATH,
   RESET_PASSWORD_PATH,
+  type EmailLinkType,
   type LoginNotice,
 } from '@/config/auth';
 import { createLogger, requestIdFrom } from '@/lib/logger';
 import { clientIpFrom } from '@/lib/utils/client-ip';
+import { emailLinkQuery, parseEmailLink, type EmailLink } from '@/lib/utils/email-link';
+import { isSameOriginRequest } from '@/lib/utils/same-origin';
 import { seeOther } from '@/lib/utils/see-other';
-import { openEmailLinkSession, type EmailLinkType } from '@/server/services/auth-service';
+import { openEmailLinkSession } from '@/server/services/auth-service';
 import { withinAuthCallbackLimit } from '@/server/services/staff-service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 15;
 
-const TOKEN_HASH_PARAM = 'token_hash';
-const TYPE_PARAM = 'type';
-const TOKEN_HASH_MAX_LENGTH = 512;
+const FORBIDDEN = 403;
+const FORM_BODY_MAX_BYTES = 2048;
+
+// The one address Supabase Auth's emails link back to (docs/Security.md APP-13), with a fixed destination for each
+// kind of link, never one taken from the link, so the callback cannot be turned into an open redirect:
+//   recovery  supabase/templates/recovery.html; /reset-password then asks for the TOTP code.
+//   invite    supabase/templates/invite.html (Task P4.8.01); /onboarding asks for the invite code before anything.
+const DESTINATIONS: Record<EmailLinkType, string> = {
+  recovery: RESET_PASSWORD_PATH,
+  invite: ONBOARDING_PATH,
+};
+
+function notice(name: LoginNotice): string {
+  return `${LOGIN_PATH}?${LOGIN_NOTICE_PARAM}=${name}`;
+}
 
 // Our own per-IP count comes before Supabase Auth is asked: Auth sees every verification arrive from this server's
 // IP, so its own per-IP limit is shared by every staff member (RV-M1 of the independent review of PR #17). The limit
@@ -34,34 +50,36 @@ async function isWithinLimit(request: Request): Promise<boolean> {
   }
 }
 
-// The one address Supabase Auth's emails link back to (docs/Security.md APP-13), with a fixed destination for each
-// kind of link, never one taken from the link, so the callback cannot be turned into an open redirect:
-//   recovery  supabase/templates/recovery.html; its token_hash opens a recovery session in whichever browser opens it
-//             (F1 of the PR #17 review), and /reset-password then asks for the TOTP code.
-//   invite    supabase/templates/invite.html (Task P4.8.01); it opens a session for the mailbox only, and /onboarding
-//             asks for the invite code before anything else.
-const DESTINATIONS: Record<EmailLinkType, string> = {
-  recovery: RESET_PASSWORD_PATH,
-  invite: ONBOARDING_PATH,
-};
-
-function emailLinkTypeOf(value: string | null): EmailLinkType | null {
-  return value === 'recovery' || value === 'invite' ? value : null;
+// L2 of the review of PR #77: opening the link uses nothing. A mail scanner that follows it only reaches
+// /auth/continue, whose button posts the link back here.
+export function GET(request: Request): Response {
+  const { searchParams } = new URL(request.url);
+  const link = parseEmailLink(searchParams.get('token_hash'), searchParams.get('type'));
+  if (!link) return seeOther(notice('link-expired'));
+  return seeOther(`${EMAIL_LINK_CONTINUE_PATH}?${emailLinkQuery(link)}`);
 }
 
-export async function GET(request: Request): Promise<Response> {
-  const { searchParams } = new URL(request.url);
-  const tokenHash = searchParams.get(TOKEN_HASH_PARAM);
-  const linkType = emailLinkTypeOf(searchParams.get(TYPE_PARAM));
-  const notice = (name: LoginNotice) => `${LOGIN_PATH}?${LOGIN_NOTICE_PARAM}=${name}`;
-  if (tokenHash === null || tokenHash.length > TOKEN_HASH_MAX_LENGTH || linkType === null) {
-    return seeOther(notice('link-expired'));
-  }
+async function postedLink(request: Request): Promise<EmailLink | null> {
+  const length = Number(request.headers.get('content-length') ?? '0');
+  if (!request.headers.get('content-type')?.startsWith('application/x-www-form-urlencoded'))
+    return null;
+  if (!Number.isFinite(length) || length > FORM_BODY_MAX_BYTES) return null;
+  const body = await request.text();
+  if (body.length > FORM_BODY_MAX_BYTES) return null;
+  const form = new URLSearchParams(body);
+  return parseEmailLink(form.get('token_hash'), form.get('type'));
+}
+
+// The continue page's button: here the link is verified with verifyOtp, in whichever browser pressed it.
+export async function POST(request: Request): Promise<Response> {
+  if (!isSameOriginRequest(request)) return new Response(null, { status: FORBIDDEN });
+  const link = await postedLink(request);
+  if (!link) return seeOther(notice('link-expired'));
   if (!(await isWithinLimit(request))) return seeOther(notice('link-try-later'));
 
   return seeOther(
-    (await openEmailLinkSession(linkType, tokenHash))
-      ? DESTINATIONS[linkType]
+    (await openEmailLinkSession(link.type, link.tokenHash))
+      ? DESTINATIONS[link.type]
       : notice('link-expired'),
   );
 }

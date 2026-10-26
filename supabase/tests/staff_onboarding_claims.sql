@@ -6,7 +6,7 @@
 -- claims_version; a revoked or lapsed invite takes its Auth user with it; an inviter who loses their standing loses
 -- their open invites; the invited address cannot change; onboarding_state() answers booleans about the caller only.
 begin;
-select plan(46);
+select plan(50);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures =====
@@ -111,6 +111,17 @@ select lives_ok($$update auth.mfa_factors set status = 'verified' where id = '00
 select throws_ok($$select pg_temp.factor('00000000-0000-4000-8000-0000000c0f14', '00000000-0000-4000-8000-0000000c0001', 'totp', 'unverified')$$,
   '42501', null, 'and enrols no second one');
 
+-- L1 of the review of PR #77 (20261103131400): another session of the mailbox opened after the claim blocks
+-- verification, so only the session that typed the code verifies the factor.
+insert into auth.sessions (id, user_id, aal)
+values ('00000000-0000-4000-8000-0000000c05d1', '00000000-0000-4000-8000-0000000c0004', 'aal1');
+select is(pg_temp.claim('00000000-0000-4000-8000-0000000c0004', '00000000-0000-4000-8000-0000000c05d1', repeat('4', 64)),
+  true, 'a claim from the account''s one session');
+insert into auth.sessions (id, user_id, aal)
+values ('00000000-0000-4000-8000-0000000c05d2', '00000000-0000-4000-8000-0000000c0004', 'aal1');
+select throws_ok($$select pg_temp.factor('00000000-0000-4000-8000-0000000c0f41', '00000000-0000-4000-8000-0000000c0004', 'totp', 'verified')$$,
+  '42501', null, 'is not enough once another session of the mailbox has opened since');
+
 -- ===== Accepting =====
 select is(pg_temp.accept('00000000-0000-4000-8000-0000000c0001', '00000000-0000-4000-8000-0000000c05a1', repeat('1', 64)),
   false, 'an AAL1 session accepts nothing');
@@ -193,6 +204,17 @@ update public.staff_invites set claimed_at = now() - interval '31 minutes' where
 select set_config('app.privileged_rpc', '', true);
 select is(pg_temp.state_of('00000000-0000-4000-8000-0000000c0005', '00000000-0000-4000-8000-0000000c05e1'), '(t,f,t)',
   'a claim older than 30 minutes is no longer held');
+
+-- ===== M1 of the review of PR #77: no way around onboarding =====
+-- A claimed account with its factor verified, its acceptance not done: the superadmin cannot activate it or give it a
+-- role (20261103131300); only accept_staff_invite does.
+select pg_temp.act_as('superadmin_aal2');
+select throws_ok($$select public.set_staff_status('00000000-0000-4000-8000-0000000c0005', true, 'Bantu petugas baru')$$,
+  'P0001', null, 'the superadmin does not reactivate a half-onboarded account');
+select throws_ok($$select public.set_staff_role('00000000-0000-4000-8000-0000000c0005', 'admin_rw', 5::smallint)$$,
+  'P0001', null, 'nor gives it a role');
+reset role;
+select set_config('request.jwt.claims', '', true);
 
 -- ===== O2: the address stays =====
 select throws_ok($$update auth.users set email = 'lain@example.test' where id = '00000000-0000-4000-8000-0000000c0003'$$,

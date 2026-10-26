@@ -4,7 +4,7 @@
 -- as an account without a role is. Each check walks the catalogue, so a table, policy or RPC added later is covered;
 -- every statement runs in a subtransaction that is rolled back, so nothing it changes stays.
 begin;
-select plan(11);
+select plan(13);
 \ir helpers/rls_personas.psql
 
 -- What a statement does for a persona: how many rows it returns or touches, or the error it raises.
@@ -30,7 +30,7 @@ begin
 end;
 $$;
 
--- The statements that read, change and remove every table and view the signed-in role may touch, and that call every
+-- The statements that read, add, change and remove every table and view the signed-in role may touch, and that call every
 -- function it may execute but the RLS helpers and onboarding_state() itself, with NULL arguments.
 create function pg_temp.probes() returns table (probe text, statement text, counts boolean, is_definer boolean)
   language sql stable
@@ -50,6 +50,11 @@ as $$
     order by a.attnum limit 1
   ) col
   where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p')
+  union all
+  select 'insert ' || c.relname, format('insert into public.%I default values', c.relname), false, false
+  from pg_class c
+  where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p')
+    and has_any_column_privilege('authenticated', c.oid, 'insert')
   union all
   select 'delete ' || c.relname, format('delete from public.%I', c.relname), false, false
   from pg_class c
@@ -94,6 +99,12 @@ select is(array(select probe from outcomes where probe like 'select %' and with_
 select is(array(select probe from outcomes where probe like 'update %' and with_factor is distinct from without_factor
                 order by 1),
   array[]::text[], 'it changes no row that an account without a role cannot');
+select is(array(select probe from outcomes where probe like 'insert %' and with_factor is distinct from without_factor
+                order by 1),
+  array[]::text[], 'it adds no row that an account without a role cannot');
+select is(array(select probe || ' ' || with_factor from outcomes where probe like 'insert %'
+                  and with_factor not like 'error:%' and with_factor <> 'rows:0' order by 1),
+  array[]::text[], 'and adds nothing at all (L5 of the review of PR #77)');
 select is(array(select probe from outcomes where probe like 'delete %' and with_factor is distinct from without_factor
                 order by 1),
   array[]::text[], 'it removes no row that an account without a role cannot');

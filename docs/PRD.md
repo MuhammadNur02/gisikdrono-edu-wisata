@@ -249,7 +249,7 @@ Public slugs are Indonesian; admin and API paths are English. Public pages use I
 
 | Sitemap node | Route (`(admin)/dashboard`) | Role | Requirements |
 |---|---|---|---|
-| Login, reset, MFA, onboarding | `/login`, `/forgot-password`, `/reset-password`, `/mfa/enroll`, `/mfa/verify`, `/onboarding`, `auth/callback`, `auth/signout` | staff | FR-ADMIN-01 |
+| Login, reset, MFA, onboarding | `/login`, `/forgot-password`, `/reset-password`, `/mfa/enroll`, `/mfa/verify`, `/onboarding`, `/auth/continue` (the page an email link opens first; its button posts the link to `auth/callback`), `auth/callback`, `auth/signout` | staff | FR-ADMIN-01 |
 | Overview | `/dashboard` | all staff | FR-ADMIN-02, FR-ADMIN-03 |
 | Reservasi | `/dashboard/bookings`, `/dashboard/bookings/[id]` | all staff (scope) | FR-ADMIN-04 |
 | Pengaturan Kuota Harian & Jam Sesi (per RW) | `/dashboard/sessions` | admin_rw own RW, superadmin | FR-ADMIN-05 |

@@ -24,6 +24,9 @@ export interface StaffMember {
   promotionRequestedAt: string | null;
   mfaResetRequestedAt: string | null;
   isSelf: boolean;
+  // An invited account still being onboarded (M1 of the review of PR #77), and its open invite if any.
+  isAwaitingOnboarding: boolean;
+  pendingInvite: StaffInviteSummary | null;
 }
 
 // An invite that can still be accepted: neither accepted nor revoked nor expired. Never its code or its hash.

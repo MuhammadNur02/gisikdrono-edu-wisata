@@ -95,6 +95,14 @@ export const authCopy = {
       'Akun ini sudah memasang aplikasi autentikator dari kode QR lain. Pakai kode dari aplikasi itu.',
     signOut: 'Keluar',
   },
+  // /auth/continue (L2 of the review of PR #77): an email link opens this page first, and its button uses the link.
+  emailLink: {
+    recoveryTitle: 'Buat kata sandi baru',
+    inviteTitle: 'Pendaftaran petugas',
+    description:
+      'Tekan Lanjutkan untuk membuka tautan dari email Anda. Tautan ini hanya bisa dipakai sekali dan berlaku 10 menit.',
+    submit: 'Lanjutkan',
+  },
   // /onboarding (Task P4.8.01). One refusal for every wrong, foreign, expired, revoked or used code and for too many
   // tries, so the page tells a guesser nothing (docs/Security.md §5.1).
   onboarding: {

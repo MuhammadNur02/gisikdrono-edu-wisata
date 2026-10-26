@@ -2,7 +2,7 @@ import 'server-only';
 
 import { isAuthApiError, type AuthError } from '@supabase/supabase-js';
 
-import { TOTP_ISSUER } from '@/config/auth';
+import { TOTP_ISSUER, type EmailLinkType } from '@/config/auth';
 import { readOnboardingState, type OnboardingState } from '@/db/rpc-onboarding';
 import { AppError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
@@ -188,8 +188,6 @@ export async function changePasswordAfterRecovery(
   const signedOut = await supabase.auth.signOut({ scope: 'global' });
   return signedOut.error ? 'changed_sessions_remain' : 'changed';
 }
-
-export type EmailLinkType = 'recovery' | 'invite';
 
 // The token_hash of a recovery or invite email (docs/Security.md §5.1). A recovery link opens a session whose verified
 // token names `otp` in amr, as /reset-password checks; an invite link (Task P4.8.01) opens one for the mailbox, which

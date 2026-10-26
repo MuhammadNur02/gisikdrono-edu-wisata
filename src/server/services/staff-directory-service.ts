@@ -33,6 +33,7 @@ type ProfileRow = {
   is_active: boolean;
   promotion_requested_at: string | null;
   mfa_reset_requested_at: string | null;
+  claims_version: number;
 };
 
 // One status narrows the list; both, or none, keep every account.
@@ -47,7 +48,7 @@ async function readProfiles(query: StaffListQuery): Promise<ProfileRow[]> {
   let request = supabase
     .from('profiles')
     .select(
-      'id, email, full_name, role, rw_id, is_active, promotion_requested_at, mfa_reset_requested_at',
+      'id, email, full_name, role, rw_id, is_active, promotion_requested_at, mfa_reset_requested_at, claims_version',
     )
     .order('full_name')
     .limit(STAFF_LIST_MAX_ROWS);
@@ -71,11 +72,21 @@ function matchingRows(rows: ProfileRow[], query: StaffListQuery): ProfileRow[] {
   return order?.ascending === false ? [...found].reverse() : found;
 }
 
+// M1 of the security review of PR #77: an account the invite email made that never became staff (no role, inactive,
+// claims_version never bumped; internal.is_never_staff) is still being onboarded. Only accept_staff_invite gives it
+// access, so the list offers it no role and no reactivation, only its invite's revoke (set_staff_status and
+// set_staff_role refuse it too, 20261103131300).
+function isAwaitingOnboarding(row: ProfileRow): boolean {
+  return row.role === 'none' && !row.is_active && row.claims_version <= 1;
+}
+
 export async function listStaffMembers(
   ctx: StaffContext,
   query: StaffListQuery,
+  openInvites: readonly StaffInviteSummary[],
 ): Promise<ListResult<StaffMember>> {
   const rows = matchingRows(await readProfiles(query), query);
+  const inviteOf = new Map(openInvites.map((invite) => [invite.email.toLowerCase(), invite]));
   const { from, to } = pageRange(query.page, query.per);
   const page = rows.slice(from, to + 1);
   const authStates = await readStaffAuthStates(page.map((row) => row.id));
@@ -94,6 +105,10 @@ export async function listStaffMembers(
       promotionRequestedAt: row.promotion_requested_at,
       mfaResetRequestedAt: row.mfa_reset_requested_at,
       isSelf: row.id === ctx.userId,
+      isAwaitingOnboarding: isAwaitingOnboarding(row),
+      pendingInvite: isAwaitingOnboarding(row)
+        ? (inviteOf.get(row.email.toLowerCase()) ?? null)
+        : null,
     };
   });
   return { rows: members, total: rows.length };

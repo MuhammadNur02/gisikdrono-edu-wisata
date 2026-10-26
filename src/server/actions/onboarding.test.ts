@@ -121,14 +121,14 @@ describe('claimInviteAction', () => {
     expect(claimInviteForSession).not.toHaveBeenCalled();
   });
 
-  it('reads an outage as one, never as a database refusal', async () => {
+  it('reads an outage like a refusal, never as a database outcome', async () => {
     vi.mocked(claimInviteForSession).mockRejectedValue(
       Object.assign(new Error('boom'), { code: 'P0001', hint: 'STATE_INVALID' }),
     );
 
-    expect(await claimInviteAction({ inviteCode: INVITE_CODE })).toMatchObject({
+    expect(await claimInviteAction({ inviteCode: INVITE_CODE })).toEqual({
       ok: false,
-      error: { code: 'INTERNAL' },
+      error: { code: 'FORBIDDEN', message: copy.auth.onboarding.claimFailed },
     });
   });
 });
