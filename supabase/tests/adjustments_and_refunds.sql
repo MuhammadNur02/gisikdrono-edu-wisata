@@ -29,8 +29,8 @@ insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time
   ('00000000-0000-4000-8000-0000000f2003', 5, public.today_jkt() + 7, '09:00', '10:00', 'Uji refund 2', 200);
 
 insert into auth.users (id, email) values ('00000000-0000-4000-8000-00000000f002', 'rls-super-b@example.test');
-insert into public.profiles (id, email, full_name, role, rw_id) values
-  ('00000000-0000-4000-8000-00000000f002', 'rls-super-b@example.test', 'Super B', 'superadmin', null);
+insert into public.profiles (id, email, full_name, role, rw_id, is_active) values
+  ('00000000-0000-4000-8000-00000000f002', 'rls-super-b@example.test', 'Super B', 'superadmin', null, true);
 update public.profiles set created_at = now() - interval '40 days'
 where id in ('00000000-0000-4000-8000-00000000f001', '00000000-0000-4000-8000-00000000f002');
 insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at) values

@@ -165,6 +165,7 @@ describe('createDocumentSignedUrl', () => {
       receipt: 900,
       credit_note: 900,
       export: 300,
+      dsr_export: 300,
       whatsapp_document_header: 3600,
     });
   });

@@ -110,8 +110,8 @@ select ok(not has_function_privilege('authenticated', 'internal.break_glass_rese
 
 -- With a second active superadmin, neither the sole path nor break-glass applies.
 insert into auth.users (id, email) values ('00000000-0000-4000-8000-00000000f00a', 'rls-super-dua@example.test');
-insert into public.profiles (id, email, full_name, role, rw_id) values
-  ('00000000-0000-4000-8000-00000000f00a', 'rls-super-dua@example.test', 'Super Dua', 'superadmin', null);
+insert into public.profiles (id, email, full_name, role, rw_id, is_active) values
+  ('00000000-0000-4000-8000-00000000f00a', 'rls-super-dua@example.test', 'Super Dua', 'superadmin', null, true);
 select throws_ok($$select internal.break_glass_reset_mfa('00000000-0000-4000-8000-00000000f001', 'HP superadmin hilang lagi')$$,
   'P0001', null, 'break-glass is refused while another superadmin can reset');
 update public.security_alerts set acknowledged_by = null where id = '00000000-0000-4000-8000-0000000fa001';

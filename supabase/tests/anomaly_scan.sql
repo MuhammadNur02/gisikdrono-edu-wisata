@@ -113,9 +113,9 @@ insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, c
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000d9e01', 'tunggu-baru@example.test'),
   ('00000000-0000-4000-8000-0000000d9e02', 'tunggu-lama@example.test');
-insert into public.profiles (id, email, full_name, role, rw_id, reenrolment_required) values
-  ('00000000-0000-4000-8000-0000000d9e01', 'tunggu-baru@example.test', 'Tunggu Baru', 'admin_rw', 5, true),
-  ('00000000-0000-4000-8000-0000000d9e02', 'tunggu-lama@example.test', 'Tunggu Lama', 'admin_rw', 5, true);
+insert into public.profiles (id, email, full_name, role, rw_id, is_active, reenrolment_required) values
+  ('00000000-0000-4000-8000-0000000d9e01', 'tunggu-baru@example.test', 'Tunggu Baru', 'admin_rw', 5, true, true),
+  ('00000000-0000-4000-8000-0000000d9e02', 'tunggu-lama@example.test', 'Tunggu Lama', 'admin_rw', 5, true, true);
 insert into public.security_events (event_type, severity, entity_type, entity_id, details, occurred_at) values
   ('mfa_reset', 'critical', 'profiles', '00000000-0000-4000-8000-0000000d9e01', '{"stage": "completed"}',
    now() - interval '3 days'),
@@ -128,11 +128,11 @@ insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000d9e03', 'tunggu-dua-hp@example.test'),
   ('00000000-0000-4000-8000-0000000d9e04', 'tunggu-darurat@example.test'),
   ('00000000-0000-4000-8000-0000000d9e05', 'tunggu-tanpa-catatan@example.test');
-insert into public.profiles (id, email, full_name, role, rw_id, reenrolment_required) values
-  ('00000000-0000-4000-8000-0000000d9e03', 'tunggu-dua-hp@example.test', 'Tunggu Dua HP', 'admin_rw', 5, false),
-  ('00000000-0000-4000-8000-0000000d9e04', 'tunggu-darurat@example.test', 'Tunggu Darurat', 'superadmin', null, true),
+insert into public.profiles (id, email, full_name, role, rw_id, is_active, reenrolment_required) values
+  ('00000000-0000-4000-8000-0000000d9e03', 'tunggu-dua-hp@example.test', 'Tunggu Dua HP', 'admin_rw', 5, true, false),
+  ('00000000-0000-4000-8000-0000000d9e04', 'tunggu-darurat@example.test', 'Tunggu Darurat', 'superadmin', null, true, true),
   ('00000000-0000-4000-8000-0000000d9e05', 'tunggu-tanpa-catatan@example.test', 'Tunggu Tanpa Catatan', 'admin_rw', 5,
-   true);
+   true, true);
 insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at) values
   ('00000000-0000-4000-8000-0000000d9f31', '00000000-0000-4000-8000-0000000d9e03', 'HP 1', 'totp', 'verified', now(), now()),
   ('00000000-0000-4000-8000-0000000d9f32', '00000000-0000-4000-8000-0000000d9e03', 'HP 2', 'totp', 'verified', now(), now());

@@ -651,7 +651,7 @@ create table public.profiles (
   phone          text check (phone ~ '^\+62[0-9]{8,13}$'),
   role           public.app_role not null default 'none',
   rw_id          smallint references public.rw_units(id),
-  is_active      boolean not null default true,
+  is_active      boolean not null default false,       -- 20261104140050: inactive until accept_staff_invite gives the role
   mfa_required   boolean not null default true,
   claims_version integer not null default 1,        -- bumped on every role/RW/status change; copied into the JWT
   became_staff_at timestamptz,                      -- 20261103131500: the first time the profile held a role; never changes
@@ -665,7 +665,10 @@ create table public.profiles (
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now(),
   constraint profiles_role_rw_ok check (
-    (role = 'superadmin' and rw_id is null) or (role = 'admin_rw' and rw_id is not null) or (role = 'none' and rw_id is null))
+    (role = 'superadmin' and rw_id is null) or (role = 'admin_rw' and rw_id is not null) or (role = 'none' and rw_id is null)),
+  -- 20261104140000: a role or an active profile means the account became staff
+  constraint profiles_role_implies_became_staff check (role = 'none' or became_staff_at is not null),
+  constraint profiles_active_implies_became_staff check (not is_active or became_staff_at is not null)
 );
 create index profiles_rw_idx on public.profiles (rw_id) where is_active;
 
@@ -1610,7 +1613,7 @@ create table public.security_events (
     'upload_rejected','role_changed','staff_disabled','key_rotated','export_downloaded','pii_revealed',
     'manual_checkin','manual_backfill','undo_check_in','cron_failed','notification_dead','price_changed',
     'session_changed_with_bookings','quota_pressure','mfa_reset','notification_blocked','upload_sanitized',
-    'mfa_locked','session_revoke_failed','manual_lookup','alert_self_ack_sole_superadmin','invite_claimed')), -- invite_claimed added by 20261103131000; alert_self_ack_sole_superadmin added by 20261029080400; mfa_reset and notification_blocked added by 0004, upload_sanitized by 20261018133045, mfa_locked and session_revoke_failed by 20261020080000, manual_lookup by 20261025080300
+    'mfa_locked','session_revoke_failed','manual_lookup','alert_self_ack_sole_superadmin','invite_claimed','dsr_handled')), -- dsr_handled added by 20261104140100; invite_claimed added by 20261103131000; alert_self_ack_sole_superadmin added by 20261029080400; mfa_reset and notification_blocked added by 0004, upload_sanitized by 20261018133045, mfa_locked and session_revoke_failed by 20261020080000, manual_lookup by 20261025080300
   severity    public.alert_severity not null default 'info',
   actor_id    uuid,
   actor_role  text,
@@ -1664,7 +1667,11 @@ create table public.exports (
 );
 create index exports_user_time_idx on public.exports (requested_by, created_at desc);
 
--- dsr_requests: data-subject requests (UU PDP) submitted on /privasi/permintaan after OTP identity check.
+-- dsr_requests: data-subject requests (UU PDP). A request from /privasi/permintaan (P3.12.03) is created verified; one the
+-- superadmin opens on /dashboard/bookings/[id] (P4.10.03, 20261104140100) waits, received with verified_at NULL, until the
+-- guest confirms it with a dsr_identity code to the booking's verified number on /reservasi/<code>/privasi. verified_at is
+-- the "identity_verified_at" of the decision of 2026-10-26 (§13.1 A16), and both clocks start there: due_at = verified_at +
+-- 3 x 24 h, fulfil_due_at = verified_at + 14 days, calendar time.
 create table public.dsr_requests (
   id              uuid primary key default gen_random_uuid(),
   request_type    text not null check (request_type in ('access','rectification','erasure','restriction','withdraw_consent')),
@@ -1675,13 +1682,28 @@ create table public.dsr_requests (
   otp_id          uuid references public.guest_otps(id) on delete set null,   -- guest_otps are pruned after 24 h
   verified_at     timestamptz,
   status          text not null default 'received' check (status in ('received','in_progress','completed','rejected')),
-  due_at          timestamptz not null,                    -- created_at + 3 days (3x24 h response window)
+  due_at          timestamptz not null,                    -- verified_at + 3 x 24 h (acknowledge); until then created_at + 3 days
   handled_by      uuid references public.profiles(id),
   handled_at      timestamptz,
-  resolution_note text,
+  resolution_note text,                                    -- the legal basis, read by the guest
+  booking_id      uuid references public.bookings(id),     -- resolved when the request is created (20261104140100)
+  acknowledged_at timestamptz,
+  fulfil_due_at   timestamptz,                             -- verified_at + 14 days
+  outcome         text check (outcome is null or outcome in ('exported','participants_deleted','anonymised',
+                                                             'rectified','rejected_identity','rejected_other')),
+  export_json_path text,                                   -- documents/bookings/<id>/dsr/<request>.json, never shown to staff
+  export_pdf_path  text,                                   -- documents/bookings/<id>/dsr/<request>.pdf
   created_at      timestamptz not null default now(),
-  constraint dsr_requests_contact_ok check (phone is not null or email is not null)
+  constraint dsr_requests_contact_ok check (phone is not null or email is not null),
+  -- status and outcome move together: no outcome while open, a refusal outcome on rejected, another on completed
+  constraint dsr_requests_outcome_status check (
+    (status in ('received','in_progress')) = (outcome is null)
+    and (status <> 'rejected' or outcome in ('rejected_identity','rejected_other'))
+    and (status <> 'completed' or outcome in ('exported','participants_deleted','anonymised','rectified'))),
+  constraint dsr_requests_export_pair check ((export_json_path is null) = (export_pdf_path is null)),
+  constraint dsr_requests_verified_clocks check (verified_at is null or fulfil_due_at is not null)
 );
+create index dsr_requests_booking_idx on public.dsr_requests (booking_id, created_at desc);
 
 -- audit_logs (AO): append-only, hash-chained; row-level before/after limited to an allow-list of columns per table.
 create table public.audit_logs (
@@ -1853,7 +1875,7 @@ Legend: S/I/U/D = select/insert/update/delete; "—" = denied; "fn" = only throu
 | security_events | — | — | S | yes | insert |
 | security_alerts | — | — | S; U `acknowledged_by` in their own name with a fresh TOTP; `acknowledged_at` is set to `now()` by `security_alerts_acknowledge_stamp`, never by the client | yes | insert (job) |
 | exports | — | S own rows; fn `rpc_create_export` (attendance only) | S all; fn | yes | file lifecycle |
-| dsr_requests | — | — | S; U `status, handled_*, resolution_note` | yes | insert via svc |
+| dsr_requests | — | — | S (never `export_json_path`, `export_pdf_path`); written only by the fns `dsr_open`, `dsr_acknowledge`, `dsr_record_export`, `dsr_delete_participants`, `dsr_anonymise_booking`, `dsr_close` (AAL2; a fresh TOTP for export, deletion and anonymisation; 20261104140100) | yes | `svc_confirm_dsr_identity`; insert via svc |
 | audit_logs | — | — | S | yes | insert by triggers / fn |
 | login_attempts | — | — | S | yes | insert by auth hook |
 | rate_limit_buckets | — | — | — | — | `rate_limit_hit` |
@@ -2004,6 +2026,13 @@ Only the keys marked public below may have `is_public = true` (CHECK `site_setti
 | `svc_unused_account_of_invite` | `(p_invite_id uuid) returns uuid` | service role | 20261103131100 (P4.8.01): after a revoke, the Auth user of the invite's address that never became staff and has no open invite left, which the server deletes through the Auth admin API (`release_unused_profile` then deletes its profile); `purge/retention` deletes those of lapsed invites (`internal.purge_lapsed_invited_accounts`) |
 | `onboarding_state` | `() returns table (invite_open boolean, claim_held boolean, factor_verified boolean)` | authenticated | 20261103131200 (P4.8.01): stable, security definer; for the caller only, while it never was staff: an open invite for its address, the claim held by this JWT's session, exactly one verified factor; false for everyone else |
 | `svc_run_anomaly_scan` | `() returns jsonb` | service role | 20261029080100, 20261029080200 (P4.10.01): the database's anomaly rules over the last ten minutes, at most 200 subjects a rule, one open alert per rule and subject (an order named by a short hash only); `{raised}` |
+| `dsr_open` | `(p_booking_id uuid, p_request_type text, p_reason text) returns jsonb` | superadmin AAL2 | 20261104140100 (P4.10.03): `{request_id, notified}`; the booking must have a verified WhatsApp number; the row is `received` with `verified_at` NULL and the booking's own number, and a `manage` link to `/reservasi/<code>/privasi` is queued to it; reason 10–2000 chars |
+| `dsr_acknowledge` | `(p_request_id uuid) returns void` | superadmin AAL2 | 20261104140100: a confirmed `received` request becomes `in_progress`, `acknowledged_at = now()` |
+| `dsr_record_export` | `(p_request_id uuid, p_json_path text, p_pdf_path text, p_note text) returns jsonb` | superadmin AAL2, fresh TOTP | 20261104140100: an acknowledged access request; the paths must be `bookings/<booking>/dsr/<request>.{json,pdf}`; `exported`, then a `view` link to the guest; `{stage, notified}` |
+| `dsr_delete_participants` | `(p_request_id uuid, p_note text) returns jsonb` | superadmin AAL2, fresh TOTP | 20261104140100: an acknowledged erasure or withdrawn consent; deletes the booking's participants and participant certificates, writes `booking_events` `dsr_participants_deleted`; `participants_deleted` |
+| `dsr_anonymise_booking` | `(p_request_id uuid, p_note text) returns jsonb` | superadmin AAL2, fresh TOTP | 20261104140100: an acknowledged erasure, paid bookings too; the guest's message is queued first and kept, then the booking's contact and free text, participants, name-bearing certificates and other outbox rows go and `token_version` is bumped; financial snapshots stay; `booking_events` `dsr_anonymised`; `anonymised` |
+| `dsr_close` | `(p_request_id uuid, p_outcome text, p_note text) returns jsonb` | superadmin AAL2 | 20261104140100: `rectified` (an acknowledged rectification or restriction), `rejected_identity` (an unconfirmed request; the guest hears nothing) or `rejected_other` |
+| `svc_issue_dsr_identity_otp` / `svc_confirm_dsr_identity` | `(p_booking_id uuid, p_otp_id uuid, p_browser_hash text, p_code_hash text, p_code text, p_ip inet) returns jsonb` / `(p_booking_id uuid, p_browser_hash text, p_code_hash text) returns jsonb` | service role | 20261104140100: the guest's code for the booking's unconfirmed requests through `internal.issue_phone_otp` / `verify_phone_otp` (purpose `dsr_identity`, the booking's own number); a verified code sets `verified_at`, `due_at = + 3 x 24 h`, `fulfil_due_at = + 14 d` |
 | `acknowledge_alert_as_sole_superadmin` | `(p_alert_id uuid, p_reason text) returns void` | superadmin, fresh TOTP | 20261029080400 (OD-2 compensating control): only while the caller is the one active superadmin, for an open alert whose `details.involved` names them, at least 24 h after `notified_at`, with a reason of 10 to 500 characters; a high `alert_self_ack_sole_superadmin` event and alert of its own, sent out of band. `internal.break_glass_reset_mfa(p_user_id, p_reason)` is the project owner's SQL-editor reset of the sole superadmin (30-minute re-enrolment window, critical `mfa_reset` alert; docs/Security.md §11.4) |
 | `svc_run_chain_check` | `() returns jsonb` | service role | 20261029080200 (P4.10.01): the audit and ledger chains, a critical `chain_broken` alert on a break; called by the route in the first run of each hour whether or not the scan succeeded; `{raised}` |
 | `verify_audit_chain` | `() returns jsonb` | superadmin, AAL2 | 20261027080200: `{audit, ledger}` from `internal.verify_audit_chain` / `verify_ledger_chain`; six an hour (`RATE_LIMITED`) |
@@ -2462,6 +2491,7 @@ Signature-failure burst for known `order_id`s; amount mismatch; Status API disag
 | A13 | PIC phone numbers | Decided (2026-10-21, review of PR #19): a web booking takes Indonesian mobile numbers only (`+62`, `picPhoneSchema` in `src/lib/validations/booking.ts`), because the WhatsApp OTP verifies them, and the wizard's phone field points a group from abroad to the kelurahan. An officer registers such a group through `channel = 'admin'` (Task P4.3.10) and may enter an international number in E.164 there, since that path has no OTP and the officer checks the number; the `bookings.pic_phone` CHECK then accepts any E.164 number for `channel = 'admin'` only and keeps `+62` for `web` (migration of P4.3.10) | International numbers on the web booking as well | WhatsApp OTP delivery abroad and its cost, the `+62` CHECK on `guest_otps.phone`, `normalizeMobilePhone`, the limiter keys |
 | A14 | Guest identity details | Decided (2026-10-21, review of PR #20): (1) the lookup of `/reservasi/cari` sends its link in a template of its own, `booking_link` / `gsk_booking_link_v1`; (2) a guest link's payload is `{s, v, exp}` without `booking_id`, the HMAC covering the booking code in the address instead, so no uuid travels in a URL; (3) `issue_phone_otp` takes the code and its keyed hash from the Next.js server, which alone holds `OTP_PEPPER` (signature in §8.7.2, which follows the migration); (4) a pending code belongs to the browser that asked for it (signed `gsk_otp_browser` cookie): 5 codes a day per number and browser, 15 per number from all browsers, and the same answer, no sooner than 1.2 s, for sent, cooldown and capped; (5) the breaker counts WhatsApp codes issued, not messages sent; (6) an email proof (`gsk_phone` with channel `email`) never counts as a verified phone or WhatsApp number (Task P3.5.04) | A per-number cap with no browser binding | A stranger could cancel or use up a visitor's codes (M1); the answers would again tell who is asking for a number (L4) |
 | A15 | Pay-first for a session more than half held by unpaid bookings | Open (decision of 2026-10-24, Q5): no pay-first flow; `internal.create_booking` answers `pay_to_confirm`, writes nothing, and the wizard asks the visitor to choose another session ("Pilih sesi lain"). Revisit with the kelurahan after launch | A booking without seats that must be paid before it reserves any | `create_booking`, `create_payment_attempt`, the wizard's summary step, a new state or flag for an unreserved hold |
+| A16 | Data-subject requests the superadmin takes in (P4.10.03) | Decided (2026-10-26): the superadmin opens a request on `/dashboard/bookings/[id]` with its kind and reason; it is `received` with `verified_at` NULL (no new status value) until the guest confirms it on `/reservasi/[bookingCode]/privasi` with a `dsr_identity` code that `internal.issue_phone_otp` / `verify_phone_otp` send to the booking's own verified number through the outbox (`gsk_otp_v1`; same caps and pepper; never a number the superadmin types), GUEST-10. `verified_at` serves as `identity_verified_at`. Calendar clocks start at that confirmation: 3 x 24 h to acknowledge (`due_at`, UU PDP's 3 x 24 h), 14 days to fulfil (`fulfil_due_at`); a request of `/privasi/permintaan` is verified when created, so there they start at `created_at`. An access request is answered with a JSON + PDF in `documents/bookings/<id>/dsr/`, delivered only as a `view` guest link to the verified channel (the superadmin never downloads it), kept 30 days. Participant deletion is per booking with a `booking_events` row and an audit row. Early anonymisation is allowed for paid bookings too: the live booking row, its participants, participant-bearing PDFs and outbox payloads go and `token_version` is bumped; the invoice, receipt, credit-note and quotation snapshots and their PDFs stay under the 10-year financial retention, which `resolution_note` records and the guest's message states. Rectification and restriction are a note plus the existing staff edits (`rectified` or `rejected_other`). Superadmin only, AAL2, fresh TOTP for the destructive steps; every step is an audit row and a `dsr_handled` security event. The guest's confirm page is pending its own decision; until then a request the superadmin opens cannot be confirmed | Intake only through `/privasi/permintaan` | `dsr_requests` columns and CHECKs of `20261104140100`, docs/Security.md §7.6 |
 
 Additional items tracked in `CLAUDE.md` §12.3: Vercel plan (Hobby vs Pro; pg_cron + pg_net make `vercel.json` crons unnecessary) and signed commits on `main`.
 

@@ -991,15 +991,21 @@ export type Database = {
       }
       dsr_requests: {
         Row: {
+          acknowledged_at: string | null
           booking_code: string | null
+          booking_id: string | null
           created_at: string
           due_at: string
           email: string | null
+          export_json_path: string | null
+          export_pdf_path: string | null
+          fulfil_due_at: string | null
           handled_at: string | null
           handled_by: string | null
           id: string
           message: string | null
           otp_id: string | null
+          outcome: string | null
           phone: string | null
           request_type: string
           resolution_note: string | null
@@ -1007,15 +1013,21 @@ export type Database = {
           verified_at: string | null
         }
         Insert: {
+          acknowledged_at?: string | null
           booking_code?: string | null
+          booking_id?: string | null
           created_at?: string
           due_at: string
           email?: string | null
+          export_json_path?: string | null
+          export_pdf_path?: string | null
+          fulfil_due_at?: string | null
           handled_at?: string | null
           handled_by?: string | null
           id?: string
           message?: string | null
           otp_id?: string | null
+          outcome?: string | null
           phone?: string | null
           request_type: string
           resolution_note?: string | null
@@ -1023,15 +1035,21 @@ export type Database = {
           verified_at?: string | null
         }
         Update: {
+          acknowledged_at?: string | null
           booking_code?: string | null
+          booking_id?: string | null
           created_at?: string
           due_at?: string
           email?: string | null
+          export_json_path?: string | null
+          export_pdf_path?: string | null
+          fulfil_due_at?: string | null
           handled_at?: string | null
           handled_by?: string | null
           id?: string
           message?: string | null
           otp_id?: string | null
+          outcome?: string | null
           phone?: string | null
           request_type?: string
           resolution_note?: string | null
@@ -1039,6 +1057,34 @@ export type Database = {
           verified_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "dsr_requests_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dsr_requests_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dsr_requests_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dsr_requests_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
+          },
           {
             foreignKeyName: "dsr_requests_handled_by_fkey"
             columns: ["handled_by"]
@@ -4288,6 +4334,32 @@ export type Database = {
         Returns: Json
       }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      dsr_acknowledge: { Args: { p_request_id: string }; Returns: undefined }
+      dsr_anonymise_booking: {
+        Args: { p_note: string; p_request_id: string }
+        Returns: Json
+      }
+      dsr_close: {
+        Args: { p_note: string; p_outcome: string; p_request_id: string }
+        Returns: Json
+      }
+      dsr_delete_participants: {
+        Args: { p_note: string; p_request_id: string }
+        Returns: Json
+      }
+      dsr_open: {
+        Args: { p_booking_id: string; p_reason: string; p_request_type: string }
+        Returns: Json
+      }
+      dsr_record_export: {
+        Args: {
+          p_json_path: string
+          p_note: string
+          p_pdf_path: string
+          p_request_id: string
+        }
+        Returns: Json
+      }
       finance_booking: { Args: { p_booking_id: string }; Returns: Json }
       finance_overview: {
         Args: { p_from: string; p_to: string }
@@ -4616,6 +4688,14 @@ export type Database = {
         Args: { p_key_id: string; p_order_id: string }
         Returns: Json
       }
+      svc_confirm_dsr_identity: {
+        Args: {
+          p_booking_id: string
+          p_browser_hash: string
+          p_code_hash: string
+        }
+        Returns: Json
+      }
       svc_consume_mfa_reenrolment_code: {
         Args: { p_code_hash: string; p_user_id: string }
         Returns: boolean
@@ -4672,6 +4752,17 @@ export type Database = {
       svc_increment_booklet_download: {
         Args: { p_booklet_id: string }
         Returns: undefined
+      }
+      svc_issue_dsr_identity_otp: {
+        Args: {
+          p_booking_id: string
+          p_browser_hash: string
+          p_code: string
+          p_code_hash: string
+          p_ip?: unknown
+          p_otp_id: string
+        }
+        Returns: Json
       }
       svc_issue_first_quotation: {
         Args: { p_booking_id: string }

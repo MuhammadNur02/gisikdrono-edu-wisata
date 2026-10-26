@@ -26,6 +26,13 @@ import {
 } from '@/server/services/certificate-documents';
 import type { CertificateRow } from '@/server/services/certificate-pages';
 import {
+  dropDsrExport,
+  dsrExportPaths,
+  keepDsrExport,
+  loadDsrExport,
+  type DsrExportPaths,
+} from '@/server/services/dsr-documents';
+import {
   keptTicketPdfPath,
   loadTicketDocument,
   ticketDocumentPdf,
@@ -47,6 +54,7 @@ export const SIGNED_URL_TTL_SECONDS = {
   receipt: 900,
   credit_note: 900,
   export: 300,
+  dsr_export: 300,
   whatsapp_document_header: 3600,
 } as const;
 
@@ -63,6 +71,7 @@ const DOCUMENT_FOLDERS_BY_KIND: Record<SignedDocumentKind, readonly string[]> = 
   receipt: ['bookings'],
   credit_note: ['bookings'],
   export: ['exports'],
+  dsr_export: ['bookings'],
   whatsapp_document_header: ['bookings', 'certificates'],
 };
 // A segment starts with a letter or digit, so neither "." nor ".." can climb out of its folder.
@@ -271,4 +280,24 @@ export async function verifyDocumentCode(
   ]);
   if (!isWithinLimit) return { kind: 'rate_limited' };
   return { kind: 'looked_up', document: await lookupVerifyCode(adminClient, code) };
+}
+
+// Task P4.10.03: the access-request export, read and kept with the service role, keyed by the booking of a request the
+// superadmin read under RLS a moment ago; dsr_record_export then checks the paths and the fresh code itself.
+export async function storeDsrExport(
+  bookingId: string,
+  requestId: string,
+): Promise<DsrExportPaths> {
+  const adminClient = createSupabaseAdminClient();
+  const paths = dsrExportPaths(bookingId, requestId);
+  await keepDsrExport(
+    adminClient,
+    await loadDsrExport(adminClient, bookingId, new Date().toISOString()),
+    paths,
+  );
+  return paths;
+}
+
+export async function discardDsrExport(paths: DsrExportPaths): Promise<void> {
+  await dropDsrExport(createSupabaseAdminClient(), paths);
 }

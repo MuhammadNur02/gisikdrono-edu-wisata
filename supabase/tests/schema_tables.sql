@@ -1,7 +1,7 @@
 -- Structure test for 0003_tables, extended group by group: exact columns, the types other code
 -- relies on, keys, and the CHECK / unique rules proven by trying to break them.
 begin;
-select plan(213);
+select plan(214);
 -- Every package write checks the price floor, which refuses to run without its setting (0005).
 insert into public.site_settings (key, value) values ('pricing.min_price_per_pax', '5000') on conflict (key) do nothing;
 -- Fixtures are dated relative to today, so the suite keeps passing as the calendar moves on. Only
@@ -127,8 +127,8 @@ insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-000000000001', 'superadmin@example.test'),
   ('00000000-0000-4000-8000-000000000002', 'admin05@example.test'),
   ('00000000-0000-4000-8000-000000000003', 'other@example.test');
-insert into public.profiles (id, email, full_name, role) values
-  ('00000000-0000-4000-8000-000000000001', 'superadmin@example.test', 'Super Admin', 'superadmin');
+insert into public.profiles (id, email, full_name, role, is_active) values
+  ('00000000-0000-4000-8000-000000000001', 'superadmin@example.test', 'Super Admin', 'superadmin', true);
 
 select throws_ok(
   $$insert into public.rw_units (id, code, slug, name, short_name, theme_label, accent_key, icon_key)
@@ -156,8 +156,8 @@ select throws_ok(
   '23514', null, 'a superadmin profile has no RW'
 );
 select lives_ok(
-  $$insert into public.profiles (id, email, full_name, role, rw_id)
-    values ('00000000-0000-4000-8000-000000000002', 'admin05@example.test', 'Admin 05', 'admin_rw', 5)$$,
+  $$insert into public.profiles (id, email, full_name, role, rw_id, is_active)
+    values ('00000000-0000-4000-8000-000000000002', 'admin05@example.test', 'Admin 05', 'admin_rw', 5, true)$$,
   'an admin_rw profile with RW 05 is accepted'
 );
 select throws_ok(
@@ -165,6 +165,8 @@ select throws_ok(
     values ('00000000-0000-4000-8000-000000000003', 'SuperAdmin@Example.test', 'Copy', false)$$,
   '23505', null, 'profile emails are unique regardless of case (citext)'
 );
+select col_default_is('public', 'profiles', 'is_active', 'false',
+  'a new profile is inactive unless its writer says otherwise (20261104140050)');
 
 select throws_ok(
   $$insert into public.staff_invites (email, role, invite_code_hash, expires_at, created_by)
@@ -1154,7 +1156,9 @@ select columns_are('public', 'exports', array[
 ]);
 select columns_are('public', 'dsr_requests', array[
   'id', 'request_type', 'phone', 'email', 'booking_code', 'message', 'otp_id', 'verified_at',
-  'status', 'due_at', 'handled_by', 'handled_at', 'resolution_note', 'created_at'
+  'status', 'due_at', 'handled_by', 'handled_at', 'resolution_note', 'created_at',
+  -- added by 20261104140100: the queue of P4.10.03
+  'booking_id', 'acknowledged_at', 'fulfil_due_at', 'outcome', 'export_json_path', 'export_pdf_path'
 ]);
 select columns_are('public', 'audit_logs', array[
   'id', 'occurred_at', 'actor_id', 'actor_role', 'actor_ip', 'request_id', 'action', 'entity_type',

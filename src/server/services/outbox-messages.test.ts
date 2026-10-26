@@ -146,7 +146,7 @@ describe('composeMessage for a guest', () => {
     await expect(scopeOf(message)).resolves.toBe('manage');
   });
 
-  it('opens each message on its own page: the ticket, the review form', async () => {
+  it('opens each message on its own page: the ticket, the review form, a data request', async () => {
     const ticket = await messageFor({
       template: 'payment_received_ticket',
       params: { link_scope: 'view' },
@@ -158,6 +158,9 @@ describe('composeMessage for a guest', () => {
     });
     expect(review.link?.buttonSuffix?.startsWith(`${CODE}/ulasan?t=`)).toBe(true);
     await expect(scopeOf(review)).resolves.toBe('review');
+    const params = { link_scope: 'manage', link_page: 'privasi' };
+    const dsr = await messageFor({ template: 'booking_link', params });
+    expect(dsr.link?.buttonSuffix?.startsWith(`${CODE}/privasi?t=`)).toBe(true);
   });
 
   it('carries the ticket PDF in the WhatsApp document header, signed as it is sent', async () => {

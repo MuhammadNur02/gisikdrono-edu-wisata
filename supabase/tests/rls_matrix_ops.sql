@@ -146,9 +146,9 @@ select is(
   true,
   'stamped with the moment it happened'
 );
-select is(pg_temp.row_count($$update public.dsr_requests set status = 'in_progress', handled_at = now(),
-  handled_by = '00000000-0000-4000-8000-00000000f001' where id = '00000000-0000-4000-8000-0000af000002'$$), 1,
-  'and takes on a data-subject request');
+select throws_ok($$update public.dsr_requests set status = 'in_progress', handled_at = now(),
+  handled_by = '00000000-0000-4000-8000-00000000f001' where id = '00000000-0000-4000-8000-0000af000002'$$, '42501', null,
+  'and takes on a data-subject request only through the queue functions (20261104140100)');
 
 select * from finish();
 rollback;

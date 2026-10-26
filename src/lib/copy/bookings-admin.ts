@@ -119,6 +119,8 @@ export const bookingsAdminCopy = {
       payment_expired: 'Batas waktu pembayaran habis',
       refund_recorded: 'Pengembalian dana dicatat',
       write_off: 'Tagihan dihapuskan',
+      dsr_participants_deleted: 'Daftar peserta dihapus atas permintaan data',
+      dsr_anonymised: 'Data pemesan dianonimkan atas permintaan data',
     },
   },
   contact: {

@@ -130,8 +130,8 @@ beforeAll(async () => {
   await runSql(`select vault.create_secret(${sqlText(localCronSecret())}, 'cron_secret')
     where not exists (select 1 from vault.secrets where name = 'cron_secret');
     insert into auth.users (id, email) values ${officers.join(', ')};
-    insert into public.profiles (id, email, full_name, role, rw_id)
-      select u.id, u.email, 'Petugas Uji ' || right(u.email, 20), 'admin_rw', 5 from auth.users u
+    insert into public.profiles (id, email, full_name, role, rw_id, is_active)
+      select u.id, u.email, 'Petugas Uji ' || right(u.email, 20), 'admin_rw', 5, true from auth.users u
       where u.id in (${OFFICERS.map((id) => `'${id}'`).join(', ')});
     insert into public.tour_packages (id, rw_id, category, slug, name, pricing_basis, price_per_pax, status)
       values ('${PACKAGE_ID}', 5, 'regular', 'uji-integrasi-gerbang-${RUN}', 'Paket Uji Gerbang', 'per_pax', 25000,
