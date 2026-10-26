@@ -989,7 +989,7 @@ Month grid (react-day-picker custom day cell): each day shows up to three sessio
 
 ### 6.10 Displaying personal data
 
-Lists read the masked view `v_bookings_staff` (PIC phone `+62 812-••••-7890`, email `h•••@sekolah.sch.id`). The booking detail page shows a `Tampilkan kontak` button that opens a dialog requiring a reason, calls `rpc_reveal_booking_contact(booking_id, reason)` and reveals the value for that page view only (daily cap 50, counter shown as `Sisa 43 hari ini`). Participant lists come from `rpc_get_participants(booking_id)` inside the −7/+30 day window; outside it the panel explains `Daftar peserta hanya tersedia 7 hari sebelum hingga 30 hari setelah kunjungan`. No admin screen ever renders children's names in a table that can be sorted or exported by admin_rw.
+Lists read the masked view `v_bookings_staff` (PIC phone `+62 812-••••-7890`, email `h•••@sekolah.sch.id`). The booking detail page shows a `Tampilkan kontak` button that opens a dialog requiring a reason, calls `rpc_reveal_booking_contact(booking_id, reason)` and reveals the value for that page view only (daily cap 50, counter shown as `Sisa 43 hari ini`). Participant lists come from `rpc_get_participants(booking_id)` inside its window, a visit at most 30 days ahead and at most 7 days past (`internal.require_booking_pii_access`); outside it the panel explains `Daftar peserta hanya tersedia sejak 30 hari sebelum hingga 7 hari setelah kunjungan` (corrected 2026-10-26: the earlier sentence had the two ends the wrong way round). No admin screen ever renders children's names in a table that can be sorted or exported by admin_rw.
 
 ## 7. Motion
 

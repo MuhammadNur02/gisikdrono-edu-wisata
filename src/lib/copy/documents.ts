@@ -65,6 +65,12 @@ export const documentsCopy = {
     forPayment: (invoiceNumber: string) => `Untuk pembayaran invoice ${invoiceNumber}`,
     paidAt: 'Tanggal pembayaran',
   },
+  // The RW admin's copy of a booking's quotation, invoice or receipt (Task P4.3.02, decision of 2026-10-26): the header
+  // only; the money of a combo's other RW, the add-ons and a discount are the superadmin's (STAFF-02).
+  restricted: {
+    mark: 'SALINAN TERBATAS',
+    withheld: 'Rincian biaya hanya tersedia untuk superadmin',
+  },
   // /verifikasi/[code] (docs/PRD.md FR-PUB-20): what a document says of itself, and nothing more.
   verifyPage: {
     title: 'Verifikasi dokumen',

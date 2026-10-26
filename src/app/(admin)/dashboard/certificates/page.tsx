@@ -12,6 +12,7 @@ import {
   revokeCertificateAction,
   waiveCertificatesAction,
 } from '@/server/actions/certificates';
+import { verifyStaffTotpAction } from '@/server/actions/staff-totp';
 import { effectiveRw } from '@/server/auth/content-owner';
 import { requireDashboardStaff } from '@/server/auth/session';
 import { listCertificateBookings } from '@/server/services/certificate-service';
@@ -59,7 +60,13 @@ export default async function CertificatesPage({ searchParams }: { searchParams:
       issueAction={issueCertificatesAction}
       rerenderAction={rerenderCertificatesAction}
       superadminActions={
-        isSuperadmin ? { waive: waiveCertificatesAction, revoke: revokeCertificateAction } : null
+        isSuperadmin
+          ? {
+              waive: waiveCertificatesAction,
+              revoke: revokeCertificateAction,
+              stepUp: verifyStaffTotpAction,
+            }
+          : null
       }
     />
   );

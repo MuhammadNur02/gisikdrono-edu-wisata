@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { CERTIFICATE_REASON_LIMITS } from '@/config/certificates';
 import { copy } from '@/lib/copy/id';
+import { totpCodeField } from '@/lib/validations/auth';
 import { isSafeFreeText } from '@/lib/validations/free-text';
 
 // /dashboard/certificates (Task P4.5.03), shared by the forms and src/server/actions/certificates.ts. The reason of a
@@ -27,6 +28,9 @@ export const waiveCertificatesSchema = z
 export const revokeCertificateSchema = z
   .object({ certificateId: z.uuid(), reason: reasonField })
   .strict();
+
+// The revocation dialog's form, with the authenticator code withStepUp checks first (review of PR #76, F-76-2).
+export const revokeCertificateFormSchema = revokeCertificateSchema.extend({ code: totpCodeField });
 
 export type WaiveCertificatesInput = z.input<typeof waiveCertificatesSchema>;
 export type WaiveCertificatesValues = z.output<typeof waiveCertificatesSchema>;

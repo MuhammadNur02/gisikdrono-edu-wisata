@@ -102,36 +102,6 @@ export function BookingLegs({ booking }: { booking: BookingDetail }) {
   );
 }
 
-export function BookingTickets({ booking }: { booking: BookingDetail }) {
-  return (
-    <DetailCard title={text.tickets}>
-      {booking.tickets.length === 0 ? (
-        <EmptyLine>{text.ticketsEmpty}</EmptyLine>
-      ) : (
-        <ul className="divide-y divide-border">
-          {booking.tickets.map((ticket) => (
-            <li
-              key={ticket.ticketCode}
-              className="flex flex-wrap items-center justify-between gap-2 py-3"
-            >
-              <span className="space-y-0.5">
-                <span className="block font-mono text-body-sm">{ticket.ticketCode}</span>
-                <span className="block text-caption text-muted-foreground">
-                  {rwLabel(ticket.rwId)} · {formatDateShort(ticket.validOn)}
-                  {ticket.checkedInPax === null
-                    ? ''
-                    : ` · ${text.checkedIn(ticket.checkedInPax, ticket.unpaidPax ?? 0)}`}
-                </span>
-              </span>
-              <StatusBadge kind="ticket_status" value={ticket.status} />
-            </li>
-          ))}
-        </ul>
-      )}
-    </DetailCard>
-  );
-}
-
 export function BookingPayments({ booking }: { booking: BookingDetail }) {
   return (
     <DetailCard title={text.payments}>
@@ -202,6 +172,14 @@ export function BookingInvoices({ booking }: { booking: BookingDetail }) {
   );
 }
 
+function isMachineReason(reason: string): reason is keyof typeof text.reasons {
+  return Object.hasOwn(text.reasons, reason);
+}
+
+function reasonText(reason: string): string {
+  return isMachineReason(reason) ? text.reasons[reason] : reason;
+}
+
 export function BookingTimeline({ events }: { events: readonly BookingTimelineEvent[] }) {
   return (
     <DetailCard title={text.timeline}>
@@ -221,7 +199,7 @@ export function BookingTimeline({ events }: { events: readonly BookingTimelineEv
                   {formatDateTimeShort(event.occurredAt)} · {text.actors[event.actorType]}
                 </span>
               </span>
-              {event.reason ? <p className="text-body-sm">{event.reason}</p> : null}
+              {event.reason ? <p className="text-body-sm">{reasonText(event.reason)}</p> : null}
             </li>
           ))}
         </ol>

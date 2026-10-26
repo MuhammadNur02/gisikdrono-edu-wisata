@@ -9,11 +9,14 @@ import {
   adminNotesSchema,
   bookingTargetSchema,
   revealContactSchema,
+  revokeTicketSchema,
 } from '@/lib/validations/booking-admin';
 import { requireRole } from '@/server/auth/guards';
 import {
+  getAddonNotes,
   getBookingParticipants,
   revealBookingContact,
+  revokeBookingTicket,
   saveAdminNotes,
   setAddonFulfillment,
 } from '@/server/services/booking-admin-service';
@@ -56,6 +59,23 @@ export async function loadBookingParticipantsAction(
   }
 }
 
+// Review of PR #76, F-76-5: the add-on notes are an audited read, asked for with "Tampilkan catatan", not on every view.
+export async function loadAddonNotesAction(
+  input: unknown,
+): Promise<ActionResult<Record<string, string>>> {
+  const parsed = bookingTargetSchema.safeParse(input);
+  if (!parsed.success) return mapError(parsed.error);
+  const guard = await requireRole('superadmin', 'admin_rw');
+  if (!guard.ok) return guard;
+  if (!guard.ctx.isAal2) return fail('FORBIDDEN');
+
+  try {
+    return ok(await getAddonNotes(parsed.data.bookingId));
+  } catch (error) {
+    return mapError(error);
+  }
+}
+
 export async function saveAdminNotesAction(input: unknown): Promise<ActionResult<null>> {
   const parsed = adminNotesSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
@@ -81,6 +101,24 @@ export async function setAddonFulfillmentAction(input: unknown): Promise<ActionR
 
   try {
     await setAddonFulfillment(parsed.data);
+    revalidatePath(bookingDetailPath(parsed.data.bookingId));
+    return ok(null);
+  } catch (error) {
+    return mapError(error);
+  }
+}
+
+// FR-ADMIN-26: the superadmin revokes one ticket with a reason. revoke_ticket checks the role, AAL2 and the ticket's
+// state again; the booking keeps its status, and booking_cancelled goes out once every ticket is revoked.
+export async function revokeTicketAction(input: unknown): Promise<ActionResult<null>> {
+  const parsed = revokeTicketSchema.safeParse(input);
+  if (!parsed.success) return mapError(parsed.error);
+  const guard = await requireRole('superadmin');
+  if (!guard.ok) return guard;
+  if (!guard.ctx.isAal2) return fail('FORBIDDEN');
+
+  try {
+    await revokeBookingTicket(parsed.data);
     revalidatePath(bookingDetailPath(parsed.data.bookingId));
     return ok(null);
   } catch (error) {

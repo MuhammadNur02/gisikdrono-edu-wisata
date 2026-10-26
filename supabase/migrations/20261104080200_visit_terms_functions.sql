@@ -287,6 +287,9 @@ declare
   quote jsonb := p_quote;
   request public.refund_requests;
   next_refund integer;
+  -- The timeline keeps the quote without the payment's ids, under the reason its kind gives.
+  event_reason text := case when p_kind = 'weather' then 'weather_refund' else 'cancelled_paid' end;
+  event_payload jsonb := p_quote - 'payment_id' - 'order_id';
 begin
   update public.bookings set status = 'cancelled', cancelled_at = now(), cancelled_by = p_actor_id,
     cancel_reason = left(p_reason, 200)
@@ -313,8 +316,7 @@ begin
   where booking_id = p_booking.id and resolved_at is null;
   insert into public.booking_events (booking_id, from_status, to_status, actor_type, actor_id, reason, payload)
   values (p_booking.id, 'paid', 'cancelled', p_actor_type, p_actor_id,
-          case when p_kind = 'weather' then 'weather_refund' else 'cancelled_paid' end,
-          quote - 'payment_id' - 'order_id');
+          event_reason, event_payload);
   return jsonb_build_object('result', 'cancelled', 'close_orders', '[]'::jsonb,
     'refund', case when request.id is null then null else jsonb_build_object(
       'request_id', request.id, 'amount', request.amount, 'method', request.method, 'refund_key', request.refund_key,
@@ -396,6 +398,7 @@ declare
   leg public.booking_legs;
   request public.refund_requests;
   next_refund integer;
+  event_payload jsonb := p_quote - 'payment_id' - 'order_id';
 begin
   select * into leg from public.booking_legs l where l.id = (p_quote ->> 'leg_id')::uuid for update;
   update public.visit_sessions set reserved_pax = greatest(reserved_pax - leg.pax_count, 0)
@@ -421,7 +424,7 @@ begin
   where booking_id = p_booking.id and booking_leg_id = leg.id and resolved_at is null;
   insert into public.booking_events (booking_id, from_status, to_status, actor_type, actor_id, reason, payload)
   values (p_booking.id, p_booking.status, p_booking.status, p_actor_type, p_actor_id, 'weather_refund_leg',
-          p_quote - 'payment_id' - 'order_id');
+          event_payload);
   return jsonb_build_object('result', 'cancelled', 'close_orders', '[]'::jsonb,
     'refund', case when request.id is null then null else jsonb_build_object(
       'request_id', request.id, 'amount', request.amount, 'method', request.method, 'refund_key', request.refund_key,
@@ -1465,6 +1468,7 @@ as $$
 declare
   request public.refund_requests;
   next_refund integer;
+  event_payload jsonb := p_quote - 'payment_id' - 'order_id';
 begin
   if (p_quote ->> 'amount')::bigint > 0 then
     select count(*) + 1 into next_refund from public.refund_requests r
@@ -1480,7 +1484,7 @@ begin
   where booking_id = p_booking.id and resolved_at is null;
   insert into public.booking_events (booking_id, from_status, to_status, actor_type, reason, payload)
   values (p_booking.id, p_booking.status, p_booking.status, 'cron', 'weather_refund',
-          p_quote - 'payment_id' - 'order_id');
+          event_payload);
   insert into public.security_alerts (rule, severity, fingerprint, title, details)
   values ('weather_auto_refund', 'high', 'weather_auto_refund:' || p_booking.id,
           'Pengembalian dana cuaca otomatis: ' || p_booking.booking_code,
