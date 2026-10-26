@@ -19,8 +19,8 @@ import type { PackageAdmin } from '@/types/package';
 // Package writes through save_package (Task P4.3.05, P4.3.11; docs/PRD.md FR-ADMIN-05, REC-13, REC-14): the package,
 // its tiers and its status in one transaction on the session client, so the grants, policies and triggers decide as
 // they did for the direct writes before it: an RW package keeps its single leg, a combo stays the superadmin's and off
-// sale until it visits two RWs, the price floor holds and every price change is recorded. A combo's legs are kept as
-// they are until the legs editor sends them (legRwIds null). Prices are integer rupiah as typed; nothing here computes
+// sale until it visits two RWs, the price floor holds and every price change is recorded. A combo sends its route in
+// order; an RW package, or a combo whose route is still empty, sends none and keeps what is saved. Prices are integer rupiah as typed; nothing here computes
 // a total (CLAUDE.md §7.1).
 
 function itineraryJson(values: PackageValues): Json {
@@ -59,6 +59,11 @@ function fieldsOf(values: PackageValues & { category: string }): Record<string, 
   };
 }
 
+// save_package_legs takes a combo's RWs in order, and refuses an empty route; null keeps the legs saved so far.
+function legsToSave(values: PackageValues): number[] | null {
+  return values.category === 'combo' && values.legRwIds.length > 0 ? values.legRwIds : null;
+}
+
 async function save(
   packageId: string | null,
   fields: Record<string, Json>,
@@ -72,7 +77,7 @@ async function save(
     return await savePackage(supabase, {
       packageId,
       fields,
-      legRwIds: null,
+      legRwIds: legsToSave(values),
       tiers: values.priceTiers,
     });
   } catch (error) {

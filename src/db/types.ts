@@ -4302,6 +4302,14 @@ export type Database = {
         Args: { p_from: string; p_rw_id: number; p_to: string }
         Returns: number
       }
+      get_rw_treasury_account: {
+        Args: { p_reason?: string; p_reveal?: boolean; p_rw_id: number }
+        Returns: Json
+      }
+      get_vendor_bank_account: {
+        Args: { p_reason?: string; p_reveal?: boolean; p_vendor_id: string }
+        Returns: Json
+      }
       hook_mfa_verification_attempt: { Args: { event: Json }; Returns: Json }
       hook_password_verification_attempt: {
         Args: { event: Json }
@@ -4463,6 +4471,15 @@ export type Database = {
         }
         Returns: Json
       }
+      set_rw_treasury_account: {
+        Args: {
+          p_account_holder: string
+          p_account_number: string
+          p_bank_name: string
+          p_rw_id: number
+        }
+        Returns: undefined
+      }
       set_rw_unit_status: {
         Args: { p_is_active: boolean; p_rw_id: number }
         Returns: undefined
@@ -4477,6 +4494,15 @@ export type Database = {
       }
       set_staff_status: {
         Args: { p_is_active: boolean; p_reason: string; p_user_id: string }
+        Returns: undefined
+      }
+      set_vendor_bank_account: {
+        Args: {
+          p_account_holder: string
+          p_account_number: string
+          p_bank_name: string
+          p_vendor_id: string
+        }
         Returns: undefined
       }
       settle_revenue_entries: {
