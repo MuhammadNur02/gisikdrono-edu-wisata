@@ -172,7 +172,7 @@ select ok((select phone_verified_at is null from combo_booking), 'A: unchecked, 
 select ok((select expires_at <= (public.today_jkt() + 3 + time '09:00') at time zone 'Asia/Jakarta'
                   and expires_at > now() + interval '23 hours' from combo_booking),
   'C: held as an institution''s booking, up to the first session');
-select is((select array_agg(channel::text order by channel) from public.notifications
+select is((select array_agg(channel::text order by channel::text) from public.notifications
            where booking_id = (select id from combo_booking) and template = 'booking_created'),
   array['email'], 'A: and its booking_created message goes by email only');
 
@@ -225,7 +225,7 @@ select is((select count(*)::int from public.invoices where booking_id = (select 
            and receipt_number is not null), 1, 'its invoice and receipt numbers');
 select ok(exists (select 1 from public.revenue_share_entries where booking_id = (select id from walk_in_booking)),
   'its ledger');
-select is((select array_agg(channel::text order by channel) from public.notifications
+select is((select array_agg(channel::text order by channel::text) from public.notifications
            where booking_id = (select id from walk_in_booking) and template = 'payment_received_ticket'),
   array['email', 'whatsapp'], 'and the ticket by WhatsApp, the officer having checked the number, and email');
 select is((select count(*)::int from public.booking_events where booking_id = (select id from walk_in_booking)
