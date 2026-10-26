@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
+import dynamic from 'next/dynamic';
 import { notFound } from 'next/navigation';
 
-import { PackageForm } from '@/components/admin/packages/package-form';
 import { packageValues } from '@/components/admin/packages/package-values';
 import { PriceHistory } from '@/components/admin/packages/price-history';
 import { BackLink } from '@/components/admin/shell/back-link';
@@ -18,6 +18,12 @@ import { requireDashboardStaff } from '@/server/auth/session';
 import { listPriceHistory } from '@/server/services/package-history-service';
 import { readPackageForStaff } from '@/server/services/package-service';
 import { listRwUnitsForStaff } from '@/server/services/rw-unit-service';
+
+// The form and its sections load as their own chunk, outside the shared first load (admin budget, as on
+// /dashboard/settings).
+const PackageForm = dynamic(() =>
+  import('@/components/admin/packages/package-form').then((module) => module.PackageForm),
+);
 
 const text = packagesCopy;
 
