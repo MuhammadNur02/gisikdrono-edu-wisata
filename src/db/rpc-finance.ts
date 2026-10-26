@@ -15,7 +15,7 @@ import type {
   SavedRule,
 } from '@/types/finance';
 
-// The finance RPCs of Task P4.7 (20261101130000 to 20261104100100) and the stats RPCs they sit beside
+// The finance RPCs of Task P4.7 (20261101130000 to 20261104190100) and the stats RPCs they sit beside
 // (20261027080200), on the signed-in superadmin's session client: auth.uid(), AAL2, the fresh-TOTP checks and RLS
 // all apply. Every reply is jsonb, parsed here into the camelCase shapes of src/types/finance.ts.
 

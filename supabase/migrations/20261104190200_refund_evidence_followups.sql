@@ -11,8 +11,10 @@
 --   I2  while the latest answer lists no refunds[] and an applied manual_refund of the payment is not yet counted as
 --       Midtrans', record_refund cannot tell what Midtrans' total holds, and refuses (REFUND_LIST_MISSING)
 --
--- record_refund_core and the three-argument note_refund_seen are made again from their 20261101130200 versions with
--- these changes; everything else in them is unchanged.
+-- The three-argument note_refund_seen is made again from its 20261101130200 version, the latest, and record_refund_core
+-- from its 20261104080200 version (PR #69, the visit-terms refund requests), the latest, with these changes; everything
+-- else in them is unchanged. apply_payment_status, apply_adjustment and recap_invariant keep their 20261104080200
+-- versions: they call these two and are not made again here.
 
 
 -- ===== Helpers =====
@@ -150,6 +152,9 @@ $$;
 
 -- ===== record_refund_core (L6, L7, I2) =====
 
+-- Replaces the 20261104080200 version (review of PR #69, H1, D-1, M-1, L-1: the open visit-terms request decides and
+-- is booked through book_refund_request; check_refund_against_requests; REFUND_PENDING_AT_MIDTRANS), with L6, L7 and
+-- I2 added; everything else in it is unchanged.
 create or replace function internal.record_refund_core(p_booking_id uuid, p_payment_id uuid, p_amount bigint, p_reference text,
   p_reason text, p_proof_path text, p_actor uuid, p_reported_only boolean) returns jsonb
   language plpgsql
@@ -163,6 +168,8 @@ declare
   is_whole boolean;
   credit_note text;
   previous_settings jsonb;
+  request public.refund_requests;
+  is_whole_request boolean;
 begin
   if reference = '' or length(reference) > 100 then
     raise exception 'a refund names its transfer in 1 to 100 characters' using errcode = '22023';
@@ -203,8 +210,8 @@ begin
   perform internal.require_unused_proof(p_booking_id, p_proof_path,
                                         nullif(current_setting('app.adjustment_id', true), '')::uuid);
   payment := internal.refund_payment_of(p_booking_id, p_payment_id);
-  perform internal.check_refund_amount(booking, payment, p_amount);
-  -- L6, I2: what Midtrans holds must be readable before anything is recorded against it.
+  -- L6, I2: what Midtrans holds must be readable before anything is recorded against it, a refund that answers an
+  -- open visit-terms request included.
   if p_reported_only and internal.refund_key_mismatch(payment, null) is not null then
     raise exception 'Midtrans lists the refund of adjustment % with another amount', internal.refund_key_mismatch(payment, null)
       using errcode = 'P0001', hint = 'REFUND_KEY_MISMATCH';
@@ -213,6 +220,40 @@ begin
     raise exception 'Midtrans'' latest answer for order % lists no refunds, while a manual refund is not yet counted',
       payment.order_id using errcode = 'P0001', hint = 'REFUND_LIST_MISSING';
   end if;
+  -- Review of PR #69, H1, and its delta review, D-1: while a visit-terms refund request is open for the payment, it
+  -- decides. A bank transfer of any amount waits while Midtrans may still pay a QRIS request out; one that Midtrans
+  -- refused, or a Virtual Account one, is finished only by a refund of exactly its amount, which books the request, so
+  -- its ledger keeps the A16 split and the booking keeps its status.
+  perform internal.check_refund_against_requests(payment.id, p_amount, p_reported_only);
+  select * into request from public.refund_requests r
+  where r.payment_id = payment.id and r.status in ('requested', 'submitted', 'failed') and r.amount = p_amount
+  for update;
+  if request.id is not null then
+    -- A disputed or duplicate payment is not refunded here, which would drop its flag (final review of PR #69, L-1).
+    if payment.status not in ('settled', 'partially_refunded') then
+      raise exception 'payment % is %, not a payment its refund request is booked against', payment.order_id,
+        payment.status using errcode = 'P0001', hint = 'STATE_INVALID';
+    end if;
+    -- A bank transfer against a QRIS request Midtrans may still pay out would pay the visitor twice (final review of PR
+    -- #69, M-1): only a request Midtrans refused is finished by hand.
+    if not p_reported_only and request.method = 'qris' and request.status <> 'failed' then
+      raise exception 'refund % is still % at Midtrans; a transfer may follow only a refused one', request.refund_key,
+        request.status using errcode = 'P0001', hint = 'REFUND_PENDING_AT_MIDTRANS';
+    end if;
+    if p_reported_only and internal.midtrans_refunded(payment) < internal.midtrans_recorded(payment) + p_amount then
+      raise exception 'Midtrans reports no refund of % on order %', internal.midtrans_recorded(payment) + p_amount,
+        payment.order_id using errcode = 'P0001', hint = 'REFUND_NOT_AT_MIDTRANS';
+    end if;
+    is_whole_request := payment.refunded_amount + p_amount >= payment.gross_amount;
+    previous_settings := internal.push_settings('{"app.in_rpc": "1"}');
+    credit_note := internal.book_refund_request(request,
+      case when is_whole_request then 'refunded' else 'partially_refunded' end::public.payment_status,
+      payment.refunded_amount + p_amount, p_reported_only, reference, p_actor) ->> 'credit_note_number';
+    perform internal.restore_settings(previous_settings);
+    return jsonb_build_object('result', 'recorded', 'amount', p_amount, 'whole', is_whole_request,
+                              'credit_note_number', credit_note);
+  end if;
+  perform internal.check_refund_amount(booking, payment, p_amount);
   -- What Midtrans reports is compared with what was recorded under its word alone (delta review of PR #68, N16): a
   -- bank-transfer refund before it neither counts towards it nor blocks a genuine Midtrans refund after it.
   if p_reported_only

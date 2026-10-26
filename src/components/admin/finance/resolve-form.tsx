@@ -55,7 +55,7 @@ export interface ResolveFormProps {
   onDone: () => void;
 }
 
-// Task P4.7.04 (20261104100000): an issue closed as resolved or ignored, with its note, in the superadmin's own name; a
+// Task P4.7.04 (20261104190000): an issue closed as resolved or ignored, with its note, in the superadmin's own name; a
 // closed issue stays closed.
 export function ResolveForm({ issueId, submit: action, onDone }: ResolveFormProps) {
   const form = useForm<ResolveInput, unknown, ResolveValues>({

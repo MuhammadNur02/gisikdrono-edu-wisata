@@ -1016,7 +1016,7 @@ Signed URLs are never persisted, logged or placed in messages; `document.signed_
 | `adjustment_self_approved`: the sole active superadmin approved their own adjustment, which applies 24 h later (raised by `approve_adjustment`, REC-16) | any | high |
 | `adjustment_self_applied`: a self-approved adjustment was applied (raised by `apply_adjustment`, §3.8) | any | high |
 | `adjustment_withdrawn`: an approved adjustment was withdrawn because it could no longer apply (raised by `reject_adjustment`) | any | medium |
-| `refund_key_mismatch`: Midtrans lists an applied `manual_refund`'s `refund_key` with refunds that do not add up to its amount; `record_refund` refuses until it agrees (raised by `note_refund_seen`, 20261104100200) | any | high |
+| `refund_key_mismatch`: Midtrans lists an applied `manual_refund`'s `refund_key` with refunds that do not add up to its amount; `record_refund` refuses until it agrees (raised by `note_refund_seen`, 20261104190200) | any | high |
 | Ledger or audit chain verification failed; protective trigger missing | any | critical |
 | Reconciliation issues open > 48 h; outbox `dead` rows; `notification_blocked` (a message held for a link, host or IP address in its text); `cron_failed` | any | medium |
 | Webhook 503/5xx | ≥ 5 in 10 min | high |

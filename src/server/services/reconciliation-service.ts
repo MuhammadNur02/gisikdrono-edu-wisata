@@ -15,7 +15,7 @@ import type { ChainStatus, ReconciliationIssue, ReconciliationRun } from '@/type
 
 // /dashboard/finance/reconciliation (Task P4.7.04; docs/Security.md REC-01, REC-09): the nightly runs, the issues
 // still open, and the superadmin closing one in their own name with a note (reconciliation_issues_super_resolve,
-// 20261104100000: a closed issue stays closed). The chains are checked through verify_audit_chain.
+// 20261104190000: a closed issue stays closed). The chains are checked through verify_audit_chain.
 
 const runRowSchema = z.object({
   id: z.uuid(),
