@@ -29,6 +29,22 @@ export const VIBRATION_PATTERNS = {
   danger: [400],
 } as const;
 
+// The beep per tone (docs/StyleGuide.md §6.6, Task P4.4.04), made with WebAudio so no audio file ships: a short high
+// note on green, two middle ones on amber, one long low note on red. Each note is [frequency in Hz, length in ms].
+export const SCAN_TONE_NOTES = {
+  success: [[1046, 120]],
+  warning: [
+    [784, 90],
+    [784, 90],
+  ],
+  danger: [[262, 360]],
+} as const;
+// The silence between two notes of a tone, and how loud a note is (0..1): audible at a gate, not startling.
+export const SCAN_TONE_GAP_MS = 80;
+export const SCAN_TONE_GAIN = 0.2;
+// The officer's own choice on this device (a per-device convenience, so localStorage): '0' mutes the beep.
+export const SCANNER_SOUND_STORAGE_KEY = 'gsk.scanner.sound';
+
 // The service worker's scope: it controls the scanner and nothing else (Task P4.4.03).
 export const SCANNER_SERVICE_WORKER = { url: '/sw.js', scope: '/dashboard/scanner' } as const;
 // What the service worker serves for the scanner page while the network is down; static, without PII.

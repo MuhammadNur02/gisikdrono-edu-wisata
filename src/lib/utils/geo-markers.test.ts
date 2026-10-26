@@ -59,7 +59,10 @@ describe('buildGeoMarkers', () => {
   });
 
   it('gives a point its type label, its RW badge and a route to its own coordinates', () => {
-    const [marker] = buildGeoMarkers([point('bank-sampah', 5, -6.98, 110.38)], [unit(5, null, null)]);
+    const [marker] = buildGeoMarkers(
+      [point('bank-sampah', 5, -6.98, 110.38)],
+      [unit(5, null, null)],
+    );
     expect(marker).toMatchObject({
       detail: 'Bank Sampah',
       rw: { id: 5, label: 'RW 05', accentKey: 'leaf' },

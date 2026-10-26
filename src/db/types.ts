@@ -2281,6 +2281,7 @@ export type Database = {
       profiles: {
         Row: {
           avatar_path: string | null
+          became_staff_at: string | null
           claims_version: number
           created_at: string
           created_by: string | null
@@ -2305,6 +2306,7 @@ export type Database = {
         }
         Insert: {
           avatar_path?: string | null
+          became_staff_at?: string | null
           claims_version?: number
           created_at?: string
           created_by?: string | null
@@ -2329,6 +2331,7 @@ export type Database = {
         }
         Update: {
           avatar_path?: string | null
+          became_staff_at?: string | null
           claims_version?: number
           created_at?: string
           created_by?: string | null
@@ -2617,6 +2620,147 @@ export type Database = {
           {
             foreignKeyName: "reconciliation_runs_created_by_fkey"
             columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      refund_requests: {
+        Row: {
+          addon_refund: number
+          amount: number
+          attempts: number
+          booking_id: string
+          booking_leg_id: string | null
+          days_before: number | null
+          failure_reason: string | null
+          fee_amount: number
+          id: string
+          kind: Database["public"]["Enums"]["refund_request_kind"]
+          last_attempt_at: string | null
+          last_checked_at: string | null
+          last_checked_event_id: number | null
+          method: Database["public"]["Enums"]["payment_method"]
+          package_refund: number
+          payment_id: string
+          provider_status_code: string | null
+          recorded_at: string | null
+          refund_key: string
+          refund_pct: number | null
+          requested_at: string
+          requested_by: string | null
+          status: Database["public"]["Enums"]["refund_request_status"]
+          submitted_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          addon_refund?: number
+          amount: number
+          attempts?: number
+          booking_id: string
+          booking_leg_id?: string | null
+          days_before?: number | null
+          failure_reason?: string | null
+          fee_amount?: number
+          id?: string
+          kind: Database["public"]["Enums"]["refund_request_kind"]
+          last_attempt_at?: string | null
+          last_checked_at?: string | null
+          last_checked_event_id?: number | null
+          method: Database["public"]["Enums"]["payment_method"]
+          package_refund?: number
+          payment_id: string
+          provider_status_code?: string | null
+          recorded_at?: string | null
+          refund_key: string
+          refund_pct?: number | null
+          requested_at?: string
+          requested_by?: string | null
+          status?: Database["public"]["Enums"]["refund_request_status"]
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          addon_refund?: number
+          amount?: number
+          attempts?: number
+          booking_id?: string
+          booking_leg_id?: string | null
+          days_before?: number | null
+          failure_reason?: string | null
+          fee_amount?: number
+          id?: string
+          kind?: Database["public"]["Enums"]["refund_request_kind"]
+          last_attempt_at?: string | null
+          last_checked_at?: string | null
+          last_checked_event_id?: number | null
+          method?: Database["public"]["Enums"]["payment_method"]
+          package_refund?: number
+          payment_id?: string
+          provider_status_code?: string | null
+          recorded_at?: string | null
+          refund_key?: string
+          refund_pct?: number | null
+          requested_at?: string
+          requested_by?: string | null
+          status?: Database["public"]["Enums"]["refund_request_status"]
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "refund_requests_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "refund_requests_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "refund_requests_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "refund_requests_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
+          },
+          {
+            foreignKeyName: "refund_requests_booking_leg_id_fkey"
+            columns: ["booking_leg_id"]
+            isOneToOne: false
+            referencedRelation: "booking_legs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "refund_requests_last_checked_event_id_fkey"
+            columns: ["last_checked_event_id"]
+            isOneToOne: false
+            referencedRelation: "payment_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "refund_requests_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "refund_requests_requested_by_fkey"
+            columns: ["requested_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -3269,6 +3413,9 @@ export type Database = {
         Row: {
           accepted_at: string | null
           accepted_user_id: string | null
+          claimed_at: string | null
+          claimed_session_id: string | null
+          claimed_user_id: string | null
           created_at: string
           created_by: string
           email: string
@@ -3282,6 +3429,9 @@ export type Database = {
         Insert: {
           accepted_at?: string | null
           accepted_user_id?: string | null
+          claimed_at?: string | null
+          claimed_session_id?: string | null
+          claimed_user_id?: string | null
           created_at?: string
           created_by: string
           email: string
@@ -3295,6 +3445,9 @@ export type Database = {
         Update: {
           accepted_at?: string | null
           accepted_user_id?: string | null
+          claimed_at?: string | null
+          claimed_session_id?: string | null
+          claimed_user_id?: string | null
           created_at?: string
           created_by?: string
           email?: string
@@ -3889,6 +4042,154 @@ export type Database = {
           },
         ]
       }
+      weather_notice_bookings: {
+        Row: {
+          booking_id: string
+          booking_leg_id: string
+          created_at: string
+          id: string
+          moves_used: number
+          notice_id: string
+          open_until: string
+          resolution: string | null
+          resolved_at: string | null
+          rw_id: number
+          updated_at: string
+        }
+        Insert: {
+          booking_id: string
+          booking_leg_id: string
+          created_at?: string
+          id?: string
+          moves_used?: number
+          notice_id: string
+          open_until: string
+          resolution?: string | null
+          resolved_at?: string | null
+          rw_id: number
+          updated_at?: string
+        }
+        Update: {
+          booking_id?: string
+          booking_leg_id?: string
+          created_at?: string
+          id?: string
+          moves_used?: number
+          notice_id?: string
+          open_until?: string
+          resolution?: string | null
+          resolved_at?: string | null
+          rw_id?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "weather_notice_bookings_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "weather_notice_bookings_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "weather_notice_bookings_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "weather_notice_bookings_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
+          },
+          {
+            foreignKeyName: "weather_notice_bookings_booking_leg_id_fkey"
+            columns: ["booking_leg_id"]
+            isOneToOne: false
+            referencedRelation: "booking_legs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "weather_notice_bookings_notice_id_fkey"
+            columns: ["notice_id"]
+            isOneToOne: false
+            referencedRelation: "weather_notices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "weather_notice_bookings_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      weather_notices: {
+        Row: {
+          declared_at: string
+          declared_by: string
+          id: string
+          reason: string | null
+          rw_id: number
+          visit_session_id: string
+        }
+        Insert: {
+          declared_at?: string
+          declared_by: string
+          id?: string
+          reason?: string | null
+          rw_id: number
+          visit_session_id: string
+        }
+        Update: {
+          declared_at?: string
+          declared_by?: string
+          id?: string
+          reason?: string | null
+          rw_id?: number
+          visit_session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "weather_notices_declared_by_fkey"
+            columns: ["declared_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "weather_notices_rw_id_fkey"
+            columns: ["rw_id"]
+            isOneToOne: false
+            referencedRelation: "rw_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "weather_notices_visit_session_id_fkey"
+            columns: ["visit_session_id"]
+            isOneToOne: true
+            referencedRelation: "v_session_availability"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "weather_notices_visit_session_id_fkey"
+            columns: ["visit_session_id"]
+            isOneToOne: true
+            referencedRelation: "visit_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       webhook_rejections: {
         Row: {
           body_sha256: string | null
@@ -4170,6 +4471,57 @@ export type Database = {
         }
         Relationships: []
       }
+      v_refund_requests_open: {
+        Row: {
+          addon_refund: number | null
+          amount: number | null
+          attempts: number | null
+          booking_code: string | null
+          booking_id: string | null
+          days_before: number | null
+          failure_reason: string | null
+          fee_amount: number | null
+          id: string | null
+          kind: Database["public"]["Enums"]["refund_request_kind"] | null
+          last_attempt_at: string | null
+          method: Database["public"]["Enums"]["payment_method"] | null
+          package_refund: number | null
+          refund_pct: number | null
+          requested_at: string | null
+          status: Database["public"]["Enums"]["refund_request_status"] | null
+          submitted_at: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "refund_requests_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "refund_requests_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_booking_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "refund_requests_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_bookings_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "refund_requests_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "v_revenue_recap_by_booking"
+            referencedColumns: ["booking_id"]
+          },
+        ]
+      }
       v_revenue_recap_by_booking: {
         Row: {
           booking_code: string | null
@@ -4279,6 +4631,10 @@ export type Database = {
         Returns: Json
       }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      declare_weather_disruption: {
+        Args: { p_reason: string; p_session_id: string }
+        Returns: Json
+      }
       finance_booking: { Args: { p_booking_id: string }; Returns: Json }
       finance_overview: {
         Args: { p_from: string; p_to: string }
@@ -4292,6 +4648,14 @@ export type Database = {
       generate_visit_sessions: {
         Args: { p_from: string; p_rw_id: number; p_to: string }
         Returns: number
+      }
+      get_rw_treasury_account: {
+        Args: { p_reason?: string; p_reveal?: boolean; p_rw_id: number }
+        Returns: Json
+      }
+      get_vendor_bank_account: {
+        Args: { p_reason?: string; p_reveal?: boolean; p_vendor_id: string }
+        Returns: Json
       }
       hook_mfa_verification_attempt: { Args: { event: Json }; Returns: Json }
       hook_password_verification_attempt: {
@@ -4312,6 +4676,18 @@ export type Database = {
       issue_mfa_reenrolment_code: {
         Args: { p_code_hash: string; p_user_id: string }
         Returns: string
+      }
+      mark_refund_request_failed: {
+        Args: { p_event_id: number; p_reason: string; p_request_id: string }
+        Returns: Json
+      }
+      onboarding_state: {
+        Args: never
+        Returns: {
+          claim_held: boolean
+          factor_verified: boolean
+          invite_open: boolean
+        }[]
       }
       owns_any_rw: { Args: { p_rw_ids: number[] }; Returns: boolean }
       owns_rw: { Args: { p_rw_id: number }; Returns: boolean }
@@ -4343,12 +4719,20 @@ export type Database = {
         Returns: Json
       }
       reset_staff_mfa: { Args: { p_user_id: string }; Returns: Json }
+      resolve_weather_link: {
+        Args: { p_link_id: string; p_outcome: string; p_reason: string }
+        Returns: Json
+      }
       revenue_recap: {
         Args: { p_from: string; p_rw_id?: number; p_to: string }
         Returns: Json
       }
       revoke_certificate: {
         Args: { p_certificate_id: string; p_reason: string }
+        Returns: undefined
+      }
+      revoke_ticket: {
+        Args: { p_reason: string; p_ticket_id: string }
         Returns: undefined
       }
       rpc_create_export: {
@@ -4359,6 +4743,13 @@ export type Database = {
           p_reason: string
         }
         Returns: Json
+      }
+      rpc_get_addon_notes: {
+        Args: { p_booking_id: string }
+        Returns: {
+          addon_id: string
+          notes: string
+        }[]
       }
       rpc_get_participants: {
         Args: { p_booking_id: string }
@@ -4435,6 +4826,15 @@ export type Database = {
         }
         Returns: Json
       }
+      set_rw_treasury_account: {
+        Args: {
+          p_account_holder: string
+          p_account_number: string
+          p_bank_name: string
+          p_rw_id: number
+        }
+        Returns: undefined
+      }
       set_rw_unit_status: {
         Args: { p_is_active: boolean; p_rw_id: number }
         Returns: undefined
@@ -4451,6 +4851,15 @@ export type Database = {
         Args: { p_is_active: boolean; p_reason: string; p_user_id: string }
         Returns: undefined
       }
+      set_vendor_bank_account: {
+        Args: {
+          p_account_holder: string
+          p_account_number: string
+          p_bank_name: string
+          p_vendor_id: string
+        }
+        Returns: undefined
+      }
       settle_revenue_entries: {
         Args: {
           p_beneficiary_key: string
@@ -4462,7 +4871,11 @@ export type Database = {
         Returns: Json
       }
       svc_accept_staff_invite: {
-        Args: { p_invite_code_hash: string; p_user_id: string }
+        Args: {
+          p_invite_code_hash: string
+          p_session_id: string
+          p_user_id: string
+        }
         Returns: Json
       }
       svc_apply_payment_event: {
@@ -4481,6 +4894,17 @@ export type Database = {
           p_snap_token: string
         }
         Returns: undefined
+      }
+      svc_cancel_booking: {
+        Args: {
+          p_actor_id?: string
+          p_booking_id: string
+          p_expected_amount: number
+          p_expected_pct?: number
+          p_kind: Database["public"]["Enums"]["refund_request_kind"]
+          p_reason: string
+        }
+        Returns: Json
       }
       svc_check_mfa_reenrolment_code: {
         Args: { p_code_hash: string; p_user_id: string }
@@ -4533,6 +4957,10 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      svc_claim_refund_retry: {
+        Args: { p_request_id: string }
+        Returns: boolean
+      }
       svc_claim_security_alerts: {
         Args: { p_limit: number }
         Returns: {
@@ -4541,6 +4969,14 @@ export type Database = {
           rule: string
           severity: Database["public"]["Enums"]["alert_severity"]
         }[]
+      }
+      svc_claim_staff_invite: {
+        Args: {
+          p_invite_code_hash: string
+          p_session_id: string
+          p_user_id: string
+        }
+        Returns: Json
       }
       svc_complete_notification: {
         Args: { p_id: string; p_provider_message_id: string }
@@ -4602,10 +5038,22 @@ export type Database = {
         }
         Returns: undefined
       }
+      svc_fail_unconfirmed_refund_by_poll: {
+        Args: { p_event_id: number; p_request_id: string }
+        Returns: boolean
+      }
+      svc_flag_cancellation_for_superadmin: {
+        Args: { p_booking_id: string }
+        Returns: undefined
+      }
       svc_forget_purged_files: { Args: { p_paths: string[] }; Returns: number }
       svc_increment_booklet_download: {
         Args: { p_booklet_id: string }
         Returns: undefined
+      }
+      svc_is_booking_phone: {
+        Args: { p_booking_id: string; p_phone: string }
+        Returns: boolean
       }
       svc_issue_first_quotation: {
         Args: { p_booking_id: string }
@@ -4644,6 +5092,15 @@ export type Database = {
           p_entity_id?: string
           p_entity_type: string
           p_metadata?: Json
+        }
+        Returns: undefined
+      }
+      svc_mark_refund_request: {
+        Args: {
+          p_reason?: string
+          p_request_id: string
+          p_status: Database["public"]["Enums"]["refund_request_status"]
+          p_status_code?: string
         }
         Returns: undefined
       }
@@ -4710,6 +5167,10 @@ export type Database = {
         }
         Returns: string
       }
+      svc_record_refund_look: {
+        Args: { p_event_id: number; p_request_id: string }
+        Returns: boolean
+      }
       svc_record_ticket_pdf: {
         Args: {
           p_actor_id?: string
@@ -4734,7 +5195,22 @@ export type Database = {
         Args: { p_ip_bucket: string; p_provider: string }
         Returns: undefined
       }
+      svc_refund_preview: {
+        Args: {
+          p_booking_id: string
+          p_kind?: Database["public"]["Enums"]["refund_request_kind"]
+        }
+        Returns: Json
+      }
+      svc_refund_requests_to_retry: {
+        Args: { p_limit?: number }
+        Returns: Json
+      }
       svc_release_security_alert: { Args: { p_id: string }; Returns: undefined }
+      svc_reschedule_for_weather: {
+        Args: { p_booking_id: string; p_session_id: string }
+        Returns: Json
+      }
       svc_resend_booking_link: {
         Args: { p_booking_code: string; p_email?: string; p_phone?: string }
         Returns: string
@@ -4745,6 +5221,10 @@ export type Database = {
       }
       svc_run_anomaly_scan: { Args: never; Returns: Json }
       svc_run_chain_check: { Args: never; Returns: Json }
+      svc_settle_lapsed_weather_links: {
+        Args: { p_limit?: number }
+        Returns: Json
+      }
       svc_submit_review: {
         Args: {
           p_body: string
@@ -4754,6 +5234,10 @@ export type Database = {
           p_reviewer_name: string
           p_title: string
         }
+        Returns: string
+      }
+      svc_unused_account_of_invite: {
+        Args: { p_invite_id: string }
         Returns: string
       }
       svc_verify_phone_otp: {
@@ -4888,6 +5372,7 @@ export type Database = {
         | "admin_booking_needs_review"
         | "security_alert"
         | "booking_link"
+        | "weather_disruption"
       otp_purpose: "booking_phone" | "dsr_identity"
       package_category: "regular" | "student" | "institutional" | "combo"
       payment_method: "qris" | "virtual_account" | "manual_transfer" | "cash"
@@ -4919,6 +5404,8 @@ export type Database = {
         | "expired"
         | "superseded"
         | "void"
+      refund_request_kind: "cancellation" | "weather"
+      refund_request_status: "requested" | "submitted" | "failed" | "recorded"
       revenue_beneficiary: "kelurahan" | "rw_treasury" | "umkm_vendor"
       revenue_entry_type: "settlement" | "reversal" | "adjustment"
       revenue_rule_scope:
@@ -5175,6 +5662,7 @@ export const Constants = {
         "admin_booking_needs_review",
         "security_alert",
         "booking_link",
+        "weather_disruption",
       ],
       otp_purpose: ["booking_phone", "dsr_identity"],
       package_category: ["regular", "student", "institutional", "combo"],
@@ -5204,6 +5692,8 @@ export const Constants = {
         "other",
       ],
       quotation_status: ["issued", "accepted", "expired", "superseded", "void"],
+      refund_request_kind: ["cancellation", "weather"],
+      refund_request_status: ["requested", "submitted", "failed", "recorded"],
       revenue_beneficiary: ["kelurahan", "rw_treasury", "umkm_vendor"],
       revenue_entry_type: ["settlement", "reversal", "adjustment"],
       revenue_rule_scope: [

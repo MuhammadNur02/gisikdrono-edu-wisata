@@ -61,8 +61,9 @@ const FORM = {
   validFrom: null,
   validTo: null,
   priceTiers: [],
+  legRwIds: [],
 };
-const COMBO_FORM = { ...FORM, category: 'combo' };
+const COMBO_FORM = { ...FORM, category: 'combo', legRwIds: [5, 8] };
 
 function stored(change: Partial<PackageAdmin> = {}): PackageAdmin {
   return {
@@ -189,20 +190,28 @@ describe('package actions', () => {
   });
 
   // tour_packages_legs_guard, the guard half: a combo goes on sale only once its saved legs visit two RWs.
-  it('keeps a combo without two RWs of saved legs off sale, new or edited, in package words', async () => {
+  it('keeps a combo whose route visits fewer than two RWs off sale, new or edited, on the route field', async () => {
     vi.mocked(requireAal2).mockResolvedValue({ ok: true, ctx: SUPERADMIN });
     const publish = { ...COMBO_FORM, status: 'published' };
-    expect(await createPackageAction(publish)).toMatchObject({
-      error: { code: 'STATE_INVALID', message: packagesCopy.errors.comboNeedsLegs },
+    expect(await createPackageAction({ ...publish, legRwIds: [5] })).toMatchObject({
+      error: {
+        code: 'VALIDATION',
+        fieldErrors: { legRwIds: [packagesCopy.validation.legsTooFew] },
+      },
     });
-    vi.mocked(readPackageForStaff).mockResolvedValue({ ...COMBO, rwIds: [5] });
-    expect(await updatePackageAction({ ...publish, id: PACKAGE_ID })).toMatchObject({
-      error: { code: 'STATE_INVALID' },
+    vi.mocked(readPackageForStaff).mockResolvedValue(COMBO);
+    expect(await updatePackageAction({ ...publish, id: PACKAGE_ID, legRwIds: [5] })).toMatchObject({
+      error: { code: 'VALIDATION' },
     });
     expect(createPackage).not.toHaveBeenCalled();
     expect(updatePackage).not.toHaveBeenCalled();
-    vi.mocked(readPackageForStaff).mockResolvedValue(COMBO);
-    expect(await updatePackageAction({ ...publish, id: PACKAGE_ID })).toMatchObject({ ok: true });
+    expect(
+      await updatePackageAction({ ...publish, id: PACKAGE_ID, legRwIds: [5, 8] }),
+    ).toMatchObject({ ok: true });
+    expect(updatePackage).toHaveBeenCalledWith(
+      SUPERADMIN,
+      expect.objectContaining({ legRwIds: [5, 8] }),
+    );
   });
 
   it("maps the database's publish refusal to the package's own words", async () => {

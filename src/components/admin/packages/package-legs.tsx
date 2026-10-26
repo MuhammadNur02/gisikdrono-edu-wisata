@@ -11,16 +11,13 @@ import {
   RwSelectField,
   type RwOption,
 } from '@/components/admin/packages/package-tiers';
-import { FormAlert } from '@/components/forms/form-alert';
 import { FormField } from '@/components/forms/form-field';
 import { Input } from '@/components/ui/input';
 import { PACKAGE_LIMITS } from '@/config/packages';
-import { rwLabel, type RwId } from '@/config/rw';
 import { packagesCopy } from '@/lib/copy/packages';
 import { rowFieldName } from '@/lib/utils/form-paths';
 
 const text = packagesCopy;
-const legs = text.legs;
 const steps = text.itinerary;
 // `HH:MM`, as the browser's time picker writes it.
 const CLOCK_TIME_LENGTH = 5;
@@ -30,28 +27,6 @@ interface RowProps {
   index: number;
   rwOptions: readonly RwOption[];
   onRemove: () => void;
-}
-
-// A combo's route (docs/PRD.md FR-ADMIN-05) is not edited from this form yet (decision on PR #35): its legs wait for
-// the save_package RPC (Task P4.3.11). The legs saved so far are shown, so the officer knows whether it may go on sale.
-export function ComboRouteNotice({
-  rwIds,
-  rwOptions,
-}: {
-  rwIds: readonly RwId[];
-  rwOptions: readonly RwOption[];
-}) {
-  const names = rwIds.map(
-    (rwId) => rwOptions.find((option) => option.id === rwId)?.name ?? rwLabel(rwId),
-  );
-  return (
-    <FormSection title={text.sections.legs}>
-      <FormAlert tone="info">
-        {legs.deferred} {legs.deferredHint}
-      </FormAlert>
-      {names.length > 0 ? <p className="text-body-sm">{legs.visits(names.join(' → '))}</p> : null}
-    </FormSection>
-  );
 }
 
 function StepTimeField({ control, index }: { control: PackageControl; index: number }) {

@@ -1,8 +1,9 @@
 import { z } from 'zod';
 
 import { OTP_CODE_LENGTH } from '@/config/guest';
+import { DB_ENUMS } from '@/db/enums';
 import { copy } from '@/lib/copy/id';
-import { normalizeBookingCode } from '@/lib/utils/codes';
+import { BOOKING_CODE_PATTERN, normalizeBookingCode } from '@/lib/utils/codes';
 import { normalizePhone } from '@/lib/utils/phone';
 import { captchaTokenField, emailField } from '@/lib/validations/auth';
 import { picPhoneSchema } from '@/lib/validations/booking';
@@ -73,3 +74,31 @@ export const lookupBookingSchema = z
 export type PhoneOtpRequest = z.output<typeof requestPhoneOtpSchema>;
 export type PhoneOtpCheck = z.output<typeof verifyPhoneOtpSchema>;
 export type LookupBookingInput = z.input<typeof lookupBookingSchema>;
+
+// The status hub's manage actions (Task P3.12.02; docs/PRD.md §13.1 A16–A18). The browser sends the booking code and
+// what it chose; the refund, the seats and the state are the database's to decide. A cancellation carries back the
+// refund the hub showed, which the database compares with its own and refuses when they differ (review of PR #69, M3):
+// a figure to confirm, never a price to pay out.
+const bookingCodeField = z.string().regex(BOOKING_CODE_PATTERN);
+const CANCEL_REASON_MAX_LENGTH = 200;
+const FULL_PERCENT = 100;
+
+export const cancelBookingSchema = z
+  .object({
+    bookingCode: bookingCodeField,
+    kind: z.enum(DB_ENUMS.refund_request_kind),
+    reason: z.string().trim().max(CANCEL_REASON_MAX_LENGTH).optional(),
+    refundAmount: z.int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    refundPct: z.int().min(0).max(FULL_PERCENT).nullable(),
+  })
+  .strict();
+
+export const rescheduleBookingSchema = z
+  .object({
+    bookingCode: bookingCodeField,
+    // The new session of the leg the weather stopped; the database finds the leg by the session's RW.
+    sessionId: z.uuid(),
+  })
+  .strict();
+
+export const confirmQuotationSchema = z.object({ bookingCode: bookingCodeField }).strict();

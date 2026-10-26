@@ -6,8 +6,8 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
+import { SaveButton } from '@/components/admin/cms/save-button';
 import { withRowId } from '@/components/admin/cms/schedule-values';
-import { SaveButton } from '@/components/admin/packages/package-form';
 import {
   ProductBasics,
   ProductOrdering,

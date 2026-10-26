@@ -4,7 +4,8 @@ import { CERTIFICATE_DEFAULT_SORT, CERTIFICATE_SORT_COLUMNS } from '@/config/cer
 import type { RwId } from '@/config/rw';
 import { DB_ENUMS, type EnumValue } from '@/db/enums';
 import { issueCertificates, revokeCertificate } from '@/db/rpc-certificates';
-import { AppError, raisedHintOf } from '@/lib/errors';
+import { staffCopy } from '@/lib/copy/staff';
+import { AppError, privilegeHintOf, raisedHintOf } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import {
   allowedValues,
@@ -142,7 +143,13 @@ export async function listCertificateBookings(
 function certificateRefusal(error: unknown): AppError | null {
   const code =
     typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
-  if (code === INSUFFICIENT_PRIVILEGE) return new AppError('FORBIDDEN');
+  // revoke_certificate asks for a fresh authenticator code (review of PR #76, F-76-2).
+  if (code === INSUFFICIENT_PRIVILEGE) {
+    return new AppError(
+      'FORBIDDEN',
+      privilegeHintOf(error) === 'FRESH_TOTP' ? staffCopy.notFresh : undefined,
+    );
+  }
   if (code === NO_DATA_FOUND) return new AppError('NOT_FOUND');
   if (code === INVALID_PARAMETER) return new AppError('VALIDATION');
   if (raisedHintOf(error) === 'STATE_INVALID') return new AppError('STATE_INVALID');

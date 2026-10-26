@@ -83,7 +83,7 @@ export const dashboardCopy = {
       checkInsToday: 'Check-in hari ini',
       checkInsTodayHint: 'Diperbarui tiap 15 detik.',
       productsSold: 'Produk terjual',
-      productsSoldHint: 'Menunggu ringkasan statistik kunjungan.',
+      productsSoldHint: 'Produk tambahan dari kunjungan lunas, bulan ini s.d. hari ini.',
     },
     revenueChart: {
       title: 'Pendapatan 30 hari terakhir',

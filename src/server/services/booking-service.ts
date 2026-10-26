@@ -18,6 +18,14 @@ import {
   type OtpIssue,
 } from '@/db/rpc-guest';
 import type { DatabaseClient } from '@/db/rpc-result';
+import {
+  svcCancelBooking,
+  svcFlagCancellationForSuperadmin,
+  svcIsBookingPhone,
+  svcRescheduleForWeather,
+  type CancellationOutcome,
+  type CancellationRequest,
+} from '@/db/rpc-terms';
 import { AppError, raisedHintOf } from '@/lib/errors';
 import { mintGuestLink } from '@/lib/links/mint';
 import { isCurrentLink, readGuestLink } from '@/lib/links/verify';
@@ -30,6 +38,7 @@ import { refundRateLimits, withinRateLimits, type RateLimitCheck } from '@/lib/r
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 import type { SubmitReviewValues } from '@/lib/validations/review';
+import { statusHubDataOf, type StatusHubData } from '@/server/services/booking-hub-data';
 import {
   bookingLimitsOf,
   bookingToCreate,
@@ -38,6 +47,7 @@ import {
   type BookingOutcome,
   type BookingRequest,
 } from '@/server/services/booking-request';
+import { sessionDaysOf } from '@/server/services/booking-weather-reads';
 
 // The guest side of a booking (Task P3.2, P3.3, P3.4): proving the PIC's phone with a one-time code, making the hold
 // or quotation booking itself, sending a link again from /reservasi/cari, and checking or revoking the links
@@ -176,17 +186,25 @@ export async function submitReview(bookingId: string, review: SubmitReviewValues
 
 const MS_PER_SECOND = 1000;
 
-// docs/Security.md §3.2 (decision of 2026-10-22 on P3.5, Q1): the browser that proved the PIC's contact and made the
-// booking holds its manage link at once, as the WhatsApp number or the proven address receives it.
-async function manageLinkFor(adminClient: DatabaseClient, bookingCode: string): Promise<string> {
+async function linkFor(
+  adminClient: DatabaseClient,
+  bookingCode: string,
+  scope: GuestLinkScope,
+): Promise<string> {
   const booking = await tokenVersionOf(adminClient, bookingCode);
   if (!booking) throw new AppError('NOT_FOUND');
   return mintGuestLink({
     bookingCode,
-    scope: 'manage',
+    scope,
     tokenVersion: booking.token_version,
     nowSeconds: Math.floor(Date.now() / MS_PER_SECOND),
   });
+}
+
+// docs/Security.md §3.2 (decision of 2026-10-22 on P3.5, Q1): the browser that proved the PIC's contact and made the
+// booking holds its manage link at once, as the WhatsApp number or the proven address receives it.
+function manageLinkFor(adminClient: DatabaseClient, bookingCode: string): Promise<string> {
+  return linkFor(adminClient, bookingCode, 'manage');
 }
 
 const CONTACT_UNVERIFIED = 'CONTACT_UNVERIFIED';
@@ -262,4 +280,46 @@ export async function createQuotedBooking(request: BookingRequest): Promise<Book
     await svcIssueFirstQuotation(createSupabaseAdminClient(), outcome.bookingId);
   }
   return outcome;
+}
+
+// ===== The status hub (Task P3.12.01, P3.12.02; docs/PRD.md §13.1 A16–A18) =====
+
+export type { StatusHubData } from '@/server/services/booking-hub-data';
+
+export function loadStatusHub(guest: GuestAccess): Promise<StatusHubData> {
+  const adminClient = createSupabaseAdminClient();
+  return statusHubDataOf(adminClient, guest, () => linkFor(adminClient, guest.bookingCode, 'pay'));
+}
+
+// docs/PRD.md §9.2: the manage link cancels; the database decides what the state allows and what comes back, and
+// refuses (PRICE_MISMATCH) when the refund the visitor confirmed is no longer the one it gives.
+export function cancelGuestBooking(
+  bookingId: string,
+  cancellation: Omit<CancellationRequest, 'bookingId'>,
+): Promise<CancellationOutcome> {
+  return svcCancelBooking(createSupabaseAdminClient(), { bookingId, ...cancellation });
+}
+
+export function bookingSessionDays(
+  bookingId: string,
+): Promise<{ rwId: number; sessionDate: string }[]> {
+  return sessionDaysOf(createSupabaseAdminClient(), bookingId);
+}
+
+// Delta review of PR #69, D-6: the cancellation the visitor asked for is the superadmin's to finish.
+export function flagCancellationForSuperadmin(bookingId: string): Promise<void> {
+  return svcFlagCancellationForSuperadmin(createSupabaseAdminClient(), bookingId);
+}
+
+export function rescheduleGuestBooking(
+  bookingId: string,
+  sessionId: string,
+): Promise<{ visitDate: string; moves: number; movesLeft: number }> {
+  return svcRescheduleForWeather(createSupabaseAdminClient(), { bookingId, sessionId });
+}
+
+// "Konfirmasi & Bayar" of a quotation (docs/PRD.md §9.2 quoted → pending_payment): the number the visitor just proved
+// with a code must be the booking's own; the number travels in the RPC body, never a query string (PR #69, L-7).
+export function isBookingPhone(bookingId: string, phone: string): Promise<boolean> {
+  return svcIsBookingPhone(createSupabaseAdminClient(), { bookingId, phone });
 }

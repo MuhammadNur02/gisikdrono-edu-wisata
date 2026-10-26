@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildWhatsAppChatUrl,
+  buildWhatsAppShareUrl,
   hasStickyMobileCta,
   isWhatsAppFabHidden,
   pageTopicFromTitle,
@@ -52,5 +53,13 @@ describe('hasStickyMobileCta', () => {
     expect(hasStickyMobileCta('/paket-wisata/eduwisata-ecowastreme')).toBe(true);
     expect(hasStickyMobileCta('/paket-wisata')).toBe(false);
     expect(hasStickyMobileCta('/produk/pupuk-kompos-1kg')).toBe(false);
+  });
+});
+
+describe('buildWhatsAppShareUrl', () => {
+  it('opens the contact picker with the message', () => {
+    expect(buildWhatsAppShareUrl('Bayar: https://x.test/a?t=1')).toBe(
+      'https://wa.me/?text=Bayar%3A%20https%3A%2F%2Fx.test%2Fa%3Ft%3D1',
+    );
   });
 });

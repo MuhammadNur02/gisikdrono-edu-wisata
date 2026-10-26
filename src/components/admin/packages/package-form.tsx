@@ -1,11 +1,13 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
 
+import { SaveButton } from '@/components/admin/cms/save-button';
 import { withRowId } from '@/components/admin/cms/schedule-values';
 import {
   BasicsFields,
@@ -13,18 +15,16 @@ import {
   VisitFields,
   type PackageControl,
 } from '@/components/admin/packages/package-fields';
-import { ComboRouteNotice, ItinerarySection } from '@/components/admin/packages/package-legs';
+import { ItinerarySection } from '@/components/admin/packages/package-legs';
 import { PhotosSection } from '@/components/admin/packages/package-photos';
 import { PricingSection, type RwOption } from '@/components/admin/packages/package-tiers';
 import { FormAlert } from '@/components/forms/form-alert';
 import { PostForm } from '@/components/forms/post-form';
-import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { PACKAGE_PATHS } from '@/config/packages';
 import type { RwId } from '@/config/rw';
 import type { EnumValue } from '@/db/enums';
 import { useActionForm } from '@/hooks/use-action-form';
-import { copy } from '@/lib/copy/id';
 import { packagesCopy } from '@/lib/copy/packages';
 import { comboMayPublish } from '@/lib/utils/package-tiers';
 import { createPackageSchema, type PackageInput } from '@/lib/validations/package';
@@ -54,16 +54,22 @@ const FIELDS = [
   'validFrom',
   'validTo',
   'priceTiers',
+  'legRwIds',
 ] as const;
+
+// The legs editor loads in the browser and only for a combo, outside the package pages' first load (admin budget):
+// a chunk rendered on the server counts toward that load, one loaded after hydration does not.
+const ComboLegsEditor = dynamic(
+  () => import('@/components/admin/packages/combo-legs').then((module) => module.ComboLegsEditor),
+  { ssr: false },
+);
 
 type PackageAction = (values: unknown) => Promise<ActionResult<PackageAdmin>>;
 
-// The row a saved package is: its owner's folder and its id for its photos, and the RWs its saved legs visit. None
-// before the first save.
+// The row a saved package is: its owner's folder and its id for its photos. None before the first save.
 export interface StoredPackage {
   id: string;
   owner: RwId | null;
-  rwIds: readonly RwId[];
 }
 
 export interface PackageFormProps {
@@ -77,20 +83,20 @@ export interface PackageFormProps {
   readOnly: boolean;
 }
 
-// A combo's route is not edited here yet (Task P4.3.11); it goes on sale once its saved legs visit two RWs.
+// A combo's route (Task P4.3.05, P4.3.11); it goes on sale once it visits two RWs.
 function ComboRoute({
   control,
-  stored,
   rwOptions,
-}: Pick<PackageFormProps, 'stored' | 'rwOptions'> & { control: PackageControl }) {
+}: Pick<PackageFormProps, 'rwOptions'> & { control: PackageControl }) {
   const category = useWatch({ control, name: 'category' });
   if (category !== 'combo') return null;
-  return <ComboRouteNotice rwIds={stored?.rwIds ?? []} rwOptions={rwOptions} />;
+  return <ComboLegsEditor control={control} rwOptions={rwOptions} />;
 }
 
-function useCanPublish(control: PackageControl, stored: StoredPackage | null): boolean {
+function useCanPublish(control: PackageControl): boolean {
   const category = useWatch({ control, name: 'category' });
-  return category !== 'combo' || comboMayPublish(stored?.rwIds ?? []);
+  const legRwIds = useWatch({ control, name: 'legRwIds' });
+  return category !== 'combo' || comboMayPublish(legRwIds);
 }
 
 function PackageSections({
@@ -100,11 +106,11 @@ function PackageSections({
   rwOptions,
 }: Pick<PackageFormProps, 'stored' | 'categories' | 'rwOptions'> & { control: PackageControl }) {
   const name = useWatch({ control, name: 'name' });
-  const canPublish = useCanPublish(control, stored);
+  const canPublish = useCanPublish(control);
   return (
     <>
       <BasicsFields control={control} categories={categories} />
-      <ComboRoute control={control} stored={stored} rwOptions={rwOptions} />
+      <ComboRoute control={control} rwOptions={rwOptions} />
       <VisitFields control={control} />
       <PricingSection control={control} />
       <ItinerarySection control={control} rwOptions={rwOptions} />
@@ -134,14 +140,6 @@ function useSavedNavigation(stored: StoredPackage | null) {
     toast.success(text.saved);
     router.refresh();
   };
-}
-
-export function SaveButton({ isSubmitting }: { isSubmitting: boolean }) {
-  return (
-    <Button type="submit" loading={isSubmitting} className="w-full sm:w-auto">
-      {copy.cms.common.save}
-    </Button>
-  );
 }
 
 // Task P4.3.05, docs/PRD.md FR-ADMIN-05: a package on its own page, section by section. Prices are integer rupiah

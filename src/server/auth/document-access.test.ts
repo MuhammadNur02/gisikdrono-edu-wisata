@@ -106,6 +106,31 @@ describe('requireDocumentReader', () => {
   });
 });
 
+describe('requireDocumentReader for an RW admin', () => {
+  it('gives the restricted reader only where the route allows it and RLS shows the row', async () => {
+    vi.mocked(requireUser).mockResolvedValue(STAFF);
+    serverClientSeeing({ id: ROW_ID });
+    await expect(
+      requireDocumentReader('quotations', ROW_ID, CODE, { allowsRestricted: true }),
+    ).resolves.toEqual({ ok: true, reader: 'restricted', userId: STAFF.ctx.userId });
+    await expect(requireDocumentReader('v_bookings_staff', ROW_ID, CODE)).resolves.toEqual(
+      NOT_FOUND,
+    );
+    serverClientSeeing(null);
+    await expect(
+      requireDocumentReader('invoices', ROW_ID, CODE, { allowsRestricted: true }),
+    ).resolves.toEqual(NOT_FOUND);
+  });
+
+  it('never gives it to an RW admin at AAL1', async () => {
+    vi.mocked(requireUser).mockResolvedValue({ ...STAFF, ctx: { ...STAFF.ctx, isAal2: false } });
+    serverClientSeeing({ id: ROW_ID });
+    await expect(
+      requireDocumentReader('quotations', ROW_ID, CODE, { allowsRestricted: true }),
+    ).resolves.toEqual(NOT_FOUND);
+  });
+});
+
 describe('requireCertificateReader', () => {
   const BOOKING_ID = '0192f3a4-5b6c-7d8e-9f01-0000000000bb';
 

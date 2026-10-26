@@ -2,14 +2,14 @@
 
 import { useCallback, useReducer, useRef, useState } from 'react';
 
-import { DUPLICATE_PAYLOAD_WINDOW_MS, VIBRATION_PATTERNS } from '@/config/scanner';
+import { DUPLICATE_PAYLOAD_WINDOW_MS } from '@/config/scanner';
+import { useScanFeedback } from '@/hooks/use-scan-feedback';
 import { isRepeatedPayload, ticketTokenOf } from '@/lib/scanner/payload';
 import {
   IDLE,
   commitOf,
   requestOf,
   scanReducer,
-  toneOf,
   withRecentScan,
   type RecentScan,
   type ScanAttempt,
@@ -25,28 +25,27 @@ import type { VerifyOutcome } from '@/types/scanner';
 
 export type PayloadVerdict = 'sent' | 'not_a_ticket' | 'repeated' | 'busy';
 
-function vibrate(outcome: VerifyOutcome): void {
-  if (outcome.kind !== 'answered' || typeof navigator.vibrate !== 'function') return;
-  navigator.vibrate(VIBRATION_PATTERNS[toneOf(outcome.response.result)]);
-}
-
 function previewOf(source: ScanSource): ScanAttempt {
   return { source, attemptId: crypto.randomUUID(), mode: 'preview' };
 }
 
-// Sends an attempt and records how it ended: the reducer's stage, the recent list and the vibration.
-function useAttemptRunner() {
+// Sends an attempt and records how it ended: the reducer's stage and the recent list, then the vibration and the
+// beep, which are queued after the result so they never hold it up (Task P4.4.04).
+function useAttemptRunner(signal: (outcome: VerifyOutcome) => void) {
   const [state, dispatch] = useReducer(scanReducer, IDLE);
   const [recent, setRecent] = useState<RecentScan[]>([]);
-  const run = useCallback(async (attempt: ScanAttempt) => {
-    dispatch({ type: 'sent', attempt });
-    const outcome = await sendScan(requestOf(attempt));
-    if (outcome.kind === 'answered') {
-      setRecent((scans) => withRecentScan(scans, outcome.response, new Date().toISOString()));
-    }
-    vibrate(outcome);
-    dispatch({ type: 'finished', attempt, outcome });
-  }, []);
+  const run = useCallback(
+    async (attempt: ScanAttempt) => {
+      dispatch({ type: 'sent', attempt });
+      const outcome = await sendScan(requestOf(attempt));
+      if (outcome.kind === 'answered') {
+        setRecent((scans) => withRecentScan(scans, outcome.response, new Date().toISOString()));
+      }
+      dispatch({ type: 'finished', attempt, outcome });
+      signal(outcome);
+    },
+    [signal],
+  );
   return { state, dispatch, recent, run };
 }
 
@@ -72,29 +71,36 @@ function usePayloadGate(run: (attempt: ScanAttempt) => Promise<void>, stage: Sca
 }
 
 export function useScanner() {
-  const { state, dispatch, recent, run } = useAttemptRunner();
+  const { signal, isSoundOn, toggleSound, prime, isReducedMotion } = useScanFeedback();
+  const { state, dispatch, recent, run } = useAttemptRunner(signal);
   const submitPayload = usePayloadGate(run, state.stage);
   const submitManual = useCallback(
     (bookingCode: string, phoneLastDigits: string) => {
+      prime();
       void run(previewOf({ kind: 'manual', bookingCode, phoneLastDigits }));
     },
-    [run],
+    [run, prime],
   );
   const confirm = useCallback(
     (attendeeCount: number, overrideReason?: string) => {
-      if (state.stage === 'result')
-        void run(commitOf(state.attempt, attendeeCount, overrideReason));
+      if (state.stage !== 'result') return;
+      prime();
+      void run(commitOf(state.attempt, attendeeCount, overrideReason));
     },
-    [run, state],
+    [run, state, prime],
   );
   const retry = useCallback(() => {
-    if (state.stage === 'problem') void run(state.attempt);
-  }, [run, state]);
+    if (state.stage !== 'problem') return;
+    prime();
+    void run(state.attempt);
+  }, [run, state, prime]);
   const close = useCallback(() => {
     dispatch({ type: 'closed' });
   }, [dispatch]);
   const isBusy = state.stage === 'checking';
-  return { state, recent, isBusy, submitPayload, submitManual, confirm, retry, close };
+  // prime wakes the beep inside a tap the hook does not see (the camera's Scan, a photo chosen).
+  const sound = { isOn: isSoundOn, toggle: toggleSound, prime, isSilenced: isReducedMotion };
+  return { state, recent, isBusy, sound, submitPayload, submitManual, confirm, retry, close };
 }
 
 export type ScannerController = ReturnType<typeof useScanner>;

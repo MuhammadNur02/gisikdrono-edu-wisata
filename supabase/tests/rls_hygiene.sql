@@ -100,7 +100,8 @@ select is(
 );
 
 -- Withheld columns (decisions of 2026-10-16 and the review of 0005): contacts, bank and treasury accounts, pay
--- links, the stored Midtrans reply and event payloads, the whole-booking amounts of payments, invoices and
+-- links, the stored Midtrans reply and event payloads, a booking event's payload (20261103130600: it may carry a
+-- refund's or a write-off's amount), the whole-booking amounts of payments, invoices and
 -- quotations, a booking's add-on subtotal and discount, add-on notes, scanned payloads and the officer's IP and
 -- device, a reviewer's full name, participant names and verify codes on certificates and outbox recipients are
 -- granted to no API role.
@@ -117,7 +118,7 @@ select is(
       ('ticket_scans', 'raw_payload'), ('ticket_scans', 'ip'), ('ticket_scans', 'device_info'),
       ('reviews', 'reviewer_name'),
       ('bookings', 'subtotal_addons'), ('bookings', 'discount_amount'), ('bookings', 'discount_note'),
-      ('booking_addons', 'notes'),
+      ('booking_addons', 'notes'), ('booking_events', 'payload'),
       ('certificates', 'recipient_name'), ('certificates', 'verify_code'),
       ('notifications', 'recipient'), ('notifications', 'recipient_name'), ('notifications', 'params'),
       ('notifications', 'last_error')

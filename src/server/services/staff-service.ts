@@ -3,6 +3,8 @@ import 'server-only';
 import type { User } from '@supabase/supabase-js';
 
 import { AUTH_USERS_PAGE_SIZE, STAFF_BAN_DURATION, STAFF_UNBAN_DURATION } from '@/config/staff';
+import { acceptStaffInvite, claimStaffInvite, unusedAccountOfInvite } from '@/db/rpc-onboarding';
+import type { OnboardingSession } from '@/db/rpc-onboarding';
 import { createLogger } from '@/lib/logger';
 import { withinRateLimits } from '@/lib/rate-limit';
 // The service role is needed for four things the session cannot do: the limiter is an internal function no API role
@@ -17,6 +19,9 @@ import { withinRateLimits } from '@/lib/rate-limit';
 // booleans and times keyed by the profile ids the superadmin already read under RLS; and the ban of
 // docs/Security.md §5.6 step 2 is the Auth admin API's, called only after set_staff_status has accepted the
 // superadmin's fresh TOTP and the change for that same id.
+// /onboarding (Task P4.8.01) adds the invite's own steps: the invite email is the Auth admin API's; the claim and the
+// acceptance are svc_ functions keyed by the user and session ids of the verified JWT; and after a revoke the Auth
+// user that never became staff is deleted through the Auth admin API, by the id svc_unused_account_of_invite names.
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 import { normalizeEmail } from '@/lib/validations/normalize';
@@ -169,6 +174,58 @@ export async function setStaffAuthBan(
   createLogger(requestId).error('internal_error', {
     source: 'staff_ban',
     userId,
+    authErrorCode: error.code ?? null,
+  });
+  return false;
+}
+
+// docs/Security.md §5.1 (Task P4.8.01): the email of supabase/templates/invite.html, sent when the invite exists. Its
+// link opens a session for the mailbox only; nothing happens there without the code the superadmin read out. False
+// when Supabase Auth refused or failed, which the superadmin is told, logged by the invite's id only.
+export async function sendStaffInviteEmail(
+  email: string,
+  inviteId: string,
+  requestId: string,
+): Promise<boolean> {
+  const { error } = await createSupabaseAdminClient().auth.admin.inviteUserByEmail(email);
+  if (!error) return true;
+  createLogger(requestId).error('internal_error', {
+    source: 'staff_invite_email',
+    inviteId,
+    authErrorCode: error.code ?? null,
+  });
+  return false;
+}
+
+export function claimInviteForSession(
+  session: OnboardingSession,
+  inviteCodeHash: string,
+): Promise<boolean> {
+  return claimStaffInvite(createSupabaseAdminClient(), session, inviteCodeHash);
+}
+
+export function acceptInviteForSession(
+  session: OnboardingSession,
+  inviteCodeHash: string,
+): Promise<boolean> {
+  return acceptStaffInvite(createSupabaseAdminClient(), session, inviteCodeHash);
+}
+
+// docs/Security.md §5.1, (4) of the onboarding review: a revoked invite takes its Auth user with it, which
+// release_unused_profile (20261104140000, reading internal.is_never_staff) follows with the profile. False when
+// Supabase Auth failed; the nightly purge/retention run deletes the account then.
+export async function releaseRevokedInviteAccount(
+  inviteId: string,
+  requestId: string,
+): Promise<boolean> {
+  const adminClient = createSupabaseAdminClient();
+  const accountId = await unusedAccountOfInvite(adminClient, inviteId);
+  if (accountId === null) return true;
+  const { error } = await adminClient.auth.admin.deleteUser(accountId);
+  if (!error) return true;
+  createLogger(requestId).error('internal_error', {
+    source: 'staff_invite_release',
+    inviteId,
     authErrorCode: error.code ?? null,
   });
   return false;

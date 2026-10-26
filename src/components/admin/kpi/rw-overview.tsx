@@ -72,7 +72,13 @@ function KpiGrid({ overview, readCheckIns }: RwOverviewProps) {
       <KpiCard
         label={text.rw.productsSold}
         icon={ShoppingBag}
-        value={<KpiUnavailable />}
+        value={
+          overview.productsSold === null ? (
+            <KpiUnavailable />
+          ) : (
+            <CountUp value={overview.productsSold} onMount />
+          )
+        }
         hint={text.rw.productsSoldHint}
       />
     </section>

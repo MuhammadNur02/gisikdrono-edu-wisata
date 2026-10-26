@@ -37,6 +37,9 @@ export const RATE_LIMITS = {
   // Task P4.5.03 (review of PR #71, L3): "Render ulang PDF" renders a whole class at once, so each staff member may run
   // it five times an hour.
   'certificate_rerender:user': { limit: 5, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  // Task P4.3.02 (decision of 2026-10-26): an RW admin's header-only copy of a booking document, per staff member, on
+  // top of document:ip and document:booking.
+  'document_restricted:user': { limit: 30, windowSeconds: 600, whenUnavailable: 'fail-closed' },
   // Task P3.6.05: the public verify page, per visitor IP.
   'verify:code': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   // Task P3.6.06: "Minta Surat Penawaran", per visitor IP, on top of the booking limits.
@@ -71,6 +74,11 @@ export const RATE_LIMITS = {
   // Every guest page and action checks its link; the status page refreshing every 5 s stays well inside this.
   'link_verify:ip': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   'link_revoke:booking': { limit: 5, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  // The status hub's manage actions (Task P3.12.02): a cancellation, a weather move and a quotation's confirmation each
+  // run once or twice in a booking's life; these stop a script repeating them against one booking.
+  'booking_cancel:booking': { limit: 5, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  'booking_reschedule:booking': { limit: 10, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  'quotation_confirm:booking': { limit: 10, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
   // Task P4.11.02 (docs/Security.md RL-04): reviews sent from one IP a day, counted before Turnstile. A booking takes one
   // review only; this stops one IP filling the moderation queue through many links.
   'review:submit': { limit: 3, windowSeconds: 86400, whenUnavailable: 'fail-closed' },

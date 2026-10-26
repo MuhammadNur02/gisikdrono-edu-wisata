@@ -10,7 +10,16 @@ vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => ({}) }
 vi.mock('@/db/rpc', () => ({ svcRecordJobRun: vi.fn() }));
 vi.mock('@/server/services/payment-poll', () => ({ pollPayments: vi.fn() }));
 
-const REPORT = { asked: 2, applied: 1, failed: 0, suspended: 0, reminded: 1 };
+const REPORT = {
+  asked: 2,
+  applied: 1,
+  failed: 0,
+  suspended: 0,
+  reminded: 1,
+  refundsRetried: 0,
+  weatherRefunded: 0,
+  weatherHeld: 0,
+};
 
 function post(authorization?: string): Promise<Response> {
   const headers = authorization ? { authorization } : undefined;

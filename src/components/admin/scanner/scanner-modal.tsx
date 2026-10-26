@@ -75,7 +75,14 @@ function PhotoPicker({
   );
 }
 
-function PhotoTab({ submit }: { submit: (raw: string) => PayloadVerdict }) {
+function PhotoTab({
+  submit,
+  onPicked,
+}: {
+  submit: (raw: string) => PayloadVerdict;
+  // Runs inside the officer's choice of a photo, where the beep may be woken (review of PR #79, L-8).
+  onPicked: () => void;
+}) {
   const [problem, setProblem] = useState<PhotoProblem>(() =>
     nativeDetector() === null ? 'unsupported' : null,
   );
@@ -83,6 +90,7 @@ function PhotoTab({ submit }: { submit: (raw: string) => PayloadVerdict }) {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
+    onPicked();
     const raw = await readPhoto(file).catch(() => null);
     if (raw === null) {
       setProblem('unreadable');
@@ -134,7 +142,7 @@ export function ScannerModal({ canOverride, onClose }: ScannerModalProps) {
         </Button>
         {scanner.state.stage === 'idle' ? (
           <ScanTabs
-            camera={<PhotoTab submit={scanner.submitPayload} />}
+            camera={<PhotoTab submit={scanner.submitPayload} onPicked={scanner.sound.prime} />}
             manual={<ManualCheckInForm isBusy={scanner.isBusy} onSubmit={scanner.submitManual} />}
           />
         ) : (

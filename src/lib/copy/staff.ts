@@ -14,7 +14,7 @@ export const staffCopy = {
     rwNotAllowed: 'Superadmin Kelurahan tidak terikat pada satu RW.',
   },
   facets: { status: 'Status', rw: 'RW' },
-  statuses: { active: 'Aktif', inactive: 'Nonaktif' },
+  statuses: { active: 'Aktif', inactive: 'Nonaktif', awaitingOnboarding: 'Menunggu orientasi' },
   roles: { superadmin: 'Superadmin Kelurahan', admin_rw: 'Admin RW', none: 'Belum ada peran' },
   columns: {
     name: 'Nama',
@@ -35,6 +35,7 @@ export const staffCopy = {
     reactivate: 'Aktifkan lagi',
     cancelPromotion: 'Batalkan jadi superadmin',
     auditTrail: 'Lihat catatan aktivitas',
+    revokeInvite: 'Cabut undangan',
   },
   stepUp: {
     hint: 'Tulis kode yang sedang tampil di aplikasi autentikator Anda untuk mengonfirmasi.',
@@ -99,8 +100,9 @@ export const staffCopy = {
     superadminWait: (after: string) =>
       `Undangan superadmin baru bisa diterima setelah ${after}. Kepala kelurahan sudah diberi tahu.`,
     done: 'Selesai',
-    onboardingPending:
-      'Halaman pendaftaran petugas (onboarding) belum tersedia, jadi undangan ini belum bisa dipakai. Email undangan juga belum dikirim.',
+    emailSent:
+      'Email undangan sudah dikirim. Tautannya berlaku 10 menit; petugas membukanya, lalu menulis kode di atas.',
+    emailFailed: 'Email undangan gagal dikirim. Cabut undangan ini, lalu buat undangan baru.',
   },
   invites: {
     title: 'Undangan terbuka',

@@ -12,7 +12,13 @@ import { DB_ENUMS } from '@/db/enums';
 import { productsCopy } from '@/lib/copy/products';
 import { contentStatusFacet, listFacets, rwFacet } from '@/lib/utils/facets';
 import { loadListQuery } from '@/lib/utils/list-query';
+import {
+  loadBankAccountAction,
+  revealBankAccountAction,
+  setBankAccountAction,
+} from '@/server/actions/bank-accounts';
 import { archiveProductAction } from '@/server/actions/products';
+import { verifyStaffTotpAction } from '@/server/actions/staff-totp';
 import { createVendorAction, updateVendorAction } from '@/server/actions/vendors';
 import { effectiveRw, ownerOfNewContent, readRwScope } from '@/server/auth/content-owner';
 import { requireDashboardStaff } from '@/server/auth/session';
@@ -28,7 +34,16 @@ export const metadata: Metadata = { title: text.title };
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-const VENDOR_ACTIONS = { create: createVendorAction, update: updateVendorAction };
+const VENDOR_ACTIONS = {
+  create: createVendorAction,
+  update: updateVendorAction,
+  bank: {
+    load: loadBankAccountAction,
+    reveal: revealBankAccountAction,
+    save: setBankAccountAction,
+    stepUp: verifyStaffTotpAction,
+  },
+};
 
 const CATEGORY_FACET: ListFacet = {
   param: 'category',

@@ -61,11 +61,8 @@ export default async function UsersPage({ searchParams }: { searchParams: Search
   if (!ctx) return null;
   if (ctx.role !== 'superadmin') return <SuperadminOnly />;
   const query = await loadListQuery(searchParams);
-  const [list, invites, rwUnits] = await Promise.all([
-    listStaffMembers(ctx, query),
-    listOpenInvites(),
-    listRwUnitsForStaff(),
-  ]);
+  const [invites, rwUnits] = await Promise.all([listOpenInvites(), listRwUnitsForStaff()]);
+  const list = await listStaffMembers(ctx, query, invites);
   const rwOptions = rwUnits.map((unit) => ({ id: unit.id, name: unit.name }));
   const inviteButton = (
     <InviteButton

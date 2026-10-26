@@ -21,6 +21,7 @@ import {
   type DateRange,
 } from '@/lib/utils/kpi';
 import { collectAllRows, rowPageOf } from '@/lib/utils/paged-rows';
+import { readProductsSoldThisMonth } from '@/server/services/visit-stats-service';
 import type {
   MonthlyFigure,
   OpenSecurityAlerts,
@@ -34,8 +35,8 @@ import type {
 // policies decide every row (DATA-04); no service role. Money comes from the ledger view only (REC-07). Plain counts
 // are head requests; a figure summed from rows reads every page against the exact count (collectAllRows, since
 // PostgREST stops at max_rows). A figure that cannot be complete, has no count or fails to load is null and shows as
-// "Belum tersedia"; the other figures still show (re-review of PR #45). The security definer aggregates of P4.2.01
-// will sum in Postgres instead, and serve figures beyond an RW admin's windows (products sold).
+// "Belum tersedia"; the other figures still show (re-review of PR #45). Products sold comes from P4.2.01's visit_stats
+// (visit-stats-service.ts), which sums in Postgres beyond an RW admin's windows.
 
 type ServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
 
@@ -273,11 +274,12 @@ export async function loadRwOverview(rw: RwId, now: Date = new Date()): Promise<
   const supabase = await createSupabaseServerClient();
   const today = todayInJakarta(now);
   const days = lastDays(CHART_DAYS, now);
-  const [sessions, upcoming, checkInsToday, checkIns] = await Promise.allSettled([
+  const [sessions, upcoming, checkInsToday, checkIns, productsSold] = await Promise.allSettled([
     listTodaySessions(supabase, rw, today),
     countUpcomingBookings(supabase, rw, today),
     countCheckInsToday(rw),
     readCheckIns(supabase, rw, days[0] ?? today),
+    readProductsSoldThisMonth(rw, now),
   ]);
   const todaySessions = figureOf(sessions, 'today_sessions');
   const checkInRows = figureOf(checkIns, 'check_ins');
@@ -287,5 +289,6 @@ export async function loadRwOverview(rw: RwId, now: Date = new Date()): Promise<
     checkInsToday: figureOf(checkInsToday, 'check_ins_today'),
     checkIns: checkInRows === null ? null : fillDailySeries(days, checkInRows),
     todaySessions,
+    productsSold: figureOf(productsSold, 'products_sold'),
   };
 }

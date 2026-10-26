@@ -85,11 +85,15 @@ select columns_are('public', 'profiles', array[
   -- added by 20261029080200: set by a completed MFA reset, cleared by the re-enrolment code
   'reenrolment_required',
   -- added by 20261029080400: the ten minutes the used code opens for the new authenticator
-  'reenrolment_window_until'
+  'reenrolment_window_until',
+  -- added by 20261103131500: when the profile first held a role (onboarding finished)
+  'became_staff_at'
 ]);
 select columns_are('public', 'staff_invites', array[
   'id', 'email', 'role', 'rw_id', 'invite_code_hash', 'expires_at', 'accepted_at',
-  'accepted_user_id', 'revoked_at', 'created_by', 'created_at'
+  'accepted_user_id', 'revoked_at', 'created_by', 'created_at',
+  -- 20261103131000: the onboarding claim.
+  'claimed_user_id', 'claimed_session_id', 'claimed_at'
 ]);
 select columns_are('public', 'site_settings', array[
   'key', 'value', 'is_public', 'description', 'updated_by', 'updated_at'
@@ -157,8 +161,8 @@ select lives_ok(
   'an admin_rw profile with RW 05 is accepted'
 );
 select throws_ok(
-  $$insert into public.profiles (id, email, full_name)
-    values ('00000000-0000-4000-8000-000000000003', 'SuperAdmin@Example.test', 'Copy')$$,
+  $$insert into public.profiles (id, email, full_name, is_active)
+    values ('00000000-0000-4000-8000-000000000003', 'SuperAdmin@Example.test', 'Copy', false)$$,
   '23505', null, 'profile emails are unique regardless of case (citext)'
 );
 
@@ -1245,8 +1249,8 @@ select throws_ok(
 
 select tables_are(
   'public',
-  array['rw_units', 'profiles', 'staff_invites', 'site_settings', 'session_templates', 'visit_sessions', 'tour_packages', 'tour_package_legs', 'tour_package_price_tiers', 'umkm_vendors', 'products_umkm', 'package_price_history', 'bookings', 'booking_legs', 'booking_addons', 'booking_participants', 'booking_events', 'guest_otps', 'payments', 'payment_events', 'webhook_rejections', 'payment_adjustments', 'reconciliation_runs', 'reconciliation_issues', 'quotations', 'invoices', 'document_sequences', 'certificates', 'tickets_qr', 'ticket_scans', 'galleries', 'articles', 'booklets', 'hero_banners', 'activity_points', 'performance_schedules', 'reviews', 'revenue_share_rules', 'revenue_share_rule_lines', 'revenue_share_entries', 'payout_batches', 'notifications', 'security_events', 'security_alerts', 'exports', 'dsr_requests', 'audit_logs', 'login_attempts', 'rate_limit_buckets', 'job_heartbeats', 'booklet_page_claims'],
-  'public holds exactly the 51 tables of the CLAUDE.md A.1 registry, job_heartbeats of 0007 and booklet_page_claims of 20261019080000 included'
+  array['rw_units', 'profiles', 'staff_invites', 'site_settings', 'session_templates', 'visit_sessions', 'tour_packages', 'tour_package_legs', 'tour_package_price_tiers', 'umkm_vendors', 'products_umkm', 'package_price_history', 'bookings', 'booking_legs', 'booking_addons', 'booking_participants', 'booking_events', 'guest_otps', 'payments', 'payment_events', 'webhook_rejections', 'payment_adjustments', 'reconciliation_runs', 'reconciliation_issues', 'quotations', 'invoices', 'document_sequences', 'certificates', 'tickets_qr', 'ticket_scans', 'galleries', 'articles', 'booklets', 'hero_banners', 'activity_points', 'performance_schedules', 'reviews', 'revenue_share_rules', 'revenue_share_rule_lines', 'revenue_share_entries', 'payout_batches', 'notifications', 'security_events', 'security_alerts', 'exports', 'dsr_requests', 'audit_logs', 'login_attempts', 'rate_limit_buckets', 'job_heartbeats', 'booklet_page_claims', 'weather_notices', 'weather_notice_bookings', 'refund_requests'],
+  'public holds exactly the 54 tables of the CLAUDE.md A.1 registry, job_heartbeats of 0007, booklet_page_claims of 20261019080000 and the visit terms'' weather_notices, weather_notice_bookings and refund_requests of 20261104080100 included'
 );
 
 -- docs/PRD.md §8.1: money and operational rows are never deleted through a parent. Only these
@@ -1262,10 +1266,10 @@ select is(
   array[
     'certificates.participant_id:n', 'dsr_requests.otp_id:n', 'galleries.booking_id:n',
     'hero_banners.product_id:n', 'package_price_history.tier_id:n', 'performance_schedules.package_id:n',
-    'revenue_share_rule_lines.rule_id:c', 'revenue_share_rules.package_id:c', 'revenue_share_rules.product_id:c',
+    'refund_requests.last_checked_event_id:n', 'revenue_share_rule_lines.rule_id:c', 'revenue_share_rules.package_id:c', 'revenue_share_rules.product_id:c',
     'tour_package_legs.package_id:c', 'tour_package_price_tiers.package_id:c', 'visit_sessions.template_id:n'
   ],
-  'only the PRD catalogue, rule and media links cascade or set null; every other reference refuses deletes'
+  'only the PRD catalogue, rule and media links and a refund request''s last look (pruned with its event) cascade or set null; every other reference refuses deletes'
 );
 
 select * from finish();

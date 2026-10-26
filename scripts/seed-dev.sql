@@ -46,13 +46,6 @@ select u.id::text, u.id, jsonb_build_object('sub', u.id::text, 'email', u.email,
 from auth.users u where u.email like '%@dev.gisikdrono.test'
 on conflict do nothing;
 
-insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at, secret)
-select gen_random_uuid(), u.id, 'DEV-ONLY authenticator', 'totp', 'verified', now(), now(),
-       current_setting('dev_seed.totp_secret')
-from auth.users u
-where u.email like '%@dev.gisikdrono.test'
-  and not exists (select 1 from auth.mfa_factors f where f.user_id = u.id and f.factor_type = 'totp');
-
 -- The system path may give a new profile its role (profiles_guard); claims_version starts at 1.
 insert into public.profiles (id, email, full_name, role, rw_id, claims_version) values
   ('0de00000-0000-4000-8000-000000000001', 'superadmin@dev.gisikdrono.test', 'Superadmin Dev', 'superadmin', null, 1),
@@ -60,6 +53,15 @@ insert into public.profiles (id, email, full_name, role, rw_id, claims_version) 
   ('0de00000-0000-4000-8000-000000000013', 'admin-rw13@dev.gisikdrono.test', 'Admin RW 13 Dev', 'admin_rw', 13, 1),
   ('0de00000-0000-4000-8000-000000000008', 'admin-rw08@dev.gisikdrono.test', 'Admin RW 08 Dev', 'admin_rw', 8, 1)
 on conflict (id) do nothing;
+
+-- After the profiles: a factor of an account without a role is verified only under a claimed invite
+-- (mfa_factor_verification_guard, 20261103131000), and these accounts have their roles by now.
+insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at, secret)
+select gen_random_uuid(), u.id, 'DEV-ONLY authenticator', 'totp', 'verified', now(), now(),
+       current_setting('dev_seed.totp_secret')
+from auth.users u
+where u.email like '%@dev.gisikdrono.test'
+  and not exists (select 1 from auth.mfa_factors f where f.user_id = u.id and f.factor_type = 'totp');
 
 
 -- ===== Old local layout (local only) =====

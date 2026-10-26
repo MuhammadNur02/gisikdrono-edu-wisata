@@ -39,6 +39,11 @@ const privateRoutes = [...PRIVATE_ROUTE_PREFIXES, '/api'].map((prefix) => `${pre
 
 // Ticket and booking URLs carry a code or token, so they should not leak through the Referer header.
 const noReferrerRoutes = ['/reservasi/:path*', '/v/:path*'];
+// So do the email links of /auth/callback and /auth/continue, whose token_hash opens a session (I77-2 of the review of
+// PR #77). They send no referrer to any other site, but keep it, and with it the Origin header, on this one: under
+// no-referrer the browser sends `Origin: null` with the continue page's POST, which auth/callback's same-origin
+// check refuses (the first CI run of the change).
+const sameOriginReferrerRoutes = ['/auth/:path*'];
 
 // The scanner's service worker is checked for an update on every registration, never served from a cache.
 const serviceWorkerHeaders = [
@@ -124,6 +129,10 @@ const nextConfig: NextConfig = {
       ...noReferrerRoutes.map((source) => ({
         source,
         headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
+      })),
+      ...sameOriginReferrerRoutes.map((source) => ({
+        source,
+        headers: [{ key: 'Referrer-Policy', value: 'same-origin' }],
       })),
     ]),
 };

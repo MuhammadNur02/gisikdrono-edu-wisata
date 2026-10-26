@@ -137,3 +137,55 @@ export async function expireTransaction(orderId: string): Promise<ExpireOutcome>
     parsed.data.status_code === EXPIRED_CODE || parsed.data.transaction_status === 'expire';
   return isExpired ? 'expired' : 'refused';
 }
+
+// accepted: Midtrans took the refund. refused: Midtrans said no in so many words (a 4xx of its own, such as 412 for a
+// method it cannot refund), which the superadmin finishes by hand (docs/PRD.md §13.1 A16). unknown: no answer about
+// this refund (a timeout, Midtrans out of reach, its own server error or a refused key), so the request stays open
+// for payments-poll (review of PR #69, M1). refund_key makes a retried call the same refund at Midtrans.
+export type RefundOutcome = 'accepted' | 'refused' | 'unknown';
+
+export interface RefundAnswer {
+  outcome: RefundOutcome;
+  statusCode: string | null;
+}
+
+const REFUND_ACCEPTED_CODE = '200';
+const REFUSAL_CODE = /^4\d\d$/;
+
+function refundOutcomeOf(response: Response, statusCode: string): RefundOutcome {
+  if (response.ok && statusCode === REFUND_ACCEPTED_CODE) return 'accepted';
+  if (NO_ANSWER_CODE.test(statusCode)) return 'unknown';
+  return REFUSAL_CODE.test(statusCode) ? 'refused' : 'unknown';
+}
+
+export async function requestRefund(refund: {
+  orderId: string;
+  refundKey: string;
+  amount: number;
+  reason: string;
+}): Promise<RefundAnswer> {
+  const { api } = hosts();
+  try {
+    const response = await send(
+      `${api}/v2/${encodeURIComponent(refund.orderId)}/refund`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          refund_key: refund.refundKey,
+          amount: refund.amount,
+          reason: refund.reason,
+        }),
+      },
+      DEFAULT_TIMEOUT_MS,
+    );
+    const parsed = midtransStatusSchema.safeParse(await readJson(response));
+    if (!parsed.success) return { outcome: 'unknown', statusCode: null };
+    return {
+      outcome: refundOutcomeOf(response, parsed.data.status_code),
+      statusCode: parsed.data.status_code,
+    };
+  } catch (error) {
+    if (error instanceof MidtransError) return { outcome: 'unknown', statusCode: null };
+    throw error;
+  }
+}

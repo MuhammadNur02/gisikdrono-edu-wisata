@@ -1,12 +1,14 @@
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
 import { BookingTable } from '@/components/admin/bookings/booking-table';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { FormAlert } from '@/components/forms/form-alert';
+import { BOOKINGS_DASHBOARD_PATH } from '@/config/bookings';
 import { BOOKING_STATUS } from '@/config/status';
 import { DB_ENUMS } from '@/db/enums';
 import { bookingsAdminCopy } from '@/lib/copy/bookings-admin';
-import { visitDateFilterOf } from '@/lib/utils/booking-list';
+import { firstPageAddress, visitDateFilterOf } from '@/lib/utils/booking-list';
 import { listFacets, rwFacet } from '@/lib/utils/facets';
 import { loadListQuery } from '@/lib/utils/list-query';
 import { effectiveRw } from '@/server/auth/content-owner';
@@ -42,6 +44,10 @@ export default async function BookingsPage({ searchParams }: { searchParams: Sea
   if (!isSuperadmin && rw === null) return null;
   const visitDate = visitDateFilterOf(query.date);
   const result = await listBookingsForStaff(query, rw, visitDate);
+  // A page past the end (rows that went away, a hand-typed ?page=) goes back to the first page of the same filters
+  // instead of reading as a list that is empty from the start (review of PR #76, F-76-3).
+  if (result.rows.length === 0 && query.page > 1)
+    redirect(firstPageAddress(BOOKINGS_DASHBOARD_PATH, await searchParams));
   const facets = listFacets(isSuperadmin, {
     status: STATUS_FACET,
     rw: rwFacet(text.facets.rw, rwUnits),

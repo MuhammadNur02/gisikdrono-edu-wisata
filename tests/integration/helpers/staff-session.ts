@@ -84,3 +84,24 @@ export async function removeSignInTraces(
     delete from auth.mfa_challenges where factor_id in (select f.id from auth.mfa_factors f where f.user_id in ${users});
     delete from auth.sessions where user_id in ${users};`);
 }
+
+// A throwaway account that already holds an RW 05 role, for a suite that enrols its factor through GoTrue: since
+// 20261103131000 a factor of an account that never was staff is verified only under a claimed invite, which
+// tests/integration/onboarding.test.ts covers. Its profile replaces the one handle_new_auth_user gave it.
+export async function giveRwRole(userId: string, email: string): Promise<void> {
+  await runSql(`begin;
+    select set_config('app.purge', 'on', true);
+    delete from public.profiles where id = '${userId}';
+    insert into public.profiles (id, email, full_name, role, rw_id, is_active, claims_version)
+    values ('${userId}', '${email}', 'Uji Integrasi', 'admin_rw', 5, true, 1);
+    commit;`);
+}
+
+// A profile that held a role keeps its Auth user from being deleted (20261029080300), so it goes first.
+export async function removeProfiles(userIds: readonly string[]): Promise<void> {
+  if (userIds.length === 0) return;
+  await runSql(`begin;
+    select set_config('app.purge', 'on', true);
+    delete from public.profiles where id = any('{${userIds.join(',')}}'::uuid[]);
+    commit;`);
+}

@@ -19,7 +19,12 @@ import {
 import { redirectGuestLink } from '@/lib/links/redirect';
 import { publicEnv } from '@/lib/public-env';
 import { canonicalGalleryPathFor } from '@/lib/utils/gallery-search';
-import { isPathUnder, PUBLIC_PATHS, rwRouteRewriteFor } from '@/lib/utils/paths';
+import {
+  guestDocumentRewriteFor,
+  isPathUnder,
+  PUBLIC_PATHS,
+  rwRouteRewriteFor,
+} from '@/lib/utils/paths';
 import { isSameOriginRequest } from '@/lib/utils/same-origin';
 import { pathWithNext } from '@/lib/utils/staff-paths';
 
@@ -54,13 +59,16 @@ function forwardRequest(request: NextRequest, nonce: string | null, csp: string)
 }
 
 // An RW page is served from its internal route folder while the visitor keeps the address they asked for
-// (rwRouteRewriteFor). RW pages are public, so this request carries no nonce either.
+// (rwRouteRewriteFor). RW pages are public, so this request carries no nonce either. A guest's document address under
+// its booking's pages is served by /api/documents the same way (guestDocumentRewriteFor), with its cookie.
 function continueRequestFor(
   request: NextRequest,
   nonce: string | null,
   csp: string,
 ): ContinueRequest {
-  const rewrite = rwRouteRewriteFor(request.nextUrl.pathname);
+  const rewrite =
+    rwRouteRewriteFor(request.nextUrl.pathname) ??
+    guestDocumentRewriteFor(request.nextUrl.pathname);
   if (rewrite === null) return () => forwardRequest(request, nonce, csp);
   const destination = request.nextUrl.clone();
   destination.pathname = rewrite;

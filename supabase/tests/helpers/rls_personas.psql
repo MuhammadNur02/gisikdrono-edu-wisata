@@ -7,7 +7,8 @@
 -- act_as switches to the persona's API role, anon or authenticated, never postgres, and sets
 -- request.jwt.claims the way GoTrue does: the standard claims plus what the real access-token hook adds
 -- (internal.staff_token_claims), so the helpers read exactly what they read in production. The personas are
--- anon, none (signed in without a role), admin_rw_05, admin_rw_08 and admin_rw_13, all at AAL2 as the dashboard requires,
+-- anon, none (signed in without a role), none_aal2_factor (an invited account half-way through /onboarding: no role, its
+-- invite claimed and its own TOTP factor verified, so a real AAL2 session; 20261103131000), admin_rw_05, admin_rw_08 and admin_rw_13, all at AAL2 as the dashboard requires,
 -- so their checks test the role and never just the missing factor, and admin_rw_05_aal1, superadmin_aal1,
 -- superadmin_aal2 and superadmin_stale_totp. The AAL2 personas verified their TOTP code a minute ago;
 -- superadmin_stale_totp did two hours ago, an AAL2 session left open on a desk, which reads but cannot take the
@@ -31,19 +32,37 @@ insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-00000000f001', 'rls-super@example.test'),
   ('00000000-0000-4000-8000-00000000f005', 'rls-admin05@example.test'),
   ('00000000-0000-4000-8000-00000000f008', 'rls-admin08@example.test'),
-  ('00000000-0000-4000-8000-00000000f013', 'rls-admin13@example.test');
-insert into public.profiles (id, email, full_name, role, rw_id) values
-  ('00000000-0000-4000-8000-00000000f000', 'rls-none@example.test', 'Tanpa Peran', 'none', null),
-  ('00000000-0000-4000-8000-00000000f001', 'rls-super@example.test', 'Super RLS', 'superadmin', null),
-  ('00000000-0000-4000-8000-00000000f005', 'rls-admin05@example.test', 'Admin RLS 05', 'admin_rw', 5),
-  ('00000000-0000-4000-8000-00000000f008', 'rls-admin08@example.test', 'Admin RLS 08', 'admin_rw', 8),
-  ('00000000-0000-4000-8000-00000000f013', 'rls-admin13@example.test', 'Admin RLS 13', 'admin_rw', 13);
+  ('00000000-0000-4000-8000-00000000f013', 'rls-admin13@example.test'),
+  ('00000000-0000-4000-8000-00000000f00f', 'rls-onboarding@example.test');
+-- none is an officer reactivated without a role yet: active, and staff once (became_staff_at, which an active
+-- profile must have since 20261104140000).
+insert into public.profiles (id, email, full_name, role, rw_id, became_staff_at) values
+  ('00000000-0000-4000-8000-00000000f000', 'rls-none@example.test', 'Tanpa Peran', 'none', null, now()),
+  ('00000000-0000-4000-8000-00000000f001', 'rls-super@example.test', 'Super RLS', 'superadmin', null, null),
+  ('00000000-0000-4000-8000-00000000f005', 'rls-admin05@example.test', 'Admin RLS 05', 'admin_rw', 5, null),
+  ('00000000-0000-4000-8000-00000000f008', 'rls-admin08@example.test', 'Admin RLS 08', 'admin_rw', 8, null),
+  ('00000000-0000-4000-8000-00000000f013', 'rls-admin13@example.test', 'Admin RLS 13', 'admin_rw', 13, null);
+-- none_aal2_factor: inactive like every invited account, its superadmin invite (no RW, so no RW counts it) claimed by
+-- its session, its factor verified.
+insert into public.profiles (id, email, full_name, role, rw_id, is_active)
+values ('00000000-0000-4000-8000-00000000f00f', 'rls-onboarding@example.test', 'Calon RLS', 'none', null, false);
+select set_config('app.privileged_rpc', 'on', true);
+insert into public.staff_invites (id, email, role, rw_id, invite_code_hash, expires_at, created_by, claimed_user_id,
+                                  claimed_session_id, claimed_at)
+values ('00000000-0000-4000-8000-00000000f0f1', 'rls-onboarding@example.test', 'superadmin', null, repeat('f', 64),
+        now() + interval '72 hours', '00000000-0000-4000-8000-00000000f001', '00000000-0000-4000-8000-00000000f00f',
+        '00000000-0000-4000-8000-00000000f0f2', now());
+select set_config('app.privileged_rpc', '', true);
+insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at)
+values ('00000000-0000-4000-8000-00000000f0f3', '00000000-0000-4000-8000-00000000f00f', 'HP Calon', 'totp', 'verified',
+        now(), now());
 
 create function pg_temp.persona_id(p_persona text) returns uuid
   language sql immutable
 as $$
   select (case p_persona
     when 'none' then '00000000-0000-4000-8000-00000000f000'
+    when 'none_aal2_factor' then '00000000-0000-4000-8000-00000000f00f'
     when 'superadmin_aal1' then '00000000-0000-4000-8000-00000000f001'
     when 'superadmin_aal2' then '00000000-0000-4000-8000-00000000f001'
     when 'superadmin_stale_totp' then '00000000-0000-4000-8000-00000000f001'
@@ -59,7 +78,7 @@ create function pg_temp.act_as(p_persona text) returns void
 as $$
 declare
   user_id uuid := pg_temp.persona_id(p_persona);
-  is_aal2 boolean := p_persona in ('none', 'admin_rw_05', 'admin_rw_08', 'admin_rw_13', 'superadmin_aal2',
+  is_aal2 boolean := p_persona in ('none', 'none_aal2_factor', 'admin_rw_05', 'admin_rw_08', 'admin_rw_13', 'superadmin_aal2',
                                    'superadmin_stale_totp');
   totp_verified_at bigint := extract(epoch from now())::bigint
                              - case when p_persona = 'superadmin_stale_totp' then 7200 else 60 end;

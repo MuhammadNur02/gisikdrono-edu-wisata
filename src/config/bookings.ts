@@ -23,5 +23,9 @@ export const STAFF_FULFILLMENT_STATUSES = ['pending', 'prepared', 'handed_over']
 // A booking code typed into the search box is looked up by its code; anything else searches the institution.
 export const BOOKING_CODE_SEARCH_PREFIX = 'GSK-';
 
+// Review of PR #76, F-76-6: a hidden participant list stays in the page's memory this long, so showing it again soon
+// costs no second audited reveal, and is then dropped.
+export const PARTICIPANTS_HIDDEN_KEEP_MS = 5 * 60 * 1000;
+
 // Who moved a booking, as booking_events.actor_type records it (its CHECK in 0003_tables.sql).
 export const BOOKING_EVENT_ACTORS = ['system', 'webhook', 'admin', 'cron', 'visitor'] as const;

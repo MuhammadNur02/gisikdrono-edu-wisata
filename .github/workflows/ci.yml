@@ -72,6 +72,33 @@ jobs:
           fi
       - run: pnpm test:integration
 
+  # Task P5.2.01 (docs/Security.md AZ-08, SC-04): the RW isolation suites on their own, so branch protection can
+  # require them by name. Every supabase/tests/rls_*.sql, then tests/integration/rls-http.test.ts with real tokens
+  # minted by the stack's own access-token hook: anon, the RW 05, RW 08 and RW 13 admins at AAL2, and the superadmin
+  # at AAL1 and AAL2.
+  rls:
+    name: rls (pgTAP RLS matrix, real JWTs)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
+        with:
+          version: 2.117.0
+      - name: Start Supabase and apply every migration
+        run: supabase start
+      - name: Development accounts and demo content (local stack only)
+        run: pnpm db:seed
+      - run: pnpm test:rls
+
   security:
     name: security (gitleaks, semgrep, audit, bundle secrets)
     runs-on: ubuntu-24.04

@@ -1,7 +1,7 @@
 'use client';
 
 import type { IScannerError, ScannerErrorKind } from '@yudiel/react-qr-scanner';
-import { Camera, CameraOff, ScanLine } from 'lucide-react';
+import { Camera, CameraOff, ScanLine, Volume2, VolumeX } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -14,7 +14,7 @@ import { FormAlert } from '@/components/forms/form-alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useBoundaryNavigation } from '@/hooks/use-boundary-navigation';
-import { useScanner } from '@/hooks/use-scanner';
+import { useScanner, type ScannerController } from '@/hooks/use-scanner';
 import { scannerCopy } from '@/lib/copy/scanner';
 import type { ActionResult } from '@/types/action-result';
 
@@ -113,7 +113,15 @@ function CameraFrame({ camera }: { camera: CameraControls }) {
   );
 }
 
-function CameraButtons({ camera, canScan }: { camera: CameraControls; canScan: boolean }) {
+function CameraButtons({
+  camera,
+  canScan,
+  onArm,
+}: {
+  camera: CameraControls;
+  canScan: boolean;
+  onArm: () => void;
+}) {
   if (!camera.isOn) return null;
   return (
     <div className="flex gap-2">
@@ -122,7 +130,7 @@ function CameraButtons({ camera, canScan }: { camera: CameraControls; canScan: b
         size="xl"
         className="flex-1"
         disabled={!canScan || camera.isArmed}
-        onClick={camera.arm}
+        onClick={onArm}
       >
         <ScanLine aria-hidden />
         {camera.isArmed ? text.scanning : text.scan}
@@ -141,7 +149,15 @@ function CameraButtons({ camera, canScan }: { camera: CameraControls; canScan: b
   );
 }
 
-function CameraPanel({ camera, canScan }: { camera: CameraControls; canScan: boolean }) {
+function CameraPanel({
+  camera,
+  canScan,
+  onArm,
+}: {
+  camera: CameraControls;
+  canScan: boolean;
+  onArm: () => void;
+}) {
   return (
     <div className="space-y-3">
       <CameraFrame camera={camera} />
@@ -149,7 +165,32 @@ function CameraPanel({ camera, canScan }: { camera: CameraControls; canScan: boo
       <p aria-live="polite" className="sr-only">
         {camera.isArmed ? text.scanning : ''}
       </p>
-      <CameraButtons camera={camera} canScan={canScan} />
+      <CameraButtons camera={camera} canScan={canScan} onArm={onArm} />
+    </div>
+  );
+}
+
+// Review of PR #79, L-9: the button's name is its visible words and its state is aria-pressed; under reduced motion
+// the beep and the vibration are off whatever the choice, and the page says so instead.
+function SoundToggle({ sound }: { sound: ScannerController['sound'] }) {
+  if (sound.isSilenced) {
+    return <p className="text-right text-caption text-muted-foreground">{text.soundSilenced}</p>;
+  }
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <span aria-hidden className="text-caption text-muted-foreground">
+        {sound.isOn ? text.soundOn : text.soundOff}
+      </span>
+      <Button
+        type="button"
+        variant="ghost"
+        className="min-h-11"
+        aria-pressed={sound.isOn}
+        onClick={sound.toggle}
+      >
+        {sound.isOn ? <Volume2 aria-hidden /> : <VolumeX aria-hidden />}
+        {text.sound}
+      </Button>
     </div>
   );
 }
@@ -182,8 +223,18 @@ export function ScannerView({ canOverride, returnTo, logOpenedAction }: ScannerV
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6">
+      <SoundToggle sound={scanner.sound} />
       <ScanTabs
-        camera={<CameraPanel camera={camera} canScan={scanner.state.stage === 'idle'} />}
+        camera={
+          <CameraPanel
+            camera={camera}
+            canScan={scanner.state.stage === 'idle'}
+            onArm={() => {
+              scanner.sound.prime();
+              camera.arm();
+            }}
+          />
+        }
         manual={<ManualCheckInForm isBusy={scanner.isBusy} onSubmit={scanner.submitManual} />}
       />
       <RecentScans scans={scanner.recent} />

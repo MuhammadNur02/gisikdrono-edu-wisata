@@ -52,7 +52,7 @@ export async function inviteStaffAction(input: unknown): Promise<ActionResult<Is
 
   try {
     if (!(await withinInviteLimit(guard.ctx.userId))) return fail('RATE_LIMITED');
-    const issued = await createStaffInvite(guard.ctx, parsed.data);
+    const issued = await createStaffInvite(guard.ctx, parsed.data, requestIdFrom(await headers()));
     revalidatePath(USERS_PATH);
     return ok(issued);
   } catch (error) {
@@ -67,7 +67,7 @@ export async function revokeStaffInviteAction(input: unknown): Promise<ActionRes
   if (!guard.ok) return guard;
 
   try {
-    await revokeStaffInvite(parsed.data.inviteId);
+    await revokeStaffInvite(parsed.data.inviteId, requestIdFrom(await headers()));
     revalidatePath(USERS_PATH);
     return ok(null);
   } catch (error) {

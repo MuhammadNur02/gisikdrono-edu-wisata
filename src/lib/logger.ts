@@ -34,6 +34,16 @@ export const REDACTED_PATHS = [
   '*.params',
   'code_hash',
   '*.code_hash',
+  // The invite code a new officer types on /onboarding (Task P4.8.01).
+  'inviteCode',
+  '*.inviteCode',
+  // A vendor's or an RW treasury's bank account number (review of PR #79, L-10), in each spelling it travels in.
+  'accountNumber',
+  '*.accountNumber',
+  'account_number',
+  '*.account_number',
+  'p_account_number',
+  '*.p_account_number',
 ];
 
 // The only event names a log line may carry: the security_events types of docs/PRD.md §8.4.9 the app logs
@@ -68,6 +78,7 @@ export const LOG_EVENTS = [
   'mfa_reset',
   'mfa_locked',
   'session_revoke_failed',
+  'invite_claimed',
   'internal_error',
   'job_run',
   'payment_webhook',
