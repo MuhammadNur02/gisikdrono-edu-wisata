@@ -1763,10 +1763,12 @@ export type Database = {
         Row: {
           amount: number
           applied_at: string | null
+          applied_by: string | null
           apply_not_before: string | null
           approved_at: string | null
           approved_by: string | null
           booking_id: string
+          details: Json
           evidence_path: string
           id: string
           payment_id: string | null
@@ -1780,10 +1782,12 @@ export type Database = {
         Insert: {
           amount: number
           applied_at?: string | null
+          applied_by?: string | null
           apply_not_before?: string | null
           approved_at?: string | null
           approved_by?: string | null
           booking_id: string
+          details?: Json
           evidence_path: string
           id?: string
           payment_id?: string | null
@@ -1797,10 +1801,12 @@ export type Database = {
         Update: {
           amount?: number
           applied_at?: string | null
+          applied_by?: string | null
           apply_not_before?: string | null
           approved_at?: string | null
           approved_by?: string | null
           booking_id?: string
+          details?: Json
           evidence_path?: string
           id?: string
           payment_id?: string | null
@@ -1812,6 +1818,13 @@ export type Database = {
           type?: Database["public"]["Enums"]["adjustment_type"]
         }
         Relationships: [
+          {
+            foreignKeyName: "payment_adjustments_applied_by_fkey"
+            columns: ["applied_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "payment_adjustments_approved_by_fkey"
             columns: ["approved_by"]
@@ -4238,6 +4251,8 @@ export type Database = {
       }
       app_role: { Args: never; Returns: string }
       app_rw_id: { Args: never; Returns: number }
+      apply_adjustment: { Args: { p_id: string }; Returns: Json }
+      approve_adjustment: { Args: { p_id: string }; Returns: Json }
       cancel_staff_mfa_reset: {
         Args: { p_user_id: string }
         Returns: undefined
@@ -4261,6 +4276,11 @@ export type Database = {
         Returns: Json
       }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      finance_booking: { Args: { p_booking_id: string }; Returns: Json }
+      finance_overview: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
       find_manual_ticket: {
         Args: { p_booking_code: string; p_phone_last_digits: string }
         Returns: Json
@@ -4292,6 +4312,33 @@ export type Database = {
       }
       owns_any_rw: { Args: { p_rw_ids: number[] }; Returns: boolean }
       owns_rw: { Args: { p_rw_id: number }; Returns: boolean }
+      propose_adjustment: {
+        Args: {
+          p_amount: number
+          p_booking_id: string
+          p_details?: Json
+          p_evidence_path: string
+          p_payment_id: string
+          p_reason: string
+          p_type: Database["public"]["Enums"]["adjustment_type"]
+        }
+        Returns: Json
+      }
+      record_refund: {
+        Args: {
+          p_amount: number
+          p_booking_id: string
+          p_payment_id?: string
+          p_proof_path?: string
+          p_reason: string
+          p_reference: string
+        }
+        Returns: Json
+      }
+      reject_adjustment: {
+        Args: { p_id: string; p_reason: string }
+        Returns: Json
+      }
       reset_staff_mfa: { Args: { p_user_id: string }; Returns: Json }
       revenue_recap: {
         Args: { p_from: string; p_rw_id?: number; p_to: string }
@@ -4358,6 +4405,18 @@ export type Database = {
         Args: { p_package_id: string; p_tiers: Json }
         Returns: undefined
       }
+      save_revenue_rule: {
+        Args: {
+          p_effective_from: string
+          p_lines: Json
+          p_name: string
+          p_package_id: string
+          p_product_id: string
+          p_rw_id: number
+          p_scope: Database["public"]["Enums"]["revenue_rule_scope"]
+        }
+        Returns: Json
+      }
       scan_ticket: {
         Args: {
           p_attempt_id: string
@@ -4388,6 +4447,16 @@ export type Database = {
       set_staff_status: {
         Args: { p_is_active: boolean; p_reason: string; p_user_id: string }
         Returns: undefined
+      }
+      settle_revenue_entries: {
+        Args: {
+          p_beneficiary_key: string
+          p_from: string
+          p_proof_path: string
+          p_reference: string
+          p_to: string
+        }
+        Returns: Json
       }
       svc_accept_staff_invite: {
         Args: { p_invite_code_hash: string; p_user_id: string }
