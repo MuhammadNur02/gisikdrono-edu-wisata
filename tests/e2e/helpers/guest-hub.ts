@@ -41,9 +41,10 @@ function base64Url(bytes: Buffer): string {
 
 // The link src/lib/links/mint.ts makes, signed with the fixture key the e2e server runs with; a past `expiresIn`
 // makes an expired one.
+// A link opens the page of its scope: the status hub, or the certificate page for a certificate link.
 export function guestLink(
   bookingCode: string,
-  scope: 'view' | 'manage' | 'pay',
+  scope: 'view' | 'manage' | 'pay' | 'certificate',
   tokenVersion: number,
   expiresIn = SECONDS_PER_HOUR,
 ): string {
@@ -52,7 +53,9 @@ export function guestLink(
   const signature = createHmac('sha256', sandboxEnv.BOOKING_LINK_SECRET)
     .update(`${LINK_LABEL}\n${bookingCode}.${payload}`)
     .digest();
-  return `/reservasi/${bookingCode}?t=${payload}.${base64Url(signature)}`;
+  const page =
+    scope === 'certificate' ? `/reservasi/${bookingCode}/sertifikat` : `/reservasi/${bookingCode}`;
+  return `${page}?t=${payload}.${base64Url(signature)}`;
 }
 
 export async function tokenVersionOf(bookingCode: string): Promise<number> {
