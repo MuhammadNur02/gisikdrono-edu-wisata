@@ -11,6 +11,7 @@ import {
 } from '@/components/admin/bank-accounts/bank-account-forms';
 import { FormAlert } from '@/components/forms/form-alert';
 import { Button } from '@/components/ui/button';
+import { REVEALED_NUMBER_VISIBLE_MS } from '@/config/bank-accounts';
 import { bankAccountsCopy } from '@/lib/copy/bank-accounts';
 import type { BankAccountTarget } from '@/lib/validations/bank-account';
 import type { MaskedBankAccount } from '@/types/bank-account';
@@ -174,12 +175,27 @@ function ModeContent(props: ModeProps) {
   );
 }
 
+// A revealed number, hidden again after REVEALED_NUMBER_VISIBLE_MS or on "Sembunyikan" (review of PR #79).
+function useRevealedNumber() {
+  const [revealed, setRevealed] = useState<string | null>(null);
+  useEffect(() => {
+    if (revealed === null) return undefined;
+    const timer = window.setTimeout(() => {
+      setRevealed(null);
+    }, REVEALED_NUMBER_VISIBLE_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [revealed]);
+  return [revealed, setRevealed] as const;
+}
+
 // Task P4.3.06: one vendor's or RW treasury's account for the superadmin, masked; the full number only after a reason
 // and a fresh authenticator code, kept in this component until hidden; a change with a fresh code too.
 export function BankAccountPanel({ target, initial, actions }: BankAccountPanelProps) {
   const { account, refusal, isLoading, reload } = useMaskedAccount(target, initial, actions);
   const [mode, setMode] = useState<Mode>('view');
-  const [revealed, setRevealed] = useState<string | null>(null);
+  const [revealed, setRevealed] = useRevealedNumber();
   if (refusal) return <FormAlert tone="info">{refusal}</FormAlert>;
   if (account === null || isLoading) {
     return <p className="text-body-sm text-muted-foreground">{text.loading}</p>;

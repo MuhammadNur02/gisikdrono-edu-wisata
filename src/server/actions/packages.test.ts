@@ -63,7 +63,7 @@ const FORM = {
   priceTiers: [],
   legRwIds: [],
 };
-const COMBO_FORM = { ...FORM, category: 'combo' };
+const COMBO_FORM = { ...FORM, category: 'combo', legRwIds: [5, 8] };
 
 function stored(change: Partial<PackageAdmin> = {}): PackageAdmin {
   return {
@@ -193,7 +193,7 @@ describe('package actions', () => {
   it('keeps a combo whose route visits fewer than two RWs off sale, new or edited, on the route field', async () => {
     vi.mocked(requireAal2).mockResolvedValue({ ok: true, ctx: SUPERADMIN });
     const publish = { ...COMBO_FORM, status: 'published' };
-    expect(await createPackageAction(publish)).toMatchObject({
+    expect(await createPackageAction({ ...publish, legRwIds: [5] })).toMatchObject({
       error: {
         code: 'VALIDATION',
         fieldErrors: { legRwIds: [packagesCopy.validation.legsTooFew] },

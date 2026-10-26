@@ -1,7 +1,7 @@
 'use client';
 
 import { ArrowDown, ArrowUp, Plus, X } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useController } from 'react-hook-form';
 
 import { FormSection } from '@/components/admin/cms/form-section';
@@ -15,12 +15,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { PACKAGE_LIMITS } from '@/config/packages';
+import { MAX_PACKAGE_LEGS } from '@/config/booking';
 import { rwLabel, type RwId } from '@/config/rw';
 import { packagesCopy } from '@/lib/copy/packages';
 import { moveLeg } from '@/lib/utils/package-tiers';
 
 const text = packagesCopy.legs;
+
+type LegAction = 'up' | 'down' | 'remove';
 
 function nameOf(rwId: RwId, rwOptions: readonly RwOption[]): string {
   return rwOptions.find((option) => option.id === rwId)?.name ?? rwLabel(rwId);
@@ -28,14 +30,14 @@ function nameOf(rwId: RwId, rwOptions: readonly RwOption[]): string {
 
 function LegButton({
   label,
+  action,
   isDisabled = false,
-  isDestructive = false,
   onClick,
   children,
 }: {
   label: string;
+  action: LegAction;
   isDisabled?: boolean;
-  isDestructive?: boolean;
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -44,9 +46,10 @@ function LegButton({
       type="button"
       variant="ghost"
       size="icon"
-      className={isDestructive ? 'size-11 text-destructive' : 'size-11'}
+      className={action === 'remove' ? 'size-11 text-destructive' : 'size-11'}
       disabled={isDisabled}
       aria-label={label}
+      data-leg-action={action}
       onClick={onClick}
     >
       {children}
@@ -55,6 +58,7 @@ function LegButton({
 }
 
 interface LegRowProps {
+  rwId: RwId;
   position: number;
   name: string;
   isFirst: boolean;
@@ -63,9 +67,9 @@ interface LegRowProps {
   onRemove: () => void;
 }
 
-function LegRow({ position, name, isFirst, isLast, onMove, onRemove }: LegRowProps) {
+function LegRow({ rwId, position, name, isFirst, isLast, onMove, onRemove }: LegRowProps) {
   return (
-    <li className="flex items-center justify-between gap-2 py-2">
+    <li className="flex items-center justify-between gap-2 py-2" data-leg={rwId}>
       <span className="space-y-0.5">
         <span className="block text-caption text-muted-foreground">{text.stop(position)}</span>
         <span className="block text-body-sm font-medium">{name}</span>
@@ -73,6 +77,7 @@ function LegRow({ position, name, isFirst, isLast, onMove, onRemove }: LegRowPro
       <span className="flex items-center gap-1">
         <LegButton
           label={text.moveUp(name)}
+          action="up"
           isDisabled={isFirst}
           onClick={() => {
             onMove(-1);
@@ -82,6 +87,7 @@ function LegRow({ position, name, isFirst, isLast, onMove, onRemove }: LegRowPro
         </LegButton>
         <LegButton
           label={text.moveDown(name)}
+          action="down"
           isDisabled={isLast}
           onClick={() => {
             onMove(1);
@@ -89,7 +95,7 @@ function LegRow({ position, name, isFirst, isLast, onMove, onRemove }: LegRowPro
         >
           <ArrowDown aria-hidden />
         </LegButton>
-        <LegButton label={text.remove(name)} isDestructive onClick={onRemove}>
+        <LegButton label={text.remove(name)} action="remove" onClick={onRemove}>
           <X aria-hidden />
         </LegButton>
       </span>
@@ -157,30 +163,39 @@ function AddLeg({
   );
 }
 
+interface RouteHandlers {
+  move: (index: number, offset: -1 | 1) => void;
+  remove: (rwId: RwId) => void;
+  add: (rwId: RwId) => void;
+}
+
 function LegList({
   legs,
   rwOptions,
-  onChange,
+  listRef,
+  handlers,
 }: {
   legs: readonly RwId[];
   rwOptions: readonly RwOption[];
-  onChange: (legs: RwId[]) => void;
+  listRef: RefObject<HTMLOListElement | null>;
+  handlers: RouteHandlers;
 }) {
   if (legs.length === 0) return <p className="text-body-sm text-muted-foreground">{text.empty}</p>;
   return (
-    <ol className="divide-y divide-border">
+    <ol ref={listRef} className="divide-y divide-border">
       {legs.map((rwId, index) => (
         <LegRow
           key={rwId}
+          rwId={rwId}
           position={index + 1}
           name={nameOf(rwId, rwOptions)}
           isFirst={index === 0}
           isLast={index === legs.length - 1}
           onMove={(offset) => {
-            onChange(moveLeg(legs, index, offset));
+            handlers.move(index, offset);
           }}
           onRemove={() => {
-            onChange(legs.filter((id) => id !== rwId));
+            handlers.remove(rwId);
           }}
         />
       ))}
@@ -188,9 +203,68 @@ function LegList({
   );
 }
 
+type FocusTarget = { rwId: RwId; action: 'up' | 'down' } | 'first' | null;
+
+function enabledButton(list: HTMLOListElement, selector: string): HTMLButtonElement | null {
+  return list.querySelector<HTMLButtonElement>(`${selector}:not(:disabled)`);
+}
+
+// Review of PR #79, L-9: after a move, focus stays on the moved RW's button of the same direction, or on the other
+// direction once that one is disabled at the end of the route; after a removal it goes to the first button left.
+function useRouteFocus(listRef: RefObject<HTMLOListElement | null>, legs: readonly RwId[]) {
+  const [target, setTarget] = useState<FocusTarget>(null);
+  useEffect(() => {
+    const list = listRef.current;
+    if (target === null || list === null) return;
+    if (target === 'first') {
+      enabledButton(list, '[data-leg-action]')?.focus();
+    } else {
+      const row = `[data-leg="${String(target.rwId)}"]`;
+      const other = target.action === 'up' ? 'down' : 'up';
+      (
+        enabledButton(list, `${row} [data-leg-action="${target.action}"]`) ??
+        enabledButton(list, `${row} [data-leg-action="${other}"]`)
+      )?.focus();
+    }
+    setTarget(null);
+  }, [target, legs, listRef]);
+  return setTarget;
+}
+
+// Each change goes to the form field, is announced, and leaves the focus where the officer can go on.
+function useRouteEditor(
+  legs: readonly RwId[],
+  rwOptions: readonly RwOption[],
+  onChange: (legs: RwId[]) => void,
+) {
+  const listRef = useRef<HTMLOListElement>(null);
+  const [announcement, setAnnouncement] = useState('');
+  const focusOn = useRouteFocus(listRef, legs);
+  const handlers: RouteHandlers = {
+    move: (index, offset) => {
+      const rwId = legs[index];
+      if (rwId === undefined) return;
+      onChange(moveLeg(legs, index, offset));
+      setAnnouncement(text.moved(nameOf(rwId, rwOptions), index + offset + 1));
+      focusOn({ rwId, action: offset < 0 ? 'up' : 'down' });
+    },
+    remove: (rwId) => {
+      onChange(legs.filter((id) => id !== rwId));
+      setAnnouncement(text.removed(nameOf(rwId, rwOptions)));
+      focusOn('first');
+    },
+    add: (rwId) => {
+      onChange([...legs, rwId]);
+      setAnnouncement(text.added(nameOf(rwId, rwOptions)));
+    },
+  };
+  return { listRef, announcement, handlers };
+}
+
 // docs/PRD.md FR-ADMIN-05 (Task P4.3.05, P4.3.11): a combo's route, the RWs it visits in order, which save_package
-// writes as its legs. The superadmin edits it; an RW admin reads it (the form's fieldset is disabled for them).
-// combo_legs_on_sale keeps a published combo at two RWs at least, and the schema says so first.
+// writes as its legs. The superadmin edits it; an RW admin reads it (the form's fieldset is disabled for them). The
+// schema keeps one RW at least, two before the combo goes on sale and four at most (MAX_PACKAGE_LEGS), as
+// save_package_legs and combo_legs_on_sale do.
 export function ComboLegsEditor({
   control,
   rwOptions,
@@ -200,21 +274,17 @@ export function ComboLegsEditor({
 }) {
   const { field, fieldState } = useController({ control, name: 'legRwIds' });
   const legs = field.value;
+  const { listRef, announcement, handlers } = useRouteEditor(legs, rwOptions, field.onChange);
   const remaining = rwOptions.map((option) => option.id).filter((id) => !legs.includes(id));
-  const canAdd = remaining.length > 0 && legs.length < PACKAGE_LIMITS.comboLegs;
+  const canAdd = remaining.length > 0 && legs.length < MAX_PACKAGE_LEGS;
   return (
     <FormSection title={packagesCopy.sections.legs}>
       <p className="text-body-sm text-muted-foreground">{text.hint}</p>
-      <LegList legs={legs} rwOptions={rwOptions} onChange={field.onChange} />
-      {canAdd ? (
-        <AddLeg
-          remaining={remaining}
-          rwOptions={rwOptions}
-          onAdd={(rwId) => {
-            field.onChange([...legs, rwId]);
-          }}
-        />
-      ) : null}
+      <LegList legs={legs} rwOptions={rwOptions} listRef={listRef} handlers={handlers} />
+      {canAdd ? <AddLeg remaining={remaining} rwOptions={rwOptions} onAdd={handlers.add} /> : null}
+      <p aria-live="polite" className="sr-only">
+        {announcement}
+      </p>
       {fieldState.error?.message ? (
         <p role="alert" className="text-body-sm text-destructive">
           {fieldState.error.message}
