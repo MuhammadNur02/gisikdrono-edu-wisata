@@ -12,6 +12,19 @@ A migration that stops is a release that stops: fix its cause, never edit an app
 
 ## Notes for particular changes
 
+### Task P4.8.01 follow-ups: profiles that became staff (`20261104140000` and `20261104140050`)
+
+- **Pre-flight, before the migration.** `20261104140000` adds two checks that every existing row must already pass, so a profile that holds a role or is active without `became_staff_at` stops the release. Run this on the target project first; it must return no rows:
+
+  ```sql
+  select id, role, is_active, became_staff_at
+  from public.profiles
+  where (role <> 'none' or is_active) and became_staff_at is null;
+  ```
+
+  A row it returns is an account set up by hand outside `accept_staff_invite`. Deactivate it, or give it `became_staff_at` through the privileged path the staging runbook's Part E uses, before migrating.
+- **New profiles are inactive by default** (`20261104140050`). A hand-written `insert into public.profiles` for a staff account says `is_active = true` itself; accepting an invite already does.
+
 ### Task P2.10.03: RW 13 and RW 08's new programme (`20261022080000_rw_13_and_rw_08_programme.sql`)
 
 - **Migrate before the deploy.** The deploy carries the 308 redirects from `/rw-08-kampung-seni-budaya` and its `/jadwal` to `/rw-13-kampung-budaya-seni`. Without the migration that page does not exist yet, so the redirect would lead to a not-found page.

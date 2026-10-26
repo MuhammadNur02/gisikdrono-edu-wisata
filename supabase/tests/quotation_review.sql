@@ -8,9 +8,11 @@ select plan(20);
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000f0001', 'review-super@example.test'),
   ('00000000-0000-4000-8000-0000000f0002', 'review-gone@example.test');
-insert into public.profiles (id, email, full_name, role, rw_id, is_active) values
-  ('00000000-0000-4000-8000-0000000f0001', 'review-super@example.test', 'Super Tinjau', 'superadmin', null, true),
-  ('00000000-0000-4000-8000-0000000f0002', 'review-gone@example.test', 'Bukan Staf', 'none', null, false);
+-- 0002 is a former officer, active and without a role (became_staff_at set, as 20261104140000 requires of an active
+-- profile), so the refusal below comes from the role branch of internal.document_actor alone (review of PR #83, L-3).
+insert into public.profiles (id, email, full_name, role, rw_id, is_active, became_staff_at) values
+  ('00000000-0000-4000-8000-0000000f0001', 'review-super@example.test', 'Super Tinjau', 'superadmin', null, true, null),
+  ('00000000-0000-4000-8000-0000000f0002', 'review-gone@example.test', 'Bukan Staf', 'none', null, true, now());
 insert into public.tour_packages (id, rw_id, category, slug, name, pricing_basis, price_per_pax, status) values
   ('00000000-0000-4000-8000-0000000f1001', 5, 'regular', 'uji-tinjau-sp', 'Paket Tinjau SP', 'per_pax', 30000,
    'published');

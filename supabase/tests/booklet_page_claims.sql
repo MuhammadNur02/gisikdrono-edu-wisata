@@ -6,8 +6,8 @@ begin;
 select plan(15);
 
 insert into auth.users (id, email) values ('00000000-0000-4000-9000-0000000c1a01', 'klaim-halaman@example.test');
-insert into public.profiles (id, email, full_name, role, rw_id)
-values ('00000000-0000-4000-9000-0000000c1a01', 'klaim-halaman@example.test', 'Petugas Klaim', 'admin_rw', 5);
+insert into public.profiles (id, email, full_name, role, rw_id, is_active)
+values ('00000000-0000-4000-9000-0000000c1a01', 'klaim-halaman@example.test', 'Petugas Klaim', 'admin_rw', 5, true);
 
 select is(
   (select relrowsecurity and relforcerowsecurity from pg_class where oid = 'public.booklet_page_claims'::regclass),

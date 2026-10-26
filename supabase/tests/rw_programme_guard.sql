@@ -26,9 +26,9 @@ insert into public.site_settings (key, value) values ('pricing.min_price_per_pax
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000c0001', 'guard-super@example.test'),
   ('00000000-0000-4000-8000-0000000c0099', 'guard-admin99@example.test');
-insert into public.profiles (id, email, full_name, role, rw_id) values
-  ('00000000-0000-4000-8000-0000000c0001', 'guard-super@example.test', 'Super Uji', 'superadmin', null),
-  ('00000000-0000-4000-8000-0000000c0099', 'guard-admin99@example.test', 'Admin RW 99 Uji', 'admin_rw', 99);
+insert into public.profiles (id, email, full_name, role, rw_id, is_active) values
+  ('00000000-0000-4000-8000-0000000c0001', 'guard-super@example.test', 'Super Uji', 'superadmin', null, true),
+  ('00000000-0000-4000-8000-0000000c0099', 'guard-admin99@example.test', 'Admin RW 99 Uji', 'admin_rw', 99, true);
 
 -- ===== An RW with nothing of its programme left =====
 select is_empty($$select * from internal.rw_programme_ties(90::smallint)$$, 'a bare RW has no ties');

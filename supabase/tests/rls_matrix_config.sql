@@ -8,8 +8,8 @@ update public.rw_units set treasury_account_number = '1230005' where id = 5;
 insert into public.rw_units (id, code, slug, name, short_name, theme_label, accent_key, icon_key, is_active)
 values (9, 'RW09', 'rw-09-uji', 'RW 09 Uji', 'Uji', 'Uji', 'teal', 'users', false);
 insert into auth.users (id, email) values ('00000000-0000-4000-8000-00000000f055', 'rls-admin05-b@example.test');
-insert into public.profiles (id, email, full_name, role, rw_id)
-values ('00000000-0000-4000-8000-00000000f055', 'rls-admin05-b@example.test', 'Rekan RW 05', 'admin_rw', 5);
+insert into public.profiles (id, email, full_name, role, rw_id, is_active)
+values ('00000000-0000-4000-8000-00000000f055', 'rls-admin05-b@example.test', 'Rekan RW 05', 'admin_rw', 5, true);
 -- seo.default_description is one of the public keys of docs/PRD.md §8.6; 0008_seed may already hold it.
 insert into public.site_settings (key, value, is_public) values
   ('seo.default_description', '"Edu Wisata Gisikdrono"', true), ('rls.private', '"tidak"', false)

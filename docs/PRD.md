@@ -651,7 +651,7 @@ create table public.profiles (
   phone          text check (phone ~ '^\+62[0-9]{8,13}$'),
   role           public.app_role not null default 'none',
   rw_id          smallint references public.rw_units(id),
-  is_active      boolean not null default true,
+  is_active      boolean not null default false,       -- 20261104140050: inactive until accept_staff_invite gives the role
   mfa_required   boolean not null default true,
   claims_version integer not null default 1,        -- bumped on every role/RW/status change; copied into the JWT
   became_staff_at timestamptz,                      -- 20261103131500: the first time the profile held a role; never changes
@@ -665,7 +665,10 @@ create table public.profiles (
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now(),
   constraint profiles_role_rw_ok check (
-    (role = 'superadmin' and rw_id is null) or (role = 'admin_rw' and rw_id is not null) or (role = 'none' and rw_id is null))
+    (role = 'superadmin' and rw_id is null) or (role = 'admin_rw' and rw_id is not null) or (role = 'none' and rw_id is null)),
+  -- 20261104140000: a role or an active profile means the account became staff
+  constraint profiles_role_implies_became_staff check (role = 'none' or became_staff_at is not null),
+  constraint profiles_active_implies_became_staff check (not is_active or became_staff_at is not null)
 );
 create index profiles_rw_idx on public.profiles (rw_id) where is_active;
 

@@ -415,8 +415,8 @@ values ('00000000-0000-4000-8000-0000000000b1', 5, pg_temp.days_from_today(27), 
 -- As an RW 05 admin of this section's own, with the claims their profile holds: the staff tests above moved
 -- profile 0002 to RW 08, so its old hand-written claims named no real admin_rw at all.
 insert into auth.users (id, email) values ('00000000-0000-4000-8000-0000000a0e05', 'penjaga05@example.test');
-insert into public.profiles (id, email, full_name, role, rw_id)
-values ('00000000-0000-4000-8000-0000000a0e05', 'penjaga05@example.test', 'Penjaga RW 05', 'admin_rw', 5);
+insert into public.profiles (id, email, full_name, role, rw_id, is_active)
+values ('00000000-0000-4000-8000-0000000a0e05', 'penjaga05@example.test', 'Penjaga RW 05', 'admin_rw', 5, true);
 select set_config('request.jwt.claims', (
   select jsonb_build_object('sub', id, 'role', 'authenticated', 'aal', 'aal2', 'app_role', role,
                             'app_rw_id', rw_id, 'claims_version', claims_version)::text
