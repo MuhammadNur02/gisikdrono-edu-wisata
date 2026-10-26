@@ -135,7 +135,8 @@ test.describe('the dashboard as the superadmin: headers, cookies and the CSP (HD
     await removeAccounts(superadmin ? [superadmin.id] : []);
   });
 
-  // One sign-in for both checks: a second sign-in of the same account within a TOTP window is refused as a replay.
+  // One sign-in serves both checks: on CI a second sign-in of the same account straight after the first timed out
+  // at the password step, and every extra sign-in also spends the shared login limits.
   test('/dashboard and the scanner carry the baseline headers, an enforced CSP and no-store, and the session cookies stay out of reach of page scripts', async ({
     page,
     context,
