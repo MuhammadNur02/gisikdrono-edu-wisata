@@ -137,6 +137,8 @@ export const financeCopy = {
       to: 'Entri sampai tanggal',
       reference: 'Nomor referensi transfer',
       accountDigits: '4 digit terakhir rekening payout di dasbor Midtrans',
+      transferredAmount: 'Jumlah yang ditransfer (Rp)',
+      transferredAmountHint: 'Ketik jumlah dari bukti transfer; harus sama dengan jumlah di atas.',
       proof: 'Bukti transfer (PDF atau foto)',
     },
     columns: {
@@ -165,6 +167,8 @@ export const financeCopy = {
         'Pembayaran hanya untuk hari yang sudah lewat; tanggal akhir paling lambat hari ini.',
       PAYOUT_TOTAL_MISMATCH:
         'Total bagian periode ini menurut buku besar tidak sama dengan jumlah yang Anda transfer. Periksa pratinjau, lalu catat pembayaran sebesar yang benar-benar ditransfer.',
+      TRANSFER_MISMATCH:
+        'Jumlah yang Anda ketik tidak sama dengan jumlah yang harus ditransfer untuk periode ini. Periksa bukti transfer; jangan catat pembayaran yang jumlahnya berbeda.',
       ACCOUNT_MISMATCH:
         'Rekening payout di dasbor Midtrans tidak sama dengan rekening yang diharapkan. Jangan lanjutkan; periksa akun Midtrans bersama Lurah.',
       ACCOUNT_UNSET:

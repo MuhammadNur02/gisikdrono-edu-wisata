@@ -1,6 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useEffect } from 'react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import type { z } from 'zod';
 
@@ -220,6 +221,13 @@ function useProposalForm(bookingId: string) {
   });
 }
 
+// Delta review of PR #80, L-c: a weather link belongs to a manual refund only, so another type drops it.
+function useWeatherLinkReset(form: ProposeForm, type: ProposeInput['type']) {
+  useEffect(() => {
+    if (type !== 'manual_refund') form.setValue('weatherLinkId', null);
+  }, [form, type]);
+}
+
 export function ProposeForm({ booking, submit: action, onDone }: ProposeFormProps) {
   const form = useProposalForm(booking.id);
   const { submit, failure } = useActionForm({
@@ -229,6 +237,7 @@ export function ProposeForm({ booking, submit: action, onDone }: ProposeFormProp
     onSuccess: onDone,
   });
   const type = form.watch('type');
+  useWeatherLinkReset(form, type);
   return (
     <Form {...form}>
       <PostForm onSubmit={submit}>

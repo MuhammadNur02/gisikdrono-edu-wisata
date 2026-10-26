@@ -13,7 +13,7 @@ import { ADJUSTMENT_STATUS } from '@/config/status';
 import { DB_ENUMS } from '@/db/enums';
 import { financeCopy } from '@/lib/copy/finance';
 import { adjustmentsCopy } from '@/lib/copy/finance-adjustments';
-import { parseAdjustmentFilter, type AdjustmentFilter } from '@/lib/validations/finance';
+import { parseAdjustmentFilter, type AdjustmentFilter } from '@/lib/validations/finance-filters';
 import {
   applyAdjustmentAction,
   approveAdjustmentAction,

@@ -6,7 +6,7 @@ import { FINANCE_LIST_LIMIT } from '@/config/finance';
 import { DB_ENUMS } from '@/db/enums';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { jakartaDayBounds } from '@/lib/utils/dates';
-import type { AdjustmentFilter } from '@/lib/validations/finance';
+import type { AdjustmentFilter } from '@/lib/validations/finance-filters';
 import type { Adjustment, FinanceList } from '@/types/finance';
 
 // /dashboard/finance/adjustments (Task P4.7.04): the adjustments newest first under RLS (payment_adjustments_super_read),

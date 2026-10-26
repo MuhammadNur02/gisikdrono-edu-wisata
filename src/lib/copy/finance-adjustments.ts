@@ -1,3 +1,4 @@
+import { FINANCE_LIST_LIMIT } from '@/config/finance';
 import type { EnumValue } from '@/db/enums';
 
 // /dashboard/finance/adjustments and /dashboard/finance/reconciliation (Task P4.7.03, P4.7.04; docs/Security.md
@@ -84,11 +85,11 @@ export const adjustmentsCopy = {
     button: 'Lepas blokir refund',
     title: 'Lepas blokir refund Midtrans',
     description:
-      'Midtrans mencatat refund penyesuaian ini dengan jumlah lain, sehingga refund berikutnya untuk pembayaran ini diblokir. Lepaskan blokir hanya setelah memeriksa dasbor Midtrans: sesudahnya angka Midtrans yang dipakai, setiap pencatatan dicatat di log audit, dan Lurah diberi tahu.',
+      'Midtrans mencatat refund penyesuaian ini dengan jumlah lain, sehingga refund berikutnya untuk pembayaran ini diblokir. Lepaskan blokir hanya setelah memeriksa dasbor Midtrans. Sesudahnya, jumlah yang dicatat Midtrans di bawah kunci penyesuaian ini dihitung sudah tercatat dan tidak bisa dicatat lagi; selisihnya dengan jumlah penyesuaian dibuka sebagai temuan rekonsiliasi, untuk diselesaikan lewat penyesuaian baru. Pengusul dan penyetuju penyesuaian ini tidak bisa melepasnya.',
     note: 'Catatan pemeriksaan',
     noteHint: 'Minimal 10 karakter. Catatan disimpan di log audit.',
     submit: 'Lepas blokir',
-    done: 'Blokir dilepas. Refund berikutnya memakai angka Midtrans.',
+    done: 'Blokir dilepas. Jumlah yang dicatat Midtrans di bawah kunci ini dihitung sudah tercatat, dan selisihnya dibuka sebagai temuan di Rekonsiliasi.',
     blocked: 'Diblokir: Midtrans mencatat jumlah lain',
   },
   // Review of PR #80, L-5.
@@ -97,7 +98,7 @@ export const adjustmentsCopy = {
     from: 'Diusulkan dari',
     to: 'Diusulkan sampai',
   },
-  more: 'Hanya 50 penyesuaian terbaru yang ditampilkan. Lebih dari 50, saring tanggal atau status untuk melihat yang lebih lama.',
+  more: `Hanya ${String(FINANCE_LIST_LIMIT)} penyesuaian terbaru yang ditampilkan. Lebih dari ${String(FINANCE_LIST_LIMIT)}, saring tanggal atau status untuk melihat yang lebih lama.`,
   overtaken:
     'Penyesuaian tidak diterapkan dan kini berstatus ditolak: Midtrans sudah mengembalikan dana permintaan refund ini, jadi transfer bank tidak dicatat lagi. Pengunjung mungkin menerima dana dua kali; ikuti panduan selisih pembayaran untuk meminta kelebihannya kembali.',
   appliesFrom: (date: string) => `Bisa diterapkan mulai ${date}`,
@@ -128,6 +129,14 @@ export const adjustmentsCopy = {
       'Pembayaran ini punya permintaan refund terbuka, dan permintaan itulah yang menentukan: transfer bank hanya bisa dicatat sebesar jumlah permintaan refund tersebut.',
     REFUND_NOT_AT_MIDTRANS:
       'Midtrans belum mencatat refund sebesar itu untuk pembayaran ini. Refund lewat transfer bank dicatat sebagai penyesuaian Refund manual.',
+    RELEASE_INELIGIBLE:
+      'Pengusul atau penyetuju penyesuaian ini tidak bisa melepas blokirnya. Minta superadmin lain memeriksa dan melepasnya.',
+    ALERT_NOT_NOTIFIED:
+      'Peringatan selisih ini belum terkirim ke Lurah. Tunggu beberapa menit sampai terkirim, lalu coba lagi.',
+    WEATHER_LINK_NOT_HELD:
+      'Tautan cuaca itu tidak sedang ditahan untuk pemesanan ini. Pilih tautan yang ditahan, atau kosongkan pilihan refund cuaca.',
+    WEATHER_FEE_UNSET_MANUAL:
+      'Atur biaya Midtrans; pengembalian dana cuaca berjalan otomatis. Jangan transfer manual.',
   },
 } as const;
 
@@ -194,7 +203,7 @@ export const reconciliationCopy = {
   recheckDescription:
     'Status terbaru order ini diminta dari Midtrans lalu diterapkan. Paling banyak sekali per menit untuk tiap pembayaran.',
   filters: { from: 'Ditemukan dari', to: 'Ditemukan sampai' },
-  more: 'Hanya 50 temuan terbuka terbaru yang ditampilkan. Lebih dari 50, saring tanggal untuk melihat yang lebih lama.',
+  more: `Hanya ${String(FINANCE_LIST_LIMIT)} temuan terbuka terbaru yang ditampilkan. Lebih dari ${String(FINANCE_LIST_LIMIT)}, saring tanggal untuk melihat yang lebih lama.`,
   rechecked: {
     applied: 'Status terbaru dari Midtrans sudah diterapkan.',
     unchanged: 'Midtrans memberi status yang sama; tidak ada yang berubah.',

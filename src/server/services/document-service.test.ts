@@ -4,12 +4,11 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Database } from '@/db/types';
 import { rateLimitKey } from '@/lib/rate-limit';
 
+import { isDocumentPathFor, SIGNED_URL_TTL_SECONDS } from './document-paths';
 import {
   countBookletDownload,
   createDocumentSignedUrl,
-  isDocumentPathFor,
   rerenderCertificateFiles,
-  SIGNED_URL_TTL_SECONDS,
   withinBookletDownloadLimit,
   withinRestrictedDocumentLimit,
 } from './document-service';

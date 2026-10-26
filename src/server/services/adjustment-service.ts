@@ -57,7 +57,9 @@ export async function propose(
       }),
     );
   } catch (error) {
-    await removeFinanceEvidence(stored.path);
+    // A refusal wrote nothing, so the file and its digest go; after any other error the write may have gone through,
+    // and the file stays with its digest (delta review of PR #80, L-d).
+    if (error instanceof AppError) await removeFinanceEvidence(stored.path);
     throw error;
   }
 }

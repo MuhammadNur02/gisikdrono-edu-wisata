@@ -5,7 +5,8 @@ import { z } from 'zod';
 import { FINANCE_LIST_LIMIT, PAYOUT_ACCOUNT_DIGITS } from '@/config/finance';
 import { EDITABLE_SETTING_KEYS } from '@/config/site-settings';
 import { DB_ENUMS } from '@/db/enums';
-import { payoutPreview, saveRevenueRule, settleRevenueEntries } from '@/db/rpc-finance';
+import { saveRevenueRule } from '@/db/rpc-finance';
+import { payoutPreview, settleRevenueEntries } from '@/db/rpc-payouts';
 import { financeCopy } from '@/lib/copy/finance';
 import { AppError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
@@ -169,10 +170,19 @@ function checkPayoutAccount(expected: string | null, typedDigits: string): void 
   }
 }
 
+// Delta review of PR #80, L-e (owner decision): the amount typed off the transfer is the preview's figure, or nothing is
+// written; settle_revenue_entries then compares that figure with the rows it stamps.
+function checkTransferredAmount(values: SettlePayoutValues): void {
+  if (values.transferredAmount !== values.expectedTotal) {
+    throw new AppError('VALIDATION', financeCopy.payouts.errors.TRANSFER_MISMATCH);
+  }
+}
+
 export async function settlePayout(
   ctx: StaffContext,
   values: SettlePayoutValues,
 ): Promise<PayoutBatch> {
+  checkTransferredAmount(values);
   checkPayoutAccount(await readExpectedPayoutAccount(), values.accountDigits);
   const stored = await storeFinanceEvidence(
     ctx,
@@ -193,7 +203,9 @@ export async function settlePayout(
       }),
     );
   } catch (error) {
-    await removeFinanceEvidence(stored.path);
+    // A refusal wrote nothing, so the file and its digest go; after any other error the write may have gone through,
+    // and the file stays with its digest (delta review of PR #80, L-d).
+    if (error instanceof AppError) await removeFinanceEvidence(stored.path);
     throw error;
   }
 }

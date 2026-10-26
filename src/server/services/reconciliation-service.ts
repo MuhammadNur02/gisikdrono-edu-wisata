@@ -9,7 +9,8 @@ import { reconciliationCopy } from '@/lib/copy/finance-adjustments';
 import { AppError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { jakartaDayBounds } from '@/lib/utils/dates';
-import type { DayFilter, ResolveIssueValues } from '@/lib/validations/finance';
+import type { ResolveIssueValues } from '@/lib/validations/finance';
+import type { DayFilter } from '@/lib/validations/finance-filters';
 import type { StaffContext } from '@/server/auth/guards';
 import { asFinanceWrite } from '@/server/services/finance-errors';
 import type {

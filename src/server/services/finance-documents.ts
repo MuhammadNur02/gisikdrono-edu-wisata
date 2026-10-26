@@ -130,8 +130,19 @@ export async function storeFinanceDocument(
   const path = `${destination}.${stored.extension}`;
   // The digest first: a file never sits in the bucket without the content check that goes with it.
   await recordProofDigest(adminClient, path, proofDigest(arrived.bytes));
-  await writeDocument(adminClient, path, stored.body, stored.contentType);
+  try {
+    await writeDocument(adminClient, path, stored.body, stored.contentType);
+  } catch (error) {
+    await forgetProofDigest(adminClient, path);
+    throw error;
+  }
   return { ok: true, path };
+}
+
+// A digest whose file backs nothing; finance_proofs_guard refuses to forget one that does (delta review of PR #80, L-d).
+async function forgetProofDigest(adminClient: DatabaseClient, path: string): Promise<void> {
+  const { error } = await adminClient.from(PROOFS_TABLE).delete().eq('path', path);
+  if (error) throw error;
 }
 
 // A document whose RPC then refused the write is taken out again, so the bucket holds only what the ledger names.
@@ -141,6 +152,5 @@ export async function removeFinanceDocument(
 ): Promise<void> {
   const { error } = await adminClient.storage.from(DOCUMENTS_BUCKET).remove([path]);
   if (error) throw error;
-  const forgotten = await adminClient.from(PROOFS_TABLE).delete().eq('path', path);
-  if (forgotten.error) throw forgotten.error;
+  await forgetProofDigest(adminClient, path);
 }

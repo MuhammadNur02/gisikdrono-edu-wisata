@@ -9,7 +9,7 @@ import { FormAlert } from '@/components/forms/form-alert';
 import { RECONCILIATION_PATH } from '@/config/finance';
 import { financeCopy } from '@/lib/copy/finance';
 import { reconciliationCopy } from '@/lib/copy/finance-adjustments';
-import { parseDayFilter, type DayFilter } from '@/lib/validations/finance';
+import { parseDayFilter, type DayFilter } from '@/lib/validations/finance-filters';
 import {
   checkChainsAction,
   recheckPaymentAction,

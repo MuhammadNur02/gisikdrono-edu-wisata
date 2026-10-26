@@ -38,7 +38,7 @@ interface FakeClient {
   deleted: unknown[];
 }
 
-function fakeClient(): FakeClient {
+function fakeClient(uploadError: Error | null = null): FakeClient {
   const inserted: unknown[] = [];
   const deleted: unknown[] = [];
   const calls: string[] = [];
@@ -46,7 +46,7 @@ function fakeClient(): FakeClient {
     from: () => ({
       upload: () => {
         calls.push('upload');
-        return Promise.resolve({ error: null });
+        return Promise.resolve({ error: uploadError });
       },
       remove: () => Promise.resolve({ error: null }),
     }),
@@ -106,6 +106,14 @@ describe('storeFinanceDocument (M-4)', () => {
       { path: 'payouts/batch-1/bukti.webp', sha256: proofDigest(IMAGE_BYTES) },
     ]);
     expect(fake.calls).toEqual(['insert', 'upload']);
+  });
+
+  it('forgets the digest when the file could not be written (delta review of PR #80, L-d)', async () => {
+    const fake = fakeClient(new Error('storage down'));
+    await expect(
+      storeFinanceDocument(fake.client, 'kelurahan/upload-1', 'payouts/batch-1/bukti'),
+    ).rejects.toThrow('storage down');
+    expect(fake.deleted).toEqual([{ column: 'path', value: 'payouts/batch-1/bukti.webp' }]);
   });
 
   it('forgets the digest when the document is taken out again', async () => {

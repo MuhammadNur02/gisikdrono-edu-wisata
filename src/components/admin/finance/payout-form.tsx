@@ -10,6 +10,7 @@ import { PayoutPreviewLine } from '@/components/admin/finance/payout-preview';
 import { TotpCodeField } from '@/components/auth/totp-code-field';
 import { FormAlert } from '@/components/forms/form-alert';
 import { FormField } from '@/components/forms/form-field';
+import { MoneyInput } from '@/components/forms/money-input';
 import { PostForm } from '@/components/forms/post-form';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
@@ -101,6 +102,28 @@ function TransferFields({ form }: { form: PayoutForm }) {
   );
 }
 
+// Delta review of PR #80, L-e: the amount typed off the transfer, which must be the preview's figure.
+function TransferredAmountField({ form }: { form: PayoutForm }) {
+  return (
+    <FormField
+      control={form.control}
+      name="transferredAmount"
+      label={text.fields.transferredAmount}
+      description={text.fields.transferredAmountHint}
+      required
+      render={(field) => (
+        <MoneyInput
+          {...field}
+          value={Number.isFinite(field.value) ? field.value : null}
+          onChange={(value) => {
+            field.onChange(value ?? Number.NaN);
+          }}
+        />
+      )}
+    />
+  );
+}
+
 function PartyField({ form, parties }: { form: PayoutForm; parties: readonly Option[] }) {
   return (
     <FormField
@@ -130,6 +153,7 @@ function usePayoutForm(today: string) {
       from: today,
       to: today,
       expectedTotal: 0,
+      transferredAmount: Number.NaN,
       reference: '',
       accountDigits: '',
       proofUpload: '',
@@ -155,6 +179,7 @@ const FIELDS = [
   'beneficiaryKey',
   'from',
   'to',
+  'transferredAmount',
   'reference',
   'accountDigits',
   'proofUpload',
@@ -183,6 +208,7 @@ export function PayoutForm({
         <PartyField form={form} parties={parties} />
         <PeriodFields form={form} today={today} />
         <PayoutPreviewLine state={preview} />
+        <TransferredAmountField form={form} />
         <TransferFields form={form} />
         <TotpCodeField control={form.control} name="code" description={staffCopy.stepUp.hint} />
         <Button

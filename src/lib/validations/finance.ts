@@ -146,6 +146,9 @@ const payoutFields = {
   // Review of PR #80, M-2: the total the preview showed and the superadmin transferred; settle_revenue_entries refuses
   // any other (PAYOUT_TOTAL_MISMATCH).
   expectedTotal: rupiah,
+  // Delta review of PR #80, L-e (owner decision): the amount the superadmin typed off the transfer, which the server
+  // compares with the preview's figure as it compares the account digits.
+  transferredAmount: rupiah,
   reference: z.string().trim().min(PAYOUT_REFERENCE_MIN_LENGTH).max(PAYOUT_REFERENCE_MAX_LENGTH),
   accountDigits: z.string().regex(new RegExp(`^[0-9]{${String(PAYOUT_ACCOUNT_DIGITS)}}$`)),
   // The uploads-quarantine path api/uploads/sign issued for the proof.
@@ -282,30 +285,3 @@ export type ResolveIssueValues = z.output<typeof resolveIssueSchema>;
 export const resolveIssueFormSchema = resolveIssueSchema.extend(stepUpField);
 
 export const recheckPaymentSchema = z.object({ paymentId: z.uuid() }).strict();
-
-// ===== List filters (review of PR #80, L-5) =====
-
-// The adjustments list by status and the Jakarta days of their proposal, the issues list by the days they were found;
-// a value the URL got wrong is left out rather than refused.
-export interface DayFilter {
-  from: string | null;
-  to: string | null;
-}
-
-export interface AdjustmentFilter extends DayFilter {
-  status: (typeof DB_ENUMS.adjustment_status)[number] | null;
-}
-
-function dayOf(params: SearchParams, key: string): string | null {
-  const parsed = isoDate.safeParse(firstOf(params, key));
-  return parsed.success ? parsed.data : null;
-}
-
-export function parseDayFilter(params: SearchParams): DayFilter {
-  return { from: dayOf(params, 'from'), to: dayOf(params, 'to') };
-}
-
-export function parseAdjustmentFilter(params: SearchParams): AdjustmentFilter {
-  const status = z.enum(DB_ENUMS.adjustment_status).safeParse(firstOf(params, 'status'));
-  return { ...parseDayFilter(params), status: status.success ? status.data : null };
-}

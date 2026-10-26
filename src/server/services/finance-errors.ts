@@ -62,6 +62,16 @@ const REFUSALS: Readonly<Record<FinanceRefusalHint, { code: ActionErrorCode; mes
     code: 'VALIDATION',
     message: adjustmentsCopy.errors.REFUND_REQUEST_MISMATCH,
   },
+  RELEASE_INELIGIBLE: { code: 'FORBIDDEN', message: adjustmentsCopy.errors.RELEASE_INELIGIBLE },
+  ALERT_NOT_NOTIFIED: { code: 'STATE_INVALID', message: adjustmentsCopy.errors.ALERT_NOT_NOTIFIED },
+  WEATHER_LINK_NOT_HELD: {
+    code: 'VALIDATION',
+    message: adjustmentsCopy.errors.WEATHER_LINK_NOT_HELD,
+  },
+  WEATHER_FEE_UNSET_MANUAL: {
+    code: 'STATE_INVALID',
+    message: adjustmentsCopy.errors.WEATHER_FEE_UNSET_MANUAL,
+  },
 };
 
 const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;

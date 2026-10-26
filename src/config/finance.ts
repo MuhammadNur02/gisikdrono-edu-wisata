@@ -74,5 +74,10 @@ export const FINANCE_REFUSAL_HINTS = [
   'REFUND_LIST_MISSING',
   'REFUND_PENDING_AT_MIDTRANS',
   'REFUND_REQUEST_MISMATCH',
+  'RELEASE_INELIGIBLE',
+  'ALERT_NOT_NOTIFIED',
+  'WEATHER_LINK_NOT_HELD',
+  // PR #90's: a manual refund named for a weather link held for an unset Midtrans fee.
+  'WEATHER_FEE_UNSET_MANUAL',
 ] as const;
 export type FinanceRefusalHint = (typeof FINANCE_REFUSAL_HINTS)[number];
