@@ -1,7 +1,9 @@
+import { createClient } from '@supabase/supabase-js';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { POST } from '@/app/api/export/[kind]/route';
+import type { Database } from '@/db/types';
 
 import {
   lastAuditId,
@@ -10,7 +12,7 @@ import {
   userIdOf,
   type ApiClient,
 } from './helpers/staff-session';
-import { runSql } from '../../scripts/local-stack';
+import { localStack, runSql } from '../../scripts/local-stack';
 
 // POST /api/export/[kind] for an RW admin (Task P5.1.02; docs/Security.md §7.5, DATA-06, STAFF-02): the route answers
 // 403 for every kind but attendance before it reads the body, with a real AAL2 session of the development RW 05
@@ -25,6 +27,14 @@ const REFUSED_KINDS = ['visits', 'finance', 'audit'] as const;
 // The signed-in client the route's createSupabaseServerClient hands out, set once the account has signed in.
 const current = vi.hoisted(() => ({ session: null as ApiClient | null }));
 
+// The route's module graph reaches the service-role client, whose React taint call needs Next's runtime; the
+// suites hand it the local stack's client instead, as every other suite here does.
+vi.mock('@/lib/supabase/admin', () => ({
+  createSupabaseAdminClient: () =>
+    createClient<Database>(localStack().apiUrl, localStack().serviceRoleKey, {
+      auth: { persistSession: false },
+    }),
+}));
 vi.mock('@/lib/supabase/server', () => ({
   createSupabaseServerClient: () => {
     if (!current.session) throw new Error('no staff session for this request');

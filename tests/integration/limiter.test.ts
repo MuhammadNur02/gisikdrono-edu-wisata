@@ -18,6 +18,8 @@ import { localStack, runSql, sqlText } from '../../scripts/local-stack';
 // A port nothing listens on: the outage the matrix is about.
 const UNREACHABLE_API = 'http://127.0.0.1:9';
 const PARALLEL_HITS = 30;
+// supabase-js retries a read that could not connect three times, a second, two and four apart, before it gives up.
+const OUTAGE_MS = 60_000;
 
 const bucketRowsSchema = z.array(z.object({ key: z.string(), count: z.coerce.number() }));
 
@@ -86,31 +88,47 @@ describe('the limiter on rate_limit_buckets', () => {
 describe('the fail-closed matrix while the database cannot answer', () => {
   const outage = () => serviceClient(UNREACHABLE_API);
 
-  it('refuses every fail-closed limit by passing the outage on', async () => {
-    for (const name of [
-      'login:ip',
-      'booking_create:ip',
-      'export_download:user',
-      'link_verify:ip',
-    ] as const) {
-      expect(RATE_LIMITS[name].whenUnavailable).toBe('fail-closed');
-      await expect(withinRateLimits(outage(), [{ name, subject: 'outage' }])).rejects.toBeDefined();
-    }
-  });
+  it(
+    'refuses every fail-closed limit by passing the outage on',
+    async () => {
+      const names = [
+        'login:ip',
+        'booking_create:ip',
+        'export_download:user',
+        'link_verify:ip',
+      ] as const;
+      for (const name of names) expect(RATE_LIMITS[name].whenUnavailable).toBe('fail-closed');
+      const outcomes = await Promise.allSettled(
+        names.map((name) => withinRateLimits(outage(), [{ name, subject: 'outage' }])),
+      );
+      expect(outcomes.map((outcome) => outcome.status)).toEqual(
+        Array(names.length).fill('rejected'),
+      );
+    },
+    OUTAGE_MS,
+  );
 
-  it('lets a booking through on its fail-open limits alone', async () => {
-    const checks = [
-      { name: 'booking:phone' as const, subject: '+6281200000000' },
-      { name: 'booking:ip+ua' as const, subject: '203.0.113.9|Integration' },
-    ];
-    await expect(withinRateLimits(outage(), checks)).resolves.toBe(true);
-  });
+  it(
+    'lets a booking through on its fail-open limits alone',
+    async () => {
+      const checks = [
+        { name: 'booking:phone' as const, subject: '+6281200000000' },
+        { name: 'booking:ip+ua' as const, subject: '203.0.113.9|Integration' },
+      ];
+      await expect(withinRateLimits(outage(), checks)).resolves.toBe(true);
+    },
+    OUTAGE_MS,
+  );
 
-  it('refuses a request that mixes a fail-open limit with a fail-closed one', async () => {
-    const checks = [
-      { name: 'booking:phone' as const, subject: '+6281200000000' },
-      { name: 'booking_create:ip' as const, subject: '203.0.113.9' },
-    ];
-    await expect(withinRateLimits(outage(), checks)).rejects.toBeDefined();
-  });
+  it(
+    'refuses a request that mixes a fail-open limit with a fail-closed one',
+    async () => {
+      const checks = [
+        { name: 'booking:phone' as const, subject: '+6281200000000' },
+        { name: 'booking_create:ip' as const, subject: '203.0.113.9' },
+      ];
+      await expect(withinRateLimits(outage(), checks)).rejects.toBeDefined();
+    },
+    OUTAGE_MS,
+  );
 });
