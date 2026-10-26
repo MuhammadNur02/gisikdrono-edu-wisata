@@ -7,6 +7,7 @@ import { z } from 'zod';
 import type { Database } from '@/db/types';
 import { startPayment } from '@/server/services/payment-service';
 
+import { runTag, syntheticPhone, syntheticPhonesOf } from './helpers/synthetic';
 import { localStack, runSql, sqlText } from '../../scripts/local-stack';
 import { simulatedNotification } from '../../scripts/midtrans-notification';
 import { POST } from '../../src/app/api/webhooks/midtrans/[token]/route';
@@ -32,7 +33,7 @@ vi.mock('@/lib/supabase/admin', () => ({
     }),
 }));
 
-const RUN = String(randomInt(100000, 999999));
+const RUN = runTag();
 const PACKAGE_ID = randomUUID();
 const PRICE_PER_PAX = 30000;
 const PAX = 20;
@@ -51,7 +52,7 @@ const clockOf = (minute: number) =>
   `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
 
 async function holdFor(flow: number, sessionId: string): Promise<{ id: string; code: string }> {
-  const phone = `+62855${RUN}${String(flow).padStart(2, '0')}`;
+  const phone = syntheticPhone(RUN, flow);
   const otpId = randomUUID();
   const rows = z.array(z.object({ id: z.string(), code: z.string() })).parse(
     await runSql(`insert into public.guest_otps (id, purpose, phone, code_hash, browser_hash, expires_at, verified_at)
@@ -129,6 +130,26 @@ async function stateOf(bookingId: string, sessionId: string) {
   return rows[0];
 }
 
+// CLAUDE.md §7.2 (review of PR #84, L-2): a duplicate settlement leaves its refund task, the open high alert that
+// names the order and the amount to give back and that record_refund closes, and every superadmin is told by email.
+async function expectRefundTask(bookingId: string, code: string, order: string): Promise<void> {
+  const task = z
+    .array(z.object({ title: z.string(), order_id: z.string(), amount: z.coerce.number() }))
+    .parse(
+      await runSql(`select title, details ->> 'order_id' as order_id, details ->> 'amount' as amount
+        from public.security_alerts where fingerprint = ${sqlText(`duplicate_settlement:${order}`)}
+          and acknowledged_at is null`),
+    );
+  expect(task.map((row) => [row.order_id, row.amount])).toEqual([[order, TOTAL]]);
+  expect(task[0]?.title).toContain('kembalikan dananya');
+  const told = z.array(z.object({ count: z.coerce.number() })).parse(
+    await runSql(`select count(*) from public.notifications n
+        where n.template = 'admin_booking_needs_review' and n.params ->> 'booking_code' = ${sqlText(code)}
+          and n.params ->> 'reason' = 'DUPLICATE_SETTLEMENT' and n.dedupe_key like ${sqlText(`booking:${bookingId}:%`)}`),
+  );
+  expect(told[0]?.count).toBeGreaterThanOrEqual(1);
+}
+
 const paidBookings: string[] = [];
 
 beforeAll(async () => {
@@ -146,8 +167,16 @@ beforeAll(async () => {
        '${clockOf(START_MINUTE + 170)}', 'Uji lunas ${RUN} c', ${String(ROOMY)});`);
 }, SLOW_MS);
 
+// Paid bookings, their payments, ledger and sessions stay (payments are never deleted, and a session with bookings
+// cannot be); the codes, the duplicate's alert and the staff messages about it go.
 afterAll(async () => {
   await stub.close();
+  await runSql(`select set_config('app.purge', 'on', true);
+    delete from public.guest_otps where phone like '${syntheticPhonesOf(RUN)}';
+    delete from public.notifications where template = 'admin_booking_needs_review'
+      and dedupe_key like any (array[${paidBookings.map((id) => sqlText(`booking:${id}:%`)).join(', ') || "''"}]);
+    delete from public.security_alerts where rule = 'duplicate_settlement'
+      and details ->> 'booking_id' = any (array[${paidBookings.map(sqlText).join(', ') || "''"}]);`);
 });
 
 describe('a settlement after the hold lapsed', () => {
@@ -244,13 +273,15 @@ describe('a second settled attempt of a paid booking', () => {
       );
       expect(alerts).toEqual([{ severity: 'high' }]);
       paidBookings.push(hold.id);
+      await expectRefundTask(hold.id, hold.code, firstOrder);
     },
     SLOW_MS,
   );
 });
 
 describe('the ledger', () => {
-  it('adds up to the total of every booking paid here, and its hash chain verifies', async () => {
+  it('adds up to the total of each booking paid here, and its hash chain verifies', async () => {
+    expect(paidBookings).toHaveLength(3);
     const rows = z.array(z.object({ total: z.coerce.number(), ledger: z.coerce.number() })).parse(
       await runSql(`select b.total_amount as total,
             (select coalesce(sum(e.amount), 0) from public.revenue_share_entries e where e.booking_id = b.id) as ledger

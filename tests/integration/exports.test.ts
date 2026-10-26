@@ -42,18 +42,24 @@ vi.mock('@/lib/supabase/server', () => ({
   },
 }));
 
-function exportRequest(kind: string): Request {
+// A body exportRequestSchema takes, unless one is given.
+const VALID_BODY = {
+  format: 'csv',
+  from: '2026-10-01',
+  to: '2026-10-31',
+  purpose: 'Rekap bulanan untuk rapat RW',
+};
+
+function exportRequest(kind: string, body: unknown = VALID_BODY): Request {
   return new Request(`${SITE}/api/export/${kind}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', origin: SITE },
-    body: JSON.stringify({
-      format: 'csv',
-      from: '2026-10-01',
-      to: '2026-10-31',
-      reason: 'Rekap bulanan untuk rapat RW',
-    }),
+    body: JSON.stringify(body),
   });
 }
+
+const postExport = (kind: string, body?: unknown) =>
+  POST(exportRequest(kind, body), { params: Promise.resolve({ kind }) });
 
 async function exportsBy(userId: string): Promise<number> {
   const rows = z
@@ -71,8 +77,22 @@ beforeAll(async () => {
   adminId = await userIdOf(current.session);
 });
 
+// The attendance export of the positive control: its file in the documents bucket, then its row.
 afterAll(async () => {
   current.session = null;
+  const files = z.array(z.object({ path: z.string() })).parse(
+    await runSql(`select storage_path as path from public.exports
+      where requested_by = '${adminId}' and storage_path is not null and created_at > now() - interval '1 hour'`),
+  );
+  if (files.length > 0) {
+    await createClient<Database>(localStack().apiUrl, localStack().serviceRoleKey, {
+      auth: { persistSession: false },
+    })
+      .storage.from('documents')
+      .remove(files.map((file) => file.path));
+  }
+  await runSql(`select set_config('app.purge', 'on', true);
+    delete from public.exports where requested_by = '${adminId}' and created_at > now() - interval '1 hour';`);
   await removeSignInTraces(auditIdBefore);
 });
 
@@ -80,7 +100,7 @@ describe('an export asked for by an RW admin', () => {
   it('is refused with 403 for visits, finance and audit, and leaves no export behind', async () => {
     const before = await exportsBy(adminId);
     for (const kind of REFUSED_KINDS) {
-      const response = await POST(exportRequest(kind), { params: Promise.resolve({ kind }) });
+      const response = await postExport(kind);
       expect(response.status).toBe(FORBIDDEN);
       await expect(response.json()).resolves.toMatchObject({
         ok: false,
@@ -88,6 +108,18 @@ describe('an export asked for by an RW admin', () => {
       });
     }
     expect(await exportsBy(adminId)).toBe(before);
+  });
+
+  it('is refused before its body is read, so a broken body gets the same 403', async () => {
+    const response = await postExport('visits', { format: 'csv', unexpected: true });
+    expect(response.status).toBe(FORBIDDEN);
+  });
+
+  // The positive control (review of PR #84, L-4): the same session exports its own RW's attendance.
+  it('goes through for attendance, the one kind an RW admin exports', async () => {
+    const response = await postExport('attendance');
+    expect(response.status).not.toBe(FORBIDDEN);
+    expect(response.status).toBe(200);
   });
 
   it('is refused by rpc_create_export too when the session calls it directly', async () => {

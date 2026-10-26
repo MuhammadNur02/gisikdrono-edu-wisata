@@ -1,4 +1,4 @@
-import { randomInt, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
 import { createClient } from '@supabase/supabase-js';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -9,6 +9,7 @@ import type { Database } from '@/db/types';
 import { serverEnv } from '@/lib/env';
 
 import { lastAuditId } from './helpers/staff-session';
+import { runTag, syntheticPhone, syntheticPhonesOf } from './helpers/synthetic';
 import { localStack, runSql, sqlText } from '../../scripts/local-stack';
 
 // The anomaly scan of POST /api/jobs/anomaly-scan against fixtures in the real tables (Task P5.1.02; docs/Security.md
@@ -22,7 +23,7 @@ vi.mock('@/lib/supabase/admin', () => ({
     }),
 }));
 
-const RUN = String(randomInt(100000, 999999));
+const RUN = runTag();
 const PACKAGE_ID = randomUUID();
 const SESSIONS = { stale: randomUUID(), held: randomUUID(), large: randomUUID() };
 const HELD_PAX = 5;
@@ -30,7 +31,7 @@ const HELD_CAPACITY_AFTER = 6;
 const LARGE_PAX = 150;
 const SLOW_MS = 120_000;
 
-const phoneOf = (index: number) => `+62853${RUN}${String(index).padStart(2, '0')}`;
+const phoneOf = (index: number) => syntheticPhone(RUN, index);
 
 async function hold(index: number, sessionId: string, pax: number): Promise<string> {
   const otpId = randomUUID();
@@ -86,8 +87,10 @@ beforeAll(async () => {
   ids.stale = await hold(1, SESSIONS.stale, 2);
   ids.held = await hold(2, SESSIONS.held, HELD_PAX);
   ids.large = await hold(3, SESSIONS.large, LARGE_PAX);
-  // The hold past its deadline (and past the expiry job's grace), and the session made smaller once half of it was
-  // held unpaid, so its unpaid share reaches 5 of 6.
+  // Another suite's lapsed hold would count in hold_past_ttl too, so the expiry job runs first; then this suite's hold
+  // is moved past its deadline (and past the job's grace), and the session made smaller once half of it was held
+  // unpaid, so its unpaid share reaches 5 of 6.
+  await runSql('select internal.expire_stale_bookings()');
   await runSql(`select set_config('app.hold_extension', '1', true);
     update public.bookings set expires_at = now() - interval '20 minutes' where id = '${ids.stale}';`);
   await runSql(
@@ -107,12 +110,13 @@ afterAll(async () => {
     .map((id) => `'${id}'`)
     .join(', ');
   await runSql(`select set_config('app.purge', 'on', true), set_config('app.in_rpc', '1', true);
+    -- create_booking's own info alert for a group past 60 (large_group), beside the scan's large_booking.
     delete from public.security_alerts where fingerprint in (${fingerprints.map(sqlText).join(', ')})
       or fingerprint = ${sqlText(`large_group:${ids.large}`)};
     delete from public.notifications where booking_id in (${bookings});
     delete from public.booking_events where booking_id in (${bookings});
     delete from public.booking_legs where booking_id in (${bookings});
-    delete from public.guest_otps where phone like '+62853${RUN}%';
+    delete from public.guest_otps where phone like '${syntheticPhonesOf(RUN)}';
     delete from public.bookings where package_id = '${PACKAGE_ID}';
     update public.visit_sessions set reserved_pax = 0 where id in (${sessions});
     delete from public.visit_sessions where id in (${sessions});
@@ -130,12 +134,23 @@ describe('the anomaly scan job', () => {
   it(
     'raises an alert for a stale hold, a session held unpaid and a very large group',
     async () => {
+      const staleOutside = z.array(z.object({ count: z.coerce.number() })).parse(
+        await runSql(`select count(*) from public.bookings b where b.status = 'pending_payment'
+          and b.expires_at < now() - interval '15 minutes' and b.id <> '${ids.stale}'`),
+      );
+      expect(staleOutside).toEqual([{ count: 0 }]);
+
       const response = await anomalyScan(scanRequest(`Bearer ${serverEnv.CRON_SECRET}`));
       expect(response.status).toBe(200);
 
       const alerts = await openAlerts(fingerprints);
       expect(alerts.map((alert) => alert.fingerprint)).toEqual([...fingerprints].sort());
       for (const alert of alerts) expect(alert.severity).toBe('medium');
+      const stale = z.array(z.object({ bookings: z.string() })).parse(
+        await runSql(`select details ->> 'bookings' as bookings from public.security_alerts
+          where fingerprint = 'hold_past_ttl:-' and acknowledged_at is null`),
+      );
+      expect(stale).toEqual([{ bookings: '1' }]);
     },
     SLOW_MS,
   );

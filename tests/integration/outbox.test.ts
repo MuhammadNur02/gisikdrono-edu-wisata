@@ -1,4 +1,4 @@
-import { randomInt, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import { createClient } from '@supabase/supabase-js';
@@ -10,12 +10,15 @@ import type { NotificationProviders, OutgoingMessage } from '@/lib/notifications
 import { processNotifications } from '@/server/services/notification-service';
 
 import { lastAuditId } from './helpers/staff-session';
+import { runTag, syntheticPhone, syntheticPhonesOf } from './helpers/synthetic';
 import { localStack, runSql, sqlText } from '../../scripts/local-stack';
 
-// The outbox worker run twice at once, as the minute's pg_cron run and an after() kick do (Task P5.1.02; docs/PRD.md
-// §8.7, GUEST-07, CLAUDE.md §5.4): internal.claim_notifications hands a message to one worker only, each message is
-// sent once, and a later run sends none of them again. The providers record what they would send and answer after a
-// moment, so the two workers overlap; nothing leaves this machine.
+// Two outbox workers at once, as the minute's pg_cron run and an after() kick can be (Task P5.1.02; docs/PRD.md §8.7,
+// GUEST-07, CLAUDE.md §5.4). The overlap is made certain (review of PR #84, M-1): worker A claims the run's messages in
+// a transaction it keeps open for a second, holding their row locks, the way a worker does between its claim and its
+// commit; worker B, processNotifications itself, starts 200 ms into that second. B must claim none of A's messages,
+// each message ends sent exactly once, and a later run sends none of them again. B's provider only records what it
+// would send; nothing leaves this machine.
 vi.mock('@/lib/supabase/admin', () => ({
   createSupabaseAdminClient: () =>
     createClient<Database>(localStack().apiUrl, localStack().serviceRoleKey, {
@@ -23,16 +26,18 @@ vi.mock('@/lib/supabase/admin', () => ({
     }),
 }));
 
-const RUN = String(randomInt(100000, 999999));
+const RUN = runTag();
 const PACKAGE_ID = randomUUID();
 const SESSION_ID = randomUUID();
 const HOLDS = 4;
 const PAX = 2;
-const SEND_DELAY_MS = 40;
-const MAX_ROUNDS = 30;
+// Worker A's claim takes up to the most claim_notifications allows, so it holds every waiting booking_created message.
+const A_CLAIM_LIMIT = 100;
+const A_HOLD_SECONDS = 1;
+const B_START_MS = 200;
 const SLOW_MS = 120_000;
 
-const phoneOf = (index: number) => `+62854${RUN}${String(index).padStart(2, '0')}`;
+const phoneOf = (index: number) => syntheticPhone(RUN, index);
 
 function adminClient() {
   return createClient<Database>(localStack().apiUrl, localStack().serviceRoleKey, {
@@ -43,10 +48,12 @@ function adminClient() {
 function recordingProviders() {
   const sent: OutgoingMessage[] = [];
   const provider = {
-    send: async (message: OutgoingMessage) => {
+    send: (message: OutgoingMessage) => {
       sent.push(message);
-      await sleep(SEND_DELAY_MS);
-      return { ok: true as const, providerMessageId: `test-${message.notificationId}` };
+      return Promise.resolve({
+        ok: true as const,
+        providerMessageId: `worker-b-${message.notificationId}`,
+      });
     },
   };
   const providers: NotificationProviders = { whatsapp: provider, email: provider };
@@ -67,13 +74,28 @@ async function hold(index: number): Promise<void> {
       internal.booking_quote_hash(internal.booking_quote('${PACKAGE_ID}', ${String(PAX)}, '[]', array[5]::smallint[])));`);
 }
 
-const ownRowsSchema = z.array(z.object({ id: z.string(), status: z.string() }));
+const ownRowsSchema = z.array(
+  z.object({ id: z.string(), status: z.string(), provider_message_id: z.string().nullable() }),
+);
 
 async function ownMessages() {
   return ownRowsSchema.parse(
-    await runSql(`select n.id::text, n.status::text from public.notifications n
+    await runSql(`select n.id::text, n.status::text, n.provider_message_id from public.notifications n
       join public.bookings b on b.id = n.booking_id where b.package_id = '${PACKAGE_ID}' order by n.id`),
   );
+}
+
+// Worker A: a claim held open for a second, then each claimed message marked sent, in one transaction.
+async function workerA(): Promise<string[]> {
+  const rows = z.array(z.object({ id: z.string() })).parse(
+    await runSql(`create temporary table worker_a on commit drop as
+        select n.id from internal.claim_notifications(${String(A_CLAIM_LIMIT)},
+          array['booking_created']::public.notification_template[]) as n;
+      select pg_sleep(${String(A_HOLD_SECONDS)});
+      select internal.complete_notification(id, 'worker-a-' || id) from worker_a;
+      select id::text from worker_a;`),
+  );
+  return rows.map((row) => row.id);
 }
 
 let auditIdBefore = 0;
@@ -95,7 +117,7 @@ afterAll(async () => {
     delete from public.notifications where booking_id in (${bookings});
     delete from public.booking_events where booking_id in (${bookings});
     delete from public.booking_legs where booking_id in (${bookings});
-    delete from public.guest_otps where phone like '+62854${RUN}%';
+    delete from public.guest_otps where phone like '${syntheticPhonesOf(RUN)}';
     delete from public.bookings where package_id = '${PACKAGE_ID}';
     update public.visit_sessions set reserved_pax = 0 where id = '${SESSION_ID}';
     delete from public.visit_sessions where id = '${SESSION_ID}';
@@ -106,41 +128,34 @@ afterAll(async () => {
 
 describe('two outbox workers at once', () => {
   it(
-    'send each message once, and a later run sends none of them again',
+    'never hand one message to both, and send each message exactly once',
     async () => {
-      const queued = await ownMessages();
-      expect(queued.length).toBeGreaterThanOrEqual(HOLDS);
-      const ownIds = new Set(queued.map((row) => row.id));
+      const ownIds = (await ownMessages()).map((row) => row.id);
+      expect(ownIds.length).toBeGreaterThanOrEqual(HOLDS);
       const { providers, sent } = recordingProviders();
 
-      for (let round = 0; round < MAX_ROUNDS; round += 1) {
-        const pending = (await ownMessages()).filter(
-          (row) => row.status === 'queued' || row.status === 'sending',
-        );
-        if (pending.length === 0) break;
-        await Promise.all([
-          processNotifications(adminClient(), providers),
-          processNotifications(adminClient(), providers),
-        ]);
-      }
-
-      const ownSends = sent
-        .filter((message) => ownIds.has(message.notificationId))
-        .map((message) => message.notificationId);
-      expect(new Set(ownSends).size).toBe(ownSends.length);
-      const settled = await ownMessages();
-      expect(settled.filter((row) => row.status === 'queued' || row.status === 'sending')).toEqual(
-        [],
-      );
-      const sentRows = settled.filter((row) => row.status === 'sent').map((row) => row.id);
-      expect(sentRows.length).toBeGreaterThanOrEqual(HOLDS);
-      expect([...ownSends].sort()).toEqual([...sentRows].sort());
-
-      const before = sent.length;
+      const claimedByA = workerA();
+      await sleep(B_START_MS);
       await processNotifications(adminClient(), providers);
-      expect(sent.slice(before).filter((message) => ownIds.has(message.notificationId))).toEqual(
-        [],
+      const aIds = new Set(await claimedByA);
+
+      expect(ownIds.filter((id) => !aIds.has(id))).toEqual([]);
+      expect(sent.filter((message) => aIds.has(message.notificationId))).toEqual([]);
+      const settled = await ownMessages();
+      expect(settled.map((row) => [row.status, row.provider_message_id])).toEqual(
+        settled.map((row) => ['sent', `worker-a-${row.id}`]),
       );
+    },
+    SLOW_MS,
+  );
+
+  it(
+    'send none of them again on a later run',
+    async () => {
+      const ownIds = new Set((await ownMessages()).map((row) => row.id));
+      const { providers, sent } = recordingProviders();
+      await processNotifications(adminClient(), providers);
+      expect(sent.filter((message) => ownIds.has(message.notificationId))).toEqual([]);
     },
     SLOW_MS,
   );

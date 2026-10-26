@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { lastAuditId } from './helpers/staff-session';
+import { runTag, syntheticPhone } from './helpers/synthetic';
 import { runSql, sqlText } from '../../scripts/local-stack';
 
 // The nightly retention run of 02:00 WIB against the real tables (Task P5.1.02; docs/Security.md §7.6, PDP-03,
@@ -14,7 +15,7 @@ import { runSql, sqlText } from '../../scripts/local-stack';
 
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const PACKAGE_ID = randomUUID();
-const RUN = String(randomInt(100000, 999999));
+const RUN = runTag();
 
 const codeOf = () =>
   `GSK-${Array.from({ length: 8 }, () => CROCKFORD[randomInt(0, CROCKFORD.length)] ?? '0').join('')}`;
@@ -27,12 +28,28 @@ const BOOKINGS = {
   expiredRecently: { id: randomUUID(), status: 'expired', expiredDaysAgo: 6 },
   cancelledLongAgo: { id: randomUUID(), status: 'cancelled', expiredDaysAgo: 8 },
   visitedPastRetention: { id: randomUUID(), status: 'completed', visitDaysAgo: 25 * 31 },
+  visitedWithinRetention: { id: randomUUID(), status: 'completed', visitDaysAgo: 23 * 30 },
 } as const;
 
 type BookingName = keyof typeof BOOKINGS;
 type Fixture = (typeof BOOKINGS)[BookingName];
 
 const PARTICIPANTS_PER_BOOKING = 2;
+// A participant's certificate, with the PDF it was rendered to, for the oldest and the most recent visit.
+const CERTIFIED: readonly BookingName[] = ['visitedLongAgo', 'visitedRecently'];
+const pdfPathOf = (name: BookingName) => `certificates/${BOOKINGS[name].id}/peserta-1.pdf`;
+
+function certificateRow(name: BookingName, index: number): string {
+  const booking = BOOKINGS[name];
+  const verifyCode = Array.from(
+    { length: 10 },
+    () => CROCKFORD[randomInt(0, CROCKFORD.length)] ?? '0',
+  ).join('');
+  return `('${booking.id}', (select p.id from public.booking_participants p where p.booking_id = '${booking.id}'
+      and p.seq_no = 1), 'participant', 'SERT/GSK/2026/9${RUN}${String(index)}', '${verifyCode}',
+    'Peserta ${name} 1', public.today_jkt() - ${String('visitDaysAgo' in booking ? booking.visitDaysAgo : 0)}, '{5}',
+    '${pdfPathOf(name)}', now())`;
+}
 
 const stateSchema = z.array(
   z.object({
@@ -52,7 +69,7 @@ function bookingRow(name: BookingName, index: number): string {
   const lapsedAt =
     lapsedDaysAgo === null ? 'null' : `now() - interval '${String(lapsedDaysAgo)} days'`;
   return `('${fixture.id}', '${codeOf()}', '${fixture.status}', '${PACKAGE_ID}', '{}', '{5}', 'school',
-    'Bu Retensi ${String(index)}', '+62856${RUN}${String(index).padStart(2, '0')}', 'retensi${RUN}${String(index)}@contoh.test',
+    'Bu Retensi ${String(index)}', ${sqlText(syntheticPhone(RUN, index))}, 'retensi${RUN}${String(index)}@contoh.test',
     now(), 10, public.today_jkt() - ${String(visitDaysAgo)}, public.today_jkt() - ${String(visitDaysAgo)},
     300000, 300000, ${isPaid ? '300000' : '0'}, ${isPaid ? `now() - interval '${String(visitDaysAgo + 7)} days'` : 'null'},
     ${fixture.status === 'expired' ? lapsedAt : 'null'}, ${fixture.status === 'cancelled' ? lapsedAt : 'null'},
@@ -87,12 +104,16 @@ beforeAll(async () => {
       pic_phone, pic_email, phone_verified_at, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
       amount_paid, paid_at, expired_at, cancelled_at, consent_version, consented_at)
     values ${names.map((name, index) => bookingRow(name, index)).join(',\n')};
-    insert into public.booking_participants (booking_id, seq_no, full_name) values ${participants.join(', ')};`);
+    insert into public.booking_participants (booking_id, seq_no, full_name) values ${participants.join(', ')};
+    insert into public.certificates (booking_id, participant_id, kind, certificate_number, verify_code, recipient_name,
+      visit_date, rw_ids, pdf_path, rendered_at)
+    values ${CERTIFIED.map((name, index) => certificateRow(name, index)).join(', ')};`);
 });
 
 // One query string is one transaction, so the purge and fence switches end with it.
 afterAll(async () => {
   await runSql(`select set_config('app.purge', 'on', true), set_config('app.in_rpc', '1', true);
+    delete from public.certificates where booking_id in (select id from public.bookings where package_id = '${PACKAGE_ID}');
     delete from public.booking_participants where booking_id in (select id from public.bookings where package_id = '${PACKAGE_ID}');
     delete from public.bookings where package_id = '${PACKAGE_ID}';
     delete from public.package_price_history where package_id = '${PACKAGE_ID}';
@@ -108,6 +129,39 @@ describe('the retention run', () => {
     expect(await stateOf('visitedRecently')).toMatchObject({
       participants: PARTICIPANTS_PER_BOOKING,
       purged: false,
+    });
+  });
+
+  it('erases the participant from the old certificate and hands its PDF to the storage purge', async () => {
+    const certificates = z
+      .array(
+        z.object({
+          booking_id: z.string(),
+          recipient_name: z.string(),
+          participant: z.boolean(),
+          purged: z.boolean(),
+          purgeable: z.boolean(),
+        }),
+      )
+      .parse(
+        await runSql(`select c.booking_id::text, c.recipient_name, c.participant_id is not null as participant,
+            c.purged_at is not null as purged,
+            exists (select 1 from internal.purgeable_files(1000) f where f.path = c.pdf_path) as purgeable
+          from public.certificates c
+          where c.booking_id in ('${BOOKINGS.visitedLongAgo.id}', '${BOOKINGS.visitedRecently.id}')`),
+      );
+    const byBooking = new Map(certificates.map((row) => [row.booking_id, row]));
+    expect(byBooking.get(BOOKINGS.visitedLongAgo.id)).toMatchObject({
+      recipient_name: '[dihapus]',
+      participant: false,
+      purged: true,
+      purgeable: true,
+    });
+    expect(byBooking.get(BOOKINGS.visitedRecently.id)).toMatchObject({
+      recipient_name: 'Peserta visitedRecently 1',
+      participant: true,
+      purged: false,
+      purgeable: false,
     });
   });
 
@@ -135,6 +189,11 @@ describe('the retention run', () => {
     });
     expect(await stateOf('visitedRecently')).toMatchObject({
       pic_name: 'Bu Retensi 1',
+      purged: false,
+    });
+    expect(await stateOf('visitedWithinRetention')).toMatchObject({
+      pic_name: 'Bu Retensi 6',
+      pic_phone: syntheticPhone(RUN, 6),
       purged: false,
     });
   });
