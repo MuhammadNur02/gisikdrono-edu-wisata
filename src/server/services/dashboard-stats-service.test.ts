@@ -16,6 +16,9 @@ const server = vi.hoisted(() => ({
   rowsAfterFirstPage: null as number | null,
   failingTable: null as string | null,
   requests: [] as string[],
+  // What the stats RPCs answer: visit_stats day buckets and revenue_recap's daily rows.
+  visitDays: [] as unknown[],
+  revenueDays: [] as unknown[],
 }));
 
 function jsonReply(body: unknown, status: number, headers: Record<string, string> = {}): Response {
@@ -25,13 +28,26 @@ function jsonReply(body: unknown, status: number, headers: Record<string, string
   });
 }
 
-function postgrestReply(url: URL): Response {
-  if (server.failingTable !== null && url.pathname.endsWith(`/${server.failingTable}`)) {
-    return jsonReply(
-      { code: '57014', message: 'canceling statement', details: null, hint: null },
-      500,
-    );
+// The stats RPCs answer one body, never pages.
+function rpcReply(url: URL): Response | null {
+  if (url.pathname.endsWith('/rpc/visit_stats')) return jsonReply(server.visitDays, 200);
+  if (url.pathname.endsWith('/rpc/revenue_recap')) {
+    return jsonReply({ daily: server.revenueDays, by_beneficiary: [], outstanding: [] }, 200);
   }
+  return null;
+}
+
+// A statement timeout on the table or RPC the test names.
+function failingReply(url: URL): Response | null {
+  if (server.failingTable === null || !url.pathname.endsWith(`/${server.failingTable}`))
+    return null;
+  return jsonReply(
+    { code: '57014', message: 'canceling statement', details: null, hint: null },
+    500,
+  );
+}
+
+function postgrestReply(url: URL): Response {
   const offset = Number(url.searchParams.get('offset') ?? 0);
   const limit = Number(url.searchParams.get('limit') ?? MAX_ROWS);
   const total =
@@ -56,7 +72,7 @@ function postgrestReply(url: URL): Response {
 const fakeFetch: typeof fetch = (input) => {
   const url = new URL(input instanceof Request ? input.url : String(input));
   server.requests.push(`${url.pathname}${url.search}`);
-  return Promise.resolve(postgrestReply(url));
+  return Promise.resolve(failingReply(url) ?? rpcReply(url) ?? postgrestReply(url));
 };
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -76,6 +92,8 @@ beforeEach(() => {
   server.rowsAfterFirstPage = null;
   server.failingTable = null;
   server.requests = [];
+  server.visitDays = [];
+  server.revenueDays = [];
 });
 
 describe('countCheckInsToday', () => {
@@ -112,5 +130,45 @@ describe('loadSuperadminOverview', () => {
     expect(overview.revenue).toMatchObject({ value: 0 });
     expect(overview.paidBookings).toMatchObject({ value: 0 });
     expect(overview.piiRevealsToday).toBe(0);
+  });
+
+  it('reads the month figures from visit_stats and revenue_recap by day', async () => {
+    const visitDay = (day: string, bookings: number, paxCheckedIn: number) => ({
+      bucket: day,
+      bookings,
+      pax_booked: paxCheckedIn,
+      pax_checked_in: paxCheckedIn,
+      tickets_used: bookings,
+      products_sold: 0,
+      gross_amount: null,
+    });
+    // 24 October against the same days of September; 20 September lies inside, 30 September past them.
+    server.visitDays = [
+      visitDay('2026-09-20', 2, 30),
+      visitDay('2026-09-30', 9, 90),
+      visitDay('2026-10-03', 3, 45),
+      visitDay('2026-10-24', 1, 15),
+    ];
+    server.revenueDays = [
+      { day: '2026-10-03', beneficiary_key: 'kelurahan', net_amount: 100_000 },
+      { day: '2026-10-03', beneficiary_key: 'rw_treasury:5', net_amount: 400_000 },
+    ];
+    const overview = await loadSuperadminOverview(null, new Date('2026-10-24T03:00:00Z'));
+    expect(overview.paidBookings).toEqual({ value: 4, trend: { direction: 'up', percent: 100 } });
+    expect(overview.checkedInVisitors).toMatchObject({
+      value: 60,
+      trend: { direction: 'up', percent: 100 },
+    });
+    expect(overview.revenue).toMatchObject({ value: 500_000 });
+    expect(server.requests.some((request) => request.includes('v_bookings_staff'))).toBe(false);
+    expect(server.requests.some((request) => request.includes('tickets_qr'))).toBe(false);
+  });
+
+  it('shows no visit figures, and still the revenue, when visit_stats fails', async () => {
+    server.failingTable = 'visit_stats';
+    const overview = await loadSuperadminOverview(null, new Date('2026-10-24T03:00:00Z'));
+    expect(overview.paidBookings).toBeNull();
+    expect(overview.checkedInVisitors).toBeNull();
+    expect(overview.revenue).toMatchObject({ value: 0 });
   });
 });
