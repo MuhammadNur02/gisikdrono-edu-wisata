@@ -6,7 +6,12 @@ import { staffCopy } from '@/lib/copy/staff';
 import { AppError } from '@/lib/errors';
 import { inviteCodeHash } from '@/lib/staff-codes';
 import type { StaffContext } from '@/server/auth/guards';
-import { readStaffAuthStates, setStaffAuthBan } from '@/server/services/staff-service';
+import {
+  readStaffAuthStates,
+  releaseRevokedInviteAccount,
+  sendStaffInviteEmail,
+  setStaffAuthBan,
+} from '@/server/services/staff-service';
 
 import {
   changeStaffRole,
@@ -63,8 +68,12 @@ vi.mock('@/db/rpc', () => ({
 vi.mock('@/db/rpc-staff', () => ({ inviteSuperadmin: vi.fn() }));
 vi.mock('@/server/services/staff-service', () => ({
   readStaffAuthStates: vi.fn(),
+  releaseRevokedInviteAccount: vi.fn(() => Promise.resolve(true)),
+  sendStaffInviteEmail: vi.fn(() => Promise.resolve(true)),
   setStaffAuthBan: vi.fn(),
 }));
+
+const REQUEST_ID = 'request-1';
 
 const SUPERADMIN: StaffContext = {
   userId: 'super-1',
@@ -94,11 +103,15 @@ beforeEach(() => {
 
 describe('createStaffInvite', () => {
   it('stores only the hash of an RW admin invite and hands the plain code back', async () => {
-    const issued = await createStaffInvite(SUPERADMIN, {
-      email: 'a@b.id',
-      role: 'admin_rw',
-      rwId: 5,
-    });
+    const issued = await createStaffInvite(
+      SUPERADMIN,
+      {
+        email: 'a@b.id',
+        role: 'admin_rw',
+        rwId: 5,
+      },
+      REQUEST_ID,
+    );
     expect(issued.inviteCode).toBe('ABCDEFGHJKMNPQRSTVWX');
     expect(issued.acceptableAfter).toBeNull();
     expect(inviteCodeHash).toHaveBeenCalledWith('ABCDEFGHJKMNPQRSTVWX');
@@ -113,13 +126,29 @@ describe('createStaffInvite', () => {
     expect(JSON.stringify(db.inserted)).not.toContain('ABCDEFGHJKMNPQRSTVWX');
   });
 
+  // Task P4.8.01: the invite email goes out once the invite exists, and the superadmin learns whether it did.
+  it('sends the invite email for the stored invite and says whether it went', async () => {
+    vi.mocked(sendStaffInviteEmail).mockResolvedValueOnce(false);
+    const issued = await createStaffInvite(
+      SUPERADMIN,
+      { email: 'a@b.id', role: 'admin_rw', rwId: 5 },
+      REQUEST_ID,
+    );
+    expect(sendStaffInviteEmail).toHaveBeenCalledWith('a@b.id', 'invite-1', REQUEST_ID);
+    expect(issued.isEmailSent).toBe(false);
+  });
+
   it('keeps the expiry inside the 72 hours the database allows', async () => {
     const before = Date.now();
-    const { expiresAt } = await createStaffInvite(SUPERADMIN, {
-      email: 'a@b.id',
-      role: 'admin_rw',
-      rwId: 5,
-    });
+    const { expiresAt } = await createStaffInvite(
+      SUPERADMIN,
+      {
+        email: 'a@b.id',
+        role: 'admin_rw',
+        rwId: 5,
+      },
+      REQUEST_ID,
+    );
     expect(Date.parse(expiresAt) - before).toBeLessThan(72 * 3600 * 1000);
   });
 
@@ -129,15 +158,20 @@ describe('createStaffInvite', () => {
       completesAfter: '2026-10-25T08:00:00Z',
       lapsesAfter: '2026-10-27T08:00:00Z',
     });
-    const issued = await createStaffInvite(SUPERADMIN, {
-      email: 'l@b.id',
-      role: 'superadmin',
-      rwId: null,
-    });
+    const issued = await createStaffInvite(
+      SUPERADMIN,
+      {
+        email: 'l@b.id',
+        role: 'superadmin',
+        rwId: null,
+      },
+      REQUEST_ID,
+    );
     expect(issued).toEqual({
       inviteCode: 'ABCDEFGHJKMNPQRSTVWX',
       expiresAt: '2026-10-27T08:00:00Z',
       acceptableAfter: '2026-10-25T08:00:00Z',
+      isEmailSent: true,
     });
     expect(db.inserted).toEqual([]);
   });
@@ -145,12 +179,12 @@ describe('createStaffInvite', () => {
   it('refuses an address that already has an account or an open invite', async () => {
     db.existingProfile = { id: 'someone' };
     await expect(
-      createStaffInvite(SUPERADMIN, { email: 'a@b.id', role: 'admin_rw', rwId: 5 }),
+      createStaffInvite(SUPERADMIN, { email: 'a@b.id', role: 'admin_rw', rwId: 5 }, REQUEST_ID),
     ).rejects.toEqual(new AppError('CONFLICT', staffCopy.invite.exists));
     db.existingProfile = null;
     db.insertError = { code: '23505' };
     await expect(
-      createStaffInvite(SUPERADMIN, { email: 'a@b.id', role: 'admin_rw', rwId: 5 }),
+      createStaffInvite(SUPERADMIN, { email: 'a@b.id', role: 'admin_rw', rwId: 5 }, REQUEST_ID),
     ).rejects.toMatchObject({ code: 'CONFLICT' });
   });
 });
@@ -158,7 +192,17 @@ describe('createStaffInvite', () => {
 describe('revokeStaffInvite', () => {
   it('says so when the invite was already accepted, revoked or never existed', async () => {
     db.revokedRows = [];
-    await expect(revokeStaffInvite('invite-1')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(revokeStaffInvite('invite-1', REQUEST_ID)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+    expect(releaseRevokedInviteAccount).not.toHaveBeenCalled();
+  });
+
+  // Finding 4 of the onboarding review: the Auth user the invite email made goes with the invite.
+  it('releases the Auth user of a revoked invite', async () => {
+    db.revokedRows = [{ id: 'invite-1' }];
+    await revokeStaffInvite('invite-1', REQUEST_ID);
+    expect(releaseRevokedInviteAccount).toHaveBeenCalledWith('invite-1', REQUEST_ID);
   });
 });
 

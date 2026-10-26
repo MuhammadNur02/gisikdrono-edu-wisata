@@ -1,4 +1,4 @@
-// The staff sign-in pages (/login, /forgot-password, /reset-password, /mfa/*), read through copy.auth in
+// The staff sign-in pages (/login, /forgot-password, /reset-password, /mfa/*, /onboarding), read through copy.auth in
 // src/lib/copy/id.ts. No message here says whether an address belongs to an account (docs/Security.md AUTH-06).
 export const authCopy = {
   validation: {
@@ -40,6 +40,8 @@ export const authCopy = {
         'Kata sandi sudah diganti, tetapi akun ini belum berhasil dikeluarkan dari perangkat lain. Masuk dengan kata sandi baru, lalu tekan Keluar untuk mencoba lagi. Bila tetap gagal, hubungi superadmin.',
       'link-try-later':
         'Tautan belum bisa dibuka sekarang. Tunggu beberapa menit, lalu buka lagi tautan dari email Anda selama masih berlaku.',
+      'onboarding-done':
+        'Pendaftaran selesai. Masuk dengan email, kata sandi baru, dan kode dari aplikasi autentikator.',
       'signed-out-here-only':
         'Anda sudah keluar dari perangkat ini, tetapi keluar dari perangkat lain belum berhasil. Masuk lagi, lalu tekan Keluar sekali lagi. Bila tetap gagal, hubungi superadmin.',
     },
@@ -92,6 +94,38 @@ export const authCopy = {
     enrollDuplicate:
       'Akun ini sudah memasang aplikasi autentikator dari kode QR lain. Pakai kode dari aplikasi itu.',
     signOut: 'Keluar',
+  },
+  // /auth/continue (L2 of the review of PR #77): an email link opens this page first, and its button uses the link.
+  emailLink: {
+    recoveryTitle: 'Buat kata sandi baru',
+    inviteTitle: 'Pendaftaran petugas',
+    description:
+      'Tekan Lanjutkan untuk membuka tautan dari email Anda. Tautan ini hanya bisa dipakai sekali dan berlaku 10 menit.',
+    submit: 'Lanjutkan',
+  },
+  // /onboarding (Task P4.8.01). One refusal for every wrong, foreign, expired, revoked or used code and for too many
+  // tries, so the page tells a guesser nothing (docs/Security.md §5.1).
+  onboarding: {
+    title: 'Pendaftaran petugas',
+    description:
+      'Tulis kode undangan dari Superadmin Kelurahan, pasang aplikasi autentikator, lalu buat kata sandi Anda.',
+    inviteCode: 'Kode undangan',
+    inviteCodeHint:
+      '20 karakter yang disampaikan langsung oleh Superadmin Kelurahan. Tanda hubung boleh ditulis atau tidak.',
+    claimSubmit: 'Lanjut',
+    claimFailed:
+      'Kode undangan ini tidak bisa dipakai. Periksa lagi kodenya. Setelah lima kali salah, tunggu satu jam. Bila undangan sudah lewat masanya, minta undangan baru ke Superadmin Kelurahan.',
+    factorReady:
+      'Aplikasi autentikator akun ini sudah terpasang. Tulis kode yang sedang tampil di aplikasi itu.',
+    completeSubmit: 'Selesaikan pendaftaran',
+    completeFailed:
+      'Pendaftaran belum bisa diselesaikan. Mulai lagi dari kode undangan. Undangan superadmin baru bisa diselesaikan 24 jam setelah dibuat.',
+    noInviteTitle: 'Tidak ada undangan untuk akun ini',
+    noInvite:
+      'Undangan untuk email ini tidak ada, sudah dipakai, sudah dicabut, atau lewat masanya. Minta undangan baru ke Superadmin Kelurahan.',
+    validation: {
+      inviteCode: 'Tulis 20 karakter kode undangan.',
+    },
   },
   noAccess: {
     title: 'Akun ini belum punya akses',

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { describe, expect, it } from 'vitest';
 
+import { giveRwRole, removeProfiles } from './helpers/staff-session';
 import { totpCode } from '../../scripts/dev-accounts';
 import { localStack } from '../../scripts/local-stack';
 
@@ -43,6 +44,7 @@ describe('API and Auth settings on the local stack', () => {
       const created = await admin.auth.admin.createUser({ email, password, email_confirm: true });
       if (created.error) throw created.error;
       try {
+        await giveRwRole(created.data.user.id, email);
         const staff = visitorClient();
         await staff.auth.signInWithPassword({ email, password });
         const first = await staff.auth.mfa.enroll({ factorType: 'totp' });
@@ -56,6 +58,7 @@ describe('API and Auth settings on the local stack', () => {
 
         expect(second.error?.code).toBe('too_many_enrolled_mfa_factors');
       } finally {
+        await removeProfiles([created.data.user.id]);
         await admin.auth.admin.deleteUser(created.data.user.id);
       }
     },

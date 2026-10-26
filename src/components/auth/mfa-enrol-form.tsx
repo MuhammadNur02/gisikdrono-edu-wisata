@@ -67,7 +67,8 @@ function ManualSecret({ secret }: { secret: string }) {
   );
 }
 
-function EnrolmentInstructions({ enrolment }: { enrolment: TotpEnrolment }) {
+// Also the factor step of /onboarding (onboarding-form.tsx).
+export function EnrolmentInstructions({ enrolment }: { enrolment: TotpEnrolment }) {
   return (
     <>
       <p className="text-body-sm">{text.enrollScan}</p>

@@ -14,8 +14,8 @@ function isJson(contentType: string | null): boolean {
 }
 
 // The body as text, or null once it passes the limit. A body sent without a length (chunked) is read only that
-// far, never whole (security review of PR #14, L5).
-async function readUpTo(request: Request, limitBytes: number): Promise<string | null> {
+// far, never whole (security review of PR #14, L5). Also the form body of auth/callback.
+export async function readUpTo(request: Request, limitBytes: number): Promise<string | null> {
   if (!request.body) return '';
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];

@@ -2281,6 +2281,7 @@ export type Database = {
       profiles: {
         Row: {
           avatar_path: string | null
+          became_staff_at: string | null
           claims_version: number
           created_at: string
           created_by: string | null
@@ -2305,6 +2306,7 @@ export type Database = {
         }
         Insert: {
           avatar_path?: string | null
+          became_staff_at?: string | null
           claims_version?: number
           created_at?: string
           created_by?: string | null
@@ -2329,6 +2331,7 @@ export type Database = {
         }
         Update: {
           avatar_path?: string | null
+          became_staff_at?: string | null
           claims_version?: number
           created_at?: string
           created_by?: string | null
@@ -3266,6 +3269,9 @@ export type Database = {
         Row: {
           accepted_at: string | null
           accepted_user_id: string | null
+          claimed_at: string | null
+          claimed_session_id: string | null
+          claimed_user_id: string | null
           created_at: string
           created_by: string
           email: string
@@ -3279,6 +3285,9 @@ export type Database = {
         Insert: {
           accepted_at?: string | null
           accepted_user_id?: string | null
+          claimed_at?: string | null
+          claimed_session_id?: string | null
+          claimed_user_id?: string | null
           created_at?: string
           created_by: string
           email: string
@@ -3292,6 +3301,9 @@ export type Database = {
         Update: {
           accepted_at?: string | null
           accepted_user_id?: string | null
+          claimed_at?: string | null
+          claimed_session_id?: string | null
+          claimed_user_id?: string | null
           created_at?: string
           created_by?: string
           email?: string
@@ -4318,6 +4330,14 @@ export type Database = {
         Args: { p_code_hash: string; p_user_id: string }
         Returns: string
       }
+      onboarding_state: {
+        Args: never
+        Returns: {
+          claim_held: boolean
+          factor_verified: boolean
+          invite_open: boolean
+        }[]
+      }
       owns_any_rw: { Args: { p_rw_ids: number[] }; Returns: boolean }
       owns_rw: { Args: { p_rw_id: number }; Returns: boolean }
       propose_adjustment: {
@@ -4496,7 +4516,11 @@ export type Database = {
         Returns: Json
       }
       svc_accept_staff_invite: {
-        Args: { p_invite_code_hash: string; p_user_id: string }
+        Args: {
+          p_invite_code_hash: string
+          p_session_id: string
+          p_user_id: string
+        }
         Returns: Json
       }
       svc_apply_payment_event: {
@@ -4575,6 +4599,14 @@ export type Database = {
           rule: string
           severity: Database["public"]["Enums"]["alert_severity"]
         }[]
+      }
+      svc_claim_staff_invite: {
+        Args: {
+          p_invite_code_hash: string
+          p_session_id: string
+          p_user_id: string
+        }
+        Returns: Json
       }
       svc_complete_notification: {
         Args: { p_id: string; p_provider_message_id: string }
@@ -4788,6 +4820,10 @@ export type Database = {
           p_reviewer_name: string
           p_title: string
         }
+        Returns: string
+      }
+      svc_unused_account_of_invite: {
+        Args: { p_invite_id: string }
         Returns: string
       }
       svc_verify_phone_otp: {
