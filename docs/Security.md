@@ -577,13 +577,13 @@ Every table `authenticated` holds a right on carries the restrictive `aal2()` po
 -- get_vendor_bank_account / get_rw_treasury_account with p_reveal (superadmin, fresh TOTP, a reason)
 --   writes security_events.pii_revealed {count:'bank_account'} with entity_type umkm_vendors or rw_units, so it is
 --   seen by the anomaly scan too; it has its own cap of 20 a day (audit_logs vendor_bank.revealed /
-() => `--   rw_treasury.revealed), and the cap of 50 counts only the pii_revealed events of bookings (20261104180000)
+--   rw_treasury.revealed), and the cap of 50 counts only the pii_revealed events of bookings (20261104180000)
 -- rpc_reveal_finance_evidence(p_kind text, p_id uuid) returns text   (superadmin at aal2(), security definer)
 --   "Lihat bukti" of /dashboard/finance (review of PR #80, M-3, owner decision: 300 s links): names the documents
 --   path of an adjustment's evidence (bookings/<id>/adjustment-*) or a payout's proof (payouts/<batch>/*) and writes
 --   security_events.pii_revealed {document:'evidence'} with entity_type payment_adjustments or payout_batches, outside
 --   the booking cap of 50; document-service.ts then signs a 300 s link, handed straight to the page, never stored
-\`\`\``
+```
 
 Masking happens server-side; the full value never reaches the client until the reveal RPC runs. Reveal counts per staff per day appear on `/dashboard/security-alerts`. PostgREST `max-rows` is set to 100 as a backstop.
 
@@ -601,7 +601,7 @@ Masking happens server-side; the full value never reaches the client until the r
 |---|---|
 | `public-media` | **no** policy for any API role (0006, security review of PR #5): `api/uploads/finalize`, with the service role, is the only writer, so nothing reaches the public bucket without the re-encode or PDF scan of §8.4 and no staff member can rename, overwrite or delete a published file through the API; the bucket is public, so the site downloads files by URL, while without a SELECT policy nobody can list it and a draft's files cannot be browsed; the RW prefix is bound by `api/uploads/sign` and re-checked by finalize |
 | `uploads-quarantine` | 50 MB, JPEG/PNG/WebP/PDF; no client policies (0006, decision of 2026-10-17); `createSignedUploadUrl` (5 min) with the path bound to `rw-XX/<uuid>` server-side; hourly purge > 24 h |
-| `documents` | 20 MB, PDF/JPEG/PNG/WebP/CSV/XLSX only (no SVG or HTML even from a server bug); **no** anon/authenticated policies; server-issued signed URLs only after authorisation, each kind only from its own folder (`createDocumentSignedUrl` refuses any other path and any `.` or `..` segment): () => `tickets/certificates 600 s, invoices 900 s, exports and finance evidence 300 s, WhatsApp document header 60 min;` URLs never persisted or placed in messages; every issuance for invoices/certificates/exports logs `document.signed_url` |
+| `documents` | 20 MB, PDF/JPEG/PNG/WebP/CSV/XLSX only (no SVG or HTML even from a server bug); **no** anon/authenticated policies; server-issued signed URLs only after authorisation, each kind only from its own folder (`createDocumentSignedUrl` refuses any other path and any `.` or `..` segment): tickets/certificates 600 s, invoices 900 s, exports and finance evidence 300 s, WhatsApp document header 60 min; URLs never persisted or placed in messages; every issuance for invoices/certificates/exports logs `document.signed_url` |
 
 ### 6.9 Isolation tests (AZ-08)
 
@@ -978,7 +978,7 @@ Resend + React Email in `src/lib/email/*`; sending subdomain `mail.<domain>` (A1
 | Invoice / receipt / quotation / credit note | `documents/bookings/<id>/<kind>-<number>.pdf` | `view`/`manage` link, or the superadmin at AAL2 whose RLS returns the row → `/api/documents/<kind>/<id>` streams the PDF inline, `private, no-store`, no signed URL handed to the browser (Task P3.6.04); a final document is rendered once and kept, its path recorded by `svc_record_document_pdf` under the reader's name, any other state rendered as it stands. Decision of 2026-10-23 on PR #33: an RW admin gets the same 404 for now, because the document prints the whole snapshot (a combo's other RW, the add-ons, a discount) and the migrations' column policy withholds those from them (0005, STAFF-02), which wins over any page; their redacted view comes with the booking detail of Task P4.3.02 | link 72 h |
 | Attendance / certificates (participant names) | `documents/certificates/<booking_id>/…` | `certificate` link **plus** last-4 step-up → 600 s signed URL; refused after `visit_date + 90 d` | link 90 d, 5 attempts/24 h |
 | Exports | `documents/exports/<profile_id>/…` | superadmin AAL2 → 300 s signed URL; deleted after 24 h | — |
-() => `| Payment / payout proofs, adjustment evidence | \`documents/bookings/<id>/payment-proof-*.jpg\`, \`documents/bookings/<id>/adjustment-*\`, \`documents/payouts/<batch>/…\` | superadmin AAL2 only; "Lihat bukti" → \`rpc_reveal_finance_evidence\` (each view a \`pii_revealed\` event, §6.6) → 300 s signed URL (review of PR #80, M-3). Each finance proof's SHA-256, taken as uploaded, is kept in \`finance_proofs\`; a copy of a file that already backs a refund, an adjustment or a payout is refused (\`PROOF_REUSED\`, M-4) | 300 s |`
+| Payment / payout proofs, adjustment evidence | `documents/bookings/<id>/payment-proof-*.jpg`, `documents/bookings/<id>/adjustment-*`, `documents/payouts/<batch>/…` | superadmin AAL2 only; "Lihat bukti" → `rpc_reveal_finance_evidence` (each view a `pii_revealed` event, §6.6) → 300 s signed URL (review of PR #80, M-3). Each finance proof's SHA-256, taken as uploaded, is kept in `finance_proofs`; a copy of a file that already backs a refund, an adjustment or a payout is refused (`PROOF_REUSED`, M-4) | 300 s |
 
 Signed URLs are never persisted, logged or placed in messages; `document.signed_url` is audited for invoices, certificates and exports; `document.downloaded` events feed the anomaly rule "participant-bearing document fetched from > 5 distinct IPs → auto-revoke links (`token_version + 1`) and re-send" (*could*).
 
