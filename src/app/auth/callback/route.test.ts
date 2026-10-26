@@ -170,11 +170,16 @@ describe('POST auth/callback', () => {
       host: '127.0.0.1:3000',
     };
     if (origin !== undefined) headers.origin = origin;
-    const response = await POST(
-      new Request(CALLBACK, { method: 'POST', body: 'token_hash=abc&type=recovery', headers }),
-    );
+    const request = new Request(CALLBACK, {
+      method: 'POST',
+      body: 'token_hash=abc&type=recovery',
+      headers,
+    });
+    const response = await POST(request);
 
     expect(response.status).toBe(403);
+    expect(request.bodyUsed).toBe(false);
+    expect(withinAuthCallbackLimit).not.toHaveBeenCalled();
     expect(openEmailLinkSession).not.toHaveBeenCalled();
   });
 

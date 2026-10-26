@@ -212,8 +212,8 @@ export function acceptInviteForSession(
 }
 
 // docs/Security.md §5.1, (4) of the onboarding review: a revoked invite takes its Auth user with it, which
-// release_unused_profile (20261029080300) follows with the profile. False when Supabase Auth failed; the nightly
-// purge/retention run deletes the account then.
+// release_unused_profile (20261104140000, reading internal.is_never_staff) follows with the profile. False when
+// Supabase Auth failed; the nightly purge/retention run deletes the account then.
 export async function releaseRevokedInviteAccount(
   inviteId: string,
   requestId: string,

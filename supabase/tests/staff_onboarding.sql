@@ -12,7 +12,7 @@
 -- re-review, 20261029080400). Since 20261103131000 an invite is claimed by a live session before the account's factor
 -- is verified, and accepted from that session at AAL2; every refusal reads the same.
 begin;
-select plan(60);
+select plan(62);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: two accounts without a role =====
@@ -266,19 +266,26 @@ select is((select count(*)::int from public.profiles where id = '00000000-0000-4
   'an Auth user that never became staff is deleted with its profile');
 select throws_ok($$delete from auth.users where id = '00000000-0000-4000-8000-0000000e0001'$$, '23503', null,
   'one whose profile ever held a role is not: it is deactivated, and the audit trail keeps naming it');
+-- Low-1 of the review of PR #81 (20261104140000): the superadmin persona, staff by its role, keeps its Auth user.
+select throws_ok($$delete from auth.users where id = '00000000-0000-4000-8000-00000000f001'$$, '23503', null,
+  'a staff member''s Auth user is never deleted');
 -- L3 of the delta2 review of PR #77 (20261103131600): the rule is internal.is_never_staff, so became_staff_at decides,
--- not is_active or claims_version. The profiles are written by hand, so the Auth trigger waits again (it was made
--- immediate above).
+-- not claims_version. The profiles are written by hand, so the Auth trigger waits again (it was made immediate
+-- above) and is left deferred: this block stays the last of the file.
 set constraints auth.handle_new_auth_user deferred;
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000e0005', 'aktif-tanpa-peran@example.test'),
   ('00000000-0000-4000-8000-0000000e0006', 'mantan-petugas@example.test');
 insert into public.profiles (id, email, full_name, role, rw_id, is_active, claims_version, became_staff_at) values
-  ('00000000-0000-4000-8000-0000000e0005', 'aktif-tanpa-peran@example.test', 'Aktif', 'none', null, true, 1, null),
+  ('00000000-0000-4000-8000-0000000e0005', 'aktif-tanpa-peran@example.test', 'Aktif', 'none', null, false, 1, null),
   ('00000000-0000-4000-8000-0000000e0006', 'mantan-petugas@example.test', 'Mantan', 'none', null, false, 1, now());
 delete from auth.users where id = '00000000-0000-4000-8000-0000000e0005';
-select is((select count(*)::int from public.profiles where id = '00000000-0000-4000-8000-0000000e0005'), 0,
-  'an account that never became staff goes with its profile, even marked active');
+select is((select count(*)::int from public.profiles where id = '00000000-0000-4000-8000-0000000e0005')
+          + (select count(*)::int from auth.users where id = '00000000-0000-4000-8000-0000000e0005'), 0,
+  'an account that never became staff goes, Auth user and profile');
+select throws_ok($$insert into public.profiles (id, email, full_name, role, rw_id, is_active)
+    values (gen_random_uuid(), 'aktif-belum@example.test', 'Aktif Belum', 'none', null, true)$$, '23514', null,
+  'and no profile is active before it became staff (Low-1 of the review of PR #81)');
 select throws_ok($$delete from auth.users where id = '00000000-0000-4000-8000-0000000e0006'$$, '23503', null,
   'one that became staff does not, even with its first claims_version');
 

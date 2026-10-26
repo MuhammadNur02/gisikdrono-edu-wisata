@@ -10,7 +10,7 @@ insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000f0002', 'review-gone@example.test');
 insert into public.profiles (id, email, full_name, role, rw_id, is_active) values
   ('00000000-0000-4000-8000-0000000f0001', 'review-super@example.test', 'Super Tinjau', 'superadmin', null, true),
-  ('00000000-0000-4000-8000-0000000f0002', 'review-gone@example.test', 'Bukan Staf', 'none', null, true);
+  ('00000000-0000-4000-8000-0000000f0002', 'review-gone@example.test', 'Bukan Staf', 'none', null, false);
 insert into public.tour_packages (id, rw_id, category, slug, name, pricing_basis, price_per_pax, status) values
   ('00000000-0000-4000-8000-0000000f1001', 5, 'regular', 'uji-tinjau-sp', 'Paket Tinjau SP', 'per_pax', 30000,
    'published');
