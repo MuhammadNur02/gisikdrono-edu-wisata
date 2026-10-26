@@ -4951,10 +4951,6 @@ export type Database = {
         Args: { p_actor_id: string; p_export_id: string; p_reason: string }
         Returns: boolean
       }
-      svc_fail_unconfirmed_refund: {
-        Args: { p_request_id: string }
-        Returns: boolean
-      }
       svc_fail_notification: {
         Args: {
           p_error: string
@@ -4963,6 +4959,10 @@ export type Database = {
           p_permanent: boolean
         }
         Returns: undefined
+      }
+      svc_fail_unconfirmed_refund: {
+        Args: { p_request_id: string }
+        Returns: boolean
       }
       svc_flag_cancellation_for_superadmin: {
         Args: { p_booking_id: string }

@@ -566,7 +566,7 @@ begin
   perform internal.cancel_booking(booking_id, null, 'Batal', 'cancellation',
     (internal.refund_preview(booking_id, 'cancellation') ->> 'amount')::bigint, 90::smallint);
   perform internal.mark_refund_request((pg_temp.request_of(booking_id)).id, 'submitted', '200', null);
-  return new_booking;
+  return booking_id;
 end;
 $fn$;
 create function pg_temp.day_without_refund(p_booking uuid) returns void
