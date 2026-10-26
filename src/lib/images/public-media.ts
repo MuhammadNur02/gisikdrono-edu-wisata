@@ -12,10 +12,7 @@ export function encodeStoragePath(path: string): string {
 }
 
 export function publicMediaUrl(path: string): string {
-  return new URL(
-    OBJECT_PATH + encodeStoragePath(path),
-    PUBLIC_SUPABASE_URL,
-  ).toString();
+  return new URL(OBJECT_PATH + encodeStoragePath(path), PUBLIC_SUPABASE_URL).toString();
 }
 
 // The bucket path behind one of these URLs, or null for any other address: the article editor shows an image

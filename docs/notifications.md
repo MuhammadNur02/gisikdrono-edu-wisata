@@ -19,6 +19,7 @@ Templates not listed here are added with the task that first sends them.
 |---|---|---|---|
 | `gsk_otp_v1` | AUTHENTICATION | Not submitted | Waiting for the WhatsApp Business number (P0.1.07). The developer's test number is blocked, so `src/lib/notifications/whatsapp-meta.ts` has not yet reached a real phone (Task P3.11.03 note) |
 | `gsk_booking_link_v1` | UTILITY | Not submitted | New template, decision of 2026-10-21 (Task P3.3.03) |
+| `gsk_weather_disruption_v1` | UTILITY | Not submitted | New template, decision of 2026-10-25 on the weather (rule 4). Until it is approved the notice goes by email only: `internal.queue_weather_messages` queues a WhatsApp row only while `site_settings` `whatsapp.weather_template_approved` is true, which a superadmin sets once Meta approves the template |
 
 ## `gsk_otp_v1` (`phone_otp`)
 
@@ -42,3 +43,17 @@ Sent when a visitor asks for their booking link again at `/reservasi/cari`. It g
 - Button: URL, label "Buka reservasi", address `https://<domain>/reservasi/{{1}}`. The dynamic part is `<booking_code>?t=<token>`, a `manage` link the worker mints when it sends the message.
 - Parameters: `{{1}}` the PIC's first name, `{{2}}` the booking code (`GSK-7F3K9Q2M`).
 - Sample values for review: `Ani`, `GSK-7F3K9Q2M`; button sample `GSK-7F3K9Q2M?t=contoh`.
+
+## `gsk_weather_disruption_v1` (`weather_disruption`)
+
+Sent to every paid booking on a session an RW officer or the superadmin marks as stopped by the weather (decision of 2026-10-25 on the weather, rule 4), once per notice and booking. It carries no link: the manage link follows in a message of its own (`gsk_booking_link_v1`). Until Meta approves this template the notice goes by email only; after the approval a superadmin sets `whatsapp.weather_template_approved` to true in `site_settings`, and WhatsApp goes too.
+
+- Body:
+
+  ```text
+  Halo {{1}}, kelurahan mengabarkan kunjungan reservasi {{2}} di {{3}} pada {{4}} terhalang cuaca. Sampai {{5}}, Anda bisa memindah jadwal (paling banyak {{6}} kali) atau meminta pengembalian dana dikurangi biaya Midtrans. Bila tidak ada pilihan sampai batas itu, dana dikembalikan otomatis. Tautan untuk mengelola reservasi kami kirim dalam pesan terpisah.
+  ```
+
+- Button: none.
+- Parameters (CLAUDE.md Recipe C: no URLs and no phone-like digit runs in free text): `{{1}}` the PIC's first name, `{{2}}` the booking code (`GSK-7F3K9Q2M`), `{{3}}` the RW's name from `rw_units.name`, `{{4}}` the stopped session's day written out (`Jumat, 30 Oktober 2026`), `{{5}}` the end of the 24 h window written out (`Sabtu, 31 Oktober 2026, 09.12 WIB`), `{{6}}` the moves allowed (`booking.weather_reschedule_max`, `3`).
+- Sample values for review: `Ani`, `GSK-7F3K9Q2M`, `RW 05 Ecowastreme`, `Jumat, 30 Oktober 2026`, `Sabtu, 31 Oktober 2026, 09.12 WIB`, `3`.

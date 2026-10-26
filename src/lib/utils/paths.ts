@@ -84,3 +84,24 @@ export function bookletDownloadPath(bookletId: string): string {
 export function bookingPath(packageSlug: string): string {
   return `/pesan/${packageSlug}?step=jadwal`;
 }
+
+// A booking's own documents for its guest (Task P3.12.01): the bk_<code> cookie lives under /reservasi/<code> only
+// (docs/Security.md §6.7), so a guest reaches /api/documents/<kind>/<id> through this address under the booking's
+// pages, which src/middleware.ts rewrites to the API route. The route still reads the row and checks the cookie for
+// the document's own booking, so the code in the address grants nothing by itself.
+const GUEST_DOCUMENT_SEGMENT = 'dokumen';
+const GUEST_DOCUMENT_PATTERN =
+  /^\/reservasi\/GSK-[0-9A-HJKMNP-TV-Z]{8}\/dokumen\/(quotation|invoice|receipt)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+
+export function guestDocumentPath(
+  bookingCode: string,
+  kind: 'quotation' | 'invoice' | 'receipt',
+  documentId: string,
+): string {
+  return `/reservasi/${bookingCode}/${GUEST_DOCUMENT_SEGMENT}/${kind}/${documentId}`;
+}
+
+export function guestDocumentRewriteFor(pathname: string): string | null {
+  const match = GUEST_DOCUMENT_PATTERN.exec(pathname);
+  return match ? `/api/documents/${match[1] ?? ''}/${match[2] ?? ''}` : null;
+}

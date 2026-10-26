@@ -159,3 +159,24 @@ export async function paymentPageOf(
     },
   };
 }
+
+// The order a refund request refunds (re-review of PR #69, M-3), for the server's own Status API look.
+export async function refundOrderOf(
+  adminClient: DatabaseClient,
+  requestId: string,
+): Promise<string> {
+  const { data: request, error } = await adminClient
+    .from('refund_requests')
+    .select('payment_id')
+    .eq('id', requestId)
+    .maybeSingle();
+  if (error) throw error;
+  if (request === null) throw new AppError('NOT_FOUND');
+  const { data: payment, error: paymentError } = await adminClient
+    .from('payments')
+    .select('order_id')
+    .eq('id', request.payment_id)
+    .single();
+  if (paymentError) throw paymentError;
+  return payment.order_id;
+}

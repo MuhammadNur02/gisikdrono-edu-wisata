@@ -39,3 +39,6 @@ export const PARTICIPANT_ROLES = ['student', 'teacher', 'chaperone', 'participan
 // Review of PR #27, L5: a draft left untouched this long is dropped, so a tab open since the morning starts again with
 // a new form key rather than sending an old booking.
 export const DRAFT_TTL_MS = 2 * 60 * 60 * 1000;
+
+// The booking_events reason internal.reschedule_for_weather writes (20261104080200): the hub counts and shows the moves.
+export const WEATHER_RESCHEDULE_REASON = 'weather_reschedule';
