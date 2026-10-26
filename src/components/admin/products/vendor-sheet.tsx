@@ -4,6 +4,7 @@ import { Store } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useState } from 'react';
 
+import type { BankAccountActions } from '@/components/admin/bank-accounts/bank-account-forms';
 import type { VendorAction } from '@/components/admin/products/vendor-form';
 import { Button } from '@/components/ui/button';
 import { productsCopy } from '@/lib/copy/products';
@@ -19,8 +20,9 @@ export interface VendorSheetProps {
   // `RW 05 Ecowastreme`, or null under Semua, where the sheet asks for an RW first.
   rwName: string | null;
   vendors: readonly VendorAdmin[];
-  // Only the superadmin registers and edits vendors (decision of 2026-10-24); an RW admin reads their own.
-  actions: { create: VendorAction; update: VendorAction } | null;
+  // Only the superadmin registers and edits vendors (decision of 2026-10-24) and their bank accounts (P4.3.06); an RW
+  // admin reads their own vendors.
+  actions: { create: VendorAction; update: VendorAction; bank: BankAccountActions } | null;
 }
 
 export function VendorSheet(props: VendorSheetProps) {

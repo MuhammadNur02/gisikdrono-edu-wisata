@@ -1,7 +1,7 @@
 'use client';
 
 import type { IScannerError, ScannerErrorKind } from '@yudiel/react-qr-scanner';
-import { Camera, CameraOff, ScanLine } from 'lucide-react';
+import { Camera, CameraOff, ScanLine, Volume2, VolumeX } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -14,7 +14,7 @@ import { FormAlert } from '@/components/forms/form-alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useBoundaryNavigation } from '@/hooks/use-boundary-navigation';
-import { useScanner } from '@/hooks/use-scanner';
+import { useScanner, type ScannerController } from '@/hooks/use-scanner';
 import { scannerCopy } from '@/lib/copy/scanner';
 import type { ActionResult } from '@/types/action-result';
 
@@ -154,6 +154,24 @@ function CameraPanel({ camera, canScan }: { camera: CameraControls; canScan: boo
   );
 }
 
+function SoundToggle({ sound }: { sound: ScannerController['sound'] }) {
+  return (
+    <div className="flex justify-end">
+      <Button
+        type="button"
+        variant="ghost"
+        className="min-h-11"
+        aria-pressed={sound.isOn}
+        aria-label={text.sound}
+        onClick={sound.toggle}
+      >
+        {sound.isOn ? <Volume2 aria-hidden /> : <VolumeX aria-hidden />}
+        {sound.isOn ? text.soundOn : text.soundOff}
+      </Button>
+    </div>
+  );
+}
+
 // One tap, one read: a payload that is no ticket is told at once and needs a new tap; a repeat keeps looking.
 function useLiveScanner() {
   const scanner = useScanner();
@@ -182,6 +200,7 @@ export function ScannerView({ canOverride, returnTo, logOpenedAction }: ScannerV
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6">
+      <SoundToggle sound={scanner.sound} />
       <ScanTabs
         camera={<CameraPanel camera={camera} canScan={scanner.state.stage === 'idle'} />}
         manual={<ManualCheckInForm isBusy={scanner.isBusy} onSubmit={scanner.submitManual} />}

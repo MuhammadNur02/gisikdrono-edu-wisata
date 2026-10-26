@@ -26,6 +26,7 @@ const VALID = {
   validFrom: '',
   validTo: null,
   priceTiers: [],
+  legRwIds: [],
 };
 
 function pathsOf(input: unknown): string[] {
@@ -67,11 +68,18 @@ describe('createPackageSchema', () => {
     expect(pathsOf({ ...VALID, priceTiers: reversed })).toEqual(['priceTiers.0.maxPax']);
   });
 
-  it("refuses legs from the form: a combo's legs wait for the save_package RPC", () => {
-    expect(createPackageSchema.safeParse({ ...VALID, category: 'combo', legs: [] }).success).toBe(
-      false,
-    );
-    expect(pathsOf({ ...VALID, category: 'combo' })).toEqual([]);
+  it('takes a combo’s route in order, each RW once, and none for an RW package', () => {
+    expect(pathsOf({ ...VALID, category: 'combo', legRwIds: [13, 5] })).toEqual([]);
+    expect(pathsOf({ ...VALID, category: 'combo', legRwIds: [5, 5] })).toEqual(['legRwIds']);
+    expect(pathsOf({ ...VALID, legRwIds: [5] })).toEqual(['legRwIds']);
+    expect(createPackageSchema.safeParse({ ...VALID, category: 'combo', legs: [] }).success).toBe(false);
+  });
+
+  it('publishes a combo only once its route visits two RWs (combo_legs_on_sale)', () => {
+    const published = { ...VALID, category: 'combo', status: 'published' };
+    expect(pathsOf({ ...published, legRwIds: [5] })).toEqual(['legRwIds']);
+    expect(pathsOf({ ...published, legRwIds: [5, 13] })).toEqual([]);
+    expect(pathsOf({ ...published, status: 'draft', legRwIds: [] })).toEqual([]);
   });
 
   it('takes no owner RW, creator or id for a new package, and no fractional rupiah', () => {
