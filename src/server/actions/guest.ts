@@ -149,6 +149,9 @@ export async function cancelBookingAction(input: unknown): Promise<ActionResult<
     if (isRaised(error, 'PRICE_MISMATCH')) {
       return fail('PRICE_MISMATCH', undefined, hubText.cancel.changed);
     }
+    if (isRaised(error, 'CANCEL_NEEDS_SUPERADMIN')) {
+      return fail('STATE_INVALID', undefined, hubText.cancel.needsSuperadmin);
+    }
     return mapError(error);
   }
 }

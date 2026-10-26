@@ -106,7 +106,9 @@ describe('processMidtransNotification', () => {
     await processMidtransNotification(NOTIFICATION, RAW_BODY);
     expect(svcRecordPaymentEvent).toHaveBeenCalledWith(expect.anything(), {
       source: 'status_api',
-      eventHash: createHash('sha256').update(`status_api\n${JSON.stringify(CONFIRMED)}`).digest('hex'),
+      eventHash: createHash('sha256')
+        .update(`status_api\n${JSON.stringify(CONFIRMED)}`)
+        .digest('hex'),
       payload: CONFIRMED,
     });
   });
@@ -116,7 +118,10 @@ describe('processMidtransNotification', () => {
     vi.mocked(getTransactionStatus).mockResolvedValue(notFound);
     await processMidtransNotification(NOTIFICATION, RAW_BODY);
     expect(svcRecordPaymentEvent).toHaveBeenCalledTimes(1);
-    expect(svcRecordPaymentEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ source: 'webhook' }));
+    expect(svcRecordPaymentEvent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ source: 'webhook' }),
+    );
     expect(svcApplyPaymentEvent).toHaveBeenCalledWith(expect.anything(), {
       eventId: 41,
       source: 'webhook',

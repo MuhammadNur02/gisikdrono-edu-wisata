@@ -229,3 +229,39 @@ export async function svcRefundRequestsToRetry(
     amount: row.amount,
   }));
 }
+
+// M-1 of the final review of PR #69: one more call to Midtrans' refund API only while the request is still
+// requested, decided under its row's lock.
+export async function svcClaimRefundRetry(
+  adminClient: DatabaseClient,
+  requestId: string,
+): Promise<boolean> {
+  return z
+    .boolean()
+    .parse(await resultOf(adminClient.rpc('svc_claim_refund_retry', { p_request_id: requestId })));
+}
+
+// "Konfirmasi & Bayar": whether the proven number is the booking's own, the number in the RPC body (L-7, L-8).
+export async function svcIsBookingPhone(
+  adminClient: DatabaseClient,
+  request: { bookingId: string; phone: string },
+): Promise<boolean> {
+  return z.boolean().parse(
+    await resultOf(
+      adminClient.rpc('svc_is_booking_phone', {
+        p_booking_id: request.bookingId,
+        p_phone: request.phone,
+      }),
+    ),
+  );
+}
+
+// L-3: a cancellation the kelurahan and RW shares cannot keep is the superadmin's; one alert per booking.
+export async function svcFlagCancellationForSuperadmin(
+  adminClient: DatabaseClient,
+  bookingId: string,
+): Promise<void> {
+  await resultOf(
+    adminClient.rpc('svc_flag_cancellation_for_superadmin', { p_booking_id: bookingId }),
+  );
+}

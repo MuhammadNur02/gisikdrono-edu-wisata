@@ -5,7 +5,7 @@
 -- weather refund the fee eats whole, the weather window closing, a full target session, the cap of three weather
 -- moves with the ticket sent again after each, and the same cancellation or move asked twice.
 begin;
-select plan(91);
+select plan(99);
 \ir helpers/rls_personas.psql
 \ir helpers/visit_terms.psql
 select set_config('app.qr_key_id', 'k1', true);
@@ -177,6 +177,8 @@ select is(internal.cancel_booking((select id from va_small), null, 'Hujan', 'wea
   'null'::jsonb, 'that weather cancellation requests no refund');
 select is((select status::text from public.bookings where id = (select id from va_small)), 'cancelled',
   'and still cancels the booking');
+select is(pg_temp.ledger_sum((select id from va_small)), 30000::bigint,
+  'with nothing refunded the ledger keeps what was paid (final review of PR #69, P-3)');
 
 -- ===== Weather moves (decision of 2026-10-25, rules 1 and 2) =====
 update public.site_settings set value = '7' where key = 'midtrans.fee_qris_permille';
@@ -436,10 +438,89 @@ select is((select r.amount || ':' || (r.booking_leg_id is not null) from public.
            where r.booking_id = (select id from visited)), '59160:true', 'the request names the leg');
 select is(pg_temp.event(pg_temp.order_of((select id from visited)), 'partial_refund', 120000, 59160)
             ->> 'processing_result', 'refund_recorded', 'and is booked when Midtrans reports it');
-select is(pg_temp.ledger_sum((select id from visited)), 60000::bigint,
-  'the ledger gives the leg''s share back and keeps the visited leg''s');
+select is((select array_agg(x.label order by x.label) from (
+    select s.beneficiary_key || '=' || (s.amount + coalesce((select sum(r.amount) from public.revenue_share_entries r
+              where r.booking_id = s.booking_id and r.entry_type = 'reversal' and r.line_ref = s.line_ref
+                and r.beneficiary_key = s.beneficiary_key), 0)) as label
+    from public.revenue_share_entries s
+    where s.booking_id = (select id from visited) and s.entry_type = 'settlement') as x),
+  array['kelurahan=12000', 'rw:13=0', 'rw:5=48000'],
+  'only the stopped leg''s lines give back: RW 13 its whole share, the kelurahan half of its own; RW 05 keeps all');
 select is((select status::text from public.invoices where booking_id = (select id from visited)), 'paid',
   'the invoice of the visited leg stands');
+
+-- ===== The final review of PR #69 =====
+
+-- M-1: a bank transfer against a QRIS request Midtrans may still pay out is refused; after Midtrans refused it, it books.
+create temporary table qris_pending on commit drop as
+select pg_temp.paid('00000000-0000-4000-8000-0000000e1001', '00000000-0000-4000-8000-0000000e3020', 2,
+                    '+6281300004016', false) as id;
+select internal.cancel_booking((select id from qris_pending), null, 'Batal', 'cancellation',
+  (internal.refund_preview((select id from qris_pending), 'cancellation') ->> 'amount')::bigint, 90::smallint);
+insert into storage.objects (bucket_id, name)
+values ('documents', 'bookings/' || (select id from qris_pending) || '/refund-' || md5('m1')::uuid || '.pdf'),
+       ('documents', 'bookings/' || (select id from qris_pending) || '/refund-' || md5('m1b')::uuid || '.pdf');
+select throws_ok($$select internal.record_refund_core((select id from qris_pending), null,
+  (pg_temp.request_of((select id from qris_pending))).amount, 'transfer-m1', 'Transfer bank uji M-1',
+  'bookings/' || (select id from qris_pending) || '/refund-' || md5('m1')::uuid || '.pdf',
+  '00000000-0000-4000-8000-00000000f001', false)$$, 'P0001', null,
+  'a transfer against a QRIS refund still requested at Midtrans is refused (REFUND_PENDING_AT_MIDTRANS)');
+select internal.mark_refund_request((pg_temp.request_of((select id from qris_pending))).id, 'failed', '412', 'midtrans_refused');
+select is(internal.record_refund_core((select id from qris_pending), null,
+  (pg_temp.request_of((select id from qris_pending))).amount, 'transfer-m1b', 'Transfer bank uji M-1',
+  'bookings/' || (select id from qris_pending) || '/refund-' || md5('m1b')::uuid || '.pdf',
+  '00000000-0000-4000-8000-00000000f001', false) ->> 'result', 'recorded',
+  'once Midtrans refused it, the transfer books the request');
+select is((select status::text from public.refund_requests where booking_id = (select id from qris_pending)),
+  'recorded', 'the request is recorded');
+select is((select status::text from public.bookings where id = (select id from qris_pending)), 'cancelled',
+  'and the booking stays cancelled');
+
+-- L-2: a booking closed after its visit day with its window unanswered still gets the weather refund.
+insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
+  ('00000000-0000-4000-8000-0000000e3040', 5, public.today_jkt() + 4, '13:00', '15:00', 'Uji tepi tutup', 200);
+create temporary table closed_late on commit drop as
+select pg_temp.paid('00000000-0000-4000-8000-0000000e1001', '00000000-0000-4000-8000-0000000e3040', 2,
+                    '+6281300004017', false) as id;
+select pg_temp.declare('00000000-0000-4000-8000-0000000e3040');
+select set_config('app.in_rpc', '1', true);
+update public.bookings set status = 'no_show' where id = (select id from closed_late);
+update public.weather_notice_bookings set open_until = now() - interval '1 second'
+where booking_id = (select id from closed_late);
+select set_config('app.in_rpc', '', true);
+select internal.settle_lapsed_weather_links(10);
+select is((select b.status::text || ':' || r.kind from public.bookings b join public.refund_requests r on r.booking_id = b.id
+           where b.id = (select id from closed_late)), 'no_show:weather',
+  'a no_show booking with an unanswered window gets its weather refund requested, its status kept');
+
+-- P-4: a checked_in booking whose review clears gets the rights of its leg still to visit.
+insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
+  ('00000000-0000-4000-8000-0000000e3215', 13, public.today_jkt() + 5, '13:00', '15:00', 'Uji tepi tinjau 13', 40);
+create temporary table reviewed on commit drop as
+select (internal.create_booking('00000000-0000-4000-8000-0000000e1003',
+  array['00000000-0000-4000-8000-0000000e3205', '00000000-0000-4000-8000-0000000e3215']::uuid[], 2,
+  jsonb_build_object('booker_type', 'school', 'institution_name', 'SD Uji Tinjau', 'pic_name', 'Bu Tinjau',
+                     'pic_phone', '+6281300004018', 'pic_email', 'tinjau@contoh.test', 'notes', null),
+  '[]', '[]', 'pay', 'web', null, pg_temp.otp('+6281300004018'), '{"version": "2026-10-18"}', null,
+  '{"ip": null, "user_agent": "pgTAP"}',
+  internal.booking_quote_hash(internal.booking_quote('00000000-0000-4000-8000-0000000e1003', 2, '[]',
+                                                     array[5, 13]::smallint[]))) ->> 'booking_id')::uuid as id;
+select pg_temp.event(pg_temp.attempt((select id from reviewed)), 'settlement',
+                     (select total_amount from public.bookings where id = (select id from reviewed)), null);
+select set_config('app.in_rpc', '1', true);
+update public.booking_legs set status = 'checked_in', checked_in_at = now()
+where booking_id = (select id from reviewed) and rw_id = 5;
+update public.bookings set status = 'checked_in', needs_review = true where id = (select id from reviewed);
+select set_config('app.in_rpc', '', true);
+select pg_temp.declare('00000000-0000-4000-8000-0000000e3215', 'admin_rw_13');
+select is((select count(*)::int from public.weather_notice_bookings where booking_id = (select id from reviewed)), 0,
+  'a booking under review gets no rights when the notice comes');
+select set_config('app.in_rpc', '1', true);
+update public.bookings set needs_review = false where id = (select id from reviewed);
+select set_config('app.in_rpc', '', true);
+select is((select count(*)::int from public.weather_notice_bookings w join public.booking_legs l on l.id = w.booking_leg_id
+           where w.booking_id = (select id from reviewed) and l.rw_id = 13), 1,
+  'once its review clears, its leg still to visit gets them (P-4)');
 
 select * from finish();
 rollback;

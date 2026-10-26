@@ -12,6 +12,7 @@ import {
 } from '@/db/rpc-payments';
 import type { DatabaseClient } from '@/db/rpc-result';
 import {
+  svcClaimRefundRetry,
   svcMarkRefundRequest,
   svcRefundRequestsToRetry,
   svcSettleLapsedWeatherLinks,
@@ -144,6 +145,8 @@ async function retryRefund(adminClient: DatabaseClient, refund: RefundToRetry): 
     });
     return;
   }
+  // A superadmin's transfer may have recorded it meanwhile (final review of PR #69, M-1).
+  if (!(await svcClaimRefundRetry(adminClient, refund.requestId))) return;
   await askMidtransForRefund(adminClient, refund);
 }
 

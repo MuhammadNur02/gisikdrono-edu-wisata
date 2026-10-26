@@ -244,8 +244,9 @@ export async function recordWebhookRejection(
 
 // docs/PRD.md §13.1 A16 (Task P3.12.02): what a cancellation leaves for Midtrans, after its commit and best effort.
 // Its open orders end; a QRIS refund is asked of Midtrans' refund API (payment-poll.ts askMidtransForRefund), and one
-// that got no answer is asked again by payments-poll. A Virtual Account refund waits for the treasurer's transfer and
-// record_refund, so nothing is called for it.
+// that got no answer is asked again by payments-poll. A Virtual Account refund waits for the treasurer's bank transfer,
+// recorded through a manual_refund adjustment that record_refund_core books against the open request; nothing is
+// called for it here.
 export async function settleCancellation(outcome: CancellationOutcome): Promise<void> {
   await expireClosedOrders(outcome.closeOrders);
   const refund = outcome.refund;

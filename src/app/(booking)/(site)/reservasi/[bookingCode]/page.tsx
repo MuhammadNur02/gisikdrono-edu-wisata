@@ -5,7 +5,7 @@ import { Suspense } from 'react';
 import { BookingTimeline } from '@/components/booking/booking-timeline';
 import { DocumentLinks } from '@/components/booking/document-links';
 import {
-  CancelPanel,
+  CancelSection,
   QuotedConfirm,
   RevokePanel,
   TreasurerCard,
@@ -95,7 +95,12 @@ function SideColumn({
       <HubHelp bookingCode={code} whatsappNumber={whatsappNumber} />
       {canManage && (
         <div className="space-y-3 px-1">
-          <CancelPanel view={view} quote={hub.cancellation} actions={ACTIONS} />
+          <CancelSection
+            view={view}
+            quote={hub.cancellation}
+            needsSuperadmin={hub.cancellationNeedsSuperadmin}
+            actions={ACTIONS}
+          />
           <RevokePanel bookingCode={code} actions={ACTIONS} />
         </div>
       )}

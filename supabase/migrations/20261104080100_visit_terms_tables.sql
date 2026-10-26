@@ -51,6 +51,8 @@ alter table public.site_settings add constraint site_settings_visit_terms_values
            when key = 'midtrans.fee_qris_permille' then (value #>> '{}')::numeric between 0 and 1000
            else (value #>> '{}')::numeric = trunc((value #>> '{}')::numeric)
                 and (value #>> '{}')::numeric >= case when key = 'booking.weather_window_hours' then 1 else 0 end
+                -- At most 24 h (final review of PR #69, L-2): the owner's window, not a longer one.
+                and (key <> 'booking.weather_window_hours' or (value #>> '{}')::numeric <= 24)
       end
     else true
   end);

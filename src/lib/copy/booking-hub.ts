@@ -169,6 +169,7 @@ export const bookingHubCopy = {
       `${String(pct)} % paket (${packagePart}) dan produk tambahan (${addons}).`,
     confirm: 'Ya, batalkan',
     keep: 'Tidak jadi',
+    needsSuperadmin: 'Hubungi kelurahan untuk pembatalan reservasi ini.',
     changed:
       'Jumlah pengembalian dana sudah berubah sejak halaman ini dibuka. Periksa angka terbaru di atas, lalu konfirmasi lagi.',
     defaultReason: 'Dibatalkan penanggung jawab lewat halaman reservasi',

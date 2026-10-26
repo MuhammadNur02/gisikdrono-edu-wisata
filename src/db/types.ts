@@ -4872,6 +4872,10 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      svc_claim_refund_retry: {
+        Args: { p_request_id: string }
+        Returns: boolean
+      }
       svc_claim_security_alerts: {
         Args: { p_limit: number }
         Returns: {
@@ -4939,6 +4943,10 @@ export type Database = {
           p_id: string
           p_permanent: boolean
         }
+        Returns: undefined
+      }
+      svc_flag_cancellation_for_superadmin: {
+        Args: { p_booking_id: string }
         Returns: undefined
       }
       svc_forget_purged_files: { Args: { p_paths: string[] }; Returns: number }

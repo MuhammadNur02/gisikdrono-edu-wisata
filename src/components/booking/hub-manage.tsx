@@ -111,7 +111,18 @@ function cancelBody(view: StatusHubView, quote: RefundQuote | null): string {
 }
 
 // docs/PRD.md FR-BOOK-23 (A16): the refund shown is the one the database computed for today, not a browser sum.
-export function CancelPanel(props: {
+// Final review of PR #69, L-3: a cancellation the terms cannot book here goes through the kelurahan.
+export function CancelSection(props: {
+  view: StatusHubView;
+  quote: RefundQuote | null;
+  needsSuperadmin: boolean;
+  actions: HubActions;
+}) {
+  if (!props.needsSuperadmin) return <CancelPanel {...props} />;
+  return <p className="text-body-sm text-ink-2">{text.cancel.needsSuperadmin}</p>;
+}
+
+function CancelPanel(props: {
   view: StatusHubView;
   quote: RefundQuote | null;
   actions: HubActions;

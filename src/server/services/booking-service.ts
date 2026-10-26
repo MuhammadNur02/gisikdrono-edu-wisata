@@ -20,17 +20,14 @@ import {
 import type { DatabaseClient } from '@/db/rpc-result';
 import {
   svcCancelBooking,
-  svcRefundPreview,
+  svcIsBookingPhone,
   svcRescheduleForWeather,
   type CancellationOutcome,
   type CancellationRequest,
-  type RefundKind,
-  type RefundQuote,
 } from '@/db/rpc-terms';
 import { AppError, raisedHintOf } from '@/lib/errors';
 import { mintGuestLink } from '@/lib/links/mint';
 import { isCurrentLink, readGuestLink } from '@/lib/links/verify';
-import { createLogger } from '@/lib/logger';
 import { drawOtpCode, otpBrowserHash, otpCodeHash } from '@/lib/otp';
 import { refundRateLimits, withinRateLimits, type RateLimitCheck } from '@/lib/rate-limit';
 // Visitors have no session, so their codes, lookups and links run with the service role (CLAUDE.md §6.1). Every
@@ -40,7 +37,7 @@ import { refundRateLimits, withinRateLimits, type RateLimitCheck } from '@/lib/r
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 import type { SubmitReviewValues } from '@/lib/validations/review';
-import { manageRightsOf, statusHubOf } from '@/server/services/booking-hub-reads';
+import { statusHubDataOf, type StatusHubData } from '@/server/services/booking-hub-data';
 import {
   bookingLimitsOf,
   bookingToCreate,
@@ -49,8 +46,7 @@ import {
   type BookingOutcome,
   type BookingRequest,
 } from '@/server/services/booking-request';
-import { sessionDaysOf, weatherStateOf } from '@/server/services/booking-weather-reads';
-import type { StatusHubView, WeatherState } from '@/types/booking-hub';
+import { sessionDaysOf } from '@/server/services/booking-weather-reads';
 
 // The guest side of a booking (Task P3.2, P3.3, P3.4): proving the PIC's phone with a one-time code, making the hold
 // or quotation booking itself, sending a link again from /reservasi/cari, and checking or revoking the links
@@ -287,50 +283,11 @@ export async function createQuotedBooking(request: BookingRequest): Promise<Book
 
 // ===== The status hub (Task P3.12.01, P3.12.02; docs/PRD.md §13.1 A16–A18) =====
 
-export interface StatusHubData {
-  view: StatusHubView;
-  // What a cancellation would give back now (FR-BOOK-23), for the manage link of a paid booking.
-  cancellation: RefundQuote | null;
-  // After a weather notice: the moves and the weather refund the manage link may choose (FR-BOOK-24, FR-BOOK-25).
-  weather: WeatherState | null;
-  weatherRefund: RefundQuote | null;
-  // The pay link a manage holder may hand the treasurer (FR-B2B-10): /reservasi/<code>/bayar?t=…, 24 h.
-  payLinkToken: string | null;
-}
+export type { StatusHubData } from '@/server/services/booking-hub-data';
 
-// A refund the terms cannot give now (a past visit, an unset fee) is no option; any other failure is logged and the hub
-// shows no option rather than an error page (review of PR #69, L-3). The cancel asks the database again anyway.
-async function quoteOrNull(adminClient: DatabaseClient, bookingId: string, kind: RefundKind) {
-  try {
-    return await svcRefundPreview(adminClient, { bookingId, kind });
-  } catch (error) {
-    if (raisedHintOf(error) !== 'STATE_INVALID') {
-      createLogger(randomUUID()).error('internal_error', {
-        step: 'refund_preview',
-        bookingId,
-        kind,
-      });
-    }
-    return null;
-  }
-}
-
-export async function loadStatusHub(guest: GuestAccess): Promise<StatusHubData> {
+export function loadStatusHub(guest: GuestAccess): Promise<StatusHubData> {
   const adminClient = createSupabaseAdminClient();
-  const view = await statusHubOf(adminClient, guest.bookingId);
-  const rights = manageRightsOf(guest, view);
-  const weather = rights.hasWeather ? await weatherStateOf(adminClient, guest.bookingId) : null;
-  return {
-    view,
-    cancellation: rights.canCancelPaid
-      ? await quoteOrNull(adminClient, guest.bookingId, 'cancellation')
-      : null,
-    weather,
-    weatherRefund: weather ? await quoteOrNull(adminClient, guest.bookingId, 'weather') : null,
-    payLinkToken: rights.canPassPayLink
-      ? await linkFor(adminClient, guest.bookingCode, 'pay')
-      : null,
-  };
+  return statusHubDataOf(adminClient, guest, () => linkFor(adminClient, guest.bookingCode, 'pay'));
 }
 
 // docs/PRD.md §9.2: the manage link cancels; the database decides what the state allows and what comes back, and
@@ -357,11 +314,6 @@ export function rescheduleGuestBooking(
 
 // "Konfirmasi & Bayar" of a quotation (docs/PRD.md §9.2 quoted → pending_payment): the number the visitor just proved
 // with a code must be the booking's own; the number travels in the RPC body, never a query string (PR #69, L-7).
-export async function isBookingPhone(bookingId: string, phone: string): Promise<boolean> {
-  const { data, error } = await createSupabaseAdminClient().rpc('svc_is_booking_phone', {
-    p_booking_id: bookingId,
-    p_phone: phone,
-  });
-  if (error) throw error;
-  return data;
+export function isBookingPhone(bookingId: string, phone: string): Promise<boolean> {
+  return svcIsBookingPhone(createSupabaseAdminClient(), { bookingId, phone });
 }
