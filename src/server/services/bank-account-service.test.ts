@@ -7,12 +7,19 @@ import { staffCopy } from '@/lib/copy/staff';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import {
   getMaskedBankAccount,
+  listRwTreasuryAccounts,
   revealBankAccountNumber,
   setBankAccount,
 } from '@/server/services/bank-account-service';
+import { listRwUnitsForStaff } from '@/server/services/rw-unit-service';
+import type { RwUnitSummary } from '@/types/rw-unit';
 
 vi.mock('@/lib/supabase/server', () => ({ createSupabaseServerClient: vi.fn() }));
 vi.mock('@/server/services/rw-unit-service', () => ({ listRwUnitsForStaff: vi.fn() }));
+const logged = vi.hoisted(() => ({ error: vi.fn() }));
+vi.mock('@/lib/logger', () => ({
+  createLogger: () => ({ error: logged.error, info: vi.fn(), warn: vi.fn() }),
+}));
 
 const VENDOR_ID = '0192f3a4-5b6c-7d8e-9f01-0000000000dd';
 const MASKED = {
@@ -113,5 +120,54 @@ describe('the bank account service', () => {
     });
     sessionAnswering(() => refusal('P0002', null));
     await expect(getMaskedBankAccount(target)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+});
+
+const unit = (id: 5 | 8, name: string): RwUnitSummary => ({
+  id,
+  label: `RW 0${String(id)}`,
+  accentKey: 'leaf',
+  name,
+  shortName: name,
+  slug: `rw-0${String(id)}`,
+  path: `/rw-0${String(id)}`,
+  iconKey: 'recycle',
+  scheduleEnabled: false,
+});
+
+// Review of PR #85, L-d: one RW's failed read is null on the page and logged by the RW's number and the error's kind.
+describe('listRwTreasuryAccounts', () => {
+  it('shows the other RWs when one read fails, and logs that one by ids only', async () => {
+    vi.mocked(listRwUnitsForStaff).mockResolvedValue([
+      unit(5, 'RW 05 Ecowastreme'),
+      unit(8, 'RW 08'),
+    ]);
+    const client = createClient<Database>('http://supabase.test', 'test-key', {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: {
+        fetch: (_input, init) => {
+          const body = typeof init?.body === 'string' ? init.body : '';
+          return Promise.resolve(
+            body.includes('"p_rw_id":8')
+              ? Response.json({ code: '57014', message: 'canceling statement' }, { status: 500 })
+              : Response.json(MASKED),
+          );
+        },
+      },
+    });
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(client);
+
+    const accounts = await listRwTreasuryAccounts();
+    expect(accounts.map((row) => [row.rwId, row.account?.accountMasked ?? null])).toEqual([
+      [5, '••••7890'],
+      [8, null],
+    ]);
+    expect(logged.error).toHaveBeenCalledTimes(1);
+    expect(logged.error).toHaveBeenCalledWith('internal_error', {
+      step: 'treasury_read',
+      rwId: 8,
+      errorName: 'object',
+      postgresCode: '57014',
+    });
   });
 });

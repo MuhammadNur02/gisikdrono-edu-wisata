@@ -573,6 +573,10 @@ Every table `authenticated` holds a right on carries the restrictive `aal2()` po
 -- rpc_get_participants(p_booking_id uuid) returns setof (seq_no, full_name, group_label)
 --   same scope and window; row cap 300; writes security_events.pii_revealed {booking_id, count:'participants'},
 --   so it spends the same daily cap of 50 as a contact reveal and is seen by the anomaly scan (MON-07)
+-- get_vendor_bank_account / get_rw_treasury_account with p_reveal (superadmin, fresh TOTP, a reason)
+--   writes security_events.pii_revealed {count:'bank_account'} with entity_type umkm_vendors or rw_units, so it is
+--   seen by the anomaly scan too; it has its own cap of 20 a day (audit_logs vendor_bank.revealed /
+--   rw_treasury.revealed), and the cap of 50 counts only the pii_revealed events of bookings (20261104180000)
 ```
 
 Masking happens server-side; the full value never reaches the client until the reveal RPC runs. Reveal counts per staff per day appear on `/dashboard/security-alerts`. PostgREST `max-rows` is set to 100 as a backstop.
