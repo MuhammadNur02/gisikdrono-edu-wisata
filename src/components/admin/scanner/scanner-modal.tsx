@@ -51,8 +51,11 @@ async function readPhoto(file: File): Promise<string | null> {
 // The native camera app takes the photo, so the page itself never opens a stream (camera=() here).
 function PhotoPicker({
   onPhoto,
+  onOpen,
 }: {
   onPhoto: (event: ChangeEvent<HTMLInputElement>) => Promise<void>;
+  // Runs in the tap that opens the camera app, where the beep may be woken (review of PR #85, I-2).
+  onOpen: () => void;
 }) {
   const inputId = useId();
   return (
@@ -66,7 +69,7 @@ function PhotoPicker({
         onChange={(event) => void onPhoto(event)}
       />
       <Button asChild size="xl" className="w-full">
-        <label htmlFor={inputId} className="cursor-pointer">
+        <label htmlFor={inputId} className="cursor-pointer" onClick={onOpen}>
           <Camera aria-hidden />
           {text.modal.takePhoto}
         </label>
@@ -80,7 +83,7 @@ function PhotoTab({
   onPicked,
 }: {
   submit: (raw: string) => PayloadVerdict;
-  // Runs inside the officer's choice of a photo, where the beep may be woken (review of PR #79, L-8).
+  // Wakes the beep in the tap that opens the picker (review of PR #79, L-8; PR #85, I-2).
   onPicked: () => void;
 }) {
   const [problem, setProblem] = useState<PhotoProblem>(() =>
@@ -90,7 +93,6 @@ function PhotoTab({
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    onPicked();
     const raw = await readPhoto(file).catch(() => null);
     if (raw === null) {
       setProblem('unreadable');
@@ -102,7 +104,7 @@ function PhotoTab({
     return <FormAlert tone="info">{text.modal.photoUnsupported}</FormAlert>;
   return (
     <div className="space-y-3">
-      <PhotoPicker onPhoto={onPhoto} />
+      <PhotoPicker onPhoto={onPhoto} onOpen={onPicked} />
       {problem === 'unreadable' ? (
         <FormAlert tone="danger">{text.modal.noQrInPhoto}</FormAlert>
       ) : null}
