@@ -1,5 +1,5 @@
-// The e-certificates (docs/PRD.md FR-POST-01, FR-POST-02, FR-ADMIN-07; Task P4.5.02, P4.5.03): the words on the PDF
-// and on /dashboard/certificates.
+// The e-certificates (docs/PRD.md FR-POST-01, FR-POST-02, FR-ADMIN-07; Task P4.5.02, P4.5.03): the words on the PDF,
+// on /dashboard/certificates and on the visitor's /reservasi/[bookingCode]/sertifikat.
 
 const PAIR = 2;
 
@@ -83,5 +83,33 @@ export const certificatesCopy = {
     reason: 'Alasan',
     reasonHint: 'Tiga sampai 300 karakter, tanpa nama peserta.',
     superadminOnly: 'Hanya superadmin yang dapat mencabut sertifikat atau melepas penahanan.',
+  },
+  guest: {
+    title: 'Sertifikat kunjungan',
+    description: (until: string) =>
+      `Unduh sertifikat rombongan dan peserta di sini. Sertifikat tersedia sampai ${until}.`,
+    expired:
+      'Sertifikat reservasi ini sudah tidak tersedia. Sertifikat dan nama peserta disimpan sampai 90 hari setelah kunjungan, lalu dihapus untuk melindungi data pribadi.',
+    pending:
+      'Sertifikat terbit setelah rombongan selesai check-in di semua RW yang dikunjungi. Tautannya dikirim lewat WhatsApp.',
+    held: 'Sertifikat reservasi ini sedang ditahan karena jumlah yang hadir melebihi jumlah yang dibayar. Hubungi kelurahan lewat WhatsApp, ya.',
+    group: 'Sertifikat rombongan',
+    participants: 'Sertifikat peserta',
+    hiddenName: 'Nama peserta tampil setelah verifikasi nomor',
+    participantNumber: (number: string) => `Sertifikat ${number}`,
+    download: 'Unduh',
+    downloadLabel: (number: string) => `Unduh sertifikat ${number}`,
+    downloading: 'Membuka sertifikat…',
+    stepUpTitle: 'Verifikasi nomor pemesan',
+    stepUpBody:
+      'Sertifikat yang mencantumkan nama hanya dibuka untuk pemesan. Masukkan empat digit terakhir nomor WhatsApp yang dipakai saat memesan.',
+    lastFour: 'Empat digit terakhir',
+    lastFourHint: 'Contoh: 4521',
+    stepUp: 'Buka sertifikat peserta',
+    mismatch: 'Empat digit itu tidak cocok dengan nomor pemesan.',
+    locked: 'Terlalu banyak percobaan. Coba lagi besok, atau hubungi kelurahan lewat WhatsApp.',
+    unverified:
+      'Nomor pemesan reservasi ini belum terverifikasi lewat WhatsApp, jadi sertifikat peserta tidak bisa dibuka di sini. Hubungi kelurahan lewat WhatsApp, ya.',
+    needsPhone: 'Verifikasi empat digit terakhir nomor pemesan dulu, ya.',
   },
 } as const;

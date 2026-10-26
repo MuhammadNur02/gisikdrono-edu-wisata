@@ -26,3 +26,26 @@ export interface CertificateBooking {
   // The people the booking's tickets this staff member sees let in above the booking.
   unpaidPax: number;
 }
+
+// One certificate on the visitor's /reservasi/[bookingCode]/sertifikat (Task P4.5.03): the institution a group
+// certificate names, a participant's name only once the PIC's number was proven (needsPhone), never a verify code.
+export interface GuestCertificate {
+  id: string;
+  kind: EnumValue<'certificate_kind'>;
+  number: string;
+  recipient: string | null;
+  needsPhone: boolean;
+}
+
+// What the page shows: nothing after 90 days from the last visit day (expired), nothing yet (pending), a booking held
+// back for its unpaid visitors (held), or the certificates it may hand out (ready).
+export type GuestCertificateView =
+  | { state: 'expired' | 'pending' | 'held'; availableUntil: string }
+  | {
+      state: 'ready';
+      availableUntil: string;
+      certificates: GuestCertificate[];
+      hasPhoneProof: boolean;
+      // False when no WhatsApp code ever proved the PIC's number: participant certificates stay with the kelurahan.
+      canProvePhone: boolean;
+    };

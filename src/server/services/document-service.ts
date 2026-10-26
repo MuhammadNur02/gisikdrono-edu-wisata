@@ -11,6 +11,7 @@ import { withinRateLimits } from '@/lib/rate-limit';
 // See withinBookletDownloadLimit for why this module creates a service-role client.
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
+import { todayInJakarta } from '@/lib/utils/dates';
 import {
   bookingDocumentPdf,
   loadBookingDocument,
@@ -26,11 +27,18 @@ import {
 } from '@/server/services/certificate-documents';
 import type { CertificateRow } from '@/server/services/certificate-pages';
 import {
+  guestCertificatePath,
+  loadGuestCertificates,
+  stepUpCertificatePhone,
+  type PhoneStepUp,
+} from '@/server/services/guest-certificates';
+import {
   keptTicketPdfPath,
   loadTicketDocument,
   ticketDocumentPdf,
   type TicketDocument,
 } from '@/server/services/ticket-documents';
+import type { GuestCertificateView } from '@/types/certificate';
 import type { VerifiedDocument } from '@/types/documents';
 
 type DatabaseClient = SupabaseClient<Database>;
@@ -235,6 +243,42 @@ export async function rerenderCertificateFiles(
     siteUrl: publicEnv.NEXT_PUBLIC_SITE_URL,
     readerId: staffId,
   });
+}
+
+// The visitor's certificate page (Task P4.5.03): the booking id comes from a verified certificate link; what the page
+// may show and hand out is decided in guest-certificates.ts.
+export function guestCertificates(
+  bookingId: string,
+  hasPhoneProof: boolean,
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<GuestCertificateView> {
+  return loadGuestCertificates(adminClient, { bookingId, hasPhoneProof, today: todayInJakarta() });
+}
+
+export function stepUpGuestCertificates(
+  bookingId: string,
+  lastFour: string,
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<PhoneStepUp> {
+  return stepUpCertificatePhone(adminClient, { bookingId, lastFour });
+}
+
+// A signed URL of 600 s to the certificate's kept file, rendered first if it has none; never stored or logged.
+export async function guestCertificateUrl(
+  request: { bookingId: string; certificateId: string; hasPhoneProof: boolean },
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<string> {
+  const path = await guestCertificatePath(adminClient, {
+    ...request,
+    today: todayInJakarta(),
+    siteUrl: publicEnv.NEXT_PUBLIC_SITE_URL,
+  });
+  return createDocumentSignedUrl(
+    adminClient,
+    path,
+    'certificate',
+    path.slice(path.lastIndexOf('/') + 1),
+  );
 }
 
 export interface WhatsAppDocument {

@@ -184,6 +184,25 @@ export async function certificatePdf(
   return pdf;
 }
 
+// The guest certificate page (Task P4.5.03): where a servable certificate's file is kept, rendered and kept first when
+// it has none yet, so the visitor is handed a signed URL to it (docs/Security.md §10.3). A recorded path is a file that
+// was uploaded before it was recorded, and only internal.purge_participants, which also marks the row purged, removes it.
+export async function keptCertificatePath(
+  adminClient: DatabaseClient,
+  certificate: CertificateRow,
+  context: CertificateContext,
+): Promise<string> {
+  if (!isServable(certificate)) throw new AppError('NOT_FOUND');
+  if (certificate.pdfPath !== null) return certificate.pdfPath;
+  const rendered = await renderAndKeep(
+    adminClient,
+    await batchFor(adminClient, certificate),
+    context,
+  );
+  if (!rendered.has(certificate.id)) throw new AppError('NOT_FOUND');
+  return storagePathFor(certificate);
+}
+
 // FR-ADMIN-07 "Render ulang": every servable certificate of the booking rendered again over its kept file, after the
 // signatory or the template changed. Returns how many files were written.
 export async function rerenderBookingCertificates(

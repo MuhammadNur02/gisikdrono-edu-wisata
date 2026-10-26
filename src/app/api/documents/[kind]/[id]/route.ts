@@ -185,7 +185,7 @@ async function ticketDocument(
 }
 
 // The same order for a certificate. One held back, revoked or purged is the same 404 as one that does not exist, and so
-// is every reader but staff in scope until the guest page of Task P4.5.03 brings the visitor's link and last-4 step-up.
+// is every reader but staff in scope: the visitor downloads from /reservasi/[bookingCode]/sertifikat (Task P4.5.03).
 async function certificateDocument(
   certificateId: string,
   clientIp: string,

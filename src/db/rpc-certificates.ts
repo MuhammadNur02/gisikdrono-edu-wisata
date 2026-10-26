@@ -53,3 +53,30 @@ export function svcRecordCertificatePdf(
     }),
   );
 }
+
+const phoneCheckSchema = z.enum(['verified', 'mismatch', 'unverified']);
+export type CertificatePhoneCheck = z.infer<typeof phoneCheckSchema>;
+
+// The guest certificate page's step-up (Task P4.5.03, 20261104182000): the four digits go in, only the answer comes
+// back; the PIC's number never leaves the database.
+export async function svcCheckCertificatePhone(
+  adminClient: DatabaseClient,
+  check: { bookingId: string; lastFour: string },
+): Promise<CertificatePhoneCheck> {
+  return phoneCheckSchema.parse(
+    await resultOf(
+      adminClient.rpc('svc_check_certificate_phone', {
+        p_booking_id: check.bookingId,
+        p_last_four: check.lastFour,
+      }),
+    ),
+  );
+}
+
+// The five tries of a day are used up: one open high alert per booking.
+export async function svcLockCertificatePhone(
+  adminClient: DatabaseClient,
+  bookingId: string,
+): Promise<void> {
+  await resultOf(adminClient.rpc('svc_lock_certificate_phone', { p_booking_id: bookingId }));
+}

@@ -4903,6 +4903,10 @@ export type Database = {
         }
         Returns: Json
       }
+      svc_check_certificate_phone: {
+        Args: { p_booking_id: string; p_last_four: string }
+        Returns: string
+      }
       svc_check_mfa_reenrolment_code: {
         Args: { p_code_hash: string; p_user_id: string }
         Returns: boolean
@@ -5081,6 +5085,10 @@ export type Database = {
           last_failure_at: string
           last_success_at: string
         }[]
+      }
+      svc_lock_certificate_phone: {
+        Args: { p_booking_id: string }
+        Returns: undefined
       }
       svc_log_audit: {
         Args: {
