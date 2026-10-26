@@ -3,11 +3,12 @@ import { z } from 'zod';
 import { BOOKING_LIMITS, PARTICIPANT_ROLES } from '@/config/booking';
 import { DB_ENUMS, type EnumValue } from '@/db/enums';
 import { copy } from '@/lib/copy/id';
-import { MOBILE_PHONE_PATTERN } from '@/lib/utils/phone';
+import { walkInCopy } from '@/lib/copy/walk-in';
+import { INTERNATIONAL_PHONE_PATTERN, MOBILE_PHONE_PATTERN } from '@/lib/utils/phone';
 import { captchaTokenField, emailField } from '@/lib/validations/auth';
 import { rowIdSchema, slugSchema } from '@/lib/validations/content';
 import { freeTextSchema, optionalFreeTextSchema } from '@/lib/validations/free-text';
-import { normalizeMobilePhone } from '@/lib/validations/normalize';
+import { normalizeInternationalPhone, normalizeMobilePhone } from '@/lib/validations/normalize';
 
 // docs/PRD.md FR-BOOK-03 and FR-BOOK-05 (Task P3.1.01), shared by the booking wizard and createBookingAction. It carries
 // identifiers and quantities only: the server prices every line from database rows (docs/Security.md §3.2, PAY-03), so
@@ -174,6 +175,42 @@ export function createBookingSchema(maxPax: number) {
       checkParticipants(booking, context);
     });
 }
+
+// Task P4.3.10 (docs/PRD.md §13.1 A13): the officer's booking at the counter, submitted to createAdminBookingAction.
+// The same identifiers and quantities as the web, priced by the server; the PIC's number may be Indonesian or from
+// abroad in E.164, since no OTP checks it here: the officer does, and says so (isPhoneConfirmed). No add-ons or
+// participant list yet.
+export const adminPicPhoneSchema = z
+  .string()
+  .max(PHONE_INPUT_MAX_LENGTH, walkInCopy.validation.phone)
+  .transform((value) => normalizeInternationalPhone(value) ?? value)
+  .pipe(z.string().regex(INTERNATIONAL_PHONE_PATTERN, walkInCopy.validation.phone));
+
+export function createAdminBookingSchema(maxPax: number) {
+  const { visitSessionIds, pax } = scheduleFields(maxPax);
+  const { bookerType, institutionName, picName, picEmail, notes } = bookerFields;
+  return z
+    .object({
+      packageId: rowIdSchema,
+      visitSessionIds,
+      pax,
+      bookerType,
+      institutionName,
+      picName,
+      picPhone: adminPicPhoneSchema,
+      picEmail,
+      notes,
+      isPhoneConfirmed: z.boolean(),
+      isCashOnTheSpot: z.boolean(),
+      consentAttested: z.literal(true, walkInCopy.validation.consentAttested),
+      idempotencyKey: z.uuid().toLowerCase(),
+      quoteHash: z.string(messages.quoteHash).regex(QUOTE_HASH_PATTERN, messages.quoteHash),
+    })
+    .strict()
+    .superRefine(requireInstitution);
+}
+export type CreateAdminBookingInput = z.input<ReturnType<typeof createAdminBookingSchema>>;
+export type CreateAdminBookingValues = z.output<ReturnType<typeof createAdminBookingSchema>>;
 
 type CreateBookingSchema = ReturnType<typeof createBookingSchema>;
 export type CreateBookingInput = z.input<CreateBookingSchema>;

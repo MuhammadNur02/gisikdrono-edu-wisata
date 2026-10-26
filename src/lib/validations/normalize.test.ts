@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { normalizeEmail, normalizeMobilePhone } from '@/lib/validations/normalize';
+import {
+  normalizeEmail,
+  normalizeInternationalPhone,
+  normalizeMobilePhone,
+} from '@/lib/validations/normalize';
 
 describe('normalizeEmail', () => {
   it('lower-cases and trims every address', () => {
@@ -42,5 +46,27 @@ describe('normalizeMobilePhone', () => {
     ['a number too short', '0812 345'],
   ])('refuses %s', (_case, input) => {
     expect(normalizeMobilePhone(input)).toBeNull();
+  });
+});
+
+// Task P4.3.10: the number an officer enters for a group at the counter.
+describe('normalizeInternationalPhone', () => {
+  it.each([
+    ['an Indonesian mobile number', '0812-3456-7890', '+6281234567890'],
+    ['an Indonesian landline', '024 7612345', '+62247612345'],
+    ['a British number', '+44 7700 900123', '+447700900123'],
+    ['a Malaysian number', '+60 (12) 345-6789', '+60123456789'],
+  ])('returns the E.164 form of %s', (_case, input, expected) => {
+    expect(normalizeInternationalPhone(input)).toBe(expected);
+  });
+
+  it.each([
+    ['a foreign number without +', '0044 7700 900123'],
+    ['a country code starting with 0', '+0 7700 900123'],
+    ['a number too short', '+44 1234'],
+    ['a number too long', '+44 1234 5678 9012 34'],
+    ['words', 'nomor hotel'],
+  ])('refuses %s', (_case, input) => {
+    expect(normalizeInternationalPhone(input)).toBeNull();
   });
 });

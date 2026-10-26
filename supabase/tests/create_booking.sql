@@ -126,8 +126,8 @@ select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1001',
 select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000c1001',
     array['00000000-0000-4000-8000-0000000c2001']::uuid[], 2, pg_temp.otp('+6281300000012'), '+6281300000012',
     p_channel => 'admin')$$,
-  'P0001', 'an officer''s booking is not taken here yet (Task P4.3.10)',
-  'an officer''s walk-in booking waits for its own task');
+  '42501', 'an officer''s booking names its officer',
+  'an officer''s booking names its officer, which the web never does (Task P4.3.10)');
 select is(pg_temp.reserved('00000000-0000-4000-8000-0000000c2001'), 0, 'none of them reserved a seat');
 select is((select count(*)::int from public.bookings where pic_phone like '+6281300000%'), 0, 'or wrote a booking');
 

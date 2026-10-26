@@ -1,4 +1,8 @@
-import { MOBILE_PHONE_PATTERN, normalizePhone } from '@/lib/utils/phone';
+import {
+  INTERNATIONAL_PHONE_PATTERN,
+  MOBILE_PHONE_PATTERN,
+  normalizePhone,
+} from '@/lib/utils/phone';
 
 // docs/Security.md §4.3 (BOOK-11): the one spelling of an email address or a phone number that limits, duplicate
 // checks and notifications count by, so 'A.Budi+promo@Gmail.com' and 'abudi@gmail.com' land in one bucket.
@@ -21,4 +25,16 @@ export function normalizeEmail(email: string): string {
 export function normalizeMobilePhone(input: string): string | null {
   const phone = normalizePhone(input);
   return phone !== null && MOBILE_PHONE_PATTERN.test(phone) ? phone : null;
+}
+
+// Task P4.3.10: the number an officer enters for a group. An Indonesian number in any of the ways people write it, or a
+// number from abroad that starts with + and its country code, returned in E.164; null otherwise. The officer checks it
+// with the group, since this path has no OTP.
+export function normalizeInternationalPhone(input: string): string | null {
+  const indonesian = normalizePhone(input);
+  if (indonesian !== null) return indonesian;
+  const trimmed = input.trim();
+  if (!trimmed.startsWith('+')) return null;
+  const phone = `+${trimmed.replace(/\D/g, '')}`;
+  return INTERNATIONAL_PHONE_PATTERN.test(phone) ? phone : null;
 }

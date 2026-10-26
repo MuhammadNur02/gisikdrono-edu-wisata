@@ -4627,6 +4627,18 @@ export type Database = {
         }
         Returns: Json
       }
+      create_admin_booking: {
+        Args: {
+          p_booker: Json
+          p_consent_version: string
+          p_idempotency_key: string
+          p_package_id: string
+          p_pax: number
+          p_quote_hash: string
+          p_session_ids: string[]
+        }
+        Returns: Json
+      }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       declare_weather_disruption: {
         Args: { p_reason: string; p_session_id: string }
@@ -4673,6 +4685,17 @@ export type Database = {
       issue_mfa_reenrolment_code: {
         Args: { p_code_hash: string; p_user_id: string }
         Returns: string
+      }
+      mark_booking_paid_manually: {
+        Args: {
+          p_amount: number
+          p_booking_id: string
+          p_key_id: string
+          p_method: Database["public"]["Enums"]["payment_method"]
+          p_proof_path?: string
+          p_reference?: string
+        }
+        Returns: Json
       }
       mark_refund_request_failed: {
         Args: { p_event_id: number; p_reason: string; p_request_id: string }
