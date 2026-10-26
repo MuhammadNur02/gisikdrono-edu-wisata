@@ -26,8 +26,10 @@ import { useWalkInQuote, type WalkInQuoteAction } from '@/hooks/use-walk-in-quot
 import { bookingWizardCopy } from '@/lib/copy/booking-wizard';
 import { walkInCopy } from '@/lib/copy/walk-in';
 import { formatIDR } from '@/lib/utils/currency';
+import { MOBILE_PHONE_PATTERN } from '@/lib/utils/phone';
 import { schemaResolver } from '@/lib/utils/schema-resolver';
 import { createAdminBookingSchema, type CreateAdminBookingValues } from '@/lib/validations/booking';
+import { normalizeInternationalPhone } from '@/lib/validations/normalize';
 import type { ActionResult } from '@/types/action-result';
 import type { WalkInBooking, WalkInPackage } from '@/types/walk-in';
 
@@ -138,8 +140,16 @@ function SessionsField({ form, action }: { form: WalkInFormApi; action: WalkInSe
   );
 }
 
+// Review of PR #91, L6: an Indonesian number that is no mobile one gets no WhatsApp, so the officer hears so before
+// relying on it.
+function isIndonesianLandline(value: string): boolean {
+  const phone = normalizeInternationalPhone(value);
+  return phone !== null && phone.startsWith('+62') && !MOBILE_PHONE_PATTERN.test(phone);
+}
+
 function BookerFields({ form }: { form: WalkInFormApi }) {
   const isGroup = form.watch('bookerType') !== 'individual';
+  const isLandline = isIndonesianLandline(form.watch('picPhone'));
   return (
     <>
       <BookerTypeField form={form} />
@@ -155,6 +165,7 @@ function BookerFields({ form }: { form: WalkInFormApi }) {
         type="tel"
         required
       />
+      {isLandline ? <FormAlert tone="info">{text.phoneNotMobile}</FormAlert> : null}
       <TextInputField
         form={form}
         name="picEmail"

@@ -1,5 +1,5 @@
--- Task P4.3.10 with the admin booking path of P4.3.08 (docs/PRD.md §13.1 A9, A13; BOOK-05, BOOK-11, AZ-14; decision of
--- 2026-10-26 on the split): an officer registers a walk-in group, or a group from abroad, at the counter.
+-- Task P4.3.10 with the admin booking path of P4.3.08 (docs/PRD.md §13.1 A9, A13, A21, A22, A23; BOOK-05, BOOK-11,
+-- AZ-14; decision of 2026-10-26 on the split): an officer registers a walk-in group, or a group from abroad.
 --
 --   public.create_admin_booking    The officer's entry point, at AAL2. The actor is auth.uid(), never a parameter, and
 --                                  it reaches internal.create_booking with p_channel = 'admin'.
@@ -7,25 +7,33 @@
 --                                  internal.create_admin_booking.
 --   internal.create_admin_booking  An officer of every RW the package visits, or the superadmin; no OTP; the same
 --                                  quote, quote hash (PRICE_MISMATCH) and quota reservation as the web; created_by set.
---   public.mark_booking_paid_manually  An RW admin's cash for an officer's booking of their RW, at AAL2 with a fresh
---                                  code (A9, FR-B2B-08). The superadmin's transfer with its proof and dual control
---                                  comes with the rest of P4.3.08.
+--                                  The admin path keeps none of the web's unpaid caps: staff at AAL2 are the trust
+--                                  model there, and every booking names its officer.
+--   internal.booking_sessions      One session check for both paths, with the earliest time each allows (the 2-argument
+--                                  web form keeps its lead time).
+--   public.send_admin_booking_link The PIC's pay link, when the officer does not take the cash after all.
+--   public.mark_booking_paid_manually  An RW admin's cash for an officer's booking of their own RW, at AAL2 with a fresh
+--                                  code (A9, A23). The superadmin's transfer with its proof and dual control comes with
+--                                  the rest of P4.3.08.
 --
--- Two product decisions of the owner (docs/PRD.md §13.1 A21 and A22, 2026-10-26); each sits in one function:
---   A  internal.admin_phone_confirmed: the officer ticks "Nomor sudah dicek dengan rombongan", which sets
---      phone_verified_at (booking_events admin_phone_confirmed and an audit row). Unticked, the number gets no WhatsApp
---      (enqueue_notification needs phone_verified_at) and the group hears by email only.
---   C  internal.admin_booking_sessions and internal.admin_hold_deadline: a session of today is booked until it ends
---      (booking.max_advance_days and the quota still apply); the hold is 30 minutes when the officer takes the cash on
---      the spot, else the institution hold, ending at the first session's start at the latest. The officer attests the
---      PIC's consent to the privacy notice (p_consent.attested_by).
+-- The owner's decisions, each in one function so that it changes in one place:
+--   A21 internal.admin_phone_confirmed: the officer ticks "Nomor sudah dicek dengan rombongan", which sets
+--       phone_verified_at (booking_events admin_phone_confirmed and an audit row). Unticked, the number gets no WhatsApp
+--       (enqueue_notification needs phone_verified_at) and the group hears by email only.
+--   A22 internal.booking_sessions with p_earliest_end: a session of today is booked until it ends
+--       (booking.max_advance_days, the package's validity and the quota still apply). The officer attests the PIC's
+--       consent to the privacy notice (p_consent.attested_by).
+--   A23 internal.admin_hold_deadline and mark_booking_paid_manually: a booking of one RW may take cash, by an RW admin
+--       of that RW, until 23:59 WIB of its visit day, so its hold runs until then; a combo is paid through its link and
+--       keeps the institution hold, ending at the first session's start. Cash after 23:59 is refused; the superadmin
+--       settles such a case through a finance adjustment.
 -- An officer's booking takes no add-ons or participant list yet; the PIC adds the list later on the manage page.
 
 
--- ===== C: the sessions an officer may book =====
+-- ===== A22: one session check, with the earliest time each path allows =====
 
--- internal.booking_sessions with the web's lead time replaced by the session's end.
-create function internal.admin_booking_sessions(p_package_id uuid, p_session_ids uuid[])
+create function internal.booking_sessions(p_package_id uuid, p_session_ids uuid[], p_earliest_start timestamptz,
+  p_earliest_end timestamptz)
   returns table (leg_order smallint, rw_id smallint, session_id uuid, session_date date, starts_at timestamptz)
   language plpgsql stable
   set search_path = ''
@@ -70,10 +78,17 @@ begin
       using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
 
-  -- Decision of 2026-10-26 (docs/PRD.md §13.1 A22): an officer books a session of today until it ends, so a
-  -- walk-in group that arrives during a session can still join it; booking.min_lead_hours is the web's rule.
-  if exists (select 1 from public.visit_sessions s where s.id = any (p_session_ids)
-             and (s.session_date + s.end_time) at time zone 'Asia/Jakarta' <= now()) then
+  -- The time the caller allows: the web's lead time before the start, or an officer's session until its end.
+  if p_earliest_start is not null
+     and exists (select 1 from public.visit_sessions s where s.id = any (p_session_ids)
+                 and (s.session_date + s.start_time) at time zone 'Asia/Jakarta' < p_earliest_start) then
+    raise exception 'a session is booked at least % hours before it starts',
+      round(extract(epoch from p_earliest_start - now()) / 3600)::integer
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  if p_earliest_end is not null
+     and exists (select 1 from public.visit_sessions s where s.id = any (p_session_ids)
+                 and (s.session_date + s.end_time) at time zone 'Asia/Jakarta' <= p_earliest_end) then
     raise exception 'a session that has ended takes no booking' using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
   if exists (select 1 from public.visit_sessions s where s.id = any (p_session_ids)
@@ -91,19 +106,37 @@ begin
 end;
 $$;
 
+-- Replaces the 20261022120000 version: the web's lead time, through the shared check above.
+create or replace function internal.booking_sessions(p_package_id uuid, p_session_ids uuid[])
+  returns table (leg_order smallint, rw_id smallint, session_id uuid, session_date date, starts_at timestamptz)
+  language sql stable
+  set search_path = ''
+as $$
+  select * from internal.booking_sessions(p_package_id, p_session_ids,
+    now() + make_interval(hours => (select (s.value #>> '{}')::integer from public.site_settings s
+                                    where s.key = 'booking.min_lead_hours')),
+    null);
+$$;
 
--- ===== C: how long an officer's hold lasts =====
 
-create function internal.admin_hold_deadline(p_is_cash_on_the_spot boolean, p_first_session_start timestamptz)
+-- ===== A23: how long an officer's hold lasts =====
+
+-- The end of the visit day in Semarang, the last moment cash is taken for a booking of one RW.
+create function internal.cash_deadline(p_visit_day date) returns timestamptz
+  language sql immutable
+  set search_path = ''
+as $$
+  select (p_visit_day + time '23:59') at time zone 'Asia/Jakarta';
+$$;
+
+create function internal.admin_hold_deadline(p_rw_ids smallint[], p_last_day date, p_first_session_start timestamptz)
   returns timestamptz
   language plpgsql stable
   set search_path = ''
 as $$
-declare
-  cash_hold constant interval := interval '30 minutes';
 begin
-  if p_is_cash_on_the_spot then
-    return now() + cash_hold;
+  if cardinality(p_rw_ids) = 1 then
+    return internal.cash_deadline(p_last_day);
   end if;
   return least(now() + make_interval(hours => (select (s.value #>> '{}')::integer from public.site_settings s
                                                where s.key = 'booking.hold_hours_institution')),
@@ -112,7 +145,7 @@ end;
 $$;
 
 
--- ===== A: the officer's check of the number =====
+-- ===== A21: the officer's check of the number =====
 
 create function internal.admin_phone_confirmed(p_booker jsonb) returns boolean
   language sql immutable
@@ -124,17 +157,25 @@ $$;
 
 -- ===== Who books for a group =====
 
--- An active superadmin, or an active RW admin of every RW the package visits.
-create function internal.require_admin_booker(p_actor_id uuid, p_rw_ids smallint[]) returns void
+-- An active superadmin, or an active RW admin of every RW the package visits; and only an RW admin of a package of one
+-- RW takes the cash on the spot (A9, A23).
+create function internal.require_admin_booker(p_actor_id uuid, p_rw_ids smallint[], p_is_cash_on_the_spot boolean)
+  returns void
   language plpgsql stable
   set search_path = ''
 as $$
+declare
+  actor_role public.app_role;
 begin
-  if not exists (select 1 from public.profiles p
-                 where p.id = p_actor_id and p.is_active
-                   and (p.role = 'superadmin'
-                        or (p.role = 'admin_rw' and p.rw_id is not null and p_rw_ids <@ array[p.rw_id]))) then
+  select p.role into actor_role from public.profiles p
+  where p.id = p_actor_id and p.is_active
+    and (p.role = 'superadmin'
+         or (p.role = 'admin_rw' and p.rw_id is not null and coalesce(p_rw_ids <@ array[p.rw_id], false)));
+  if actor_role is null then
     raise exception 'only an officer of the package''s RW books for a group' using errcode = '42501';
+  end if;
+  if p_is_cash_on_the_spot and (actor_role <> 'admin_rw' or cardinality(p_rw_ids) <> 1) then
+    raise exception 'only an RW admin takes cash, for a package of their own RW' using errcode = '42501';
   end if;
 end;
 $$;
@@ -169,8 +210,19 @@ begin
 end;
 $$;
 
--- The events and messages of a new officer's booking: who made it, who checked the number (A), and the booking_created
--- message unless the cash is taken at once, when the ticket message follows within minutes.
+-- The PIC's pay link by WhatsApp (when the number was checked) and email; enqueue_notification's key sends it once.
+create function internal.queue_admin_pay_link(p_booking_id uuid) returns void
+  language plpgsql
+  set search_path = ''
+as $$
+begin
+  perform internal.enqueue_notification(p_booking_id, 'booking_created', 'whatsapp', '{"link_scope": "manage"}');
+  perform internal.enqueue_notification(p_booking_id, 'booking_created', 'email', '{"link_scope": "manage"}');
+end;
+$$;
+
+-- The events and messages of a new officer's booking: who made it, who checked the number (A21), and the pay link
+-- unless the officer takes the cash at once, when the ticket follows instead (or send_admin_booking_link, if not).
 create function internal.record_admin_booking(p_booking public.bookings, p_actor_id uuid, p_legs integer,
   p_is_cash_on_the_spot boolean) returns void
   language plpgsql
@@ -188,10 +240,17 @@ begin
                                jsonb_build_object('channel', 'admin', 'confirmed_by', p_actor_id));
   end if;
   if not p_is_cash_on_the_spot then
-    perform internal.enqueue_notification(p_booking.id, 'booking_created', 'whatsapp', '{"link_scope": "manage"}');
-    perform internal.enqueue_notification(p_booking.id, 'booking_created', 'email', '{"link_scope": "manage"}');
+    perform internal.queue_admin_pay_link(p_booking.id);
   end if;
 end;
+$$;
+
+-- The reply of internal.create_booking, with the total the cash step asks for.
+create function internal.admin_booking_reply(p_result text, p_booking public.bookings) returns jsonb
+  language sql immutable
+  set search_path = ''
+as $$
+  select internal.booking_reply(p_result, p_booking) || jsonb_build_object('total_amount', p_booking.total_amount);
 $$;
 
 create function internal.create_admin_booking(
@@ -203,6 +262,8 @@ create function internal.create_admin_booking(
 as $$
 declare
   large_group_pax constant integer := 60;
+  -- A hold with less than this left cannot be paid through the link (create_payment_attempt).
+  min_hold_left constant interval := interval '5 minutes';
   is_cash_on_the_spot boolean := coalesce(p_booker #>> '{admin,cash_on_the_spot}', 'false') = 'true';
   previous_settings jsonb;
   tour_package public.tour_packages;
@@ -220,6 +281,9 @@ begin
   if coalesce(p_consent ->> 'version', '') = '' or p_consent ->> 'attested_by' is distinct from p_actor_id::text then
     raise exception 'the officer attests the PIC''s consent to the privacy notice' using errcode = '22023';
   end if;
+  perform internal.require_admin_booker(p_actor_id,
+    (select array_agg(l.rw_id order by l.rw_id) from public.tour_package_legs l where l.package_id = p_package_id),
+    is_cash_on_the_spot);
   perform internal.take_audit_turn();
   previous_settings := internal.push_settings(jsonb_build_object('app.in_rpc', '1')
     || internal.document_actor(p_actor_id));
@@ -231,7 +295,7 @@ begin
         raise exception 'this form was already sent for another booking' using errcode = '23505';
       end if;
       perform internal.restore_settings(previous_settings);
-      return internal.booking_reply('existing', booking);
+      return internal.admin_booking_reply('existing', booking);
     end if;
   end if;
 
@@ -242,12 +306,11 @@ begin
   select array_agg(s.rw_id order by s.leg_order) as rw_ids, array_agg(s.session_id order by s.leg_order) as ids,
          min(s.starts_at) as first_start, min(s.session_date) as first_day, max(s.session_date) as last_day
     into sessions
-  from internal.admin_booking_sessions(p_package_id, p_session_ids) as s;
-  perform internal.require_admin_booker(p_actor_id, sessions.rw_ids);
+  from internal.booking_sessions(p_package_id, p_session_ids, null, now()) as s;
   perform internal.check_booking_size(p_pax, '[]');
-  deadline := internal.admin_hold_deadline(is_cash_on_the_spot, sessions.first_start);
-  if deadline <= now() then
-    raise exception 'the session has started: take the cash on the spot' using errcode = 'P0001', hint = 'STATE_INVALID';
+  deadline := internal.admin_hold_deadline(sessions.rw_ids, sessions.last_day, sessions.first_start);
+  if deadline < now() + min_hold_left then
+    raise exception 'too little of the hold would be left to pay' using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
 
   quote := internal.booking_quote(p_package_id, p_pax, '[]', sessions.rw_ids);
@@ -266,7 +329,7 @@ begin
   end if;
 
   perform internal.restore_settings(previous_settings);
-  return internal.booking_reply('created', booking);
+  return internal.admin_booking_reply('created', booking);
 end;
 $$;
 
@@ -397,18 +460,21 @@ begin
 end;
 $$;
 
-revoke execute on function internal.admin_booking_sessions(uuid, uuid[]),
-  internal.admin_hold_deadline(boolean, timestamptz),
+revoke execute on function internal.booking_sessions(uuid, uuid[], timestamptz, timestamptz),
+  internal.cash_deadline(date),
+  internal.admin_hold_deadline(smallint[], date, timestamptz),
   internal.admin_phone_confirmed(jsonb),
-  internal.require_admin_booker(uuid, smallint[]),
+  internal.require_admin_booker(uuid, smallint[], boolean),
   internal.insert_admin_booking(public.tour_packages, smallint[], date, date, timestamptz, jsonb, integer, jsonb, text,
                                 jsonb, uuid, jsonb),
+  internal.queue_admin_pay_link(uuid),
   internal.record_admin_booking(public.bookings, uuid, integer, boolean),
+  internal.admin_booking_reply(text, public.bookings),
   internal.create_admin_booking(uuid, uuid[], integer, jsonb, text, text, jsonb, uuid, jsonb, text)
   from public, anon, authenticated;
 
 
--- ===== The officer's entry point =====
+-- ===== The officer's entry points =====
 
 -- p_booker: booker_type, institution_name, pic_name, pic_phone (E.164, any country), pic_email, notes, and
 -- admin {phone_confirmed, cash_on_the_spot}. The consent is the privacy notice version the server shows, attested by
@@ -432,12 +498,54 @@ revoke execute on function public.create_admin_booking(uuid, uuid[], integer, js
   from public, anon, service_role;
 grant execute on function public.create_admin_booking(uuid, uuid[], integer, jsonb, text, text, text) to authenticated;
 
+-- The officer leaves the cash step without taking the cash: the PIC gets the pay link, once.
+create function public.send_admin_booking_link(p_booking_id uuid) returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  previous_settings jsonb;
+  booking public.bookings;
+begin
+  if not (public.is_staff() and public.aal2()) then
+    raise exception 'only an officer at AAL2 sends a pay link' using errcode = '42501';
+  end if;
+  perform internal.take_audit_turn();
+  select * into booking from public.bookings b where b.id = p_booking_id for update;
+  if not found or not (public.is_superadmin() or public.owns_any_rw(booking.rw_ids)) then
+    raise exception 'booking % is not in this officer''s RW', p_booking_id using errcode = 'P0002';
+  end if;
+  if booking.channel <> 'admin' or booking.status <> 'pending_payment' or booking.expires_at <= now() then
+    raise exception 'this booking takes no pay link now' using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  previous_settings := internal.push_settings(jsonb_build_object('app.in_rpc', '1')
+    || internal.document_actor(auth.uid()));
+  perform internal.queue_admin_pay_link(booking.id);
+  insert into public.booking_events (booking_id, from_status, to_status, actor_type, actor_id, reason)
+  values (booking.id, booking.status, booking.status, 'admin', auth.uid(), 'admin_pay_link_sent');
+  perform internal.restore_settings(previous_settings);
+end;
+$$;
+revoke execute on function public.send_admin_booking_link(uuid) from public, anon, service_role;
+grant execute on function public.send_admin_booking_link(uuid) to authenticated;
 
--- ===== Cash at the counter (A9) =====
 
--- The cash an RW admin takes for an officer's booking of their own RW: the whole total, once, while the hold runs. It settles
--- as a Midtrans payment does (internal.settle_payment: invoice and receipt numbers, ledger, tickets with the server's
--- QR key id, messages), as a manual payment the officer recorded. A transfer with its proof is not taken here.
+-- ===== L3: the QR key ids a ticket may be signed with =====
+
+-- The server names the kid it signs with (QR_SIGNING_ACTIVE_KID); a call from an officer's session is held against
+-- this list, which the key rotation runbook extends before the server moves to a new kid.
+insert into public.site_settings (key, value, is_public, description) values
+  ('qr.signing_kids', '["k1"]', false, 'Kid kunci tanda tangan QR yang boleh dipakai tiket baru')
+on conflict (key) do nothing;
+
+
+-- ===== A9, A23: cash at the counter =====
+
+-- The cash an RW admin takes for an officer's booking of their own RW: the whole total, once, while the hold runs and
+-- at the latest by 23:59 WIB of the visit day. It settles as a Midtrans payment does (internal.settle_payment: invoice
+-- and receipt numbers, ledger, tickets, messages), as a manual payment the officer recorded, who is not told of it
+-- again by admin_new_paid_booking. An open Midtrans order is ended by the server first (src/server/services); while
+-- one is open, the cash is refused.
 create function public.mark_booking_paid_manually(p_booking_id uuid, p_method public.payment_method, p_amount bigint,
   p_key_id text, p_reference text default null, p_proof_path text default null) returns jsonb
   language plpgsql security definer
@@ -464,15 +572,19 @@ begin
   if length(coalesce(p_reference, '')) > 100 then
     raise exception 'a receipt reference has at most 100 characters' using errcode = '22023';
   end if;
+  if not exists (select 1 from public.site_settings s
+                 where s.key = 'qr.signing_kids' and s.value ? coalesce(p_key_id, '')) then
+    raise exception 'the QR key id is not one tickets are signed with' using errcode = '22023';
+  end if;
   perform internal.take_audit_turn();
   select * into booking from public.bookings b where b.id = p_booking_id for update;
-  -- A9, FR-B2B-08: cash is the RW admin's, for a booking of their own RW; the superadmin's transfers come later.
+  -- A9: cash is the RW admin's, for a booking of their own RW.
   if not found or not (public.is_admin_rw() and cardinality(booking.rw_ids) = 1
                        and public.owns_rw(booking.rw_ids[1])) then
-    raise exception 'booking % does not exist', p_booking_id using errcode = 'P0002';
+    raise exception 'booking % is not one this RW admin takes cash for', p_booking_id using errcode = 'P0002';
   end if;
   if booking.channel <> 'admin' or booking.status <> 'pending_payment' or booking.needs_review
-     or booking.expires_at <= now()
+     or booking.expires_at <= now() or now() >= internal.cash_deadline(booking.visit_date_end)
      or exists (select 1 from public.payments p where p.booking_id = booking.id
                 and p.status in ('initiated', 'pending', 'needs_review', 'settled')) then
     raise exception 'this booking takes no cash now' using errcode = 'P0001', hint = 'STATE_INVALID';
@@ -494,6 +606,10 @@ begin
           booking.total_amount, now(), nullif(btrim(coalesce(p_reference, '')), ''), auth.uid())
   returning * into payment;
   answer := internal.settle_payment(booking, payment, jsonb_build_object('source', 'cash'), 'admin');
+  -- The officer who took the cash needs no email that the booking is paid (internal.notify_staff's key).
+  update public.notifications n set status = 'cancelled', last_error_code = 'recorded_by_recipient'
+  where n.dedupe_key = concat_ws(':', 'booking', booking.id, 'admin_new_paid_booking', 'email', auth.uid())
+    and n.status = 'queued';
   perform internal.restore_settings(previous_settings);
   return answer || jsonb_build_object('order_id', payment.order_id);
 end;

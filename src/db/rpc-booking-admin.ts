@@ -25,7 +25,7 @@ export async function rpcGetAddonNotes(
   return new Map(rows.map((row) => [row.addon_id, row.notes]));
 }
 
-// Task P4.3.10: an officer's booking at the counter (20261104150200_admin_bookings.sql). The actor is the session's
+// Task P4.3.10: an officer's booking at the counter (20261104200100_admin_bookings.sql). The actor is the session's
 // own auth.uid(); the reply is internal.create_booking's.
 export interface AdminBookingToCreate {
   packageId: string;
@@ -54,6 +54,7 @@ const adminBookingReplySchema = z.object({
   expires_at: z.string().nullable(),
   visit_date: z.iso.date(),
   visit_date_end: z.iso.date(),
+  total_amount: z.int().positive(),
 });
 
 export interface AdminBookingReply {
@@ -63,6 +64,7 @@ export interface AdminBookingReply {
   expiresAt: string | null;
   visitDate: string;
   visitDateEnd: string;
+  totalAmount: number;
 }
 
 export async function createAdminBooking(
@@ -101,6 +103,7 @@ export async function createAdminBooking(
     expiresAt: reply.expires_at,
     visitDate: reply.visit_date,
     visitDateEnd: reply.visit_date_end,
+    totalAmount: reply.total_amount,
   };
 }
 
@@ -123,4 +126,9 @@ export async function markBookingPaidInCash(
     ),
   );
   return { isApplied: reply.result === 'applied', orderId: reply.order_id };
+}
+
+// The PIC's pay link, when the officer leaves the cash step without taking the cash (review of PR #91, M2).
+export function sendAdminBookingLink(client: DatabaseClient, bookingId: string): Promise<void> {
+  return resultOf(client.rpc('send_admin_booking_link', { p_booking_id: bookingId }));
 }

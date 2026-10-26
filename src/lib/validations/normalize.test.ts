@@ -66,6 +66,7 @@ describe('normalizeInternationalPhone', () => {
     ['a number too short', '+44 1234'],
     ['a number too long', '+44 1234 5678 9012 34'],
     ['words', 'nomor hotel'],
+    ['a +62 number that is no Indonesian number', '+62 0812 3456 7890'],
   ])('refuses %s', (_case, input) => {
     expect(normalizeInternationalPhone(input)).toBeNull();
   });

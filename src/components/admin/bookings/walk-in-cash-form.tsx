@@ -30,6 +30,8 @@ export interface WalkInCashFormProps {
   // §5.3).
   stepUpAction: CashAction;
   onRecorded: () => void;
+  // "Bayar nanti (kirim tautan)" after a new booking, "Tutup" on the booking's page.
+  laterLabel: string;
   onLater: () => void;
 }
 
@@ -73,7 +75,7 @@ export function WalkInCashForm(props: WalkInCashFormProps) {
             {text.cashSubmit}
           </Button>
           <Button type="button" variant="outline" className="min-h-11 flex-1" onClick={onLater}>
-            {text.cashLater}
+            {props.laterLabel}
           </Button>
         </div>
       </PostForm>

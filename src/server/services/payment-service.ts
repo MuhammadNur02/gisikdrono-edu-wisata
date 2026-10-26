@@ -275,3 +275,19 @@ export async function markRefundRequestFailedByStaff(
     throw error;
   }
 }
+
+const PAID_STATUSES: ReadonlySet<string> = new Set(['settlement', 'capture']);
+
+// Review of PR #91, L1: before an officer takes the cash, an open Midtrans order of the booking is ended at Midtrans
+// and closed here, so the PIC cannot pay it too. An order Midtrans says was paid stops the cash, and
+// mark_booking_paid_manually still refuses while any payment is open or settled.
+export async function endOpenOrderBeforeCash(bookingId: string): Promise<void> {
+  const adminClient = createSupabaseAdminClient();
+  const open = await openAttemptOf(adminClient, bookingId);
+  if (open === null) return;
+  if (open.status === 'needs_review') throw new AppError('STATE_INVALID', text.underReview);
+  if ((await expireTransaction(open.orderId)) === 'refused') throw new AppError('PAYMENT');
+  const status = await getTransactionStatus(open.orderId);
+  if (PAID_STATUSES.has(status.transaction_status ?? '')) throw new AppError('STATE_INVALID');
+  await svcRecordPaymentFailure(adminClient, open.paymentId, 'expired');
+}

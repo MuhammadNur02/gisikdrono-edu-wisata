@@ -2,32 +2,20 @@
 
 import { revalidatePath, revalidateTag } from 'next/cache';
 
-import { BOOKINGS_DASHBOARD_PATH, bookingDetailPath } from '@/config/bookings';
-import { STAFF_STEP_UP_MAX_AGE_SECONDS } from '@/config/staff';
-import { staffCopy } from '@/lib/copy/staff';
+import { BOOKINGS_DASHBOARD_PATH } from '@/config/bookings';
 import { walkInCopy } from '@/lib/copy/walk-in';
 import { fail, mapError, ok } from '@/lib/errors';
 import { getPublicSiteSettings } from '@/lib/queries/settings';
 import { TAGS } from '@/lib/queries/tags';
 import { createAdminBookingSchema } from '@/lib/validations/booking';
-import {
-  recordCashSchema,
-  walkInPackageSchema,
-  walkInQuoteSchema,
-} from '@/lib/validations/walk-in';
-import {
-  requireFreshTotp,
-  requireRole,
-  requireRwAccess,
-  type GuardResult,
-} from '@/server/auth/guards';
+import { walkInPackageSchema, walkInQuoteSchema } from '@/lib/validations/walk-in';
+import { requireRole, requireRwAccess, type GuardResult } from '@/server/auth/guards';
 import type { BookingWizard } from '@/server/services/booking-wizard-service';
 import {
   createWalkInBooking,
   listWalkInSessions,
   loadWalkInPackage,
   quoteWalkIn,
-  recordWalkInCash,
 } from '@/server/services/walk-in-service';
 import type { ActionResult } from '@/types/action-result';
 import type { QuotePreviewAnswer } from '@/types/booking';
@@ -36,7 +24,7 @@ import type { WalkInBooking } from '@/types/walk-in';
 
 // The officer's booking at the counter (Task P4.3.10; docs/PRD.md §13.1 A9, A13), in the order of CLAUDE.md §5.2. Every
 // step is an officer's at AAL2; the package's RWs are the officer's own (requireRwAccess), as create_admin_booking and
-// mark_booking_paid_manually check again. The cash also needs an authenticator code from the last five minutes.
+// mark_booking_paid_manually check again; the cash and the pay link are in walk-in-cash.ts.
 
 async function requireOfficer(): Promise<GuardResult> {
   const guard = await requireRole('superadmin', 'admin_rw');
@@ -126,26 +114,10 @@ export async function createAdminBookingAction(
     return ok({
       bookingId: booking.bookingId,
       bookingCode: booking.bookingCode,
-      totalAmount: quote.quote.total,
+      totalAmount: booking.totalAmount,
       isCashOnTheSpot: parsed.data.isCashOnTheSpot,
     });
   } catch (error) {
     return walkInFailure(error);
-  }
-}
-
-export async function recordWalkInCashAction(input: unknown): Promise<ActionResult<null>> {
-  const parsed = recordCashSchema.safeParse(input);
-  if (!parsed.success) return mapError(parsed.error);
-  const guard = await requireFreshTotp(STAFF_STEP_UP_MAX_AGE_SECONDS);
-  if (!guard.ok) return fail('FORBIDDEN', undefined, staffCopy.notFresh);
-
-  try {
-    await recordWalkInCash(parsed.data);
-    revalidatePath(bookingDetailPath(parsed.data.bookingId));
-    revalidatePath(BOOKINGS_DASHBOARD_PATH);
-    return ok(null);
-  } catch (error) {
-    return mapError(error);
   }
 }

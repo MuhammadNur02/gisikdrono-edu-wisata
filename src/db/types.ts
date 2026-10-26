@@ -4846,6 +4846,10 @@ export type Database = {
         }
         Returns: Json
       }
+      send_admin_booking_link: {
+        Args: { p_booking_id: string }
+        Returns: undefined
+      }
       set_rw_treasury_account: {
         Args: {
           p_account_holder: string

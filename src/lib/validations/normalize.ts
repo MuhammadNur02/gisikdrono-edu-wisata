@@ -27,6 +27,8 @@ export function normalizeMobilePhone(input: string): string | null {
   return phone !== null && MOBILE_PHONE_PATTERN.test(phone) ? phone : null;
 }
 
+const INDONESIAN_PREFIX = '+62';
+
 // Task P4.3.10: the number an officer enters for a group. An Indonesian number in any of the ways people write it, or a
 // number from abroad that starts with + and its country code, returned in E.164; null otherwise. The officer checks it
 // with the group, since this path has no OTP.
@@ -36,5 +38,7 @@ export function normalizeInternationalPhone(input: string): string | null {
   const trimmed = input.trim();
   if (!trimmed.startsWith('+')) return null;
   const phone = `+${trimmed.replace(/\D/g, '')}`;
+  // A +62 number normalizePhone refused is no Indonesian number, and no foreign one either (review of PR #91, L6).
+  if (phone.startsWith(INDONESIAN_PREFIX)) return null;
   return INTERNATIONAL_PHONE_PATTERN.test(phone) ? phone : null;
 }

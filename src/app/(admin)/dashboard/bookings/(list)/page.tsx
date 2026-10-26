@@ -18,8 +18,8 @@ import {
   createAdminBookingAction,
   listWalkInSessionsAction,
   previewWalkInQuoteAction,
-  recordWalkInCashAction,
 } from '@/server/actions/walk-in';
+import { recordWalkInCashAction, sendWalkInPayLinkAction } from '@/server/actions/walk-in-cash';
 import { effectiveRw } from '@/server/auth/content-owner';
 import { requireDashboardStaff } from '@/server/auth/session';
 import { listBookingsForStaff } from '@/server/services/booking-admin-service';
@@ -40,6 +40,7 @@ const WALK_IN_ACTIONS = {
   previewQuote: previewWalkInQuoteAction,
   create: createAdminBookingAction,
   recordCash: recordWalkInCashAction,
+  sendLink: sendWalkInPayLinkAction,
   stepUp: verifyStaffTotpAction,
 };
 

@@ -26,7 +26,9 @@ export const walkInCopy = {
     'Tiket dan pengingat dikirim lewat WhatsApp hanya ke nomor yang sudah Anda cek. Tanpa centang, rombongan menerima kabar lewat email saja.',
   cashOnTheSpot: 'Bayar tunai sekarang',
   cashOnTheSpotHint:
-    'Kuota ditahan 30 menit sambil Anda menerima uang tunai. Tanpa centang, rombongan membayar lewat tautan seperti pemesanan lembaga.',
+    'Catat uang tunai begitu pemesanan dibuat. Tanpa centang, penanggung jawab menerima tautan pembayaran; uang tunai masih bisa dicatat dari halaman pemesanan sampai pukul 23.59 WIB pada hari kunjungan.',
+  phoneNotMobile:
+    'Nomor ini bukan nomor seluler Indonesia, jadi WhatsApp mungkin tidak sampai. Pastikan email penanggung jawab benar.',
   consentAttested:
     'Penanggung jawab sudah membaca Pemberitahuan Privasi dan menyetujui data rombongan dicatat.',
   total: 'Total',
@@ -40,7 +42,10 @@ export const walkInCopy = {
   cashReference: 'Nomor kuitansi (opsional)',
   cashSubmit: 'Catat pembayaran tunai',
   cashRecorded: 'Pembayaran tunai tercatat. Tiket sedang dikirim.',
-  cashLater: 'Nanti saja',
+  cashLater: 'Bayar nanti (kirim tautan)',
+  cashClose: 'Tutup',
+  receiveCash: 'Terima tunai',
+  linkSent: 'Tautan pembayaran dikirim ke penanggung jawab.',
   validation: {
     phone:
       'Tulis nomor Indonesia, misalnya 0812-3456-7890, atau nomor luar negeri dengan kode negara, misalnya +44 7700 900123.',
@@ -49,7 +54,9 @@ export const walkInCopy = {
   },
   errors: {
     stateInvalid:
-      'Sesi ini tidak bisa dipesan sekarang. Jika sesi sudah dimulai, centang "Bayar tunai sekarang".',
+      'Sesi ini tidak bisa dipesan sekarang: sudah selesai, penuh, ditutup, atau waktu pembayarannya terlalu sedikit. Pilih sesi lain.',
+    cashRefused:
+      'Uang tunai tidak bisa dicatat sekarang: pemesanan sudah dibayar, sedang ditinjau, punya pembayaran lain yang terbuka, atau sudah lewat pukul 23.59 WIB hari kunjungan.',
     priceChanged: 'Harga paket berubah. Periksa lagi totalnya, lalu kirim ulang.',
   },
 } as const;

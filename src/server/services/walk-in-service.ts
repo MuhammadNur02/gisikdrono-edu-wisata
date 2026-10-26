@@ -6,6 +6,7 @@ import { PRIVACY_NOTICE_VERSION } from '@/config/site';
 import {
   createAdminBooking,
   markBookingPaidInCash,
+  sendAdminBookingLink,
   type AdminBookingReply,
 } from '@/db/rpc-booking-admin';
 import { serverEnv } from '@/lib/env';
@@ -23,6 +24,7 @@ import {
   type BookingWizard,
   type QuotePreview,
 } from '@/server/services/booking-wizard-service';
+import { endOpenOrderBeforeCash } from '@/server/services/payment-service';
 import type { AvailableSession, BookableLeg } from '@/types/session';
 import type { WalkInPackage } from '@/types/walk-in';
 
@@ -123,7 +125,9 @@ export async function createWalkInBooking(
   });
 }
 
+// An open Midtrans order is ended first (payment-service.ts); the RPC still refuses while any payment is open.
 export async function recordWalkInCash(values: RecordCashValues): Promise<void> {
+  await endOpenOrderBeforeCash(values.bookingId);
   const supabase = await createSupabaseServerClient();
   const answer = await markBookingPaidInCash(supabase, {
     bookingId: values.bookingId,
@@ -133,4 +137,10 @@ export async function recordWalkInCash(values: RecordCashValues): Promise<void> 
   });
   // A settlement the ledger or the seats refused waits for the superadmin under review, as a Midtrans one does.
   if (!answer.isApplied) throw new AppError('STATE_INVALID');
+}
+
+// The officer leaves the cash step: the PIC gets the pay link (review of PR #91, M2).
+export async function sendWalkInPayLink(bookingId: string): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  await sendAdminBookingLink(supabase, bookingId);
 }

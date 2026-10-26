@@ -12,8 +12,59 @@ const MASK = '••••';
 const AREA_DIGITS = 3;
 const MIDDLE_DIGITS = 4;
 const VISIBLE_TAIL_DIGITS = 4;
-// '+' and the first three digits, which name the country.
-const FOREIGN_VISIBLE_HEAD = 4;
+// The calling codes of one and two digits (ITU-T E.164 zone 1 and 7, and the two-digit codes); every other code has
+// three. Enough to show a number's country without its subscriber digits.
+const ONE_DIGIT_CODES: ReadonlySet<string> = new Set(['1', '7']);
+const TWO_DIGIT_CODES: ReadonlySet<string> = new Set([
+  '20',
+  '27',
+  '30',
+  '31',
+  '32',
+  '33',
+  '34',
+  '36',
+  '39',
+  '40',
+  '41',
+  '43',
+  '44',
+  '45',
+  '46',
+  '47',
+  '48',
+  '49',
+  '51',
+  '52',
+  '53',
+  '54',
+  '55',
+  '56',
+  '57',
+  '58',
+  '60',
+  '61',
+  '62',
+  '63',
+  '64',
+  '65',
+  '66',
+  '81',
+  '82',
+  '84',
+  '86',
+  '90',
+  '91',
+  '92',
+  '93',
+  '94',
+  '95',
+  '98',
+]);
+const MIN_TAIL_DIGITS = 1;
+const TWO_DIGITS = 2;
+const THREE_DIGITS = 3;
+const HALF = 2;
 
 // What people type: '0812-3456-7890', '812 3456 7890', '62812…' or '+62 812…'. Returns the E.164 form,
 // or null when it cannot be an Indonesian number.
@@ -55,11 +106,27 @@ export function formatPhone(phone: string): string {
   return `${E164_PREFIX} ${[area, middle, tail].filter(Boolean).join('-')}`;
 }
 
-// Staff lists never show the whole number: '+62 812-••••-7890', or '+447••••3456' from abroad (docs/StyleGuide.md
-// §6.10).
+function callingCodeOf(digits: string): string {
+  const [one, two, three] = [1, TWO_DIGITS, THREE_DIGITS].map((length) => digits.slice(0, length));
+  if (one !== undefined && ONE_DIGIT_CODES.has(one)) return one;
+  if (two !== undefined && TWO_DIGIT_CODES.has(two)) return two;
+  return three ?? '';
+}
+
+// A number from abroad shows its country code and its last digits, up to four and never more than half of them all:
+// '+44 ••••0123', '+353 ••••78' (review of PR #91, L7).
+function maskForeignPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  const code = callingCodeOf(digits);
+  const room = Math.floor(digits.length / HALF) - code.length;
+  const tail = Math.max(MIN_TAIL_DIGITS, Math.min(VISIBLE_TAIL_DIGITS, room));
+  return `+${code} ${MASK}${digits.slice(-tail)}`;
+}
+
+// Staff lists never show the whole number: '+62 812-••••-7890' (docs/StyleGuide.md §6.10), or a number from abroad as
+// maskForeignPhone writes it.
 export function maskPhone(phone: string): string {
-  if (!isIndonesian(phone))
-    return `${phone.slice(0, FOREIGN_VISIBLE_HEAD)}${MASK}${lastFourDigits(phone)}`;
+  if (!isIndonesian(phone)) return maskForeignPhone(phone);
   const [area] = splitLocal(phone);
   return `${E164_PREFIX} ${area}-${MASK}-${lastFourDigits(phone)}`;
 }

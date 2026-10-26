@@ -76,9 +76,11 @@ describe('numbers from abroad', () => {
     expect(PHONE_PATTERN.test('+447700900123')).toBe(false);
   });
 
-  it('are shown in E.164 and masked after their country code', () => {
+  it('are shown in E.164 and masked to their country code and at most half the digits', () => {
     expect(formatPhone('+447700900123')).toBe('+447700900123');
-    expect(maskPhone('+447700900123')).toBe('+447••••0123');
+    expect(maskPhone('+447700900123')).toBe('+44 ••••0123');
+    expect(maskPhone('+14155550100')).toBe('+1 ••••0100');
+    expect(maskPhone('+35312345678')).toBe('+353 ••••78');
     expect(lastFourDigits('+447700900123')).toBe('0123');
   });
 });

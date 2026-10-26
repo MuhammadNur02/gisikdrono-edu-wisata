@@ -96,7 +96,7 @@ select is(
         'public.revenue_recap', 'public.revoke_certificate', 'public.revoke_ticket', 'public.rpc_create_export',
         'public.rpc_get_addon_notes', 'public.rpc_get_participants', 'public.rpc_log_ui_event', 'public.rpc_reveal_booking_contact',
         'public.save_package', 'public.save_package_legs', 'public.save_package_tiers', 'public.save_revenue_rule',
-        'public.scan_ticket', 'public.set_rw_treasury_account', 'public.set_rw_unit_status', 'public.set_staff_role', 'public.set_staff_status',
+        'public.scan_ticket', 'public.send_admin_booking_link', 'public.set_rw_treasury_account', 'public.set_rw_unit_status', 'public.set_staff_role', 'public.set_staff_status',
         'public.set_vendor_bank_account', 'public.settle_revenue_entries', 'public.today_jkt',
         'public.undo_check_in', 'public.unlock_scanner_officer', 'public.verify_audit_chain', 'public.visit_stats'],
   'authenticated can execute the ten RLS helpers and the staff RPCs, nothing else'

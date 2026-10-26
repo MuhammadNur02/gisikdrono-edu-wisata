@@ -3,26 +3,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppError, fail } from '@/lib/errors';
 import { getPublicSiteSettings } from '@/lib/queries/settings';
-import {
-  requireFreshTotp,
-  requireRole,
-  requireRwAccess,
-  type StaffContext,
-} from '@/server/auth/guards';
+import { requireRole, requireRwAccess, type StaffContext } from '@/server/auth/guards';
 import type { BookingWizard } from '@/server/services/booking-wizard-service';
 import {
   createWalkInBooking,
   listWalkInSessions,
   loadWalkInPackage,
   quoteWalkIn,
-  recordWalkInCash,
 } from '@/server/services/walk-in-service';
 
 import {
   createAdminBookingAction,
   listWalkInSessionsAction,
   previewWalkInQuoteAction,
-  recordWalkInCashAction,
 } from './walk-in';
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }));
@@ -30,14 +23,12 @@ vi.mock('@/lib/queries/settings', () => ({ getPublicSiteSettings: vi.fn() }));
 vi.mock('@/server/auth/guards', () => ({
   requireRole: vi.fn(),
   requireRwAccess: vi.fn(),
-  requireFreshTotp: vi.fn(),
 }));
 vi.mock('@/server/services/walk-in-service', () => ({
   createWalkInBooking: vi.fn(),
   listWalkInSessions: vi.fn(),
   loadWalkInPackage: vi.fn(),
   quoteWalkIn: vi.fn(),
-  recordWalkInCash: vi.fn(),
 }));
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
@@ -78,7 +69,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireRole).mockResolvedValue({ ok: true, ctx: OFFICER });
   vi.mocked(requireRwAccess).mockResolvedValue({ ok: true, ctx: OFFICER });
-  vi.mocked(requireFreshTotp).mockResolvedValue({ ok: true, ctx: OFFICER });
   vi.mocked(getPublicSiteSettings).mockResolvedValue({ maxPax: 500 } as never);
   vi.mocked(loadWalkInPackage).mockResolvedValue(WIZARD);
   vi.mocked(quoteWalkIn).mockReturnValue(QUOTE as never);
@@ -132,6 +122,7 @@ describe('createAdminBookingAction', () => {
       expiresAt: null,
       visitDate: '2026-10-27',
       visitDateEnd: '2026-10-27',
+      totalAmount: 120000,
     });
     await expect(createAdminBookingAction(BOOKING)).resolves.toEqual({
       ok: true,
@@ -170,32 +161,10 @@ describe('createAdminBookingAction', () => {
     vi.mocked(createWalkInBooking).mockRejectedValueOnce(new AppError('STATE_INVALID'));
     const refused = await createAdminBookingAction(BOOKING);
     expect(refused).toMatchObject({ error: { code: 'STATE_INVALID' } });
-    expect(refused.ok ? '' : refused.error.message).toContain('Bayar tunai sekarang');
+    expect(refused.ok ? '' : refused.error.message).toContain('Pilih sesi lain');
     vi.mocked(createWalkInBooking).mockRejectedValueOnce(new AppError('PRICE_MISMATCH'));
     await expect(createAdminBookingAction(BOOKING)).resolves.toMatchObject({
       error: { code: 'PRICE_MISMATCH' },
     });
-  });
-});
-
-describe('recordWalkInCashAction', () => {
-  const cash = { bookingId: BOOKING_ID, amount: 120000, reference: 'Kuitansi 001' };
-
-  it('records the cash with a fresh code and reads the booking again', async () => {
-    await expect(recordWalkInCashAction(cash)).resolves.toEqual({ ok: true, data: null });
-    expect(requireFreshTotp).toHaveBeenCalledWith(300);
-    expect(recordWalkInCash).toHaveBeenCalledWith(cash);
-    expect(revalidatePath).toHaveBeenCalledWith(`/dashboard/bookings/${BOOKING_ID}`);
-  });
-
-  it('stops without a fresh code, and never takes the code itself', async () => {
-    vi.mocked(requireFreshTotp).mockResolvedValueOnce(fail('FORBIDDEN'));
-    await expect(recordWalkInCashAction(cash)).resolves.toMatchObject({
-      error: { code: 'FORBIDDEN' },
-    });
-    await expect(recordWalkInCashAction({ ...cash, code: '123456' })).resolves.toMatchObject({
-      error: { code: 'VALIDATION' },
-    });
-    expect(recordWalkInCash).not.toHaveBeenCalled();
   });
 });

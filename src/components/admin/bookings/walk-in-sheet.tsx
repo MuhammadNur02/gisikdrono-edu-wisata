@@ -33,10 +33,10 @@ export interface WalkInSheetProps {
   packages: readonly WalkInPackage[];
   maxPax: number;
   canTakeCash: boolean;
-  actions: WalkInActions & { recordCash: CashAction; stepUp: CashAction };
+  actions: WalkInActions & { recordCash: CashAction; stepUp: CashAction; sendLink: CashAction };
 }
 
-function useWalkInSheet() {
+function useWalkInSheet(sendLink: CashAction) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [created, setCreated] = useState<WalkInBooking | null>(null);
@@ -50,16 +50,24 @@ function useWalkInSheet() {
     if (booking.isCashOnTheSpot) setCreated(booking);
     else finish(booking);
   };
-  // Closed during the cash step, the booking stays held and opens on its own page.
+  // Left without the cash ("Bayar nanti", closed, Esc): the PIC gets the pay link, and the booking opens on its own
+  // page, where the cash can still be taken until 23:59 WIB of the visit day (review of PR #91, M2).
+  const payLater = (booking: WalkInBooking) => {
+    void sendLink({ bookingId: booking.bookingId }).then((result) => {
+      if (result.ok) toast.success(text.linkSent);
+      else toast.error(result.error.message);
+    });
+    finish(booking);
+  };
   const onOpenChange = (open: boolean) => {
-    if (!open && created) finish(created);
+    if (!open && created) payLater(created);
     else setIsOpen(open);
   };
-  return { isOpen, setIsOpen, created, finish, onCreated, onOpenChange };
+  return { isOpen, setIsOpen, created, finish, payLater, onCreated, onOpenChange };
 }
 
 function SheetBody(props: WalkInSheetProps & ReturnType<typeof useWalkInSheet>) {
-  const { created, finish } = props;
+  const { created, finish, payLater } = props;
   if (!created) {
     return (
       <WalkInForm
@@ -80,15 +88,16 @@ function SheetBody(props: WalkInSheetProps & ReturnType<typeof useWalkInSheet>) 
         toast.success(text.cashRecorded);
         finish(created);
       }}
+      laterLabel={text.cashLater}
       onLater={() => {
-        finish(created);
+        payLater(created);
       }}
     />
   );
 }
 
 export function WalkInSheet(props: WalkInSheetProps) {
-  const sheet = useWalkInSheet();
+  const sheet = useWalkInSheet(props.actions.sendLink);
   return (
     <>
       <Button
