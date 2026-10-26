@@ -16,7 +16,8 @@ select is(
 
 -- ===== Fixtures =====
 insert into auth.users (id, email) values ('00000000-0000-4000-9000-000000000699', 'retensi@example.test');
-insert into public.profiles (id, email, full_name) values ('00000000-0000-4000-9000-000000000699', 'retensi@example.test', 'Petugas Uji');
+insert into public.profiles (id, email, full_name, is_active)
+values ('00000000-0000-4000-9000-000000000699', 'retensi@example.test', 'Petugas Uji', false);
 insert into public.site_settings (key, value) values ('pii_retention_months', '24')
 on conflict (key) do update set value = excluded.value;
 insert into public.tour_packages (id, rw_id, category, slug, name, tagline, duration_minutes, price_per_pax, status)

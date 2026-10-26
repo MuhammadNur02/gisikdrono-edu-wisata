@@ -18,7 +18,7 @@ const VENDOR_ID = '0192f3a4-5b6c-7d8e-9f01-0000000000dd';
 const MASKED = {
   bank_name: 'BRI',
   account_holder: 'Ibu Sari',
-  account_masked: '••••••7890',
+  account_masked: '••••7890',
   account_number: null,
 };
 
@@ -58,7 +58,7 @@ describe('the bank account service', () => {
     await expect(getMaskedBankAccount({ kind: 'vendor', vendorId: VENDOR_ID })).resolves.toEqual({
       bankName: 'BRI',
       accountHolder: 'Ibu Sari',
-      accountMasked: '••••••7890',
+      accountMasked: '••••7890',
     });
     expect(calls).toEqual([
       {

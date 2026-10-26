@@ -414,15 +414,18 @@ The invite and onboarding screens come with Task P4.8, so the first superadmin i
 2. Supabase > **SQL Editor** (role selector, if shown, on `postgres`). Replace the address and run:
 
    ```sql
-   insert into public.profiles (id, email, full_name, role, rw_id, claims_version)
-   select u.id, u.email, 'Superadmin Staging', 'superadmin', null, 1
+   begin;
+   select set_config('app.privileged_rpc', 'on', true);
+   update public.profiles p
+   set full_name = 'Superadmin Staging', role = 'superadmin', is_active = true
    from auth.users u
-   where u.email = 'your.name@institution.example';
+   where u.id = p.id and u.email = 'your.name@institution.example';
+   commit;
 
    select email, role, is_active, mfa_required from public.profiles;
    ```
 
-   It must show one row: `superadmin`, `true`, `true`. The SQL editor runs as `postgres`, the system path that `internal.profiles_guard` allows to give a new profile its role, exactly as the local seed does; an API caller could not.
+   It must show one row: `superadmin`, `true`, `true`. Creating the user already gave it a profile without a role (`internal.handle_new_auth_user`), so the step updates that profile rather than inserting one. The SQL editor runs as `postgres`, and `app.privileged_rpc` is the flag `internal.profiles_guard` requires for a role change, as `set_staff_role` sets it; an API caller could do neither. The role also stamps `became_staff_at` (20261103131500).
 3. Open `<staging-url>/login` in a private browser window. Enter the email and password and wait for the Turnstile check, then sign in.
 4. The app sends you to **/mfa/enroll** (no factor yet). Create the QR code, scan it with your authenticator app, and type the 6-digit code. Also save the setup key it shows into the Bitwarden login item's **Authenticator key (TOTP)** field, so a lost phone does not lock you out.
 5. You land on **/dashboard** at AAL2. Sign out and in once more: this time the app asks for the TOTP code at **/mfa/verify**.

@@ -1002,6 +1002,8 @@ Signed URLs are never persisted, logged or placed in messages; `document.signed_
 | `session_changed_with_bookings`; `price_changed` within 48 h of a booking from the same PIC; unit price < 50 % of the 30-day median; price changed → booking → restored within 7 d; add-on value > 60 % of total | any | medium |
 | Manual check-ins; check-ins before the session date; > 20 check-ins per officer per hour; `unpaid_pax > 0` on > 2 bookings/week per RW | any | medium |
 | `pii_revealed` > 50/day per user; participants read for past sessions | any | high |
+| `bank_account_reveal_cap`: the superadmin's 20th bank account reveal of a Jakarta day (raised by `get_vendor_bank_account` / `get_rw_treasury_account`; the 21st is refused). Each reveal is also audited as `vendor_bank.revealed` or `rw_treasury.revealed` with its reason, and is a `pii_revealed` event under the account's RW (20261104120000, 20261104121000) | any | medium |
+| `payout_account_changed`: a vendor's bank account or an RW's treasury account changed (raised by `set_vendor_bank_account` / `set_rw_treasury_account`, with the masked numbers only; PAY-16) | any | high |
 | Exports; new superadmin; `mfa_enrolled`; `role_changed` | any | high |
 | `staff_factor_count`: an active staff profile without exactly one verified TOTP factor (AUTH-12; 20261029080200), except an officer waiting for their re-enrolment code with no factor at all (20261103130000) | any | high |
 | `staff_reenrolment_overdue`: an officer still waiting for their re-enrolment code, with no factor, 7 days after the reset completed or break-glass ran, or with neither on record (R24; 20261103130000) | any | medium |

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { MAX_PACKAGE_LEGS } from '@/config/booking';
 import { PACKAGE_LIMITS } from '@/config/packages';
 import { DB_ENUMS, type EnumValue } from '@/db/enums';
 import { packagesCopy } from '@/lib/copy/packages';
@@ -113,7 +114,7 @@ const packageFields = {
   validFrom: optionalDateSchema,
   validTo: optionalDateSchema,
   priceTiers: z.array(priceTierSchema).max(PACKAGE_LIMITS.tiers),
-  legRwIds: z.array(rwIdSchema).max(PACKAGE_LIMITS.comboLegs),
+  legRwIds: z.array(rwIdSchema).max(MAX_PACKAGE_LEGS, messages.legsTooMany(MAX_PACKAGE_LEGS)),
 };
 
 type PackageRules = {
@@ -143,15 +144,27 @@ function checkPricing(pkg: PackageRules, context: z.RefinementCtx): void {
   if (tiersOverlap(pkg.priceTiers)) issue(context, 'priceTiers', messages.tierOverlap);
 }
 
-// save_package_legs: a combo visits each of its RWs once; an RW package names none.
-function checkLegs(pkg: PackageRules, context: z.RefinementCtx): void {
-  if (pkg.category !== 'combo' && pkg.legRwIds.length > 0)
-    issue(context, 'legRwIds', messages.legsNotCombo);
-  if (new Set(pkg.legRwIds).size !== pkg.legRwIds.length)
-    issue(context, 'legRwIds', messages.legsRepeated);
-  if (pkg.category === 'combo' && pkg.status === 'published' && !comboMayPublish(pkg.legRwIds)) {
+// A combo's route keeps one RW at least (review of PR #79, L-7), and two before it goes on sale.
+function checkComboRoute(pkg: PackageRules, context: z.RefinementCtx): void {
+  if (pkg.legRwIds.length === 0) {
+    issue(context, 'legRwIds', messages.legsEmpty);
+    return;
+  }
+  if (pkg.status === 'published' && !comboMayPublish(pkg.legRwIds)) {
     issue(context, 'legRwIds', messages.legsTooFew);
   }
+}
+
+// save_package_legs: a combo visits each of its RWs once, at most MAX_PACKAGE_LEGS; an RW package names none.
+function checkLegs(pkg: PackageRules, context: z.RefinementCtx): void {
+  if (pkg.category !== 'combo') {
+    if (pkg.legRwIds.length > 0) issue(context, 'legRwIds', messages.legsNotCombo);
+    return;
+  }
+  if (new Set(pkg.legRwIds).size !== pkg.legRwIds.length) {
+    issue(context, 'legRwIds', messages.legsRepeated);
+  }
+  checkComboRoute(pkg, context);
 }
 
 // The group size and the validity window, checked here first so the form can point at the field.

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { packagesCopy } from '@/lib/copy/packages';
+
 import { createPackageSchema, updatePackageSchema } from './package';
 
 const TIER_ID = '0192f3a4-5b6c-7d8e-9f01-23456789abcd';
@@ -72,14 +74,27 @@ describe('createPackageSchema', () => {
     expect(pathsOf({ ...VALID, category: 'combo', legRwIds: [13, 5] })).toEqual([]);
     expect(pathsOf({ ...VALID, category: 'combo', legRwIds: [5, 5] })).toEqual(['legRwIds']);
     expect(pathsOf({ ...VALID, legRwIds: [5] })).toEqual(['legRwIds']);
-    expect(createPackageSchema.safeParse({ ...VALID, category: 'combo', legs: [] }).success).toBe(false);
+    expect(createPackageSchema.safeParse({ ...VALID, category: 'combo', legs: [] }).success).toBe(
+      false,
+    );
   });
 
   it('publishes a combo only once its route visits two RWs (combo_legs_on_sale)', () => {
     const published = { ...VALID, category: 'combo', status: 'published' };
     expect(pathsOf({ ...published, legRwIds: [5] })).toEqual(['legRwIds']);
     expect(pathsOf({ ...published, legRwIds: [5, 13] })).toEqual([]);
-    expect(pathsOf({ ...published, status: 'draft', legRwIds: [] })).toEqual([]);
+    expect(pathsOf({ ...published, status: 'draft', legRwIds: [5] })).toEqual([]);
+  });
+
+  // Review of PR #79, L-1 and L-7: a combo keeps one RW at least, and visits four at most (MAX_PACKAGE_LEGS).
+  it('keeps a combo route between one RW and four', () => {
+    const combo = { ...VALID, category: 'combo' };
+    const empty = createPackageSchema.safeParse({ ...combo, legRwIds: [] });
+    expect(empty.success ? [] : empty.error.issues.map((issue) => issue.message)).toEqual([
+      packagesCopy.validation.legsEmpty,
+    ]);
+    expect(pathsOf({ ...combo, legRwIds: [5, 8, 13, 1] })).toEqual([]);
+    expect(pathsOf({ ...combo, legRwIds: [5, 8, 13, 1, 2] })).toEqual(['legRwIds']);
   });
 
   it('takes no owner RW, creator or id for a new package, and no fractional rupiah', () => {

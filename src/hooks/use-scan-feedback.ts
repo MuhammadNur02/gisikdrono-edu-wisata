@@ -30,40 +30,59 @@ function storeSoundOn(isOn: boolean): void {
   }
 }
 
-// One context per page, made on the first beep: the officer has tapped Scan by then, so the browser allows it.
+// Review of PR #79, L-8: one context per page, made and woken inside the officer's tap (Scan, Periksa, a photo
+// chosen), where every browser lets sound start, and closed when the scanner goes. A browser without WebAudio, or one
+// that refuses it, stays silent.
 function useAudioContext() {
   const context = useRef<AudioContext | null>(null);
-  return useCallback((): AudioContext | null => {
-    if (context.current === null && typeof window.AudioContext === 'function') {
-      context.current = new window.AudioContext();
+  useEffect(
+    () => () => {
+      void context.current?.close().catch(() => undefined);
+      context.current = null;
+    },
+    [],
+  );
+  const prime = useCallback(() => {
+    try {
+      if (context.current === null && typeof window.AudioContext === 'function') {
+        context.current = new window.AudioContext();
+      }
+      if (context.current?.state === 'suspended')
+        void context.current.resume().catch(() => undefined);
+    } catch {
+      context.current = null;
     }
-    return context.current;
   }, []);
+  return { context, prime };
 }
 
-export function useScanFeedback() {
-  const isReducedMotion = useReducedMotion() === true;
+function useSoundChoice() {
   // On for the server render and the first paint; the device's own choice is read after hydration.
   const [isSoundOn, setIsSoundOn] = useState(true);
   useEffect(() => {
     setIsSoundOn(readSoundOn());
   }, []);
-  const audioContext = useAudioContext();
-  const signal = useCallback(
-    (outcome: VerifyOutcome) => {
-      if (outcome.kind !== 'answered' || isReducedMotion) return;
-      const tone = toneOf(outcome.response.result);
-      if (typeof navigator.vibrate === 'function') navigator.vibrate(VIBRATION_PATTERNS[tone]);
-      const context = isSoundOn ? audioContext() : null;
-      if (context) playScanTone(context, tone);
-    },
-    [audioContext, isReducedMotion, isSoundOn],
-  );
   const toggleSound = useCallback(() => {
     setIsSoundOn((isOn) => {
       storeSoundOn(!isOn);
       return !isOn;
     });
   }, []);
-  return { signal, isSoundOn, toggleSound };
+  return { isSoundOn, toggleSound };
+}
+
+export function useScanFeedback() {
+  const isReducedMotion = useReducedMotion() === true;
+  const { isSoundOn, toggleSound } = useSoundChoice();
+  const { context, prime } = useAudioContext();
+  const signal = useCallback(
+    (outcome: VerifyOutcome) => {
+      if (outcome.kind !== 'answered' || isReducedMotion) return;
+      const tone = toneOf(outcome.response.result);
+      if (typeof navigator.vibrate === 'function') navigator.vibrate(VIBRATION_PATTERNS[tone]);
+      if (isSoundOn && context.current) playScanTone(context.current, tone);
+    },
+    [context, isReducedMotion, isSoundOn],
+  );
+  return { signal, isSoundOn, toggleSound, prime, isReducedMotion };
 }

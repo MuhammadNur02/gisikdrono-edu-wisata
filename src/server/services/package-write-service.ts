@@ -59,9 +59,9 @@ function fieldsOf(values: PackageValues & { category: string }): Record<string, 
   };
 }
 
-// save_package_legs takes a combo's RWs in order, and refuses an empty route; null keeps the legs saved so far.
+// save_package_legs takes a combo's RWs in order (the schema keeps one at least); an RW package sends none.
 function legsToSave(values: PackageValues): number[] | null {
-  return values.category === 'combo' && values.legRwIds.length > 0 ? values.legRwIds : null;
+  return values.category === 'combo' ? values.legRwIds : null;
 }
 
 async function save(

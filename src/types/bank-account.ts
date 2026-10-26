@@ -10,5 +10,6 @@ export interface MaskedBankAccount {
 export interface RwTreasuryAccount {
   rwId: number;
   rwName: string;
-  account: MaskedBankAccount;
+  // null when it could not be read; the page shows the others.
+  account: MaskedBankAccount | null;
 }
