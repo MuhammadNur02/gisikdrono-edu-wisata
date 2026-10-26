@@ -149,7 +149,7 @@ select throws_ok($$insert into public.bookings (booking_code, status, channel, p
 select lives_ok($$insert into public.bookings (booking_code, status, channel, package_id, package_snapshot, rw_ids,
     booker_type, pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
     consent_version, consented_at)
-  values ('GSK-WEB0IDN1', 'quoted', 'web', '00000000-0000-4000-8000-0000000ab001', '{}', '{5}', 'individual', 'Web',
+  values ('GSK-WEB0DNA1', 'quoted', 'web', '00000000-0000-4000-8000-0000000ab001', '{}', '{5}', 'individual', 'Web',
           '+6281300000901', 'web@example.test', 1, public.today_jkt() + 3, public.today_jkt() + 3, 30000, 30000, 'v1',
           now())$$,
   'and an Indonesian one is taken');
@@ -194,11 +194,11 @@ select throws_ok($$select pg_temp.pay('walk_in', 'cash', 120000)$$, '42501',
   'confirm with a fresh authenticator code first', 'cash needs a fresh authenticator code');
 reset role;
 select pg_temp.act_as('superadmin_aal2');
-select throws_ok($select pg_temp.pay('walk_in', 'cash', 120000)$, 'P0002', null,
+select throws_ok($$select pg_temp.pay('walk_in', 'cash', 120000)$$, 'P0002', null,
   'A9: cash is the RW admin''s, not the superadmin''s');
 reset role;
 select pg_temp.act_as('admin_rw_08');
-select throws_ok($select pg_temp.pay('walk_in', 'cash', 120000)$, 'P0002', null,
+select throws_ok($$select pg_temp.pay('walk_in', 'cash', 120000)$$, 'P0002', null,
   'an RW 08 officer does not see the RW 05 booking');
 reset role;
 select pg_temp.act_as('admin_rw_05');
