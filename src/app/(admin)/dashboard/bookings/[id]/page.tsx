@@ -15,6 +15,7 @@ import {
 } from '@/components/admin/bookings/booking-sections';
 import { BookingTickets } from '@/components/admin/bookings/booking-tickets';
 import { ContactPanel } from '@/components/admin/bookings/contact-panel';
+import { DsrPanel, type DsrPanelActions } from '@/components/admin/bookings/dsr-panel';
 import { ParticipantsPanel } from '@/components/admin/bookings/participants-panel';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { StatusBadge } from '@/components/admin/status/status-badge';
@@ -29,6 +30,14 @@ import {
   saveAdminNotesAction,
   setAddonFulfillmentAction,
 } from '@/server/actions/booking-admin';
+import {
+  acknowledgeDsrRequestAction,
+  anonymiseDsrBookingAction,
+  closeDsrRequestAction,
+  deleteDsrParticipantsAction,
+  exportDsrDataAction,
+  openDsrRequestAction,
+} from '@/server/actions/dsr';
 import { verifyStaffTotpAction } from '@/server/actions/staff-totp';
 import { requireDashboardStaff } from '@/server/auth/session';
 import {
@@ -36,7 +45,9 @@ import {
   listBookingAddons,
   listBookingTimeline,
 } from '@/server/services/booking-admin-service';
+import { listBookingDsrRequests } from '@/server/services/dsr-service';
 import type { BookingAddonLine, BookingDetail, BookingTimelineEvent } from '@/types/booking-admin';
+import type { StaffDsrRequest } from '@/types/dsr';
 
 const text = bookingsAdminCopy.detail;
 const idSchema = z.uuid();
@@ -87,12 +98,27 @@ function MainColumn({ booking, addons, isSuperadmin }: MainColumnProps) {
   );
 }
 
+// Task P4.10.03: the superadmin's data-request queue; an RW admin never sees it (RLS shows them no row either).
+const DSR_ACTIONS: DsrPanelActions = {
+  open: openDsrRequestAction,
+  acknowledge: acknowledgeDsrRequestAction,
+  finish: {
+    export: exportDsrDataAction,
+    deleteParticipants: deleteDsrParticipantsAction,
+    anonymise: anonymiseDsrBookingAction,
+  },
+  close: closeDsrRequestAction,
+  stepUp: verifyStaffTotpAction,
+};
+
 function SideColumn({
   booking,
   timeline,
+  dsrRequests,
 }: {
   booking: BookingDetail;
   timeline: BookingTimelineEvent[];
+  dsrRequests: StaffDsrRequest[] | null;
 }) {
   return (
     <div className="flex flex-col gap-6">
@@ -107,6 +133,14 @@ function SideColumn({
           bookingId={booking.id}
           adminNotes={booking.adminNotes}
           action={saveAdminNotesAction}
+        />
+      )}
+      {dsrRequests === null ? null : (
+        <DsrPanel
+          bookingId={booking.id}
+          isBookingAnonymised={booking.isAnonymised}
+          requests={dsrRequests}
+          actions={DSR_ACTIONS}
         />
       )}
       <BookingTimeline events={timeline} />
@@ -135,6 +169,8 @@ export default async function BookingDetailPage({ params }: BookingPageProps) {
   const loaded = await loadBooking(parsedId.data);
   if (loaded === null) notFound();
   const { booking, addons, timeline } = loaded;
+  const isSuperadmin = ctx.role === 'superadmin';
+  const dsrRequests = isSuperadmin ? await listBookingDsrRequests(booking.id) : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -147,8 +183,8 @@ export default async function BookingDetailPage({ params }: BookingPageProps) {
         action={<StatusBadge kind="booking_status" value={booking.status} />}
       />
       <div className="grid gap-6 lg:grid-cols-3">
-        <MainColumn booking={booking} addons={addons} isSuperadmin={ctx.role === 'superadmin'} />
-        <SideColumn booking={booking} timeline={timeline} />
+        <MainColumn booking={booking} addons={addons} isSuperadmin={isSuperadmin} />
+        <SideColumn booking={booking} timeline={timeline} dsrRequests={dsrRequests} />
       </div>
     </div>
   );
