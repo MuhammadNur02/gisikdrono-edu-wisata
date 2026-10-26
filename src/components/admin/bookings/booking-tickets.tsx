@@ -9,6 +9,12 @@ import type { BookingDetail, BookingTicketSummary } from '@/types/booking-admin'
 
 const text = bookingsAdminCopy.detail;
 
+// revokeTicketAction and verifyStaffTotpAction, the superadmin's; null for an RW admin.
+export interface RevokeTicketActions {
+  revoke: RevokeTicketAction;
+  stepUp: RevokeTicketAction;
+}
+
 // revoke_ticket takes an issued or suspended ticket; a used, revoked or expired one stays as it is.
 function isRevocable(ticket: BookingTicketSummary): boolean {
   return ticket.status === 'issued' || ticket.status === 'suspended';
@@ -21,7 +27,7 @@ function TicketLine({
 }: {
   bookingId: string;
   ticket: BookingTicketSummary;
-  revokeAction: RevokeTicketAction | null;
+  revokeAction: RevokeTicketActions | null;
 }) {
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 py-3">
@@ -40,7 +46,8 @@ function TicketLine({
           <RevokeTicketButton
             bookingId={bookingId}
             ticketCode={ticket.ticketCode}
-            action={revokeAction}
+            action={revokeAction.revoke}
+            stepUpAction={revokeAction.stepUp}
           />
         ) : null}
       </span>
@@ -55,7 +62,7 @@ export function BookingTickets({
 }: {
   booking: BookingDetail;
   // revokeTicketAction for the superadmin; null for an RW admin.
-  revokeAction: RevokeTicketAction | null;
+  revokeAction: RevokeTicketActions | null;
 }) {
   return (
     <DetailCard title={text.tickets}>

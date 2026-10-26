@@ -7,6 +7,7 @@ import {
 } from '@/config/bookings';
 import { copy } from '@/lib/copy/id';
 import { TICKET_CODE_PATTERN } from '@/lib/utils/codes';
+import { totpCodeField } from '@/lib/validations/auth';
 import { isSafeFreeText } from '@/lib/validations/free-text';
 
 // /dashboard/bookings/[id] (Task P4.3.02), shared by the forms and src/server/actions/booking-admin.ts. The reveal
@@ -53,6 +54,10 @@ export const revokeTicketSchema = z
     reason: reasonField,
   })
   .strict();
+
+// The dialog's form: the same fields and the authenticator code, which withStepUp sends to verifyStaffTotpAction first
+// (docs/Security.md §5.3; review of PR #76, F-76-2).
+export const revokeTicketFormSchema = revokeTicketSchema.extend({ code: totpCodeField });
 
 export type RevealContactInput = z.input<typeof revealContactSchema>;
 export type RevealContactValues = z.output<typeof revealContactSchema>;

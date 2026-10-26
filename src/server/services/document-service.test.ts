@@ -8,11 +8,12 @@ import {
   countBookletDownload,
   createDocumentSignedUrl,
   isDocumentPathFor,
-  purgeMarkedFiles,
   rerenderCertificateFiles,
   SIGNED_URL_TTL_SECONDS,
   withinBookletDownloadLimit,
+  withinRestrictedDocumentLimit,
 } from './document-service';
+import { purgeMarkedFiles } from './storage-purge';
 
 // The tests hand every function its client; the module's own default would need the service-role key.
 vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => ({}) }));
@@ -271,5 +272,42 @@ describe('booklet downloads', () => {
     expect(bodiesOf(requests, 'POST', '/rest/v1/rpc/svc_increment_booklet_download')).toEqual([
       { p_booklet_id: bookletId },
     ]);
+  });
+});
+
+// Review of PR #76, F-76-8: an RW admin's header-only copies are counted per staff member, and a limiter that cannot
+// answer passes its error on (fail-closed), so no copy is rendered.
+describe('restricted document copies', () => {
+  const staffId = '0192f3a4-5b6c-7d8e-9f01-0000000000aa';
+
+  it('limits 30 per 10 minutes for each staff member', async () => {
+    const { client, requests } = clientWith({
+      'GET /rest/v1/site_settings': { status: 200, body: [{ value: 'normal' }] },
+      'POST /rest/v1/rpc/svc_rate_limit_hit': { status: 200, body: true },
+    });
+
+    await expect(withinRestrictedDocumentLimit(staffId, client)).resolves.toBe(true);
+
+    expect(bodiesOf(requests, 'POST', '/rest/v1/rpc/svc_rate_limit_hit')).toEqual([
+      {
+        p_key: rateLimitKey('document_restricted:user', staffId),
+        p_limit: 30,
+        p_window_seconds: 600,
+      },
+    ]);
+  });
+
+  it('refuses once the limit is spent, and passes a failing limiter on rather than allowing', async () => {
+    const spent = clientWith({
+      'GET /rest/v1/site_settings': { status: 200, body: [{ value: 'normal' }] },
+      'POST /rest/v1/rpc/svc_rate_limit_hit': { status: 200, body: false },
+    });
+    await expect(withinRestrictedDocumentLimit(staffId, spent.client)).resolves.toBe(false);
+
+    const failing = clientWith({
+      'GET /rest/v1/site_settings': { status: 200, body: [{ value: 'normal' }] },
+      'POST /rest/v1/rpc/svc_rate_limit_hit': { status: 500, body: { message: 'down' } },
+    });
+    await expect(withinRestrictedDocumentLimit(staffId, failing.client)).rejects.toBeDefined();
   });
 });

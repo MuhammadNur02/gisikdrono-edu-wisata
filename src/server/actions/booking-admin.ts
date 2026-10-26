@@ -13,6 +13,7 @@ import {
 } from '@/lib/validations/booking-admin';
 import { requireRole } from '@/server/auth/guards';
 import {
+  getAddonNotes,
   getBookingParticipants,
   revealBookingContact,
   revokeBookingTicket,
@@ -53,6 +54,23 @@ export async function loadBookingParticipantsAction(
 
   try {
     return ok(await getBookingParticipants(parsed.data.bookingId));
+  } catch (error) {
+    return mapError(error);
+  }
+}
+
+// Review of PR #76, F-76-5: the add-on notes are an audited read, asked for with "Tampilkan catatan", not on every view.
+export async function loadAddonNotesAction(
+  input: unknown,
+): Promise<ActionResult<Record<string, string>>> {
+  const parsed = bookingTargetSchema.safeParse(input);
+  if (!parsed.success) return mapError(parsed.error);
+  const guard = await requireRole('superadmin', 'admin_rw');
+  if (!guard.ok) return guard;
+  if (!guard.ctx.isAal2) return fail('FORBIDDEN');
+
+  try {
+    return ok(await getAddonNotes(parsed.data.bookingId));
   } catch (error) {
     return mapError(error);
   }

@@ -2,7 +2,7 @@ import 'server-only';
 
 import { resultOf, type DatabaseClient } from '@/db/rpc-result';
 
-// The booking detail's staff RPCs (Task P4.3.02; 20261103102000_revoke_ticket.sql, 20261103102100_addon_notes_rpc.sql),
+// The booking detail's staff RPCs (Task P4.3.02; 20261103130100_revoke_ticket.sql, 20261103130200_addon_notes_rpc.sql),
 // called on the staff member's own session client so their AAL2, scope and window checks see who asks.
 
 export function revokeTicket(

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
+import { TotpCodeField } from '@/components/auth/totp-code-field';
 import { FormAlert } from '@/components/forms/form-alert';
 import { FormField } from '@/components/forms/form-field';
 import { PostForm } from '@/components/forms/post-form';
@@ -15,7 +16,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { REVEAL_REASON_LIMITS } from '@/config/bookings';
 import { useActionForm } from '@/hooks/use-action-form';
 import { bookingsAdminCopy } from '@/lib/copy/bookings-admin';
-import { revokeTicketSchema } from '@/lib/validations/booking-admin';
+import { staffCopy } from '@/lib/copy/staff';
+import { withStepUp } from '@/lib/utils/step-up';
+import { revokeTicketFormSchema } from '@/lib/validations/booking-admin';
 import type { ActionResult } from '@/types/action-result';
 
 const text = bookingsAdminCopy.detail;
@@ -26,25 +29,39 @@ export interface RevokeTicketDialogProps {
   bookingId: string;
   ticketCode: string;
   action: RevokeTicketAction;
+  // verifyStaffTotpAction: the code is checked first, so revoke_ticket sees a fresh one (docs/Security.md §5.3).
+  stepUpAction: RevokeTicketAction;
   onClose: () => void;
 }
 
-function RevokeTicketForm({ bookingId, ticketCode, action, onClose }: RevokeTicketDialogProps) {
+// The code is checked by stepUpAction first, then the revocation runs; on success the booking is read again.
+function useRevokeTicketForm({
+  bookingId,
+  ticketCode,
+  action,
+  stepUpAction,
+  onClose,
+}: RevokeTicketDialogProps) {
   const router = useRouter();
   const form = useForm({
-    resolver: zodResolver(revokeTicketSchema),
-    defaultValues: { bookingId, ticketCode, reason: '' },
+    resolver: zodResolver(revokeTicketFormSchema),
+    defaultValues: { bookingId, ticketCode, reason: '', code: '' },
   });
   const { submit, failure } = useActionForm({
     form,
-    action,
-    fields: ['reason'],
+    action: withStepUp(stepUpAction, action),
+    fields: ['reason', 'code'],
     onSuccess: () => {
       toast.success(text.ticketRevoked(ticketCode));
       onClose();
       router.refresh();
     },
   });
+  return { form, submit, failure };
+}
+
+function RevokeTicketForm(props: RevokeTicketDialogProps) {
+  const { form, submit, failure } = useRevokeTicketForm(props);
   return (
     <Form {...form}>
       <PostForm onSubmit={submit}>
@@ -57,6 +74,7 @@ function RevokeTicketForm({ bookingId, ticketCode, action, onClose }: RevokeTick
           required
           render={(field) => <Textarea {...field} rows={3} maxLength={REVEAL_REASON_LIMITS.max} />}
         />
+        <TotpCodeField control={form.control} name="code" description={staffCopy.stepUp.hint} />
         <Button
           type="submit"
           variant="destructive"

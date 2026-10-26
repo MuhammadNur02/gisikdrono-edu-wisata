@@ -10,7 +10,9 @@ import type { RwId } from '@/config/rw';
 import { DB_ENUMS } from '@/db/enums';
 import { rpcGetParticipants, rpcRevealBookingContact } from '@/db/rpc';
 import { revokeTicket, rpcGetAddonNotes } from '@/db/rpc-booking-admin';
-import { AppError, raisedHintOf } from '@/lib/errors';
+import { bookingsAdminCopy } from '@/lib/copy/bookings-admin';
+import { staffCopy } from '@/lib/copy/staff';
+import { AppError, privilegeHintOf, raisedHintOf } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import {
   allowedValues,
@@ -152,10 +154,19 @@ export async function listBookingTimeline(bookingId: string): Promise<BookingTim
 
 // What a refusal of the staff RPCs means to the officer; anything else (STATE_INVALID among them) is thrown on for
 // mapError.
+// A 42501 says why with its hint (review of PR #76, F-76-7): the booking window, a stale authenticator code, or
+// plainly no right to it, which keeps the generic text.
+function privilegeRefusal(hint: string | undefined): AppError {
+  if (hint === 'OUTSIDE_WINDOW')
+    return new AppError('FORBIDDEN', bookingsAdminCopy.detail.outsideWindow);
+  if (hint === 'FRESH_TOTP') return new AppError('FORBIDDEN', staffCopy.notFresh);
+  return new AppError('FORBIDDEN');
+}
+
 function staffRpcRefusal(error: unknown): AppError | null {
   const code =
     typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
-  if (code === INSUFFICIENT_PRIVILEGE) return new AppError('FORBIDDEN');
+  if (code === INSUFFICIENT_PRIVILEGE) return privilegeRefusal(privilegeHintOf(error));
   if (code === NO_DATA_FOUND) return new AppError('NOT_FOUND');
   if (code === INVALID_PARAMETER) return new AppError('VALIDATION');
   if (raisedHintOf(error) === 'RATE_LIMITED') return new AppError('RATE_LIMITED');
@@ -250,14 +261,10 @@ export async function revokeBookingTicket(values: RevokeTicketValues): Promise<v
   await asStaffRpcStep(() => revokeTicket(supabase, { ticketId: data.id, reason: values.reason }));
 }
 
-// The visitor's notes on the caller's own RW's add-on lines, by line id (rpc_get_addon_notes, audited). Outside the
-// booking window the function refuses, and the lines are shown without their notes.
-export async function listAddonNotes(bookingId: string): Promise<Map<string, string>> {
+// The visitor's notes on the caller's own RW's add-on lines, by line id (rpc_get_addon_notes, audited), read only when
+// the staff member asks for them (review of PR #76, F-76-5). Outside the booking window the refusal says why.
+export async function getAddonNotes(bookingId: string): Promise<Record<string, string>> {
   const supabase = await createSupabaseServerClient();
-  try {
-    return await asStaffRpcStep(() => rpcGetAddonNotes(supabase, bookingId));
-  } catch (error) {
-    if (error instanceof AppError && error.code === 'FORBIDDEN') return new Map();
-    throw error;
-  }
+  const notes = await asStaffRpcStep(() => rpcGetAddonNotes(supabase, bookingId));
+  return Object.fromEntries(notes);
 }

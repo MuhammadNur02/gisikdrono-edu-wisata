@@ -1,11 +1,12 @@
 'use client';
 
 import { Users } from 'lucide-react';
-import { useState, useTransition } from 'react';
+import { useCallback, useEffect, useState, useTransition } from 'react';
 
 import { DetailCard, EmptyLine } from '@/components/admin/bookings/booking-detail-parts';
 import { FormAlert } from '@/components/forms/form-alert';
 import { Button } from '@/components/ui/button';
+import { PARTICIPANTS_HIDDEN_KEEP_MS } from '@/config/bookings';
 import { bookingsAdminCopy } from '@/lib/copy/bookings-admin';
 import type { ActionResult } from '@/types/action-result';
 import type { ParticipantEntry } from '@/types/booking-admin';
@@ -14,8 +15,9 @@ const text = bookingsAdminCopy.participants;
 
 type ParticipantsAction = (values: unknown) => Promise<ActionResult<ParticipantEntry[]>>;
 
-// What the panel holds: the list once it was loaded (kept, so showing it again costs no second reveal, review of
-// PR #75, F-75-4), whether it is shown, and why it could not be loaded.
+// What the panel holds: the list once it was loaded (kept while hidden for PARTICIPANTS_HIDDEN_KEEP_MS, so showing it
+// again soon costs no second reveal, review of PR #75, F-75-4 and PR #76, F-76-6), whether it is shown, and why it
+// could not be loaded.
 interface PanelState {
   participants: ParticipantEntry[] | null;
   isVisible: boolean;
@@ -70,10 +72,26 @@ function ParticipantTable({ participants }: { participants: readonly Participant
   );
 }
 
-// Loads the list through the action the first time only; afterwards it only shows or hides what it holds.
+// Drops a hidden list once it has stayed hidden for PARTICIPANTS_HIDDEN_KEEP_MS; showing it again stops the clock.
+function useDropWhenHidden(state: PanelState, drop: () => void) {
+  const isHeldHidden = state.participants !== null && !state.isVisible;
+  useEffect(() => {
+    if (!isHeldHidden) return undefined;
+    const timer = window.setTimeout(drop, PARTICIPANTS_HIDDEN_KEEP_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [isHeldHidden, drop]);
+}
+
+// Loads the list through the action when it holds none; otherwise it only shows or hides what it holds.
 function useParticipants(bookingId: string, action: ParticipantsAction) {
   const [state, setState] = useState<PanelState>(CLOSED);
   const [isLoading, startTransition] = useTransition();
+  const drop = useCallback(() => {
+    setState(CLOSED);
+  }, []);
+  useDropWhenHidden(state, drop);
   const open = () => {
     if (state.participants !== null) {
       setState({ ...state, isVisible: true });
@@ -85,8 +103,7 @@ function useParticipants(bookingId: string, action: ParticipantsAction) {
         setState({ participants: result.data, isVisible: true, refusal: null });
         return;
       }
-      const isOutsideWindow = result.error.code === 'FORBIDDEN';
-      setState({ ...CLOSED, refusal: isOutsideWindow ? text.outsideWindow : result.error.message });
+      setState({ ...CLOSED, refusal: result.error.message });
     });
   };
   const close = () => {

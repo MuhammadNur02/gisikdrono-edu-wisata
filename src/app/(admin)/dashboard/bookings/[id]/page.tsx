@@ -22,16 +22,17 @@ import { Button } from '@/components/ui/button';
 import { BOOKINGS_DASHBOARD_PATH } from '@/config/bookings';
 import { bookingsAdminCopy } from '@/lib/copy/bookings-admin';
 import {
+  loadAddonNotesAction,
   loadBookingParticipantsAction,
   revealBookingContactAction,
   revokeTicketAction,
   saveAdminNotesAction,
   setAddonFulfillmentAction,
 } from '@/server/actions/booking-admin';
+import { verifyStaffTotpAction } from '@/server/actions/staff-totp';
 import { requireDashboardStaff } from '@/server/auth/session';
 import {
   getBookingDetail,
-  listAddonNotes,
   listBookingAddons,
   listBookingTimeline,
 } from '@/server/services/booking-admin-service';
@@ -60,12 +61,10 @@ function BackLink() {
 interface MainColumnProps {
   booking: BookingDetail;
   addons: BookingAddonLine[];
-  // The visitor's notes on the lines, by line id, as rpc_get_addon_notes returned them.
-  addonNotes: Record<string, string>;
   isSuperadmin: boolean;
 }
 
-function MainColumn({ booking, addons, addonNotes, isSuperadmin }: MainColumnProps) {
+function MainColumn({ booking, addons, isSuperadmin }: MainColumnProps) {
   return (
     <div className="flex flex-col gap-6 lg:col-span-2">
       <BookingSummary booking={booking} />
@@ -73,10 +72,15 @@ function MainColumn({ booking, addons, addonNotes, isSuperadmin }: MainColumnPro
       <AddonLines
         bookingId={booking.id}
         lines={addons}
-        notes={addonNotes}
+        notesAction={loadAddonNotesAction}
         action={booking.isAnonymised ? null : setAddonFulfillmentAction}
       />
-      <BookingTickets booking={booking} revokeAction={isSuperadmin ? revokeTicketAction : null} />
+      <BookingTickets
+        booking={booking}
+        revokeAction={
+          isSuperadmin ? { revoke: revokeTicketAction, stepUp: verifyStaffTotpAction } : null
+        }
+      />
       <BookingPayments booking={booking} />
       <BookingInvoices booking={booking} />
     </div>
@@ -110,17 +114,15 @@ function SideColumn({
   );
 }
 
-// The booking with its lines, history and the notes of those lines; null when RLS does not show the booking. The notes
-// are an audited read, so they are asked for only when there are lines to show them on.
+// The booking with its lines and history; null when RLS does not show the booking. The lines' notes are an audited
+// read the staff member asks for on the card (review of PR #76, F-76-5).
 async function loadBooking(bookingId: string) {
   const [booking, addons, timeline] = await Promise.all([
     getBookingDetail(bookingId),
     listBookingAddons(bookingId),
     listBookingTimeline(bookingId),
   ]);
-  if (booking === null) return null;
-  const notes = addons.length > 0 ? await listAddonNotes(bookingId) : new Map<string, string>();
-  return { booking, addons, timeline, addonNotes: Object.fromEntries(notes) };
+  return booking === null ? null : { booking, addons, timeline };
 }
 
 // Task P4.3.02, docs/PRD.md FR-ADMIN-05: one booking through v_booking_admin. RLS answers the scope: a booking outside
@@ -132,7 +134,7 @@ export default async function BookingDetailPage({ params }: BookingPageProps) {
   if (!parsedId.success) notFound();
   const loaded = await loadBooking(parsedId.data);
   if (loaded === null) notFound();
-  const { booking, addons, timeline, addonNotes } = loaded;
+  const { booking, addons, timeline } = loaded;
 
   return (
     <div className="flex flex-col gap-6">
@@ -145,12 +147,7 @@ export default async function BookingDetailPage({ params }: BookingPageProps) {
         action={<StatusBadge kind="booking_status" value={booking.status} />}
       />
       <div className="grid gap-6 lg:grid-cols-3">
-        <MainColumn
-          booking={booking}
-          addons={addons}
-          addonNotes={addonNotes}
-          isSuperadmin={ctx.role === 'superadmin'}
-        />
+        <MainColumn booking={booking} addons={addons} isSuperadmin={ctx.role === 'superadmin'} />
         <SideColumn booking={booking} timeline={timeline} />
       </div>
     </div>

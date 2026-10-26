@@ -1,5 +1,5 @@
 -- Task P4.3.02 (docs/PRD.md FR-ADMIN-26, §8.7 `revoke_ticket`, §9.3; moved here from P3.10.04): the superadmin takes
--- one ticket out of use with a reason, from the booking detail page. An issued or suspended ticket becomes revoked, so
+-- one ticket out of use with a reason and a fresh authenticator code, from the booking detail page. An issued or suspended ticket becomes revoked, so
 -- the gate answers `revoked` from then on. The booking's own status is cancel's and refund's to change, never this
 -- function's (decision of 2026-10-26): once every ticket of the booking is revoked, the visitor is told with
 -- booking_cancelled, and the booking stays as it is until staff cancel or refund it. booking_events keeps the step
@@ -16,6 +16,11 @@ declare
 begin
   if not (public.is_superadmin() and public.aal2()) then
     raise exception 'only the superadmin revokes a ticket' using errcode = '42501';
+  end if;
+  -- docs/Security.md §5.3: a revocation is a critical step, confirmed with an authenticator code from the last five
+  -- minutes (review of PR #76, F-76-2).
+  if not public.fresh_totp() then
+    raise exception 'confirm with a fresh authenticator code first' using errcode = '42501', hint = 'FRESH_TOTP';
   end if;
   if length(btrim(coalesce(p_reason, ''))) not between 3 and 300 then
     raise exception 'a revocation needs a reason of 3 to 300 characters' using errcode = '22023';

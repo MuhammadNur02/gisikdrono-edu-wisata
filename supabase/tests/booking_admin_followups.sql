@@ -1,11 +1,11 @@
--- Task P4.3.02 follow-ups (20261103102000_revoke_ticket.sql, 20261103102100_addon_notes_rpc.sql,
--- 20261103102200_addon_fulfillment_guard.sql):
+-- Task P4.3.02 follow-ups (20261103130100_revoke_ticket.sql, 20261103130200_addon_notes_rpc.sql,
+-- 20261103130300_addon_fulfillment_guard.sql):
 -- * revoke_ticket: the superadmin at AAL2 revokes an issued ticket with a reason; the booking keeps its status, the
 --   step is in booking_events, booking_cancelled goes out only once every ticket is revoked.
 -- * rpc_get_addon_notes: the notes of the caller's own RW's lines, inside the booking window, audited.
 -- * the fulfilment guard: no API session sets `cancelled` or takes a line out of it.
 begin;
-select plan(24);
+select plan(33);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -95,6 +95,22 @@ create function pg_temp.ticket(p_rw smallint) returns uuid
 as $$ select t.id from public.tickets_qr t where t.booking_id = (select paid_combo from cases) and t.rw_id = p_rw; $$;
 grant execute on function pg_temp.line(smallint), pg_temp.ticket(smallint) to authenticated;
 
+-- The hint of the error a statement raises, or null when it raises none.
+create function pg_temp.hint_of(p_statement text) returns text
+  language plpgsql
+as $$
+declare
+  raised_hint text;
+begin
+  execute p_statement;
+  return null;
+exception when others then
+  get stacked diagnostics raised_hint = pg_exception_hint;
+  return raised_hint;
+end;
+$$;
+grant execute on function pg_temp.hint_of(text) to authenticated;
+
 -- ===== rpc_get_addon_notes =====
 select pg_temp.act_as('admin_rw_05');
 select is((select array_agg(n.notes) from public.rpc_get_addon_notes((select with_notes from cases)) n),
@@ -124,6 +140,8 @@ where id = (select with_notes from cases);
 select pg_temp.act_as('admin_rw_05');
 select throws_ok($$select * from public.rpc_get_addon_notes((select with_notes from cases))$$, '42501', null,
   'and nobody reads a note more than seven days after the visit');
+select is(pg_temp.hint_of('select * from public.rpc_get_addon_notes(' || quote_literal((select with_notes from cases)) || ')'),
+  'OUTSIDE_WINDOW', 'a refusal the window makes says so in its hint (F-76-7)');
 reset role;
 update public.bookings set visit_date = public.today_jkt() + 13, visit_date_end = public.today_jkt() + 13
 where id = (select with_notes from cases);
@@ -144,6 +162,20 @@ select throws_ok(format($$update public.booking_addons set fulfillment_status = 
 reset role;
 select is((select a.fulfillment_status::text from public.booking_addons a where a.id = pg_temp.line(13::smallint)),
   'cancelled', 'which stays cancelled');
+select pg_temp.act_as('admin_rw_13');
+select set_config('app.in_rpc', '1', true);
+select is(pg_temp.row_count(format($$update public.booking_addons set fulfillment_status = 'pending' where id = %L$$,
+  pg_temp.line(13::smallint))), 1, 'a function writing under app.in_rpc may bring it back, as an adjustment will');
+select set_config('app.in_rpc', '', true);
+reset role;
+
+-- ===== booking_events.payload =====
+select pg_temp.act_as('admin_rw_05');
+select throws_ok($$select e.payload from public.booking_events e limit 1$$, '42501', null,
+  'no staff session reads a booking event''s payload, which may carry another RW''s money');
+select lives_ok($$select e.reason, e.to_status from public.booking_events e limit 1$$,
+  'while the timeline''s own columns stay readable');
+reset role;
 
 -- ===== revoke_ticket =====
 select pg_temp.act_as('admin_rw_05');
@@ -154,9 +186,19 @@ select pg_temp.act_as('superadmin_aal1');
 select throws_ok(format($$select public.revoke_ticket(%L, 'Salah cetak')$$, pg_temp.ticket(5::smallint)), '42501',
   null, 'nor a superadmin without the authenticator');
 reset role;
+select pg_temp.act_as('superadmin_stale_totp');
+select throws_ok(format($$select public.revoke_ticket(%L, 'Salah cetak')$$, pg_temp.ticket(5::smallint)), '42501',
+  null, 'nor one whose authenticator code is older than five minutes (F-76-2)');
+select throws_ok($$select public.revoke_certificate('00000000-0000-4000-8000-0000000f5998', 'Salah cetak')$$, '42501',
+  null, 'and the same holds for revoking a certificate');
+select throws_ok($$select public.undo_check_in('00000000-0000-4000-8000-0000000f5998', 'Salah cetak')$$, '42501',
+  null, 'and for undoing a check-in');
+reset role;
 select pg_temp.act_as('superadmin_aal2');
-select throws_ok(format($$select public.revoke_ticket(%L, ' ')$$, pg_temp.ticket(5::smallint)), '22023', null,
-  'a revocation needs a reason');
+select throws_ok(format($$select public.revoke_ticket(%L, 'ab')$$, pg_temp.ticket(5::smallint)), '22023', null,
+  'a revocation needs a reason of three characters at least');
+select throws_ok(format($$select public.revoke_ticket(%L, %L)$$, pg_temp.ticket(5::smallint), repeat('x', 301)),
+  '22023', null, 'and of 300 at most');
 select throws_ok($$select public.revoke_ticket('00000000-0000-4000-8000-0000000f5999', 'Salah cetak')$$, 'P0002',
   null, 'an unknown ticket is not found');
 select lives_ok(format($$select public.revoke_ticket(%L, 'Salah cetak')$$, pg_temp.ticket(5::smallint)),
@@ -165,6 +207,10 @@ reset role;
 select is((select (t.status::text, t.revoke_reason, t.revoked_by = pg_temp.persona_id('superadmin_aal2'))::text
            from public.tickets_qr t where t.id = pg_temp.ticket(5::smallint)),
   ('revoked', 'Salah cetak', true)::text, 'which is revoked with its reason, under their name');
+select is((select count(*)::int from public.audit_logs a
+           where a.entity_type = 'tickets_qr' and a.entity_id = pg_temp.ticket(5::smallint)::text
+             and a.action = 'tickets_qr.update' and a.actor_id = pg_temp.persona_id('superadmin_aal2')), 1,
+  'and the ticket''s audit row names them');
 select is((select b.status::text from public.bookings b where b.id = (select paid_combo from cases)), 'paid',
   'the booking keeps its status');
 select is((select (e.from_status, e.to_status, e.payload ->> 'step')::text from public.booking_events e
@@ -176,8 +222,14 @@ select is((select count(*)::int from public.notifications n
 select pg_temp.act_as('superadmin_aal2');
 select throws_ok(format($$select public.revoke_ticket(%L, 'Salah cetak')$$, pg_temp.ticket(5::smallint)), 'P0001',
   null, 'a ticket is revoked once');
+reset role;
+select set_config('app.in_rpc', '1', true);
+update public.tickets_qr set status = 'suspended', suspended_at = now(), suspend_reason = 'Uji'
+where id = pg_temp.ticket(13::smallint);
+select set_config('app.in_rpc', '', true);
+select pg_temp.act_as('superadmin_aal2');
 select lives_ok(format($$select public.revoke_ticket(%L, 'Rombongan batal')$$, pg_temp.ticket(13::smallint)),
-  'the superadmin revokes the RW 13 ticket too');
+  'the superadmin revokes the RW 13 ticket too, suspended as it was');
 reset role;
 select is((select count(*)::int from public.notifications n
            where n.booking_id = (select paid_combo from cases) and n.template = 'booking_cancelled'), 2,

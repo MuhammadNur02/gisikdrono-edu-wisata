@@ -2,10 +2,11 @@ import { createClient } from '@supabase/supabase-js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Database } from '@/db/types';
+import { bookingsAdminCopy } from '@/lib/copy/bookings-admin';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { loadListQuery } from '@/lib/utils/list-query';
 import {
-  listAddonNotes,
+  getAddonNotes,
   listBookingsForStaff,
   revealBookingContact,
   revokeBookingTicket,
@@ -177,11 +178,23 @@ describe('revokeBookingTicket', () => {
   });
 });
 
-describe('listAddonNotes', () => {
-  it('reads the notes by line id, and none outside the booking window', async () => {
+describe('getAddonNotes', () => {
+  it('reads the notes by line id, and says why outside the booking window', async () => {
     sessionAnswering(() => Response.json([{ addon_id: 'a-1', notes: 'Dibungkus' }]));
-    await expect(listAddonNotes(BOOKING_ID)).resolves.toEqual(new Map([['a-1', 'Dibungkus']]));
+    await expect(getAddonNotes(BOOKING_ID)).resolves.toEqual({ 'a-1': 'Dibungkus' });
+    sessionAnswering(() =>
+      Response.json({ code: '42501', message: 'x', hint: 'OUTSIDE_WINDOW' }, { status: 403 }),
+    );
+    await expect(getAddonNotes(BOOKING_ID)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      userMessage: bookingsAdminCopy.detail.outsideWindow,
+    });
+  });
+
+  it('keeps any other refusal generic', async () => {
     sessionAnswering(() => Response.json({ code: '42501', message: 'x' }, { status: 403 }));
-    await expect(listAddonNotes(BOOKING_ID)).resolves.toEqual(new Map());
+    const refusal: unknown = await getAddonNotes(BOOKING_ID).catch((error: unknown) => error);
+    expect(refusal).toMatchObject({ code: 'FORBIDDEN' });
+    expect(refusal).not.toMatchObject({ userMessage: bookingsAdminCopy.detail.outsideWindow });
   });
 });

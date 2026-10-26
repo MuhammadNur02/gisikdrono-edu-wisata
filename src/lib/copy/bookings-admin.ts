@@ -63,6 +63,8 @@ export const bookingsAdminCopy = {
       'Tiga sampai 300 karakter. Alasan tersimpan pada tiket dan di log audit.',
     ticketRevoked: (code: string) => `Tiket ${code} dicabut.`,
     addonNote: (note: string) => `Catatan: ${note}`,
+    showNotes: 'Tampilkan catatan',
+    hideNotes: 'Sembunyikan catatan',
     ticketsEmpty: 'Belum ada tiket; tiket terbit setelah pembayaran lunas.',
     checkedIn: (checkedIn: number, unpaid: number) =>
       unpaid > 0
@@ -90,6 +92,10 @@ export const bookingsAdminCopy = {
     adminNotesHint: 'Hanya terlihat oleh petugas. Jangan tulis nomor telepon, alamat, atau tautan.',
     adminNotesSave: 'Simpan catatan',
     adminNotesSaved: 'Catatan petugas disimpan.',
+    // internal.require_booking_pii_access's OUTSIDE_WINDOW (20261103130500): the contact, the participants and the
+    // add-on notes open from 30 days before the visit to 7 days after it.
+    outsideWindow:
+      'Data pribadi reservasi ini hanya bisa dibuka sejak 30 hari sebelum hingga 7 hari setelah kunjungan.',
     // The machine reasons the database functions write into booking_events.reason (review of PR #75, F-75-1); a staff
     // member's own reason is shown as they wrote it.
     reasons: {
@@ -105,6 +111,14 @@ export const bookingsAdminCopy = {
       duplicate_settlement: 'Tercatat pembayaran ganda',
       split_error: 'Bagi hasil belum bisa dihitung',
       undo_check_in: 'Check-in dibatalkan',
+      ticket_revoked: 'Tiket dicabut',
+      payment_attempt: 'Percobaan pembayaran dibuat',
+      payment_denied: 'Pembayaran ditolak',
+      payment_failed: 'Pembayaran gagal',
+      payment_cancelled: 'Pembayaran dibatalkan',
+      payment_expired: 'Batas waktu pembayaran habis',
+      refund_recorded: 'Pengembalian dana dicatat',
+      write_off: 'Tagihan dihapuskan',
     },
   },
   contact: {
@@ -121,16 +135,12 @@ export const bookingsAdminCopy = {
     revealSubmit: 'Tampilkan',
     revealedNote: 'Kontak ini hanya tampil sampai halaman ditutup atau dimuat ulang.',
     name: 'Nama',
-    outsideWindow:
-      'Kontak hanya bisa dibuka sejak 30 hari sebelum hingga 7 hari setelah kunjungan.',
   },
   participants: {
     title: 'Daftar peserta',
     show: 'Tampilkan peserta',
     hint: 'Membuka daftar peserta dicatat sebagai pembukaan data pribadi.',
     empty: 'Reservasi ini tidak memiliki daftar peserta.',
-    outsideWindow:
-      'Daftar peserta hanya tersedia sejak 30 hari sebelum hingga 7 hari setelah kunjungan.',
     hide: 'Sembunyikan',
     columns: { number: 'No.', name: 'Nama', group: 'Kelas/kelompok', role: 'Peran' },
     roles: {

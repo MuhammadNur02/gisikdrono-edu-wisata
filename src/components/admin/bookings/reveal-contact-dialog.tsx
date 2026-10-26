@@ -28,14 +28,6 @@ export interface RevealContactDialogProps {
   onClose: () => void;
 }
 
-// The function refuses a booking outside the window with FORBIDDEN, which the officer reads as the window's rule (review
-// of PR #75, F-75-6).
-async function revealWithWindowMessage(action: RevealAction, values: unknown) {
-  const result = await action(values);
-  if (result.ok || result.error.code !== 'FORBIDDEN') return result;
-  return { ...result, error: { ...result.error, message: text.outsideWindow } };
-}
-
 function RevealForm({ bookingId, action, onRevealed }: Omit<RevealContactDialogProps, 'onClose'>) {
   const form = useForm({
     resolver: zodResolver(revealContactSchema),
@@ -43,7 +35,7 @@ function RevealForm({ bookingId, action, onRevealed }: Omit<RevealContactDialogP
   });
   const { submit, failure } = useActionForm({
     form,
-    action: (values) => revealWithWindowMessage(action, values),
+    action,
     fields: ['reason'],
     onSuccess: onRevealed,
   });
