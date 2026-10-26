@@ -156,8 +156,8 @@ select throws_ok(
   '23514', null, 'a superadmin profile has no RW'
 );
 select lives_ok(
-  $insert into public.profiles (id, email, full_name, role, rw_id, is_active)
-    values ('00000000-0000-4000-8000-000000000002', 'admin05@example.test', 'Admin 05', 'admin_rw', 5, true)$,
+  $$insert into public.profiles (id, email, full_name, role, rw_id, is_active)
+    values ('00000000-0000-4000-8000-000000000002', 'admin05@example.test', 'Admin 05', 'admin_rw', 5, true)$$,
   'an admin_rw profile with RW 05 is accepted'
 );
 select throws_ok(
