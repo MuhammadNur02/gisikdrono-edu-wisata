@@ -12,9 +12,9 @@
 -- counts as Midtrans' once Midtrans lists its key, whenever that answer comes (N17), and only for its own amount (L5).
 -- Delta 3 (20261104190200): a key listed with another amount (L6), a reference however written (L7), the notice of a
 -- recorded refund closing its alert (I1), and an answer without refunds[] (I2). Review of PR #80: the L7 refusal by
--- its hint (L-3), and the superadmin releasing an L6 block with a note (L-1).
+-- its hint (L-3); releasing an L6 block is refund_key_release.sql's.
 begin;
-select plan(141);
+select plan(131);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: RW 05 and combo packages and two superadmins old enough to approve =====
@@ -547,51 +547,6 @@ select throws_ok($$select public.record_refund((select id from seen), 500, 'TRF-
   'Midtrans lists the refund of adjustment ' || (select id from keyed_late) || ' with another amount',
   'and nothing is recorded against Midtrans while that mismatch stands (REFUND_KEY_MISMATCH)');
 reset role;
-
--- ===== L-1 (review of PR #80): the superadmin releases the L6 block =====
-select pg_temp.act_as('superadmin_aal2');
-select throws_ok($$select public.release_refund_key_mismatch((select id from keyed_late), 'singkat')$$, '22023', null,
-  'a release says why in at least 10 characters');
-reset role;
-select pg_temp.act_as('superadmin_stale_totp');
-select throws_ok($$select public.release_refund_key_mismatch((select id from keyed_late),
-  'Angka Midtrans sudah dicek di dasbor')$$, '42501', null, 'and needs a fresh code');
-reset role;
-select pg_temp.act_as('superadmin_aal2');
-select is(public.release_refund_key_mismatch((select id from keyed_late), 'Angka Midtrans sudah dicek di dasbor')
-            ->> 'result', 'released', 'the superadmin acknowledges the mismatch alert with a note and a fresh code');
-select is(pg_temp.hint_of($$select public.release_refund_key_mismatch((select id from keyed_late),
-  'Angka Midtrans sudah dicek di dasbor')$$), 'STATE_INVALID', 'once');
-reset role;
--- Midtrans then reports another refund of 1000 beside the two it listed.
-insert into public.payment_events (payment_id, order_id, source, event_hash, transaction_status, status_code,
-  gross_amount_raw, payload, processed_at)
-select pg_temp.payment_of((select id from seen)), (select order_id from seen_order), 'status_api', md5('uji-key-released'),
-       'partial_refund', '200', '300000.00',
-       jsonb_build_object('order_id', (select order_id from seen_order), 'currency', 'IDR', 'refund_amount', '3500.00',
-         'refunds', jsonb_build_array(jsonb_build_object('refund_key', 'TRF-N9', 'refund_amount', '1000.00'),
-                                      jsonb_build_object('refund_key', (select id from keyed_late)::text,
-                                                         'refund_amount', '1500.00'),
-                                      jsonb_build_object('refund_key', 'TRF-L6', 'refund_amount', '1000.00'))), now();
-select is(internal.refund_key_mismatch((select p from public.payments p where p.id = pg_temp.payment_of((select id from seen))),
-  null), null, 'the released mismatch blocks nothing any more');
-select pg_temp.act_as('superadmin_aal2');
-select is(public.record_refund((select id from seen), 500, 'TRF-L6', 'Refund QRIS lain dicatat', null,
-  pg_temp.proof((select id from seen), 'l6b')) ->> 'result', 'recorded',
-  'so record_refund books what Midtrans reports, its figure counting');
-reset role;
-select ok(exists (select 1 from public.audit_logs where action = 'refund.key_mismatch_released'
-                  and entity_id = (select id from keyed_late)::text), 'the release is audited');
-select ok(exists (select 1 from public.audit_logs where action = 'refund.recorded_over_key_mismatch'
-                  and entity_id = (select id from keyed_late)::text), 'and so is each record over it');
-select is((select severity::text from public.security_alerts
-           where fingerprint = 'refund_key_mismatch_overridden:' || (select order_id from seen_order) || ':TRF-L6'),
-  'high', 'which raises a high alert');
-select internal.note_refund_seen((select p from public.payments p where p.id = pg_temp.payment_of((select id from seen))),
-  'partially_refunded', null);
-select is((select count(*)::int from public.security_alerts
-           where fingerprint = 'refund_key_mismatch:' || (select id from keyed_late) and acknowledged_at is null), 0,
-  'and a released mismatch raises no new refund_key_mismatch alert');
 
 -- ===== Adjustments: the workflow =====
 reset role;

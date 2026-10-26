@@ -16,14 +16,18 @@ begin
   if not (public.is_superadmin() and public.aal2()) then
     raise exception 'finance evidence is opened by the superadmin at AAL2' using errcode = '42501';
   end if;
+  -- Each kind only from its own folder (delta review of PR #80): an adjustment's evidence under its booking's folder,
+  -- a payout's proof under its batch's.
   if p_kind = 'adjustment' then
-    select a.evidence_path into path from public.payment_adjustments a where a.id = p_id;
+    select a.evidence_path into path from public.payment_adjustments a
+    where a.id = p_id and a.evidence_path ~ ('^bookings/' || a.booking_id || '/adjustment-[0-9a-f-]{36}\.[a-z]{3,4}$');
   elsif p_kind = 'payout' then
-    select b.proof_path into path from public.payout_batches b where b.id = p_id;
+    select b.proof_path into path from public.payout_batches b
+    where b.id = p_id and b.proof_path ~ ('^payouts/' || b.id || '/[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}$');
   else
     raise exception 'evidence is that of an adjustment or a payout' using errcode = '22023';
   end if;
-  if path is null or path !~ '^(bookings/[0-9a-f-]{36}/adjustment-|payouts/[0-9a-f-]{36}/)' then
+  if path is null then
     raise exception 'no evidence for % %', p_kind, p_id using errcode = 'P0002';
   end if;
   insert into public.security_events (event_type, severity, actor_id, actor_role, entity_type, entity_id, details)

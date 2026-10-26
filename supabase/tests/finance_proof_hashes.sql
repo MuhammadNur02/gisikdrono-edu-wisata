@@ -3,7 +3,7 @@
 -- an adjustment or a payout is refused (PROOF_REUSED), at the payout as at the refund and adjustment checks. A path
 -- the server never hashed is judged by its path alone.
 begin;
-select plan(13);
+select plan(17);
 \ir helpers/rls_personas.psql
 
 -- The hint a statement is refused with, or null when it runs.
@@ -68,6 +68,21 @@ insert into public.finance_proofs (path, sha256) values
   ('payouts/00000000-0000-4000-8000-0000000f7006/bukti.pdf', repeat('c', 64));
 select lives_ok($$select internal.require_unseen_proof('payouts/00000000-0000-4000-8000-0000000f7006/bukti.pdf', null)$$,
   'a copy of a file that backs nothing passes');
+
+-- ===== L-d of the delta review: a digest stays as written while its file backs something =====
+select throws_ok($$update public.finance_proofs set sha256 = repeat('d', 64)
+  where path = 'payouts/00000000-0000-4000-8000-0000000f7005/bukti.pdf'$$, '42501', null, 'a digest never changes');
+select throws_ok($$delete from public.finance_proofs where path = 'payouts/00000000-0000-4000-8000-0000000f7001/bukti.pdf'$$,
+  '42501', null, 'nor goes while its file backs a payout');
+select lives_ok($$delete from public.finance_proofs where path = 'payouts/00000000-0000-4000-8000-0000000f7005/bukti.pdf'$$,
+  'a digest of a file that backs nothing may go');
+insert into public.finance_proofs (path, sha256, stored_at) values
+  ('payouts/00000000-0000-4000-8000-0000000f7007/bukti.pdf', repeat('e', 64), now() - interval '2 days');
+insert into public.finance_proofs (path, sha256) values
+  ('payouts/00000000-0000-4000-8000-0000000f7008/bukti.pdf', repeat('f', 64));
+select is((select count(*)::int from public.finance_proofs
+           where path = 'payouts/00000000-0000-4000-8000-0000000f7007/bukti.pdf'), 0,
+  'a day-old digest whose file is gone and backs nothing is purged when the next one is stored');
 
 -- settle_revenue_entries checks the content before it stamps anything.
 select pg_temp.act_as('superadmin_aal2');

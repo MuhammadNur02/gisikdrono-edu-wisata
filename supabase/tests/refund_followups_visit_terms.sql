@@ -5,7 +5,7 @@
 -- and recap_invariant are still in force, and that #80's own L6, L7, I1 and I2 hold on a payment whose refund came
 -- from a visit-terms request.
 begin;
-select plan(32);
+select plan(33);
 \ir helpers/rls_personas.psql
 \ir helpers/visit_terms.psql
 select set_config('app.qr_key_id', 'k1', true);
@@ -32,6 +32,7 @@ exception when others then
   return raised_hint;
 end;
 $$;
+grant execute on function pg_temp.hint_of(text) to authenticated;
 
 create function pg_temp.request_of(p_booking uuid) returns public.refund_requests
   language sql
@@ -251,7 +252,7 @@ select is((select (value #>> '{invariant,weather_refund_fees}')::bigint from ove
 select cmp_ok((select (value #>> '{invariant,weather_refund_fees}')::bigint from overview), '>=',
   internal.weather_refund_fees((select id from weather)), 'which counts this booking''s fee');
 
--- ===== PR #90's key: a manual_refund keeps details.weather_link_id, a uuid, and nothing else =====
+-- ===== PR #90's key (delta review of PR #80, L-c): a manual_refund names only a held link of its own booking =====
 insert into storage.objects (bucket_id, name)
 values ('documents', 'bookings/' || (select id from weather) || '/adjustment-' || md5('weather-link')::uuid || '.pdf');
 create temporary table weather_link on commit drop as
@@ -259,12 +260,14 @@ select w.id from public.weather_notice_bookings w where w.booking_id = (select i
 create temporary table weather_payment on commit drop as select (pg_temp.payment_row((select id from weather))).id as id;
 grant select on weather, weather_link, weather_payment to authenticated;
 select pg_temp.act_as('superadmin_aal2');
-select is(public.propose_adjustment('manual_refund', (select id from weather), 100, 'Refund cuaca manual uji',
-  'bookings/' || (select id from weather) || '/adjustment-' || md5('weather-link')::uuid || '.pdf',
-  jsonb_build_object('weather_link_id', (select id from weather_link), 'line_ref', 'package'),
-  (select id from weather_payment)) -> 'details',
-  jsonb_build_object('weather_link_id', (select id from weather_link)::text),
-  'a manual refund keeps the weather link it answers, and no other detail');
+select is(pg_temp.hint_of($$select public.propose_adjustment('manual_refund', (select id from weather), 100,
+  'Refund cuaca manual uji', 'bookings/' || (select id from weather) || '/adjustment-' || md5('weather-link')::uuid || '.pdf',
+  jsonb_build_object('weather_link_id', (select id from weather_link)), (select id from weather_payment))$$),
+  'WEATHER_LINK_NOT_HELD', 'a link already resolved is no held weather refund');
+select is(pg_temp.hint_of($$select public.propose_adjustment('manual_refund', (select id from weather), 100,
+  'Refund cuaca manual uji', 'bookings/' || (select id from weather) || '/adjustment-' || md5('weather-link')::uuid || '.pdf',
+  jsonb_build_object('weather_link_id', upper((select id from weather_link)::text)), (select id from weather_payment))$$),
+  'WEATHER_LINK_NOT_HELD', 'whatever case its uuid is written in');
 select throws_ok($$select public.propose_adjustment('manual_refund', (select id from weather), 100,
   'Refund cuaca manual uji', 'bookings/x', '{"weather_link_id": "bukan-uuid"}', (select id from weather_payment))$$,
   '22023', null, 'and only as a uuid');

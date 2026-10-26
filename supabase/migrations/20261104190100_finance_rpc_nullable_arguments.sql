@@ -89,12 +89,20 @@ declare
                         then jsonb_build_object('line_ref', p_details ->> 'line_ref', 'from_key', p_details ->> 'from_key',
                                                 'to_key', p_details ->> 'to_key')
                         else '{}' end;
-  weather_link text := btrim(coalesce(p_details ->> 'weather_link_id', ''));
+  weather_link text := lower(btrim(coalesce(p_details ->> 'weather_link_id', '')));
 begin
   perform internal.require_finance_writer();
   if p_type = 'manual_refund' and weather_link <> '' then
     if weather_link !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
       raise exception 'details.weather_link_id names a weather link by its id' using errcode = '22023';
+    end if;
+    -- Delta review of PR #80, L-c: a link of this booking that the sweep holds for the superadmin, window closed and no
+    -- outcome yet; the uuid is read in any case and kept in lower case.
+    if not exists (select 1 from public.weather_notice_bookings w
+                   where w.id = weather_link::uuid and w.booking_id = p_booking_id and w.resolved_at is null
+                     and w.open_until <= now()) then
+      raise exception 'weather link % is not held on booking %', weather_link, p_booking_id
+        using errcode = 'P0001', hint = 'WEATHER_LINK_NOT_HELD';
     end if;
     details := jsonb_build_object('weather_link_id', weather_link);
   end if;

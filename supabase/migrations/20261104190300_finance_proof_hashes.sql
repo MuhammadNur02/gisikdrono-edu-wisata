@@ -3,9 +3,13 @@
 -- bytes the superadmin uploaded, before any re-encoding) and stores the digest here with the documents path it chose,
 -- through the service role. A proof whose digest already backs another refund, adjustment or payout is refused with
 -- the existing PROOF_REUSED hint. The digest is the server's word bound to a path only the server writes (the
--- documents bucket has no API policy), so a caller of the RPCs cannot name another digest for a file.
+-- documents bucket has no API policy), so a caller of the RPCs cannot name another digest for a file. It is a
+-- deterrent against the same file backing two money movements, not proof against forgery: a file changed by one byte
+-- (re-saved, re-scanned, cropped) has another digest, so the approver still reads the evidence itself.
 --
--- A path with no digest (a proof stored before this migration) is judged by its path alone, as before.
+-- A path with no digest (a proof stored before this migration) is judged by its path alone, as before. Delta review of
+-- PR #80, L-d: a digest never changes, and one is deleted only while its file backs nothing; a digest whose file is
+-- gone and that backs nothing is purged a day later, whenever a new one is stored.
 
 
 create table public.finance_proofs (
@@ -83,4 +87,44 @@ $$;
 
 revoke execute on function internal.proof_backs_something(text, uuid), internal.require_unseen_proof(text, uuid),
   internal.require_unused_proof(uuid, text, uuid)
+  from public, anon, authenticated, service_role;
+
+
+-- ===== L-d: a digest stays as written while its file backs something =====
+
+create function internal.finance_proofs_guard() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if tg_op = 'UPDATE' then
+    raise exception 'a finance proof''s digest never changes' using errcode = '42501';
+  end if;
+  if internal.proof_backs_something(old.path, null) then
+    raise exception 'the digest of % backs a refund, an adjustment or a payout', old.path using errcode = '42501';
+  end if;
+  return old;
+end;
+$$;
+create trigger finance_proofs_guard before update or delete on public.finance_proofs
+  for each row execute function internal.finance_proofs_guard();
+
+-- Info of the delta review: a digest whose file was never written or was taken out again, and that backs nothing, is
+-- purged a day after it was stored, each time a new digest is stored.
+create function internal.purge_orphan_finance_proofs() returns trigger
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  delete from public.finance_proofs f
+  where f.stored_at < now() - interval '1 day'
+    and not exists (select 1 from storage.objects o where o.bucket_id = 'documents' and o.name = f.path)
+    and not internal.proof_backs_something(f.path, null);
+  return null;
+end;
+$$;
+create trigger finance_proofs_purge_orphans after insert on public.finance_proofs
+  for each statement execute function internal.purge_orphan_finance_proofs();
+
+revoke execute on function internal.finance_proofs_guard(), internal.purge_orphan_finance_proofs()
   from public, anon, authenticated, service_role;
