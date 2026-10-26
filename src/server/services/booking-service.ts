@@ -38,6 +38,15 @@ import {
   type BookingOutcome,
   type BookingRequest,
 } from '@/server/services/booking-request';
+import {
+  confirmDsrCode,
+  dsrDownloadUrl,
+  issueDsrCode,
+  readGuestDsrRequests,
+  type DsrCodeCheck,
+  type DsrCodeRequest,
+  type DsrDownload,
+} from '@/server/services/dsr-guest';
 
 // The guest side of a booking (Task P3.2, P3.3, P3.4): proving the PIC's phone with a one-time code, making the hold
 // or quotation booking itself, sending a link again from /reservasi/cari, and checking or revoking the links
@@ -263,3 +272,12 @@ export async function createQuotedBooking(request: BookingRequest): Promise<Book
   }
   return outcome;
 }
+
+// Task P4.10.03: the guest's data requests, their dsr_identity code to the booking's own number, and the export's
+// file (dsr-guest.ts), each keyed by the booking of a guest link requireGuestToken has just passed.
+export const guestDsr = {
+  list: (bookingId: string) => readGuestDsrRequests(createSupabaseAdminClient(), bookingId),
+  issueCode: (request: DsrCodeRequest) => issueDsrCode(createSupabaseAdminClient(), request),
+  confirm: (check: DsrCodeCheck) => confirmDsrCode(createSupabaseAdminClient(), check),
+  downloadUrl: (download: DsrDownload) => dsrDownloadUrl(createSupabaseAdminClient(), download),
+};

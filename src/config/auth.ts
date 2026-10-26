@@ -73,5 +73,7 @@ export const TURNSTILE_ACTIONS = {
   bookingCreate: 'booking_create',
   // The post-visit review form (Task P4.11.02).
   reviewSubmit: 'review_submit',
+  // The guest's code for a data request on /reservasi/<code>/privasi (Task P4.10.03).
+  dsrCode: 'dsr_code',
 } as const;
 export type TurnstileAction = (typeof TURNSTILE_ACTIONS)[keyof typeof TURNSTILE_ACTIONS];

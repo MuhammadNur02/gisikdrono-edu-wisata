@@ -55,6 +55,14 @@ const PAGE_OF_TEMPLATE: Partial<
   certificate_ready: { page: 'sertifikat', needs: 'certificate' },
 };
 
+// A booking_link queued for one page of the booking rather than its hub: the data-request page of Task P4.10.03
+// (internal.notify_dsr_guest), which a view link reaches.
+const QUEUED_PAGES = { privasi: { page: 'privasi', needs: 'view' } } as const satisfies Record<
+  string,
+  { page: string; needs: GuestLinkScope }
+>;
+const queuedPageSchema = z.object({ link_page: z.enum(['privasi']) });
+
 // The guest templates whose WhatsApp button carries a guest link: without one in the row, there is nothing to send.
 const LINKED_TEMPLATES: ReadonlySet<NotificationTemplate> = new Set([
   'booking_created',
@@ -152,7 +160,10 @@ async function guestLink(row: OutboxRow, booking: LoadedBooking, nowSeconds: num
     tokenVersion: booking.token_version,
     nowSeconds,
   });
-  const page = PAGE_OF_TEMPLATE[row.template];
+  const queued = queuedPageSchema.safeParse(row.params);
+  const page = queued.success
+    ? QUEUED_PAGES[queued.data.link_page]
+    : PAGE_OF_TEMPLATE[row.template];
   const subpath = page && grantsScope(scope, page.needs) ? `/${page.page}` : '';
   const buttonSuffix = `${booking.booking_code}${subpath}?${GUEST_LINK_PARAM}=${token}`;
   return {

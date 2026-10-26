@@ -13,6 +13,8 @@
 --           bookings too; the invoice, receipt, credit-note and quotation snapshots and their files stay under the
 --           10-year financial retention), or dsr_close (rectified, rejected_identity, rejected_other). Each finish
 --           sets status and outcome together and tells the guest, through a view link to the same page.
+--   Files   An export stays 30 days after its request finished and goes at once with an anonymised booking, and so
+--           does that booking's ticket PDF (internal.purgeable_files).
 --   Rules   Superadmin only, at AAL2; the destructive steps need a fresh TOTP code (has_fresh_totp). Every step is an
 --           audit row and a dsr_handled security event. The table is written only by these functions.
 -- verified_at is the column PRD §8 already gives the confirmed identity; it is what "identity_verified_at" names.
@@ -66,7 +68,7 @@ begin
     raise exception 'only the superadmin handles data requests' using errcode = '42501';
   end if;
   if p_needs_fresh_code and not internal.has_fresh_totp() then
-    raise exception 'confirm with a fresh authenticator code first' using errcode = '42501';
+    raise exception 'confirm with a fresh authenticator code first' using errcode = '42501', hint = 'FRESH_TOTP';
   end if;
 end;
 $$;
@@ -481,3 +483,64 @@ grant execute on function public.dsr_open(uuid, text, text), public.dsr_acknowle
   public.dsr_record_export(uuid, text, text, text), public.dsr_delete_participants(uuid, text),
   public.dsr_anonymise_booking(uuid, text), public.dsr_close(uuid, text, text)
   to authenticated;
+
+
+-- ===== The files that outlive their request =====
+
+-- Replaces the 20261031080000 version. An access-request export stays 30 days after its request was finished, long
+-- enough for the guest to come back through /reservasi/cari, and goes at once when its booking is anonymised; an
+-- anonymised booking's ticket PDF, which prints the booker, goes with it. api/jobs/purge-storage removes them.
+create or replace function internal.purgeable_files(p_limit integer) returns table (bucket text, path text)
+  language sql stable security definer
+  set search_path = ''
+as $$
+  (select 'documents', c.pdf_path from public.certificates c
+   where c.purged_at is not null and c.pdf_path is not null order by c.purged_at limit p_limit)
+  union all
+  (select 'documents', e.storage_path from public.exports e
+   where (e.deleted_at is not null or e.expires_at < now()) and e.storage_path is not null
+   order by coalesce(e.deleted_at, e.expires_at) limit p_limit)
+  union all
+  -- Ticket PDFs are kept for 12 months after the visit, and not at all once the booking is anonymised.
+  (select 'documents', b.ticket_pdf_path from public.bookings b
+   where b.ticket_pdf_path is not null
+     and (b.visit_date_end < (public.today_jkt() - interval '12 months')::date or b.pii_purged_at is not null)
+   order by b.visit_date_end limit p_limit)
+  union all
+  (select 'documents', unnest(array[r.export_json_path, r.export_pdf_path]) from public.dsr_requests r
+   where r.export_json_path is not null
+     and (r.handled_at < now() - interval '30 days'
+          or exists (select 1 from public.bookings b where b.id = r.booking_id and b.pii_purged_at is not null))
+   order by r.handled_at limit p_limit);
+$$;
+
+-- Replaces the 20261031080000 version: the paths above are forgotten once their files are gone.
+create or replace function internal.forget_purged_files(p_paths text[]) returns integer
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  previous_settings jsonb;
+  forgotten integer := 0;
+  cleared integer;
+begin
+  previous_settings := internal.begin_scheduled_job();
+  update public.certificates set pdf_path = null where purged_at is not null and pdf_path = any (p_paths);
+  get diagnostics cleared = row_count;
+  forgotten := forgotten + cleared;
+  update public.exports set storage_path = null, deleted_at = coalesce(deleted_at, now())
+  where (deleted_at is not null or expires_at < now()) and storage_path = any (p_paths);
+  get diagnostics cleared = row_count;
+  forgotten := forgotten + cleared;
+  update public.bookings set ticket_pdf_path = null
+  where ticket_pdf_path = any (p_paths)
+    and (visit_date_end < (public.today_jkt() - interval '12 months')::date or pii_purged_at is not null);
+  get diagnostics cleared = row_count;
+  forgotten := forgotten + cleared;
+  update public.dsr_requests set export_json_path = null, export_pdf_path = null
+  where export_json_path = any (p_paths) and export_pdf_path = any (p_paths);
+  get diagnostics cleared = row_count;
+  perform internal.restore_settings(previous_settings);
+  return forgotten + cleared;
+end;
+$$;

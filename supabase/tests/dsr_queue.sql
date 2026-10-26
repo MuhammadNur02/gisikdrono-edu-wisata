@@ -4,7 +4,7 @@
 -- anonymising the booking, or by a close, each audited, each telling the guest; only the superadmin at AAL2 handles
 -- requests, the destructive steps with a fresh code, and the table is written by these functions alone.
 begin;
-select plan(45);
+select plan(47);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: a paid RW 05 booking with a verified number and two participants, and one without =====
@@ -91,6 +91,8 @@ select set_config('request.jwt.claims', '', true);
 
 -- ===== Intake: the guest confirms =====
 create temporary table requests (kind text primary key, id uuid);
+-- Read inside the throws_ok calls that run as a persona.
+grant select on requests to authenticated;
 insert into requests values ('access', pg_temp.open('access'));
 select is(pg_temp.request((select id from requests where kind = 'access')), '(received,,f,f)',
   'an opened request waits for the guest, received and unconfirmed');
@@ -219,6 +221,14 @@ select is(pg_temp.request((select id from requests where kind = 'erasure')), '(c
 select throws_ok(format($$select pg_temp.step('select public.dsr_open(''%s'', ''access'', ''Diminta lewat telepon'')')$$,
                         '00000000-0000-4000-8000-0000000d5b01'),
   'P0001', null, 'an anonymised booking takes no new request');
+
+-- The access request's export goes with the anonymised booking (internal.purgeable_files).
+select is((select count(*)::int from internal.purgeable_files(1000) f
+           where f.path like 'bookings/00000000-0000-4000-8000-0000000d5b01/dsr/%'), 2,
+  'the export of the anonymised booking is due for removal, both files');
+select is(internal.forget_purged_files(array(select f.path from internal.purgeable_files(1000) f
+                                             where f.path like 'bookings/00000000-0000-4000-8000-0000000d5b01/dsr/%'))
+            > 0, true, 'and forgotten once its files are gone');
 
 -- ===== Every step is on record =====
 select is((select count(*)::int from public.security_events e

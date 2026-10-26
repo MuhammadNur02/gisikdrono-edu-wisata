@@ -99,6 +99,8 @@ export const pdfStyles = StyleSheet.create({
   label: { fontSize: SMALL_SIZE, color: PDF_COLORS.muted },
   value: { fontWeight: 600 },
   paragraph: { marginBottom: 8 },
+  // One labelled block of the access-request export (dsr-export.tsx).
+  section: { marginTop: 12 },
   table: {
     borderWidth: 1,
     borderColor: PDF_COLORS.border,
