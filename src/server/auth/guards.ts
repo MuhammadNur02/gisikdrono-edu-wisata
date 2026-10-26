@@ -12,6 +12,10 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { clientIpFrom } from '@/lib/utils/client-ip';
 import { isBookingCode } from '@/lib/utils/codes';
 import { nowInSeconds } from '@/server/auth/guest-cookies';
+import {
+  readOnboardingContext,
+  type OnboardingGuardResult,
+} from '@/server/auth/onboarding-context';
 import { verifyGuestAccess, type GuestAccess } from '@/server/services/booking-service';
 import type { ActionFailure } from '@/types/action-result';
 
@@ -30,6 +34,8 @@ export type StaffContext = {
 };
 
 export type GuardResult = { ok: true; ctx: StaffContext } | ActionFailure;
+
+export type { OnboardingContext, OnboardingGuardResult } from '@/server/auth/onboarding-context';
 
 export type StaffRole = Exclude<AppRole, 'none'>;
 
@@ -101,6 +107,11 @@ export async function requireUser(): Promise<GuardResult> {
   if (!session) return fail('UNAUTHENTICATED');
   if (session.ctx.role === 'none') return fail('FORBIDDEN');
   return { ok: true, ctx: session.ctx };
+}
+
+// The account /onboarding serves (Task P4.8.01): see src/server/auth/onboarding-context.ts.
+export async function requireOnboardingUser(): Promise<OnboardingGuardResult> {
+  return readOnboardingContext(await createSupabaseServerClient());
 }
 
 // requireRole('superadmin') for the kelurahan's own work; the dashboard shell lets either staff role in.

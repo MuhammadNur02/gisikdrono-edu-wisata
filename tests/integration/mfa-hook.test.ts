@@ -4,6 +4,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { afterAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { giveRwRole, removeProfiles } from './helpers/staff-session';
 import { totpCode } from '../../scripts/dev-accounts';
 import { localStack, runSql } from '../../scripts/local-stack';
 
@@ -36,7 +37,7 @@ async function signedInClient(email: string): Promise<SupabaseClient> {
   return client;
 }
 
-// An account with one verified TOTP factor, enrolled through GoTrue as /mfa/enroll does.
+// A staff account with one verified TOTP factor, enrolled through GoTrue as /mfa/enroll does.
 async function accountWithFactor(): Promise<{
   id: string;
   email: string;
@@ -51,6 +52,7 @@ async function accountWithFactor(): Promise<{
   });
   if (error) throw error;
   createdUserIds.push(data.user.id);
+  await giveRwRole(data.user.id, email);
 
   const client = await signedInClient(email);
   const enrolled = await client.auth.mfa.enroll({ factorType: 'totp' });
@@ -86,8 +88,8 @@ async function eventsOf(userId: string): Promise<string[]> {
     .map((row) => row.event_type);
 }
 
-// Security events are append-only, so they go under the retention flag; deleting the Auth user takes its factors,
-// its sessions and its never-staff profile with it (20261029080300).
+// Security events are append-only, so they go under the retention flag, and so do the staff profiles; deleting the
+// Auth user takes its factors and sessions with it.
 async function removeWhatTheSuiteWrote() {
   const userIds = `'{${createdUserIds.join(',')}}'::uuid[]`;
   await runSql(`begin;
@@ -96,6 +98,7 @@ async function removeWhatTheSuiteWrote() {
     delete from public.security_events where actor_id = any(${userIds});
     delete from public.security_alerts where fingerprint in (select 'mfa_locked:' || id from unnest(${userIds}) id);
     commit;`);
+  await removeProfiles(createdUserIds);
   for (const userId of createdUserIds) {
     const { error } = await adminClient().auth.admin.deleteUser(userId);
     if (error) throw error;

@@ -42,7 +42,11 @@ export function IssuedInviteCard({ issued, onDone }: { issued: IssuedInvite; onD
           {text.superadminWait(formatDateTimeShort(issued.acceptableAfter))}
         </p>
       ) : null}
-      <FormAlert tone="info">{text.onboardingPending}</FormAlert>
+      {issued.isEmailSent ? (
+        <FormAlert tone="info">{text.emailSent}</FormAlert>
+      ) : (
+        <FormAlert tone="danger">{text.emailFailed}</FormAlert>
+      )}
       <Button type="button" size="lg" className="w-full" onClick={onDone}>
         {text.done}
       </Button>

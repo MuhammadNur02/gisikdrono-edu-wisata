@@ -6,7 +6,7 @@ import type { StaffSession } from '@/server/auth/guards';
 import {
   changePasswordAfterRecovery,
   confirmTotpEnrolment,
-  openRecoverySession,
+  openEmailLinkSession,
   signInWithPassword,
   signOutEverywhere,
   startTotpEnrolment,
@@ -309,24 +309,33 @@ describe('TOTP enrolment', () => {
 
 // F1 of the PR #17 review: the recovery email carries a token_hash, which auth/callback verifies here. Unlike a PKCE
 // code it is not tied to the browser that asked, so /forgot-password writes no cookie at all.
-describe('openRecoverySession', () => {
+describe('openEmailLinkSession', () => {
   it('opens the session of a recovery link', async () => {
     auth.verifyOtp.mockResolvedValue({ data: {}, error: null });
 
-    expect(await openRecoverySession('token-hash')).toBe(true);
+    expect(await openEmailLinkSession('recovery', 'token-hash')).toBe(true);
     expect(auth.verifyOtp).toHaveBeenCalledWith({ type: 'recovery', token_hash: 'token-hash' });
+  });
+
+  it('opens the session of an invite link the same way (Task P4.8.01)', async () => {
+    auth.verifyOtp.mockResolvedValue({ data: {}, error: null });
+
+    expect(await openEmailLinkSession('invite', 'token-hash')).toBe(true);
+    expect(auth.verifyOtp).toHaveBeenCalledWith({ type: 'invite', token_hash: 'token-hash' });
   });
 
   it('is false for a used or expired link', async () => {
     auth.verifyOtp.mockResolvedValue({ data: {}, error: refused(403, 'otp_expired') });
 
-    expect(await openRecoverySession('token-hash')).toBe(false);
+    expect(await openEmailLinkSession('recovery', 'token-hash')).toBe(false);
   });
 
   it('throws an outage on, so it never reads as an expired link', async () => {
     auth.verifyOtp.mockResolvedValue({ data: {}, error: refused(500, 'unexpected_failure') });
 
-    await expect(openRecoverySession('token-hash')).rejects.toBeInstanceOf(AuthApiError);
+    await expect(openEmailLinkSession('recovery', 'token-hash')).rejects.toBeInstanceOf(
+      AuthApiError,
+    );
   });
 });
 

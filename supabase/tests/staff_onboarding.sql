@@ -9,18 +9,25 @@
 -- caller's own row is refused before anything else. An Auth user that never became staff is deleted with its profile;
 -- one that ever held a role is not (20261029080300). Using the code opens a ten-minute window and keeps the wait; a
 -- factor is verified only inside it, the first one ends the wait, and an abandoned window needs a new code (N1 of the
--- re-review, 20261029080400).
+-- re-review, 20261029080400). Since 20261103131000 an invite is claimed by a live session before the account's factor
+-- is verified, and accepted from that session at AAL2; every refusal reads the same.
 begin;
-select plan(57);
+select plan(58);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: two accounts without a role =====
+-- Both held a role once (became_staff_at, claims_version moved on), so they enrol the way a reactivated officer does; an account that
+-- never was staff verifies a factor only under a claimed invite (20261103131000, staff_onboarding_claims.sql).
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000e0001', 'baru-satu@example.test'),
   ('00000000-0000-4000-8000-0000000e0002', 'baru-dua@example.test');
-insert into public.profiles (id, email, full_name, role, rw_id, is_active) values
-  ('00000000-0000-4000-8000-0000000e0001', 'baru-satu@example.test', 'Baru Satu', 'none', null, false),
-  ('00000000-0000-4000-8000-0000000e0002', 'baru-dua@example.test', 'Baru Dua', 'none', null, false);
+insert into public.profiles (id, email, full_name, role, rw_id, is_active, claims_version, became_staff_at) values
+  ('00000000-0000-4000-8000-0000000e0001', 'baru-satu@example.test', 'Baru Satu', 'none', null, false, 2, now()),
+  ('00000000-0000-4000-8000-0000000e0002', 'baru-dua@example.test', 'Baru Dua', 'none', null, false, 2, now());
+-- The superadmin who invites keeps their own authenticator (inviter_in_good_standing, 20261103131000).
+insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at)
+values ('00000000-0000-4000-8000-0000000e0f01', '00000000-0000-4000-8000-00000000f001', 'HP Super', 'totp', 'verified',
+        now(), now());
 create function pg_temp.enrol(p_user uuid) returns void
   language sql
 as $$
@@ -109,28 +116,33 @@ insert into public.staff_invites (id, email, role, rw_id, invite_code_hash, expi
    now() + interval '72 hours', '00000000-0000-4000-8000-00000000f001'),
   ('00000000-0000-4000-8000-0000000eb002', 'baru-dua@example.test', 'admin_rw', 8, repeat('2', 64),
    now() + interval '1 minute', '00000000-0000-4000-8000-00000000f001');
-select throws_ok($$select public.svc_accept_staff_invite('00000000-0000-4000-8000-0000000e0003', repeat('1', 64))$$,
-  'P0001', null, 'an invite waits for the account''s own authenticator');
+-- 20261103131000: the code is claimed by a live session first, and accepted from it at AAL2.
+insert into auth.sessions (id, user_id, aal)
+values ('00000000-0000-4000-8000-0000000e05a3', '00000000-0000-4000-8000-0000000e0003', 'aal2');
+select is(public.svc_accept_staff_invite('00000000-0000-4000-8000-0000000e0003', '00000000-0000-4000-8000-0000000e05a3', repeat('1', 64)),
+  '{"accepted": false}', 'an invite waits for its claim and the account''s own authenticator, with the generic refusal');
+select is(public.svc_claim_staff_invite('00000000-0000-4000-8000-0000000e0003', '00000000-0000-4000-8000-0000000e05a3', repeat('9', 64)),
+  '{"claimed": false}', 'a wrong code claims nothing');
+select is(public.svc_claim_staff_invite('00000000-0000-4000-8000-0000000e0003', '00000000-0000-4000-8000-0000000e05a3', repeat('2', 64)),
+  '{"claimed": false}', 'nor does another address''s code');
+select is(public.svc_claim_staff_invite('00000000-0000-4000-8000-0000000e0003', '00000000-0000-4000-8000-0000000e05a3', repeat('1', 64)),
+  '{"claimed": true}', 'the right code claims the invite');
 select pg_temp.enrol('00000000-0000-4000-8000-0000000e0003');
-select is(public.svc_accept_staff_invite('00000000-0000-4000-8000-0000000e0003', repeat('9', 64)),
-  '{"accepted": false}', 'a wrong code accepts nothing');
-select is(public.svc_accept_staff_invite('00000000-0000-4000-8000-0000000e0003', repeat('2', 64)),
-  '{"accepted": false}', 'nor does another address''s code');
-select is(public.svc_accept_staff_invite('00000000-0000-4000-8000-0000000e0003', repeat('1', 64)),
+select is(public.svc_accept_staff_invite('00000000-0000-4000-8000-0000000e0003', '00000000-0000-4000-8000-0000000e05a3', repeat('1', 64)),
   '{"role": "admin_rw", "rw_id": 5, "accepted": true}', 'the right code gives the invite''s role');
 select is(pg_temp.profile('00000000-0000-4000-8000-0000000e0003'), '(admin_rw,5,t)', 'and activates the account');
 select is((select (i.accepted_user_id, i.accepted_at is not null)::text from public.staff_invites i
            where i.id = '00000000-0000-4000-8000-0000000eb001'),
   ('00000000-0000-4000-8000-0000000e0003'::uuid, true)::text, 'the invite is used');
-select is(public.svc_accept_staff_invite('00000000-0000-4000-8000-0000000e0003', repeat('1', 64)),
+select is(public.svc_accept_staff_invite('00000000-0000-4000-8000-0000000e0003', '00000000-0000-4000-8000-0000000e05a3', repeat('1', 64)),
   '{"accepted": false}', 'once');
 select is((select count(*)::int from public.security_events e
            where e.event_type = 'login_failed' and e.entity_id = '00000000-0000-4000-8000-0000000e0003'),
-  2, 'each refused code is a security event');
+  4, 'each refused step is a security event');
 update public.staff_invites set expires_at = now() - interval '1 second'
 where id = '00000000-0000-4000-8000-0000000eb002';
 select pg_temp.enrol('00000000-0000-4000-8000-0000000e0002');
-select is(public.svc_accept_staff_invite('00000000-0000-4000-8000-0000000e0002', repeat('2', 64)),
+select is(public.svc_accept_staff_invite('00000000-0000-4000-8000-0000000e0002', gen_random_uuid(), repeat('2', 64)),
   '{"accepted": false}', 'an expired invite accepts nothing');
 -- A server-side step: no signed-in user, the actor it declared.
 select set_config('request.jwt.claims', '', true);
@@ -140,8 +152,8 @@ select set_config('app.actor_id', '', true);
 select ok((select a.details -> 'involved' @> jsonb_build_array('00000000-0000-4000-8000-00000000f001', '00000000-0000-4000-8000-00000000f005') from public.security_alerts a
            where a.fingerprint = 'superadmin_invite:00000000-0000-4000-8000-0000000eb001'),
   'an invite''s alert names its creator and the actor of the step');
-select ok(not has_function_privilege('authenticated', 'public.svc_accept_staff_invite(uuid, text)', 'execute')
-          and has_function_privilege('service_role', 'public.svc_accept_staff_invite(uuid, text)', 'execute'),
+select ok(not has_function_privilege('authenticated', 'public.svc_accept_staff_invite(uuid, uuid, text)', 'execute')
+          and has_function_privilege('service_role', 'public.svc_accept_staff_invite(uuid, uuid, text)', 'execute'),
   'invites are consumed by the server alone');
 
 -- ===== P4.8.05: the re-enrolment code =====

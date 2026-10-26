@@ -32,7 +32,7 @@ export const nextField = z.string().max(NEXT_PATH_MAX_LENGTH).optional();
 
 export const totpCodeField = z.string().trim().regex(TOTP_CODE, messages.totpCode);
 
-const newPasswordField = z
+export const newPasswordField = z
   .string()
   .max(PASSWORD_MAX_LENGTH, messages.passwordTooLong)
   .refine(
@@ -41,6 +41,8 @@ const newPasswordField = z
       PASSWORD_CLASSES.every((pattern) => pattern.test(password)),
     messages.newPassword,
   );
+
+export const confirmPasswordField = z.string().max(PASSWORD_MAX_LENGTH);
 
 export const signInSchema = z
   .object({
@@ -67,7 +69,7 @@ export type ForgotPasswordInput = z.input<typeof forgotPasswordSchema>;
 export const resetPasswordSchema = z
   .object({
     password: newPasswordField,
-    confirmPassword: z.string().max(PASSWORD_MAX_LENGTH),
+    confirmPassword: confirmPasswordField,
     totpCode: totpCodeField.optional(),
     captchaToken: captchaTokenField,
   })

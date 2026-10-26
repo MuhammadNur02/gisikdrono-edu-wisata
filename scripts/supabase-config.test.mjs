@@ -90,6 +90,23 @@ describe('supabase/config.toml', () => {
     expect(html).not.toContain('{{ .ConfirmationURL }}');
   });
 
+  // Task P4.8.01: the invite email links to auth/callback with type=invite, which opens /onboarding and nothing else.
+  it('sends the invite email with a token_hash link to auth/callback and nothing else', () => {
+    const template = config('auth.email.template.invite');
+    expect(template.subject).toBe('Undangan petugas Edu Wisata Gisikdrono');
+    expect(template.content_path).toBe('./supabase/templates/invite.html');
+
+    const html = readFileSync(
+      new URL('../supabase/templates/invite.html', import.meta.url),
+      'utf8',
+    );
+    const links = [...html.matchAll(/href="([^"]*)"/g)].map(([, href]) => href);
+    expect(links).toEqual([
+      '{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&amp;type=invite',
+    ]);
+    expect(html).not.toContain('{{ .ConfirmationURL }}');
+  });
+
   // M1 of the PR #17 review: a TOTP code sent straight to GoTrue skips the app, so the lockout lives in Auth.
   it('runs the MFA-attempt hook of 20261020080100', () => {
     expect(config('auth.hook.mfa_verification_attempt')).toEqual({

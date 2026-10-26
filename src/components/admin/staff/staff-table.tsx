@@ -1,7 +1,7 @@
 'use client';
 
 import type { ColumnDef } from '@tanstack/react-table';
-import { History, Power, ShieldCheck, ShieldOff, UserCog, Users, XCircle } from 'lucide-react';
+import { Ban, History, Power, ShieldCheck, ShieldOff, UserCog, Users, XCircle } from 'lucide-react';
 import { useMemo } from 'react';
 
 import { ColumnHeader } from '@/components/admin/data-table/column-header';
@@ -44,6 +44,21 @@ function actionsOf(member: StaffMember, onRequest: StaffTableProps['onRequest'])
   ];
   // docs/Security.md §5.3: never on the superadmin's own row (profiles_guard refuses it as well).
   if (member.isSelf) return items;
+  // M1 of the review of PR #77: an account still being onboarded gets its role only by finishing onboarding.
+  if (member.isAwaitingOnboarding) {
+    const invite = member.pendingInvite;
+    if (invite) {
+      items.push({
+        label: text.actions.revokeInvite,
+        icon: Ban,
+        destructive: true,
+        onSelect: () => {
+          onRequest({ kind: 'revokeInvite', invite });
+        },
+      });
+    }
+    return items;
+  }
   const ask = (kind: 'role' | 'status' | 'cancelPromotion') => () => {
     onRequest({ kind, member });
   };
@@ -86,6 +101,17 @@ function NameCell({ member }: { member: StaffMember }) {
   );
 }
 
+function StatusBadgeOf({ member }: { member: StaffMember }) {
+  if (member.isAwaitingOnboarding) {
+    return <Badge variant="warning">{text.statuses.awaitingOnboarding}</Badge>;
+  }
+  return (
+    <Badge variant={member.isActive ? 'success' : 'neutral'}>
+      {member.isActive ? text.statuses.active : text.statuses.inactive}
+    </Badge>
+  );
+}
+
 function MfaBadge({ isEnrolled }: { isEnrolled: boolean }) {
   const Icon = isEnrolled ? ShieldCheck : ShieldOff;
   return (
@@ -118,11 +144,7 @@ function columnsFor(onRequest: StaffTableProps['onRequest']): ColumnDef<StaffMem
     {
       id: 'status',
       header: text.columns.status,
-      cell: ({ row }) => (
-        <Badge variant={row.original.isActive ? 'success' : 'neutral'}>
-          {row.original.isActive ? text.statuses.active : text.statuses.inactive}
-        </Badge>
-      ),
+      cell: ({ row }) => <StatusBadgeOf member={row.original} />,
       meta: { label: text.columns.status, card: 'badge' },
     },
     {

@@ -72,16 +72,17 @@ describe('inviteStaffAction', () => {
       inviteCode: 'ABCDEFGHJKMNPQRSTVWX',
       expiresAt: '2026-10-27T08:00:00Z',
       acceptableAfter: null,
+      isEmailSent: true,
     };
     vi.mocked(createStaffInvite).mockResolvedValue(issued);
     await expect(inviteStaffAction(INVITE)).resolves.toEqual({ ok: true, data: issued });
     expect(requireRole).toHaveBeenCalledWith('superadmin');
     expect(requireFreshTotp).toHaveBeenCalledWith(300);
-    expect(createStaffInvite).toHaveBeenCalledWith(SUPERADMIN, {
-      email: 'petugas@gisikdrono.id',
-      role: 'admin_rw',
-      rwId: 5,
-    });
+    expect(createStaffInvite).toHaveBeenCalledWith(
+      SUPERADMIN,
+      { email: 'petugas@gisikdrono.id', role: 'admin_rw', rwId: 5 },
+      'request-1',
+    );
     expect(revalidatePath).toHaveBeenCalledWith('/dashboard/users');
   });
 
@@ -158,7 +159,7 @@ describe('revokeStaffInviteAction and cancelSuperadminPromotionAction', () => {
       ok: true,
       data: null,
     });
-    expect(revokeStaffInvite).toHaveBeenCalledWith(INVITE_ID);
+    expect(revokeStaffInvite).toHaveBeenCalledWith(INVITE_ID, 'request-1');
     await expect(cancelSuperadminPromotionAction({ userId: OTHER_ID })).resolves.toEqual({
       ok: true,
       data: null,
