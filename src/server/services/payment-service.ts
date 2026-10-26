@@ -254,6 +254,10 @@ export async function recordWebhookRejection(
 // applies nothing. The payment id comes from a reconciliation issue the superadmin's session could read.
 export async function recheckPaymentStatus(paymentId: string): Promise<RecheckOutcome> {
   const adminClient = createSupabaseAdminClient();
+  const isWithinLimit = await withinRateLimits(adminClient, [
+    { name: 'finance_recheck:payment', subject: paymentId },
+  ]);
+  if (!isWithinLimit) throw new AppError('RATE_LIMITED');
   const { data, error } = await adminClient
     .from('payments')
     .select('order_id')

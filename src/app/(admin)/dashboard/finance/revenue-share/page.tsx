@@ -13,7 +13,12 @@ import { formatIDR } from '@/lib/utils/currency';
 import { todayInJakarta } from '@/lib/utils/dates';
 import { partyLabel } from '@/lib/utils/finance-display';
 import { visitDateAfter } from '@/lib/utils/kpi';
-import { saveRevenueRuleAction, settlePayoutAction } from '@/server/actions/finance';
+import {
+  previewPayoutAction,
+  saveRevenueRuleAction,
+  settlePayoutAction,
+} from '@/server/actions/finance';
+import { viewFinanceEvidenceAction } from '@/server/actions/finance-evidence';
 import { verifyStaffTotpAction } from '@/server/actions/staff-totp';
 import { requireDashboardStaff } from '@/server/auth/session';
 import { loadFinanceRecap } from '@/server/services/finance-service';
@@ -56,7 +61,7 @@ async function loadRevenueShare(today: string) {
     loadFinanceRecap({ from: periodStart, to: today }),
   ]);
   const rwOptions = rwUnits.map((unit) => ({ value: String(unit.id), label: unit.name }));
-  return { periodStart, rules, targets, payouts, account, rwOptions, balances: recap.balances };
+  return { rules, targets, payouts, account, rwOptions, balances: recap.balances };
 }
 
 // The page's two writes: a rule's new version, and a payout.
@@ -75,7 +80,7 @@ function pageActions(data: Awaited<ReturnType<typeof loadRevenueShare>>, today: 
       <PayoutDialog
         parties={partyOptions(data.balances)}
         today={today}
-        periodStart={data.periodStart}
+        previewAction={previewPayoutAction}
         settleAction={settlePayoutAction}
         stepUpAction={verifyStaffTotpAction}
       />
@@ -106,7 +111,12 @@ export default async function RevenueSharePage() {
       <div className="flex flex-col gap-6">
         <AccountBanner account={data.account} />
         <RulesTable rules={data.rules} targets={data.targets} today={today} />
-        <PayoutTable payouts={data.payouts} balances={data.balances} action={recordPayout} />
+        <PayoutTable
+          payouts={data.payouts}
+          balances={data.balances}
+          action={recordPayout}
+          viewAction={viewFinanceEvidenceAction}
+        />
       </div>
     </>
   );

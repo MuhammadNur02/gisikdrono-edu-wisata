@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { createHash } from 'node:crypto';
+
 import { QUARANTINE_BUCKET, SIGNED_UPLOAD_WINDOW_SECONDS } from '@/config/uploads';
 import type { DatabaseClient } from '@/db/rpc-result';
 import { AppError } from '@/lib/errors';
@@ -21,7 +23,11 @@ import type { UploadKind, UploadProblem } from '@/types/upload';
 // hands its path here with the documents path the server chose. The file is checked as finalize checks it, an image
 // re-encoded (EXIF stripped) to WebP and a PDF scanned and sanitised, then written to the private documents bucket,
 // where the finance RPCs look for it (internal.require_document), and the quarantine object is retired. The
-// service-role client comes from upload-service.ts, the only module allowed to create it.
+// service-role client is handed in by document-service.ts (storeFinanceEvidence), an allow-listed importer of it.
+//
+// Review of PR #80, M-4: the SHA-256 of the bytes the superadmin uploaded, before any re-encoding, is stored with the
+// documents path in finance_proofs, where internal.require_unseen_proof refuses a copy of a file that already backs a
+// refund, an adjustment or a payout (PROOF_REUSED).
 
 const DOCUMENTS_BUCKET = 'documents';
 const PDF_SIGNATURE = '%PDF-';
@@ -29,14 +35,22 @@ const PDF_TYPE = 'application/pdf';
 const WEBP_TYPE = 'image/webp';
 const MS_PER_SECOND = 1000;
 const ALREADY_EXISTS = '409';
+const PROOFS_TABLE = 'finance_proofs';
 
 export type StoredDocument = { ok: true; path: string } | { ok: false; problem: UploadProblem };
 
 function kindOf(bytes: Buffer): UploadKind {
-  return bytes.subarray(0, PDF_SIGNATURE.length).toString('latin1') === PDF_SIGNATURE ? 'pdf' : 'image';
+  return bytes.subarray(0, PDF_SIGNATURE.length).toString('latin1') === PDF_SIGNATURE
+    ? 'pdf'
+    : 'image';
 }
 
-async function writeDocument(adminClient: DatabaseClient, path: string, body: Uint8Array, contentType: string) {
+async function writeDocument(
+  adminClient: DatabaseClient,
+  path: string,
+  body: Uint8Array,
+  contentType: string,
+) {
   const { error } = await adminClient.storage
     .from(DOCUMENTS_BUCKET)
     .upload(path, Buffer.from(body), { contentType, upsert: false });
@@ -44,7 +58,18 @@ async function writeDocument(adminClient: DatabaseClient, path: string, body: Ui
   if (error) throw error;
 }
 
-type DocumentBody = { body: Uint8Array; extension: string; contentType: string } | { problem: UploadProblem };
+// The digest finance_proofs keeps of a proof: lowercase hex SHA-256 of the file as uploaded.
+export function proofDigest(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+async function recordProofDigest(adminClient: DatabaseClient, path: string, sha256: string) {
+  const { error } = await adminClient.from(PROOFS_TABLE).insert({ path, sha256 });
+  if (error) throw error;
+}
+
+type DocumentBody =
+  { body: Uint8Array; extension: string; contentType: string } | { problem: UploadProblem };
 
 // What the file becomes: a sanitised PDF, or a WebP without its metadata.
 async function documentBody(bytes: Buffer, kind: UploadKind): Promise<DocumentBody> {
@@ -103,12 +128,19 @@ export async function storeFinanceDocument(
   await retireQuarantineObject(adminClient, arrived.path);
   if ('problem' in stored) return { ok: false, problem: stored.problem };
   const path = `${destination}.${stored.extension}`;
+  // The digest first: a file never sits in the bucket without the content check that goes with it.
+  await recordProofDigest(adminClient, path, proofDigest(arrived.bytes));
   await writeDocument(adminClient, path, stored.body, stored.contentType);
   return { ok: true, path };
 }
 
 // A document whose RPC then refused the write is taken out again, so the bucket holds only what the ledger names.
-export async function removeFinanceDocument(adminClient: DatabaseClient, path: string): Promise<void> {
+export async function removeFinanceDocument(
+  adminClient: DatabaseClient,
+  path: string,
+): Promise<void> {
   const { error } = await adminClient.storage.from(DOCUMENTS_BUCKET).remove([path]);
   if (error) throw error;
+  const forgotten = await adminClient.from(PROOFS_TABLE).delete().eq('path', path);
+  if (forgotten.error) throw forgotten.error;
 }

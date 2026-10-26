@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   applyOutcomeOf,
+  hasPayableTotal,
   netSeries,
   numberOrNull,
   partyLabel,
@@ -81,5 +82,21 @@ describe('applyOutcomeOf', () => {
   it('reads an applied row as applied and the rejected answer of an overtaken transfer as overtaken', () => {
     expect(applyOutcomeOf('applied')).toBe('applied');
     expect(applyOutcomeOf('rejected')).toBe('overtaken');
+  });
+});
+
+describe('hasPayableTotal (review of PR #80, M-2)', () => {
+  const preview = {
+    beneficiaryKey: 'rw:5',
+    oldestUnpaid: '2026-10-01',
+    from: '2026-10-01',
+    to: '2026-10-25',
+    entries: 3,
+  };
+  it('lets a payout be recorded only on a figure above nothing', () => {
+    expect(hasPayableTotal({ status: 'ready', preview: { ...preview, total: 70000 } })).toBe(true);
+    expect(hasPayableTotal({ status: 'ready', preview: { ...preview, total: 0 } })).toBe(false);
+    expect(hasPayableTotal({ status: 'ready', preview: { ...preview, total: null } })).toBe(false);
+    expect(hasPayableTotal({ status: 'loading' })).toBe(false);
   });
 });

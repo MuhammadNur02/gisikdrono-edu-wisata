@@ -14,10 +14,12 @@ import { PostForm } from '@/components/forms/post-form';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
+import { rwLabel } from '@/config/rw';
 import { useActionForm } from '@/hooks/use-action-form';
 import { adjustmentsCopy } from '@/lib/copy/finance-adjustments';
 import { staffCopy } from '@/lib/copy/staff';
 import { formatIDR } from '@/lib/utils/currency';
+import { formatDateTimeShort } from '@/lib/utils/dates';
 import { partyLabel } from '@/lib/utils/finance-display';
 import { PROPOSABLE_ADJUSTMENTS, proposeAdjustmentFormSchema } from '@/lib/validations/finance';
 import type { ActionResult } from '@/types/action-result';
@@ -25,15 +27,21 @@ import type { FinanceBooking } from '@/types/finance';
 
 // Task P4.7.04 (docs/Security.md §3.8): an adjustment of one booking, with its evidence and the authenticator code. The
 // options come from the booking's own payments and ledger lines as finance_booking read them; the RPC checks the terms
-// again (REFUND_TOO_LARGE, SHARE_TOO_LARGE).
+// again (REFUND_TOO_LARGE, SHARE_TOO_LARGE). A manual refund may name the held weather link it answers (PR #90's key,
+// details.weather_link_id), picked from the booking's own held links only.
 
 const text = adjustmentsCopy;
 type ProposeInput = z.input<typeof proposeAdjustmentFormSchema>;
 type ProposeValues = z.output<typeof proposeAdjustmentFormSchema>;
 type ProposeForm = UseFormReturn<ProposeInput, unknown, ProposeValues>;
 
-const TYPE_OPTIONS: Option[] = PROPOSABLE_ADJUSTMENTS.map((type) => ({ value: type, label: text.types[type] }));
+const TYPE_OPTIONS: Option[] = PROPOSABLE_ADJUSTMENTS.map((type) => ({
+  value: type,
+  label: text.types[type],
+}));
 const REFUNDABLE = new Set(['settled', 'partially_refunded', 'duplicate']);
+// The picker's "not a weather refund", which the form keeps as null.
+const NO_WEATHER_LINK = 'none';
 
 export interface ProposeFormProps {
   booking: FinanceBooking;
@@ -43,14 +51,24 @@ export interface ProposeFormProps {
 
 function paymentOptions(booking: FinanceBooking): Option[] {
   return booking.payments
-    .filter((payment) => REFUNDABLE.has(payment.status) && payment.grossAmount > payment.refundedAmount)
+    .filter(
+      (payment) => REFUNDABLE.has(payment.status) && payment.grossAmount > payment.refundedAmount,
+    )
     .map((payment) => ({
       value: payment.id,
-      label: text.paymentOption(payment.orderId, formatIDR(payment.grossAmount - payment.refundedAmount)),
+      label: text.paymentOption(
+        payment.orderId,
+        formatIDR(payment.grossAmount - payment.refundedAmount),
+      ),
     }));
 }
 
-function SelectField({ form, name, label, options }: {
+function SelectField({
+  form,
+  name,
+  label,
+  options,
+}: {
   form: ProposeForm;
   name: 'type' | 'paymentId' | 'lineRef' | 'fromKey' | 'toKey';
   label: string;
@@ -81,14 +99,55 @@ function MoveFields({ form, booking }: { form: ProposeForm; booking: FinanceBook
   const lineRefs = [...new Set(booking.ledger.map((line) => line.lineRef))];
   const parties = booking.ledger
     .filter((line) => line.lineRef === lineRef)
-    .map((line) => ({ value: line.beneficiaryKey, label: text.lineOption(line.lineRef, partyLabel(line.beneficiaryKey, null), formatIDR(line.amount)) }));
+    .map((line) => ({
+      value: line.beneficiaryKey,
+      label: text.lineOption(
+        line.lineRef,
+        partyLabel(line.beneficiaryKey, null),
+        formatIDR(line.amount),
+      ),
+    }));
   return (
     <>
-      <SelectField form={form} name="lineRef" label={text.fields.line}
-        options={lineRefs.map((ref) => ({ value: ref, label: ref }))} />
+      <SelectField
+        form={form}
+        name="lineRef"
+        label={text.fields.line}
+        options={lineRefs.map((ref) => ({ value: ref, label: ref }))}
+      />
       <SelectField form={form} name="fromKey" label={text.fields.fromKey} options={parties} />
       <SelectField form={form} name="toKey" label={text.fields.toKey} options={parties} />
     </>
+  );
+}
+
+function WeatherLinkField({ form, booking }: { form: ProposeForm; booking: FinanceBooking }) {
+  const options: Option[] = [
+    { value: NO_WEATHER_LINK, label: text.weatherLinkNone },
+    ...booking.heldWeatherLinks.map((link) => ({
+      value: link.id,
+      label: text.weatherLinkOption(rwLabel(link.rwId), formatDateTimeShort(link.openUntil)),
+    })),
+  ];
+  return (
+    <FormField
+      control={form.control}
+      name="weatherLinkId"
+      label={text.fields.weatherLink}
+      description={text.fields.weatherLinkHint}
+      wrapsOwnControl
+      render={(field) => (
+        <OptionSelect
+          value={field.value ?? NO_WEATHER_LINK}
+          onChange={(value) => {
+            field.onChange(value === NO_WEATHER_LINK ? null : value);
+          }}
+          options={options}
+          placeholder={text.weatherLinkNone}
+          trigger={field}
+        />
+      )}
+    />
   );
 }
 
@@ -129,16 +188,46 @@ function TermsFields({ form }: { form: ProposeForm }) {
   );
 }
 
-export function ProposeForm({ booking, submit: action, onDone }: ProposeFormProps) {
-  const form = useForm<ProposeInput, unknown, ProposeValues>({
+const PROPOSAL_FIELDS = [
+  'type',
+  'paymentId',
+  'amount',
+  'reason',
+  'lineRef',
+  'fromKey',
+  'toKey',
+  'weatherLinkId',
+  'evidenceUpload',
+  'code',
+] as const;
+
+function useProposalForm(bookingId: string) {
+  return useForm<ProposeInput, unknown, ProposeValues>({
     resolver: zodResolver(proposeAdjustmentFormSchema),
     defaultValues: {
-      type: 'manual_refund', bookingId: booking.id, paymentId: null, amount: Number.NaN, reason: '',
-      lineRef: null, fromKey: null, toKey: null, evidenceUpload: '', code: '',
+      type: 'manual_refund',
+      bookingId,
+      paymentId: null,
+      amount: Number.NaN,
+      reason: '',
+      lineRef: null,
+      fromKey: null,
+      toKey: null,
+      weatherLinkId: null,
+      evidenceUpload: '',
+      code: '',
     },
   });
-  const fields = ['type', 'paymentId', 'amount', 'reason', 'lineRef', 'fromKey', 'toKey', 'evidenceUpload', 'code'] as const;
-  const { submit, failure } = useActionForm({ form, action, fields, onSuccess: onDone });
+}
+
+export function ProposeForm({ booking, submit: action, onDone }: ProposeFormProps) {
+  const form = useProposalForm(booking.id);
+  const { submit, failure } = useActionForm({
+    form,
+    action,
+    fields: PROPOSAL_FIELDS,
+    onSuccess: onDone,
+  });
   const type = form.watch('type');
   return (
     <Form {...form}>
@@ -146,7 +235,15 @@ export function ProposeForm({ booking, submit: action, onDone }: ProposeFormProp
         {failure ? <FormAlert tone="danger">{failure}</FormAlert> : null}
         <SelectField form={form} name="type" label={text.fields.type} options={TYPE_OPTIONS} />
         {type === 'manual_refund' ? (
-          <SelectField form={form} name="paymentId" label={text.fields.payment} options={paymentOptions(booking)} />
+          <SelectField
+            form={form}
+            name="paymentId"
+            label={text.fields.payment}
+            options={paymentOptions(booking)}
+          />
+        ) : null}
+        {type === 'manual_refund' && booking.heldWeatherLinks.length > 0 ? (
+          <WeatherLinkField form={form} booking={booking} />
         ) : null}
         {type === 'reclassify_share' ? <MoveFields form={form} booking={booking} /> : null}
         <TermsFields form={form} />

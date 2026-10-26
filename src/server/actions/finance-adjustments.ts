@@ -11,10 +11,17 @@ import {
   bookingLookupSchema,
   proposeAdjustmentSchema,
   rejectAdjustmentSchema,
+  releaseKeyMismatchSchema,
 } from '@/lib/validations/finance';
 import { requireFinanceStepUp } from '@/server/auth/finance-guards';
 import { requireAal2, requireRole } from '@/server/auth/guards';
-import { apply, approve, propose, reject } from '@/server/services/adjustment-service';
+import {
+  apply,
+  approve,
+  propose,
+  reject,
+  releaseKeyMismatch,
+} from '@/server/services/adjustment-service';
 import { findFinanceBooking } from '@/server/services/finance-service';
 import type { ActionResult } from '@/types/action-result';
 import type { AdjustmentReply, AppliedAdjustment, FinanceBooking } from '@/types/finance';
@@ -119,6 +126,24 @@ export async function applyAdjustmentAction(
     const applied = await apply(parsed.data.adjustmentId);
     revalidateAdjustments();
     return ok({ ...applied, outcome: applyOutcomeOf(applied.status) });
+  } catch (error) {
+    return mapError(error);
+  }
+}
+
+// Review of PR #80, L-1: releasing an applied manual refund's L6 block, with a note and the authenticator code.
+export async function releaseKeyMismatchAction(input: unknown): Promise<ActionResult<null>> {
+  const parsed = releaseKeyMismatchSchema.safeParse(input);
+  if (!parsed.success) return mapError(parsed.error);
+  const superadmin = await requireRole('superadmin');
+  if (!superadmin.ok) return superadmin;
+  const guard = await requireFinanceStepUp();
+  if (!guard.ok) return guard;
+
+  try {
+    await releaseKeyMismatch(parsed.data);
+    revalidateAdjustments();
+    return ok(null);
   } catch (error) {
     return mapError(error);
   }

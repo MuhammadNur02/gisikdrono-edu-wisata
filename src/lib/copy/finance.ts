@@ -1,19 +1,13 @@
 import type { EnumValue } from '@/db/enums';
 
 // /dashboard/finance and /dashboard/finance/revenue-share (Task P4.7.01, P4.7.02; docs/PRD.md FR-ADMIN-18..20).
-// Hints the finance RPCs raise are turned into these messages by finance-service.ts and revenue-share-service.ts.
+// Hints the finance RPCs raise are turned into these messages by finance-errors.ts (FINANCE_REFUSAL_HINTS).
 
 type Beneficiary = EnumValue<'revenue_beneficiary'>;
 type RuleScope = EnumValue<'revenue_rule_scope'>;
 
 export const financeCopy = {
   onlySuper: 'Halaman keuangan hanya untuk Superadmin Kelurahan.',
-  nav: {
-    recap: 'Rekap',
-    revenueShare: 'Bagi hasil',
-    adjustments: 'Penyesuaian',
-    reconciliation: 'Rekonsiliasi',
-  },
   period: {
     from: 'Dari tanggal',
     to: 'Sampai tanggal',
@@ -151,16 +145,26 @@ export const financeCopy = {
       amount: 'Jumlah',
       reference: 'Referensi',
       paidAt: 'Dicatat',
+      proof: 'Bukti',
+    },
+    // Review of PR #80, M-2: the figure the database counts for the period, which the transfer must equal.
+    preview: {
+      loading: 'Menghitung bagian periode dari buku besar…',
+      choose: 'Pilih penerima untuk melihat jumlah yang harus ditransfer.',
+      total: (amount: string, entries: number) =>
+        `Jumlah yang harus ditransfer: ${amount} (${String(entries)} entri buku besar). Catat setelah transfer sebesar ini.`,
+      nothing: 'Tidak ada entri yang belum dibayar dalam periode ini.',
+      invalid: 'Pilih periode yang sudah lewat, tanggal awal sebelum tanggal akhir.',
     },
     submit: 'Catat pembayaran',
     saved: (amount: string) =>
       `Pembayaran ${amount} dicatat dan entri buku besarnya ditandai lunas.`,
     errors: {
       PAYOUT_EMPTY: 'Tidak ada entri yang belum dibayar untuk penerima ini dalam periode tersebut.',
-      FUTURE_DAY: 'Pembayaran hanya untuk hari yang sudah lewat; tanggal akhir paling lambat hari ini.',
+      FUTURE_DAY:
+        'Pembayaran hanya untuk hari yang sudah lewat; tanggal akhir paling lambat hari ini.',
       PAYOUT_TOTAL_MISMATCH:
         'Total bagian periode ini menurut buku besar tidak sama dengan jumlah yang Anda transfer. Periksa pratinjau, lalu catat pembayaran sebesar yang benar-benar ditransfer.',
-      PROOF_MISSING: 'Bukti transfer belum tersimpan. Unggah ulang lalu coba lagi.',
       ACCOUNT_MISMATCH:
         'Rekening payout di dasbor Midtrans tidak sama dengan rekening yang diharapkan. Jangan lanjutkan; periksa akun Midtrans bersama Lurah.',
       ACCOUNT_UNSET:

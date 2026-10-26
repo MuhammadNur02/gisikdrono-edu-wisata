@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { svcApplyPaymentEvent, svcRecordPaymentEvent } from '@/db/rpc-payments';
 import { getTransactionStatus } from '@/lib/midtrans/client';
+import { withinRateLimits } from '@/lib/rate-limit';
 import { recheckPaymentStatus } from '@/server/services/payment-service';
 
 // recheckPaymentStatus, the "Cek status Midtrans" of /dashboard/finance/reconciliation (Task P4.7.04, N12).
@@ -52,6 +53,7 @@ const SETTLED = { order_id: ORDER_ID, status_code: '200', transaction_status: 's
 beforeEach(() => {
   vi.clearAllMocks();
   stored.orderId = ORDER_ID;
+  vi.mocked(withinRateLimits).mockResolvedValue(true);
   vi.mocked(svcRecordPaymentEvent).mockResolvedValue({ eventId: 77, isProcessed: false });
   vi.mocked(svcApplyPaymentEvent).mockResolvedValue({
     result: 'applied',
@@ -65,10 +67,15 @@ beforeEach(() => {
 describe('recheckPaymentStatus', () => {
   it('keeps the answer about the order as a status_api event, then applies it', async () => {
     vi.mocked(getTransactionStatus).mockResolvedValue(SETTLED);
-    await expect(recheckPaymentStatus(PAYMENT_ID)).resolves.toEqual({ result: 'applied', status: 'settled' });
+    await expect(recheckPaymentStatus(PAYMENT_ID)).resolves.toEqual({
+      result: 'applied',
+      status: 'settled',
+    });
     expect(svcRecordPaymentEvent).toHaveBeenCalledWith(expect.anything(), {
       source: 'status_api',
-      eventHash: createHash('sha256').update(`status_api\n${JSON.stringify(SETTLED)}`).digest('hex'),
+      eventHash: createHash('sha256')
+        .update(`status_api\n${JSON.stringify(SETTLED)}`)
+        .digest('hex'),
       payload: SETTLED,
     });
     expect(svcApplyPaymentEvent).toHaveBeenCalledWith(expect.anything(), {
@@ -80,8 +87,14 @@ describe('recheckPaymentStatus', () => {
   });
 
   it('applies nothing when Midtrans knows no such order', async () => {
-    vi.mocked(getTransactionStatus).mockResolvedValue({ status_code: '404', status_message: 'not found' });
-    await expect(recheckPaymentStatus(PAYMENT_ID)).resolves.toEqual({ result: 'not_found', status: null });
+    vi.mocked(getTransactionStatus).mockResolvedValue({
+      status_code: '404',
+      status_message: 'not found',
+    });
+    await expect(recheckPaymentStatus(PAYMENT_ID)).resolves.toEqual({
+      result: 'not_found',
+      status: null,
+    });
     expect(svcRecordPaymentEvent).not.toHaveBeenCalled();
     expect(svcApplyPaymentEvent).not.toHaveBeenCalled();
   });
@@ -89,8 +102,20 @@ describe('recheckPaymentStatus', () => {
   it('says nothing changed for an answer it has applied before', async () => {
     vi.mocked(getTransactionStatus).mockResolvedValue(SETTLED);
     vi.mocked(svcRecordPaymentEvent).mockResolvedValue({ eventId: 77, isProcessed: true });
-    await expect(recheckPaymentStatus(PAYMENT_ID)).resolves.toEqual({ result: 'unchanged', status: null });
+    await expect(recheckPaymentStatus(PAYMENT_ID)).resolves.toEqual({
+      result: 'unchanged',
+      status: null,
+    });
     expect(svcApplyPaymentEvent).not.toHaveBeenCalled();
+  });
+
+  it('asks Midtrans about one payment once a minute at most (review of PR #80, L-7)', async () => {
+    vi.mocked(withinRateLimits).mockResolvedValue(false);
+    await expect(recheckPaymentStatus(PAYMENT_ID)).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+    expect(withinRateLimits).toHaveBeenCalledWith(expect.anything(), [
+      { name: 'finance_recheck:payment', subject: PAYMENT_ID },
+    ]);
+    expect(getTransactionStatus).not.toHaveBeenCalled();
   });
 
   it('refuses a payment that does not exist', async () => {

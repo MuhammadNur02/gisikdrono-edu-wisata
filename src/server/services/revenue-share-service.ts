@@ -5,17 +5,27 @@ import { z } from 'zod';
 import { FINANCE_LIST_LIMIT, PAYOUT_ACCOUNT_DIGITS } from '@/config/finance';
 import { EDITABLE_SETTING_KEYS } from '@/config/site-settings';
 import { DB_ENUMS } from '@/db/enums';
-import { saveRevenueRule, settleRevenueEntries } from '@/db/rpc-finance';
+import { payoutPreview, saveRevenueRule, settleRevenueEntries } from '@/db/rpc-finance';
 import { financeCopy } from '@/lib/copy/finance';
 import { AppError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { failureFor } from '@/lib/uploads/outcomes';
 import { createUuidV7 } from '@/lib/utils/uuid-v7';
-import type { SaveRevenueRuleValues, SettlePayoutValues } from '@/lib/validations/finance';
+import type {
+  PayoutPreviewValues,
+  SaveRevenueRuleValues,
+  SettlePayoutValues,
+} from '@/lib/validations/finance';
 import type { StaffContext } from '@/server/auth/guards';
 import { removeFinanceEvidence, storeFinanceEvidence } from '@/server/services/document-service';
 import { asFinanceWrite } from '@/server/services/finance-errors';
-import type { PayoutBatch, RevenueRule, RevenueRuleTargets, SavedRule } from '@/types/finance';
+import type {
+  PayoutBatch,
+  PayoutPreview,
+  RevenueRule,
+  RevenueRuleTargets,
+  SavedRule,
+} from '@/types/finance';
 
 // /dashboard/finance/revenue-share (Task P4.7.02; docs/Security.md REC-05, REC-10, PAY-16): the rule versions, the
 // targets a rule may name, and the payouts. Reads go through the superadmin's session client under RLS; writes through
@@ -52,22 +62,25 @@ export async function listRevenueRules(): Promise<RevenueRule[]> {
     .order('effective_from', { ascending: false })
     .limit(FINANCE_LIST_LIMIT);
   if (error) throw error;
-  return z.array(ruleRowSchema).parse(data).map((row) => ({
-    id: row.id,
-    scope: row.scope,
-    rwId: row.rw_id,
-    packageId: row.package_id,
-    productId: row.product_id,
-    name: row.name,
-    effectiveFrom: row.effective_from,
-    effectiveTo: row.effective_to,
-    lines: row.revenue_share_rule_lines.map((line) => ({
-      beneficiary: line.beneficiary,
-      rwId: line.rw_id,
-      vendorId: line.vendor_id,
-      pct: line.pct,
-    })),
-  }));
+  return z
+    .array(ruleRowSchema)
+    .parse(data)
+    .map((row) => ({
+      id: row.id,
+      scope: row.scope,
+      rwId: row.rw_id,
+      packageId: row.package_id,
+      productId: row.product_id,
+      name: row.name,
+      effectiveFrom: row.effective_from,
+      effectiveTo: row.effective_to,
+      lines: row.revenue_share_rule_lines.map((line) => ({
+        beneficiary: line.beneficiary,
+        rwId: line.rw_id,
+        vendorId: line.vendor_id,
+        pct: line.pct,
+      })),
+    }));
 }
 
 export async function listRuleTargets(): Promise<RevenueRuleTargets> {
@@ -83,7 +96,11 @@ export async function listRuleTargets(): Promise<RevenueRuleTargets> {
   return {
     packages: packages.data,
     products: products.data,
-    vendors: vendors.data.map((vendor) => ({ id: vendor.id, name: vendor.name, rwId: vendor.rw_id })),
+    vendors: vendors.data.map((vendor) => ({
+      id: vendor.id,
+      name: vendor.name,
+      rwId: vendor.rw_id,
+    })),
   };
 }
 
@@ -108,21 +125,26 @@ export async function listPayouts(): Promise<PayoutBatch[]> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('payout_batches')
-    .select('id, beneficiary_key, period_from, period_to, total_amount, reference, paid_at, proof_path, created_at')
+    .select(
+      'id, beneficiary_key, period_from, period_to, total_amount, reference, paid_at, proof_path, created_at',
+    )
     .order('created_at', { ascending: false })
     .limit(FINANCE_LIST_LIMIT);
   if (error) throw error;
-  return z.array(batchRowSchema).parse(data).map((row) => ({
-    id: row.id,
-    beneficiaryKey: row.beneficiary_key,
-    periodFrom: row.period_from,
-    periodTo: row.period_to,
-    totalAmount: row.total_amount,
-    reference: row.reference,
-    paidAt: row.paid_at,
-    hasProof: row.proof_path !== null,
-    createdAt: row.created_at,
-  }));
+  return z
+    .array(batchRowSchema)
+    .parse(data)
+    .map((row) => ({
+      id: row.id,
+      beneficiaryKey: row.beneficiary_key,
+      periodFrom: row.period_from,
+      periodTo: row.period_to,
+      totalAmount: row.total_amount,
+      reference: row.reference,
+      paidAt: row.paid_at,
+      hasProof: row.proof_path !== null,
+      createdAt: row.created_at,
+    }));
 }
 
 // site_settings.finance.expected_payout_account_masked (PAY-16), as the superadmin's session reads it; null when unset.
@@ -147,9 +169,16 @@ function checkPayoutAccount(expected: string | null, typedDigits: string): void 
   }
 }
 
-export async function settlePayout(ctx: StaffContext, values: SettlePayoutValues): Promise<PayoutBatch> {
+export async function settlePayout(
+  ctx: StaffContext,
+  values: SettlePayoutValues,
+): Promise<PayoutBatch> {
   checkPayoutAccount(await readExpectedPayoutAccount(), values.accountDigits);
-  const stored = await storeFinanceEvidence(ctx, values.proofUpload, `payouts/${createUuidV7()}/bukti`);
+  const stored = await storeFinanceEvidence(
+    ctx,
+    values.proofUpload,
+    `payouts/${createUuidV7()}/bukti`,
+  );
   if (!stored.ok) throw new AppError('VALIDATION', failureFor(stored.problem).error.message);
   const supabase = await createSupabaseServerClient();
   try {
@@ -160,10 +189,17 @@ export async function settlePayout(ctx: StaffContext, values: SettlePayoutValues
         to: values.to,
         reference: values.reference,
         proofPath: stored.path,
+        expectedTotal: values.expectedTotal,
       }),
     );
   } catch (error) {
     await removeFinanceEvidence(stored.path);
     throw error;
   }
+}
+
+// Review of PR #80, M-2: what a payout of one party would stamp, the figure the superadmin transfers and then confirms.
+export async function previewPayout(values: PayoutPreviewValues): Promise<PayoutPreview> {
+  const supabase = await createSupabaseServerClient();
+  return asFinanceWrite(() => payoutPreview(supabase, values));
 }

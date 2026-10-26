@@ -6,6 +6,7 @@ import type {
   ApplyOutcome,
   FinanceDay,
   FinancePeriod,
+  PayoutPreviewState,
   RevenueRule,
 } from '@/types/finance';
 
@@ -64,4 +65,9 @@ export function numberOrNull(value: string): number | null {
 // the RPC raises rather than answer one.
 export function applyOutcomeOf(status: AdjustmentReply['status']): ApplyOutcome {
   return status === 'applied' ? 'applied' : 'overtaken';
+}
+
+// Review of PR #80, M-2: a payout is recorded only once the server's figure for the period is in and above nothing.
+export function hasPayableTotal(state: PayoutPreviewState): boolean {
+  return state.status === 'ready' && (state.preview.total ?? 0) > 0;
 }

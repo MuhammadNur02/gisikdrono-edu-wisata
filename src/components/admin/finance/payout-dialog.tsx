@@ -13,14 +13,14 @@ import { financeCopy } from '@/lib/copy/finance';
 import { formatIDR } from '@/lib/utils/currency';
 import { withStepUp } from '@/lib/utils/step-up';
 import type { ActionResult } from '@/types/action-result';
-import type { PayoutBatch } from '@/types/finance';
+import type { PayoutBatch, PayoutPreview } from '@/types/finance';
 
 const text = financeCopy.payouts;
 
 export interface PayoutDialogProps {
   parties: readonly Option[];
   today: string;
-  periodStart: string;
+  previewAction: (values: unknown) => Promise<ActionResult<PayoutPreview>>;
   settleAction: (values: unknown) => Promise<ActionResult<PayoutBatch>>;
   stepUpAction: (values: unknown) => Promise<ActionResult<null>>;
 }

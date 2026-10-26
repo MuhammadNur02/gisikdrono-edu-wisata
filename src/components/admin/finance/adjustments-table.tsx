@@ -43,6 +43,9 @@ function AdjustmentRow({ adjustment, actions }: { adjustment: Adjustment; action
       <TableCell className="text-right tabular-nums">{formatIDR(adjustment.amount)}</TableCell>
       <TableCell>
         <StatusBadge kind="adjustment_status" value={adjustment.status} />
+        {adjustment.hasOpenKeyMismatch ? (
+          <p className="mt-1 max-w-60 text-caption text-danger">{text.release.blocked}</p>
+        ) : null}
         {adjustment.status === 'rejected' && adjustment.rejectedReason ? (
           <p className="mt-1 line-clamp-2 max-w-60 text-caption text-muted-foreground">
             {adjustment.rejectedReason}

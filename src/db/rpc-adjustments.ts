@@ -6,7 +6,8 @@ import { DB_ENUMS } from '@/db/enums';
 import { resultOf, type DatabaseClient } from '@/db/rpc-result';
 import type { AdjustmentDetails, AdjustmentReply } from '@/types/finance';
 
-// The adjustment and refund RPCs of Task P4.7.03 (20261101130200, 20261104190100) on the superadmin's session client.
+// The adjustment and refund RPCs of Task P4.7.03 (20261101130200, 20261104190100, 20261104190200) on the superadmin's
+// session client.
 // Each one checks the fresh TOTP itself and answers with the adjustment row (or the refund's outcome) as jsonb.
 
 const adjustmentReplySchema = z.looseObject({
@@ -40,7 +41,9 @@ export async function proposeAdjustment(
         from_key: proposal.details.fromKey ?? null,
         to_key: proposal.details.toKey ?? null,
       }
-    : {};
+    : proposal.details.weatherLinkId
+      ? { weather_link_id: proposal.details.weatherLinkId }
+      : {};
   const reply = await resultOf(
     client.rpc('propose_adjustment', {
       p_type: proposal.type,
@@ -78,4 +81,17 @@ export async function applyAdjustment(
   id: string,
 ): Promise<AdjustmentReply> {
   return replyOf(await resultOf(client.rpc('apply_adjustment', { p_id: id })));
+}
+
+// Review of PR #80, L-1: the superadmin releases the L6 block of an applied manual refund, with a note.
+export async function releaseRefundKeyMismatch(
+  client: DatabaseClient,
+  release: { adjustmentId: string; note: string },
+): Promise<void> {
+  await resultOf(
+    client.rpc('release_refund_key_mismatch', {
+      p_adjustment_id: release.adjustmentId,
+      p_note: release.note,
+    }),
+  );
 }

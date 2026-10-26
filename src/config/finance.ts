@@ -30,6 +30,8 @@ export const PAYOUT_ACCOUNT_DIGITS = 4;
 // propose_adjustment and reject_adjustment: a reason (or a rejection) of at least 10 characters.
 export const ADJUSTMENT_REASON_MIN_LENGTH = 10;
 export const ADJUSTMENT_REASON_MAX_LENGTH = 500;
+// release_refund_key_mismatch: a note of 10 (ADJUSTMENT_REASON_MIN_LENGTH) to 300 characters.
+export const RELEASE_NOTE_MAX_LENGTH = 300;
 
 // A reconciliation issue is closed with a note of at least 5 characters, which the audit log keeps.
 export const ISSUE_NOTE_MIN_LENGTH = 5;

@@ -139,6 +139,12 @@ export function sessionStartsAt(sessionDate: string, startTime: string): Date {
   );
 }
 
+// The instant a Semarang day starts and the instant the next one does, for a filter by day on a timestamptz column.
+export function jakartaDayBounds(visitDate: string): { start: string; end: string } {
+  const start = sessionStartsAt(visitDate, '00:00');
+  return { start: start.toISOString(), end: addDays(start, 1).toISOString() };
+}
+
 export interface BookingWindowRules {
   now: Date;
   minLeadHours: number;

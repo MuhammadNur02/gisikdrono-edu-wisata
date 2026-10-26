@@ -12,6 +12,7 @@ import {
   PAYOUT_ACCOUNT_DIGITS,
   PAYOUT_REFERENCE_MAX_LENGTH,
   PAYOUT_REFERENCE_MIN_LENGTH,
+  RELEASE_NOTE_MAX_LENGTH,
   RULE_MAX_LINES,
   RULE_NAME_MAX_LENGTH,
   RULE_PCT_DECIMALS,
@@ -21,6 +22,7 @@ import {
 import { DB_ENUMS } from '@/db/enums';
 import { financeCopy } from '@/lib/copy/finance';
 import { BOOKING_CODE_PATTERN } from '@/lib/utils/codes';
+import { todayInJakarta } from '@/lib/utils/dates';
 import { totpCodeField } from '@/lib/validations/auth';
 
 // The finance pages' URL period and their forms (Task P4.7), shared by the dialogs and src/server/actions/finance*.ts.
@@ -111,10 +113,18 @@ function checkRule(rule: z.infer<z.ZodObject<typeof ruleFields>>, context: z.Ref
     context.addIssue({ code: 'custom', path: ['lines'], message: financeCopy.rules.totalMustBe });
   }
   if (rule.scope === 'package' && rule.packageId === null) {
-    context.addIssue({ code: 'custom', path: ['packageId'], message: financeCopy.rules.errors.RULE_TARGET_INVALID });
+    context.addIssue({
+      code: 'custom',
+      path: ['packageId'],
+      message: financeCopy.rules.errors.RULE_TARGET_INVALID,
+    });
   }
   if (rule.scope === 'product' && rule.productId === null) {
-    context.addIssue({ code: 'custom', path: ['productId'], message: financeCopy.rules.errors.RULE_TARGET_INVALID });
+    context.addIssue({
+      code: 'custom',
+      path: ['productId'],
+      message: financeCopy.rules.errors.RULE_TARGET_INVALID,
+    });
   }
 }
 
@@ -127,19 +137,32 @@ export type SaveRevenueRuleValues = z.output<typeof saveRevenueRuleSchema>;
 
 // ===== Payouts =====
 
+const beneficiaryKeyField = z.string().regex(/^(kelurahan|rw:[0-9]{1,2}|vendor:[0-9a-f-]{36})$/);
+
 const payoutFields = {
-  beneficiaryKey: z.string().regex(/^(kelurahan|rw:[0-9]{1,2}|vendor:[0-9a-f-]{36})$/),
+  beneficiaryKey: beneficiaryKeyField,
   from: isoDate,
   to: isoDate,
+  // Review of PR #80, M-2: the total the preview showed and the superadmin transferred; settle_revenue_entries refuses
+  // any other (PAYOUT_TOTAL_MISMATCH).
+  expectedTotal: rupiah,
   reference: z.string().trim().min(PAYOUT_REFERENCE_MIN_LENGTH).max(PAYOUT_REFERENCE_MAX_LENGTH),
   accountDigits: z.string().regex(new RegExp(`^[0-9]{${String(PAYOUT_ACCOUNT_DIGITS)}}$`)),
   // The uploads-quarantine path api/uploads/sign issued for the proof.
   proofUpload: z.string().min(1).max(UPLOAD_PATH_MAX_LENGTH),
 };
 
+// A payout covers days that have passed: it ends today in Semarang at the latest (M-2).
 function checkPayoutPeriod(payout: { from: string; to: string }, context: z.RefinementCtx) {
   if (payout.to < payout.from) {
     context.addIssue({ code: 'custom', path: ['to'], message: financeCopy.period.invalid });
+  }
+  if (payout.to > todayInJakarta()) {
+    context.addIssue({
+      code: 'custom',
+      path: ['to'],
+      message: financeCopy.payouts.errors.FUTURE_DAY,
+    });
   }
 }
 
@@ -150,15 +173,27 @@ export const settlePayoutFormSchema = z
   .superRefine(checkPayoutPeriod);
 export type SettlePayoutValues = z.output<typeof settlePayoutSchema>;
 
+// What a payout of one party would stamp; from is left out for the party's oldest unpaid day.
+export const payoutPreviewSchema = z
+  .object({ beneficiaryKey: beneficiaryKeyField, from: isoDate.nullable(), to: isoDate.nullable() })
+  .strict();
+export type PayoutPreviewValues = z.output<typeof payoutPreviewSchema>;
+
 // ===== Adjustments =====
 
 export const PROPOSABLE_ADJUSTMENTS = ['manual_refund', 'reclassify_share', 'write_off'] as const;
 
 export const bookingLookupSchema = z
-  .object({ bookingCode: z.string().trim().toUpperCase().pipe(z.string().regex(BOOKING_CODE_PATTERN)) })
+  .object({
+    bookingCode: z.string().trim().toUpperCase().pipe(z.string().regex(BOOKING_CODE_PATTERN)),
+  })
   .strict();
 
-const reasonField = z.string().trim().min(ADJUSTMENT_REASON_MIN_LENGTH).max(ADJUSTMENT_REASON_MAX_LENGTH);
+const reasonField = z
+  .string()
+  .trim()
+  .min(ADJUSTMENT_REASON_MIN_LENGTH)
+  .max(ADJUSTMENT_REASON_MAX_LENGTH);
 
 const proposalFields = {
   type: z.enum(PROPOSABLE_ADJUSTMENTS),
@@ -169,16 +204,42 @@ const proposalFields = {
   lineRef: z.string().max(LEDGER_KEY_MAX_LENGTH).nullable(),
   fromKey: z.string().max(LEDGER_KEY_MAX_LENGTH).nullable(),
   toKey: z.string().max(LEDGER_KEY_MAX_LENGTH).nullable(),
+  // PR #90's key: a manual refund may name the held weather link it answers ("Refund cuaca untuk").
+  weatherLinkId: z.uuid().nullable(),
   evidenceUpload: z.string().min(1).max(UPLOAD_PATH_MAX_LENGTH),
 };
 
-function checkProposal(proposal: z.infer<z.ZodObject<typeof proposalFields>>, context: z.RefinementCtx) {
+function checkProposal(
+  proposal: z.infer<z.ZodObject<typeof proposalFields>>,
+  context: z.RefinementCtx,
+) {
   if (proposal.type === 'manual_refund' && proposal.paymentId === null) {
-    context.addIssue({ code: 'custom', path: ['paymentId'], message: 'Pilih pembayaran yang dikembalikan.' });
+    context.addIssue({
+      code: 'custom',
+      path: ['paymentId'],
+      message: 'Pilih pembayaran yang dikembalikan.',
+    });
+  }
+  if (proposal.type !== 'manual_refund' && proposal.weatherLinkId !== null) {
+    context.addIssue({
+      code: 'custom',
+      path: ['weatherLinkId'],
+      message: 'Refund cuaca hanya untuk refund manual.',
+    });
   }
   const isMove = proposal.type === 'reclassify_share';
-  if (isMove && (!proposal.lineRef || !proposal.fromKey || !proposal.toKey || proposal.fromKey === proposal.toKey)) {
-    context.addIssue({ code: 'custom', path: ['toKey'], message: 'Pilih baris dan dua pihak yang berbeda.' });
+  if (
+    isMove &&
+    (!proposal.lineRef ||
+      !proposal.fromKey ||
+      !proposal.toKey ||
+      proposal.fromKey === proposal.toKey)
+  ) {
+    context.addIssue({
+      code: 'custom',
+      path: ['toKey'],
+      message: 'Pilih baris dan dua pihak yang berbeda.',
+    });
   }
 }
 
@@ -194,6 +255,20 @@ const rejectionFields = { adjustmentId: z.uuid(), reason: reasonField };
 export const rejectAdjustmentSchema = z.object(rejectionFields).strict();
 export const rejectAdjustmentFormSchema = z.object({ ...rejectionFields, ...stepUpField }).strict();
 
+// Review of PR #80, L-1: the superadmin releases an L6 block with a note of 10 to 300 characters.
+const releaseFields = {
+  adjustmentId: z.uuid(),
+  note: z.string().trim().min(ADJUSTMENT_REASON_MIN_LENGTH).max(RELEASE_NOTE_MAX_LENGTH),
+};
+export const releaseKeyMismatchSchema = z.object(releaseFields).strict();
+export const releaseKeyMismatchFormSchema = z.object({ ...releaseFields, ...stepUpField }).strict();
+export type ReleaseKeyMismatchValues = z.output<typeof releaseKeyMismatchSchema>;
+
+// Review of PR #80, M-3: "Lihat bukti" of an adjustment or a payout.
+export const evidenceLinkSchema = z
+  .object({ kind: z.enum(['adjustment', 'payout']), id: z.uuid() })
+  .strict();
+
 // ===== Reconciliation =====
 
 export const resolveIssueSchema = z
@@ -207,3 +282,30 @@ export type ResolveIssueValues = z.output<typeof resolveIssueSchema>;
 export const resolveIssueFormSchema = resolveIssueSchema.extend(stepUpField);
 
 export const recheckPaymentSchema = z.object({ paymentId: z.uuid() }).strict();
+
+// ===== List filters (review of PR #80, L-5) =====
+
+// The adjustments list by status and the Jakarta days of their proposal, the issues list by the days they were found;
+// a value the URL got wrong is left out rather than refused.
+export interface DayFilter {
+  from: string | null;
+  to: string | null;
+}
+
+export interface AdjustmentFilter extends DayFilter {
+  status: (typeof DB_ENUMS.adjustment_status)[number] | null;
+}
+
+function dayOf(params: SearchParams, key: string): string | null {
+  const parsed = isoDate.safeParse(firstOf(params, key));
+  return parsed.success ? parsed.data : null;
+}
+
+export function parseDayFilter(params: SearchParams): DayFilter {
+  return { from: dayOf(params, 'from'), to: dayOf(params, 'to') };
+}
+
+export function parseAdjustmentFilter(params: SearchParams): AdjustmentFilter {
+  const status = z.enum(DB_ENUMS.adjustment_status).safeParse(firstOf(params, 'status'));
+  return { ...parseDayFilter(params), status: status.success ? status.data : null };
+}

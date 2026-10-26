@@ -3,6 +3,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { svcIncrementBookletDownload } from '@/db/rpc';
+import { revealFinanceEvidence } from '@/db/rpc-finance';
 import type { Database } from '@/db/types';
 import { AppError } from '@/lib/errors';
 import { publicEnv } from '@/lib/public-env';
@@ -10,6 +11,7 @@ import { getPublicSiteSettings } from '@/lib/queries/settings';
 import { withinRateLimits } from '@/lib/rate-limit';
 // See withinBookletDownloadLimit for why this module creates a service-role client.
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 import type { StaffContext } from '@/server/auth/guards';
 import {
@@ -31,6 +33,7 @@ import {
   storeFinanceDocument,
   type StoredDocument,
 } from '@/server/services/finance-documents';
+import { asFinanceWrite } from '@/server/services/finance-errors';
 import {
   keptTicketPdfPath,
   loadTicketDocument,
@@ -39,6 +42,7 @@ import {
 } from '@/server/services/ticket-documents';
 import { withinUploadLimit } from '@/server/services/upload-events';
 import type { VerifiedDocument } from '@/types/documents';
+import type { EvidenceKind, EvidenceLink } from '@/types/finance';
 
 type DatabaseClient = SupabaseClient<Database>;
 
@@ -54,14 +58,17 @@ export const SIGNED_URL_TTL_SECONDS = {
   receipt: 900,
   credit_note: 900,
   export: 300,
+  // Review of PR #80, M-3 (owner decision): the superadmin's look at a finance proof, as short as an export.
+  adjustment_evidence: 300,
+  payout_proof: 300,
   whatsapp_document_header: 3600,
 } as const;
 
 export type SignedDocumentKind = keyof typeof SIGNED_URL_TTL_SECONDS;
 
 // The folders of the documents bucket each kind may be signed from (CLAUDE.md §6.6): booking papers under
-// bookings/<id>/, certificates under certificates/<booking_id>/, exports under exports/<profile_id>/. Payout
-// files are never handed out by URL.
+// bookings/<id>/, certificates under certificates/<booking_id>/, exports under exports/<profile_id>/, and a payout's
+// proof under payouts/<batch>/ to the superadmin alone (signFinanceEvidence).
 const DOCUMENT_FOLDERS_BY_KIND: Record<SignedDocumentKind, readonly string[]> = {
   ticket: ['bookings'],
   certificate: ['certificates'],
@@ -70,6 +77,8 @@ const DOCUMENT_FOLDERS_BY_KIND: Record<SignedDocumentKind, readonly string[]> = 
   receipt: ['bookings'],
   credit_note: ['bookings'],
   export: ['exports'],
+  adjustment_evidence: ['bookings'],
+  payout_proof: ['payouts'],
   whatsapp_document_header: ['bookings', 'certificates'],
 };
 // A segment starts with a letter or digit, so neither "." nor ".." can climb out of its folder.
@@ -297,4 +306,20 @@ export async function storeFinanceEvidence(
 
 export async function removeFinanceEvidence(path: string): Promise<void> {
   await removeFinanceDocument(createSupabaseAdminClient(), path);
+}
+
+const EVIDENCE_DOCUMENT_KIND = {
+  adjustment: 'adjustment_evidence',
+  payout: 'payout_proof',
+} as const satisfies Record<EvidenceKind, SignedDocumentKind>;
+
+// Review of PR #80, M-3: "Lihat bukti". rpc_reveal_finance_evidence checks the superadmin's AAL2 on their own session,
+// names the file and writes the view's pii_revealed event; only then is a 300 s link signed, which goes straight back
+// to the page and is never stored.
+export async function signFinanceEvidence(kind: EvidenceKind, id: string): Promise<EvidenceLink> {
+  const supabase = await createSupabaseServerClient();
+  const path = await asFinanceWrite(() => revealFinanceEvidence(supabase, kind, id));
+  const documentKind = EVIDENCE_DOCUMENT_KIND[kind];
+  const url = await createDocumentSignedUrl(createSupabaseAdminClient(), path, documentKind);
+  return { url, expiresInSeconds: SIGNED_URL_TTL_SECONDS[documentKind] };
 }

@@ -1,7 +1,15 @@
 import type { ReactNode } from 'react';
 
+import { EvidenceLink, type EvidenceLinkProps } from '@/components/admin/finance/evidence-link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { financeCopy } from '@/lib/copy/finance';
 import { formatIDR } from '@/lib/utils/currency';
 import { formatDateShort, formatDateTimeShort } from '@/lib/utils/dates';
@@ -15,9 +23,11 @@ export interface PayoutTableProps {
   balances: readonly PartyBalance[];
   // "Catat pembayaran", beside the title.
   action: ReactNode;
+  // "Lihat bukti" of a payout's proof (review of PR #80, M-3).
+  viewAction: EvidenceLinkProps['viewAction'];
 }
 
-function PayoutRows({ payouts, balances }: Omit<PayoutTableProps, 'action'>) {
+function PayoutRows({ payouts, balances, viewAction }: Omit<PayoutTableProps, 'action'>) {
   const names = new Map(balances.map((balance) => [balance.beneficiaryKey, balance.name || null]));
   return (
     <TableBody>
@@ -34,6 +44,13 @@ function PayoutRows({ payouts, balances }: Omit<PayoutTableProps, 'action'>) {
           <TableCell className="whitespace-nowrap tabular-nums">
             {payout.paidAt ? formatDateTimeShort(payout.paidAt) : '–'}
           </TableCell>
+          <TableCell>
+            {payout.hasProof ? (
+              <EvidenceLink kind="payout" id={payout.id} viewAction={viewAction} />
+            ) : (
+              '–'
+            )}
+          </TableCell>
         </TableRow>
       ))}
     </TableBody>
@@ -41,7 +58,7 @@ function PayoutRows({ payouts, balances }: Omit<PayoutTableProps, 'action'>) {
 }
 
 // Task P4.7.02: the payouts recorded through settle_revenue_entries, newest first, each with the transfer it names.
-export function PayoutTable({ payouts, balances, action }: PayoutTableProps) {
+export function PayoutTable({ payouts, balances, action, viewAction }: PayoutTableProps) {
   return (
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
@@ -63,9 +80,10 @@ export function PayoutTable({ payouts, balances, action }: PayoutTableProps) {
                 <TableHead className="text-right">{text.columns.amount}</TableHead>
                 <TableHead>{text.columns.reference}</TableHead>
                 <TableHead>{text.columns.paidAt}</TableHead>
+                <TableHead>{text.columns.proof}</TableHead>
               </TableRow>
             </TableHeader>
-            <PayoutRows payouts={payouts} balances={balances} />
+            <PayoutRows payouts={payouts} balances={balances} viewAction={viewAction} />
           </Table>
         )}
       </CardContent>

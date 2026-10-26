@@ -1,7 +1,7 @@
 import type { EnumValue } from '@/db/enums';
 
 // /dashboard/finance/adjustments and /dashboard/finance/reconciliation (Task P4.7.03, P4.7.04; docs/Security.md
-// REC-01, REC-09, REC-16). The hints of the adjustment RPCs become these messages in adjustment-service.ts.
+// REC-01, REC-09, REC-16). The hints of the adjustment RPCs become these messages in finance-errors.ts.
 
 type AdjustmentType = EnumValue<'adjustment_type'>;
 
@@ -19,8 +19,6 @@ export const adjustmentsCopy = {
   propose: 'Usulkan penyesuaian',
   empty: 'Belum ada penyesuaian.',
   emptyHint: 'Usulkan penyesuaian dari kode pemesanannya.',
-  noun: 'penyesuaian',
-  search: 'Cari kode pemesanan',
   columns: {
     proposedAt: 'Diusulkan',
     booking: 'Pemesanan',
@@ -28,7 +26,6 @@ export const adjustmentsCopy = {
     amount: 'Jumlah',
     status: 'Status',
     people: 'Pengusul / penyetuju',
-    applyFrom: 'Berlaku mulai',
     action: 'Tindakan',
   },
   by: (proposer: string, approver: string | null) =>
@@ -49,7 +46,12 @@ export const adjustmentsCopy = {
     fromKey: 'Dari pihak',
     toKey: 'Ke pihak',
     evidence: 'Bukti (PDF atau foto)',
+    weatherLink: 'Refund cuaca untuk',
+    weatherLinkHint:
+      'Isi bila refund ini menyelesaikan tautan cuaca yang ditahan untuk superadmin.',
   },
+  weatherLinkNone: 'Bukan refund cuaca',
+  weatherLinkOption: (rw: string, closedAt: string) => `Cuaca ${rw} · jendela ditutup ${closedAt}`,
   paymentOption: (orderId: string, refundable: string) =>
     `${orderId} · bisa dikembalikan ${refundable}`,
   lineOption: (line: string, key: string, amount: string) => `${line} · ${key} · ${amount}`,
@@ -70,6 +72,32 @@ export const adjustmentsCopy = {
   applyDescription:
     'Penyesuaian dijalankan sekarang: refund dicatat, bagian dipindah, atau selisih dihapus. Tindakan ini tidak bisa dibatalkan.',
   applied: 'Penyesuaian diterapkan.',
+  // Review of PR #80, M-3: a 300 s link to the file, opened in a new tab.
+  evidence: {
+    view: 'Lihat bukti',
+    open: 'Buka bukti',
+    expires: (minutes: number) =>
+      `Tautan berlaku ${String(minutes)} menit dan setiap pembukaan dicatat.`,
+  },
+  // Review of PR #80, L-1: releasing an L6 block.
+  release: {
+    button: 'Lepas blokir refund',
+    title: 'Lepas blokir refund Midtrans',
+    description:
+      'Midtrans mencatat refund penyesuaian ini dengan jumlah lain, sehingga refund berikutnya untuk pembayaran ini diblokir. Lepaskan blokir hanya setelah memeriksa dasbor Midtrans: sesudahnya angka Midtrans yang dipakai, setiap pencatatan dicatat di log audit, dan Lurah diberi tahu.',
+    note: 'Catatan pemeriksaan',
+    noteHint: 'Minimal 10 karakter. Catatan disimpan di log audit.',
+    submit: 'Lepas blokir',
+    done: 'Blokir dilepas. Refund berikutnya memakai angka Midtrans.',
+    blocked: 'Diblokir: Midtrans mencatat jumlah lain',
+  },
+  // Review of PR #80, L-5.
+  filters: {
+    status: 'Status',
+    from: 'Diusulkan dari',
+    to: 'Diusulkan sampai',
+  },
+  more: 'Hanya 50 penyesuaian terbaru yang ditampilkan. Lebih dari 50, saring tanggal atau status untuk melihat yang lebih lama.',
   overtaken:
     'Penyesuaian tidak diterapkan dan kini berstatus ditolak: Midtrans sudah mengembalikan dana permintaan refund ini, jadi transfer bank tidak dicatat lagi. Pengunjung mungkin menerima dana dua kali; ikuti panduan selisih pembayaran untuk meminta kelebihannya kembali.',
   appliesFrom: (date: string) => `Bisa diterapkan mulai ${date}`,
@@ -133,7 +161,6 @@ export const reconciliationCopy = {
   issuesTitle: 'Temuan terbuka',
   issuesEmpty: 'Tidak ada temuan terbuka.',
   issuesEmptyHint: 'Semua temuan pencocokan sudah ditindaklanjuti.',
-  noun: 'temuan',
   issueTypes: {
     paid_without_tickets: 'Lunas tanpa tiket',
     ticket_without_payment: 'Tiket tanpa pembayaran',
@@ -163,6 +190,11 @@ export const reconciliationCopy = {
   noteHint: 'Minimal 5 karakter.',
   resolved: 'Temuan ditutup.',
   recheck: 'Cek status Midtrans',
+  recheckTitle: 'Cek status Midtrans',
+  recheckDescription:
+    'Status terbaru order ini diminta dari Midtrans lalu diterapkan. Paling banyak sekali per menit untuk tiap pembayaran.',
+  filters: { from: 'Ditemukan dari', to: 'Ditemukan sampai' },
+  more: 'Hanya 50 temuan terbuka terbaru yang ditampilkan. Lebih dari 50, saring tanggal untuk melihat yang lebih lama.',
   rechecked: {
     applied: 'Status terbaru dari Midtrans sudah diterapkan.',
     unchanged: 'Midtrans memberi status yang sama; tidak ada yang berubah.',

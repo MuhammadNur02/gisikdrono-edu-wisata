@@ -1127,6 +1127,24 @@ export type Database = {
           },
         ]
       }
+      finance_proofs: {
+        Row: {
+          path: string
+          sha256: string
+          stored_at: string
+        }
+        Insert: {
+          path: string
+          sha256: string
+          stored_at?: string
+        }
+        Update: {
+          path?: string
+          sha256?: string
+          stored_at?: string
+        }
+        Relationships: []
+      }
       galleries: {
         Row: {
           alt_text: string
@@ -4691,6 +4709,10 @@ export type Database = {
       }
       owns_any_rw: { Args: { p_rw_ids: number[] }; Returns: boolean }
       owns_rw: { Args: { p_rw_id: number }; Returns: boolean }
+      payout_preview: {
+        Args: { p_beneficiary_key: string; p_from?: string; p_to?: string }
+        Returns: Json
+      }
       propose_adjustment: {
         Args: {
           p_amount: number
@@ -4716,6 +4738,10 @@ export type Database = {
       }
       reject_adjustment: {
         Args: { p_id: string; p_reason: string }
+        Returns: Json
+      }
+      release_refund_key_mismatch: {
+        Args: { p_adjustment_id: string; p_note: string }
         Returns: Json
       }
       reset_staff_mfa: { Args: { p_user_id: string }; Returns: Json }
@@ -4777,6 +4803,10 @@ export type Database = {
       rpc_reveal_booking_contact: {
         Args: { p_booking_id: string; p_reason: string }
         Returns: Json
+      }
+      rpc_reveal_finance_evidence: {
+        Args: { p_id: string; p_kind: string }
+        Returns: string
       }
       save_package: {
         Args: {
@@ -4863,6 +4893,7 @@ export type Database = {
       settle_revenue_entries: {
         Args: {
           p_beneficiary_key: string
+          p_expected_total: number
           p_from: string
           p_proof_path: string
           p_reference: string

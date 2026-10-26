@@ -14,7 +14,8 @@ import type { ChainStatus, RecheckOutcome } from '@/types/finance';
 
 // /dashboard/finance/reconciliation (Task P4.7.04; docs/Security.md REC-01, REC-09): closing an issue with a note,
 // asking Midtrans again about a payment ("Cek status Midtrans", which applies only what the Status API answers about
-// that order), and checking the audit and ledger chains (verify_audit_chain, six times an hour at most).
+// that order), and checking the audit and ledger chains (verify_audit_chain, six times an hour at most). Asking
+// Midtrans again needs the authenticator code and happens once a minute per payment at most (review of PR #80, L-7).
 
 export async function resolveIssueAction(input: unknown): Promise<ActionResult<null>> {
   const parsed = resolveIssueSchema.safeParse(input);
@@ -38,7 +39,7 @@ export async function recheckPaymentAction(input: unknown): Promise<ActionResult
   if (!parsed.success) return mapError(parsed.error);
   const superadmin = await requireRole('superadmin');
   if (!superadmin.ok) return superadmin;
-  const guard = await requireAal2();
+  const guard = await requireFinanceStepUp();
   if (!guard.ok) return guard;
 
   try {

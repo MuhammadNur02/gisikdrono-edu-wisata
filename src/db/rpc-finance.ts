@@ -11,11 +11,12 @@ import type {
   PartyBalance,
   PartyPeriodShare,
   PayoutBatch,
+  PayoutPreview,
   RuleLine,
   SavedRule,
 } from '@/types/finance';
 
-// The finance RPCs of Task P4.7 (20261101130000 to 20261104190100) and the stats RPCs they sit beside
+// The finance RPCs of Task P4.7 (20261101130000 to 20261104190500) and the stats RPCs they sit beside
 // (20261027080200), on the signed-in superadmin's session client: auth.uid(), AAL2, the fresh-TOTP checks and RLS
 // all apply. Every reply is jsonb, parsed here into the camelCase shapes of src/types/finance.ts.
 
@@ -247,6 +248,7 @@ export interface PayoutToSettle {
   to: string;
   reference: string;
   proofPath: string;
+  expectedTotal: number;
 }
 
 export async function settleRevenueEntries(
@@ -260,9 +262,42 @@ export async function settleRevenueEntries(
       p_to: payout.to,
       p_reference: payout.reference,
       p_proof_path: payout.proofPath,
+      p_expected_total: payout.expectedTotal,
     }),
   );
   return payoutBatchOf(batchSchema.parse(reply));
+}
+
+const previewSchema = z.object({
+  beneficiary_key: z.string(),
+  oldest_unpaid: z.string().nullable(),
+  from: z.string(),
+  to: z.string(),
+  total: money.nullable(),
+  entries: count.nullable(),
+});
+
+// Review of PR #80, M-2: what a payout of one party would stamp, as of the server's time now (payout_preview).
+export async function payoutPreview(
+  client: DatabaseClient,
+  query: { beneficiaryKey: string; from: string | null; to: string | null },
+): Promise<PayoutPreview> {
+  const reply = await resultOf(
+    client.rpc('payout_preview', {
+      p_beneficiary_key: query.beneficiaryKey,
+      ...(query.from ? { p_from: query.from } : {}),
+      ...(query.to ? { p_to: query.to } : {}),
+    }),
+  );
+  const parsed = previewSchema.parse(reply);
+  return {
+    beneficiaryKey: parsed.beneficiary_key,
+    oldestUnpaid: parsed.oldest_unpaid,
+    from: parsed.from,
+    to: parsed.to,
+    total: parsed.total,
+    entries: parsed.entries,
+  };
 }
 
 const chainSchema = z.object({
@@ -281,4 +316,16 @@ export async function verifyAuditChain(client: DatabaseClient): Promise<ChainSta
     firstBrokenId: chain.first_broken_id,
   });
   return { audit: stateOf(parsed.audit), ledger: stateOf(parsed.ledger) };
+}
+
+// Review of PR #80, M-3: the documents path of an adjustment's evidence or a payout's proof, the view audited.
+export async function revealFinanceEvidence(
+  client: DatabaseClient,
+  kind: 'adjustment' | 'payout',
+  id: string,
+): Promise<string> {
+  const reply = await resultOf(
+    client.rpc('rpc_reveal_finance_evidence', { p_kind: kind, p_id: id }),
+  );
+  return z.string().min(1).parse(reply);
 }

@@ -137,13 +137,33 @@ export interface Adjustment {
   applyNotBefore: string | null;
   appliedAt: string | null;
   rejectedReason: string | null;
+  hasEvidence: boolean;
+  // An applied manual_refund Midtrans lists under its key with another amount, still blocking (L6, review of PR #80
+  // L-1): the superadmin may release it.
+  hasOpenKeyMismatch: boolean;
 }
 
-// reclassify_share moves an amount of one ledger line from one beneficiary to another.
+// reclassify_share moves an amount of one ledger line from one beneficiary to another; a manual_refund may name the
+// held weather link it answers (PR #90's key).
 export interface AdjustmentDetails {
   lineRef?: string;
   fromKey?: string;
   toKey?: string;
+  weatherLinkId?: string;
+}
+
+// A finance list reads at most FINANCE_LIST_LIMIT rows; hasMore says there are older ones to filter for (L-5).
+export interface FinanceList<T> {
+  items: T[];
+  hasMore: boolean;
+}
+
+// A weather link the sweep holds for the superadmin on a booking (20261104080200, resolve_weather_link): its window
+// closed with no outcome.
+export interface HeldWeatherLink {
+  id: string;
+  rwId: number;
+  openUntil: string;
 }
 
 export interface BookingPayment {
@@ -174,6 +194,7 @@ export interface FinanceBooking {
   payments: BookingPayment[];
   // What each line holds per beneficiary now: settlement, reversal and adjustment rows summed.
   ledger: BookingLedgerLine[];
+  heldWeatherLinks: HeldWeatherLink[];
 }
 
 export interface ReconciliationRun {
@@ -235,4 +256,30 @@ export type ApplyOutcome = 'applied' | 'overtaken';
 
 export interface AppliedAdjustment extends AdjustmentReply {
   outcome: ApplyOutcome;
+}
+
+// Review of PR #80, M-2: what a payout of one party would stamp, read by payout_preview as of the server's time.
+export interface PayoutPreview {
+  beneficiaryKey: string;
+  oldestUnpaid: string | null;
+  from: string;
+  to: string;
+  // Null while the period is not one a payout may cover.
+  total: number | null;
+  entries: number | null;
+}
+
+// What the payout form shows of the preview while it is asked again.
+export type PayoutPreviewState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; preview: PayoutPreview }
+  | { status: 'failed'; message: string };
+
+// Review of PR #80, M-3: what a "Lihat bukti" link opens, valid for EVIDENCE_LINK_SECONDS.
+export type EvidenceKind = 'adjustment' | 'payout';
+
+export interface EvidenceLink {
+  url: string;
+  expiresInSeconds: number;
 }
