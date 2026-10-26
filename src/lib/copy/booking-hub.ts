@@ -185,6 +185,8 @@ export const bookingHubCopy = {
     title: 'Kunjungan terhalang cuaca',
     body: (until: string) =>
       `Kelurahan mengabarkan sesi Anda terhalang cuaca. Sampai ${until}, pindah jadwal atau minta pengembalian dana. Bila tidak ada pilihan sampai saat itu, dana dikembalikan otomatis dikurangi biaya Midtrans.`,
+    bodyNeedsSuperadmin: (until: string) =>
+      `Kelurahan mengabarkan sesi Anda terhalang cuaca. Sampai ${until}, jadwal masih bisa dipindah. Pengembalian dana untuk reservasi ini diurus kelurahan, jadi hubungi kelurahan lewat WhatsApp, ya.`,
     movesLeft: (rwName: string, count: number) =>
       `Jadwal di ${rwName} bisa dipindah ${String(count)} kali lagi.`,
     noMovesLeft: (rwName: string) =>
@@ -200,6 +202,8 @@ export const bookingHubCopy = {
       `Dana yang dikembalikan ${amount}, setelah dikurangi biaya Midtrans ${fee}.`,
     refundUnavailable:
       'Pengembalian dana karena cuaca belum bisa dihitung. Hubungi kelurahan lewat WhatsApp, ya.',
+    refundNeedsSuperadmin:
+      'Pengembalian dana karena cuaca untuk reservasi ini diurus kelurahan. Hubungi kelurahan lewat WhatsApp, ya.',
     refund: 'Minta pengembalian dana',
     refundConfirmTitle: 'Batalkan dan minta pengembalian dana?',
   },

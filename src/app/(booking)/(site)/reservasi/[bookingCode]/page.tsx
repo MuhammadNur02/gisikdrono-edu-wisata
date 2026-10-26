@@ -69,6 +69,7 @@ function ManagePanels({ hub, canManage }: { hub: StatusHubData; canManage: boole
           bookingCode={code}
           weather={hub.weather}
           refund={hub.weatherRefund}
+          refundNeedsSuperadmin={hub.weatherRefundNeedsSuperadmin}
           actions={ACTIONS}
         />
       )}

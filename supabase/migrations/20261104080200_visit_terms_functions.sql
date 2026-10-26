@@ -470,10 +470,15 @@ create function internal.flag_cancellation_for_superadmin(p_booking_id uuid) ret
 as $$
 begin
   perform internal.require_server_caller('flag_cancellation_for_superadmin');
+  -- Once per booking, whether or not an earlier alert was acknowledged (second delta review of PR #69, L-b): every
+  -- visit to the hub asks again, and an acknowledged alert is the superadmin's answer.
   insert into public.security_alerts (rule, severity, fingerprint, title, details)
   select 'cancellation_needs_superadmin', 'medium', 'cancellation_needs_superadmin:' || b.id,
          'Pembatalan perlu diselesaikan superadmin: ' || b.booking_code, jsonb_build_object('booking_id', b.id)
-  from public.bookings b where b.id = p_booking_id
+  from public.bookings b
+  where b.id = p_booking_id
+    and not exists (select 1 from public.security_alerts a
+                    where a.fingerprint = 'cancellation_needs_superadmin:' || b.id)
   on conflict (fingerprint) where acknowledged_at is null do nothing;
 end;
 $$;
@@ -526,7 +531,9 @@ begin
   previous_settings := internal.push_settings('{"app.in_rpc": "1", "app.actor_role": "visitor"}');
   update public.refund_requests
   set status = p_status,
-      submitted_at = case when p_status = 'submitted' then coalesce(submitted_at, now()) else submitted_at end,
+      -- A request Midtrans takes again after a refusal or no answer counts its 24 h from then (second delta review,
+      -- L-e); another look at one already submitted keeps the stamp.
+      submitted_at = case when p_status = 'submitted' and status <> 'submitted' then now() else submitted_at end,
       provider_status_code = case when p_status_code ~ '^[0-9]{3}$' then p_status_code else provider_status_code end,
       failure_reason = case when p_status = 'failed' then left(coalesce(p_reason, 'refused'), 200) end,
       attempts = attempts + 1, last_attempt_at = now()
@@ -644,9 +651,11 @@ begin
 end;
 $$;
 
--- Whether the answer of a request's last look shows its refund not paid out (M-2): no refunds[] entry under its
--- refund_key, and no more refunded in all than Midtrans' own refunds recorded so far. An answer that states only a
--- refund_amount counts as one that shows a refund; a whole refund (transaction_status refund) shows the gross.
+-- Whether the answer of a request's last look shows its refund not paid out (M-2; second delta review, L-d): a
+-- successful answer (status_code 200) about a settled or refunded transaction, no refunds[] entry under its
+-- refund_key, and no more refunded in all than Midtrans' own refunds recorded so far, nor any Midtrans answer that
+-- reported more (midtrans_refunded). An answer that states only a refund_amount counts as one that shows a refund; a
+-- whole refund (transaction_status refund) shows the gross.
 create function internal.look_shows_refund_unpaid(p_request public.refund_requests) returns boolean
   language plpgsql stable
   set search_path = ''
@@ -659,7 +668,9 @@ begin
   select * into payment from public.payments p where p.id = p_request.payment_id;
   select * into answer from public.payment_events e
   where e.id = p_request.last_checked_event_id and e.order_id = payment.order_id and e.source in ('status_api', 'poll');
-  if answer.id is null then
+  if answer.id is null or answer.status_code is distinct from '200'
+     or answer.transaction_status not in ('settlement', 'capture', 'partial_refund', 'refund')
+     or internal.midtrans_refunded(payment) > internal.midtrans_recorded(payment) then
     return false;
   end if;
   if exists (select 1 from jsonb_array_elements(case when jsonb_typeof(answer.payload -> 'refunds') = 'array'
@@ -691,7 +702,7 @@ begin
   select * into request from public.refund_requests r where r.id = p_request_id for update;
   if request.id is null or request.status <> 'submitted' or request.last_checked_at is null
      or request.last_checked_at < now() - interval '5 minutes'
-     or request.last_checked_at < request.submitted_at + interval '24 hours'
+     or request.last_checked_at < coalesce(request.submitted_at, request.requested_at) + interval '24 hours'
      or not internal.look_shows_refund_unpaid(request) then
     return false;
   end if;
@@ -1608,7 +1619,9 @@ begin
     select w.* from public.weather_notice_bookings w
     where w.resolved_at is null and w.open_until <= now()
     order by exists (select 1 from public.security_alerts a
-                     where a.fingerprint = 'weather_refund_fee_unset:' || w.booking_id and a.acknowledged_at is null),
+                     where a.fingerprint in ('weather_refund_fee_unset:' || w.booking_id,
+                                             'cancellation_needs_superadmin:' || w.booking_id)
+                       and a.acknowledged_at is null),
              w.open_until
     limit least(greatest(p_limit, 1), 50)
   loop
@@ -1686,6 +1699,51 @@ begin
 end;
 $$;
 
+-- Second delta review of PR #69, L-a (owner decision): a weather link the sweep holds for the superadmin (an unset
+-- Midtrans fee, a leg the shares cannot fund) stays open until the superadmin closes it here, at AAL2 with a fresh
+-- code and a reason: refunded_manually (the money went back through a manual_refund adjustment and its dual control)
+-- or no_refund. Only a link whose window has closed; once resolved, close_past_bookings may complete or close the
+-- booking. Audited with the reason.
+create function public.resolve_weather_link(p_link_id uuid, p_outcome text, p_reason text) returns jsonb
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  link public.weather_notice_bookings;
+  previous_settings jsonb;
+begin
+  if not (public.is_superadmin() and public.aal2()) then
+    raise exception 'only a superadmin resolves a held weather link' using errcode = '42501';
+  end if;
+  if not public.fresh_totp() then
+    raise exception 'confirm with a fresh authenticator code first' using errcode = '42501', hint = 'FRESH_TOTP';
+  end if;
+  if p_outcome is null or p_outcome not in ('refunded_manually', 'no_refund') then
+    raise exception 'a held weather link ends as refunded_manually or no_refund' using errcode = '22023';
+  end if;
+  if length(btrim(coalesce(p_reason, ''))) not between 10 and 300 then
+    raise exception 'say why in 10 to 300 characters' using errcode = '22023';
+  end if;
+  perform internal.take_audit_turn();
+  select * into link from public.weather_notice_bookings w where w.id = p_link_id for update;
+  if link.id is null then
+    raise exception 'weather link % does not exist', p_link_id using errcode = 'P0002';
+  end if;
+  if link.resolved_at is not null or link.open_until > now() then
+    raise exception 'weather link % is not one the sweep holds', p_link_id
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  previous_settings := internal.push_settings(jsonb_build_object('app.in_rpc', '1')
+    || internal.document_actor(auth.uid()));
+  update public.weather_notice_bookings set resolution = p_outcome, resolved_at = now() where id = link.id
+  returning * into link;
+  perform internal.log_audit('weather_link.resolved', 'weather_notice_bookings', link.id::text,
+    jsonb_build_object('booking_id', link.booking_id, 'outcome', p_outcome, 'reason', left(btrim(p_reason), 300)));
+  perform internal.restore_settings(previous_settings);
+  return jsonb_build_object('result', 'resolved', 'link_id', link.id, 'resolution', link.resolution);
+end;
+$$;
+
 -- "Konfirmasi & Bayar": whether the number the visitor just proved is the booking's own. The number travels in the
 -- RPC body rather than a query string (review of PR #69, L-7); only the answer comes back.
 create function internal.is_booking_phone(p_booking_id uuid, p_phone text) returns boolean
@@ -1759,9 +1817,12 @@ as $$
   limit 1;
 $$;
 
--- Replaces the 20261101130200 version (re-review of PR #69, M-2): a manual_refund whose visit-terms request Midtrans
--- refunded meanwhile is not applied, or the visitor would be paid twice; the adjustment is rejected with a high
--- refund_paid_twice_prevented alert instead of an error, so the alert stays. Everything else is unchanged.
+-- Replaces the 20261101130200 version (re-review of PR #69, M-2; second delta review, L-c): a manual_refund whose
+-- visit-terms request Midtrans refunded meanwhile is not booked a second time. The bank transfer itself happens before
+-- the proposal (A16, FR-ADMIN-26), so the visitor may already hold two refunds: the adjustment is rejected with the
+-- high refund_paid_twice_detected alert instead of an error, so the alert stays, and docs/runbooks/payment-discrepancy.md
+-- asks the visitor for the duplicate back. A refund Midtrans made under this adjustment's own id as refund_key is the
+-- adjustment's own and applies as before. Everything else is unchanged.
 create or replace function public.apply_adjustment(p_id uuid) returns jsonb
   language plpgsql security definer
   set search_path = ''
@@ -1780,7 +1841,8 @@ begin
   end if;
   if adjustment.type = 'manual_refund' then
     overtaken := internal.request_refunded_by_midtrans_since(adjustment);
-    if overtaken.id is not null then
+    if overtaken.id is not null
+       and not internal.midtrans_refunded_under_key(adjustment.payment_id, p_id::text, adjustment.amount) then
       return internal.reject_overtaken_refund(adjustment, overtaken);
     end if;
   end if;
@@ -1813,7 +1875,7 @@ begin
 end;
 $$;
 
--- M-2: the adjustment Midtrans overtook is rejected, with the request it would have paid again named in the alert
+-- M-2, L-c: the adjustment Midtrans overtook is rejected, with the request it may have paid twice named in the alert
 -- and the audit log.
 create function internal.reject_overtaken_refund(p_adjustment public.payment_adjustments,
   p_request public.refund_requests) returns jsonb
@@ -1826,12 +1888,14 @@ declare
 begin
   previous_settings := internal.push_settings('{"app.in_rpc": "1"}');
   update public.payment_adjustments
-  set status = 'rejected', rejected_reason = 'Midtrans sudah mengembalikan dana ' || p_request.refund_key
+  set status = 'rejected',
+      rejected_reason = 'Midtrans sudah mengembalikan dana ' || p_request.refund_key || '; transfer tidak dicatat lagi'
   where id = p_adjustment.id
   returning * into adjustment;
   insert into public.security_alerts (rule, severity, fingerprint, title, details)
-  values ('refund_paid_twice_prevented', 'high', 'refund_paid_twice_prevented:' || adjustment.id,
-          'Transfer manual tidak diterapkan: Midtrans sudah mengembalikan dana ' || p_request.refund_key,
+  values ('refund_paid_twice_detected', 'high', 'refund_paid_twice_detected:' || adjustment.id,
+          'Pengunjung mungkin menerima dua kali pengembalian dana: Midtrans sudah mengembalikan '
+            || p_request.refund_key || ' dan transfer manual sudah dikirim',
           jsonb_build_object('adjustment_id', adjustment.id, 'booking_id', adjustment.booking_id,
                              'refund_key', p_request.refund_key, 'amount', adjustment.amount))
   on conflict (fingerprint) where acknowledged_at is null do nothing;
@@ -1919,10 +1983,10 @@ revoke execute on function internal.cancel_refund_pct(integer),
   internal.settle_lapsed_weather_links(integer)
   from public, anon, authenticated;
 revoke execute on function public.declare_weather_disruption(uuid, text),
-  public.mark_refund_request_failed(uuid, bigint, text)
+  public.mark_refund_request_failed(uuid, bigint, text), public.resolve_weather_link(uuid, text, text)
   from public, anon, service_role;
 grant execute on function public.declare_weather_disruption(uuid, text),
-  public.mark_refund_request_failed(uuid, bigint, text)
+  public.mark_refund_request_failed(uuid, bigint, text), public.resolve_weather_link(uuid, text, text)
   to authenticated;
 
 

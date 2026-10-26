@@ -29,6 +29,9 @@ export interface StatusHubData {
   // After a weather notice: the moves and the weather refund the manage link may choose (FR-BOOK-24, FR-BOOK-25).
   weather: WeatherState | null;
   weatherRefund: RefundQuote | null;
+  // The weather refund is the superadmin's to make (second delta review of PR #69, L-a): the hub says to call the
+  // kelurahan rather than promise an automatic refund.
+  weatherRefundNeedsSuperadmin: boolean;
   // The pay link a manage holder may hand the treasurer (FR-B2B-10): /reservasi/<code>/bayar?t=…, 24 h.
   payLinkToken: string | null;
 }
@@ -98,6 +101,7 @@ export async function statusHubDataOf(
     cancellationNeedsSuperadmin: cancellation.needsSuperadmin,
     weather,
     weatherRefund: weatherRefund.quote,
+    weatherRefundNeedsSuperadmin: weatherRefund.needsSuperadmin,
     payLinkToken: rights.canPassPayLink ? await mintPayLink() : null,
   };
 }

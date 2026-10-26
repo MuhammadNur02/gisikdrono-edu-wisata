@@ -155,9 +155,13 @@ function CancelPanel(props: {
 function WeatherRefund(props: {
   bookingCode: string;
   quote: RefundQuote | null;
+  needsSuperadmin: boolean;
   actions: HubActions;
 }) {
   const { quote } = props;
+  if (props.needsSuperadmin) {
+    return <p className="text-body-sm text-ink-2">{text.weather.refundNeedsSuperadmin}</p>;
+  }
   if (!quote) return <p className="text-body-sm text-ink-2">{text.weather.refundUnavailable}</p>;
   const body = text.weather.refundBody(formatIDR(quote.amount), formatIDR(quote.feeAmount));
   return (
@@ -181,7 +185,14 @@ function WeatherRefund(props: {
   );
 }
 
-function WeatherNotice({ weather }: { weather: WeatherState }) {
+function WeatherNotice({
+  weather,
+  needsSuperadmin,
+}: {
+  weather: WeatherState;
+  needsSuperadmin: boolean;
+}) {
+  const until = instantText(weather.openUntil);
   return (
     <div className="flex gap-3">
       <CloudRain aria-hidden className="mt-0.5 size-5 shrink-0 text-warning-soft-foreground" />
@@ -189,7 +200,9 @@ function WeatherNotice({ weather }: { weather: WeatherState }) {
         <h2 id="hub-weather" className="text-h4 font-bold">
           {text.weather.title}
         </h2>
-        <p className="text-body-sm">{text.weather.body(instantText(weather.openUntil))}</p>
+        <p className="text-body-sm">
+          {needsSuperadmin ? text.weather.bodyNeedsSuperadmin(until) : text.weather.body(until)}
+        </p>
         {weather.reason && <p className="text-body-sm italic">{weather.reason}</p>}
       </div>
     </div>
@@ -230,17 +243,23 @@ export function WeatherPanel(props: {
   bookingCode: string;
   weather: WeatherState;
   refund: RefundQuote | null;
+  refundNeedsSuperadmin: boolean;
   actions: HubActions;
 }) {
   const { weather, bookingCode, actions } = props;
   return (
     <section aria-labelledby="hub-weather" className="space-y-4 rounded-2xl bg-warning-soft p-5">
-      <WeatherNotice weather={weather} />
+      <WeatherNotice weather={weather} needsSuperadmin={props.refundNeedsSuperadmin} />
       <div className="space-y-4 rounded-xl bg-card p-4">
         {weather.legs.map((leg) => (
           <WeatherLegMove key={leg.rwName} bookingCode={bookingCode} leg={leg} actions={actions} />
         ))}
-        <WeatherRefund bookingCode={bookingCode} quote={props.refund} actions={actions} />
+        <WeatherRefund
+          bookingCode={bookingCode}
+          quote={props.refund}
+          needsSuperadmin={props.refundNeedsSuperadmin}
+          actions={actions}
+        />
       </div>
     </section>
   );

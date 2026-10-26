@@ -91,6 +91,7 @@ select is(
         'public.onboarding_state',
         'public.owns_any_rw', 'public.owns_rw',
         'public.propose_adjustment', 'public.record_refund', 'public.reject_adjustment', 'public.reset_staff_mfa',
+        'public.resolve_weather_link',
         'public.revenue_recap', 'public.revoke_certificate', 'public.revoke_ticket', 'public.rpc_create_export',
         'public.rpc_get_addon_notes', 'public.rpc_get_participants', 'public.rpc_log_ui_event', 'public.rpc_reveal_booking_contact',
         'public.save_package', 'public.save_package_legs', 'public.save_package_tiers', 'public.save_revenue_rule',

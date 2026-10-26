@@ -107,7 +107,9 @@ create trigger log_audit after insert or update or delete on public.weather_noti
 -- ended. The rights belong to the booking and the notice, so a move keeps them: the leg may move again, or the
 -- booking take the weather refund, until the window closes. resolution: refunded (the weather refund), cancelled (an
 -- ordinary cancellation), kept (the window closed after a move), auto_refunded (the window closed with no choice, and
--- payments-poll requested the weather refund). Written only by the weather functions.
+-- payments-poll requested the weather refund), and, for a link the sweep held for the superadmin (an unset fee, a leg
+-- the shares cannot fund), refunded_manually or no_refund through resolve_weather_link (second delta review of PR #69,
+-- L-a). Written only by the weather functions.
 create table public.weather_notice_bookings (
   id             uuid primary key default gen_random_uuid(),
   notice_id      uuid not null references public.weather_notices(id) on delete restrict,
@@ -116,7 +118,8 @@ create table public.weather_notice_bookings (
   rw_id          smallint not null references public.rw_units(id),
   open_until     timestamptz not null,
   moves_used     smallint not null default 0 check (moves_used >= 0),
-  resolution     text check (resolution in ('refunded', 'cancelled', 'kept', 'auto_refunded')),
+  resolution     text check (resolution in ('refunded', 'cancelled', 'kept', 'auto_refunded', 'refunded_manually',
+                                             'no_refund')),
   resolved_at    timestamptz,
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now(),
@@ -184,7 +187,8 @@ create table public.refund_requests (
   -- The server's last successful Status API look at the order and the payment_events row it stored, a duplicate
   -- answer included: what a submitted request is failed on (re-review of PR #69, M-2, M-3).
   last_checked_at      timestamptz,
-  last_checked_event_id bigint references public.payment_events(id) on delete restrict,
+  -- The monthly prune removes payment_events after 24 months; the look then goes with it (second delta review, N-1).
+  last_checked_event_id bigint references public.payment_events(id) on delete set null,
   updated_at           timestamptz not null default now(),
   constraint refund_requests_parts_ok check (
     (kind = 'cancellation' and amount = package_refund + addon_refund and fee_amount = 0)
@@ -203,8 +207,7 @@ revoke all on public.refund_requests from anon, authenticated;
 grant select (id, booking_id, payment_id, booking_leg_id, kind, status, method, refund_key, amount, package_refund,
   addon_refund,
   fee_amount, refund_pct, days_before, requested_by, requested_at, submitted_at, recorded_at, provider_status_code,
-  failure_reason, attempts, last_attempt_at, last_checked_at, last_checked_event_id, updated_at)
-  on public.refund_requests to authenticated;
+  failure_reason, attempts, last_attempt_at, updated_at) on public.refund_requests to authenticated;
 create policy refund_requests_super_read on public.refund_requests for select to authenticated
   using ((select public.is_superadmin()));
 create policy refund_requests_aal2 on public.refund_requests as restrictive for all to authenticated
