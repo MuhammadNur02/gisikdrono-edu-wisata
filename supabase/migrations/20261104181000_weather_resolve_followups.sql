@@ -4,12 +4,13 @@
 --   F-1  apply_adjustment: a manual refund Midtrans made under the adjustment's own key while the visit-terms request
 --        was refunded too is applied, with refund_paid_twice_detected, only when Midtrans refunded both; otherwise it
 --        is the request's own refund, rejected as already recorded, audited, with no alert.
---   F-2  a weather refund the superadmin makes by hand, only for a link held because the shares cannot fund it
---        (shares_short; a link held for an unset fee is refunded by the sweep itself once the fee is set, #90 delta,
---        M-A): a manual_refund that names it in details.weather_link_id moves exactly that link's weather refund (the
---        share less the payment's Midtrans fee, A18), is booked as a weather refund request (the fee leaves the
---        ledger; A20: only the stopped leg's share for a visited combo), and closes the booking and the link in the
---        same transaction (#90, H-1, M-1, M-2). The sweep leaves a link alone while an open manual_refund names it.
+--   F-2  a weather refund the superadmin makes by hand, only for a visited combo's leg held because the shares cannot
+--        fund it (shares_short; a link held for an unset fee is refunded by the sweep itself once the fee is set, #90
+--        delta, M-A): a manual_refund proposed with details.weather_link_id (propose_adjustment keeps it, H-A) moves
+--        exactly the leg's share less the payment's Midtrans fee (A18), is booked as the leg's weather refund request
+--        (A20: the stopped RW's treasury first, then the kelurahan, then the vendors; what is still short the
+--        kelurahan bears, A24, M-B), and releases the leg and resolves the link in the same transaction (#90, H-1,
+--        M-1, M-2). The sweep leaves a booking alone while any manual_refund of it is open (M-C).
 --   F-3  a held link carries its own marker (held_at, held_reason) and its own alert, weather_link_held:<link id>,
 --        closed when the link is resolved (#90, L-3).
 --   F-4  an answer without a transaction_status never fails a refund request.
@@ -30,30 +31,39 @@ create trigger guard_status_writes before update on public.weather_notice_bookin
   for each row execute function internal.guard_status_writes('moves_used', 'resolution', 'open_until', 'held_at',
                                                              'held_reason');
 
+-- A24 (owner decision of 2026-10-27, delta review of PR #90, M-B): what the kelurahan bore beyond its own share of a
+-- leg's weather refund the shares could not fund.
+alter table public.refund_requests
+  add column kelurahan_shortfall bigint not null default 0 check (kelurahan_shortfall >= 0);
+
 -- The sweep holds a link once: the marker, and a high alert of its own that asks the superadmin, whatever became of
--- an earlier alert about the booking. Later runs leave both as they are.
+-- an earlier alert about the booking. A later run that finds another reason marks it and asks again (#90 delta, L-2);
+-- otherwise it leaves both as they are. p_held_since dates a hold the backfill below finds.
 create function internal.hold_weather_link(p_link public.weather_notice_bookings, p_booking public.bookings,
-  p_reason text) returns void
+  p_reason text, p_held_since timestamptz default now()) returns void
   language plpgsql
   set search_path = ''
 as $$
 declare
   held uuid;
 begin
-  update public.weather_notice_bookings set held_at = now(), held_reason = p_reason
-  where id = p_link.id and held_at is null
+  update public.weather_notice_bookings
+  set held_at = coalesce(held_at, p_held_since), held_reason = p_reason
+  where id = p_link.id and held_reason is distinct from p_reason
   returning id into held;
   if held is null then
     return;
   end if;
-  insert into public.security_alerts (rule, severity, fingerprint, title, details)
+  perform internal.close_weather_link_alert(p_link.id, null);
+  insert into public.security_alerts (rule, severity, fingerprint, title, details, first_seen_at)
   values ('weather_link_held', 'high', 'weather_link_held:' || p_link.id,
           case p_reason
             when 'fee_unset' then 'Waktu pilih cuaca habis, biaya Midtrans belum diatur: ' || p_booking.booking_code
-                                  || '. Atur biaya Midtrans; refund cuaca berjalan otomatis. Jangan transfer manual.'
-            else 'Waktu pilih cuaca habis, bagi hasil tidak cukup untuk pengembalian dana: ' || p_booking.booking_code
-                 || '. Transfer manual lewat penyesuaian manual_refund yang menyebut tautan ini.' end,
-          jsonb_build_object('booking_id', p_booking.id, 'link_id', p_link.id, 'reason', p_reason))
+                                  || '. Atur biaya Midtrans; pengembalian dana cuaca berjalan otomatis. Jangan transfer manual.'
+            else 'Waktu pilih cuaca habis, bagi hasil tidak cukup untuk pengembalian dana cuaca: ' || p_booking.booking_code
+                 || '. Kirim pengembalian dana lewat penyesuaian pengembalian dana manual yang menyebut tautan cuaca ini.'
+          end,
+          jsonb_build_object('booking_id', p_booking.id, 'link_id', p_link.id, 'reason', p_reason), p_held_since)
   on conflict (fingerprint) where acknowledged_at is null do nothing;
 end;
 $$;
@@ -70,38 +80,57 @@ as $$
   where fingerprint = 'weather_link_held:' || p_link_id and acknowledged_at is null;
 $$;
 
--- L-3 (and the delta review of PR #90, L-c): the links the sweep held before this migration, told by the alerts it
--- raised for them then, are marked once, dated by the first of those alerts, given the alert of their own, and the
--- old alerts closed in favour of it, so the superadmin may resolve them without waiting for a sweep.
-create temporary table weather_holds_before on commit drop as
-select w.id as link_id, w.booking_id, min(a.first_seen_at) as held_since,
-       case when bool_or(a.fingerprint like 'weather_refund_fee_unset:%') then 'fee_unset' else 'shares_short' end
-         as reason
-from public.weather_notice_bookings w
-join public.security_alerts a
-  on a.fingerprint in ('weather_refund_fee_unset:' || w.booking_id, 'cancellation_needs_superadmin:' || w.booking_id)
-where w.resolved_at is null and w.open_until <= now() and w.held_at is null
-group by w.id, w.booking_id;
-select set_config('app.in_rpc', '1', true), set_config('app.actor_role', 'cron', true);
-update public.weather_notice_bookings w set held_at = h.held_since, held_reason = h.reason
-from weather_holds_before h where w.id = h.link_id;
-insert into public.security_alerts (rule, severity, fingerprint, title, details, first_seen_at)
-select 'weather_link_held', 'high', 'weather_link_held:' || h.link_id,
-       case h.reason
-         when 'fee_unset' then 'Waktu pilih cuaca habis, biaya Midtrans belum diatur: ' || b.booking_code
-                               || '. Atur biaya Midtrans; refund cuaca berjalan otomatis. Jangan transfer manual.'
-         else 'Waktu pilih cuaca habis, bagi hasil tidak cukup untuk pengembalian dana: ' || b.booking_code
-              || '. Transfer manual lewat penyesuaian manual_refund yang menyebut tautan ini.' end,
-       jsonb_build_object('booking_id', h.booking_id, 'link_id', h.link_id, 'reason', h.reason), h.held_since
-from weather_holds_before h join public.bookings b on b.id = h.booking_id
-on conflict (fingerprint) where acknowledged_at is null do nothing;
-update public.security_alerts a
-set acknowledged_at = now(), details = a.details || jsonb_build_object('closed', 'replaced_by_weather_link_held')
-from weather_holds_before h
-where a.fingerprint in ('weather_refund_fee_unset:' || h.booking_id, 'cancellation_needs_superadmin:' || h.booking_id)
-  and a.acknowledged_at is null;
-select set_config('app.in_rpc', '', true), set_config('app.actor_role', '', true);
-drop table weather_holds_before;
+-- L-3 (and the delta reviews of PR #90, L-c, L-3): the links the sweep held before this migration, told by the alerts
+-- it raised for them then, are marked once from what holds them now: a visited combo's leg the shares still cannot
+-- fund (shares_short), else a payment whose Midtrans fee is still unset (fee_unset); any other is left for the sweep.
+-- The hold is dated by the first of the old alerts and gets its own alert; the old weather alerts are closed in its
+-- favour (the hub's cancellation_needs_superadmin only where the old sweep raised it for the leg, shares_short).
+create function internal.backfill_weather_holds() returns integer
+  language plpgsql
+  set search_path = ''
+as $$
+declare
+  previous_settings jsonb := internal.push_settings('{"app.in_rpc": "1", "app.actor_role": "cron"}');
+  link public.weather_notice_bookings;
+  booking public.bookings;
+  leg public.booking_legs;
+  payment public.payments;
+  reason text;
+  marked integer := 0;
+begin
+  for link in
+    select w.* from public.weather_notice_bookings w
+    where w.resolved_at is null and w.open_until <= now() and w.held_at is null
+      and exists (select 1 from public.security_alerts a
+                  where a.fingerprint in ('weather_refund_fee_unset:' || w.booking_id,
+                                          'cancellation_needs_superadmin:' || w.booking_id))
+  loop
+    select * into booking from public.bookings b where b.id = link.booking_id;
+    select * into leg from public.booking_legs l where l.id = link.booking_leg_id;
+    payment := internal.settled_payment_of(booking.id);
+    reason := case
+      when booking.status = 'checked_in' and leg.status = 'reserved' and internal.leg_pool_short(booking, leg)
+        then 'shares_short'
+      when payment.id is not null and internal.midtrans_fee_of(payment.method, payment.gross_amount) is null
+        then 'fee_unset'
+    end;
+    continue when reason is null;
+    perform internal.hold_weather_link(link, booking, reason,
+      (select min(a.first_seen_at) from public.security_alerts a
+       where a.fingerprint in ('weather_refund_fee_unset:' || link.booking_id,
+                               'cancellation_needs_superadmin:' || link.booking_id)));
+    update public.security_alerts
+    set acknowledged_at = now(), details = details || jsonb_build_object('closed', 'replaced_by_weather_link_held')
+    where acknowledged_at is null
+      and (fingerprint = 'weather_refund_fee_unset:' || link.booking_id
+           or (reason = 'shares_short' and fingerprint = 'cancellation_needs_superadmin:' || link.booking_id));
+    marked := marked + 1;
+  end loop;
+  perform internal.restore_settings(previous_settings);
+  return marked;
+end;
+$$;
+select internal.backfill_weather_holds();
 
 -- ===== The hub: the weather fee unset is the superadmin's =====
 
@@ -130,9 +159,21 @@ $$;
 
 -- ===== F-3: the sweep =====
 
+-- Whether a manual refund of the booking is open (proposed or approved), named after a weather link or not: the
+-- sweep then pays nothing, or the visitor could be paid twice (delta review of PR #90, M-A, M-C).
+create function internal.has_open_manual_refund(p_booking_id uuid) returns boolean
+  language sql stable
+  set search_path = ''
+as $$
+  select exists (select 1 from public.payment_adjustments a
+                 where a.booking_id = p_booking_id and a.type = 'manual_refund'
+                   and a.status in ('proposed', 'approved'));
+$$;
+
 -- Replaces the 20261104080200 version: a link it cannot settle is held through hold_weather_link (F-3) and goes to
--- the back of the queue by that marker; a link it settles closes its alert, and a link resolved meanwhile is left as
--- it is (#90, L-1, L-3). Everything else is unchanged.
+-- the back of the queue by that marker; a link it settles closes its alert, a link resolved meanwhile is left as it
+-- is, and a booking with an open manual refund is left alone, all checked again under the booking's lock (#90, L-1,
+-- L-3; delta M-C, L-1). Everything else is unchanged.
 create or replace function internal.settle_lapsed_weather_links(p_limit integer) returns jsonb
   language plpgsql security definer
   set search_path = ''
@@ -152,14 +193,16 @@ begin
   for due in
     select w.* from public.weather_notice_bookings w
     where w.resolved_at is null and w.open_until <= now()
-      -- Review of PR #90 (delta, M-A): a refund by hand is under way for this link, so the sweep must not pay again.
-      and not exists (select 1 from public.payment_adjustments a
-                      where a.type = 'manual_refund' and a.status in ('proposed', 'approved')
-                        and a.details ->> 'weather_link_id' = w.id::text)
+      and not internal.has_open_manual_refund(w.booking_id)
     order by w.held_at is not null, w.open_until
     limit least(greatest(p_limit, 1), 50)
   loop
     select * into booking from public.bookings b where b.id = due.booking_id for update;
+    -- L-1: read again under the booking's lock, which a manual refund takes too.
+    select * into due from public.weather_notice_bookings w where w.id = due.id for update;
+    if due.resolved_at is not null or internal.has_open_manual_refund(booking.id) then
+      continue;
+    end if;
     -- A20: a checked_in booking whose stopped leg is still to visit gets that leg's weather refund. A paid booking
     -- never reaches no_show or completed with its window open: close_past_bookings waits for this sweep.
     if booking.status = 'checked_in' and not booking.needs_review and due.moves_used = 0
@@ -264,9 +307,10 @@ $$;
 
 -- ===== F-2: a weather refund made by hand (review of PR #90, H-1, M-1, M-2) =====
 
--- The held link a manual_refund names in details.weather_link_id, held because the shares cannot fund it
--- (shares_short), on the booking's settled payment (the one settled_payment_of gives, so never a duplicate or
--- disputed one). An adjustment that names no link is no weather
+-- The held link a manual_refund names in details.weather_link_id (any case): a visited combo's stopped leg, held
+-- because the shares cannot fund it (shares_short) and still short now (#90 delta, L-2), on the booking's settled
+-- payment (the one settled_payment_of gives, so never a duplicate or disputed one). A link held for an unset fee is
+-- refused with WEATHER_FEE_UNSET_MANUAL: the sweep refunds it once the fee is set. An adjustment that names no link is no weather
 -- refund (null); one that names a link it may not refund is refused, so a weather refund is never booked by mistake
 -- as an ordinary one or the other way round.
 create function internal.named_weather_link(p_booking_id uuid, p_payment_id uuid, p_details jsonb)
@@ -275,50 +319,53 @@ create function internal.named_weather_link(p_booking_id uuid, p_payment_id uuid
   set search_path = ''
 as $$
 declare
+  named text := lower(btrim(coalesce(p_details ->> 'weather_link_id', '')));
   link public.weather_notice_bookings;
+  booking public.bookings;
 begin
-  if coalesce(p_details ->> 'weather_link_id', '') = '' then
+  if named = '' then
     return null;
   end if;
-  if p_details ->> 'weather_link_id' !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+  if named !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
     raise exception 'details.weather_link_id names a weather link by its id' using errcode = '22023';
   end if;
   select w.* into link from public.weather_notice_bookings w
-  where w.id = (p_details ->> 'weather_link_id')::uuid and w.booking_id = p_booking_id
-    and w.resolved_at is null and w.held_at is not null
+  where w.id = named::uuid and w.booking_id = p_booking_id and w.resolved_at is null and w.held_at is not null
     and p_payment_id = (internal.settled_payment_of(p_booking_id)).id;
   if link.id is null then
-    raise exception 'weather link % is not held on the booking''s settled payment', p_details ->> 'weather_link_id'
+    raise exception 'weather link % is not held on the booking''s settled payment', named
       using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
   -- M-A: a link held for an unset fee is refunded by the sweep once the fee is set; a transfer by hand would pay twice.
-  if link.held_reason is distinct from 'shares_short' then
-    raise exception 'Atur biaya Midtrans; refund cuaca berjalan otomatis. Jangan transfer manual.'
+  if link.held_reason = 'fee_unset' then
+    raise exception 'set the Midtrans fee: the sweep refunds weather link % itself; do not transfer by hand', named
+      using errcode = 'P0001', hint = 'WEATHER_FEE_UNSET_MANUAL';
+  end if;
+  select * into booking from public.bookings b where b.id = p_booking_id;
+  if booking.status <> 'checked_in'
+     or not internal.leg_pool_short(booking, (select l from public.booking_legs l where l.id = link.booking_leg_id)) then
+    raise exception 'weather link % is no longer one the shares cannot fund', named
       using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
   return link;
 end;
 $$;
 
--- What a held link's weather refund is (A18, A20): the share, the stopped leg's for a checked_in booking, else the
--- whole payment; the Midtrans fee of that payment, which the visitor bears (WEATHER_FEE_UNSET while it is not set, so
--- the superadmin sets it first); and the refund, the share less that fee, all of it or nothing.
+-- What a held leg's weather refund is (A18, A20): the stopped leg's share; the Midtrans fee of that payment, which the
+-- visitor bears (WEATHER_FEE_UNSET while it is not set); and the refund, the share less that fee, all of it or nothing.
 create function internal.held_weather_terms(p_booking public.bookings, p_link public.weather_notice_bookings,
   p_payment public.payments) returns jsonb
   language plpgsql stable
   set search_path = ''
 as $$
 declare
-  share bigint := case when p_booking.status = 'checked_in'
-                       then internal.leg_share(p_booking, p_link.booking_leg_id)
-                       else p_payment.gross_amount end;
   fee bigint := internal.midtrans_fee_of(p_payment.method, p_payment.gross_amount);
+  share bigint;
 begin
-  -- The delta review of PR #90, L-a: only a booking the sweep itself would refund, paid or checked_in, not under
-  -- review, its link never moved, and for a visited combo its stopped leg still to visit.
-  if p_booking.status not in ('paid', 'checked_in') or p_booking.needs_review or p_link.moves_used <> 0
-     or (p_booking.status = 'checked_in'
-         and not exists (select 1 from public.booking_legs l where l.id = p_link.booking_leg_id and l.status = 'reserved')) then
+  -- The delta review of PR #90, L-a: only a booking the sweep itself would refund the leg of: checked_in, not under
+  -- review, its link never moved, its stopped leg still to visit.
+  if p_booking.status <> 'checked_in' or p_booking.needs_review or p_link.moves_used <> 0
+     or not exists (select 1 from public.booking_legs l where l.id = p_link.booking_leg_id and l.status = 'reserved') then
     raise exception 'booking % has no weather refund for this link', p_booking.id
       using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
@@ -326,6 +373,7 @@ begin
     raise exception 'the Midtrans fee of % payments is not set', p_payment.method
       using errcode = 'P0001', hint = 'WEATHER_FEE_UNSET';
   end if;
+  share := internal.leg_share(p_booking, p_link.booking_leg_id);
   return jsonb_build_object('share', share, 'fee_amount', least(fee, share), 'amount', greatest(share - fee, 0));
 end;
 $$;
@@ -351,11 +399,10 @@ $$;
 -- M-1, M-2: the manual_refund naming a held link, booked and closed in one transaction, as the sweep's weather refund
 -- would have been. Under the booking's lock the link and the payment's open requests are read again (L-1); the
 -- refund is a weather refund request (fee_amount the payment's Midtrans fee, so recap_invariant's
--- weather_refund_fees holds), booked by book_refund_request, which reverses the ledger as a weather refund does: the
--- whole ledger for a paid booking, the stopped leg's lines alone for a visited combo (reverse_leg_share, the visited
--- RW never drawn). A refund Midtrans made under the adjustment's own id is booked under its word (L-2). Then the
--- booking is closed (close_held_weather_booking) and the link resolved as refunded_manually, so no second weather
--- refund can name it.
+-- weather_refund_fees holds), booked by book_refund_request, which reverses the stopped leg's lines as A20 and A24 say
+-- (reverse_leg_share: the visited RW never drawn, the kelurahan bearing what the others cannot). A refund Midtrans
+-- made under the adjustment's own id is booked under its word (L-2). Then the leg is released
+-- (close_held_weather_booking) and the link resolved as refunded_manually, so no second weather refund can name it.
 create function internal.record_weather_manual_refund(p_adjustment public.payment_adjustments,
   p_link public.weather_notice_bookings) returns void
   language plpgsql
@@ -390,7 +437,7 @@ begin
   select count(*) + 1 into next_refund from public.refund_requests r where r.payment_id = payment.id;
   insert into public.refund_requests (booking_id, payment_id, booking_leg_id, kind, method, refund_key, amount,
     fee_amount, requested_by)
-  values (booking.id, payment.id, case when booking.status = 'checked_in' then link.booking_leg_id end, 'weather',
+  values (booking.id, payment.id, link.booking_leg_id, 'weather',
           payment.method, payment.order_id || '-R' || lpad(next_refund::text, 2, '0'), p_adjustment.amount,
           (terms ->> 'fee_amount')::bigint, auth.uid())
   returning * into request;
@@ -562,9 +609,9 @@ $$;
 
 -- ===== F-2, F-5: closing a held link =====
 
--- What the weather refund of a held link does to its booking, as the sweep's weather refund would: a paid booking is
--- cancelled (its tickets revoked, its seats given back, booking_cancelled sent; book_refund_request voided its
--- invoice), a visited combo's stopped leg is released and its ticket revoked.
+-- What the weather refund of a held leg does to its booking, as the sweep's leg refund would: the stopped leg is
+-- released and its ticket revoked; the visited leg and the booking's invoice stand (A20). Only a visited combo's leg
+-- is refunded by hand (named_weather_link), so a paid booking never reaches here.
 create function internal.close_held_weather_booking(p_booking public.bookings, p_link public.weather_notice_bookings,
   p_adjustment_id uuid, p_actor_id uuid) returns void
   language plpgsql
@@ -573,23 +620,7 @@ as $$
 declare
   leg public.booking_legs;
 begin
-  if p_booking.status = 'paid' then
-    update public.bookings set status = 'cancelled', cancelled_at = now(), cancelled_by = p_actor_id,
-      cancel_reason = 'Pengembalian dana cuaca oleh kelurahan'
-    where id = p_booking.id;
-    perform internal.revoke_booking_tickets(p_booking.id, 'weather_refund', p_actor_id);
-    perform internal.release_booking_quota(p_booking.id);
-    insert into public.booking_events (booking_id, from_status, to_status, actor_type, actor_id, reason, payload)
-    values (p_booking.id, 'paid', 'cancelled', 'admin', p_actor_id, 'weather_refund',
-            jsonb_build_object('adjustment_id', p_adjustment_id));
-    perform internal.enqueue_notification(p_booking.id, 'booking_cancelled', 'whatsapp', '{}');
-    perform internal.enqueue_notification(p_booking.id, 'booking_cancelled', 'email', '{}');
-    return;
-  end if;
   select * into leg from public.booking_legs l where l.id = p_link.booking_leg_id for update;
-  if p_booking.status <> 'checked_in' or leg.status <> 'reserved' then
-    return;
-  end if;
   update public.visit_sessions set reserved_pax = greatest(reserved_pax - leg.pax_count, 0)
   where id = leg.visit_session_id;
   update public.booking_legs set status = 'released', quota_released_at = now() where id = leg.id;
@@ -604,7 +635,8 @@ $$;
 
 -- Replaces the 20261104080200 version (F-5; review of PR #90, M-1, M-2, L-1): only a link the sweep held (held_at),
 -- and only as no_refund: a weather refund made by hand closes its link itself, when the manual_refund naming it is
--- applied, and a link that has a weather refund request is refused. The booking is locked before the link, the order
+-- applied, and a link that has a weather refund request, or whose booking has a manual refund open, is refused
+-- (#90 delta, L-4). The booking is locked before the link, the order
 -- every writer keeps. Superadmin at AAL2 with a fresh code and a reason, audited.
 create or replace function public.resolve_weather_link(p_link_id uuid, p_outcome text, p_reason text) returns jsonb
   language plpgsql security definer
@@ -635,7 +667,7 @@ begin
   if link.id is null then
     raise exception 'weather link % does not exist', p_link_id using errcode = 'P0002';
   end if;
-  if link.resolved_at is not null or link.held_at is null
+  if link.resolved_at is not null or link.held_at is null or internal.has_open_manual_refund(link.booking_id)
      or exists (select 1 from public.refund_requests r
                 where r.booking_id = link.booking_id and r.kind = 'weather'
                   and (r.booking_leg_id is null or r.booking_leg_id = link.booking_leg_id)) then
@@ -655,7 +687,202 @@ end;
 $$;
 
 
-revoke execute on function internal.hold_weather_link(public.weather_notice_bookings, public.bookings, text),
+-- ===== H-A: propose_adjustment keeps the weather link a manual refund names =====
+
+-- Replaces the 20261101130200 version (delta review of PR #90, H-A): a manual_refund keeps details.weather_link_id,
+-- lower-cased, and nothing else of p_details; check_adjustment_terms then validates the link (named_weather_link: the
+-- booking's own, unresolved, held, shares_short and still short) before the row is written. Everything else is
+-- unchanged.
+create or replace function public.propose_adjustment(p_type public.adjustment_type, p_booking_id uuid, p_payment_id uuid,
+  p_amount bigint, p_reason text, p_evidence_path text, p_details jsonb default '{}') returns jsonb
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  proposed public.payment_adjustments;
+  previous_settings jsonb;
+  details jsonb := case
+    when p_type = 'reclassify_share'
+      then jsonb_build_object('line_ref', p_details ->> 'line_ref', 'from_key', p_details ->> 'from_key',
+                              'to_key', p_details ->> 'to_key')
+    when p_type = 'manual_refund'
+      then jsonb_strip_nulls(jsonb_build_object('weather_link_id', lower(btrim(p_details ->> 'weather_link_id'))))
+    else '{}' end;
+begin
+  perform internal.require_finance_writer();
+  if p_evidence_path is null
+     or p_evidence_path !~ ('^bookings/' || p_booking_id
+                            || '/adjustment-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+                            || '\.(pdf|jpg|jpeg|png|webp)$') then
+    raise exception 'an adjustment keeps its evidence under documents/bookings/%/', p_booking_id
+      using errcode = '22023';
+  end if;
+  perform internal.require_document(p_evidence_path);
+  -- The audit turn before any row lock, as every writer takes them (review of PR #68, L3).
+  perform internal.take_audit_turn();
+  perform 1 from public.bookings b where b.id = p_booking_id for update;
+  if not found then
+    raise exception 'booking % does not exist', p_booking_id using errcode = 'P0002';
+  end if;
+  -- Under the booking's lock, so two proposals naming one file cannot both pass (L2 c).
+  perform internal.require_unused_proof(p_booking_id, p_evidence_path, null);
+  perform internal.check_adjustment_terms(p_type, p_booking_id, p_payment_id, p_amount, details);
+  if exists (select 1 from public.payment_adjustments a
+             where a.booking_id = p_booking_id and a.type = p_type and a.status in ('proposed', 'approved')) then
+    raise exception 'booking % already has an open % adjustment', p_booking_id, p_type
+      using errcode = 'P0001', hint = 'ADJUSTMENT_OPEN';
+  end if;
+
+  previous_settings := internal.push_settings('{"app.in_rpc": "1"}');
+  insert into public.payment_adjustments (booking_id, payment_id, type, amount, reason, evidence_path, proposed_by,
+    details)
+  values (p_booking_id, p_payment_id, p_type, p_amount, btrim(p_reason), p_evidence_path, auth.uid(), details)
+  returning * into proposed;
+  if internal.is_sole_superadmin(auth.uid()) then
+    perform internal.raise_adjustment_alert('adjustment_proposed_alone',
+                                            'Penyesuaian diusulkan oleh satu-satunya superadmin', proposed);
+  end if;
+  perform internal.restore_settings(previous_settings);
+  return to_jsonb(proposed);
+end;
+$$;
+
+-- ===== M-B: the kelurahan bears what the shares cannot give back (A24) =====
+
+-- Replaces the 20261104080200 version (A20, A24, owner decision of 2026-10-27, delta review of PR #90, M-B): the
+-- reversal of one leg's weather refund is still exactly its share (leg_share), and the visited RW's treasury still
+-- gives back nothing. The leg's package part comes back from the stopped RW's treasury first, then the kelurahan,
+-- then the package's vendor lines pro rata to what each still holds, by largest remainder; what is still short the
+-- kelurahan bears, a reversal beyond its own share of the booking, recorded on the refund request
+-- (kelurahan_shortfall) and raised as the medium weather_shortfall_kelurahan alert. The ledger then always balances
+-- with the refund, so recap_invariant holds. The stopped RW's add-on lines come back whole (D-7). One set of reversal
+-- rows per refund reference.
+create or replace function internal.reverse_leg_share(p_booking_id uuid, p_leg_id uuid, p_reference text) returns jsonb
+  language plpgsql
+  set search_path = ''
+as $$
+declare
+  booking public.bookings;
+  leg public.booking_legs;
+  package_part bigint;
+  still_owed bigint;
+  keeper record;
+  taken bigint;
+  back_ids bigint[] := '{}';
+  back_amounts bigint[] := '{}';
+  vendor_ids bigint[];
+  vendor_held numeric[];
+  vendor_total bigint;
+  vendor_part bigint;
+  shortfall bigint := 0;
+  kelurahan_row bigint;
+  kelurahan_at integer;
+  written bigint;
+begin
+  if exists (select 1 from public.revenue_share_entries e
+             where e.booking_id = p_booking_id and e.entry_type = 'reversal'
+               and e.rule_version ->> 'refund_reference' = p_reference) then
+    return jsonb_build_object('result', 'already_reversed');
+  end if;
+  select * into booking from public.bookings b where b.id = p_booking_id;
+  select * into leg from public.booking_legs l where l.id = p_leg_id and l.booking_id = p_booking_id;
+  if leg.id is null then
+    raise exception 'leg % is not one of booking %', p_leg_id, p_booking_id using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  package_part := internal.leg_package_part(booking, p_leg_id);
+
+  create temporary table leg_held on commit drop as
+  select s.id, s.line_ref, s.beneficiary, s.rw_id, s.booking_addon_id,
+         greatest(s.amount + coalesce((select sum(r.amount) from public.revenue_share_entries r
+                                       where r.booking_id = s.booking_id and r.entry_type in ('reversal', 'adjustment')
+                                         and r.line_ref = s.line_ref and r.beneficiary_key = s.beneficiary_key), 0),
+                  0) as remaining
+  from public.revenue_share_entries s
+  where s.booking_id = p_booking_id and s.entry_type = 'settlement';
+
+  still_owed := package_part;
+  for keeper in
+    select h.id, h.remaining from leg_held h
+    where h.line_ref = 'package'
+      and (h.beneficiary = 'kelurahan' or (h.beneficiary = 'rw_treasury' and h.rw_id = leg.rw_id))
+    order by h.beneficiary = 'kelurahan', h.id
+  loop
+    taken := least(keeper.remaining, still_owed);
+    if taken > 0 then
+      back_ids := back_ids || keeper.id;
+      back_amounts := back_amounts || taken;
+      still_owed := still_owed - taken;
+    end if;
+  end loop;
+  if still_owed > 0 then
+    select array_agg(h.id order by h.id), array_agg(h.remaining::numeric order by h.id),
+           coalesce(sum(h.remaining), 0)
+      into vendor_ids, vendor_held, vendor_total
+    from leg_held h where h.line_ref = 'package' and h.beneficiary = 'umkm_vendor';
+    vendor_part := least(coalesce(vendor_total, 0), still_owed);
+    if vendor_part > 0 then
+      back_ids := back_ids || vendor_ids;
+      back_amounts := back_amounts || internal.largest_remainder_split(vendor_part, vendor_held);
+      still_owed := still_owed - vendor_part;
+    end if;
+  end if;
+  -- A24: what is still short comes out of the kelurahan's own package line, below what it holds of the booking.
+  if still_owed > 0 then
+    kelurahan_row := (select h.id from leg_held h where h.line_ref = 'package' and h.beneficiary = 'kelurahan'
+                      order by h.id limit 1);
+    if kelurahan_row is null then
+      drop table leg_held;
+      raise exception 'booking % has no kelurahan share to bear the % its leg refunds beyond the others', p_booking_id,
+        still_owed using errcode = 'P0001', hint = 'STATE_INVALID';
+    end if;
+    shortfall := still_owed;
+    kelurahan_at := array_position(back_ids, kelurahan_row);
+    if kelurahan_at is null then
+      back_ids := back_ids || kelurahan_row;
+      back_amounts := back_amounts || shortfall;
+    else
+      back_amounts[kelurahan_at] := back_amounts[kelurahan_at] + shortfall;
+    end if;
+  end if;
+
+  insert into public.revenue_share_entries (booking_id, payment_id, entry_type, line_ref, booking_addon_id, rule_id,
+    rule_version, beneficiary, beneficiary_key, rw_id, vendor_id, base_amount, pct, amount)
+  select s.booking_id, s.payment_id, 'reversal', s.line_ref, s.booking_addon_id, s.rule_id,
+         s.rule_version || jsonb_build_object('reason', 'weather_refund_leg', 'refund_reference', p_reference),
+         s.beneficiary, s.beneficiary_key, s.rw_id, s.vendor_id, -back.amount, s.pct, -back.amount
+  from (
+    select part.id, part.amount from unnest(back_ids, back_amounts) as part(id, amount)
+    union all
+    select h.id, h.remaining from leg_held h
+    join public.booking_addons a on a.id = h.booking_addon_id
+    where h.line_ref <> 'package' and a.rw_id = leg.rw_id
+  ) as back
+  join public.revenue_share_entries s on s.id = back.id
+  where back.amount > 0
+  order by s.id;
+  drop table leg_held;
+
+  select coalesce(-sum(e.amount), 0) into written from public.revenue_share_entries e
+  where e.booking_id = p_booking_id and e.entry_type = 'reversal' and e.rule_version ->> 'refund_reference' = p_reference;
+  -- What the ledger gave back is the leg's share the refund was computed from, or the refund is the superadmin's.
+  if written <> internal.leg_share(booking, p_leg_id) then
+    raise exception 'booking % gave back % for its leg, not the % refunded', p_booking_id, written,
+      internal.leg_share(booking, p_leg_id) using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  if shortfall > 0 then
+    update public.refund_requests set kelurahan_shortfall = shortfall where refund_key = p_reference;
+    insert into public.security_alerts (rule, severity, fingerprint, title, details)
+    values ('weather_shortfall_kelurahan', 'medium', 'weather_shortfall_kelurahan:' || p_reference,
+            'Kelurahan menanggung kekurangan bagi hasil pengembalian dana cuaca: ' || booking.booking_code,
+            jsonb_build_object('booking_id', p_booking_id, 'refund_key', p_reference, 'shortfall', shortfall))
+    on conflict (fingerprint) where acknowledged_at is null do nothing;
+  end if;
+  return jsonb_build_object('result', 'reversed', 'amount', -written, 'kelurahan_shortfall', shortfall);
+end;
+$$;
+
+revoke execute on function internal.hold_weather_link(public.weather_notice_bookings, public.bookings, text, timestamptz),
+  internal.backfill_weather_holds(), internal.has_open_manual_refund(uuid),
   internal.close_weather_link_alert(uuid, uuid),
   internal.named_weather_link(uuid, uuid, jsonb),
   internal.held_weather_terms(public.bookings, public.weather_notice_bookings, public.payments),

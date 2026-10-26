@@ -5,7 +5,7 @@
 -- weather refund the fee eats whole, the weather window closing, a full target session, the cap of three weather
 -- moves with the ticket sent again after each, and the same cancellation or move asked twice.
 begin;
-select plan(178);
+select plan(188);
 \ir helpers/rls_personas.psql
 \ir helpers/visit_terms.psql
 select set_config('app.qr_key_id', 'k1', true);
@@ -1043,20 +1043,81 @@ select is((select severity::text from public.security_alerts
            where fingerprint = 'refund_paid_twice_detected:' || (select id from own_key_both)), 'high',
   'the second still raises refund_paid_twice_detected');
 
--- M-A (delta review of PR #90): a paid booking held for its unset Virtual Account fee is refunded by the sweep once the
--- fee is set; a transfer by hand is refused, or the visitor would be paid twice.
+-- ===== The weather refund by hand through the finance RPCs (delta review of PR #90, H-A) =====
+
+-- A second superadmin, old enough and with a factor, approves what the persona superadmin proposes (dual control).
+insert into auth.users (id, email) values ('00000000-0000-4000-8000-00000000f002', 'rls-super-b@example.test');
+insert into public.profiles (id, email, full_name, role, rw_id) values
+  ('00000000-0000-4000-8000-00000000f002', 'rls-super-b@example.test', 'Super B', 'superadmin', null);
+update public.profiles set created_at = now() - interval '40 days' where id = '00000000-0000-4000-8000-00000000f002';
+insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at)
+values (gen_random_uuid(), '00000000-0000-4000-8000-00000000f002', 'uji-b', 'totp', 'verified',
+        now() - interval '39 days', now());
+create function pg_temp.act_as_super_b() returns void
+  language plpgsql
+as $fn$
+declare
+  user_id uuid := '00000000-0000-4000-8000-00000000f002';
+  verified_at bigint := extract(epoch from now())::bigint - 60;
+begin
+  perform set_config('request.jwt.claims', (jsonb_build_object(
+      'iss', 'supabase', 'aud', 'authenticated', 'sub', user_id, 'role', 'authenticated',
+      'email', 'rls-super-b@example.test', 'session_id', gen_random_uuid(), 'is_anonymous', false, 'aal', 'aal2',
+      'amr', jsonb_build_array(jsonb_build_object('method', 'totp', 'timestamp', verified_at),
+                               jsonb_build_object('method', 'password', 'timestamp', verified_at - 60)))
+    || internal.staff_token_claims(user_id))::text, true);
+  perform set_config('role', 'authenticated', true);
+end;
+$fn$;
+-- propose_adjustment as the superadmin persona, naming p_link (in capitals, as a form might send it) when given.
+create function pg_temp.propose_refund(p_booking uuid, p_amount bigint, p_name text, p_link uuid default null)
+  returns uuid
+  language plpgsql
+as $fn$
+declare
+  evidence text := 'bookings/' || p_booking || '/adjustment-' || md5(p_name)::uuid || '.pdf';
+  payment_id uuid := (select p.id from public.payments p
+                      where p.booking_id = p_booking and p.status in ('settled', 'partially_refunded')
+                      order by p.attempt_no desc limit 1);
+  reply jsonb;
+begin
+  insert into storage.objects (bucket_id, name) values ('documents', evidence) on conflict do nothing;
+  perform pg_temp.act_as('superadmin_aal2');
+  reply := public.propose_adjustment('manual_refund', p_booking, payment_id, p_amount, 'Transfer bank uji tindak lanjut',
+    evidence, case when p_link is null then '{}'::jsonb else jsonb_build_object('weather_link_id', upper(p_link::text)) end);
+  reset role;
+  return (reply ->> 'id')::uuid;
+end;
+$fn$;
+-- approve_adjustment by the second superadmin, then apply_adjustment by the persona.
+create function pg_temp.approve_and_apply(p_adjustment uuid) returns text
+  language plpgsql
+as $fn$
+declare
+  reply jsonb;
+begin
+  perform pg_temp.act_as_super_b();
+  perform public.approve_adjustment(p_adjustment);
+  reset role;
+  perform pg_temp.act_as('superadmin_aal2');
+  reply := public.apply_adjustment(p_adjustment);
+  reset role;
+  return reply ->> 'status';
+end;
+$fn$;
+
+-- M-A: a paid booking held for its unset Virtual Account fee is refunded by the sweep once the fee is set; a transfer
+-- by hand is refused when it is proposed, or the visitor would be paid twice.
 create temporary table va_link on commit drop as
 select id from public.weather_notice_bookings where booking_id = (select id from lapsed_va);
-grant select on va_link to authenticated;
 select is((select held_reason from public.weather_notice_bookings where id = (select id from va_link)), 'fee_unset',
   'F-3: the sweep marked the link it held');
-select ok((select title like '%Jangan transfer manual.' from public.security_alerts
-           where fingerprint = 'weather_link_held:' || (select id from va_link)),
+select ok((select title like '%pengembalian dana cuaca berjalan otomatis. Jangan transfer manual.'
+           from public.security_alerts where fingerprint = 'weather_link_held:' || (select id from va_link)),
   'its alert says to set the fee and not to transfer by hand');
-select is(pg_temp.hint_of(format($$select internal.check_adjustment_terms('manual_refund', %L, %L, 146000, %L)$$,
-  (select id from lapsed_va), (select p.id from public.payments p where p.booking_id = (select id from lapsed_va)),
-  jsonb_build_object('weather_link_id', (select id from va_link)))), 'STATE_INVALID',
-  'M-A: a manual_refund naming a link held for its fee is refused');
+select is(pg_temp.hint_of($$select pg_temp.propose_refund((select id from lapsed_va), 146000, 'va-named',
+  (select id from va_link))$$), 'WEATHER_FEE_UNSET_MANUAL',
+  'H-A, M-A: proposing a refund by hand for a link held for its fee is refused, with its own hint');
 update public.site_settings set value = '4000' where key = 'midtrans.fee_va_idr';
 select internal.settle_lapsed_weather_links(50);
 select is((select b.status::text || ':' || w.resolution || ':' || r.kind || ':' || r.status || ':' || r.amount || ':'
@@ -1069,10 +1130,12 @@ select is((select count(*)::int from public.security_alerts
            where fingerprint = 'weather_link_held:' || (select id from va_link) and acknowledged_at is null), 0,
   'L-3: and closes the held link''s alert');
 
--- H-1, M-A: a paid booking and a visited combo held for the unset QRIS fee.
+-- A paid booking and a visited combo held for the unset QRIS fee.
 update public.site_settings set value = 'null' where key = 'midtrans.fee_qris_permille';
 insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
   ('00000000-0000-4000-8000-0000000e3041', 5, public.today_jkt() + 6, '13:00', '15:00', 'Uji tepi biasa', 200),
+  ('00000000-0000-4000-8000-0000000e3042', 5, public.today_jkt() + 7, '13:00', '15:00', 'Uji tepi susulan', 200),
+  ('00000000-0000-4000-8000-0000000e3043', 5, public.today_jkt() + 7, '15:30', '17:00', 'Uji tepi susulan VA', 200),
   ('00000000-0000-4000-8000-0000000e3220', 13, public.today_jkt() + 5, '20:00', '21:00', 'Uji tepi manual 13', 40);
 create temporary table held_plain on commit drop as
 select pg_temp.paid('00000000-0000-4000-8000-0000000e1001', '00000000-0000-4000-8000-0000000e3041', 2,
@@ -1095,40 +1158,59 @@ select internal.settle_lapsed_weather_links(50);
 select is((select count(*)::int from public.security_alerts
            where fingerprint = 'weather_link_held:' || (select id from manual_leg_link) and severity = 'high'), 1,
   'F-3: a hold asks the superadmin once with its own alert, though the hub''s alert was acknowledged');
-select is(pg_temp.hint_of(format($$select internal.check_adjustment_terms('manual_refund', %L, %L, 243443, %L)$$,
-  (select id from manual_leg), (select p.id from public.payments p where p.booking_id = (select id from manual_leg)),
-  jsonb_build_object('weather_link_id', (select id from manual_leg_link)))), 'STATE_INVALID',
-  'M-A: nor is a visited combo''s leg held for its fee refunded by hand');
+select is(pg_temp.hint_of($$select pg_temp.propose_refund((select id from manual_leg), 243443, 'leg-named',
+  (select id from manual_leg_link))$$), 'WEATHER_FEE_UNSET_MANUAL',
+  'nor is a visited combo''s leg held for its fee refunded by hand');
 
--- H-1: an unnamed manual_refund on a held booking's payment is an ordinary refund.
-create temporary table plain_refund on commit drop as
-select pg_temp.approved_refund((select id from held_plain), 1000, 'plain') as id;
-grant select on plain_refund to authenticated;
-select pg_temp.act_as('superadmin_aal2');
-select is(public.apply_adjustment((select id from plain_refund)) ->> 'status', 'applied',
+-- L-3: the backfill marks the holds the sweep made before 20261104181000 from what holds them now.
+create temporary table old_hold on commit drop as
+select pg_temp.paid('00000000-0000-4000-8000-0000000e1001', '00000000-0000-4000-8000-0000000e3042', 2,
+                    '+6281300004035', false) as id;
+select set_config('test.payment_type', 'bank_transfer', true);
+create temporary table old_hold_va on commit drop as
+select pg_temp.paid('00000000-0000-4000-8000-0000000e1001', '00000000-0000-4000-8000-0000000e3043', 2,
+                    '+6281300004036', false) as id;
+select set_config('test.payment_type', '', true);
+select pg_temp.declare('00000000-0000-4000-8000-0000000e3042');
+select pg_temp.declare('00000000-0000-4000-8000-0000000e3043');
+select set_config('app.in_rpc', '1', true);
+update public.weather_notice_bookings set open_until = now() - interval '1 second'
+where booking_id in ((select id from old_hold), (select id from old_hold_va));
+select set_config('app.in_rpc', '', true);
+insert into public.security_alerts (rule, severity, fingerprint, title, first_seen_at)
+select 'weather_refund_fee_unset', 'high', 'weather_refund_fee_unset:' || b.id, 'Uji peringatan lama',
+       now() - interval '2 days'
+from public.bookings b where b.id in ((select id from old_hold), (select id from old_hold_va));
+select internal.backfill_weather_holds();
+select is((select w.held_reason || ':' || (w.held_at = now() - interval '2 days')
+           from public.weather_notice_bookings w where w.booking_id = (select id from old_hold)), 'fee_unset:true',
+  'a link whose fee is still unset is marked fee_unset, from the old alert''s first day');
+select is((select (a.acknowledged_at is not null)::text || ':'
+                  || (select count(*) from public.security_alerts n
+                      where n.fingerprint = 'weather_link_held:' || w.id and n.acknowledged_at is null)
+           from public.security_alerts a join public.weather_notice_bookings w on w.booking_id = (select id from old_hold)
+           where a.fingerprint = 'weather_refund_fee_unset:' || (select id from old_hold)), 'true:1',
+  'with its own alert, the old one closed');
+select is((select coalesce(w.held_reason, 'unmarked') from public.weather_notice_bookings w
+           where w.booking_id = (select id from old_hold_va)), 'unmarked',
+  'a link whose fee is set now is left for the sweep');
+
+-- H-1: a manual_refund that names no link is an ordinary refund.
+select is(pg_temp.approve_and_apply(pg_temp.propose_refund((select id from held_plain), 1000, 'plain')), 'applied',
   'H-1: a manual_refund that names no link is applied as an ordinary refund');
-reset role;
 select is((select count(*)::int || ':' || (select (w.resolved_at is null)::text from public.weather_notice_bookings w
                                            where w.booking_id = (select id from held_plain))
            from public.refund_requests r where r.booking_id = (select id from held_plain)), '0:true',
   'with no weather request, its link still held');
 
--- M-A, second guard: while an open manual_refund names a link, the sweep leaves it alone.
-select set_config('app.in_rpc', '1', true);
-insert into public.payment_adjustments (booking_id, payment_id, type, amount, reason, evidence_path, proposed_by,
-  details)
-select b.id, p.id, 'manual_refund', 1000, 'Transfer bank uji penjaga', 'bookings/' || b.id || '/adjustment-'
-         || md5('guard')::uuid || '.pdf', '00000000-0000-4000-8000-00000000f001',
-       jsonb_build_object('weather_link_id', w.id)
-from public.bookings b join public.payments p on p.booking_id = b.id
-join public.weather_notice_bookings w on w.booking_id = b.id
-where b.id = (select id from held_plain);
-select set_config('app.in_rpc', '', true);
+-- M-C: while any manual_refund of the booking is open, the sweep leaves the booking alone.
+create temporary table open_plain on commit drop as
+select pg_temp.propose_refund((select id from held_plain), 500, 'plain-open') as id;
 update public.site_settings set value = '7' where key = 'midtrans.fee_qris_permille';
 select internal.settle_lapsed_weather_links(50);
 select is((select (resolved_at is null)::text from public.weather_notice_bookings
            where booking_id = (select id from held_plain)), 'true',
-  'the sweep skips a link an open manual_refund names');
+  'M-C: the sweep skips a booking with an open manual_refund, named or not');
 select is((select w.resolution || ':' || r.status || ':' || r.amount || ':' || r.fee_amount || ':'
                   || string_agg(l.rw_id || '=' || l.status, ',' order by l.rw_id)
            from public.weather_notice_bookings w join public.refund_requests r on r.booking_id = w.booking_id
@@ -1137,53 +1219,77 @@ select is((select w.resolution || ':' || r.status || ':' || r.amount || ':' || r
   'auto_refunded:requested:243443:3457:5=checked_in,13=released',
   'and refunds the visited combo''s leg itself once the QRIS fee is set: its share less the Rp 3.457 fee');
 
--- F-2 (review of PR #90, H-1, M-1, M-2; delta M-A): a leg the shares cannot fund is the one refunded by hand. On the
--- 5/80/15 rule of the L-1 combo, RW 13 and the kelurahan hold Rp 12.000 of the leg's Rp 30.000, so the ledger cannot
--- give the share back: the refund is booked all the same (the money went back), the ledger is left as it was and
--- refund_ledger_unbalanced asks the superadmin to settle it in Keuangan.
+-- F-2 (H-A, M-B): a visited combo's leg the shares cannot fund is the one refunded by hand. On the 5/80/15 rule of the
+-- L-1 combo of Rp 60.000 the kelurahan holds Rp 3.000, RW 05 Rp 48.000 and RW 13 Rp 9.000. The leg's share is
+-- Rp 30.000 and the QRIS fee 7 per mille of Rp 60.000, Rp 420, so the transfer is Rp 29.580. The ledger gives back
+-- the share: RW 13's Rp 9.000, the kelurahan's Rp 3.000 and, as A24 says, Rp 18.000 more from the kelurahan, which ends
+-- at minus Rp 18.000; RW 05 keeps its Rp 48.000.
 create temporary table short_link on commit drop as
 select id from public.weather_notice_bookings where booking_id = (select id from short_combo);
-grant select on short_link to authenticated;
 select set_config('app.in_rpc', '1', true);
 update public.weather_notice_bookings set open_until = now() - interval '1 second' where id = (select id from short_link);
 select set_config('app.in_rpc', '', true);
 select internal.settle_lapsed_weather_links(50);
 select is((select held_reason from public.weather_notice_bookings where id = (select id from short_link)),
   'shares_short', 'the sweep holds the leg the shares cannot fund');
--- The leg's share is half of Rp 60.000; the payment's QRIS fee is 7 per mille of it, Rp 420.
-create temporary table short_wrong on commit drop as
-select pg_temp.approved_refund((select id from short_combo), 30000, 'short-wrong',
-                               jsonb_build_object('weather_link_id', (select id from short_link))) as id;
+select is(pg_temp.hint_of($$select internal.held_weather_terms(
+  jsonb_populate_record((select b from public.bookings b where b.id = (select id from short_combo)), '{"needs_review": true}'),
+  (select w from public.weather_notice_bookings w where w.id = (select id from short_link)),
+  (select p from public.payments p where p.booking_id = (select id from short_combo)))$$), 'STATE_INVALID',
+  'L-a: no weather refund by hand for a booking under review');
+select is(pg_temp.hint_of($$select internal.held_weather_terms(
+  (select b from public.bookings b where b.id = (select id from short_combo)),
+  jsonb_populate_record((select w from public.weather_notice_bookings w where w.id = (select id from short_link)),
+                        '{"moves_used": 1}'),
+  (select p from public.payments p where p.booking_id = (select id from short_combo)))$$), 'STATE_INVALID',
+  'nor for a link that moved');
+select is(pg_temp.hint_of($$select internal.held_weather_terms(
+  (select b from public.bookings b where b.id = (select id from short_combo)),
+  jsonb_populate_record((select w from public.weather_notice_bookings w where w.id = (select id from short_link)),
+    jsonb_build_object('booking_leg_id', (select l.id from public.booking_legs l
+                                          where l.booking_id = (select id from short_combo) and l.rw_id = 5))),
+  (select p from public.payments p where p.booking_id = (select id from short_combo)))$$), 'STATE_INVALID',
+  'nor for a leg already visited');
+select is(pg_temp.hint_of($$select pg_temp.propose_refund((select id from short_combo), 30000, 'short-wrong',
+  (select id from short_link))$$), 'REFUND_REQUEST_MISMATCH',
+  'a proposal of any other amount than the share less the Midtrans fee is refused');
 create temporary table short_manual on commit drop as
-select pg_temp.approved_refund((select id from short_combo), 29580, 'short-manual',
-                               jsonb_build_object('weather_link_id', (select id from short_link))) as id;
-create temporary table short_again on commit drop as
-select pg_temp.approved_refund((select id from short_combo), 100, 'short-again',
-                               jsonb_build_object('weather_link_id', (select id from short_link))) as id;
-grant select on short_wrong, short_manual, short_again to authenticated;
+select pg_temp.propose_refund((select id from short_combo), 29580, 'short-manual', (select id from short_link)) as id;
+grant select on short_link, short_manual to authenticated;
+select is((select details ->> 'weather_link_id' from public.payment_adjustments where id = (select id from short_manual)),
+  (select id::text from short_link), 'H-A: propose_adjustment keeps the link it names, lower-cased');
 select pg_temp.act_as('superadmin_aal2');
-select is(pg_temp.hint_of($$select public.apply_adjustment((select id from short_wrong))$$), 'REFUND_REQUEST_MISMATCH',
-  'a transfer of any other amount than the share less the Midtrans fee is refused');
-select is(public.apply_adjustment((select id from short_manual)) ->> 'status', 'applied',
-  'the exact Rp 29.580 is applied');
+select is(pg_temp.hint_of($$select public.resolve_weather_link((select id from short_link), 'no_refund',
+  'Diputuskan superadmin')$$), 'STATE_INVALID', 'L-4: no_refund is refused while a manual refund is open');
 reset role;
-select is((select r.kind || ':' || r.status || ':' || r.amount || ':' || r.fee_amount || ':' || (r.booking_leg_id is not null)
+select is(pg_temp.approve_and_apply((select id from short_manual)), 'applied',
+  'approved by a second superadmin, the exact Rp 29.580 is applied');
+select is((select r.kind || ':' || r.status || ':' || r.amount || ':' || r.fee_amount || ':' || r.kelurahan_shortfall
+                  || ':' || (r.booking_leg_id is not null)
            from public.refund_requests r where r.booking_id = (select id from short_combo)),
-  'weather:recorded:29580:420:true', 'as the leg''s weather refund request, its fee the payment''s Midtrans fee');
-select is(pg_temp.ledger_sum((select id from short_combo)), 60000::bigint,
-  'the ledger, which cannot give the share back without the visited RW''s, is left as it was');
-select is((select severity::text from public.security_alerts
+  'weather:recorded:29580:420:18000:true',
+  'as the leg''s weather refund request, the Rp 18.000 the kelurahan bore recorded on it');
+select is(pg_temp.balances((select id from short_combo)), array['kelurahan=-18000', 'rw:13=0', 'rw:5=48000'],
+  'M-B: RW 13 and the kelurahan give back what they hold, the kelurahan bears the rest, RW 05 keeps its share');
+select is((select pg_temp.ledger_sum(b.id) = b.total_amount - p.refunded_amount - internal.weather_refund_fees(b.id)
+           from public.bookings b join public.payments p on p.booking_id = b.id where b.id = (select id from short_combo)),
+  true, 'so the ledger, Rp 30.000, balances with the refund and its fee');
+select is((select severity::text || ':' || (details ->> 'shortfall') from public.security_alerts
+           where fingerprint = 'weather_shortfall_kelurahan:'
+                               || (pg_temp.request_of((select id from short_combo))).refund_key), 'medium:18000',
+  'with the medium weather_shortfall_kelurahan alert');
+select is((select count(*)::int from public.security_alerts
            where fingerprint = 'refund_ledger_unbalanced:' || (pg_temp.request_of((select id from short_combo))).refund_key),
-  'high', 'and refund_ledger_unbalanced asks the superadmin to settle it');
+  0, 'and no unbalanced ledger');
 select is((select b.status::text || ':' || w.resolution || ':' || string_agg(l.rw_id || '=' || l.status, ',' order by l.rw_id)
            from public.bookings b join public.booking_legs l on l.booking_id = b.id
            join public.weather_notice_bookings w on w.id = (select id from short_link)
            where b.id = (select id from short_combo) group by b.status, w.resolution),
   'checked_in:refunded_manually:5=checked_in,13=released',
   'M-1: in the same transaction the stopped leg is released and the link resolved');
+select is(pg_temp.hint_of($$select pg_temp.propose_refund((select id from short_combo), 100, 'short-again',
+  (select id from short_link))$$), 'STATE_INVALID', 'M-2: a second refund naming the resolved link is refused');
 select pg_temp.act_as('superadmin_aal2');
-select is(pg_temp.hint_of($$select public.apply_adjustment((select id from short_again))$$), 'STATE_INVALID',
-  'M-2: a second weather refund naming the resolved link is refused');
 select is(pg_temp.hint_of($$select public.resolve_weather_link((select id from short_link), 'no_refund',
   'Diputuskan superadmin')$$), 'STATE_INVALID', 'and so is no_refund after the weather refund');
 select throws_ok($$select public.resolve_weather_link((select id from short_link), 'refunded_manually',

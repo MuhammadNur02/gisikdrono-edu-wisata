@@ -39,6 +39,8 @@ const CODE_BY_POSTGRES_HINT: Record<string, ActionErrorCode> = {
   RATE_LIMITED: 'RATE_LIMITED',
   CONTACT_UNVERIFIED: 'STATE_INVALID',
   WEATHER_FEE_UNSET: 'STATE_INVALID',
+  // A refund by hand named a weather link held for its unset fee: the sweep refunds it once the fee is set.
+  WEATHER_FEE_UNSET_MANUAL: 'STATE_INVALID',
 };
 
 export class AppError extends Error {
