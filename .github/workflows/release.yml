@@ -1,10 +1,12 @@
 name: Production release
 
 # Task P5.7.02 (docs/runbooks/release-checklist.md; CLAUDE.md §6.4, §12.1 no. 19). Migrations are the only path into
-# the gisikdrono-prod schema, and this job is the only one that pushes them. Until go-live it runs by hand only, from
-# main only, and by default as a dry run that lists the migrations and changes nothing. The production credentials
-# live in the GitHub environment "production", whose required reviewers approve every run before a step starts.
-# The order of a release: check the project, run the pre-flight, migrate; the Vercel production deploy follows the
+# the gisikdrono-prod schema, and this job is the only one that pushes them. It runs by hand only, before go-live and
+# after it (decision of 2026-10-28, review of PR #98, L7): from main, and by default as a dry run that lists the
+# migrations and changes nothing. The production credentials live in the GitHub environment "production", whose
+# required reviewers approve every run before a step starts; the job's `if` on main is defence in depth only, the
+# environment's branch rule is what holds (release checklist, "One-time setup"). The order of a release: check the
+# project, run the pre-flight and the Advisor, migrate, the Advisor again; the Vercel production deploy follows the
 # migration (release checklist, "Then deploy"). Never --include-all or --include-seed.
 on:
   workflow_dispatch:
@@ -66,12 +68,17 @@ jobs:
       # migration starts (release checklist, "The production release job's pre-flight").
       - name: Pre-flight
         run: supabase db query --linked --file scripts/release-preflight.sql > /dev/null
+      # docs/Security.md §8.7, DB-01: an error the Security Advisor already shows stops the release before anything
+      # is pushed (review of PR #98, L1).
+      - name: Security Advisor before the push, errors only
+        run: supabase db advisors --linked --type security --level error --fail-on error
       - name: Migrations that would run
         run: supabase db push --linked --dry-run
       - name: Apply the migrations
-        if: ${{ !inputs.dry_run }}
+        if: ${{ inputs.dry_run == false }}
         run: supabase db push --linked --yes
-      # docs/Security.md §8.7, DB-01: the Security Advisor shows no error after a release. Run on a dry run too, so
-      # an error already there is seen before anything is pushed.
-      - name: Security Advisor, errors only
+      # An error that appears after the push means a migration caused it. Migrations are forward-only: do not deploy
+      # Vercel, and fix it with a new migration (release checklist, "If a check fails after the push").
+      - name: Security Advisor after the push, errors only
+        if: ${{ inputs.dry_run == false }}
         run: supabase db advisors --linked --type security --level error --fail-on error

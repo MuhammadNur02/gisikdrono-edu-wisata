@@ -8,6 +8,9 @@ declare
   problems text[] := '{}';
   found bigint;
 begin
+  -- Read only from here on, whatever the connection's default (review of PR #98, L4).
+  perform set_config('transaction_read_only', 'on', true);
+
   -- 20261104140000: a profile that holds a role, or is active, has became_staff_at.
   if exists (select 1 from information_schema.columns
              where table_schema = 'public' and table_name = 'profiles' and column_name = 'became_staff_at') then

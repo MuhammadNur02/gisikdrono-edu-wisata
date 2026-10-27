@@ -60,11 +60,24 @@ A migration that stops is a release that stops: fix its cause, never edit an app
 
 ## The production release job
 
-`.github/workflows/release.yml` (Task P5.7.02) runs on **Run workflow** only, until go-live and after. No merge pushes production by itself.
+`.github/workflows/release.yml` (Task P5.7.02) runs on **Run workflow** only, before go-live and after it, behind a reviewer's approval (decision of 2026-10-28, review of PR #98, L7). No merge pushes production by itself.
+
+### One-time setup (owner)
+
+1. **The environment `production`.** Settings > Environments > New environment `production`:
+   - **Deployment branches:** `main` only. This rule is what keeps another branch's code away from the production secrets. The job's own `if: github.ref == 'refs/heads/main'` is defence in depth only, since anyone who can push a branch can edit that line on it.
+   - **Required reviewers:** the owner, and a second maintainer once there is one.
+   - **Prevent self-review:** on, so the person who started a run cannot approve it.
+2. **Its secrets.**
+   - `SUPABASE_ACCESS_TOKEN`: a personal access token of the project owner, for `supabase link`, the pre-flight and the Advisor.
+   - `SUPABASE_DB_URL`: the session pooler's connection string of `gisikdrono-prod` (Connect > Session pooler), port 5432, user `postgres.<ref>`, without `sslmode` or with `sslmode=verify-full`. GitHub's runners reach the internet over IPv4 only, and the direct host `db.<ref>.supabase.co` answers over IPv6 only, so the direct string cannot work here (L5).
+3. **Network restrictions.** Production's database allows the kelurahan office's IP and Vercel's egress only (P5.7.02 parity). A GitHub runner's address is neither, and `supabase db push` connects to the database itself. Decide at go-live how a release gets through, and record the decision here: either allow the runner's address for the run's length and remove it afterwards, or use a runner with a fixed address that the restrictions allow.
+
+### What a run does
 
 1. **Approval.** The job runs in the GitHub environment `production`. A required reviewer approves the run before any step starts.
 2. **The project.** The project ref comes from `SUPABASE_DB_URL` itself (`scripts/supabase-db-url.mjs`). The Management API must name that project `gisikdrono-prod`, or nothing runs.
-3. **The pre-flight.** `scripts/release-preflight.sql` runs read-only through the Management API. It stops the release when an existing row would fail a check that a migration adds, and it reports counts only:
+3. **The pre-flight.** `scripts/release-preflight.sql` runs through the Management API, in a transaction it turns read only first (L4). It stops the release when an existing row would fail a check that a migration adds, and it reports counts only:
    - **Profiles** (`20261104140000`): no profile holds a role, or is active, without `became_staff_at`.
 
      ```sql
@@ -82,7 +95,15 @@ A migration that stops is a release that stops: fix its cause, never edit an app
      The superadmin corrects a counted account in the dashboard (`set_vendor_bank_account` / `set_rw_treasury_account`), never in SQL.
 
    A column the target does not have yet is skipped; the migration that adds it decides. Add a check here, and to the file, whenever a migration adds a constraint that existing rows must already pass.
-4. **The migrations.** `supabase db push --linked --dry-run` lists them. With **dry_run** unticked, `supabase db push --linked --yes` applies them. The job never passes `--include-all` (it would apply a migration older than the last one applied) or `--include-seed`.
-5. **The Security Advisor.** `supabase db advisors --linked --type security --fail-on error` must show no error (DB-01). It runs on a dry run too.
-6. **Then deploy.** The Vercel production deployment follows the migration (step 2 of the order above). Record the run's link in the release notes.
+4. **The Security Advisor, before the push.** `supabase db advisors --linked --type security --fail-on error` must show no error (DB-01). An error already there stops the run before anything moves (L1).
+5. **The migrations.** `supabase db push --linked --dry-run` lists them. With **dry_run** unticked, `supabase db push --linked --yes` applies them. The job never passes `--include-all` (it would apply a migration older than the last one applied) or `--include-seed`.
+6. **The Security Advisor, after the push.** The same check again, when the run applied anything.
+7. **Then deploy.** The Vercel production deployment follows the migration (step 2 of the order above). Record the run's link in the release notes.
 
+### If a check fails after the push
+
+The migrations already applied stay: they are forward-only (`CLAUDE.md` §6.4).
+
+1. **Do not deploy Vercel.** The previous production deployment keeps serving.
+2. **Fix it with a new migration.** Write it on a branch and review it like any other, then run the release again. Never edit or revert an applied migration, and never fix production by hand in the SQL editor.
+3. **If the Advisor's error exposes data** (a table without RLS, a function open to `anon`), treat it as an incident (`docs/runbooks/breach.md`) until the fixing migration is out.

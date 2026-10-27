@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { githubEnvLines, parseSupabaseDbUrl } from './supabase-db-url.mjs';
+import { escapeCommandValue, githubEnvLines, parseSupabaseDbUrl } from './supabase-db-url.mjs';
 
 const REF = 'abcdefghijklmnopqrst';
 const OTHER_REF = 'zyxwvutsrqponmlkjihg';
 const DIRECT_HOST = `db.${REF}.supabase.co:5432`;
+const POOLER_HOST = 'aws-0-ap-southeast-1.pooler.supabase.com:5432';
+const CR = String.fromCharCode(13);
+const LF = String.fromCharCode(10);
 
 // A connection string built from its parts, so no credential-shaped literal sits in the source for the secret
 // scanners to report (semgrep p/secrets, gitleaks).
@@ -29,13 +32,11 @@ describe('scripts/supabase-db-url.mjs', () => {
     });
   });
 
-  it('reads the ref of a pooler URL from its user', () => {
-    const url = dbUrl({
-      scheme: 'postgres',
-      user: `postgres.${REF}`,
-      host: 'aws-0-ap-southeast-1.pooler.supabase.com:5432',
-    });
-    expect(parseSupabaseDbUrl(url).ref).toBe(REF);
+  it('reads the ref of a pooler URL from its user, for the backup role too', () => {
+    const release = dbUrl({ scheme: 'postgres', user: `postgres.${REF}`, host: POOLER_HOST });
+    const backup = dbUrl({ user: `gisikdrono_backup.${REF}`, host: POOLER_HOST });
+    expect(parseSupabaseDbUrl(release).ref).toBe(REF);
+    expect(parseSupabaseDbUrl(backup).ref).toBe(REF);
   });
 
   it('accepts sslmode=verify-full and refuses a weaker one', () => {
@@ -57,6 +58,11 @@ describe('scripts/supabase-db-url.mjs', () => {
     expect(() => parseSupabaseDbUrl('not a url')).toThrow(/not a URL/);
   });
 
+  it('refuses a password with a line break, either kind', () => {
+    expect(() => parseSupabaseDbUrl(dbUrl({ password: `a${CR}b` }))).toThrow(/line break/);
+    expect(() => parseSupabaseDbUrl(dbUrl({ password: `a${LF}b` }))).toThrow(/line break/);
+  });
+
   it('never puts any part of the URL in its error messages', () => {
     const password = 'fixture-password-to-hide';
     const messages = [
@@ -75,8 +81,22 @@ describe('scripts/supabase-db-url.mjs', () => {
 
   it('masks the password before it hands it to the later steps', () => {
     expect(githubEnvLines({ ref: REF, password: 'fixture' })).toEqual({
-      log: '::add-mask::fixture\n',
-      env: `PROJECT_REF=${REF}\nSUPABASE_DB_PASSWORD=fixture\n`,
+      log: `::add-mask::fixture${LF}`,
+      env: `PROJECT_REF=${REF}${LF}SUPABASE_DB_PASSWORD=fixture${LF}`,
     });
+  });
+
+  it('masks the password but hands on the ref alone for the backup', () => {
+    expect(githubEnvLines({ ref: REF, password: 'fixture' }, { refOnly: true })).toEqual({
+      log: `::add-mask::fixture${LF}`,
+      env: `PROJECT_REF=${REF}${LF}`,
+    });
+  });
+
+  it('escapes the mask as GitHub unescapes a workflow command', () => {
+    expect(escapeCommandValue('50%off')).toBe('50%25off');
+    expect(escapeCommandValue('%0A')).toBe('%250A');
+    expect(escapeCommandValue(`a${CR}b${LF}c`)).toBe('a%0Db%0Ac');
+    expect(githubEnvLines({ ref: REF, password: 'p%ss' }).log).toBe(`::add-mask::p%25ss${LF}`);
   });
 });
