@@ -3,23 +3,40 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Database } from '@/db/types';
 
-import { countCheckInsToday, loadSuperadminOverview } from './dashboard-stats-service';
+import {
+  countCheckInsToday,
+  loadRwOverview,
+  loadSuperadminOverview,
+} from './dashboard-stats-service';
 
 // PostgREST as supabase/config.toml runs it: never more than max_rows (100) rows per response, the exact count in
 // Content-Range when asked for, 416 / PGRST103 for a range past the last row. The review of PR #45 (H1) found totals
 // summed from the first 100 rows only; its re-review (L1) a 416 that took the whole overview down.
 const MAX_ROWS = 100;
 const PAX_PER_TICKET = 2;
+const STATEMENT_TIMEOUT = '57014';
+// 24 October 2026, 10:00 in Semarang.
+const NOW = new Date('2026-10-24T03:00:00Z');
+
+interface StatsCall {
+  p_from: string;
+  p_to: string;
+  p_granularity?: string;
+  p_rw_id?: number;
+}
+
 const server = vi.hoisted(() => ({
   rows: 0,
   // Rows left once the first page has been read: rows that vanished between two pages.
   rowsAfterFirstPage: null as number | null,
   failingTable: null as string | null,
   requests: [] as string[],
-  // What the stats RPCs answer: visit_stats day buckets and revenue_recap's daily rows.
-  visitDays: [] as unknown[],
+  // What the stats RPCs answer: visit_stats buckets for each call and revenue_recap's daily rows.
+  visitStats: null as ((call: StatsCall) => unknown[]) | null,
+  statsCalls: [] as StatsCall[],
   revenueDays: [] as unknown[],
 }));
+const logged = vi.hoisted(() => ({ error: vi.fn() }));
 
 function jsonReply(body: unknown, status: number, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -29,8 +46,12 @@ function jsonReply(body: unknown, status: number, headers: Record<string, string
 }
 
 // The stats RPCs answer one body, never pages.
-function rpcReply(url: URL): Response | null {
-  if (url.pathname.endsWith('/rpc/visit_stats')) return jsonReply(server.visitDays, 200);
+function rpcReply(url: URL, body: string | undefined): Response | null {
+  if (url.pathname.endsWith('/rpc/visit_stats')) {
+    const call = JSON.parse(body ?? '{}') as StatsCall;
+    server.statsCalls.push(call);
+    return jsonReply(server.visitStats?.(call) ?? [], 200);
+  }
   if (url.pathname.endsWith('/rpc/revenue_recap')) {
     return jsonReply({ daily: server.revenueDays, by_beneficiary: [], outstanding: [] }, 200);
   }
@@ -41,10 +62,8 @@ function rpcReply(url: URL): Response | null {
 function failingReply(url: URL): Response | null {
   if (server.failingTable === null || !url.pathname.endsWith(`/${server.failingTable}`))
     return null;
-  return jsonReply(
-    { code: '57014', message: 'canceling statement', details: null, hint: null },
-    500,
-  );
+  const error = { code: STATEMENT_TIMEOUT, message: 'canceling statement', details: null };
+  return jsonReply({ ...error, hint: null }, 500);
 }
 
 function postgrestReply(url: URL): Response {
@@ -53,13 +72,8 @@ function postgrestReply(url: URL): Response {
   const total =
     offset > 0 && server.rowsAfterFirstPage !== null ? server.rowsAfterFirstPage : server.rows;
   if (offset > 0 && offset >= total) {
-    const error = {
-      code: 'PGRST103',
-      message: 'Requested range not satisfiable',
-      details: null,
-      hint: null,
-    };
-    return jsonReply(error, 416, { 'Content-Range': `*/${String(total)}` });
+    const error = { code: 'PGRST103', message: 'Requested range not satisfiable', details: null };
+    return jsonReply({ ...error, hint: null }, 416, { 'Content-Range': `*/${String(total)}` });
   }
   const end = Math.min(offset + Math.min(limit, MAX_ROWS), total);
   const body = Array.from({ length: Math.max(end - offset, 0) }, () => ({
@@ -69,10 +83,11 @@ function postgrestReply(url: URL): Response {
   return jsonReply(body, 200, { 'Content-Range': `${range}/${String(total)}` });
 }
 
-const fakeFetch: typeof fetch = (input) => {
+const fakeFetch: typeof fetch = (input, init) => {
   const url = new URL(input instanceof Request ? input.url : String(input));
   server.requests.push(`${url.pathname}${url.search}`);
-  return Promise.resolve(failingReply(url) ?? rpcReply(url) ?? postgrestReply(url));
+  const body = typeof init?.body === 'string' ? init.body : undefined;
+  return Promise.resolve(failingReply(url) ?? rpcReply(url, body) ?? postgrestReply(url));
 };
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -84,16 +99,37 @@ vi.mock('@/lib/supabase/server', () => ({
       }),
     ),
 }));
-// The failing KPI is logged by name; the test keeps the output quiet.
-vi.mock('@/lib/logger', () => ({ createLogger: () => ({ error: vi.fn() }) }));
+// The failing KPI is logged by name and code (review of PR #93, I-2); the spy keeps the output quiet.
+vi.mock('@/lib/logger', () => ({ createLogger: () => ({ error: logged.error }) }));
+
+function bucket(day: string, figures: { bookings?: number; paxCheckedIn?: number; sold?: number }) {
+  return {
+    bucket: day,
+    bookings: figures.bookings ?? 0,
+    pax_booked: figures.paxCheckedIn ?? 0,
+    pax_checked_in: figures.paxCheckedIn ?? 0,
+    tickets_used: figures.bookings ?? 0,
+    products_sold: figures.sold ?? 0,
+    gross_amount: null,
+  };
+}
+
+function expectLoggedFailure(kpi: string) {
+  expect(logged.error).toHaveBeenCalledWith(
+    'internal_error',
+    expect.objectContaining({ kpi, code: STATEMENT_TIMEOUT }),
+  );
+}
 
 beforeEach(() => {
   server.rows = 0;
   server.rowsAfterFirstPage = null;
   server.failingTable = null;
   server.requests = [];
-  server.visitDays = [];
+  server.visitStats = null;
+  server.statsCalls = [];
   server.revenueDays = [];
+  logged.error.mockClear();
 });
 
 describe('countCheckInsToday', () => {
@@ -122,53 +158,108 @@ describe('countCheckInsToday', () => {
 });
 
 describe('loadSuperadminOverview', () => {
-  it('keeps the other figures when one KPI fails to load', async () => {
+  it('keeps the other figures when one KPI fails to load, and logs it by name and code', async () => {
     server.failingTable = 'reviews';
-    const overview = await loadSuperadminOverview(null, new Date('2026-10-24T03:00:00Z'));
+    const overview = await loadSuperadminOverview(null, NOW);
     expect(overview.rating).toBeNull();
     expect(overview.checkedInVisitors).toMatchObject({ value: 0 });
     expect(overview.revenue).toMatchObject({ value: 0 });
     expect(overview.paidBookings).toMatchObject({ value: 0 });
     expect(overview.piiRevealsToday).toBe(0);
+    expectLoggedFailure('rating');
   });
 
-  it('reads the month figures from visit_stats and revenue_recap by day', async () => {
-    const visitDay = (day: string, bookings: number, paxCheckedIn: number) => ({
-      bucket: day,
-      bookings,
-      pax_booked: paxCheckedIn,
-      pax_checked_in: paxCheckedIn,
-      tickets_used: bookings,
-      products_sold: 0,
-      gross_amount: null,
-    });
-    // 24 October against the same days of September; 20 September lies inside, 30 September past them.
-    server.visitDays = [
-      visitDay('2026-09-20', 2, 30),
-      visitDay('2026-09-30', 9, 90),
-      visitDay('2026-10-03', 3, 45),
-      visitDay('2026-10-24', 1, 15),
-    ];
+  it('counts paid bookings per month, and the rest by day, from the stats RPCs', async () => {
+    // 1 to 24 October against 1 to 24 September. The month buckets count a combo on two days once (3), the day
+    // buckets would count it twice (4).
+    server.visitStats = (call) => {
+      if (call.p_granularity === 'month') {
+        return [bucket(call.p_from, { bookings: call.p_from === '2026-10-01' ? 3 : 2 })];
+      }
+      return [
+        bucket('2026-09-20', { bookings: 2, paxCheckedIn: 30 }),
+        bucket('2026-09-30', { bookings: 9, paxCheckedIn: 90 }),
+        bucket('2026-10-03', { bookings: 3, paxCheckedIn: 45 }),
+        bucket('2026-10-24', { bookings: 1, paxCheckedIn: 15 }),
+      ];
+    };
     server.revenueDays = [
       { day: '2026-10-03', beneficiary_key: 'kelurahan', net_amount: 100_000 },
       { day: '2026-10-03', beneficiary_key: 'rw_treasury:5', net_amount: 400_000 },
     ];
-    const overview = await loadSuperadminOverview(null, new Date('2026-10-24T03:00:00Z'));
-    expect(overview.paidBookings).toEqual({ value: 4, trend: { direction: 'up', percent: 100 } });
+    const overview = await loadSuperadminOverview(null, NOW);
+    expect(overview.paidBookings).toEqual({ value: 3, trend: { direction: 'up', percent: 50 } });
+    expect(server.statsCalls.filter((call) => call.p_granularity === 'month')).toEqual([
+      { p_from: '2026-10-01', p_to: '2026-10-24', p_granularity: 'month' },
+      { p_from: '2026-09-01', p_to: '2026-09-24', p_granularity: 'month' },
+    ]);
     expect(overview.checkedInVisitors).toMatchObject({
       value: 60,
       trend: { direction: 'up', percent: 100 },
     });
     expect(overview.revenue).toMatchObject({ value: 500_000 });
-    expect(server.requests.some((request) => request.includes('v_bookings_staff'))).toBe(false);
-    expect(server.requests.some((request) => request.includes('tickets_qr'))).toBe(false);
+    const rowReads = server.requests.filter((request) =>
+      /v_bookings_staff|tickets_qr/.test(request),
+    );
+    expect(rowReads).toEqual([]);
   });
 
   it('shows no visit figures, and still the revenue, when visit_stats fails', async () => {
     server.failingTable = 'visit_stats';
-    const overview = await loadSuperadminOverview(null, new Date('2026-10-24T03:00:00Z'));
+    const overview = await loadSuperadminOverview(null, NOW);
     expect(overview.paidBookings).toBeNull();
     expect(overview.checkedInVisitors).toBeNull();
     expect(overview.revenue).toMatchObject({ value: 0 });
+    expectLoggedFailure('visit_stats');
+  });
+
+  it('shows no revenue, and still the visit figures, when revenue_recap fails', async () => {
+    server.failingTable = 'revenue_recap';
+    const overview = await loadSuperadminOverview(null, NOW);
+    expect(overview.revenue).toBeNull();
+    expect(overview.paidBookings).toMatchObject({ value: 0 });
+    expect(overview.checkedInVisitors).toMatchObject({ value: 0 });
+    expectLoggedFailure('revenue');
+  });
+});
+
+describe('loadRwOverview', () => {
+  it('reads upcoming visits from month buckets from tomorrow, and the chart from day buckets', async () => {
+    server.visitStats = (call) => {
+      if (call.p_granularity === 'day') return [bucket('2026-10-20', { paxCheckedIn: 25 })];
+      if (call.p_from === '2026-10-25') {
+        return [bucket('2026-10-01', { bookings: 2 }), bucket('2026-11-01', { bookings: 3 })];
+      }
+      return [bucket('2026-10-01', { sold: 7 })];
+    };
+    const overview = await loadRwOverview(5, NOW);
+    expect(overview.upcomingBookings).toBe(5);
+    expect(server.statsCalls).toContainEqual({
+      p_from: '2026-10-25',
+      p_to: '2026-11-23',
+      p_granularity: 'month',
+      p_rw_id: 5,
+    });
+    expect(server.statsCalls).toContainEqual({
+      p_from: '2026-09-25',
+      p_to: '2026-10-24',
+      p_granularity: 'day',
+      p_rw_id: 5,
+    });
+    expect(overview.checkIns).toHaveLength(30);
+    expect(overview.checkIns?.find((point) => point.day === '2026-10-20')?.value).toBe(25);
+    expect(overview.checkIns?.at(-1)).toEqual({ day: '2026-10-24', value: 0 });
+    expect(overview.productsSold).toBe(7);
+  });
+
+  it('shows no chart or visit counts when visit_stats fails, and still today at the gate', async () => {
+    server.failingTable = 'visit_stats';
+    const overview = await loadRwOverview(5, NOW);
+    expect(overview.checkIns).toBeNull();
+    expect(overview.upcomingBookings).toBeNull();
+    expect(overview.productsSold).toBeNull();
+    expect(overview.checkInsToday).toBe(0);
+    expect(overview.todaySessions).toEqual([]);
+    expectLoggedFailure('check_ins');
   });
 });

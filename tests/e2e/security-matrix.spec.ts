@@ -17,13 +17,15 @@ import {
   createRwAdmin,
   createSuperadmin,
   removeAccounts,
+  resetAuthLimits,
   signInToDashboard,
 } from './helpers/staff';
 import { runSql, sqlText } from '../../scripts/local-stack';
 import { CANARY, xssCanaryArticle } from '../fixtures/xss-canary-article';
 
-// Task P5.3.02, the rest of the matrix. Every check reads a status code, a header or a redirect, never a public
-// page's markup, which the redesign is rebuilding; the XSS canary watches for a script that runs, not for a tag.
+// Task P5.3.02, the rest of the matrix. Every check reads a status code, a header, a cookie or a redirect, never a
+// public page's layout, which the redesign is rebuilding. The XSS canary alone reads the rendered page: the attributes
+// the renderer wrote, and its two positive controls, never where or how they show.
 
 // The first bytes of a WebP file, as the upload form sends them: RIFF, a size, then WEBP and its VP8 chunk.
 const WEBP_HEAD = Buffer.concat([
@@ -36,6 +38,9 @@ const WEBP_HEAD = Buffer.concat([
 const SEEDED_PACKAGE_SLUG = 'paket-eduwisata-ecowastreme';
 // The canary page settles after hydration before its attributes are read.
 const CANARY_SETTLE_MS = 1_500;
+// The canary's legitimate image and link (tests/fixtures/xss-canary-article.ts), which the renderer keeps.
+const CANARY_IMAGE_ALT = 'Warga memilah sampah plastik di Bank Sampah';
+const CANARY_SAFE_LINK = 'https://gisikdrono.example/jadwal';
 const WEBHOOK_PATHS = ['/api/webhooks/whatsapp', '/api/webhooks/resend'];
 // The jobs security.spec.ts does not already call without a bearer.
 const OTHER_JOB_PATHS = ['/api/jobs/anomaly-scan', '/api/jobs/payments-poll'];
@@ -91,6 +96,7 @@ test.describe('signed in as an RW 05 officer (AZ-03, STAFF-02)', () => {
   let officer: { id: string; email: string } | undefined;
 
   test.beforeAll(async () => {
+    await resetAuthLimits();
     officer = await createRwAdmin(5);
   });
 
@@ -128,6 +134,7 @@ test.describe('the dashboard as the superadmin: headers, cookies and the CSP (HD
   let superadmin: { id: string; email: string } | undefined;
 
   test.beforeAll(async () => {
+    await resetAuthLimits();
     superadmin = await createSuperadmin();
   });
 
@@ -135,8 +142,11 @@ test.describe('the dashboard as the superadmin: headers, cookies and the CSP (HD
     await removeAccounts(superadmin ? [superadmin.id] : []);
   });
 
-  // One sign-in serves both checks: on CI a second sign-in of the same account straight after the first timed out
-  // at the password step, and every extra sign-in also spends the shared login limits.
+  // One sign-in serves both checks. The CI flake of a second sign-in was not a TOTP replay: it stopped at the password
+  // step (helpers/staff.ts, waiting for /mfa/verify), before any code was sent, where a replay would stop at the TOTP
+  // step. What refuses a password step that is right is the shared login:ip limit (10 in 5 minutes, every worker at
+  // 127.0.0.1), which this file did not reset; it now resets it like the other signed-in files and signs in once.
+  // The cookie checks are soft, so a failing one still lets the header checks run and report.
   test('/dashboard and the scanner carry the baseline headers, an enforced CSP and no-store, and the session cookies stay out of reach of page scripts', async ({
     page,
     context,
@@ -144,9 +154,9 @@ test.describe('the dashboard as the superadmin: headers, cookies and the CSP (HD
     await signInToDashboard(page, superadmin?.email ?? '');
     const cookies = await context.cookies();
     const sessionCookies = cookies.filter((cookie) => cookie.name.startsWith('sb-'));
-    expect(sessionCookies.length).toBeGreaterThan(0);
-    for (const cookie of sessionCookies) expect(cookie.httpOnly, cookie.name).toBe(true);
-    expect(await page.evaluate(() => document.cookie)).not.toMatch(/(^|;\s*)sb-/);
+    expect.soft(sessionCookies.length).toBeGreaterThan(0);
+    for (const cookie of sessionCookies) expect.soft(cookie.httpOnly, cookie.name).toBe(true);
+    expect.soft(await page.evaluate(() => document.cookie)).not.toMatch(/(^|;\s*)sb-/);
 
     for (const path of ['/dashboard', SCANNER_PATH]) {
       const response = await page.request.get(path, NO_REDIRECTS);
@@ -171,7 +181,8 @@ test.describe('the dashboard as the superadmin: headers, cookies and the CSP (HD
 // as a visitor (review of PR #88, M-1). The CSP alone would block every canary, so the test does not rely on it: it
 // reads the rendered attributes themselves. No element carries an on* handler, every link's resolved protocol is
 // http, https, mailto or tel, nothing frames evil.example, the script canary shows as text, no CSP violation is
-// reported and no dialog opens.
+// reported and no dialog opens. Two positive controls show the renderer did run: the in-folder image and the https
+// link are on the page.
 test.describe('the XSS canary article', () => {
   test.skip(({ isMobile }) => isMobile, 'one run is enough');
 
@@ -211,6 +222,8 @@ test.describe('the XSS canary article', () => {
     const response = await page.goto(`/artikel/${slug}`, { waitUntil: 'load' });
     expect(response?.status()).toBe(200);
     await expect(page.getByText(`<script>alert('${CANARY}')</script>`).first()).toBeVisible();
+    await expect(page.getByRole('img', { name: CANARY_IMAGE_ALT })).toBeAttached();
+    await expect(page.locator(`a[href="${CANARY_SAFE_LINK}"]`)).toHaveCount(1);
     await page.waitForTimeout(CANARY_SETTLE_MS);
 
     const findings = await page.evaluate(() => {

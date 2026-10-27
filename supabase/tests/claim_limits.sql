@@ -5,11 +5,15 @@
 -- statement already updated, LockRows skips them, and LIMIT hands out the next ones. Before 20261104150000 the
 -- nested_no_unique planner made payments_to_poll(1) ask about 8 open attempts and claim_notifications(1) claim 38 of
 -- 40 messages (CI run 40329134693). The controls below run that old shape, UPDATE ... WHERE id IN (SELECT ... LIMIT 1
--- FOR UPDATE SKIP LOCKED), on this file's own fixtures for the alerts and the paid bookings, under the
--- nested_indexed planner, whose indexes let the locking sub-select keep its order without a sort; each must take
--- more than one row, so the planners here are shown to reach the plan that over-claims (review of PR #87, L-1).
+-- FOR UPDATE SKIP LOCKED), on this file's own fixtures for every claim: the open attempts and the paid bookings of
+-- payments_to_poll, the messages and the alerts, under the nested_indexed planner, whose indexes let the locking
+-- sub-select keep its order without a sort; each must take more than one row, so the planners here are shown to reach
+-- the plan that over-claims (reviews of PR #87, L-1, and PR #92, L-1). Each control runs in a subtransaction it ends
+-- with its own SQLSTATE, GSKRB, so nothing else the control might raise is mistaken for its rollback (PR #92, I-1).
+-- The indexes stay in place for the rest of the file on purpose: the fixed claims run under nested_indexed too, and a
+-- claim that is right only without them would not be right (PR #92, I-2). They go with the transaction's rollback.
 begin;
-select plan(35);
+select plan(37);
 -- Every call is planned again with the settings of its planner, never from a plan cached under another one (L-2).
 set local plan_cache_mode = force_custom_plan;
 select set_config('app.qr_key_id', 'k1', true);
@@ -44,11 +48,13 @@ end;
 $$;
 create temporary table planners (name text primary key) on commit drop;
 insert into planners values ('default'), ('nested'), ('nested_no_unique'), ('nested_seq'), ('nested_indexed');
--- What nested_indexed reads in order without a sort: the alerts by last_seen_at and the paid bookings by their last
--- poll, as the claims order them. Rolled back with the rest.
+-- What nested_indexed reads in order without a sort, as the claims order them: the alerts by last_seen_at, the paid
+-- bookings and the open attempts by their last poll, and the messages by their next attempt.
 create index claim_limits_alerts_seen_idx on public.security_alerts (last_seen_at);
 create index claim_limits_payments_polled_idx on public.payments
   (last_polled_at nulls first, (coalesce(settlement_time, updated_at)));
+create index claim_limits_payments_open_idx on public.payments (last_polled_at nulls first, created_at);
+create index claim_limits_notifications_due_idx on public.notifications (next_attempt_at);
 
 -- ===== Fixtures: open attempts and paid bookings without a ticket =====
 update public.site_settings set value = 'true' where key in ('whatsapp_enabled', 'email_enabled');
@@ -133,8 +139,8 @@ begin
       limit 1
       for update of s skip locked);
     get diagnostics claimed = row_count;
-    raise exception using errcode = 'P0001', message = 'roll the control back';
-  exception when sqlstate 'P0001' then
+    raise sqlstate 'GSKRB' using message = 'roll the control back';
+  exception when sqlstate 'GSKRB' then
     null;
   end;
   perform pg_temp.planner('default');
@@ -143,6 +149,34 @@ end;
 $$;
 select cmp_ok(pg_temp.old_paid_claim(), '>', 1,
   'control: the old IN (... LIMIT 1 ... SKIP LOCKED) claim of paid bookings takes more than one here');
+-- The old asked_open claim of 20261024120100, the same way.
+create function pg_temp.old_open_claim() returns integer
+  language plpgsql
+as $$
+declare
+  claimed integer;
+begin
+  perform pg_temp.planner('nested_indexed');
+  begin
+    update public.payments p set last_polled_at = now()
+    where p.id in (
+      select o.id from public.payments o join public.bookings b on b.id = o.booking_id
+      where o.provider = 'midtrans' and o.status = 'pending' and o.created_at < now() - interval '2 minutes'
+        and now() < b.expires_at + interval '24 hours'
+      order by o.last_polled_at nulls first, o.created_at
+      limit 1
+      for update of o skip locked);
+    get diagnostics claimed = row_count;
+    raise sqlstate 'GSKRB' using message = 'roll the control back';
+  exception when sqlstate 'GSKRB' then
+    null;
+  end;
+  perform pg_temp.planner('default');
+  return claimed;
+end;
+$$;
+select cmp_ok(pg_temp.old_open_claim(), '>', 1,
+  'control: the old IN (... LIMIT 1 ... SKIP LOCKED) claim of open attempts takes more than one here');
 
 -- ===== payments_to_poll =====
 create function pg_temp.poll(p_planner text, p_limit integer) returns table (open_count integer, paid_count integer)
@@ -169,6 +203,34 @@ select null, 'whatsapp', 'phone_otp', '+62813000023' || lpad(n::text, 2, '0'), '
        'klaim:otp:' || n, now() - interval '1 minute'
 from generate_series(1, 40) n;
 analyze public.notifications;
+-- The old final claim of 20261024120000, the same way.
+create function pg_temp.old_message_claim() returns integer
+  language plpgsql
+as $$
+declare
+  claimed integer;
+begin
+  perform pg_temp.planner('nested_indexed');
+  begin
+    update public.notifications n set status = 'sending', locked_at = now(), attempts = n.attempts + 1
+    where n.id in (
+      select due.id from public.notifications due
+      where due.status in ('queued', 'failed') and due.dead_at is null and due.next_attempt_at <= now()
+        and due.template = any (array['phone_otp']::public.notification_template[])
+      order by due.next_attempt_at
+      limit 1
+      for update skip locked);
+    get diagnostics claimed = row_count;
+    raise sqlstate 'GSKRB' using message = 'roll the control back';
+  exception when sqlstate 'GSKRB' then
+    null;
+  end;
+  perform pg_temp.planner('default');
+  return claimed;
+end;
+$$;
+select cmp_ok(pg_temp.old_message_claim(), '>', 1,
+  'control: the old IN (... LIMIT 1 ... SKIP LOCKED) claim of messages takes more than one here');
 create function pg_temp.claim_messages(p_planner text, p_limit integer) returns integer
   language plpgsql
 as $$
@@ -215,8 +277,8 @@ begin
       limit 1
       for update skip locked);
     get diagnostics claimed = row_count;
-    raise exception using errcode = 'P0001', message = 'roll the control back';
-  exception when sqlstate 'P0001' then
+    raise sqlstate 'GSKRB' using message = 'roll the control back';
+  exception when sqlstate 'GSKRB' then
     null;
   end;
   perform pg_temp.planner('default');

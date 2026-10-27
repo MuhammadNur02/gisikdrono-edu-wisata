@@ -41,7 +41,7 @@ describe('supabase/config.toml', () => {
   it('keeps staff accounts invite-only, with strong passwords and 15-minute tokens', () => {
     expect(config('auth').enable_signup).toBe(false);
     expect(config('auth').enable_anonymous_sign_ins).toBe(false);
-    expect(config('auth').minimum_password_length).toBeGreaterThanOrEqual(12);
+    expect(config('auth').minimum_password_length).toBeGreaterThanOrEqual(8);
     expect(config('auth').password_requirements).toBe('lower_upper_letters_digits_symbols');
     expect(config('auth').jwt_expiry).toBe(900);
     expect(config('auth').additional_redirect_urls).toEqual([

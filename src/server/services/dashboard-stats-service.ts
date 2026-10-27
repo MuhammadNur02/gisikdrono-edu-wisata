@@ -1,7 +1,7 @@
 import 'server-only';
 
 import type { RwId } from '@/config/rw';
-import type { VisitStatsBucket } from '@/db/rpc-stats';
+import { postgresCodeOf } from '@/lib/errors';
 import { createLogger } from '@/lib/logger';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { todayInJakarta } from '@/lib/utils/dates';
@@ -20,6 +20,7 @@ import {
 } from '@/lib/utils/kpi';
 import { collectAllRows, rowPageOf } from '@/lib/utils/paged-rows';
 import {
+  countPaidBookings,
   countUpcomingVisits,
   dailyValuesOf,
   readProductsSoldThisMonth,
@@ -62,23 +63,26 @@ function periodOf(now: Date): Period {
   return { ranges, days, since: firstDay < ranges.previous.from ? firstDay : ranges.previous.from };
 }
 
-// A KPI that failed to load becomes null, logged by name only, so one bad read never takes the overview down.
+// A KPI that failed to load becomes null, logged by name and by the PostgREST or SQLSTATE code when there is one, so
+// one bad read never takes the overview down.
 function figureOf<T>(result: PromiseSettledResult<T | null>, kpi: string): T | null {
   if (result.status === 'fulfilled') return result.value;
   const reason: unknown = result.reason;
   createLogger(crypto.randomUUID()).error('internal_error', {
     kpi,
     errorName: reason instanceof Error ? reason.name : typeof reason,
+    code: postgresCodeOf(reason),
   });
   return null;
 }
 
 // "Reservasi lunas": the paid bookings that visit in the month so far, against the same days of last month.
-function paidBookingsOf(days: readonly VisitStatsBucket[] | null, period: Period) {
-  if (days === null) return null;
-  const rows = dailyValuesOf(days, (day) => day.bookings);
-  const value = sumWithin(rows, period.ranges.current);
-  return { value, trend: trendBetween(value, sumWithin(rows, period.ranges.previous)) };
+async function readPaidBookings(rw: RwId | null, period: Period, supabase: ServerClient) {
+  const [value, previous] = await Promise.all([
+    countPaidBookings(rw, period.ranges.current, supabase),
+    countPaidBookings(rw, period.ranges.previous, supabase),
+  ]);
+  return { value, trend: trendBetween(value, previous) };
 }
 
 function monthlyFigure(rows: readonly DailyValue[] | null, period: Period): MonthlyFigure | null {
@@ -142,17 +146,19 @@ export async function loadSuperadminOverview(
   const supabase = await createSupabaseServerClient();
   const period = periodOf(now);
   const today = todayInJakarta(now);
-  const [revenue, visits, rating, openAlerts, piiRevealsToday] = await Promise.allSettled([
-    readRevenueDays(rw, period.since, today, supabase),
-    readVisitDays(rw, period.since, today, supabase),
-    readRating(supabase, rw),
-    listOpenAlerts(supabase),
-    countPiiRevealsToday(supabase, today),
-  ]);
+  const [revenue, paidBookings, visits, rating, openAlerts, piiRevealsToday] =
+    await Promise.allSettled([
+      readRevenueDays(rw, period.since, today, supabase),
+      readPaidBookings(rw, period, supabase),
+      readVisitDays(rw, period.since, today, supabase),
+      readRating(supabase, rw),
+      listOpenAlerts(supabase),
+      countPiiRevealsToday(supabase, today),
+    ]);
   const visitDays = figureOf(visits, 'visit_stats');
   return {
     revenue: monthlyFigure(figureOf(revenue, 'revenue'), period),
-    paidBookings: paidBookingsOf(visitDays, period),
+    paidBookings: figureOf(paidBookings, 'paid_bookings'),
     checkedInVisitors: monthlyFigure(
       visitDays === null ? null : dailyValuesOf(visitDays, (day) => day.pax_checked_in),
       period,
