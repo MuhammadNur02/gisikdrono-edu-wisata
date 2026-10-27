@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { BookingDetail } from '@/types/booking-admin';
 
-import { cashDeadlineOf, isCashReceivable } from './walk-in-cash';
+import { cashDeadlineOf, hasOpenPayLink, isCashReceivable } from './walk-in-cash';
 
 // Task P4.3.10, docs/PRD.md §13.1 A23: "Terima tunai" until 23:59 WIB of the visit day.
 
@@ -51,10 +51,22 @@ describe('isCashReceivable', () => {
     );
   });
 
-  it('not while a payment is open or settled, and again once it closed', () => {
-    expect(isCashReceivable({ ...BOOKING, payments: [PAYMENT] }, true, NOW)).toBe(false);
-    expect(
-      isCashReceivable({ ...BOOKING, payments: [{ ...PAYMENT, status: 'expired' }] }, true, NOW),
-    ).toBe(true);
+  it('still while the PIC has a pay link open, which the cash ends (delta review of PR #91, M-1)', () => {
+    for (const status of ['initiated', 'pending'] as const) {
+      const booking = { ...BOOKING, payments: [{ ...PAYMENT, status }] };
+      expect(isCashReceivable(booking, true, NOW)).toBe(true);
+      expect(hasOpenPayLink(booking)).toBe(true);
+    }
+  });
+
+  it('not while a payment is under review or settled, and again once it closed', () => {
+    for (const status of ['needs_review', 'settled'] as const) {
+      expect(isCashReceivable({ ...BOOKING, payments: [{ ...PAYMENT, status }] }, true, NOW)).toBe(
+        false,
+      );
+    }
+    const closed = { ...BOOKING, payments: [{ ...PAYMENT, status: 'expired' as const }] };
+    expect(isCashReceivable(closed, true, NOW)).toBe(true);
+    expect(hasOpenPayLink(closed)).toBe(false);
   });
 });

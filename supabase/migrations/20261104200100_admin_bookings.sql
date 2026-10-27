@@ -211,13 +211,16 @@ end;
 $$;
 
 -- The PIC's pay link by WhatsApp (when the number was checked) and email; enqueue_notification's key sends it once.
-create function internal.queue_admin_pay_link(p_booking_id uuid) returns void
+create function internal.queue_admin_pay_link(p_booking_id uuid) returns integer
   language plpgsql
   set search_path = ''
 as $$
+declare
+  by_whatsapp uuid := internal.enqueue_notification(p_booking_id, 'booking_created', 'whatsapp',
+                                                    '{"link_scope": "manage"}');
+  by_email uuid := internal.enqueue_notification(p_booking_id, 'booking_created', 'email', '{"link_scope": "manage"}');
 begin
-  perform internal.enqueue_notification(p_booking_id, 'booking_created', 'whatsapp', '{"link_scope": "manage"}');
-  perform internal.enqueue_notification(p_booking_id, 'booking_created', 'email', '{"link_scope": "manage"}');
+  return (by_whatsapp is not null)::integer + (by_email is not null)::integer;
 end;
 $$;
 
@@ -245,12 +248,16 @@ begin
 end;
 $$;
 
--- The reply of internal.create_booking, with the total the cash step asks for.
+-- The reply of internal.create_booking, with what the cash step asks for: the total, and when the first session starts
+-- (after it, the cash counts the group in, A23 addendum).
 create function internal.admin_booking_reply(p_result text, p_booking public.bookings) returns jsonb
-  language sql immutable
+  language sql stable
   set search_path = ''
 as $$
-  select internal.booking_reply(p_result, p_booking) || jsonb_build_object('total_amount', p_booking.total_amount);
+  select internal.booking_reply(p_result, p_booking) || jsonb_build_object('total_amount', p_booking.total_amount,
+    'first_starts_at', (select min((s.session_date + s.start_time) at time zone 'Asia/Jakarta')
+                          from public.booking_legs l join public.visit_sessions s on s.id = l.visit_session_id
+                          where l.booking_id = p_booking.id));
 $$;
 
 create function internal.create_admin_booking(
@@ -309,7 +316,7 @@ begin
   from internal.booking_sessions(p_package_id, p_session_ids, null, now()) as s;
   perform internal.check_booking_size(p_pax, '[]');
   deadline := internal.admin_hold_deadline(sessions.rw_ids, sessions.last_day, sessions.first_start);
-  if deadline < now() + min_hold_left then
+  if not is_cash_on_the_spot and deadline < now() + min_hold_left then
     raise exception 'too little of the hold would be left to pay' using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
 
@@ -512,7 +519,9 @@ begin
   end if;
   perform internal.take_audit_turn();
   select * into booking from public.bookings b where b.id = p_booking_id for update;
-  if not found or not (public.is_superadmin() or public.owns_any_rw(booking.rw_ids)) then
+  -- Every RW of the booking is the officer's (delta review of PR #91, L-5); a combo is the superadmin's.
+  if not found or not (public.is_superadmin()
+                       or (public.is_admin_rw() and booking.rw_ids <@ array[public.app_rw_id()])) then
     raise exception 'booking % is not in this officer''s RW', p_booking_id using errcode = 'P0002';
   end if;
   if booking.channel <> 'admin' or booking.status <> 'pending_payment' or booking.expires_at <= now() then
@@ -520,9 +529,10 @@ begin
   end if;
   previous_settings := internal.push_settings(jsonb_build_object('app.in_rpc', '1')
     || internal.document_actor(auth.uid()));
-  perform internal.queue_admin_pay_link(booking.id);
-  insert into public.booking_events (booking_id, from_status, to_status, actor_type, actor_id, reason)
-  values (booking.id, booking.status, booking.status, 'admin', auth.uid(), 'admin_pay_link_sent');
+  if internal.queue_admin_pay_link(booking.id) > 0 then
+    insert into public.booking_events (booking_id, from_status, to_status, actor_type, actor_id, reason)
+    values (booking.id, booking.status, booking.status, 'admin', auth.uid(), 'admin_pay_link_sent');
+  end if;
   perform internal.restore_settings(previous_settings);
 end;
 $$;
@@ -539,6 +549,41 @@ insert into public.site_settings (key, value, is_public, description) values
 on conflict (key) do nothing;
 
 
+-- ===== A23 addendum: cash after the session started (delta review of PR #91, L-3) =====
+
+create function internal.session_has_started(p_booking_id uuid) returns boolean
+  language sql stable
+  set search_path = ''
+as $$
+  select coalesce(min((s.session_date + s.start_time) at time zone 'Asia/Jakarta') <= now(), false)
+  from public.booking_legs l join public.visit_sessions s on s.id = l.visit_session_id
+  where l.booking_id = p_booking_id;
+$$;
+
+-- The check-in of the scanner's manual path (note_admission, admit_group, record_scan) for each ticket the cash just
+-- issued: the group is at the counter. The ticket message would read as a ticket still to use, so it is not sent.
+create function internal.check_in_at_cash(p_booking_id uuid, p_attendee_count integer) returns void
+  language plpgsql
+  set search_path = ''
+as $$
+declare
+  ticket record;
+begin
+  for ticket in select t.id from public.tickets_qr t where t.booking_id = p_booking_id and t.status = 'issued'
+                order by t.id loop
+    perform internal.note_admission(ticket.id, 'manual', 'ok', null);
+    perform internal.admit_group(ticket.id, p_attendee_count, 'Hadir saat pembayaran tunai di loket');
+    perform internal.record_scan(gen_random_uuid(), ticket.id, 'check_in', 'ok', 'manual', p_attendee_count, null,
+                                 null, '{}'::jsonb, null);
+  end loop;
+  update public.notifications n set status = 'cancelled', last_error_code = 'checked_in_at_cash'
+  where n.booking_id = p_booking_id and n.template = 'payment_received_ticket' and n.status = 'queued';
+end;
+$$;
+revoke execute on function internal.session_has_started(uuid), internal.check_in_at_cash(uuid, integer)
+  from public, anon, authenticated;
+
+
 -- ===== A9, A23: cash at the counter =====
 
 -- The cash an RW admin takes for an officer's booking of their own RW: the whole total, once, while the hold runs and
@@ -547,7 +592,8 @@ on conflict (key) do nothing;
 -- again by admin_new_paid_booking. An open Midtrans order is ended by the server first (src/server/services); while
 -- one is open, the cash is refused.
 create function public.mark_booking_paid_manually(p_booking_id uuid, p_method public.payment_method, p_amount bigint,
-  p_key_id text, p_reference text default null, p_proof_path text default null) returns jsonb
+  p_key_id text, p_reference text default null, p_proof_path text default null, p_attendee_count integer default null)
+  returns jsonb
   language plpgsql security definer
   set search_path = ''
 as $$
@@ -574,7 +620,8 @@ begin
   end if;
   if not exists (select 1 from public.site_settings s
                  where s.key = 'qr.signing_kids' and s.value ? coalesce(p_key_id, '')) then
-    raise exception 'the QR key id is not one tickets are signed with' using errcode = '22023';
+    raise exception 'the QR key id is not one tickets are signed with'
+      using errcode = 'P0001', hint = 'QR_KEY_UNKNOWN';
   end if;
   perform internal.take_audit_turn();
   select * into booking from public.bookings b where b.id = p_booking_id for update;
@@ -592,6 +639,12 @@ begin
   if p_amount is distinct from booking.total_amount then
     raise exception 'the cash is the booking''s whole total' using errcode = 'P0001', hint = 'PRICE_MISMATCH';
   end if;
+  -- A23 addendum (delta review of PR #91, L-3): cash after the session started is taken from a group that came, so the
+  -- officer counts it in; before, nobody is counted in yet.
+  if (internal.session_has_started(booking.id)) <> (p_attendee_count is not null) then
+    raise exception 'cash after the session started counts the group in, and only then'
+      using errcode = 'P0001', hint = 'ATTENDANCE_REQUIRED';
+  end if;
 
   previous_settings := internal.push_settings(jsonb_build_object('app.in_rpc', '1', 'app.qr_key_id', p_key_id)
     || internal.document_actor(auth.uid()));
@@ -606,6 +659,9 @@ begin
           booking.total_amount, now(), nullif(btrim(coalesce(p_reference, '')), ''), auth.uid())
   returning * into payment;
   answer := internal.settle_payment(booking, payment, jsonb_build_object('source', 'cash'), 'admin');
+  if p_attendee_count is not null and answer ->> 'result' = 'applied' then
+    perform internal.check_in_at_cash(booking.id, p_attendee_count);
+  end if;
   -- The officer who took the cash needs no email that the booking is paid (internal.notify_staff's key).
   update public.notifications n set status = 'cancelled', last_error_code = 'recorded_by_recipient'
   where n.dedupe_key = concat_ws(':', 'booking', booking.id, 'admin_new_paid_booking', 'email', auth.uid())
@@ -614,7 +670,111 @@ begin
   return answer || jsonb_build_object('order_id', payment.order_id);
 end;
 $$;
-revoke execute on function public.mark_booking_paid_manually(uuid, public.payment_method, bigint, text, text, text)
-  from public, anon, service_role;
-grant execute on function public.mark_booking_paid_manually(uuid, public.payment_method, bigint, text, text, text)
-  to authenticated;
+revoke execute on function public.mark_booking_paid_manually(uuid, public.payment_method, bigint, text, text, text,
+  integer) from public, anon, service_role;
+grant execute on function public.mark_booking_paid_manually(uuid, public.payment_method, bigint, text, text, text,
+  integer) to authenticated;
+
+
+-- Delta review of PR #91, L-1: payment-service.ts ends the PIC's open Midtrans order before an RW admin takes the cash
+-- and closes it here as expired, with the officer as its actor.
+create function internal.close_attempt_for_cash(p_payment_id uuid, p_actor_id uuid) returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  previous_settings jsonb;
+  closed public.payments;
+begin
+  perform internal.require_server_caller('close_attempt_for_cash');
+  perform internal.take_audit_turn();
+  previous_settings := internal.push_settings(jsonb_build_object('app.in_rpc', '1')
+    || internal.document_actor(p_actor_id));
+  update public.payments set status = 'expired'
+  where id = p_payment_id and status in ('initiated', 'pending')
+  returning * into closed;
+  if closed.id is not null then
+    insert into public.booking_events (booking_id, from_status, to_status, actor_type, actor_id, reason, payload)
+    select b.id, b.status, b.status, 'admin', p_actor_id, 'payment_expired_for_cash',
+           jsonb_build_object('order_id', closed.order_id)
+    from public.bookings b where b.id = closed.booking_id;
+  end if;
+  perform internal.restore_settings(previous_settings);
+end;
+$$;
+revoke execute on function internal.close_attempt_for_cash(uuid, uuid) from public, anon, authenticated;
+
+create function public.svc_close_attempt_for_cash(p_payment_id uuid, p_actor_id uuid) returns void
+  language sql security definer
+  set search_path = ''
+as $$ select internal.close_attempt_for_cash(p_payment_id, p_actor_id); $$;
+revoke execute on function public.svc_close_attempt_for_cash(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.svc_close_attempt_for_cash(uuid, uuid) to service_role;
+
+
+-- ===== A23 addendum: an officer's long hold (delta review of PR #91, L-2) =====
+
+-- Replaces the 20261024100200 version. Two changes for an officer's hold, which A23 runs until 23:59 WIB of the visit
+-- day: its payment reminder comes six hours before the first session starts rather than before the deadline, and a
+-- hold still unpaid seven days after it was made raises one medium alert, admin_hold_unpaid_long, for the staff to
+-- follow up. Everything else is unchanged.
+create or replace function internal.payments_housekeeping() returns jsonb
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  reminder_ahead constant interval := interval '6 hours';
+  unpaid_too_long constant interval := interval '7 days';
+  previous_settings jsonb;
+  orphan record;
+  hold record;
+  suspended integer := 0;
+  reminded integer := 0;
+begin
+  perform internal.require_server_caller('payments_housekeeping');
+  perform internal.take_audit_turn();
+  previous_settings := internal.begin_scheduled_job();
+  for orphan in
+    select distinct t.booking_id from public.tickets_qr t join public.bookings b on b.id = t.booking_id
+    where t.status = 'issued' and t.valid_until > now() and b.status not in ('paid', 'checked_in')
+    order by t.booking_id
+  loop
+    suspended := suspended + internal.suspend_booking_tickets(orphan.booking_id, 'booking_not_paid');
+    insert into public.security_alerts (rule, severity, fingerprint, title, details)
+    values ('tickets_without_payment', 'critical', 'tickets_without_payment:' || orphan.booking_id,
+            'Tiket masih berlaku untuk pesanan yang tidak lunas; tiketnya ditangguhkan',
+            jsonb_build_object('booking_id', orphan.booking_id))
+    on conflict (fingerprint) where acknowledged_at is null do update
+    set last_seen_at = now(), occurrences = public.security_alerts.occurrences + 1, notified_at = null;
+  end loop;
+
+  for hold in
+    select b.id from public.bookings b
+    cross join lateral (select min((s.session_date + s.start_time) at time zone 'Asia/Jakarta') as first_start
+                        from public.booking_legs l join public.visit_sessions s on s.id = l.visit_session_id
+                        where l.booking_id = b.id) as legs
+    cross join lateral (select case when b.channel = 'admin' then least(b.expires_at, legs.first_start)
+                                    else b.expires_at end as remind_by) as due
+    where b.status = 'pending_payment' and not b.needs_review
+      and (b.channel = 'admin' or b.booker_type in ('school', 'university', 'government', 'company'))
+      and b.expires_at > now() and due.remind_by > now() and due.remind_by <= now() + reminder_ahead
+      and not exists (select 1 from public.notifications n
+                      where n.booking_id = b.id and n.template = 'payment_reminder')
+    order by due.remind_by
+  loop
+    perform internal.enqueue_notification(hold.id, 'payment_reminder', 'whatsapp', '{"link_scope": "pay"}');
+    perform internal.enqueue_notification(hold.id, 'payment_reminder', 'email', '{"link_scope": "pay"}');
+    reminded := reminded + 1;
+  end loop;
+  insert into public.security_alerts (rule, severity, fingerprint, title, details)
+  select 'admin_hold_unpaid_long', 'medium', 'admin_hold_unpaid_long:' || b.id,
+         'Pemesanan petugas belum dibayar lebih dari 7 hari: ' || b.booking_code,
+         jsonb_build_object('booking_id', b.id, 'rw_ids', b.rw_ids, 'created_by', b.created_by)
+  from public.bookings b
+  where b.channel = 'admin' and b.status = 'pending_payment' and b.created_at < now() - unpaid_too_long
+    and not exists (select 1 from public.security_alerts a where a.fingerprint = 'admin_hold_unpaid_long:' || b.id)
+  on conflict (fingerprint) where acknowledged_at is null do nothing;
+  perform internal.restore_settings(previous_settings);
+  return jsonb_build_object('suspended', suspended, 'reminded', reminded);
+end;
+$$;

@@ -5,7 +5,7 @@
 -- officer's check of the number), A22 (today's sessions until they end) and A23 (cash by an RW admin of a booking of
 -- one RW, until 23:59 WIB of the visit day, so its hold runs until then).
 begin;
-select plan(68);
+select plan(81);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -147,10 +147,13 @@ create temporary table later on commit drop as
   select pg_temp.book('00000000-0000-4000-8000-0000000ab001', array['00000000-0000-4000-8000-0000000ab203']::uuid[], 2,
                       pg_temp.booker('+6281300000903', true, true), 'loket-3',
                       (select hash from quotes where name = 'rw05_2')) as reply;
-select case when (now() at time zone 'Asia/Jakarta')::time < time '23:30'
-  then is((pg_temp.book('00000000-0000-4000-8000-0000000ab001', array['00000000-0000-4000-8000-0000000ab201']::uuid[],
-                        2, pg_temp.booker('+447700900127', true, true), 'loket-5',
-                        (select hash from quotes where name = 'rw05_2'))) ->> 'result', 'created',
+create temporary table today_walk_in on commit drop as
+  select pg_temp.book('00000000-0000-4000-8000-0000000ab001', array['00000000-0000-4000-8000-0000000ab201']::uuid[],
+                      2, pg_temp.booker('+447700900127', true, true), 'loket-5',
+                      (select hash from quotes where name = 'rw05_2')) as reply
+  where (now() at time zone 'Asia/Jakarta')::time < time '23:30';
+select case when exists (select 1 from today_walk_in)
+  then is((select reply ->> 'result' from today_walk_in), 'created',
           'A22: today''s session that has started is booked until it ends')
   else skip('too late in the Jakarta day to pay for a session of today', 1) end;
 reset role;
@@ -241,7 +244,8 @@ select 'walk_in', id from walk_in_booking
 union all select 'combo', id from combo_booking
 union all select 'later', (reply ->> 'booking_id')::uuid from later
 union all select 'web', id from public.bookings where booking_code = 'GSK-WEB0DNA1'
-union all select 'yesterday', id from public.bookings where booking_code = 'GSK-ADM0KMRN';
+union all select 'yesterday', id from public.bookings where booking_code = 'GSK-ADM0KMRN'
+union all select 'today', (reply ->> 'booking_id')::uuid from today_walk_in;
 grant select on bookings_to_pay to authenticated;
 create function pg_temp.pay(p_name text, p_amount bigint, p_key text) returns jsonb
   language sql
@@ -249,7 +253,15 @@ as $$
   select public.mark_booking_paid_manually((select id from bookings_to_pay where name = p_name), 'cash', p_amount,
                                            p_key, 'Kuitansi 001');
 $$;
-grant execute on function pg_temp.pay(text, bigint, text) to authenticated;
+-- The cash of a group already at the counter, counted in (A23 addendum).
+create function pg_temp.pay_present(p_name text, p_amount bigint, p_count integer) returns jsonb
+  language sql
+as $$
+  select public.mark_booking_paid_manually((select id from bookings_to_pay where name = p_name), 'cash', p_amount,
+                                           'k1', 'Kuitansi 002', null, p_count);
+$$;
+grant execute on function pg_temp.pay(text, bigint, text), pg_temp.pay_present(text, bigint, integer)
+  to authenticated;
 
 select pg_temp.act_as('superadmin_stale_totp');
 select throws_ok($$select pg_temp.pay('walk_in', 120000, 'k1')$$, '42501',
@@ -269,7 +281,7 @@ select throws_ok($$select pg_temp.pay('combo', 120000, 'k1')$$, 'P0002', null,
 select throws_ok($$select public.mark_booking_paid_manually((select id from bookings_to_pay where name = 'walk_in'),
     'manual_transfer', 120000, 'k1')$$,
   'P0001', 'only cash for an officer''s booking is recorded here', 'a transfer is not recorded here');
-select throws_ok($$select pg_temp.pay('walk_in', 120000, 'k9')$$, '22023',
+select throws_ok($$select pg_temp.pay('walk_in', 120000, 'k9')$$, 'P0001',
   'the QR key id is not one tickets are signed with', 'a QR key id off the allow-list is refused');
 select throws_ok($$select pg_temp.pay('web', 30000, 'k1')$$, 'P0001', 'this booking takes no cash now',
   'a web booking takes no cash');
@@ -302,11 +314,43 @@ update public.bookings set needs_review = false, review_reason = null where id =
 select set_config('app.in_rpc', '', true);
 
 select pg_temp.act_as('admin_rw_05');
+select throws_ok($$select pg_temp.pay_present('walk_in', 120000, 4)$$, 'P0001',
+  'cash after the session started counts the group in, and only then',
+  'nobody is counted in before the session starts');
 select is((pg_temp.pay('walk_in', 120000, 'k1')) ->> 'result', 'applied', 'the RW admin takes the cash');
 select throws_ok($$select pg_temp.pay('walk_in', 120000, 'k1')$$, 'P0001', 'this booking takes no cash now',
   'once');
+select case when exists (select 1 from today_walk_in)
+  then throws_ok($$select pg_temp.pay('today', 60000, 'k1')$$, 'P0001',
+                 'cash after the session started counts the group in, and only then',
+                 'A23: cash after the session started asks for the group to be counted in')
+  else skip('too late in the Jakarta day to pay for a session of today', 1) end;
+select case when exists (select 1 from today_walk_in)
+  then is((pg_temp.pay_present('today', 60000, 2)) ->> 'result', 'applied', 'and with the count it is taken')
+  else skip('too late in the Jakarta day to pay for a session of today', 1) end;
 reset role;
 select set_config('request.jwt.claims', '', true);
+select case when exists (select 1 from today_walk_in)
+  then is((select status::text from public.bookings where id = (select id from bookings_to_pay where name = 'today')),
+          'checked_in', 'the group is checked in, so the booking never becomes no_show')
+  else skip('too late in the Jakarta day to pay for a session of today', 1) end;
+select case when exists (select 1 from today_walk_in)
+  then is((select (status, checked_in_pax)::text from public.tickets_qr
+           where booking_id = (select id from bookings_to_pay where name = 'today')),
+          '(used,2)', 'through its ticket, with the count')
+  else skip('too late in the Jakarta day to pay for a session of today', 1) end;
+select case when exists (select 1 from today_walk_in)
+  then is((select count(*)::int from public.ticket_scans s join public.tickets_qr t on t.id = s.ticket_id
+           where t.booking_id = (select id from bookings_to_pay where name = 'today')
+             and s.phase = 'check_in' and s.result = 'ok' and s.source = 'manual' and s.attendee_count = 2
+             and s.scanned_by = '00000000-0000-4000-8000-00000000f005'), 1, 'as a manual check-in by the officer')
+  else skip('too late in the Jakarta day to pay for a session of today', 1) end;
+select case when exists (select 1 from today_walk_in)
+  then is((select count(*)::int from public.notifications
+           where booking_id = (select id from bookings_to_pay where name = 'today')
+             and template = 'payment_received_ticket' and status = 'queued'), 0,
+          'and no ticket message goes out as if the ticket were still to use')
+  else skip('too late in the Jakarta day to pay for a session of today', 1) end;
 
 select is((select (status, amount_paid)::text from public.bookings where id = (select id from walk_in_booking)),
   '(paid,120000)', 'the booking is paid');
@@ -344,7 +388,22 @@ select is((select array_agg(channel::text order by channel::text) from public.no
   array['email', 'whatsapp'], 'the PIC gets the pay link once on each channel');
 select is((select count(*)::int from public.booking_events
            where booking_id = (select id from bookings_to_pay where name = 'later') and reason = 'admin_pay_link_sent'),
-  2, 'each sending is on the timeline');
+  1, 'only a sending that queued a message is on the timeline');
+select pg_temp.act_as('admin_rw_08');
+select throws_ok($$select public.send_admin_booking_link((select id from bookings_to_pay where name = 'later'))$$,
+  'P0002', null, 'another RW''s officer sends no pay link');
+reset role;
+select pg_temp.act_as('admin_rw_05_aal1');
+select throws_ok($$select public.send_admin_booking_link((select id from bookings_to_pay where name = 'later'))$$,
+  '42501', 'only an officer at AAL2 sends a pay link', 'nor their own officer before AAL2');
+reset role;
+select pg_temp.act_as('admin_rw_05');
+select throws_ok($$select public.send_admin_booking_link((select id from bookings_to_pay where name = 'web'))$$,
+  'P0001', 'this booking takes no pay link now', 'a web booking gets its links on its own path');
+select throws_ok($$select public.send_admin_booking_link((select id from bookings_to_pay where name = 'walk_in'))$$,
+  'P0001', 'this booking takes no pay link now', 'and a paid booking none');
+reset role;
+select set_config('request.jwt.claims', '', true);
 select is((select expires_at from public.bookings where id = (select id from bookings_to_pay where name = 'later')),
   (public.today_jkt() + 3 + time '23:59') at time zone 'Asia/Jakarta',
   'A23: held until 23:59 WIB of the visit day, so the cash can still be taken that day');
@@ -364,8 +423,26 @@ select is((select reserved_pax from public.visit_sessions where id = '00000000-0
 select pg_temp.act_as('admin_rw_05');
 select throws_ok($$select pg_temp.pay('later', 60000, 'k1')$$, 'P0001', 'this booking takes no cash now',
   'and a lapsed hold takes no cash, so no seat is taken again past the capacity');
+select throws_ok($$select public.send_admin_booking_link((select id from bookings_to_pay where name = 'later'))$$,
+  'P0001', 'this booking takes no pay link now', 'nor a pay link');
 reset role;
 select set_config('request.jwt.claims', '', true);
+
+-- ===== A23 addendum: an officer's hold unpaid for a week =====
+select set_config('app.in_rpc', '1', true);
+insert into public.bookings (booking_code, status, channel, package_id, package_snapshot, rw_ids, booker_type,
+  pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
+  consent_version, consented_at, expires_at, created_by, created_at)
+values ('GSK-ADM0LAMA', 'pending_payment', 'admin', '00000000-0000-4000-8000-0000000ab001', '{}', '{5}', 'individual',
+        'Lama', '+447700900128', 'lama@example.test', 1, public.today_jkt() + 3, public.today_jkt() + 3, 30000, 30000,
+        'v1', now() - interval '8 days', now() + interval '1 day', '00000000-0000-4000-8000-00000000f005',
+        now() - interval '8 days');
+select set_config('app.in_rpc', '', true);
+select internal.payments_housekeeping();
+select is((select (rule, severity)::text from public.security_alerts
+           where fingerprint = 'admin_hold_unpaid_long:' || (select id from public.bookings
+                                                             where booking_code = 'GSK-ADM0LAMA')),
+  '(admin_hold_unpaid_long,medium)', 'an officer''s hold unpaid for a week raises a medium alert');
 
 -- ===== The web path is unchanged =====
 select throws_ok($$select internal.create_booking('00000000-0000-4000-8000-0000000ab001',
@@ -395,14 +472,16 @@ select ok(not has_function_privilege('anon', 'public.create_admin_booking(uuid, 
                                          'execute'),
   'only a signed-in officer books for a group');
 select ok(not has_function_privilege('anon',
-            'public.mark_booking_paid_manually(uuid, public.payment_method, bigint, text, text, text)', 'execute')
+            'public.mark_booking_paid_manually(uuid, public.payment_method, bigint, text, text, text, integer)',
+            'execute')
           and not has_function_privilege('anon', 'public.send_admin_booking_link(uuid)', 'execute')
           and not has_function_privilege('authenticated',
             'internal.create_admin_booking(uuid, uuid[], integer, jsonb, text, text, jsonb, uuid, jsonb, text)',
             'execute'),
   'and the internal path is no API role''s');
 select ok(has_function_privilege('authenticated',
-            'public.mark_booking_paid_manually(uuid, public.payment_method, bigint, text, text, text)', 'execute'),
+            'public.mark_booking_paid_manually(uuid, public.payment_method, bigint, text, text, text, integer)',
+            'execute'),
   'the cash is recorded through the officer''s session');
 
 select * from finish();

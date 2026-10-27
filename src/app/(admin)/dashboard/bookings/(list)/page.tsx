@@ -5,7 +5,7 @@ import { BookingTable } from '@/components/admin/bookings/booking-table';
 import { WalkInSheet } from '@/components/admin/bookings/walk-in-sheet';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { FormAlert } from '@/components/forms/form-alert';
-import { BOOKINGS_DASHBOARD_PATH } from '@/config/bookings';
+import { ADMIN_UNPAID_VIEW, BOOKINGS_DASHBOARD_PATH } from '@/config/bookings';
 import { BOOKING_STATUS } from '@/config/status';
 import { DB_ENUMS } from '@/db/enums';
 import { bookingsAdminCopy } from '@/lib/copy/bookings-admin';
@@ -51,6 +51,13 @@ const STATUS_FACET: ListFacet = {
     value: status,
     label: BOOKING_STATUS[status].label,
   })),
+};
+
+// docs/PRD.md §13.1 A23 addendum (delta review of PR #91, L-2c): the officers' holds still unpaid.
+const VIEW_FACET: ListFacet = {
+  param: 'category',
+  title: text.facets.view,
+  options: [{ value: ADMIN_UNPAID_VIEW, label: text.facets.adminUnpaid }],
 };
 
 // Task P4.3.10: "Pemesanan di loket" is the page's primary action, for an officer at AAL2.
@@ -101,6 +108,7 @@ export default async function BookingsPage({ searchParams }: { searchParams: Sea
     redirect(firstPageAddress(BOOKINGS_DASHBOARD_PATH, await searchParams));
   const facets = listFacets(isSuperadmin, {
     status: STATUS_FACET,
+    others: [VIEW_FACET],
     rw: rwFacet(text.facets.rw, rwUnits),
   });
 

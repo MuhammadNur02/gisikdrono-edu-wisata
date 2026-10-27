@@ -9,10 +9,17 @@ export interface WalkInPackage {
   maxPax: number;
 }
 
-// What createAdminBookingAction answers: the booking, and its total for the cash step.
-export interface WalkInBooking {
+// What the cash step needs of a booking: its total, its size, and when its first session starts (after it, the cash
+// counts the group in, A23 addendum). ISO strings.
+export interface CashBooking {
   bookingId: string;
   bookingCode: string;
   totalAmount: number;
+  paxCount: number;
+  sessionStartsAt: string;
+}
+
+// What createAdminBookingAction answers: the booking for the cash step, and whether the officer takes the cash now.
+export interface WalkInBooking extends CashBooking {
   isCashOnTheSpot: boolean;
 }

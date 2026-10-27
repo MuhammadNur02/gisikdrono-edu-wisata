@@ -10,11 +10,12 @@ import { ResponsiveSheet } from '@/components/admin/shell/responsive-sheet';
 import { Button } from '@/components/ui/button';
 import { walkInCopy } from '@/lib/copy/walk-in';
 import type { ActionResult } from '@/types/action-result';
-import type { WalkInBooking } from '@/types/walk-in';
+import type { CashBooking } from '@/types/walk-in';
 
 // Review of PR #91, M2 (docs/PRD.md §13.1 A23): "Terima tunai" on /dashboard/bookings/[id], for an RW admin's
-// officer booking of their RW whose hold still runs and that has no payment yet, so cash left for later is still taken
-// until 23:59 WIB of the visit day. The page decides when it shows; mark_booking_paid_manually decides again.
+// officer booking of their RW whose hold still runs and that is neither paid nor under review, so cash left for later
+// is still taken until 23:59 WIB of the visit day, also after the PIC opened the pay link (delta review, M-1). The page
+// decides when it shows; recordWalkInCashAction and mark_booking_paid_manually decide again.
 
 const text = walkInCopy;
 
@@ -25,12 +26,14 @@ const WalkInCashForm = dynamic(() =>
 type CashAction = (input: unknown) => Promise<ActionResult<null>>;
 
 export interface ReceiveCashButtonProps {
-  booking: Omit<WalkInBooking, 'isCashOnTheSpot'>;
+  booking: CashBooking;
+  hasOpenPayLink: boolean;
   action: CashAction;
   stepUpAction: CashAction;
 }
 
-export function ReceiveCashButton({ booking, action, stepUpAction }: ReceiveCashButtonProps) {
+export function ReceiveCashButton(props: ReceiveCashButtonProps) {
+  const { booking, action, stepUpAction } = props;
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   return (
@@ -51,7 +54,8 @@ export function ReceiveCashButton({ booking, action, stepUpAction }: ReceiveCash
         title={text.cashTitle(booking.bookingCode)}
       >
         <WalkInCashForm
-          booking={{ ...booking, isCashOnTheSpot: true }}
+          booking={booking}
+          hasOpenPayLink={props.hasOpenPayLink}
           action={action}
           stepUpAction={stepUpAction}
           laterLabel={text.cashClose}

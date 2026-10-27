@@ -46,17 +46,31 @@ export const walkInCopy = {
   cashClose: 'Tutup',
   receiveCash: 'Terima tunai',
   linkSent: 'Tautan pembayaran dikirim ke penanggung jawab.',
+  linkNotSent:
+    'Tautan pembayaran belum terkirim karena koneksi terputus. Hubungi penanggung jawab, atau catat uang tunainya dari halaman pemesanan.',
+  openLinkNote: 'Tautan pembayaran yang terbuka akan dihentikan',
+  present: 'Rombongan sudah hadir',
+  attendees: 'Jumlah yang hadir',
+  attendeesHint: (max: number) =>
+    `Sesi sudah dimulai, jadi rombongan langsung dicatat masuk. Paling banyak ${String(max)} orang.`,
   validation: {
     phone:
       'Tulis nomor Indonesia, misalnya 0812-3456-7890, atau nomor luar negeri dengan kode negara, misalnya +44 7700 900123.',
     consentAttested: 'Centang dulu bahwa penanggung jawab sudah menyetujui Pemberitahuan Privasi.',
     reference: 'Nomor kuitansi paling panjang 100 karakter.',
+    present: 'Centang dulu bahwa rombongan sudah hadir di loket.',
+    attendees:
+      'Tulis jumlah orang yang hadir, paling sedikit 1 dan paling banyak dua kali jumlah peserta.',
   },
   errors: {
     stateInvalid:
       'Sesi ini tidak bisa dipesan sekarang: sudah selesai, penuh, ditutup, atau waktu pembayarannya terlalu sedikit. Pilih sesi lain.',
     cashRefused:
-      'Uang tunai tidak bisa dicatat sekarang: pemesanan sudah dibayar, sedang ditinjau, punya pembayaran lain yang terbuka, atau sudah lewat pukul 23.59 WIB hari kunjungan.',
+      'Uang tunai tidak bisa dicatat sekarang: pemesanan sudah dibayar, sedang ditinjau, waktu tahannya habis, atau sudah lewat pukul 23.59 WIB hari kunjungan.',
     priceChanged: 'Harga paket berubah. Periksa lagi totalnya, lalu kirim ulang.',
+    attendanceRequired:
+      'Sesi pemesanan ini sudah dimulai. Tutup formulir, buka lagi, lalu catat rombongan yang hadir.',
+    qrKeyUnknown:
+      'Kunci tanda tangan tiket belum terdaftar, jadi tiket tidak bisa dibuat. Uang tunai belum tercatat; hubungi Superadmin Kelurahan.',
   },
 } as const;

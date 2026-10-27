@@ -2,13 +2,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   svcAttachSnapToken,
+  svcCloseAttemptForCash,
   svcCreatePaymentAttempt,
   svcRecordPaymentFailure,
 } from '@/db/rpc-payments';
 import { copy } from '@/lib/copy/id';
-import { createSnapTransaction, expireTransaction } from '@/lib/midtrans/client';
+import {
+  createSnapTransaction,
+  expireTransaction,
+  getTransactionStatus,
+} from '@/lib/midtrans/client';
 import { openAttemptOf, snapBookingOf } from '@/server/services/payment-reads';
-import { startPayment } from '@/server/services/payment-service';
+import { endOpenOrderBeforeCash, startPayment } from '@/server/services/payment-service';
 
 // The amount the database holds for the notified order, or null for an order it never issued.
 const recorded: { grossAmount: number | null } = vi.hoisted(() => ({ grossAmount: 600000 }));
@@ -30,6 +35,7 @@ vi.mock('@/lib/supabase/admin', () => ({
 vi.mock('@/db/rpc-payments', () => ({
   svcApplyPaymentEvent: vi.fn(),
   svcAttachSnapToken: vi.fn(),
+  svcCloseAttemptForCash: vi.fn(),
   svcCreatePaymentAttempt: vi.fn(),
   svcRecordPaymentEvent: vi.fn(),
   svcRecordPaymentFailure: vi.fn(),
@@ -179,5 +185,45 @@ describe('startPayment', () => {
       'failed',
     );
     expect(svcAttachSnapToken).not.toHaveBeenCalled();
+  });
+});
+
+// Delta review of PR #91, L-1: the PIC's open order before an RW admin takes the cash.
+describe('endOpenOrderBeforeCash', () => {
+  const OFFICER_ID = '0192f3a4-5b6c-7d8e-9f01-00000000f005';
+
+  it('does nothing without an open order', async () => {
+    await endOpenOrderBeforeCash(BOOKING_ID, OFFICER_ID);
+    expect(expireTransaction).not.toHaveBeenCalled();
+    expect(svcCloseAttemptForCash).not.toHaveBeenCalled();
+  });
+
+  it('ends it at Midtrans and closes it with the officer as actor', async () => {
+    vi.mocked(openAttemptOf).mockResolvedValue({ ...ABANDONED, status: 'pending' });
+    vi.mocked(expireTransaction).mockResolvedValue('expired');
+    vi.mocked(getTransactionStatus).mockResolvedValue({
+      status_code: '407',
+      transaction_status: 'expire',
+    });
+    await endOpenOrderBeforeCash(BOOKING_ID, OFFICER_ID);
+    expect(expireTransaction).toHaveBeenCalledWith(ABANDONED.orderId);
+    expect(svcCloseAttemptForCash).toHaveBeenCalledWith(
+      expect.anything(),
+      ABANDONED.paymentId,
+      OFFICER_ID,
+    );
+  });
+
+  it('stops the cash when Midtrans says the order was paid', async () => {
+    vi.mocked(openAttemptOf).mockResolvedValue(ABANDONED);
+    vi.mocked(expireTransaction).mockResolvedValue('expired');
+    vi.mocked(getTransactionStatus).mockResolvedValue({
+      status_code: '200',
+      transaction_status: 'settlement',
+    });
+    await expect(endOpenOrderBeforeCash(BOOKING_ID, OFFICER_ID)).rejects.toMatchObject({
+      code: 'STATE_INVALID',
+    });
+    expect(svcCloseAttemptForCash).not.toHaveBeenCalled();
   });
 });

@@ -60,6 +60,11 @@ describe('buildSnapPayload', () => {
     expect(() => buildSnapPayload(ended, [ADDON], CONTEXT)).toThrow(RangeError);
   });
 
+  it('keeps one page at most 24 hours, however long an officer hold runs (A23 addendum)', () => {
+    const longHold = { ...BOOKING, expiresAt: '2026-11-07T16:59:00Z' };
+    expect(buildSnapPayload(longHold, [ADDON], CONTEXT).expiry.duration).toBe(1440);
+  });
+
   it('sells a flat-priced group as one unit, and takes a discount off as its own line', () => {
     const flat = {
       ...BOOKING,

@@ -4689,6 +4689,7 @@ export type Database = {
       mark_booking_paid_manually: {
         Args: {
           p_amount: number
+          p_attendee_count?: number
           p_booking_id: string
           p_key_id: string
           p_method: Database["public"]["Enums"]["payment_method"]
@@ -5001,6 +5002,10 @@ export type Database = {
           p_user_id: string
         }
         Returns: Json
+      }
+      svc_close_attempt_for_cash: {
+        Args: { p_actor_id: string; p_payment_id: string }
+        Returns: undefined
       }
       svc_complete_notification: {
         Args: { p_id: string; p_provider_message_id: string }

@@ -1,5 +1,9 @@
 // /dashboard/bookings (Task P4.3.02, docs/PRD.md FR-ADMIN-05; docs/StyleGuide.md §6.10).
 
+// docs/PRD.md §13.1 A23 addendum (delta review of PR #91, L-2c): `?category=admin_unpaid` on /dashboard/bookings
+// narrows the list to the officers' bookings still waiting for their payment.
+export const ADMIN_UNPAID_VIEW = 'admin_unpaid';
+
 export const BOOKINGS_DASHBOARD_PATH = '/dashboard/bookings';
 
 export function bookingDetailPath(bookingId: string): string {

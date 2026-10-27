@@ -74,7 +74,7 @@ export async function loadWalkInPackage(
 }
 
 // The owner's decision of 2026-10-26 (docs/PRD.md §13.1 A22): a session of today until it ends, up to
-// booking.max_advance_days ahead, as internal.admin_booking_sessions books them.
+// booking.max_advance_days ahead, as internal.booking_sessions books them for the admin channel.
 export async function listWalkInSessions(
   wizard: BookingWizard,
   now: Date = new Date(),
@@ -125,15 +125,18 @@ export async function createWalkInBooking(
   });
 }
 
-// An open Midtrans order is ended first (payment-service.ts); the RPC still refuses while any payment is open.
-export async function recordWalkInCash(values: RecordCashValues): Promise<void> {
-  await endOpenOrderBeforeCash(values.bookingId);
+// The action found the booking able to take cash; the PIC's open Midtrans order is ended first, with the officer as
+// its actor (payment-service.ts), and the RPC still refuses while any payment is open. After the session started the
+// same call checks the group in (A23 addendum).
+export async function recordWalkInCash(ctx: StaffContext, values: RecordCashValues): Promise<void> {
+  await endOpenOrderBeforeCash(values.bookingId, ctx.userId);
   const supabase = await createSupabaseServerClient();
   const answer = await markBookingPaidInCash(supabase, {
     bookingId: values.bookingId,
     amount: values.amount,
     reference: values.reference === '' ? null : values.reference,
     keyId: serverEnv.QR_SIGNING_ACTIVE_KID,
+    attendeeCount: values.attendeeCount,
   });
   // A settlement the ledger or the seats refused waits for the superadmin under review, as a Midtrans one does.
   if (!answer.isApplied) throw new AppError('STATE_INVALID');

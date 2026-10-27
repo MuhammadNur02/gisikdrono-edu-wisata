@@ -83,11 +83,31 @@ describe('the walk-in reads and the cash', () => {
       bookingId: '0192f3a4-5b6c-7d8e-9f01-0000000000d1',
       amount: 120000,
       reference: ' ',
+      attendeeCount: null,
     };
     expect(recordCashSchema.parse(cash).reference).toBe('');
     expect(recordCashSchema.safeParse({ ...cash, amount: 1200.5 }).success).toBe(false);
     expect(recordCashSchema.safeParse({ ...cash, reference: 'x'.repeat(101) }).success).toBe(false);
     expect(recordCashSchema.safeParse({ ...cash, method: 'manual_transfer' }).success).toBe(false);
-    expect(recordCashFormSchema.safeParse({ ...cash, code: '123456' }).success).toBe(true);
+    const form = { ...cash, code: '123456', isPresent: false };
+    expect(recordCashFormSchema(false, 8).safeParse(form).success).toBe(true);
+  });
+
+  // Delta review of PR #91, L-3: after the session started, the group is confirmed here and counted in.
+  it('ask, once the session started, for the group to be here and counted, up to twice its size', () => {
+    const form = {
+      bookingId: '0192f3a4-5b6c-7d8e-9f01-0000000000d1',
+      amount: 120000,
+      reference: '',
+      code: '123456',
+    };
+    const started = recordCashFormSchema(true, 8);
+    expect(started.safeParse({ ...form, isPresent: true, attendeeCount: 4 }).success).toBe(true);
+    expect(started.safeParse({ ...form, isPresent: false, attendeeCount: 4 }).success).toBe(false);
+    expect(started.safeParse({ ...form, isPresent: true, attendeeCount: null }).success).toBe(
+      false,
+    );
+    expect(started.safeParse({ ...form, isPresent: true, attendeeCount: 9 }).success).toBe(false);
+    expect(recordCashSchema.safeParse({ ...form, attendeeCount: 0 }).success).toBe(false);
   });
 });

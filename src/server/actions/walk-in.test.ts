@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError, fail } from '@/lib/errors';
 import { getPublicSiteSettings } from '@/lib/queries/settings';
 import { requireRole, requireRwAccess, type StaffContext } from '@/server/auth/guards';
-import type { BookingWizard } from '@/server/services/booking-wizard-service';
 import {
   createWalkInBooking,
   listWalkInSessions,
@@ -17,6 +16,8 @@ import {
   listWalkInSessionsAction,
   previewWalkInQuoteAction,
 } from './walk-in';
+import { comboWizard } from '../../../tests/fixtures/booking-wizard';
+
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }));
 vi.mock('@/lib/queries/settings', () => ({ getPublicSiteSettings: vi.fn() }));
@@ -46,7 +47,7 @@ const OFFICER: StaffContext = {
 const PACKAGE_ID = '0192f3a4-5b6c-7d8e-9f01-0000000000a1';
 const BOOKING_ID = '0192f3a4-5b6c-7d8e-9f01-0000000000d1';
 const RW05 = { id: 5, label: 'RW 05', accentKey: null };
-const WIZARD = { package: { id: PACKAGE_ID, rws: [RW05] } } as unknown as BookingWizard;
+const WIZARD = { ...comboWizard, package: { ...comboWizard.package, id: PACKAGE_ID, rws: [RW05] } };
 const QUOTE = { ok: true, quote: { lines: [], total: 120000 }, quoteHash: 'a'.repeat(64) } as const;
 const BOOKING = {
   packageId: PACKAGE_ID,
@@ -123,6 +124,7 @@ describe('createAdminBookingAction', () => {
       visitDate: '2026-10-27',
       visitDateEnd: '2026-10-27',
       totalAmount: 120000,
+      firstStartsAt: '2026-10-27T09:00:00+07:00',
     });
     await expect(createAdminBookingAction(BOOKING)).resolves.toEqual({
       ok: true,
@@ -130,6 +132,8 @@ describe('createAdminBookingAction', () => {
         bookingId: BOOKING_ID,
         bookingCode: 'GSK-7F3K9Q2M',
         totalAmount: 120000,
+        paxCount: 4,
+        sessionStartsAt: '2026-10-27T09:00:00+07:00',
         isCashOnTheSpot: true,
       },
     });

@@ -53,10 +53,14 @@ function useWalkInSheet(sendLink: CashAction) {
   // Left without the cash ("Bayar nanti", closed, Esc): the PIC gets the pay link, and the booking opens on its own
   // page, where the cash can still be taken until 23:59 WIB of the visit day (review of PR #91, M2).
   const payLater = (booking: WalkInBooking) => {
-    void sendLink({ bookingId: booking.bookingId }).then((result) => {
-      if (result.ok) toast.success(text.linkSent);
-      else toast.error(result.error.message);
-    });
+    void sendLink({ bookingId: booking.bookingId })
+      .then((result) => {
+        if (result.ok) toast.success(text.linkSent);
+        else toast.error(result.error.message);
+      })
+      .catch(() => {
+        toast.error(text.linkNotSent);
+      });
     finish(booking);
   };
   const onOpenChange = (open: boolean) => {
