@@ -29,7 +29,13 @@ const INPUT = {
   fileName: 'midtrans-oktober.csv',
   rows: [{ orderId: 'GSK-7F3K9Q2M-01', status: 'settlement', grossAmount: '300000' }],
 };
-const SUMMARY = { runId: '0192f3a4-5b6c-7d8e-9f01-0000000000cc', rowsChecked: 1, issuesFound: 0 };
+const SUMMARY = {
+  runId: '0192f3a4-5b6c-7d8e-9f01-0000000000cc',
+  rowsChecked: 1,
+  issuesFound: 0,
+  issuesAlreadyOpen: 0,
+  alreadyImported: false,
+};
 
 beforeEach(() => {
   vi.mocked(requireRole).mockReset().mockResolvedValue({ ok: true, ctx: SUPERADMIN });
@@ -43,7 +49,7 @@ describe('importMidtransCsvAction', () => {
     await expect(importMidtransCsvAction(INPUT)).resolves.toEqual({ ok: true, data: SUMMARY });
     expect(requireRole).toHaveBeenCalledWith('superadmin');
     expect(requireFreshTotp).toHaveBeenCalledWith(300);
-    expect(importStatement).toHaveBeenCalledWith(INPUT);
+    expect(importStatement).toHaveBeenCalledWith({ ...INPUT, period: null });
     expect(revalidatePath).toHaveBeenCalledWith('/dashboard/finance/reconciliation');
   });
 

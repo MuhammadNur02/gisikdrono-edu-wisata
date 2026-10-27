@@ -14,6 +14,7 @@ const CLIENT = { name: 'session client' };
 const VALUES = {
   fileName: 'okt.csv',
   rows: [{ orderId: 'GSK-7F3K9Q2M-01', status: 'settlement', grossAmount: '300000' }],
+  period: null,
 };
 
 beforeEach(() => {
@@ -25,10 +26,16 @@ beforeEach(() => {
 
 describe('importStatement', () => {
   it('calls the function on the session client', async () => {
-    const summary = { runId: 'run-1', rowsChecked: 1, issuesFound: 1 };
+    const summary = {
+      runId: 'run-1',
+      rowsChecked: 1,
+      issuesFound: 1,
+      issuesAlreadyOpen: 0,
+      alreadyImported: false,
+    };
     vi.mocked(importMidtransStatement).mockResolvedValueOnce(summary);
     await expect(importStatement(VALUES)).resolves.toEqual(summary);
-    expect(importMidtransStatement).toHaveBeenCalledWith(CLIENT, 'okt.csv', VALUES.rows);
+    expect(importMidtransStatement).toHaveBeenCalledWith(CLIENT, VALUES);
   });
 
   it('reads STATEMENT_INVALID as a form error', async () => {
@@ -38,6 +45,13 @@ describe('importStatement', () => {
     });
     await expect(importStatement(VALUES)).rejects.toEqual(
       new AppError('VALIDATION', statementCopy.invalid),
+    );
+  });
+
+  it('says how many imports an hour allows (review of PR #99, L4)', async () => {
+    vi.mocked(importMidtransStatement).mockRejectedValueOnce({ code: 'P0001', hint: 'RATE_LIMITED' });
+    await expect(importStatement(VALUES)).rejects.toEqual(
+      new AppError('RATE_LIMITED', statementCopy.rateLimited),
     );
   });
 

@@ -41,10 +41,18 @@ function problemMessage(parse: Extract<StatementParse, { ok: false }>): string {
     : message;
 }
 
+// Review of PR #99, M1: a statement imported before answers with its earlier run, not an error.
+function summaryMessage(summary: StatementImportSummary): string {
+  return summary.alreadyImported
+    ? text.alreadyImported(summary.rowsChecked, summary.issuesFound)
+    : text.done(summary.rowsChecked, summary.issuesFound, summary.issuesAlreadyOpen);
+}
+
 // The browser reads the file and keeps only its rows; the action and the database check them again.
 async function chooseStatement(form: StatementForm, file: File): Promise<void> {
   form.setValue('fileName', file.name);
   form.setValue('rows', []);
+  form.setValue('period', null);
   if (file.size > STATEMENT_MAX_FILE_BYTES) {
     form.setError('rows', { message: text.fileTooLarge });
     return;
@@ -56,6 +64,7 @@ async function chooseStatement(form: StatementForm, file: File): Promise<void> {
   }
   form.clearErrors('rows');
   form.setValue('rows', parse.rows);
+  form.setValue('period', parse.period);
 }
 
 function StatementFileField({ form }: { form: StatementForm }) {
@@ -90,7 +99,7 @@ function useStatementImportForm({ importAction, stepUpAction }: StatementImportF
   const [inputKey, setInputKey] = useState(0);
   const form = useForm({
     resolver: zodResolver(importStatementFormSchema),
-    defaultValues: { fileName: '', rows: [], code: '' },
+    defaultValues: { fileName: '', rows: [], period: null, code: '' },
   });
   const { submit, failure } = useActionForm({
     form,
@@ -115,7 +124,7 @@ export function StatementImportForm(props: StatementImportFormProps) {
       <PostForm onSubmit={submit}>
         {failure ? <FormAlert tone="danger">{failure}</FormAlert> : null}
         {summary ? (
-          <FormAlert tone="info">{text.done(summary.rowsChecked, summary.issuesFound)}</FormAlert>
+          <FormAlert tone="info">{summaryMessage(summary)}</FormAlert>
         ) : null}
         <StatementFileField key={inputKey} form={form} />
         <TotpCodeField control={form.control} name="code" description={staffCopy.stepUp.hint} />

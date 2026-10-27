@@ -13,6 +13,7 @@ describe('importStatementSchema', () => {
     expect(importStatementSchema.parse({ fileName: ' midtrans.csv ', rows: [ROW] })).toEqual({
       fileName: 'midtrans.csv',
       rows: [ROW],
+      period: null,
     });
   });
 
@@ -38,6 +39,14 @@ describe('importStatementSchema', () => {
     ['an order twice', [ROW, ROW]],
     ['cents', [{ ...ROW, grossAmount: '300000.50' }]],
     ['a status Midtrans does not spell so', [{ ...ROW, status: 'Settlement' }]],
+    ['a status the Midtrans map does not know (review of PR #99, L2)', [{ ...ROW, status: 'authorize' }]],
+    [
+      'rows past the payload cap (L3)',
+      Array.from({ length: STATEMENT_MAX_ROWS }, (_, index) => ({
+        ...ROW,
+        orderId: `GSK-${'X'.repeat(48)}-${String(index)}`,
+      })),
+    ],
     ['an order id with spaces', [{ ...ROW, orderId: 'GSK 1' }]],
     [
       'too many rows',
@@ -48,6 +57,20 @@ describe('importStatementSchema', () => {
     ],
   ])('refuses %s', (_, rows) => {
     expect(importStatementSchema.safeParse({ fileName: 'a.csv', rows }).success).toBe(false);
+  });
+
+  it('takes the period of the statement, in order (review of PR #99, Info)', () => {
+    const period = { from: '2026-10-01', to: '2026-10-31' };
+    expect(importStatementSchema.parse({ fileName: 'a.csv', rows: [ROW], period }).period).toEqual(
+      period,
+    );
+    expect(
+      importStatementSchema.safeParse({
+        fileName: 'a.csv',
+        rows: [ROW],
+        period: { from: '2026-10-31', to: '2026-10-01' },
+      }).success,
+    ).toBe(false);
   });
 
   it('refuses a name that is only unsafe characters', () => {

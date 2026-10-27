@@ -7,8 +7,9 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { reconciliationCopy } from '@/lib/copy/finance-adjustments';
+import { formatIDR } from '@/lib/utils/currency';
 import { formatDateShort, formatDateTimeShort } from '@/lib/utils/dates';
-import type { ReconciliationIssue, ReconciliationRun } from '@/types/finance';
+import type { ReconciliationIssue, ReconciliationRun, StatementFacts } from '@/types/finance';
 
 const text = reconciliationCopy;
 
@@ -64,6 +65,24 @@ export interface IssuesTableProps {
   actionsFor: (issue: ReconciliationIssue) => ReactNode;
 }
 
+function sideOf(status: string | null, amount: number | null): string {
+  if (status === null && amount === null) return text.statementSide.missing;
+  return [status, amount === null ? null : formatIDR(amount)].filter(Boolean).join(' · ');
+}
+
+// Review of PR #99, M2: a statement issue shows Midtrans' status and amount above the ones the payment holds.
+function StatementComparison({ facts }: { facts: StatementFacts | null }) {
+  if (!facts) return <span aria-hidden="true">–</span>;
+  return (
+    <dl className="grid grid-cols-[auto_1fr] gap-x-2 text-body-sm">
+      <dt className="text-muted-foreground">{text.statementSide.midtrans}</dt>
+      <dd className="tabular-nums">{sideOf(facts.midtransStatus, facts.midtransAmount)}</dd>
+      <dt className="text-muted-foreground">{text.statementSide.ours}</dt>
+      <dd className="tabular-nums">{sideOf(facts.ourStatus, facts.ourAmount)}</dd>
+    </dl>
+  );
+}
+
 function IssueRow({ issue, actions }: { issue: ReconciliationIssue; actions: ReactNode }) {
   return (
     <TableRow>
@@ -74,6 +93,9 @@ function IssueRow({ issue, actions }: { issue: ReconciliationIssue; actions: Rea
       </TableCell>
       <TableCell className="font-medium">{issue.bookingCode ?? '–'}</TableCell>
       <TableCell className="tabular-nums">{issue.orderId ?? '–'}</TableCell>
+      <TableCell>
+        <StatementComparison facts={issue.statement} />
+      </TableCell>
       <TableCell>{actions}</TableCell>
     </TableRow>
   );
@@ -98,6 +120,7 @@ export function IssuesTable({ issues, actionsFor }: IssuesTableProps) {
               <TableHead>{text.columns.severity}</TableHead>
               <TableHead>{text.columns.booking}</TableHead>
               <TableHead>{text.columns.order}</TableHead>
+              <TableHead>{text.columns.comparison}</TableHead>
               <TableHead>
                 <span className="sr-only">{text.columns.action}</span>
               </TableHead>

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  MIDTRANS_STATEMENT_STATUSES,
+  STATEMENT_MAX_PAYLOAD_BYTES,
   STATEMENT_MAX_ROWS,
   columnIndexes,
   csvRecords,
@@ -117,6 +119,7 @@ describe('parseMidtransStatement: a readable statement', () => {
         { orderId: 'GSK-7F3K9Q2M-01', status: 'settlement', grossAmount: '300000' },
         { orderId: 'GSK-7F3K9Q2M-02', status: 'expire', grossAmount: '300000' },
       ],
+      period: null,
     });
   });
 
@@ -125,6 +128,20 @@ describe('parseMidtransStatement: a readable statement', () => {
     expect(parseMidtransStatement(text)).toEqual({
       ok: true,
       rows: [{ orderId: 'GSK-7F3K9Q2M-01', status: 'settlement', grossAmount: '1250000' }],
+      period: null,
+    });
+  });
+
+  it('reads the period from the transaction times, when the file has them (review of PR #99, Info)', () => {
+    const text = [
+      'Order ID,Transaction Time,Transaction Status,Gross Amount',
+      'GSK-A,2026-10-31 23:10:00,settlement,1000',
+      'GSK-B,2026-10-02 08:00:00,expire,1000',
+      'GSK-C,,pending,1000',
+    ].join('\n');
+    expect(parseMidtransStatement(text)).toMatchObject({
+      ok: true,
+      period: { from: '2026-10-02', to: '2026-10-31' },
     });
   });
 });
@@ -166,6 +183,28 @@ describe('parseMidtransStatement: a statement it refuses', () => {
       'GSK-B,t,?,q,1000',
     );
     expect(parseMidtransStatement(text)).toEqual({ ok: false, problem: 'rows', records: [3, 4] });
+  });
+
+  it('names the records whose status the Midtrans map does not know (review of PR #99, L2)', () => {
+    const text = statement('GSK-A,t,settlement,q,1000', 'GSK-B,t,authorize,q,1000');
+    expect(parseMidtransStatement(text)).toEqual({
+      ok: false,
+      problem: 'unknown_status',
+      records: [3],
+    });
+    expect(MIDTRANS_STATEMENT_STATUSES).toContain('partial_chargeback');
+  });
+
+  it('refuses rows past the payload cap (L3)', () => {
+    const rows = Array.from(
+      { length: STATEMENT_MAX_ROWS },
+      (_, index) => `GSK-${'X'.repeat(48)}-${String(index)},t,pending,q,1`,
+    );
+    expect(parseMidtransStatement(statement(...rows))).toMatchObject({
+      ok: false,
+      problem: 'too_large',
+    });
+    expect(STATEMENT_MAX_PAYLOAD_BYTES).toBe(460_800);
   });
 
   it('and the records that list an order again', () => {

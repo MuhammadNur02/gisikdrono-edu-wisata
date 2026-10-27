@@ -186,7 +186,14 @@ export const reconciliationCopy = {
     severity: 'Tingkat',
     booking: 'Pemesanan',
     order: 'Order Midtrans',
+    comparison: 'Midtrans / tercatat',
     action: 'Tindakan',
+  },
+  // Review of PR #99, M2: what a Midtrans statement said beside what the payment holds.
+  statementSide: {
+    midtrans: 'Midtrans',
+    ours: 'Tercatat',
+    missing: 'tidak ada',
   },
   resolve: 'Tutup temuan',
   resolveTitle: 'Tutup temuan',

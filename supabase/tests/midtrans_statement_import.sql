@@ -1,9 +1,27 @@
 -- Task P4.7.05 (20261104190600; docs/Security.md REC-02): the Midtrans dashboard statement compared with the payments by
 -- order_id, as a csv_import reconciliation run: an unknown order, an amount and a status that differ each become an
 -- issue; a row that agrees, a capture included, raises nothing. Only the superadmin with a fresh code imports.
+-- Review of PR #99: the same statement again is the run it made (M1), an overlapping one raises no issue already open
+-- (M1), a status Midtrans' map does not know is refused (L2), five imports an hour (L4), the period on the run and a
+-- refunded duplicate raising nothing (Info), and nothing outside the reconciliation tables changes (L1).
 begin;
-select plan(14);
+select plan(28);
 \ir helpers/rls_personas.psql
+
+create function pg_temp.hint_of(p_sql text) returns text
+  language plpgsql
+as $$
+declare
+  raised_hint text;
+begin
+  execute p_sql;
+  return null;
+exception when others then
+  get stacked diagnostics raised_hint = pg_exception_hint;
+  return raised_hint;
+end;
+$$;
+grant execute on function pg_temp.hint_of(text) to authenticated;
 
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax, status) values
   ('00000000-0000-4000-8000-0000000d1001', 5, 'regular', 'uji-statement', 'Paket Uji Statement', 25000, 'published');
@@ -30,8 +48,18 @@ insert into public.payments (id, booking_id, attempt_no, provider, method, statu
   ('00000000-0000-4000-8000-0000000d3003', '00000000-0000-4000-8000-0000000d2003', 1, 'midtrans', 'qris', 'settled',
    'GSK-SC0000A3-01', 70000, now()),
   ('00000000-0000-4000-8000-0000000d3004', '00000000-0000-4000-8000-0000000d2004', 1, 'midtrans', 'qris', 'pending',
-   'GSK-SC0000A4-01', 40000, null);
+   'GSK-SC0000A4-01', 40000, null),
+  ('00000000-0000-4000-8000-0000000d3005', '00000000-0000-4000-8000-0000000d2001', 2, 'midtrans', 'qris', 'duplicate',
+   'GSK-SC0000A1-02', 100000, now());
 select set_config('app.in_rpc', '', true);
+
+-- L1: what the import must leave as it is.
+create temporary table money_rows on commit drop as
+select (select md5(coalesce(string_agg(p::text, '|' order by p.id), '')) from public.payments p)
+       || (select md5(coalesce(string_agg(b::text, '|' order by b.id), '')) from public.bookings b)
+       || (select md5(coalesce(string_agg(e::text, '|' order by e.id), '')) from public.payment_events e)
+       || (select md5(coalesce(string_agg(r::text, '|' order by r.id), '')) from public.revenue_share_entries r)
+       as digest;
 
 -- ===== Who imports =====
 reset role;
@@ -44,6 +72,21 @@ select pg_temp.act_as('superadmin_stale_totp');
 select throws_ok($$select public.import_midtrans_statement('statement.csv',
   '[{"order_id": "GSK-SC0000A1-01", "status": "settlement", "gross_amount": "100000"}]')$$, '42501', null,
   'nor a superadmin whose code is no longer fresh');
+reset role;
+select pg_temp.act_as('superadmin_aal1');
+select throws_ok($$select public.import_midtrans_statement('statement.csv',
+  '[{"order_id": "GSK-SC0000A1-01", "status": "settlement", "gross_amount": "100000"}]')$$, '42501', null,
+  'nor a superadmin without the second factor (L1)');
+reset role;
+select pg_temp.act_as('anon');
+select throws_ok($$select public.import_midtrans_statement('statement.csv',
+  '[{"order_id": "GSK-SC0000A1-01", "status": "settlement", "gross_amount": "100000"}]')$$, '42501', null,
+  'nor a visitor');
+reset role;
+select pg_temp.act_as('none');
+select throws_ok($$select public.import_midtrans_statement('statement.csv',
+  '[{"order_id": "GSK-SC0000A1-01", "status": "settlement", "gross_amount": "100000"}]')$$, '42501', null,
+  'nor a signed-in account that holds no role');
 
 -- ===== What a statement is =====
 reset role;
@@ -57,6 +100,12 @@ select throws_ok($$select public.import_midtrans_statement('ganda.csv',
 select throws_ok($$select public.import_midtrans_statement('pecahan.csv',
   '[{"order_id": "GSK-SC0000A1-01", "status": "settlement", "gross_amount": "100000.50"}]')$$, 'P0001', null,
   'and one whose amount is not whole rupiah');
+select is(pg_temp.hint_of($$select public.import_midtrans_statement('otorisasi.csv',
+  '[{"order_id": "GSK-SC0000A1-01", "status": "authorize", "gross_amount": "100000"}]')$$), 'STATEMENT_INVALID',
+  'and one whose status midtrans_payment_status does not map (L2)');
+select is(pg_temp.hint_of($$select public.import_midtrans_statement('periode.csv',
+  '[{"order_id": "GSK-SC0000A1-01", "status": "settlement", "gross_amount": "100000"}]', '2026-10-31', '2026-10-01')$$),
+  'STATEMENT_INVALID', 'and a period that ends before it starts');
 
 -- ===== The comparison =====
 create temporary table imported on commit drop as
@@ -65,13 +114,18 @@ create temporary table imported on commit drop as
     {"order_id": "GSK-SC0000A2-01", "status": "settlement", "gross_amount": "50000"},
     {"order_id": "GSK-SC0000A3-01", "status": "settlement", "gross_amount": "75000"},
     {"order_id": "GSK-SC0000A4-01", "status": "expire", "gross_amount": "40000"},
-    {"order_id": "GSK-ZZZZZZZZ-01", "status": "settlement", "gross_amount": "1000"}]') as reply;
+    {"order_id": "GSK-ZZZZZZZZ-01", "status": "settlement", "gross_amount": "1000"}]', '2026-10-01', '2026-10-31')
+    as reply;
+grant select on imported to authenticated;
 select is((select (reply ->> 'rows_checked')::int || ':' || (reply ->> 'issues_found')::int from imported), '5:4',
   'five rows are checked and four of them disagree');
 reset role;
 select is((select source || ':' || payments_checked || ':' || issues_found || ':' || (finished_at is not null)
            from public.reconciliation_runs where id = (select (reply ->> 'run_id')::uuid from imported)),
   'csv_import:5:4:true', 'as a csv_import run of its own');
+select is((select (summary ->> 'period_from') || '/' || (summary ->> 'period_to') from public.reconciliation_runs
+           where id = (select (reply ->> 'run_id')::uuid from imported)),
+  '2026-10-01/2026-10-31', 'which keeps the period of the statement (Info)');
 select is((select string_agg(issue_type, ',' order by issue_type) from public.reconciliation_issues
            where run_id = (select (reply ->> 'run_id')::uuid from imported)),
   'amount_mismatch,status_disagreement,status_disagreement,unknown_order',
@@ -98,6 +152,67 @@ select is((select count(*)::int from public.reconciliation_issues
 select is((select (metadata ->> 'issues')::int from public.audit_logs
            where action = 'reconciliation.csv_import' and entity_id = (select reply ->> 'run_id' from imported)), 4,
   'and the import is in the audit log');
+
+-- ===== M1: the same statement again is the run it made =====
+select pg_temp.act_as('superadmin_aal2');
+create temporary table repeated on commit drop as
+  select public.import_midtrans_statement('midtrans-oktober (1).csv', '[
+    {"order_id": "GSK-ZZZZZZZZ-01", "status": "settlement", "gross_amount": "1000"},
+    {"order_id": "GSK-SC0000A4-01", "status": "expire", "gross_amount": "40000"},
+    {"order_id": "GSK-SC0000A3-01", "status": "settlement", "gross_amount": "75000"},
+    {"order_id": "GSK-SC0000A2-01", "status": "settlement", "gross_amount": "50000"},
+    {"order_id": "GSK-SC0000A1-01", "status": "capture", "gross_amount": "100000"}]') as reply;
+reset role;
+select is((select (reply ->> 'already_imported') || ':' || (reply ->> 'run_id') || ':' || (reply ->> 'issues_found')
+           from repeated),
+  'true:' || (select reply ->> 'run_id' from imported) || ':4',
+  'the same rows in another order and under another name answer with the earlier run');
+select is((select count(*)::int from public.reconciliation_runs r
+           where r.source = 'csv_import'
+             and r.statement_fingerprint = (select e.statement_fingerprint from public.reconciliation_runs e
+                                            where e.id = (select (reply ->> 'run_id')::uuid from imported))), 1,
+  'so one run holds that statement');
+select is((select count(*)::int from public.reconciliation_issues i
+           join public.reconciliation_runs r on r.id = i.run_id
+           where r.source = 'csv_import' and i.resolved_at is null), 4,
+  'and no issue is raised twice');
+
+-- ===== M1: an overlapping statement raises only what is new =====
+select pg_temp.act_as('superadmin_aal2');
+create temporary table overlapping on commit drop as
+  select public.import_midtrans_statement('midtrans-minggu-5.csv', '[
+    {"order_id": "GSK-SC0000A3-01", "status": "settlement", "gross_amount": "75000"},
+    {"order_id": "GSK-SC0000A4-01", "status": "expire", "gross_amount": "40000"},
+    {"order_id": "GSK-SC0000A1-02", "status": "refund", "gross_amount": "100000"},
+    {"order_id": "GSK-YYYYYYYY-01", "status": "settlement", "gross_amount": "2000"}]') as reply;
+reset role;
+select is((select (reply ->> 'issues_found') || ':' || (reply ->> 'issues_already_open') from overlapping), '1:2',
+  'an overlapping week raises its new unknown order and leaves the two differences already open');
+select is((select count(*)::int from public.reconciliation_issues
+           where resolved_at is null and issue_type = 'amount_mismatch'
+             and payment_id = '00000000-0000-4000-8000-0000000d3003'), 1,
+  'so one amount issue stays open for that payment');
+select is((select count(*)::int from public.reconciliation_issues
+           where payment_id = '00000000-0000-4000-8000-0000000d3005'), 0,
+  'and a duplicate payment Midtrans refunded raises nothing (Info)');
+
+-- ===== L1: the import compares; it changes nothing it compares with =====
+select is((select (select md5(coalesce(string_agg(p::text, '|' order by p.id), '')) from public.payments p)
+                  || (select md5(coalesce(string_agg(b::text, '|' order by b.id), '')) from public.bookings b)
+                  || (select md5(coalesce(string_agg(e::text, '|' order by e.id), '')) from public.payment_events e)
+                  || (select md5(coalesce(string_agg(r::text, '|' order by r.id), '')) from public.revenue_share_entries r)),
+  (select digest from money_rows), 'payments, bookings, payment events and the ledger are as they were');
+
+-- ===== L4: five imports an hour =====
+insert into public.rate_limit_buckets (key, window_start, count)
+values ('statement_import:00000000-0000-4000-8000-00000000f001',
+        to_timestamp(floor(extract(epoch from now()) / 3600) * 3600), 5)
+on conflict (key, window_start) do update set count = 5;
+select pg_temp.act_as('superadmin_aal2');
+select is(pg_temp.hint_of($$select public.import_midtrans_statement('keenam.csv',
+  '[{"order_id": "GSK-XXXXXXXX-01", "status": "settlement", "gross_amount": "3000"}]')$$), 'RATE_LIMITED',
+  'a sixth import within the hour is refused');
+reset role;
 
 select * from finish();
 rollback;
