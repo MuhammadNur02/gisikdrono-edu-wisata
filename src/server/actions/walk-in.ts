@@ -9,7 +9,12 @@ import { getPublicSiteSettings } from '@/lib/queries/settings';
 import { TAGS } from '@/lib/queries/tags';
 import { createAdminBookingSchema } from '@/lib/validations/booking';
 import { walkInPackageSchema, walkInQuoteSchema } from '@/lib/validations/walk-in';
-import { requireRole, requireRwAccess, type GuardResult } from '@/server/auth/guards';
+import {
+  requireRole,
+  requireRwAccess,
+  type GuardResult,
+  type StaffContext,
+} from '@/server/auth/guards';
 import type { BookingWizard } from '@/server/services/booking-wizard-service';
 import {
   createWalkInBooking,
@@ -36,16 +41,14 @@ type PackageRead =
   { ok: true; wizard: BookingWizard; canTakeCash: boolean } | ReturnType<typeof fail>;
 
 // The package when the officer may book it, each of its RWs checked by requireRwAccess.
-async function openPackage(packageId: string): Promise<PackageRead> {
-  const guard = await requireOfficer();
-  if (!guard.ok) return guard;
-  const wizard = await loadWalkInPackage(guard.ctx, packageId);
+async function openPackage(ctx: StaffContext, packageId: string): Promise<PackageRead> {
+  const wizard = await loadWalkInPackage(ctx, packageId);
   if (!wizard) return fail('NOT_FOUND');
   for (const rw of wizard.package.rws) {
     const access = await requireRwAccess(rw.id);
     if (!access.ok) return access;
   }
-  return { ok: true, wizard, canTakeCash: guard.ctx.role === 'admin_rw' };
+  return { ok: true, wizard, canTakeCash: ctx.role === 'admin_rw' };
 }
 
 export async function listWalkInSessionsAction(
@@ -53,8 +56,10 @@ export async function listWalkInSessionsAction(
 ): Promise<ActionResult<BookableLeg[]>> {
   const parsed = walkInPackageSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
+  const guard = await requireOfficer();
+  if (!guard.ok) return guard;
   try {
-    const read = await openPackage(parsed.data.packageId);
+    const read = await openPackage(guard.ctx, parsed.data.packageId);
     if (!read.ok) return read;
     return ok(await listWalkInSessions(read.wizard));
   } catch (error) {
@@ -68,8 +73,10 @@ export async function previewWalkInQuoteAction(
 ): Promise<ActionResult<QuotePreviewAnswer>> {
   const parsed = walkInQuoteSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
+  const guard = await requireOfficer();
+  if (!guard.ok) return guard;
   try {
-    const read = await openPackage(parsed.data.packageId);
+    const read = await openPackage(guard.ctx, parsed.data.packageId);
     if (!read.ok) return read;
     const preview = quoteWalkIn(read.wizard, parsed.data.pax);
     if (!preview.ok) return ok({ kind: 'problem', problem: 'pax_out_of_range' });
@@ -95,11 +102,14 @@ async function walkInFailure(error: unknown) {
 export async function createAdminBookingAction(
   input: unknown,
 ): Promise<ActionResult<WalkInBooking>> {
+  const settings = await getPublicSiteSettings();
+  const parsed = createAdminBookingSchema(settings.maxPax).safeParse(input);
+  if (!parsed.success) return mapError(parsed.error);
+  const guard = await requireOfficer();
+  if (!guard.ok) return guard;
+
   try {
-    const settings = await getPublicSiteSettings();
-    const parsed = createAdminBookingSchema(settings.maxPax).safeParse(input);
-    if (!parsed.success) return await mapError(parsed.error);
-    const read = await openPackage(parsed.data.packageId);
+    const read = await openPackage(guard.ctx, parsed.data.packageId);
     if (!read.ok) return read;
     if (parsed.data.isCashOnTheSpot && !read.canTakeCash) return fail('FORBIDDEN');
     const quote = quoteWalkIn(read.wizard, parsed.data.pax);
@@ -115,6 +125,8 @@ export async function createAdminBookingAction(
       bookingId: booking.bookingId,
       bookingCode: booking.bookingCode,
       totalAmount: booking.totalAmount,
+      paxCount: parsed.data.pax,
+      sessionStartsAt: booking.firstStartsAt,
       isCashOnTheSpot: parsed.data.isCashOnTheSpot,
     });
   } catch (error) {

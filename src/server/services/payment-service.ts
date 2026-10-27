@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   svcApplyPaymentEvent,
   svcAttachSnapToken,
+  svcCloseAttemptForCash,
   svcCreatePaymentAttempt,
   svcRecordPaymentEvent,
   svcRecordPaymentFailure,
@@ -35,8 +36,9 @@ import { buildSnapPayload } from '@/lib/midtrans/snap';
 import { publicEnv } from '@/lib/public-env';
 import { withinRateLimits, type RateLimitCheck } from '@/lib/rate-limit';
 // Visitors have no session and Midtrans is no user, so payments run with the service role (CLAUDE.md §6.1). Every
-// call is keyed by what the server checked first: a booking id a verified guest link gave (startPayment, the page), or
-// an order id inside a notification whose signature passed (the webhook). Status and money columns are written only by
+// call is keyed by what the server checked first: a booking id a verified guest link gave (startPayment, the page), an
+// order id inside a notification whose signature passed (the webhook), or a booking an RW admin was guarded for and
+// found able to take cash under their own RLS (endOpenOrderBeforeCash, from src/server/actions/walk-in-cash.ts). Status and money columns are written only by
 // the internal.* functions behind the svc_* wrappers.
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
@@ -278,10 +280,11 @@ export async function markRefundRequestFailedByStaff(
 
 const PAID_STATUSES: ReadonlySet<string> = new Set(['settlement', 'capture']);
 
-// Review of PR #91, L1: before an officer takes the cash, an open Midtrans order of the booking is ended at Midtrans
-// and closed here, so the PIC cannot pay it too. An order Midtrans says was paid stops the cash, and
-// mark_booking_paid_manually still refuses while any payment is open or settled.
-export async function endOpenOrderBeforeCash(bookingId: string): Promise<void> {
+// Review of PR #91, L1, and its delta review, L-1: once the action found the booking able to take cash, an open
+// Midtrans order of it is ended at Midtrans and closed here as expired with the officer as actor, so the PIC cannot pay
+// it too. An order Midtrans says was paid stops the cash, and mark_booking_paid_manually still refuses while any
+// payment is open or settled.
+export async function endOpenOrderBeforeCash(bookingId: string, actorId: string): Promise<void> {
   const adminClient = createSupabaseAdminClient();
   const open = await openAttemptOf(adminClient, bookingId);
   if (open === null) return;
@@ -289,5 +292,5 @@ export async function endOpenOrderBeforeCash(bookingId: string): Promise<void> {
   if ((await expireTransaction(open.orderId)) === 'refused') throw new AppError('PAYMENT');
   const status = await getTransactionStatus(open.orderId);
   if (PAID_STATUSES.has(status.transaction_status ?? '')) throw new AppError('STATE_INVALID');
-  await svcRecordPaymentFailure(adminClient, open.paymentId, 'expired');
+  await svcCloseAttemptForCash(adminClient, open.paymentId, actorId);
 }

@@ -1,0 +1,45 @@
+import type { BookingDetail } from '@/types/booking-admin';
+
+// A synthetic officer's booking as /dashboard/bookings/[id] reads it (Task P4.3.10): RW 05, held and unpaid, visited on
+// 2026-10-30 at 13.00 WIB. Tests change the fields they are about with a spread.
+export const officerBookingDetail: BookingDetail = {
+  id: '0192f3a4-5b6c-7d8e-9f01-0000000000d1',
+  bookingCode: 'GSK-ADM0TNAI',
+  status: 'pending_payment',
+  institutionName: null,
+  picFirstName: 'Sari',
+  bookerType: 'individual',
+  packageName: 'Eduwisata Ecowastreme',
+  rwIds: [5],
+  paxCount: 4,
+  visitDate: '2026-10-30',
+  visitDateEnd: '2026-10-30',
+  paymentStatus: null,
+  needsReview: false,
+  amounts: { total: 120000, paid: 0 },
+  createdAt: '2026-10-29T03:00:00.000Z',
+  phoneMasked: '+62 812-****-7890',
+  emailMasked: 's***@example.test',
+  isPhoneVerified: true,
+  isEmailVerified: false,
+  isAnonymised: false,
+  channel: 'admin',
+  notes: null,
+  adminNotes: null,
+  reviewReason: null,
+  cancelReason: null,
+  expiresAt: '2026-10-30T16:59:00.000Z',
+  legs: [
+    {
+      rwId: 5,
+      sessionDate: '2026-10-30',
+      startTime: '13:00',
+      label: null,
+      pax: 4,
+      status: 'reserved',
+    },
+  ],
+  payments: [],
+  tickets: [],
+  invoices: [],
+};

@@ -22,7 +22,7 @@ import { StatusBadge } from '@/components/admin/status/status-badge';
 import { Button } from '@/components/ui/button';
 import { BOOKINGS_DASHBOARD_PATH } from '@/config/bookings';
 import { bookingsAdminCopy } from '@/lib/copy/bookings-admin';
-import { isCashReceivable } from '@/lib/utils/walk-in-cash';
+import { cashBookingOf, hasOpenPayLink, isCashReceivable } from '@/lib/utils/walk-in-cash';
 import {
   loadAddonNotesAction,
   loadBookingParticipantsAction,
@@ -68,16 +68,15 @@ interface MainColumnProps {
   canReceiveCash: boolean;
 }
 
-// Task P4.3.10 (A23): the cash an RW admin takes later for an officer's booking of their RW.
+// Task P4.3.10 (A23): the cash an RW admin takes later for an officer's booking of their RW, also while the PIC has
+// a pay link open, which the cash ends (delta review of PR #91, M-1).
 function ReceiveCash({ booking }: { booking: BookingDetail }) {
-  if (booking.amounts === null) return null;
+  const cash = cashBookingOf(booking);
+  if (cash === null) return null;
   return (
     <ReceiveCashButton
-      booking={{
-        bookingId: booking.id,
-        bookingCode: booking.bookingCode,
-        totalAmount: booking.amounts.total,
-      }}
+      booking={cash}
+      hasOpenPayLink={hasOpenPayLink(booking)}
       action={recordWalkInCashAction}
       stepUpAction={verifyStaffTotpAction}
     />

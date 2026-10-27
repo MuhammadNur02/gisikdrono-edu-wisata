@@ -55,6 +55,7 @@ const adminBookingReplySchema = z.object({
   visit_date: z.iso.date(),
   visit_date_end: z.iso.date(),
   total_amount: z.int().positive(),
+  first_starts_at: z.string(),
 });
 
 export interface AdminBookingReply {
@@ -65,6 +66,7 @@ export interface AdminBookingReply {
   visitDate: string;
   visitDateEnd: string;
   totalAmount: number;
+  firstStartsAt: string;
 }
 
 export async function createAdminBooking(
@@ -104,6 +106,7 @@ export async function createAdminBooking(
     visitDate: reply.visit_date,
     visitDateEnd: reply.visit_date_end,
     totalAmount: reply.total_amount,
+    firstStartsAt: reply.first_starts_at,
   };
 }
 
@@ -112,7 +115,13 @@ const cashReplySchema = z.object({ result: z.string(), order_id: z.string() });
 // Cash for an officer's booking (A9): the whole total, once; the server's QR key id signs the tickets it issues.
 export async function markBookingPaidInCash(
   client: DatabaseClient,
-  cash: { bookingId: string; amount: number; reference: string | null; keyId: string },
+  cash: {
+    bookingId: string;
+    amount: number;
+    reference: string | null;
+    attendeeCount: number | null;
+    keyId: string;
+  },
 ): Promise<{ isApplied: boolean; orderId: string }> {
   const reply = cashReplySchema.parse(
     await resultOf(
@@ -122,6 +131,7 @@ export async function markBookingPaidInCash(
         p_amount: cash.amount,
         p_key_id: cash.keyId,
         ...(cash.reference === null ? {} : { p_reference: cash.reference }),
+        ...(cash.attendeeCount === null ? {} : { p_attendee_count: cash.attendeeCount }),
       }),
     ),
   );

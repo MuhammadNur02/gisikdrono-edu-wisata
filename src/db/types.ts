@@ -2634,6 +2634,7 @@ export type Database = {
           failure_reason: string | null
           fee_amount: number
           id: string
+          kelurahan_shortfall: number
           kind: Database["public"]["Enums"]["refund_request_kind"]
           last_attempt_at: string | null
           last_checked_at: string | null
@@ -2661,6 +2662,7 @@ export type Database = {
           failure_reason?: string | null
           fee_amount?: number
           id?: string
+          kelurahan_shortfall?: number
           kind: Database["public"]["Enums"]["refund_request_kind"]
           last_attempt_at?: string | null
           last_checked_at?: string | null
@@ -2688,6 +2690,7 @@ export type Database = {
           failure_reason?: string | null
           fee_amount?: number
           id?: string
+          kelurahan_shortfall?: number
           kind?: Database["public"]["Enums"]["refund_request_kind"]
           last_attempt_at?: string | null
           last_checked_at?: string | null
@@ -4044,6 +4047,8 @@ export type Database = {
           booking_id: string
           booking_leg_id: string
           created_at: string
+          held_at: string | null
+          held_reason: string | null
           id: string
           moves_used: number
           notice_id: string
@@ -4057,6 +4062,8 @@ export type Database = {
           booking_id: string
           booking_leg_id: string
           created_at?: string
+          held_at?: string | null
+          held_reason?: string | null
           id?: string
           moves_used?: number
           notice_id: string
@@ -4070,6 +4077,8 @@ export type Database = {
           booking_id?: string
           booking_leg_id?: string
           created_at?: string
+          held_at?: string | null
+          held_reason?: string | null
           id?: string
           moves_used?: number
           notice_id?: string
@@ -4689,6 +4698,7 @@ export type Database = {
       mark_booking_paid_manually: {
         Args: {
           p_amount: number
+          p_attendee_count?: number
           p_booking_id: string
           p_key_id: string
           p_method: Database["public"]["Enums"]["payment_method"]
@@ -5001,6 +5011,10 @@ export type Database = {
           p_user_id: string
         }
         Returns: Json
+      }
+      svc_close_attempt_for_cash: {
+        Args: { p_actor_id: string; p_payment_id: string }
+        Returns: undefined
       }
       svc_complete_notification: {
         Args: { p_id: string; p_provider_message_id: string }

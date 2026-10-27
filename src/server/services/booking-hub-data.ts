@@ -53,9 +53,10 @@ function flagForSuperadmin(adminClient: DatabaseClient, bookingId: string): void
   });
 }
 
-// A refund the terms cannot give now (a past visit, an unset fee) is no option. One the shares cannot fund
-// (CANCEL_NEEDS_SUPERADMIN) is said so and flagged for the superadmin; any other failure is logged and the hub shows
-// no option rather than an error page (review of PR #69, L-3). The cancel asks the database again anyway.
+// A refund the terms cannot give now (a past visit) is no option. One the shares cannot fund (CANCEL_NEEDS_SUPERADMIN)
+// is said so and flagged for the superadmin; a weather refund while its Midtrans fee is unset (WEATHER_FEE_UNSET) is
+// said so too, and the weather sweep holds it for the superadmin when the window closes. Any other failure is logged
+// and the hub shows no option rather than an error page (review of PR #69, L-3). The cancel asks the database again.
 async function quoteOf(
   adminClient: DatabaseClient,
   bookingId: string,
@@ -72,6 +73,7 @@ async function quoteOf(
       flagForSuperadmin(adminClient, bookingId);
       return { quote: null, needsSuperadmin: true };
     }
+    if (hint === 'WEATHER_FEE_UNSET') return { quote: null, needsSuperadmin: true };
     if (hint !== 'STATE_INVALID') {
       createLogger(randomUUID()).error('internal_error', {
         step: 'refund_preview',

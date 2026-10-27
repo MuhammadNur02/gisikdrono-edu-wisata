@@ -107,10 +107,14 @@ function checkItemsAddUp(items: readonly SnapItem[], totalAmount: number): void 
   }
 }
 
+// docs/PRD.md §13.1 A23 addendum (delta review of PR #91, L-2a): an officer's hold can run for weeks, but one Snap page
+// lives at most 24 hours; a later attempt replaces it, as any new attempt does.
+const SNAP_PAGE_MAX_MINUTES = 1440;
+
 function minutesUntil(expiresAt: string, now: Date): number {
   const minutes = Math.floor((new Date(expiresAt).getTime() - now.getTime()) / MS_PER_MINUTE);
   if (minutes < 1) throw new RangeError('The hold has no minute left for a payment page');
-  return minutes;
+  return Math.min(minutes, SNAP_PAGE_MAX_MINUTES);
 }
 
 export function buildSnapPayload(
