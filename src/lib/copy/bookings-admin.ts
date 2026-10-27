@@ -127,6 +127,8 @@ export const bookingsAdminCopy = {
       admin_phone_confirmed: 'Nomor penanggung jawab dicek petugas',
       admin_pay_link_sent: 'Tautan pembayaran dikirim petugas',
       payment_expired_for_cash: 'Tautan pembayaran dihentikan karena dibayar tunai',
+      hold_extended: 'Batas waktu pembayaran diperpanjang petugas',
+      reactivated: 'Pemesanan diaktifkan lagi oleh petugas',
       // The visit terms (20261104080200, docs/PRD.md §13.1 A16–A20).
       cancelled_unpaid: 'Dibatalkan pemesan sebelum membayar',
       cancelled_paid: 'Dibatalkan pemesan, pengembalian dana diminta',
