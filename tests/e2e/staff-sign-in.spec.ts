@@ -199,9 +199,26 @@ test('an RW officer sees only their own groups and never the RwSwitcher', async 
   }
   const nav = page.getByRole('navigation', { name: 'Menu dasbor' }).filter({ visible: true });
   await expect(nav.getByRole('link', { name: 'Reservasi' })).toBeVisible();
-  for (const hidden of ['Jadwal Pertunjukan', 'Ulasan', 'Rekap', 'Pengguna']) {
+  // docs/PRD.md §13.1 A26: their own RW's recap, read only, and no other finance page.
+  await expect(nav.getByRole('link', { name: 'Rekap', exact: true })).toBeVisible();
+  const hiddenLinks = [
+    'Jadwal Pertunjukan',
+    'Ulasan',
+    'Bagi Hasil',
+    'Rekonsiliasi',
+    'Penyesuaian',
+    'Pengguna',
+  ];
+  for (const hidden of hiddenLinks) {
     await expect(nav.getByRole('link', { name: hidden, exact: true })).toHaveCount(0);
   }
+
+  // The recap opens read only: the RW's own figures, never the superadmin's payment totals or ledger check.
+  await page.goto('/dashboard/finance');
+  await expect(page.getByRole('heading', { name: 'Rekap keuangan', level: 1 })).toBeVisible();
+  await expect(page.getByText('Bagian bersih periode ini')).toBeVisible();
+  await expect(page.getByText('Pembayaran lunas')).toHaveCount(0);
+  await expect(page.getByText('Buku besar cocok', { exact: false })).toHaveCount(0);
 });
 
 test('an account without a factor enrols one from the QR code and lands on the dashboard', async ({
