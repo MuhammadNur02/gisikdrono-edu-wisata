@@ -31,7 +31,13 @@ export async function holdThroughWizard(
   await page.getByRole('button', { name: 'Lanjut' }).click();
   await readySummary(page);
   await page.getByRole('button', { name: 'Konfirmasi & Bayar' }).click();
-  await expect(page).toHaveURL(BOOKING_URL, STEP);
+  try {
+    await expect(page).toHaveURL(BOOKING_URL, STEP);
+  } catch (error) {
+    // The summary's own alert says why the hold was refused (a limit, the quota), which the URL alone does not.
+    const alerts = await page.getByRole('alert').allInnerTexts();
+    throw new Error(`the hold did not reach /bayar: ${alerts.join(' | ') || 'no alert'}`, { cause: error });
+  }
   return BOOKING_URL.exec(page.url())?.[1] ?? '';
 }
 

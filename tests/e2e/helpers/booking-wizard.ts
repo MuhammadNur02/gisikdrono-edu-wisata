@@ -163,7 +163,9 @@ export async function fillBooker(page: Page, phone: string) {
   await page.getByRole('combobox', { name: /Jenis rombongan/ }).click();
   await page.getByRole('option', { name: 'Pribadi atau keluarga' }).click();
   await page.getByLabel(/Nama penanggung jawab/).fill('Tamu Uji E2E');
-  await page.getByLabel(/Email penanggung jawab/).fill(`e2e${RUN}@contoh.test`);
+  // An address of the phone's own, so the holds of every spec and project never share the per-address limit
+  // (booking:email, five a day), which a reset in one spec's beforeAll cannot keep under for the others.
+  await page.getByLabel(/Email penanggung jawab/).fill(`e2e${phone.replace(/\D/g, '')}@contoh.test`);
   await proveWhatsApp(page, phone);
   await page.getByRole('button', { name: 'Lanjut' }).click();
 }
