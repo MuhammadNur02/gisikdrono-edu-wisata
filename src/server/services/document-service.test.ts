@@ -4,12 +4,11 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Database } from '@/db/types';
 import { rateLimitKey } from '@/lib/rate-limit';
 
+import { isDocumentPathFor, SIGNED_URL_TTL_SECONDS } from './document-paths';
 import {
   countBookletDownload,
   createDocumentSignedUrl,
-  isDocumentPathFor,
   rerenderCertificateFiles,
-  SIGNED_URL_TTL_SECONDS,
   withinBookletDownloadLimit,
   withinRestrictedDocumentLimit,
 } from './document-service';
@@ -17,6 +16,7 @@ import { purgeMarkedFiles } from './storage-purge';
 
 // The tests hand every function its client; the module's own default would need the service-role key.
 vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => ({}) }));
+vi.mock('@/lib/supabase/server', () => ({ createSupabaseServerClient: () => Promise.resolve({}) }));
 
 // rootBody: what a Storage list answers for the bucket's root (prefix ''), where the owner folders are.
 type Reply = { status: number; body: unknown; rootBody?: unknown };
@@ -165,6 +165,8 @@ describe('createDocumentSignedUrl', () => {
       receipt: 900,
       credit_note: 900,
       export: 300,
+      adjustment_evidence: 300,
+      payout_proof: 300,
       whatsapp_document_header: 3600,
     });
   });
@@ -194,6 +196,10 @@ describe('createDocumentSignedUrl', () => {
     ['whatsapp_document_header', 'certificates/b1/group.pdf', true],
     ['ticket', 'exports/p1/visits-2026-10.xlsx', false],
     ['invoice', 'payouts/2026-10/batch.csv', false],
+    ['payout_proof', 'payouts/0192f3a4-5b6c-7d8e-9f01-000000000001/bukti.webp', true],
+    ['adjustment_evidence', 'bookings/b1/adjustment-0192f3a4.pdf', true],
+    ['payout_proof', 'bookings/b1/adjustment-0192f3a4.pdf', false],
+    ['adjustment_evidence', 'payouts/0192f3a4-5b6c-7d8e-9f01-000000000001/bukti.webp', false],
     ['ticket', 'bookings/../exports/p1/visits.xlsx', false],
     ['ticket', 'bookings/b1/../../exports/p1/visits.xlsx', false],
     ['ticket', '/bookings/b1/ticket.pdf', false],

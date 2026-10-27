@@ -1127,6 +1127,24 @@ export type Database = {
           },
         ]
       }
+      finance_proofs: {
+        Row: {
+          path: string
+          sha256: string
+          stored_at: string
+        }
+        Insert: {
+          path: string
+          sha256: string
+          stored_at?: string
+        }
+        Update: {
+          path?: string
+          sha256?: string
+          stored_at?: string
+        }
+        Relationships: []
+      }
       galleries: {
         Row: {
           alt_text: string
@@ -2489,6 +2507,7 @@ export type Database = {
           id: string
           issue_type: string
           payment_id: string | null
+          resolution: string | null
           resolution_note: string | null
           resolved_at: string | null
           resolved_by: string | null
@@ -2502,6 +2521,7 @@ export type Database = {
           id?: string
           issue_type: string
           payment_id?: string | null
+          resolution?: string | null
           resolution_note?: string | null
           resolved_at?: string | null
           resolved_by?: string | null
@@ -2515,6 +2535,7 @@ export type Database = {
           id?: string
           issue_type?: string
           payment_id?: string | null
+          resolution?: string | null
           resolution_note?: string | null
           resolved_at?: string | null
           resolved_by?: string | null
@@ -4697,13 +4718,17 @@ export type Database = {
       }
       owns_any_rw: { Args: { p_rw_ids: number[] }; Returns: boolean }
       owns_rw: { Args: { p_rw_id: number }; Returns: boolean }
+      payout_preview: {
+        Args: { p_beneficiary_key: string; p_from?: string; p_to?: string }
+        Returns: Json
+      }
       propose_adjustment: {
         Args: {
           p_amount: number
           p_booking_id: string
           p_details?: Json
           p_evidence_path: string
-          p_payment_id: string
+          p_payment_id?: string
           p_reason: string
           p_type: Database["public"]["Enums"]["adjustment_type"]
         }
@@ -4722,6 +4747,10 @@ export type Database = {
       }
       reject_adjustment: {
         Args: { p_id: string; p_reason: string }
+        Returns: Json
+      }
+      release_refund_key_mismatch: {
+        Args: { p_adjustment_id: string; p_note: string }
         Returns: Json
       }
       reset_staff_mfa: { Args: { p_user_id: string }; Returns: Json }
@@ -4784,6 +4813,10 @@ export type Database = {
         Args: { p_booking_id: string; p_reason: string }
         Returns: Json
       }
+      rpc_reveal_finance_evidence: {
+        Args: { p_id: string; p_kind: string }
+        Returns: string
+      }
       save_package: {
         Args: {
           p_leg_rw_ids?: number[]
@@ -4810,9 +4843,9 @@ export type Database = {
           p_effective_from: string
           p_lines: Json
           p_name: string
-          p_package_id: string
-          p_product_id: string
-          p_rw_id: number
+          p_package_id?: string
+          p_product_id?: string
+          p_rw_id?: number
           p_scope: Database["public"]["Enums"]["revenue_rule_scope"]
         }
         Returns: Json
@@ -4869,6 +4902,7 @@ export type Database = {
       settle_revenue_entries: {
         Args: {
           p_beneficiary_key: string
+          p_expected_total: number
           p_from: string
           p_proof_path: string
           p_reference: string

@@ -117,7 +117,9 @@ function base64Of(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes));
 }
 
-async function uploadToQuarantine(file: Blob, rwId: RwId | null): Promise<string> {
+// The first half alone, for a file the server then takes somewhere other than public-media: the finance pages' proofs
+// and evidence, which document-service.ts moves into the private documents bucket (Task P4.7.02, P4.7.04).
+export async function uploadToQuarantine(file: Blob, rwId: RwId | null): Promise<string> {
   const leadingBytes = new Uint8Array(await file.slice(0, LEADING_BYTES_LENGTH).arrayBuffer());
   const request = {
     rwId,

@@ -54,7 +54,9 @@ select set_config('app.in_rpc', '', true);
 insert into public.reconciliation_runs (id, run_date, source) values ('00000000-0000-4000-8000-0000ab000001', public.today_jkt(), 'manual');
 insert into public.reconciliation_issues (id, run_id, booking_id, issue_type, severity) values
   ('00000000-0000-4000-8000-0000ab000002', '00000000-0000-4000-8000-0000ab000001', '00000000-0000-4000-8000-0000b5000001',
-   'amount_mismatch', 'high');
+   'amount_mismatch', 'high'),
+  ('00000000-0000-4000-8000-0000ab000003', '00000000-0000-4000-8000-0000ab000001', '00000000-0000-4000-8000-0000b5000001',
+   'pending_beyond_ttl', 'medium');
 insert into public.quotations (booking_id, quotation_number, verify_code, valid_until, snapshot) values
   ('00000000-0000-4000-8000-0000b5000001', 'SP/GSK/2026/10/0501', 'RLSQUOTE05', public.today_jkt() + 14, '{}'),
   ('00000000-0000-4000-8000-0000b8000001', 'SP/GSK/2026/10/0801', 'RLSQUOTE08', public.today_jkt() + 14, '{}'),
@@ -191,10 +193,13 @@ select throws_ok($$select gross_amount from public.payments$$, '42501', null,
 select throws_ok($$select payload from public.payment_events$$, '42501', null,
   'nor a payment event''s payload (review of 0005, L1)');
 select is(pg_temp.row_count($$update public.reconciliation_issues set resolved_at = now(),
-  resolved_by = '00000000-0000-4000-8000-00000000f001', resolution_note = 'Sudah dicek'
+  resolved_by = '00000000-0000-4000-8000-00000000f001', resolution = 'resolved', resolution_note = 'Sudah dicek'
   where id = '00000000-0000-4000-8000-0000ab000002'$$), 1, 'resolves a reconciliation issue in their own name');
-select throws_ok($$update public.reconciliation_issues set resolved_by = '00000000-0000-4000-8000-00000000f005'
-  where id = '00000000-0000-4000-8000-0000ab000002'$$, '42501', null, 'never in someone else''s');
+-- Review of PR #80, L-2: against an issue still open, so the refusal is the policy's and not the closed-once trigger's.
+select throws_ok($$update public.reconciliation_issues set resolved_at = now(),
+  resolved_by = '00000000-0000-4000-8000-00000000f005', resolution = 'resolved', resolution_note = 'Sudah dicek'
+  where id = '00000000-0000-4000-8000-0000ab000003'$$, '42501', 'new row violates row-level security policy for table "reconciliation_issues"',
+  'never in someone else''s');
 
 select * from finish();
 rollback;
