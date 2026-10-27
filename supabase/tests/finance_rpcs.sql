@@ -221,8 +221,8 @@ reset role;
 -- Another Rp 25.000 for the kelurahan: the period now nets Rp 15.000.
 insert into public.revenue_share_entries (booking_id, payment_id, entry_type, line_ref, rule_version, beneficiary,
   beneficiary_key, rw_id, base_amount, pct, amount)
-values ('00000000-0000-4000-8000-0000000e2001', '00000000-0000-4000-8000-0000000e3001', 'adjustment', 'package', '{}',
-        'kelurahan', 'kelurahan', null, 100000, 25, 25000);
+values ('00000000-0000-4000-8000-0000000e2001', '00000000-0000-4000-8000-0000000e3001', 'settlement',
+        'addon:00000000-0000-4000-8000-0000000e9001', '{}', 'kelurahan', 'kelurahan', null, 100000, 25, 25000);
 select pg_temp.act_as('superadmin_aal2');
 select is(pg_temp.hint_of($$select public.settle_revenue_entries('kelurahan', public.today_jkt() - 1, public.today_jkt(),
   'TRF-KEL-POS', 'payouts/00000000-0000-4000-8000-0000000e4005/bukti.pdf', 25000)$$), 'PAYOUT_TOTAL_MISMATCH',
