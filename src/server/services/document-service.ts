@@ -5,11 +5,13 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { svcIncrementBookletDownload } from '@/db/rpc';
 import type { Database } from '@/db/types';
 import { AppError } from '@/lib/errors';
+import { pepperedHash } from '@/lib/pepper';
 import { publicEnv } from '@/lib/public-env';
 import { getPublicSiteSettings } from '@/lib/queries/settings';
 import { withinRateLimits } from '@/lib/rate-limit';
 // See withinBookletDownloadLimit for why this module creates a service-role client.
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import type { CertificateSlot } from '@/lib/utils/certificate-slots';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 import { todayInJakarta } from '@/lib/utils/dates';
 import {
@@ -26,8 +28,12 @@ import {
   rerenderBookingCertificates,
 } from '@/server/services/certificate-documents';
 import type { CertificateRow } from '@/server/services/certificate-pages';
+import { createDocumentSignedUrl } from '@/server/services/document-urls';
 import {
-  guestCertificatePath,
+  guestCertificateFile,
+  type GuestCertificateFile,
+} from '@/server/services/guest-certificate-downloads';
+import {
   loadGuestCertificates,
   stepUpCertificatePhone,
   type PhoneStepUp,
@@ -42,73 +48,6 @@ import type { GuestCertificateView } from '@/types/certificate';
 import type { VerifiedDocument } from '@/types/documents';
 
 type DatabaseClient = SupabaseClient<Database>;
-
-const DOCUMENTS_BUCKET = 'documents';
-
-// How long a signed URL to a private document stays valid (docs/Security.md §10.3). The WhatsApp document
-// header lives longest because Meta fetches the file some time after the message is queued.
-export const SIGNED_URL_TTL_SECONDS = {
-  ticket: 600,
-  certificate: 600,
-  invoice: 900,
-  quotation: 900,
-  receipt: 900,
-  credit_note: 900,
-  export: 300,
-  whatsapp_document_header: 3600,
-} as const;
-
-export type SignedDocumentKind = keyof typeof SIGNED_URL_TTL_SECONDS;
-
-// The folders of the documents bucket each kind may be signed from (CLAUDE.md §6.6): booking papers under
-// bookings/<id>/, certificates under certificates/<booking_id>/, exports under exports/<profile_id>/. Payout
-// files are never handed out by URL.
-const DOCUMENT_FOLDERS_BY_KIND: Record<SignedDocumentKind, readonly string[]> = {
-  ticket: ['bookings'],
-  certificate: ['certificates'],
-  invoice: ['bookings'],
-  quotation: ['bookings'],
-  receipt: ['bookings'],
-  credit_note: ['bookings'],
-  export: ['exports'],
-  whatsapp_document_header: ['bookings', 'certificates'],
-};
-// A segment starts with a letter or digit, so neither "." nor ".." can climb out of its folder.
-const PATH_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const MIN_DOCUMENT_SEGMENTS = 3;
-
-export function isDocumentPathFor(kind: SignedDocumentKind, path: string): boolean {
-  const segments = path.split('/');
-  const [folder] = segments;
-  return (
-    segments.length >= MIN_DOCUMENT_SEGMENTS &&
-    folder !== undefined &&
-    DOCUMENT_FOLDERS_BY_KIND[kind].includes(folder) &&
-    segments.every((segment) => PATH_SEGMENT.test(segment))
-  );
-}
-
-// The one place a signed URL into the documents bucket is minted. The caller has already authorised the
-// reader for this document; the URL is handed straight back in a redirect and never stored, logged or
-// written into a message (CLAUDE.md §6.6). A path outside the kind's own folder is refused, so a bug in a
-// caller cannot turn a ticket link into a link to someone's export. `downloadName` makes the link save the file under
-// that name instead of opening it (an export).
-export async function createDocumentSignedUrl(
-  adminClient: DatabaseClient,
-  path: string,
-  kind: SignedDocumentKind,
-  downloadName?: string,
-): Promise<string> {
-  if (!isDocumentPathFor(kind, path)) throw new AppError('NOT_FOUND');
-  const bucket = adminClient.storage.from(DOCUMENTS_BUCKET);
-  const ttl = SIGNED_URL_TTL_SECONDS[kind];
-  const { data, error } =
-    downloadName === undefined
-      ? await bucket.createSignedUrl(path, ttl)
-      : await bucket.createSignedUrl(path, ttl, { download: downloadName });
-  if (error) throw error;
-  return data.signedUrl;
-}
 
 // The service role is needed below because the limiter and the counter are internal functions no API role may
 // run (P1.3.24): a public counter would be a public write. The limiter is keyed by the visitor IP alone (hashed
@@ -255,30 +194,62 @@ export function guestCertificates(
   return loadGuestCertificates(adminClient, { bookingId, hasPhoneProof, today: todayInJakarta() });
 }
 
-export function stepUpGuestCertificates(
-  bookingId: string,
-  lastFour: string,
-  adminClient: DatabaseClient = createSupabaseAdminClient(),
-): Promise<PhoneStepUp> {
-  return stepUpCertificatePhone(adminClient, { bookingId, lastFour });
+// The IP as security events and the audit log keep it (docs/Security.md §7.4): a keyed hash, never the address.
+function ipHashOf(clientIp: string): string {
+  return pepperedHash('gsk-ip-hash-v1', clientIp);
 }
 
-// A signed URL of 600 s to the certificate's kept file, rendered first if it has none; never stored or logged.
-export async function guestCertificateUrl(
-  request: { bookingId: string; certificateId: string; hasPhoneProof: boolean },
+export function stepUpGuestCertificates(
+  request: { bookingId: string; lastFour: string; clientIp: string },
   adminClient: DatabaseClient = createSupabaseAdminClient(),
-): Promise<string> {
-  const path = await guestCertificatePath(adminClient, {
-    ...request,
+): Promise<PhoneStepUp> {
+  return stepUpCertificatePhone(adminClient, {
+    bookingId: request.bookingId,
+    lastFour: request.lastFour,
+    ipBucket: rateLimitIpBucket(request.clientIp),
+    ipHash: ipHashOf(request.clientIp),
+  });
+}
+
+// The certificate downloads' own limits (review of PR #94, M3), apart from the booking documents': per IP before the
+// link is checked (bookingId null), then per booking, and "Unduh semua" once more for the whole class it renders.
+export function withinCertificateDownloadLimits(
+  request: { clientIp: string; bookingId: string | null; slot: CertificateSlot },
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<boolean> {
+  if (request.bookingId === null) {
+    return withinRateLimits(adminClient, [
+      { name: 'certificate_download:ip', subject: rateLimitIpBucket(request.clientIp) },
+    ]);
+  }
+  const perBooking = { name: 'certificate_download:booking', subject: request.bookingId } as const;
+  const perBundle = { name: 'certificate_bundle:booking', subject: request.bookingId } as const;
+  return withinRateLimits(
+    adminClient,
+    request.slot.kind === 'all_participants' ? [perBooking, perBundle] : [perBooking],
+  );
+}
+
+// The PDF of /reservasi/[bookingCode]/sertifikat/unduh/[slot], rendered on this request when it has no kept file.
+export function guestCertificateDownload(
+  request: {
+    bookingId: string;
+    bookingCode: string;
+    slot: CertificateSlot;
+    hasPhoneProof: boolean;
+    clientIp: string;
+  },
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<GuestCertificateFile> {
+  return guestCertificateFile(adminClient, {
+    bookingId: request.bookingId,
+    bookingCode: request.bookingCode,
+    slot: request.slot,
+    hasPhoneProof: request.hasPhoneProof,
     today: todayInJakarta(),
     siteUrl: publicEnv.NEXT_PUBLIC_SITE_URL,
+    ipHash: ipHashOf(request.clientIp),
   });
-  return createDocumentSignedUrl(
-    adminClient,
-    path,
-    'certificate',
-    path.slice(path.lastIndexOf('/') + 1),
-  );
 }
 
 export interface WhatsAppDocument {

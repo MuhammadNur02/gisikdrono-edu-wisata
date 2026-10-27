@@ -5,22 +5,15 @@ import { headers } from 'next/headers';
 import { certificatesCopy } from '@/lib/copy/certificates';
 import { fail, mapError, ok } from '@/lib/errors';
 import { clientIpFrom } from '@/lib/utils/client-ip';
-import {
-  certificateDownloadSchema,
-  certificatePhoneSchema,
-} from '@/lib/validations/guest-certificate';
+import { certificatePhoneSchema } from '@/lib/validations/guest-certificate';
 import { requireGuestToken } from '@/server/auth/guards';
-import { hasCertificateProof, rememberCertificateProof } from '@/server/auth/guest-cookies';
-import {
-  guestCertificateUrl,
-  stepUpGuestCertificates,
-  withinDocumentLimits,
-} from '@/server/services/document-service';
+import { rememberCertificateProof } from '@/server/auth/guest-cookies';
+import { stepUpGuestCertificates } from '@/server/services/document-service';
 import type { ActionResult } from '@/types/action-result';
 
 // /reservasi/[bookingCode]/sertifikat (Task P4.5.03; docs/Security.md §6.7, §10.3, DOC-02): the certificate link opens
-// the page, the last four digits of the PIC's verified number open the certificates that print a person's name, and
-// each download is a signed URL of 600 s, made for this request and never kept.
+// the page, and the last four digits of the PIC's verified number open the certificates that print a person's name.
+// The downloads themselves are the route handler sertifikat/unduh/[slot] (review of PR #94, M1).
 
 const text = certificatesCopy.guest;
 
@@ -31,38 +24,19 @@ export async function proveCertificatePhoneAction(input: unknown): Promise<Actio
   if (!guard.ok) return guard;
 
   try {
-    const answer = await stepUpGuestCertificates(guard.guest.bookingId, parsed.data.lastFour);
+    const answer = await stepUpGuestCertificates({
+      bookingId: guard.guest.bookingId,
+      lastFour: parsed.data.lastFour,
+      clientIp: clientIpFrom(await headers()),
+    });
     if (answer === 'verified') {
-      await rememberCertificateProof(guard.guest.bookingCode);
+      await rememberCertificateProof(guard.guest);
       return ok(null);
     }
     if (answer === 'locked') return fail('RATE_LIMITED', undefined, text.locked);
+    if (answer === 'blocked') return fail('FORBIDDEN', undefined, text.blocked);
     if (answer === 'unverified') return fail('STATE_INVALID', undefined, text.unverified);
     return fail('VALIDATION', { lastFour: [text.mismatch] }, text.mismatch);
-  } catch (error) {
-    return mapError(error);
-  }
-}
-
-export async function certificateDownloadAction(
-  input: unknown,
-): Promise<ActionResult<{ url: string }>> {
-  const parsed = certificateDownloadSchema.safeParse(input);
-  if (!parsed.success) return mapError(parsed.error);
-  const guard = await requireGuestToken(parsed.data.bookingCode, 'certificate');
-  if (!guard.ok) return guard;
-
-  try {
-    const { bookingId, bookingCode } = guard.guest;
-    if (!(await withinDocumentLimits(clientIpFrom(await headers()), bookingId))) {
-      return fail('RATE_LIMITED');
-    }
-    const url = await guestCertificateUrl({
-      bookingId,
-      certificateId: parsed.data.certificateId,
-      hasPhoneProof: await hasCertificateProof(bookingCode),
-    });
-    return ok({ url });
   } catch (error) {
     return mapError(error);
   }

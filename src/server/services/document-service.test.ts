@@ -6,13 +6,11 @@ import { rateLimitKey } from '@/lib/rate-limit';
 
 import {
   countBookletDownload,
-  createDocumentSignedUrl,
-  isDocumentPathFor,
   rerenderCertificateFiles,
-  SIGNED_URL_TTL_SECONDS,
   withinBookletDownloadLimit,
   withinRestrictedDocumentLimit,
 } from './document-service';
+import { createDocumentSignedUrl, isDocumentPathFor, SIGNED_URL_TTL_SECONDS } from './document-urls';
 import { purgeMarkedFiles } from './storage-purge';
 
 // The tests hand every function its client; the module's own default would need the service-role key.

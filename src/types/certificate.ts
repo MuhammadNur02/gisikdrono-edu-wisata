@@ -29,13 +29,20 @@ export interface CertificateBooking {
 
 // One certificate on the visitor's /reservasi/[bookingCode]/sertifikat (Task P4.5.03): the institution a group
 // certificate names, a participant's name only once the PIC's number was proven (needsPhone), never a verify code.
+// slot is the last segment of its download address (rombongan, peserta-<n>), never its id.
 export interface GuestCertificate {
   id: string;
   kind: EnumValue<'certificate_kind'>;
   number: string;
   recipient: string | null;
   needsPhone: boolean;
+  slot: string;
 }
+
+// The last-4 step-up: open, blocked for good after ten wrong tries over the window (review of PR #94, L1), or
+// unverified when no WhatsApp code ever proved the PIC's number. Blocked and unverified both send the visitor to the
+// kelurahan.
+export type CertificatePhoneStepUp = 'open' | 'blocked' | 'unverified';
 
 // What the page shows: nothing after 90 days from the last visit day (expired), nothing yet (pending), a booking held
 // back for its unpaid visitors (held), or the certificates it may hand out (ready).
@@ -46,6 +53,5 @@ export type GuestCertificateView =
       availableUntil: string;
       certificates: GuestCertificate[];
       hasPhoneProof: boolean;
-      // False when no WhatsApp code ever proved the PIC's number: participant certificates stay with the kelurahan.
-      canProvePhone: boolean;
+      phoneStepUp: CertificatePhoneStepUp;
     };

@@ -7,29 +7,27 @@ import {
   type CertificatePhoneCheck,
 } from '@/db/rpc-certificates';
 import type { DatabaseClient } from '@/db/rpc-result';
-import { certificatesCopy } from '@/lib/copy/certificates';
-import { AppError } from '@/lib/errors';
-import { isFirstRefusal, withinRateLimits } from '@/lib/rate-limit';
-import {
-  isServable,
-  keptCertificatePath,
-  loadCertificate,
-  printsAPersonsName,
-} from '@/server/services/certificate-documents';
+import { isFirstRefusal, refundRateLimits, withinRateLimits } from '@/lib/rate-limit';
+import { formatCertificateSlot } from '@/lib/utils/certificate-slots';
 import {
   certificateBookingOf,
   standingCertificatesOf,
+  type CertificateBooking,
   type StandingCertificate,
 } from '@/server/services/guest-certificate-reads';
-import type { GuestCertificate, GuestCertificateView } from '@/types/certificate';
+import type {
+  CertificatePhoneStepUp,
+  GuestCertificate,
+  GuestCertificateView,
+} from '@/types/certificate';
 
 // The visitor's certificate page (Task P4.5.03; docs/PRD.md FR-POST-02; docs/Security.md §6.7, §10.3, DOC-02,
 // GUEST-06), on the service-role client document-service.ts hands in, keyed by the booking id a verified certificate
 // link gave. A certificate that prints a person's name (every participant's, and the group's of an individual visit)
-// opens only after the last-4 step-up, and never for a booking whose number no WhatsApp code proved; everything
-// stops 90 days after the last visit day, when internal.purge_participants removes the names and their files.
+// opens only after the last-4 step-up, never for a booking whose number no WhatsApp code proved, and never once ten
+// wrong tries blocked the step-up; everything stops 90 days after the last visit day, when
+// internal.purge_participants removes the names and their files. The downloads are guest-certificate-downloads.ts.
 
-const text = certificatesCopy.guest;
 const MS_PER_DAY = 86_400_000;
 const ISO_DATE_LENGTH = 'YYYY-MM-DD'.length;
 
@@ -43,10 +41,34 @@ export function certificatesAvailableUntil(visitDateEnd: string): string {
   return until.toISOString().slice(0, ISO_DATE_LENGTH);
 }
 
-function toGuestCertificate(row: StandingCertificate, hasPhoneProof: boolean): GuestCertificate {
+export function phoneStepUpOf(booking: CertificateBooking): CertificatePhoneStepUp {
+  if (!booking.isPhoneProven) return 'unverified';
+  return booking.isPhoneBlocked ? 'blocked' : 'open';
+}
+
+function toGuestCertificate(
+  row: StandingCertificate,
+  slot: string,
+  hasPhoneProof: boolean,
+): GuestCertificate {
   const needsPhone = row.kind === 'participant' || row.institution_name === null;
   const recipient = needsPhone ? (hasPhoneProof ? row.recipient_name : null) : row.institution_name;
-  return { id: row.id, kind: row.kind, number: row.certificate_number, recipient, needsPhone };
+  return { id: row.id, kind: row.kind, number: row.certificate_number, recipient, needsPhone, slot };
+}
+
+// The released certificates in the page's order, each with its download slot: participants by their place in the list.
+function listedCertificates(rows: readonly StandingCertificate[], hasPhoneProof: boolean) {
+  let position = 0;
+  return rows
+    .filter((row) => row.released_at !== null)
+    .map((row) => {
+      if (row.kind === 'group') {
+        return toGuestCertificate(row, formatCertificateSlot({ kind: 'group' }), hasPhoneProof);
+      }
+      position += 1;
+      const slot = formatCertificateSlot({ kind: 'participant', position });
+      return toGuestCertificate(row, slot, hasPhoneProof);
+    });
 }
 
 export async function loadGuestCertificates(
@@ -58,62 +80,33 @@ export async function loadGuestCertificates(
   if (request.today > availableUntil) return { state: 'expired', availableUntil };
   const rows = await standingCertificatesOf(adminClient, request.bookingId);
   if (rows.length === 0) return { state: 'pending', availableUntil };
-  const released = rows.filter((row) => row.released_at !== null);
-  if (released.length === 0) return { state: 'held', availableUntil };
-  const hasPhoneProof = booking.isPhoneProven && request.hasPhoneProof;
-  const certificates = released
-    .map((row) => toGuestCertificate(row, hasPhoneProof))
-    .filter((certificate) => booking.isPhoneProven || !certificate.needsPhone);
-  return {
-    state: 'ready',
-    availableUntil,
-    certificates,
-    hasPhoneProof,
-    canProvePhone: booking.isPhoneProven,
-  };
+  if (rows.every((row) => row.released_at === null)) return { state: 'held', availableUntil };
+  const phoneStepUp = phoneStepUpOf(booking);
+  const hasPhoneProof = phoneStepUp === 'open' && request.hasPhoneProof;
+  const certificates = listedCertificates(rows, hasPhoneProof).filter(
+    (certificate) => phoneStepUp !== 'unverified' || !certificate.needsPhone,
+  );
+  return { state: 'ready', availableUntil, certificates, hasPhoneProof, phoneStepUp };
 }
 
-// Five tries per booking a day (certificate_phone:booking); the first refusal raises the superadmin's alert.
+// Twenty tries per IP and five per booking a day; a right try is given back, so only wrong ones count (review of
+// PR #94, M3). The first refusal of a booking raises the superadmin's alert; the database keeps the wrong tries of the
+// whole window and answers blocked at the tenth (L1).
 export async function stepUpCertificatePhone(
   adminClient: DatabaseClient,
-  check: { bookingId: string; lastFour: string },
+  check: { bookingId: string; lastFour: string; ipBucket: string; ipHash: string },
 ): Promise<PhoneStepUp> {
-  const limit = { name: 'certificate_phone:booking', subject: check.bookingId } as const;
-  if (!(await withinRateLimits(adminClient, [limit]))) {
-    if (await isFirstRefusal(adminClient, limit)) {
+  const perIp = { name: 'certificate_phone:ip', subject: check.ipBucket } as const;
+  const perBooking = { name: 'certificate_phone:booking', subject: check.bookingId } as const;
+  if (!(await withinRateLimits(adminClient, [perIp]))) return 'locked';
+  if (!(await withinRateLimits(adminClient, [perBooking]))) {
+    if (await isFirstRefusal(adminClient, perBooking)) {
       await svcLockCertificatePhone(adminClient, check.bookingId);
     }
+    await refundRateLimits(adminClient, [perIp]);
     return 'locked';
   }
-  return svcCheckCertificatePhone(adminClient, check);
-}
-
-// Where the file of one of the booking's servable certificates is kept, after the page's own checks: the window, the
-// booking, the standing, and the step-up for a certificate that prints a person's name. Rendered on first download.
-export async function guestCertificatePath(
-  adminClient: DatabaseClient,
-  request: {
-    bookingId: string;
-    certificateId: string;
-    hasPhoneProof: boolean;
-    today: string;
-    siteUrl: string;
-  },
-): Promise<string> {
-  const booking = await certificateBookingOf(adminClient, request.bookingId);
-  if (request.today > certificatesAvailableUntil(booking.visitDateEnd)) {
-    throw new AppError('STATE_INVALID', text.expired);
-  }
-  const certificate = await loadCertificate(adminClient, request.certificateId);
-  if (!certificate || certificate.bookingId !== request.bookingId || !isServable(certificate)) {
-    throw new AppError('NOT_FOUND');
-  }
-  if (printsAPersonsName(certificate)) {
-    if (!booking.isPhoneProven) throw new AppError('NOT_FOUND');
-    if (!request.hasPhoneProof) throw new AppError('FORBIDDEN', text.needsPhone);
-  }
-  return keptCertificatePath(adminClient, certificate, {
-    siteUrl: request.siteUrl,
-    readerId: null,
-  });
+  const answer = await svcCheckCertificatePhone(adminClient, check);
+  if (answer === 'verified') await refundRateLimits(adminClient, [perIp, perBooking]);
+  return answer;
 }

@@ -13,7 +13,3 @@ export const certificatePhoneSchema = z
     lastFour: z.string().regex(new RegExp(`^[0-9]{${String(PHONE_LAST_DIGITS)}}$`)),
   })
   .strict();
-
-export const certificateDownloadSchema = z
-  .object({ bookingCode, certificateId: z.uuid() })
-  .strict();

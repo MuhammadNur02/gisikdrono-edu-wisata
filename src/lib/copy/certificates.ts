@@ -99,17 +99,20 @@ export const certificatesCopy = {
     participantNumber: (number: string) => `Sertifikat ${number}`,
     download: 'Unduh',
     downloadLabel: (number: string) => `Unduh sertifikat ${number}`,
-    downloading: 'Membuka sertifikat…',
+    downloadAll: 'Unduh semua (satu PDF)',
+    downloadAllLabel: 'Unduh semua sertifikat peserta dalam satu PDF',
     stepUpTitle: 'Verifikasi nomor pemesan',
     stepUpBody:
-      'Sertifikat yang mencantumkan nama hanya dibuka untuk pemesan. Masukkan empat digit terakhir nomor WhatsApp yang dipakai saat memesan.',
+      'Sertifikat yang mencantumkan nama hanya dibuka untuk pemesan. Masukkan empat digit terakhir nomor pemesan yang terverifikasi saat memesan.',
     lastFour: 'Empat digit terakhir',
     lastFourHint: 'Contoh: 4521',
     stepUp: 'Buka sertifikat peserta',
     mismatch: 'Empat digit itu tidak cocok dengan nomor pemesan.',
-    locked: 'Terlalu banyak percobaan. Coba lagi besok, atau hubungi kelurahan lewat WhatsApp.',
+    locked: 'Terlalu banyak percobaan. Coba lagi besok, atau hubungi kelurahan.',
+    blocked:
+      'Empat digit nomor pemesan sudah terlalu sering salah, jadi sertifikat peserta tidak bisa dibuka di sini lagi. Hubungi kelurahan, ya.',
     unverified:
-      'Nomor pemesan reservasi ini belum terverifikasi lewat WhatsApp, jadi sertifikat peserta tidak bisa dibuka di sini. Hubungi kelurahan lewat WhatsApp, ya.',
+      'Reservasi ini tidak punya nomor pemesan yang terverifikasi, jadi sertifikat peserta tidak bisa dibuka di sini. Hubungi kelurahan, ya.',
     needsPhone: 'Verifikasi empat digit terakhir nomor pemesan dulu, ya.',
   },
 } as const;

@@ -1,38 +1,44 @@
 import { Award, Users } from 'lucide-react';
 
-import {
-  CertificateDownloadButton,
-  type CertificateDownloadAction,
-} from '@/components/certificates/certificate-download-button';
+import { CertificateDownloadLink } from '@/components/certificates/certificate-download-link';
 import {
   CertificatePhoneStepUp,
   type ProveCertificatePhoneAction,
 } from '@/components/certificates/certificate-phone-step-up';
 import { FormAlert } from '@/components/forms/form-alert';
 import { certificatesCopy } from '@/lib/copy/certificates';
+import { certificateDownloadPath, parseCertificateSlot } from '@/lib/utils/certificate-slots';
 import type { GuestCertificate, GuestCertificateView } from '@/types/certificate';
 
 const text = certificatesCopy.guest;
-
-export interface GuestCertificateActions {
-  download: CertificateDownloadAction;
-  prove: ProveCertificatePhoneAction;
-}
+// "Unduh semua" is offered once a class has more than one participant certificate.
+const MIN_PARTICIPANTS_FOR_ALL = 2;
 
 interface ListProps {
   bookingCode: string;
-  actions: GuestCertificateActions;
+  prove: ProveCertificatePhoneAction;
 }
 
+type ReadyView = Extract<GuestCertificateView, { state: 'ready' }>;
+
 const NOTICE_OF = { expired: text.expired, pending: text.pending, held: text.held } as const;
+
+function downloadHref(bookingCode: string, slot: string): string | null {
+  const parsed = parseCertificateSlot(slot);
+  return parsed === null ? null : certificateDownloadPath(bookingCode, parsed);
+}
 
 function CertificateRow({
   certificate,
   canDownload,
   bookingCode,
-  actions,
-}: ListProps & { certificate: GuestCertificate; canDownload: boolean }) {
+}: {
+  certificate: GuestCertificate;
+  canDownload: boolean;
+  bookingCode: string;
+}) {
   const Icon = certificate.kind === 'group' ? Award : Users;
+  const href = canDownload ? downloadHref(bookingCode, certificate.slot) : null;
   return (
     <li className="flex items-center gap-3 py-3">
       <Icon aria-hidden className="size-5 shrink-0 text-primary" />
@@ -44,13 +50,10 @@ function CertificateRow({
           {text.participantNumber(certificate.number)}
         </p>
       </div>
-      {canDownload && (
-        <CertificateDownloadButton
-          bookingCode={bookingCode}
-          certificateId={certificate.id}
-          number={certificate.number}
-          action={actions.download}
-        />
+      {href && (
+        <CertificateDownloadLink href={href} label={text.downloadLabel(certificate.number)}>
+          {text.download}
+        </CertificateDownloadLink>
       )}
     </li>
   );
@@ -60,19 +63,33 @@ function CertificateGroup({
   title,
   certificates,
   hasPhoneProof,
-  ...props
-}: ListProps & { title: string; certificates: GuestCertificate[]; hasPhoneProof: boolean }) {
+  bookingCode,
+  allHref,
+}: {
+  title: string;
+  certificates: GuestCertificate[];
+  hasPhoneProof: boolean;
+  bookingCode: string;
+  allHref?: string | undefined;
+}) {
   if (certificates.length === 0) return null;
   return (
     <section className="space-y-1 rounded-2xl border border-border bg-card px-5 py-4">
-      <h2 className="text-label font-semibold">{title}</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-label font-semibold">{title}</h2>
+        {allHref && (
+          <CertificateDownloadLink href={allHref} label={text.downloadAllLabel}>
+            {text.downloadAll}
+          </CertificateDownloadLink>
+        )}
+      </div>
       <ul className="divide-y divide-border">
         {certificates.map((certificate) => (
           <CertificateRow
             key={certificate.id}
             certificate={certificate}
             canDownload={!certificate.needsPhone || hasPhoneProof}
-            {...props}
+            bookingCode={bookingCode}
           />
         ))}
       </ul>
@@ -80,9 +97,18 @@ function CertificateGroup({
   );
 }
 
+function PhoneNotice({ view, prove, bookingCode }: ListProps & { view: ReadyView }) {
+  if (view.phoneStepUp === 'unverified') return <FormAlert tone="info">{text.unverified}</FormAlert>;
+  if (view.hasPhoneProof || !view.certificates.some((certificate) => certificate.needsPhone)) {
+    return null;
+  }
+  if (view.phoneStepUp === 'blocked') return <FormAlert tone="info">{text.blocked}</FormAlert>;
+  return <CertificatePhoneStepUp bookingCode={bookingCode} action={prove} />;
+}
+
 // docs/PRD.md FR-POST-02 (Task P4.5.03): what the certificate link shows. The group certificate of an institution opens
-// at once; a certificate that prints a person's name waits for the last-4 step-up, and none is offered for a booking
-// whose number no WhatsApp code proved.
+// at once; a certificate that prints a person's name waits for the last-4 step-up, none is offered for a booking whose
+// number no WhatsApp code proved, and none once ten wrong tries blocked the step-up (review of PR #94, L1).
 export function GuestCertificateList({
   view,
   ...props
@@ -92,25 +118,21 @@ export function GuestCertificateList({
   const participants = view.certificates.filter(
     (certificate) => certificate.kind === 'participant',
   );
-  const needsStepUp =
-    view.certificates.some((certificate) => certificate.needsPhone) && !view.hasPhoneProof;
+  const canDownloadAll = view.hasPhoneProof && participants.length >= MIN_PARTICIPANTS_FOR_ALL;
+  const shared = { hasPhoneProof: view.hasPhoneProof, bookingCode: props.bookingCode };
   return (
     <div className="space-y-6">
-      {!view.canProvePhone && <FormAlert tone="info">{text.unverified}</FormAlert>}
-      <CertificateGroup
-        title={text.group}
-        certificates={group}
-        hasPhoneProof={view.hasPhoneProof}
-        {...props}
-      />
-      {needsStepUp && (
-        <CertificatePhoneStepUp bookingCode={props.bookingCode} action={props.actions.prove} />
-      )}
+      <CertificateGroup title={text.group} certificates={group} {...shared} />
+      <PhoneNotice view={view} {...props} />
       <CertificateGroup
         title={text.participants}
         certificates={participants}
-        hasPhoneProof={view.hasPhoneProof}
-        {...props}
+        allHref={
+          canDownloadAll
+            ? certificateDownloadPath(props.bookingCode, { kind: 'all_participants' })
+            : undefined
+        }
+        {...shared}
       />
     </div>
   );

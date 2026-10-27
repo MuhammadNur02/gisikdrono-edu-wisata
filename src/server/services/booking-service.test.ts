@@ -199,6 +199,7 @@ describe('verifyGuestAccess', () => {
       bookingId: BOOKING_ID,
       bookingCode: CODE,
       scope: 'manage',
+      tokenVersion: 2,
     });
   });
 

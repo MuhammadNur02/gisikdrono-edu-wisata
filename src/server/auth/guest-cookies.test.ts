@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ensureOtpBrowserId,
+  forgetCertificateProof,
   forgetPhoneProof,
   hasCertificateProof,
   readOtpBrowserCookie,
@@ -120,8 +121,10 @@ describe('the gsk_otp_browser cookie', () => {
 
 // Task P4.5.03 (docs/Security.md DOC-02): the last-4 step-up of the certificate page.
 describe("the certificate page's phone proof", () => {
+  const BINDING = { bookingCode: 'GSK-7F3K9Q2M', tokenVersion: 1 };
+
   it("is kept for half an hour under that booking's certificate page alone", async () => {
-    await rememberCertificateProof('GSK-7F3K9Q2M');
+    await rememberCertificateProof(BINDING);
     expect(jar.get('bk_GSK-7F3K9Q2M_certificate_phone')?.options).toEqual({
       httpOnly: true,
       secure: true,
@@ -129,14 +132,23 @@ describe("the certificate page's phone proof", () => {
       path: '/reservasi/GSK-7F3K9Q2M/sertifikat',
       maxAge: 1800,
     });
-    await expect(hasCertificateProof('GSK-7F3K9Q2M')).resolves.toBe(true);
+    await expect(hasCertificateProof(BINDING)).resolves.toBe(true);
+  });
+
+  it('ends with the links: a new version refuses it, and "Cabut tautan" removes it', async () => {
+    await rememberCertificateProof(BINDING);
+    await expect(hasCertificateProof({ ...BINDING, tokenVersion: 2 })).resolves.toBe(false);
+    await forgetCertificateProof('GSK-7F3K9Q2M');
+    expect(jar.has('bk_GSK-7F3K9Q2M_certificate_phone')).toBe(false);
   });
 
   it("is missing until the digits are typed, and never opens another booking's", async () => {
-    await expect(hasCertificateProof('GSK-7F3K9Q2M')).resolves.toBe(false);
-    await rememberCertificateProof('GSK-7F3K9Q2M');
+    await expect(hasCertificateProof(BINDING)).resolves.toBe(false);
+    await rememberCertificateProof(BINDING);
     const kept = jar.get('bk_GSK-7F3K9Q2M_certificate_phone');
     if (kept) jar.set('bk_GSK-7F3K9Q2N_certificate_phone', kept);
-    await expect(hasCertificateProof('GSK-7F3K9Q2N')).resolves.toBe(false);
+    await expect(
+      hasCertificateProof({ ...BINDING, bookingCode: 'GSK-7F3K9Q2N' }),
+    ).resolves.toBe(false);
   });
 });

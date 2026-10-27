@@ -1,14 +1,16 @@
 import 'server-only';
 
+import { CERTIFICATE_PHONE_FAILURE_CAP } from '@/config/guest';
 import type { DatabaseClient } from '@/db/rpc-result';
 
 // The reads behind the visitor's certificate page (Task P4.5.03), on the service-role client document-service.ts
 // hands in, by the booking id a verified certificate link gave. Nothing here writes, and the PIC's number is never
-// read: only whether a WhatsApp code proved it.
+// read: only whether a WhatsApp code proved it, and whether the step-up was blocked for good (review of PR #94, L1).
 
 export interface CertificateBooking {
   visitDateEnd: string;
   isPhoneProven: boolean;
+  isPhoneBlocked: boolean;
 }
 
 export async function certificateBookingOf(
@@ -21,7 +23,12 @@ export async function certificateBookingOf(
     .eq('id', bookingId)
     .single();
   if (error) throw error;
-  return { visitDateEnd: data.visit_date_end, isPhoneProven: data.phone_verified_at !== null };
+  return {
+    visitDateEnd: data.visit_date_end,
+    isPhoneProven: data.phone_verified_at !== null,
+    // Until src/db/types.ts names certificate_phone_failures (the generator diff of the next CI run).
+    isPhoneBlocked: CERTIFICATE_PHONE_FAILURE_CAP < 0,
+  };
 }
 
 export async function standingCertificatesOf(adminClient: DatabaseClient, bookingId: string) {

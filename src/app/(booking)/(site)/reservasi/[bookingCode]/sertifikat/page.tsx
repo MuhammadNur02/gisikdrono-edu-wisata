@@ -4,16 +4,12 @@ import { notFound } from 'next/navigation';
 import { GuestCertificateList } from '@/components/certificates/guest-certificate-list';
 import { certificatesCopy } from '@/lib/copy/certificates';
 import { formatDateWritten } from '@/lib/utils/dates';
-import {
-  certificateDownloadAction,
-  proveCertificatePhoneAction,
-} from '@/server/actions/guest-certificates';
+import { proveCertificatePhoneAction } from '@/server/actions/guest-certificates';
 import { requireGuestToken } from '@/server/auth/guards';
 import { hasCertificateProof } from '@/server/auth/guest-cookies';
 import { guestCertificates } from '@/server/services/document-service';
 
 const text = certificatesCopy.guest;
-const ACTIONS = { download: certificateDownloadAction, prove: proveCertificatePhoneAction };
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: text.title, robots: { index: false, follow: false } };
@@ -29,10 +25,7 @@ export default async function CertificatePage({ params }: CertificatePageProps) 
   const { bookingCode } = await params;
   const guard = await requireGuestToken(bookingCode, 'certificate');
   if (!guard.ok) notFound();
-  const view = await guestCertificates(
-    guard.guest.bookingId,
-    await hasCertificateProof(guard.guest.bookingCode),
-  );
+  const view = await guestCertificates(guard.guest.bookingId, await hasCertificateProof(guard.guest));
   return (
     <div className="w-full max-w-2xl space-y-6">
       <header className="space-y-2">
@@ -43,7 +36,11 @@ export default async function CertificatePage({ params }: CertificatePageProps) 
           </p>
         )}
       </header>
-      <GuestCertificateList view={view} bookingCode={guard.guest.bookingCode} actions={ACTIONS} />
+      <GuestCertificateList
+        view={view}
+        bookingCode={guard.guest.bookingCode}
+        prove={proveCertificatePhoneAction}
+      />
     </div>
   );
 }

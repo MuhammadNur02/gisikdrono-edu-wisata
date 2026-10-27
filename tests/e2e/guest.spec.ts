@@ -111,6 +111,6 @@ test('opens the certificate page with the certificate link only', async ({ page,
   await expect(
     visitor.getByText(/Sertifikat terbit setelah rombongan selesai check-in/),
   ).toBeVisible();
-  await expect(visitor.getByRole('button', { name: /Unduh sertifikat/ })).toHaveCount(0);
+  await expect(visitor.getByRole('link', { name: /Unduh sertifikat/ })).toHaveCount(0);
   await stranger.close();
 });

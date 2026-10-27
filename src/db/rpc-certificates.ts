@@ -54,20 +54,22 @@ export function svcRecordCertificatePdf(
   );
 }
 
-const phoneCheckSchema = z.enum(['verified', 'mismatch', 'unverified']);
+const phoneCheckSchema = z.enum(['verified', 'mismatch', 'blocked', 'unverified']);
 export type CertificatePhoneCheck = z.infer<typeof phoneCheckSchema>;
 
-// The guest certificate page's step-up (Task P4.5.03, 20261104182000): the four digits go in, only the answer comes
-// back; the PIC's number never leaves the database.
+// The guest certificate page's step-up (Task P4.5.03, 20261104182000): the four digits and the hashed IP go in, only
+// the answer comes back; the PIC's number never leaves the database, which counts the wrong tries of the window and
+// records a right one as a pii_revealed event.
 export async function svcCheckCertificatePhone(
   adminClient: DatabaseClient,
-  check: { bookingId: string; lastFour: string },
+  check: { bookingId: string; lastFour: string; ipHash: string },
 ): Promise<CertificatePhoneCheck> {
   return phoneCheckSchema.parse(
     await resultOf(
       adminClient.rpc('svc_check_certificate_phone', {
         p_booking_id: check.bookingId,
         p_last_four: check.lastFour,
+        p_ip_hash: check.ipHash,
       }),
     ),
   );
