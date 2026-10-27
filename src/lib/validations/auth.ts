@@ -8,7 +8,7 @@ const EMAIL_MAX_LENGTH = 254;
 // bcrypt reads 72 bytes, and Supabase Auth refuses a longer password.
 const PASSWORD_MAX_LENGTH = 72;
 // docs/Security.md §5.2 (AUTH-02); Supabase Auth checks the same rule and leaked passwords on top.
-const PASSWORD_MIN_LENGTH = 12;
+const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_CLASSES = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/];
 const CAPTCHA_TOKEN_MAX_LENGTH = 2048;
 const NEXT_PATH_MAX_LENGTH = 512;

@@ -6,7 +6,7 @@ export const authCopy = {
     password: 'Tulis kata sandi Anda.',
     passwordTooLong: 'Kata sandi paling panjang 72 karakter.',
     newPassword:
-      'Kata sandi minimal 12 karakter dan memuat huruf besar, huruf kecil, angka, serta simbol.',
+      'Kata sandi minimal 8 karakter dan memuat huruf besar, huruf kecil, angka, serta simbol.',
     passwordMismatch: 'Kedua kata sandi belum sama.',
     totpCode: 'Tulis 6 angka dari aplikasi autentikator.',
     captcha: 'Tunggu verifikasi keamanan selesai, lalu coba lagi.',
@@ -59,7 +59,7 @@ export const authCopy = {
     description:
       'Setelah tersimpan, Anda keluar dari semua perangkat, lalu masuk lagi dengan kata sandi baru.',
     password: 'Kata sandi baru',
-    passwordHint: 'Minimal 12 karakter dengan huruf besar, huruf kecil, angka, dan simbol.',
+    passwordHint: 'Minimal 8 karakter dengan huruf besar, huruf kecil, angka, dan simbol.',
     confirmPassword: 'Ulangi kata sandi baru',
     totpHint: 'Akun petugas memakai verifikasi dua langkah, jadi penggantian juga butuh kodenya.',
     submit: 'Simpan kata sandi',
