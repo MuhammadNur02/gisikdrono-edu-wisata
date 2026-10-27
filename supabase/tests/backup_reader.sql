@@ -49,6 +49,9 @@ select is(
     select t.schemaname || '.' || t.tablename from pg_tables t
     where t.tableowner = 'postgres'
       and t.schemaname not in ('public', 'internal', 'supabase_migrations')
+      -- A session's own temporary tables (pgTAP keeps its counters in one) are never part of the schema.
+      and t.schemaname not like 'pg\_temp\_%'
+      and t.schemaname not like 'pg\_toast\_temp\_%'
     order by 1
   ),
   array[]::text[],
