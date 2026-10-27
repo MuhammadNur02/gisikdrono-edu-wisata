@@ -4,7 +4,8 @@
 --                           default start), and for a period the total and the rows, as of the server's time now. A
 --                           read for the superadmin at AAL2.
 --   settle_revenue_entries  takes the total the superadmin saw and transferred (p_expected_total) and refuses
---                           (PAYOUT_TOTAL_MISMATCH) when the rows it stamps add up to anything else; the period ends
+--                           (PAYOUT_TOTAL_MISMATCH) when the rows it stamps add up to anything else, negative rows
+--                           included; a net of nothing or less stays PAYOUT_EMPTY, whatever was named; the period ends
 --                           today at the latest, and only rows written by the time of the call are stamped. The proof's
 --                           content is checked as every finance proof is (20261104190300, PROOF_REUSED).
 --
@@ -81,9 +82,6 @@ begin
   if p_from is null or p_to is null or p_from > p_to or p_to > public.today_jkt() then
     raise exception 'a payout covers days that have passed' using errcode = '22023';
   end if;
-  if p_expected_total is null or p_expected_total <= 0 then
-    raise exception 'a payout names the amount transferred' using errcode = '22023';
-  end if;
   if length(reference) not between 3 and 100 then
     raise exception 'a payout names its transfer in 3 to 100 characters' using errcode = '22023';
   end if;
@@ -106,12 +104,14 @@ begin
     returning e.amount
   )
   select coalesce(sum(stamped.amount), 0) into total from stamped;
+  -- The total nets every unpaid row of the period, a negative kelurahan row (an A24 shortfall) included; a net of
+  -- nothing or less is no payout, whatever amount was named (#90's review).
   if total <= 0 then
     raise exception 'nothing is left to pay out to % from % to %', key, p_from, p_to
       using errcode = 'P0001', hint = 'PAYOUT_EMPTY';
   end if;
-  -- M-2: what was transferred is what the rows add up to, or nothing is written.
-  if total <> p_expected_total then
+  -- M-2: what was transferred is what the rows add up to, or nothing is written; naming no amount is naming another.
+  if p_expected_total is distinct from total then
     raise exception 'the period pays % to %, not the % transferred', total, key, p_expected_total
       using errcode = 'P0001', hint = 'PAYOUT_TOTAL_MISMATCH';
   end if;
