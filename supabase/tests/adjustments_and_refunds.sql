@@ -10,8 +10,11 @@
 -- count towards nor block what Midtrans refunded (N16), a manual refund Midtrans made under its refund_key, a
 -- rejected adjustment's evidence (L2), and an event judged only under its own source (L4). Delta 2: a manual refund
 -- counts as Midtrans' once Midtrans lists its key, whenever that answer comes (N17), and only for its own amount (L5).
+-- Delta 3 (20261104190200): a key listed with another amount (L6), a reference however written (L7), the notice of a
+-- recorded refund closing its alert (I1), and an answer without refunds[] (I2). Review of PR #80: the L7 refusal by
+-- its hint (L-3); releasing an L6 block is refund_key_release.sql's.
 begin;
-select plan(126);
+select plan(131);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: RW 05 and combo packages and two superadmins old enough to approve =====
@@ -77,6 +80,22 @@ end;
 $$;
 grant execute on function pg_temp.doc(text) to authenticated;
 
+-- The hint a statement is refused with, or null when it runs (review of PR #80, L-3).
+create function pg_temp.hint_of(p_sql text) returns text
+  language plpgsql
+as $$
+declare
+  raised_hint text;
+begin
+  execute p_sql;
+  return null;
+exception when others then
+  get stacked diagnostics raised_hint = pg_exception_hint;
+  return raised_hint;
+end;
+$$;
+grant execute on function pg_temp.hint_of(text) to authenticated;
+
 -- A refund's proof as finance-service.ts names it, refund-<uuid>.pdf (N6), with or without the file in the bucket.
 create function pg_temp.proof_path(p_booking uuid, p_name text) returns text
   language sql
@@ -95,7 +114,10 @@ as $$
     gross_amount_raw, payload, processed_at)
   select p.id, p.order_id, 'status_api', md5(p.id::text || p_refunded || clock_timestamp()::text),
          case when p_refunded >= p.gross_amount then 'refund' else 'partial_refund' end, '200', p.gross_amount || '.00',
-         jsonb_build_object('refund_amount', p_refunded || '.00', 'currency', 'IDR'), now()
+         jsonb_build_object('refund_amount', p_refunded || '.00', 'currency', 'IDR',
+                            'refunds', jsonb_build_array(jsonb_build_object('refund_key', 'uji-' || p_refunded,
+                                                                            'refund_amount', p_refunded || '.00'))),
+         now()
   from public.payments p where p.id = p_payment;
 $$;
 
@@ -457,9 +479,7 @@ select throws_ok($$select internal.apply_payment_event((internal.record_payment_
 -- ===== N17: a manual refund Midtrans made under its refund_key is booked once, whenever its answer comes =====
 select pg_temp.act_as('superadmin_aal2');
 create temporary table keyed_late on commit drop as
-  select ((public.propose_adjustment('manual_refund', (select id from seen), pg_temp.payment_of((select id from seen)),
-    2000, 'Refund QRIS dari dasbor Midtrans',
-    pg_temp.doc('bookings/' || (select id from seen) || '/adjustment-' || gen_random_uuid() || '.pdf')))
+  select ((public.propose_adjustment('manual_refund', (select id from seen), 2000, 'Refund QRIS dari dasbor Midtrans', pg_temp.doc('bookings/' || (select id from seen) || '/adjustment-' || gen_random_uuid() || '.pdf'), '{}', pg_temp.payment_of((select id from seen))))
     ->> 'id')::uuid as id;
 reset role;
 select pg_temp.act_as_super_b();
@@ -485,45 +505,62 @@ select pg_temp.payment_of((select id from seen)), (select order_id from seen_ord
        md5('uji-keyed-late'), 'partial_refund', '200', '300000.00', (select answer from keyed_answer), now();
 select pg_temp.act_as('superadmin_aal2');
 select throws_ok($$select public.record_refund((select id from seen), 2000, 'TRF-N17', 'Refund QRIS dicatat lagi', null,
-  pg_temp.proof((select id from seen), 'n17'))$$, 'P0001', null,
+  pg_temp.proof((select id from seen), 'n17'))$$, 'P0001',
+  'Midtrans reports no refund of 5000 on order ' || (select order_id from seen_order),
   'once Midtrans lists the key, the same money cannot be recorded again (N17, REFUND_NOT_AT_MIDTRANS)');
 select throws_ok($$select public.record_refund((select id from seen), 2000, (select id from keyed_late)::text,
   'Refund QRIS dicatat lagi', null, pg_temp.proof((select id from seen), 'n17b'))$$, 'P0001',
   'refund ' || (select id from keyed_late) || ' was recorded when its adjustment was applied',
   'nor under the refund_key the adjustment already booked');
+select is(pg_temp.hint_of($$select public.record_refund((select id from seen), 2000,
+  '  Adjustment:{' || upper((select id from keyed_late)::text) || '} ', 'Refund QRIS dicatat lagi', null,
+  pg_temp.proof((select id from seen), 'n17c'))$$), 'STATE_INVALID',
+  'nor under that key written in capitals, with braces and spaces (L7)');
 reset role;
-select internal.close_refund_alert('refund_seen:' || (select order_id from seen_order),
-  internal.midtrans_recorded((select p from public.payments p where p.id = pg_temp.payment_of((select id from seen)))),
-  '00000000-0000-4000-8000-00000000f001');
-select isnt((select acknowledged_at from public.security_alerts
+select is(internal.note_refund_seen((select p from public.payments p where p.id = pg_temp.payment_of((select id from seen))),
+  'partially_refunded', (select answer from keyed_answer)) ->> 'processing_result', 'refund_already_recorded',
+  'Midtrans telling again of the refunds now recorded raises nothing');
+select isnt((select acknowledged_by from public.security_alerts
              where fingerprint = 'refund_seen:' || (select order_id from seen_order)
              order by created_at desc limit 1), null,
-  'and what was recorded now covers the alert, which closes');
+  'and closes the open alert in the name of whoever recorded them (I1)');
 select is(internal.midtrans_refunded_under_key(pg_temp.payment_of((select id from seen)), (select id from keyed_late)::text,
   2000), true, 'the key''s refunds add up to the adjustment''s amount');
 select is(internal.midtrans_refunded_under_key(pg_temp.payment_of((select id from seen)), (select id from keyed_late)::text,
   1500), false, 'and another amount under that key is not its refund (L5)');
+insert into public.payment_events (payment_id, order_id, source, event_hash, transaction_status, status_code,
+  gross_amount_raw, payload, processed_at)
+select pg_temp.payment_of((select id from seen)), (select order_id from seen_order), 'status_api', md5('uji-key-mismatch'),
+       'partial_refund', '200', '300000.00',
+       jsonb_build_object('order_id', (select order_id from seen_order), 'currency', 'IDR', 'refund_amount', '2500.00',
+         'refunds', jsonb_build_array(jsonb_build_object('refund_key', 'TRF-N9', 'refund_amount', '1000.00'),
+                                      jsonb_build_object('refund_key', (select id from keyed_late)::text,
+                                                         'refund_amount', '1500.00'))), now();
+select internal.note_refund_seen((select p from public.payments p where p.id = pg_temp.payment_of((select id from seen))),
+  'partially_refunded', null);
+select is((select severity::text from public.security_alerts
+           where fingerprint = 'refund_key_mismatch:' || (select id from keyed_late) and acknowledged_at is null), 'high',
+  'Midtrans listing the adjustment''s key with another amount raises a high alert (L6)');
+select pg_temp.act_as('superadmin_aal2');
+select throws_ok($$select public.record_refund((select id from seen), 500, 'TRF-L6', 'Refund QRIS lain dicatat', null,
+  pg_temp.proof((select id from seen), 'l6'))$$, 'P0001',
+  'Midtrans lists the refund of adjustment ' || (select id from keyed_late) || ' with another amount',
+  'and nothing is recorded against Midtrans while that mismatch stands (REFUND_KEY_MISMATCH)');
+reset role;
 
 -- ===== Adjustments: the workflow =====
 reset role;
 select pg_temp.act_as('superadmin_aal2');
-select throws_ok($$select public.propose_adjustment('manual_refund', (select id from adjusted),
-  pg_temp.payment_of((select id from adjusted)), 50000, 'Biaya tambahan dikembalikan', 'bookings/x/adjustment.pdf')$$,
+select throws_ok($$select public.propose_adjustment('manual_refund', (select id from adjusted), 50000, 'Biaya tambahan dikembalikan', 'bookings/x/adjustment.pdf', '{}', pg_temp.payment_of((select id from adjusted)))$$,
   '22023', null, 'an adjustment without evidence under its booking is refused');
-select throws_ok($$select public.propose_adjustment('manual_mark_paid', (select id from adjusted), null, 50000,
-  'Bayar tunai di loket',
-  pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf'))$$,
+select throws_ok($$select public.propose_adjustment('manual_mark_paid', (select id from adjusted), 50000, 'Bayar tunai di loket', pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf'), '{}', null)$$,
   'P0001', null, 'manual_mark_paid is not proposed here');
 create temporary table proposal on commit drop as
-  select ((public.propose_adjustment('manual_refund', (select id from adjusted),
-    pg_temp.payment_of((select id from adjusted)), 50000, 'Biaya tambahan dikembalikan',
-    pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf')))
+  select ((public.propose_adjustment('manual_refund', (select id from adjusted), 50000, 'Biaya tambahan dikembalikan', pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf'), '{}', pg_temp.payment_of((select id from adjusted))))
     ->> 'id')::uuid as id;
 select is((select status::text from public.payment_adjustments where id = (select id from proposal)), 'proposed',
   'a manual refund is proposed with its evidence');
-select throws_ok($$select public.propose_adjustment('manual_refund', (select id from adjusted),
-  pg_temp.payment_of((select id from adjusted)), 1000, 'Satu lagi pengembalian dana',
-  pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf'))$$,
+select throws_ok($$select public.propose_adjustment('manual_refund', (select id from adjusted), 1000, 'Satu lagi pengembalian dana', pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf'), '{}', pg_temp.payment_of((select id from adjusted)))$$,
   'P0001', null, 'a second open refund of the booking is refused');
 select throws_ok($$select public.approve_adjustment((select id from proposal))$$, 'P0001', null,
   'its proposer does not approve it while another superadmin can');
@@ -625,9 +662,7 @@ select set_config('app.privileged_rpc', '', true);
 reset role;
 select pg_temp.act_as('superadmin_aal2');
 create temporary table write_off on commit drop as
-  select ((public.propose_adjustment('write_off', (select id from adjusted), null, 2500,
-    'Selisih pembulatan transfer bank',
-    pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.png')))
+  select ((public.propose_adjustment('write_off', (select id from adjusted), 2500, 'Selisih pembulatan transfer bank', pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.png'), '{}', null))
     ->> 'id')::uuid as id;
 select isnt((select id from public.security_alerts
               where fingerprint = 'adjustment_proposed_alone:' || (select id from write_off)), null,
@@ -671,21 +706,14 @@ grant select on shared_keys to authenticated;
 select is(array_length((select keys from shared_keys), 1) >= 2, true, 'the package line pays at least two parties');
 reset role;
 select pg_temp.act_as('superadmin_aal2');
-select throws_ok($$select public.propose_adjustment('reclassify_share', (select id from shared), null, 99999999,
-  'Bagian RW salah dicatat',
-  pg_temp.doc('bookings/' || (select id from shared) || '/adjustment-' || gen_random_uuid() || '.pdf'),
-  jsonb_build_object('line_ref', 'package', 'from_key', (select keys[1] from shared_keys),
-                     'to_key', (select keys[2] from shared_keys)))$$, 'P0001', null,
+select throws_ok($$select public.propose_adjustment('reclassify_share', (select id from shared), 99999999, 'Bagian RW salah dicatat', pg_temp.doc('bookings/' || (select id from shared) || '/adjustment-' || gen_random_uuid() || '.pdf'), jsonb_build_object('line_ref', 'package', 'from_key', (select keys[1] from shared_keys),
+                     'to_key', (select keys[2] from shared_keys)), null)$$, 'P0001', null,
   'a share is not moved beyond what it holds');
 create temporary table reclassified on commit drop as
-  select ((public.propose_adjustment('reclassify_share', (select id from shared), null, 1000,
-    'Bagian RW salah dicatat',
-    pg_temp.doc('bookings/' || (select id from shared) || '/adjustment-' || gen_random_uuid() || '.pdf'),
-    jsonb_build_object('line_ref', 'package', 'from_key', (select keys[1] from shared_keys),
-                       'to_key', (select keys[2] from shared_keys)))) ->> 'id')::uuid as id;
+  select ((public.propose_adjustment('reclassify_share', (select id from shared), 1000, 'Bagian RW salah dicatat', pg_temp.doc('bookings/' || (select id from shared) || '/adjustment-' || gen_random_uuid() || '.pdf'), jsonb_build_object('line_ref', 'package', 'from_key', (select keys[1] from shared_keys),
+                       'to_key', (select keys[2] from shared_keys)), null)) ->> 'id')::uuid as id;
 create temporary table withdrawn on commit drop as
-  select ((public.propose_adjustment('write_off', (select id from shared), null, 500, 'Selisih biaya admin bank',
-    pg_temp.doc('bookings/' || (select id from shared) || '/adjustment-' || gen_random_uuid() || '.pdf')))
+  select ((public.propose_adjustment('write_off', (select id from shared), 500, 'Selisih biaya admin bank', pg_temp.doc('bookings/' || (select id from shared) || '/adjustment-' || gen_random_uuid() || '.pdf'), '{}', null))
     ->> 'id')::uuid as id;
 select is((public.reject_adjustment((select id from withdrawn), 'Ditarik oleh pengusulnya') ->> 'status'),
   'rejected', 'a proposal may be withdrawn');
@@ -732,9 +760,7 @@ select is((select bool_and(held like '%=0') from unnest(pg_temp.holdings((select
 reset role;
 select pg_temp.act_as('superadmin_aal2');
 create temporary table stuck_refund on commit drop as
-  select ((public.propose_adjustment('manual_refund', (select id from adjusted),
-    pg_temp.payment_of((select id from adjusted)), 200000, 'Sisa dana dikembalikan',
-    pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf')))
+  select ((public.propose_adjustment('manual_refund', (select id from adjusted), 200000, 'Sisa dana dikembalikan', pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf'), '{}', pg_temp.payment_of((select id from adjusted))))
     ->> 'id')::uuid as id;
 reset role;
 select pg_temp.act_as_super_b();
@@ -750,17 +776,14 @@ select throws_ok($$select public.apply_adjustment((select id from stuck_refund))
   'so the approval no longer applies (REFUND_TOO_LARGE)');
 select is((public.reject_adjustment((select id from stuck_refund), 'Sebagian dana sudah dikembalikan lewat Midtrans')
            ->> 'status'), 'rejected', 'and any superadmin withdraws it, saying why (N2)');
-select isnt(((public.propose_adjustment('manual_refund', (select id from adjusted),
-  pg_temp.payment_of((select id from adjusted)), 1000, 'Selisih kecil dikembalikan',
-  pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf'))) ->> 'id'),
+select isnt(((public.propose_adjustment('manual_refund', (select id from adjusted), 1000, 'Selisih kecil dikembalikan', pg_temp.doc('bookings/' || (select id from adjusted) || '/adjustment-' || gen_random_uuid() || '.pdf'), '{}', pg_temp.payment_of((select id from adjusted)))) ->> 'id'),
   null,
   'which frees the booking for the next proposal of its kind');
 
 select is((select severity::text from public.security_alerts
            where fingerprint = 'adjustment_withdrawn:' || (select id from stuck_refund)), 'medium',
   'a withdrawn approval raises a medium alert');
-select throws_ok($$select public.propose_adjustment('write_off', (select id from adjusted), null, 500,
-  'Selisih biaya admin bank', (select evidence_path from public.payment_adjustments where id = (select id from proposal)))$$,
+select throws_ok($$select public.propose_adjustment('write_off', (select id from adjusted), 500, 'Selisih biaya admin bank', (select evidence_path from public.payment_adjustments where id = (select id from proposal)), '{}', null)$$,
   'P0001', null, 'and an evidence file that backs one adjustment backs no other (PROOF_REUSED)');
 
 -- A share that stopped holding: the booking refunded whole after the move was approved (SHARE_TOO_LARGE).
@@ -771,11 +794,8 @@ create temporary table doubled_keys on commit drop as
 grant select on doubled_keys to authenticated;
 select pg_temp.act_as('superadmin_aal2');
 create temporary table stuck_move on commit drop as
-  select ((public.propose_adjustment('reclassify_share', (select id from doubled), null, 1000,
-    'Bagian RW salah dicatat',
-    pg_temp.doc('bookings/' || (select id from doubled) || '/adjustment-' || gen_random_uuid() || '.pdf'),
-    jsonb_build_object('line_ref', 'package', 'from_key', (select keys[1] from doubled_keys),
-                       'to_key', (select keys[2] from doubled_keys)))) ->> 'id')::uuid as id;
+  select ((public.propose_adjustment('reclassify_share', (select id from doubled), 1000, 'Bagian RW salah dicatat', pg_temp.doc('bookings/' || (select id from doubled) || '/adjustment-' || gen_random_uuid() || '.pdf'), jsonb_build_object('line_ref', 'package', 'from_key', (select keys[1] from doubled_keys),
+                       'to_key', (select keys[2] from doubled_keys)), null)) ->> 'id')::uuid as id;
 reset role;
 select pg_temp.act_as_super_b();
 select is((public.approve_adjustment((select id from stuck_move)) ->> 'status'), 'approved', 'a move is approved');
@@ -814,15 +834,12 @@ select is((select (payload ->> 'reported')::boolean from public.booking_events
            where reason = 'refund_recorded' and payload ->> 'refund_reference' = 'adjustment:' || (select id from keyed_refund)),
   true, 'and recorded under Midtrans'' word, since Midtrans reports it under that refund_key');
 select pg_temp.act_as('superadmin_aal2');
-select isnt(((public.propose_adjustment('manual_refund', (select id from adjusted),
-  pg_temp.payment_of((select id from adjusted)), 1000, 'Selisih kecil dikembalikan',
-  (select evidence_path from public.payment_adjustments where id = (select id from stuck_refund)))) ->> 'id'), null,
+select isnt(((public.propose_adjustment('manual_refund', (select id from adjusted), 1000, 'Selisih kecil dikembalikan', (select evidence_path from public.payment_adjustments where id = (select id from stuck_refund)), '{}', pg_temp.payment_of((select id from adjusted)))) ->> 'id'), null,
   'a rejected adjustment''s evidence may back the next proposal (L2)');
 
 -- An approver who left: B deactivated after approving.
 create temporary table stuck_write_off on commit drop as
-  select ((public.propose_adjustment('write_off', (select id from combo), null, 1500, 'Selisih biaya admin bank',
-    pg_temp.doc('bookings/' || (select id from combo) || '/adjustment-' || gen_random_uuid() || '.pdf')))
+  select ((public.propose_adjustment('write_off', (select id from combo), 1500, 'Selisih biaya admin bank', pg_temp.doc('bookings/' || (select id from combo) || '/adjustment-' || gen_random_uuid() || '.pdf'), '{}', null))
     ->> 'id')::uuid as id;
 reset role;
 select pg_temp.act_as_super_b();
@@ -864,6 +881,19 @@ reset role;
 select is((select severity::text from public.security_alerts
            where fingerprint = 'adjustment_self_applied:00000000-0000-4000-8000-0000000f5001'), 'high',
   'and the kelurahan head hears of it on apply as well (N8)');
+
+-- ===== I2: an answer without refunds[] while a manual refund is not yet counted =====
+reset role;
+insert into public.payment_events (payment_id, order_id, source, event_hash, transaction_status, status_code,
+  gross_amount_raw, payload, processed_at)
+select p.id, p.order_id, 'status_api', md5('uji-no-refund-list'), 'partial_refund', '200', '300000.00',
+       '{"currency": "IDR", "refund_amount": "200000.00"}', now()
+from public.payments p where p.id = pg_temp.payment_of((select id from adjusted));
+select pg_temp.act_as('superadmin_aal2');
+select throws_ok($$select public.record_refund((select id from adjusted), 1000, 'TRF-I2', 'Refund QRIS lain dicatat', null,
+  pg_temp.proof((select id from adjusted), 'i2'))$$, 'P0001', null,
+  'an answer that lists no refunds cannot be told apart from a bank transfer, so nothing is recorded (REFUND_LIST_MISSING)');
+reset role;
 
 select set_config('request.jwt.claims', '', true);
 select set_config('app.privileged_rpc', 'on', true);

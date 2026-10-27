@@ -38,7 +38,13 @@ const CODE_BY_POSTGRES_HINT: Record<string, ActionErrorCode> = {
   PRICE_MISMATCH: 'PRICE_MISMATCH',
   RATE_LIMITED: 'RATE_LIMITED',
   CONTACT_UNVERIFIED: 'STATE_INVALID',
+  WEATHER_FEE_UNSET: 'STATE_INVALID',
+  // A refund by hand named a weather link held for its unset fee: the sweep refunds it once the fee is set.
+  WEATHER_FEE_UNSET_MANUAL: 'STATE_INVALID',
 };
+
+// The hints mapError answers itself; a service with sentences of its own leaves these to it.
+export const MAPPED_POSTGRES_HINTS: readonly string[] = Object.keys(CODE_BY_POSTGRES_HINT);
 
 export class AppError extends Error {
   readonly status: number;
