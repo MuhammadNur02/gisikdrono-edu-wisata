@@ -263,11 +263,11 @@ select pg_temp.act_as('superadmin_aal2');
 select is(pg_temp.hint_of($$select public.propose_adjustment('manual_refund', (select id from weather), 100,
   'Refund cuaca manual uji', 'bookings/' || (select id from weather) || '/adjustment-' || md5('weather-link')::uuid || '.pdf',
   jsonb_build_object('weather_link_id', (select id from weather_link)), (select id from weather_payment))$$),
-  'WEATHER_LINK_NOT_HELD', 'a link already resolved is no held weather refund');
+  'STATE_INVALID', 'a link already resolved is no held weather refund (named_weather_link, 20261104181000)');
 select is(pg_temp.hint_of($$select public.propose_adjustment('manual_refund', (select id from weather), 100,
   'Refund cuaca manual uji', 'bookings/' || (select id from weather) || '/adjustment-' || md5('weather-link')::uuid || '.pdf',
   jsonb_build_object('weather_link_id', upper((select id from weather_link)::text)), (select id from weather_payment))$$),
-  'WEATHER_LINK_NOT_HELD', 'whatever case its uuid is written in');
+  'STATE_INVALID', 'whatever case its uuid is written in');
 select throws_ok($$select public.propose_adjustment('manual_refund', (select id from weather), 100,
   'Refund cuaca manual uji', 'bookings/x', '{"weather_link_id": "bukan-uuid"}', (select id from weather_payment))$$,
   '22023', null, 'and only as a uuid');

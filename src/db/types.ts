@@ -2655,6 +2655,7 @@ export type Database = {
           failure_reason: string | null
           fee_amount: number
           id: string
+          kelurahan_shortfall: number
           kind: Database["public"]["Enums"]["refund_request_kind"]
           last_attempt_at: string | null
           last_checked_at: string | null
@@ -2682,6 +2683,7 @@ export type Database = {
           failure_reason?: string | null
           fee_amount?: number
           id?: string
+          kelurahan_shortfall?: number
           kind: Database["public"]["Enums"]["refund_request_kind"]
           last_attempt_at?: string | null
           last_checked_at?: string | null
@@ -2709,6 +2711,7 @@ export type Database = {
           failure_reason?: string | null
           fee_amount?: number
           id?: string
+          kelurahan_shortfall?: number
           kind?: Database["public"]["Enums"]["refund_request_kind"]
           last_attempt_at?: string | null
           last_checked_at?: string | null
@@ -4065,6 +4068,8 @@ export type Database = {
           booking_id: string
           booking_leg_id: string
           created_at: string
+          held_at: string | null
+          held_reason: string | null
           id: string
           moves_used: number
           notice_id: string
@@ -4078,6 +4083,8 @@ export type Database = {
           booking_id: string
           booking_leg_id: string
           created_at?: string
+          held_at?: string | null
+          held_reason?: string | null
           id?: string
           moves_used?: number
           notice_id: string
@@ -4091,6 +4098,8 @@ export type Database = {
           booking_id?: string
           booking_leg_id?: string
           created_at?: string
+          held_at?: string | null
+          held_reason?: string | null
           id?: string
           moves_used?: number
           notice_id?: string
