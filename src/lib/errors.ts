@@ -84,6 +84,11 @@ function isPostgresError(error: unknown): error is PostgresError {
   );
 }
 
+// The SQLSTATE or PostgREST code of a failed read, for a log line that names why without the message.
+export function postgresCodeOf(error: unknown): string | undefined {
+  return isPostgresError(error) ? error.code : undefined;
+}
+
 // The hint of a P0001 an internal.* function raised, for a service that answers one refusal itself.
 export function raisedHintOf(error: unknown): string | undefined {
   if (!isPostgresError(error) || error.code !== RAISED_EXCEPTION) return undefined;
