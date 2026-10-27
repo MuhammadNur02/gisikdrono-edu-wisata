@@ -5,7 +5,7 @@
 -- officer's check of the number), A22 (today's sessions until they end) and A23 (cash by an RW admin of a booking of
 -- one RW, until 23:59 WIB of the visit day, so its hold runs until then).
 begin;
-select plan(67);
+select plan(68);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -120,26 +120,26 @@ select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000ab001',
     (select hash from quotes where name = 'rw05_6'))$$,
   'P0001', null, 'and the quota: six visitors do not fit five seats');
 select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000ab001',
-    array['00000000-0000-4000-8000-0000000ab201']::uuid[], 4, pg_temp.booker('+447700900123', true, true), 'loket-x',
+    array['00000000-0000-4000-8000-0000000ab203']::uuid[], 4, pg_temp.booker('+447700900123', true, true), 'loket-x',
     repeat('0', 64))$$,
   'P0001', 'the price changed since the summary was shown', 'the quote is checked as on the web');
 select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000ab001',
-    array['00000000-0000-4000-8000-0000000ab201']::uuid[], 4, pg_temp.booker('12345', true, true), 'loket-x',
+    array['00000000-0000-4000-8000-0000000ab203']::uuid[], 4, pg_temp.booker('12345', true, true), 'loket-x',
     (select hash from quotes where name = 'rw05_4'))$$,
   '23514', null, 'a number that is not E.164 is refused');
 select throws_ok($$select pg_temp.book('00000000-0000-4000-8000-0000000ab001',
-    array['00000000-0000-4000-8000-0000000ab201']::uuid[], 4, pg_temp.booker('+6224761', true, true), 'loket-x',
+    array['00000000-0000-4000-8000-0000000ab203']::uuid[], 4, pg_temp.booker('+6224761', true, true), 'loket-x',
     (select hash from quotes where name = 'rw05_4'))$$,
   '23514', null, 'and so is a +62 number too short to be Indonesian, which the foreign branch does not take');
 
 create temporary table walk_in on commit drop as
-  select pg_temp.book('00000000-0000-4000-8000-0000000ab001', array['00000000-0000-4000-8000-0000000ab201']::uuid[], 4,
+  select pg_temp.book('00000000-0000-4000-8000-0000000ab001', array['00000000-0000-4000-8000-0000000ab203']::uuid[], 4,
                       pg_temp.booker('+447700900123', true, true), 'loket-1',
                       (select hash from quotes where name = 'rw05_4')) as reply;
 select is((select (reply ->> 'result', reply ->> 'total_amount') from walk_in)::text, '(created,120000)',
-  'the RW 05 officer books today''s session that has started, and hears its total');
+  'the RW 05 officer books a session in three days, and hears its total');
 select is((select (pg_temp.book('00000000-0000-4000-8000-0000000ab001',
-                   array['00000000-0000-4000-8000-0000000ab201']::uuid[], 4,
+                   array['00000000-0000-4000-8000-0000000ab203']::uuid[], 4,
                    pg_temp.booker('+447700900123', true, true), 'loket-1',
                    (select hash from quotes where name = 'rw05_4'))) ->> 'booking_id'),
   (select reply ->> 'booking_id' from walk_in), 'the same form sent twice books once');
@@ -147,6 +147,12 @@ create temporary table later on commit drop as
   select pg_temp.book('00000000-0000-4000-8000-0000000ab001', array['00000000-0000-4000-8000-0000000ab203']::uuid[], 2,
                       pg_temp.booker('+6281300000903', true, true), 'loket-3',
                       (select hash from quotes where name = 'rw05_2')) as reply;
+select case when (now() at time zone 'Asia/Jakarta')::time < time '23:30'
+  then is((pg_temp.book('00000000-0000-4000-8000-0000000ab001', array['00000000-0000-4000-8000-0000000ab201']::uuid[],
+                        2, pg_temp.booker('+447700900127', true, true), 'loket-5',
+                        (select hash from quotes where name = 'rw05_2'))) ->> 'result', 'created',
+          'A22: today''s session that has started is booked until it ends')
+  else skip('too late in the Jakarta day to pay for a session of today', 1) end;
 reset role;
 select set_config('request.jwt.claims', '', true);
 
@@ -155,10 +161,10 @@ create temporary table walk_in_booking on commit drop as
 select is((select (channel, status, created_by, pic_phone, total_amount)::text from walk_in_booking),
   '(admin,pending_payment,00000000-0000-4000-8000-00000000f005,+447700900123,120000)',
   'an admin booking of the officer, with the foreign number and the catalogue''s price');
-select is((select expires_at from walk_in_booking), (public.today_jkt() + time '23:59') at time zone 'Asia/Jakarta',
+select is((select expires_at from walk_in_booking), (public.today_jkt() + 3 + time '23:59') at time zone 'Asia/Jakarta',
   'A23: a booking of one RW is held until 23:59 WIB of its visit day, as long as cash may be taken');
-select is((select reserved_pax from public.visit_sessions where id = '00000000-0000-4000-8000-0000000ab201'), 4,
-  'its seats are reserved as on the web');
+select is((select reserved_pax from public.visit_sessions where id = '00000000-0000-4000-8000-0000000ab203'), 6,
+  'its seats are reserved as on the web, beside the two the next booking took');
 select is((select consent_version from walk_in_booking), '2026-10-18', 'with the privacy notice the server shows');
 select ok((select phone_verified_at is not null from walk_in_booking), 'A21: the officer''s check verifies the number');
 select is((select count(*)::int from public.booking_events
@@ -353,8 +359,8 @@ select set_config('app.in_rpc', '', true);
 select internal.expire_stale_bookings();
 select is((select status::text from public.bookings where id = (select id from bookings_to_pay where name = 'later')),
   'expired', 'expire_stale_bookings ends a lapsed officer''s hold');
-select is((select reserved_pax from public.visit_sessions where id = '00000000-0000-4000-8000-0000000ab203'), 3,
-  'and gives its two seats back, the combo keeping its three');
+select is((select reserved_pax from public.visit_sessions where id = '00000000-0000-4000-8000-0000000ab203'), 7,
+  'and gives its two seats back, the paid booking and the combo keeping theirs');
 select pg_temp.act_as('admin_rw_05');
 select throws_ok($$select pg_temp.pay('later', 60000, 'k1')$$, 'P0001', 'this booking takes no cash now',
   'and a lapsed hold takes no cash, so no seat is taken again past the capacity');
