@@ -1239,13 +1239,14 @@ select is((select w.resolution || ':' || r.status || ':' || r.amount || ':' || r
   'and refunds the visited combo''s leg itself once the QRIS fee is set: its share less the Rp 3.457 fee');
 
 -- D-N1 (20261104210000): the open waiting alert follows the adjustment to apply or withdraw, its amount with dots, and
--- an acknowledgement holds while the same adjustment waits.
-create temporary table open_plain_2 on commit drop as
-select pg_temp.propose_refund((select id from held_plain), 1500, 'plain-open-2') as id;
+-- an acknowledgement holds while the same adjustment waits. A booking has one open manual refund at a time, so the
+-- first is withdrawn and the next proposed before the sweep runs again.
 select set_config('app.in_rpc', '1', true);
 update public.payment_adjustments set status = 'rejected', rejected_reason = 'Ditarik untuk uji'
 where id = (select id from open_plain);
 select set_config('app.in_rpc', '', true);
+create temporary table open_plain_2 on commit drop as
+select pg_temp.propose_refund((select id from held_plain), 1500, 'plain-open-2') as id;
 select internal.settle_lapsed_weather_links(50);
 select is((select count(*)::int || ':' || bool_and(a.details ->> 'adjustment_id' = (select id from open_plain_2)::text)
                   || ':' || bool_and(a.title like '%Rp 1.500 yang diajukan%')
