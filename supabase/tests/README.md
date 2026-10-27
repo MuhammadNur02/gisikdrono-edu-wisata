@@ -32,8 +32,9 @@ The `rls_*.sql` files are the isolation matrix:
 
 `pnpm test:rls` runs them together with `tests/integration/rls-http.test.ts`, which repeats the core of the matrix
 through PostgREST and Storage with real tokens minted by the stack's own access-token hook: the anon key, the RW 05,
-RW 08 and RW 13 admins at AAL2, and the superadmin at AAL1 and at AAL2. CI's `rls` job runs it and is a required
-status check on `main` (Task P5.2.01).
+RW 08 and RW 13 admins at AAL2, and the superadmin at AAL1 and at AAL2. CI's `rls` job runs it on every pull request
+(Task P5.2.01). It is not a required status check yet: that is a branch-protection setting of the repository, which
+the owner applies.
 
 The personas of the SQL suites (`admin_rw_05`, `admin_rw_08`, `admin_rw_13`, `superadmin_aal1`, `superadmin_aal2`,
 `superadmin_stale_totp`, …) live in `helpers/rls_personas.psql`. A suite includes it with

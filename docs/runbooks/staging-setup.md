@@ -52,7 +52,7 @@ Staging uses the **Free** plan (decision of 2026-10-23: staging free, production
 | Feature | Free | Pro | Staging on Free |
 |---|---|---|---|
 | Image transformations (`/storage/v1/render/image`) | no | yes | Built with `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS=off`: photos are served as their plain `public-media` files (`src/lib/images/public-object-loader.ts`), already shrunk to 1600 px WebP on upload. Production refuses the flag and keeps the transformer |
-| Leaked-password protection | no | yes | **Production only**; staging relies on the 12-character password policy and TOTP |
+| Leaked-password protection | no | yes | **Production only**; staging relies on the 8-character password policy and TOTP |
 | Session time-box (12 h) and inactivity timeout (2 h) | no | yes | **Production only**; staging sessions are not time-boxed, so sign out of the dashboard after use |
 | Daily backups | no | yes (7 days) | None on staging; it holds demo content only, which the workflow can write again. The restore drill of `docs/Security.md` §11 waits for a Pro project |
 | Always on | **paused after 7 days without activity** | always on | See "When Supabase pauses the staging project" in part F |
@@ -330,7 +330,7 @@ Resume each one (`active := true`) in the staging release that ships its route: 
 | | Email provider | on; Confirm email **on**; Secure email change **on** |
 | | Email OTP | length 8, expiry 600 seconds |
 | | Phone, anonymous, every OAuth provider | off |
-| | Minimum password length / requirements | 12; lowercase, uppercase, digits and symbols |
+| | Minimum password length / requirements | 8; lowercase, uppercase, digits and symbols |
 | Authentication > Attack Protection | Leaked password protection | **production only** (Pro); not offered on Free |
 | | Captcha protection | **on**, provider Cloudflare Turnstile, secret = `TURNSTILE_SECRET_KEY` |
 | Authentication > URL Configuration | Site URL | `<staging-url>` |

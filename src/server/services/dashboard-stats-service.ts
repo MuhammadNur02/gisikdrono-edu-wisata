@@ -1,14 +1,13 @@
 import 'server-only';
 
 import type { RwId } from '@/config/rw';
+import { postgresCodeOf } from '@/lib/errors';
 import { createLogger } from '@/lib/logger';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { todayInJakarta } from '@/lib/utils/dates';
 import {
   averageOf,
-  dayAfter,
   fillDailySeries,
-  jakartaDayOf,
   lastDays,
   monthRanges,
   quotaUsagePercent,
@@ -16,12 +15,18 @@ import {
   sumOf,
   sumWithin,
   trendBetween,
-  visitDateAfter,
   type DailyValue,
   type DateRange,
 } from '@/lib/utils/kpi';
 import { collectAllRows, rowPageOf } from '@/lib/utils/paged-rows';
-import { readProductsSoldThisMonth } from '@/server/services/visit-stats-service';
+import {
+  countPaidBookings,
+  countUpcomingVisits,
+  dailyValuesOf,
+  readProductsSoldThisMonth,
+  readRevenueDays,
+  readVisitDays,
+} from '@/server/services/visit-stats-service';
 import type {
   MonthlyFigure,
   OpenSecurityAlerts,
@@ -31,20 +36,18 @@ import type {
   TodaySession,
 } from '@/types/dashboard-stats';
 
-// The overview KPIs (Task P4.2.03, docs/StyleGuide.md §6.3), read through the session client so RLS and the AAL2
-// policies decide every row (DATA-04); no service role. Money comes from the ledger view only (REC-07). Plain counts
-// are head requests; a figure summed from rows reads every page against the exact count (collectAllRows, since
-// PostgREST stops at max_rows). A figure that cannot be complete, has no count or fails to load is null and shows as
-// "Belum tersedia"; the other figures still show (re-review of PR #45). Products sold comes from P4.2.01's visit_stats
-// (visit-stats-service.ts), which sums in Postgres beyond an RW admin's windows.
+// The overview KPIs (Task P4.2.03, docs/StyleGuide.md §6.3), read through the session client so the AAL2 checks and
+// RLS decide (DATA-04); no service role. Every figure over days or a month comes from the stats RPCs of P4.2.01
+// (visit-stats-service.ts): revenue from revenue_recap, the ledger (REC-07); paid bookings, check-ins, upcoming visits
+// and products sold from visit_stats, by the day of the visit. They sum in Postgres, so an RW admin's figures are whole
+// past the bookings RLS window. What is not a period figure (today's sessions and gate count, the rating, the alerts,
+// today's reveals) still reads its own table, every page against the exact count where it sums rows. A figure that
+// fails to load is null and shows as "Belum tersedia"; the other figures still show (re-review of PR #45).
 
 type ServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
 
 const CHART_DAYS = 30;
-const UPCOMING_DAYS = 30;
 const ALERT_STRIP_LIMIT = 5;
-// A booking that was paid, whatever happened at the gate since.
-const PAID_BOOKING_STATUSES = ['paid', 'checked_in', 'completed', 'no_show'] as const;
 
 interface Period {
   ranges: { current: DateRange; previous: DateRange };
@@ -60,15 +63,26 @@ function periodOf(now: Date): Period {
   return { ranges, days, since: firstDay < ranges.previous.from ? firstDay : ranges.previous.from };
 }
 
-// A KPI that failed to load becomes null, logged by name only, so one bad read never takes the overview down.
+// A KPI that failed to load becomes null, logged by name and by the PostgREST or SQLSTATE code when there is one, so
+// one bad read never takes the overview down.
 function figureOf<T>(result: PromiseSettledResult<T | null>, kpi: string): T | null {
   if (result.status === 'fulfilled') return result.value;
   const reason: unknown = result.reason;
   createLogger(crypto.randomUUID()).error('internal_error', {
     kpi,
     errorName: reason instanceof Error ? reason.name : typeof reason,
+    code: postgresCodeOf(reason),
   });
   return null;
+}
+
+// "Reservasi lunas": the paid bookings that visit in the month so far, against the same days of last month.
+async function readPaidBookings(rw: RwId | null, period: Period, supabase: ServerClient) {
+  const [value, previous] = await Promise.all([
+    countPaidBookings(rw, period.ranges.current, supabase),
+    countPaidBookings(rw, period.ranges.previous, supabase),
+  ]);
+  return { value, trend: trendBetween(value, previous) };
 }
 
 function monthlyFigure(rows: readonly DailyValue[] | null, period: Period): MonthlyFigure | null {
@@ -79,64 +93,6 @@ function monthlyFigure(rows: readonly DailyValue[] | null, period: Period): Mont
     trend: trendBetween(value, sumWithin(rows, period.ranges.previous)),
     series: fillDailySeries(period.days, rows),
   };
-}
-
-async function readRevenue(supabase: ServerClient, rw: RwId | null, period: Period) {
-  const result = await collectAllRows(async (from, to) => {
-    let query = supabase
-      .from('v_revenue_recap_daily')
-      .select('day, net_amount', { count: 'exact' })
-      .gte('day', period.since);
-    if (rw !== null) query = query.eq('rw_id', rw);
-    return rowPageOf(
-      await query.order('day').order('rw_id').order('beneficiary_key').range(from, to),
-    );
-  });
-  if (!result.complete) return null;
-  const rows = result.rows.flatMap((row) =>
-    row.day ? [{ day: row.day, value: row.net_amount ?? 0 }] : [],
-  );
-  return monthlyFigure(rows, period);
-}
-
-async function readCheckIns(supabase: ServerClient, rw: RwId | null, since: string) {
-  const result = await collectAllRows(async (from, to) => {
-    let query = supabase
-      .from('tickets_qr')
-      .select('checked_in_at, checked_in_pax', { count: 'exact' })
-      .gte('checked_in_at', startOfJakartaDay(since));
-    if (rw !== null) query = query.eq('rw_id', rw);
-    return rowPageOf(await query.order('id').range(from, to));
-  });
-  if (!result.complete) return null;
-  return result.rows.flatMap((row) =>
-    row.checked_in_at
-      ? [{ day: jakartaDayOf(row.checked_in_at), value: row.checked_in_pax ?? 0 }]
-      : [],
-  );
-}
-
-// Bookings paid on the days of the range (Semarang days, both ends included); null without a count.
-async function countPaidBookings(supabase: ServerClient, rw: RwId | null, range: DateRange) {
-  let query = supabase
-    .from('v_bookings_staff')
-    .select('id', { count: 'exact', head: true })
-    .in('status', PAID_BOOKING_STATUSES)
-    .gte('paid_at', startOfJakartaDay(range.from))
-    .lt('paid_at', startOfJakartaDay(dayAfter(range.to)));
-  if (rw !== null) query = query.contains('rw_ids', [rw]);
-  const { count, error } = await query;
-  if (error) throw error;
-  return count;
-}
-
-async function readPaidBookings(supabase: ServerClient, rw: RwId | null, period: Period) {
-  const [value, previousValue] = await Promise.all([
-    countPaidBookings(supabase, rw, period.ranges.current),
-    countPaidBookings(supabase, rw, period.ranges.previous),
-  ]);
-  if (value === null || previousValue === null) return null;
-  return { value, trend: trendBetween(value, previousValue) };
 }
 
 async function readRating(supabase: ServerClient, rw: RwId | null): Promise<RatingFigure | null> {
@@ -189,19 +145,24 @@ export async function loadSuperadminOverview(
 ): Promise<SuperadminOverview> {
   const supabase = await createSupabaseServerClient();
   const period = periodOf(now);
-  const [revenue, paidBookings, checkIns, rating, openAlerts, piiRevealsToday] =
+  const today = todayInJakarta(now);
+  const [revenue, paidBookings, visits, rating, openAlerts, piiRevealsToday] =
     await Promise.allSettled([
-      readRevenue(supabase, rw, period),
-      readPaidBookings(supabase, rw, period),
-      readCheckIns(supabase, rw, period.since),
+      readRevenueDays(rw, period.since, today, supabase),
+      readPaidBookings(rw, period, supabase),
+      readVisitDays(rw, period.since, today, supabase),
       readRating(supabase, rw),
       listOpenAlerts(supabase),
-      countPiiRevealsToday(supabase, todayInJakarta(now)),
+      countPiiRevealsToday(supabase, today),
     ]);
+  const visitDays = figureOf(visits, 'visit_stats');
   return {
-    revenue: figureOf(revenue, 'revenue'),
+    revenue: monthlyFigure(figureOf(revenue, 'revenue'), period),
     paidBookings: figureOf(paidBookings, 'paid_bookings'),
-    checkedInVisitors: monthlyFigure(figureOf(checkIns, 'checked_in_visitors'), period),
+    checkedInVisitors: monthlyFigure(
+      visitDays === null ? null : dailyValuesOf(visitDays, (day) => day.pax_checked_in),
+      period,
+    ),
     rating: figureOf(rating, 'rating'),
     openAlerts: figureOf(openAlerts, 'open_alerts'),
     piiRevealsToday: figureOf(piiRevealsToday, 'pii_reveals_today'),
@@ -238,19 +199,6 @@ async function listTodaySessions(supabase: ServerClient, rw: RwId, today: string
   }));
 }
 
-// Paid visits from today to 30 days ahead in Semarang, stated here rather than left to the RLS window of 0005.
-async function countUpcomingBookings(supabase: ServerClient, rw: RwId, today: string) {
-  const { count, error } = await supabase
-    .from('v_bookings_staff')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'paid')
-    .gte('visit_date', today)
-    .lte('visit_date', visitDateAfter(today, UPCOMING_DAYS))
-    .contains('rw_ids', [rw]);
-  if (error) throw error;
-  return count;
-}
-
 // Today's gate count from v_attendance_today, the figure the overview re-reads every 15 s (Task P4.2.02); null when
 // it cannot be read whole.
 export async function countCheckInsToday(rw: RwId | null): Promise<number | null> {
@@ -276,13 +224,15 @@ export async function loadRwOverview(rw: RwId, now: Date = new Date()): Promise<
   const days = lastDays(CHART_DAYS, now);
   const [sessions, upcoming, checkInsToday, checkIns, productsSold] = await Promise.allSettled([
     listTodaySessions(supabase, rw, today),
-    countUpcomingBookings(supabase, rw, today),
+    countUpcomingVisits(rw, today),
     countCheckInsToday(rw),
-    readCheckIns(supabase, rw, days[0] ?? today),
+    readVisitDays(rw, days[0] ?? today, today, supabase),
     readProductsSoldThisMonth(rw, now),
   ]);
   const todaySessions = figureOf(sessions, 'today_sessions');
-  const checkInRows = figureOf(checkIns, 'check_ins');
+  const visitDays = figureOf(checkIns, 'check_ins');
+  const checkInRows =
+    visitDays === null ? null : dailyValuesOf(visitDays, (day) => day.pax_checked_in);
   return {
     quota: quotaOf(todaySessions),
     upcomingBookings: figureOf(upcoming, 'upcoming_bookings'),

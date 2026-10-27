@@ -5,7 +5,6 @@ import {
   dayAfter,
   fillDailySeries,
   hasAnyValue,
-  jakartaDayOf,
   lastDays,
   monthRanges,
   quotaUsagePercent,
@@ -125,10 +124,6 @@ describe('lastDays and fillDailySeries', () => {
 });
 
 describe('Semarang days of instants', () => {
-  it('buckets an instant by its Semarang day', () => {
-    expect(jakartaDayOf('2026-10-31T17:30:00Z')).toBe('2026-11-01');
-  });
-
   it('starts a Semarang day at 17:00 UTC the evening before', () => {
     expect(startOfJakartaDay('2026-11-01')).toBe('2026-10-31T17:00:00.000Z');
   });

@@ -1,9 +1,12 @@
 import 'server-only';
 
+import { randomUUID } from 'node:crypto';
+
 import { rpcGetBankAccount, rpcSetBankAccount, type BankAccountRow } from '@/db/rpc-bank-accounts';
 import { bankAccountsCopy } from '@/lib/copy/bank-accounts';
 import { staffCopy } from '@/lib/copy/staff';
 import { AppError, privilegeHintOf, raisedHintOf } from '@/lib/errors';
+import { createLogger } from '@/lib/logger';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import type {
   BankAccountTarget,
@@ -86,6 +89,19 @@ export async function setBankAccount(values: SetBankAccountValues): Promise<void
   );
 }
 
+// A treasury read that failed is shown as "Belum tersedia"; the log names the RW and the error's kind, never the
+// account (review of PR #85, L-d).
+function logFailedTreasuryRead(rwId: number, reason: unknown): void {
+  const code =
+    typeof reason === 'object' && reason !== null && 'code' in reason ? reason.code : undefined;
+  createLogger(randomUUID()).error('internal_error', {
+    step: 'treasury_read',
+    rwId,
+    errorName: reason instanceof Error ? reason.name : typeof reason,
+    ...(typeof code === 'string' ? { postgresCode: code } : {}),
+  });
+}
+
 // /dashboard/settings: every RW's treasury, masked. One that fails to load is null, so the others still show (review
 // of PR #79, L-6).
 export async function listRwTreasuryAccounts(): Promise<RwTreasuryAccount[]> {
@@ -95,6 +111,7 @@ export async function listRwTreasuryAccounts(): Promise<RwTreasuryAccount[]> {
   );
   return units.map((unit, index) => {
     const read = accounts[index];
+    if (read?.status === 'rejected') logFailedTreasuryRead(unit.id, read.reason);
     return {
       rwId: unit.id,
       rwName: unit.name,
