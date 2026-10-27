@@ -4,7 +4,7 @@ Owner: Dev on call. Source of truth: `CLAUDE.md` §6.4 and §10.1, `docs/Task.md
 
 ## The order of a release
 
-1. **Migrate first.** `pnpm db:push --linked` applies the new migrations to the target project. Only CI runs it (`.github/workflows/release.yml`, Task P5.7.02); nobody pushes production by hand (`CLAUDE.md` §12.1 no. 19). Until that job exists, staging is migrated and then deployed by the manual `.github/workflows/staging-db.yml` (`docs/runbooks/staging-setup.md`, part D).
+1. **Migrate first.** `pnpm db:push --linked` applies the new migrations to the target project. Only CI runs it; nobody pushes production by hand (`CLAUDE.md` §12.1 no. 19). Production is migrated by `.github/workflows/release.yml` (Task P5.7.02; see "The production release job" below), staging by `.github/workflows/staging-db.yml` (`docs/runbooks/staging-setup.md`, part D). Both run by hand, from `main`, and as a dry run unless that box is unticked.
 2. **Then deploy.** The Vercel deployment builds after the database has moved. The public pages are prerendered from the database: the RW pages are built from `rw_units` (`generateStaticParams`), and the redirects of `src/config/redirects.ts` point at RW pages that must exist. A build against an older database bakes in the old slugs.
 3. **Then check.** Open `/api/health` (200 on production) and the pages the change touched.
 
@@ -57,3 +57,32 @@ A migration that stops is a release that stops: fix its cause, never edit an app
 
   Within five minutes `last_success_at` moves and `last_error_code` stays empty. `anomaly-scan` and `reconcile-payments` stay paused until their own routes ship.
 - **The first runs on staging backfill earlier paid bookings.** Every paid booking settled before this release lacks its ledger and tickets, so the poll completes them about 20 a run, each written ticket raising one medium `tickets_reissued` alert. Acknowledge those alerts in one go. The default revenue rules start on the day their migration ran, so a booking settled earlier finds no rule for its Jakarta day and waits under `REVENUE_RULE_REFUSED`; the poll retries it each run. To clear it, a superadmin adds a rule that covers that day, or, while no ledger row uses the default rules yet, moves their `effective_from` back to the first staging settlement. Production has no earlier settlements.
+
+## The production release job
+
+`.github/workflows/release.yml` (Task P5.7.02) runs on **Run workflow** only, until go-live and after. No merge pushes production by itself.
+
+1. **Approval.** The job runs in the GitHub environment `production`. A required reviewer approves the run before any step starts.
+2. **The project.** The project ref comes from `SUPABASE_DB_URL` itself (`scripts/supabase-db-url.mjs`). The Management API must name that project `gisikdrono-prod`, or nothing runs.
+3. **The pre-flight.** `scripts/release-preflight.sql` runs read-only through the Management API. It stops the release when an existing row would fail a check that a migration adds, and it reports counts only:
+   - **Profiles** (`20261104140000`): no profile holds a role, or is active, without `became_staff_at`.
+
+     ```sql
+     select count(*) from public.profiles where (role <> 'none' or is_active) and became_staff_at is null;
+     ```
+
+     A row it counts is an account set up by hand outside `accept_staff_invite`. Deactivate it, or give it `became_staff_at` through the privileged path that part E of the staging runbook uses.
+   - **Bank account numbers** (`20261104121000`, L-3): every UMKM vendor's `bank_account_number` and every RW's `treasury_account_number` is empty or 5 to 20 digits.
+
+     ```sql
+     select count(*) from public.umkm_vendors where bank_account_number !~ '^[0-9]{5,20}$';
+     select count(*) from public.rw_units where treasury_account_number !~ '^[0-9]{5,20}$';
+     ```
+
+     The superadmin corrects a counted account in the dashboard (`set_vendor_bank_account` / `set_rw_treasury_account`), never in SQL.
+
+   A column the target does not have yet is skipped; the migration that adds it decides. Add a check here, and to the file, whenever a migration adds a constraint that existing rows must already pass.
+4. **The migrations.** `supabase db push --linked --dry-run` lists them. With **dry_run** unticked, `supabase db push --linked --yes` applies them. The job never passes `--include-all` (it would apply a migration older than the last one applied) or `--include-seed`.
+5. **The Security Advisor.** `supabase db advisors --linked --type security --fail-on error` must show no error (DB-01). It runs on a dry run too.
+6. **Then deploy.** The Vercel production deployment follows the migration (step 2 of the order above). Record the run's link in the release notes.
+

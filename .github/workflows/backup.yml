@@ -1,6 +1,11 @@
 name: Weekly database backup
 
-# docs/Security.md RES-01: an encrypted copy of production lives outside Supabase, in Cloudflare R2.
+# Task P5.5.04 (docs/Security.md §7.8, RES-01, DB-07; docs/runbooks/restore-drills.md): an encrypted copy of the
+# production database lives outside Supabase, in a private Cloudflare R2 bucket. The dump is encrypted with age to
+# BACKUP_AGE_PUBLIC_KEY as it streams, so no plain copy touches the runner's disk, and only the vault holds the
+# private key; CI never decrypts. The upload is read back and compared before the job passes. The credentials live
+# in the GitHub environment "production-backup" (main only, no reviewers, so the weekly run never waits); the
+# project is checked against gisikdrono-prod as the release job checks it.
 on:
   schedule:
     - cron: '0 19 * * 6' # Sunday 02:00 WIB
@@ -9,34 +14,106 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: production-backup
+  cancel-in-progress: false
+
 jobs:
   backup:
+    name: dump, encrypt, upload and verify
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    environment: production-backup
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      BACKUP_AGE_PUBLIC_KEY: ${{ secrets.BACKUP_AGE_PUBLIC_KEY }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      # R2 takes the checksums the AWS CLI sends only where S3 requires them.
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+      PRODUCTION_PROJECT_NAME: gisikdrono-prod
+      # Supabase's root certificate, a public file the owner downloads from the project's database settings and
+      # commits (restore-drills.md, part A): pg_dump checks the server against it, never merely encrypts.
+      PGSSLMODE: verify-full
+      PGSSLROOTCERT: supabase/certs/prod-ca-2021.crt
+      # The production database runs Postgres 17 (supabase/config.toml major_version).
+      PG_DUMP: /usr/lib/postgresql/17/bin/pg_dump
+      ENCRYPTED_FILE: backup.dump.age
+      VERIFY_FILE: verify.dump.age
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
+        with:
+          version: 2.117.0
+      - name: Every secret and the root certificate are there
+        run: |
+          for name in SUPABASE_ACCESS_TOKEN SUPABASE_DB_URL BACKUP_AGE_PUBLIC_KEY R2_ACCOUNT_ID R2_BUCKET \
+                      AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not set in the GitHub environment 'production-backup'"
+              exit 1
+            fi
+          done
+          # An age X25519 recipient: age1 and 58 bech32 characters. A private key (AGE-SECRET-KEY-1...) never fits.
+          if ! [[ "$BACKUP_AGE_PUBLIC_KEY" =~ ^age1[02-9ac-hj-np-z]{58}$ ]]; then
+            echo "::error::BACKUP_AGE_PUBLIC_KEY is not an age public key (age1...)"
+            exit 1
+          fi
+          if [ ! -s "$PGSSLROOTCERT" ]; then
+            echo "::error::$PGSSLROOTCERT is missing; commit Supabase's root certificate (restore-drills.md, part A)"
+            exit 1
+          fi
+          node scripts/supabase-db-url.mjs "$GITHUB_ENV" <<< "$SUPABASE_DB_URL"
+      - name: The URL belongs to the production project
+        run: |
+          name="$(supabase projects list -o json \
+            | jq -r --arg ref "$PROJECT_REF" '.[] | select(.id == $ref or .ref == $ref) | .name')"
+          if [ "$name" != "$PRODUCTION_PROJECT_NAME" ]; then
+            echo "::error::That URL is not the project $PRODUCTION_PROJECT_NAME; nothing was dumped"
+            exit 1
+          fi
       - name: Install pg_dump 17 and age
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql-common age
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y -qq postgresql-client-17
-      # The dump is encrypted with the public key before it touches disk; only the vault holds the private key.
+      # Custom format, every schema, owners and grants left out: restore-drills.md part C says what is restored
+      # where.
       - name: Dump and encrypt
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-          BACKUP_AGE_PUBLIC_KEY: ${{ secrets.BACKUP_AGE_PUBLIC_KEY }}
         run: |
           set -euo pipefail
-          /usr/lib/postgresql/17/bin/pg_dump --format=custom --no-owner --no-privileges "$SUPABASE_DB_URL" \
-            | age --recipient "$BACKUP_AGE_PUBLIC_KEY" > backup.dump.age
-          test -s backup.dump.age
-      - name: Upload to R2
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          "$PG_DUMP" --format=custom --no-owner --no-privileges "$SUPABASE_DB_URL" \
+            | age --recipient "$BACKUP_AGE_PUBLIC_KEY" > "$ENCRYPTED_FILE"
+          if [ "$(head -c 21 "$ENCRYPTED_FILE")" != "age-encryption.org/v1" ]; then
+            echo "::error::The backup is not an age file"
+            exit 1
+          fi
+      - name: Upload to R2 and read it back
         run: |
-          aws s3 cp backup.dump.age "s3://$R2_BUCKET/postgres/$(date -u +%Y-%m-%d).dump.age" \
-            --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+          set -euo pipefail
+          endpoint="https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+          key="postgres/$(date -u +%Y-%m-%dT%H%MZ).dump.age"
+          checksum="$(sha256sum "$ENCRYPTED_FILE" | cut -d' ' -f1)"
+          aws s3 cp "$ENCRYPTED_FILE" "s3://$R2_BUCKET/$key" --endpoint-url "$endpoint" \
+            --metadata "sha256=$checksum" --only-show-errors
+          aws s3 cp "s3://$R2_BUCKET/$key" "$VERIFY_FILE" --endpoint-url "$endpoint" --only-show-errors
+          if [ "$(sha256sum "$VERIFY_FILE" | cut -d' ' -f1)" != "$checksum" ]; then
+            echo "::error::The object in R2 differs from the backup that was uploaded"
+            exit 1
+          fi
+          echo "Backup $key: $(stat -c %s "$ENCRYPTED_FILE") bytes, sha256 $checksum" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove the local copies
+        if: always()
+        run: rm -f "$ENCRYPTED_FILE" "$VERIFY_FILE"
