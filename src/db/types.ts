@@ -2606,6 +2606,7 @@ export type Database = {
           run_date: string
           source: string
           started_at: string
+          statement_fingerprint: string | null
           summary: Json
         }
         Insert: {
@@ -2619,6 +2620,7 @@ export type Database = {
           run_date: string
           source: string
           started_at?: string
+          statement_fingerprint?: string | null
           summary?: Json
         }
         Update: {
@@ -2632,6 +2634,7 @@ export type Database = {
           run_date?: string
           source?: string
           started_at?: string
+          statement_fingerprint?: string | null
           summary?: Json
         }
         Relationships: [
@@ -4690,7 +4693,12 @@ export type Database = {
         Returns: Json
       }
       import_midtrans_statement: {
-        Args: { p_file_name: string; p_rows: Json }
+        Args: {
+          p_file_name: string
+          p_period_from?: string
+          p_period_to?: string
+          p_rows: Json
+        }
         Returns: Json
       }
       invite_superadmin: {
