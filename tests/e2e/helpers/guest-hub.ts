@@ -30,6 +30,10 @@ export async function holdThroughWizard(
   await fillBooker(page, phone);
   await page.getByRole('button', { name: 'Lanjut' }).click();
   await readySummary(page);
+  // Every spec and both projects hold from 127.0.0.1, so the per-IP and per-browser hold limits (booking_create:ip,
+  // booking:ip+ua) count the whole suite's holds; a reset in one spec's beforeAll cannot keep them under for the others.
+  await runSql(`delete from public.rate_limit_buckets
+    where key like 'booking_create:%' or key like 'booking:%'`);
   await page.getByRole('button', { name: 'Konfirmasi & Bayar' }).click();
   try {
     await expect(page).toHaveURL(BOOKING_URL, STEP);
