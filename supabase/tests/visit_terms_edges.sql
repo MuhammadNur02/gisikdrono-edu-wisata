@@ -5,7 +5,7 @@
 -- weather refund the fee eats whole, the weather window closing, a full target session, the cap of three weather
 -- moves with the ticket sent again after each, and the same cancellation or move asked twice.
 begin;
-select plan(200);
+select plan(202);
 \ir helpers/rls_personas.psql
 \ir helpers/visit_terms.psql
 select set_config('app.qr_key_id', 'k1', true);
@@ -1127,8 +1127,9 @@ declare
 begin
   insert into storage.objects (bucket_id, name) values ('documents', evidence) on conflict do nothing;
   perform pg_temp.act_as('superadmin_aal2');
-  reply := public.propose_adjustment('manual_refund', p_booking, payment_id, p_amount, 'Transfer bank uji tindak lanjut',
-    evidence, case when p_link is null then '{}'::jsonb else jsonb_build_object('weather_link_id', upper(p_link::text)) end);
+  -- PR #80's argument order (20261104190100): the nullable payment last.
+  reply := public.propose_adjustment('manual_refund', p_booking, p_amount, 'Transfer bank uji tindak lanjut', evidence,
+    case when p_link is null then '{}'::jsonb else jsonb_build_object('weather_link_id', upper(p_link::text)) end, payment_id);
   reset role;
   return (reply ->> 'id')::uuid;
 end;
@@ -1315,11 +1316,21 @@ select is(pg_temp.hint_of($$select internal.held_weather_terms(
 select is(pg_temp.hint_of($$select pg_temp.propose_refund((select id from short_combo), 30000, 'short-wrong',
   (select id from short_link))$$), 'REFUND_REQUEST_MISMATCH',
   'a proposal of any other amount than the share less the Midtrans fee is refused');
+-- PR #80: the positive path of a named shares_short weather refund, propose -> approve -> apply, runs through
+-- 20261104190100's propose_adjustment, whose nullable payment comes last; the order PR #90 called is gone.
+select ok(to_regprocedure('public.propose_adjustment(public.adjustment_type, uuid, bigint, text, text, jsonb, uuid)')
+            is not null
+          and to_regprocedure('public.propose_adjustment(public.adjustment_type, uuid, uuid, bigint, text, text, jsonb)')
+            is null,
+  'propose_adjustment takes the payment last (PR #80)');
 create temporary table short_manual on commit drop as
 select pg_temp.propose_refund((select id from short_combo), 29580, 'short-manual', (select id from short_link)) as id;
 grant select on short_link, short_manual to authenticated;
 select is((select details ->> 'weather_link_id' from public.payment_adjustments where id = (select id from short_manual)),
   (select id::text from short_link), 'H-A: propose_adjustment keeps the link it names, lower-cased');
+select is((select payment_id from public.payment_adjustments where id = (select id from short_manual)),
+  (select p.id from public.payments p where p.booking_id = (select id from short_combo) and p.status = 'settled'),
+  'and the settled payment passed last');
 select pg_temp.act_as('superadmin_aal2');
 select is(pg_temp.hint_of($$select public.resolve_weather_link((select id from short_link), 'no_refund',
   'Diputuskan superadmin')$$), 'STATE_INVALID', 'L-4: no_refund is refused while a manual refund is open');

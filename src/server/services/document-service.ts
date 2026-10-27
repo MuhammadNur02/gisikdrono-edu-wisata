@@ -3,6 +3,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { svcIncrementBookletDownload } from '@/db/rpc';
+import { revealFinanceEvidence } from '@/db/rpc-finance';
 import type { Database } from '@/db/types';
 import { AppError } from '@/lib/errors';
 import { publicEnv } from '@/lib/public-env';
@@ -10,7 +11,9 @@ import { getPublicSiteSettings } from '@/lib/queries/settings';
 import { withinRateLimits } from '@/lib/rate-limit';
 // See withinBookletDownloadLimit for why this module creates a service-role client.
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
+import type { StaffContext } from '@/server/auth/guards';
 import {
   bookingDocumentPdf,
   loadBookingDocument,
@@ -26,59 +29,29 @@ import {
 } from '@/server/services/certificate-documents';
 import type { CertificateRow } from '@/server/services/certificate-pages';
 import {
+  isDocumentPathFor,
+  SIGNED_URL_TTL_SECONDS,
+  type SignedDocumentKind,
+} from '@/server/services/document-paths';
+import {
+  removeFinanceDocument,
+  storeFinanceDocument,
+  type StoredDocument,
+} from '@/server/services/finance-documents';
+import { asFinanceWrite } from '@/server/services/finance-errors';
+import {
   keptTicketPdfPath,
   loadTicketDocument,
   ticketDocumentPdf,
   type TicketDocument,
 } from '@/server/services/ticket-documents';
+import { withinUploadLimit } from '@/server/services/upload-events';
 import type { VerifiedDocument } from '@/types/documents';
+import type { EvidenceKind, EvidenceLink } from '@/types/finance';
 
 type DatabaseClient = SupabaseClient<Database>;
 
 const DOCUMENTS_BUCKET = 'documents';
-
-// How long a signed URL to a private document stays valid (docs/Security.md §10.3). The WhatsApp document
-// header lives longest because Meta fetches the file some time after the message is queued.
-export const SIGNED_URL_TTL_SECONDS = {
-  ticket: 600,
-  certificate: 600,
-  invoice: 900,
-  quotation: 900,
-  receipt: 900,
-  credit_note: 900,
-  export: 300,
-  whatsapp_document_header: 3600,
-} as const;
-
-export type SignedDocumentKind = keyof typeof SIGNED_URL_TTL_SECONDS;
-
-// The folders of the documents bucket each kind may be signed from (CLAUDE.md §6.6): booking papers under
-// bookings/<id>/, certificates under certificates/<booking_id>/, exports under exports/<profile_id>/. Payout
-// files are never handed out by URL.
-const DOCUMENT_FOLDERS_BY_KIND: Record<SignedDocumentKind, readonly string[]> = {
-  ticket: ['bookings'],
-  certificate: ['certificates'],
-  invoice: ['bookings'],
-  quotation: ['bookings'],
-  receipt: ['bookings'],
-  credit_note: ['bookings'],
-  export: ['exports'],
-  whatsapp_document_header: ['bookings', 'certificates'],
-};
-// A segment starts with a letter or digit, so neither "." nor ".." can climb out of its folder.
-const PATH_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const MIN_DOCUMENT_SEGMENTS = 3;
-
-export function isDocumentPathFor(kind: SignedDocumentKind, path: string): boolean {
-  const segments = path.split('/');
-  const [folder] = segments;
-  return (
-    segments.length >= MIN_DOCUMENT_SEGMENTS &&
-    folder !== undefined &&
-    DOCUMENT_FOLDERS_BY_KIND[kind].includes(folder) &&
-    segments.every((segment) => PATH_SEGMENT.test(segment))
-  );
-}
 
 // The one place a signed URL into the documents bucket is minted. The caller has already authorised the
 // reader for this document; the URL is handed straight back in a redirect and never stored, logged or
@@ -271,4 +244,39 @@ export async function verifyDocumentCode(
   ]);
   if (!isWithinLimit) return { kind: 'rate_limited' };
   return { kind: 'looked_up', document: await lookupVerifyCode(adminClient, code) };
+}
+
+// The finance pages' proofs and evidence (Task P4.7.02, P4.7.04): the private documents bucket has no policy, so
+// only the service role writes it, at a path finance-service.ts built from a verified booking or payout id, for a
+// superadmin the action's guard has checked. Counted with the other finalizes (docs/Security.md UPL-04).
+export async function storeFinanceEvidence(
+  ctx: StaffContext,
+  quarantinePath: string,
+  destination: string,
+): Promise<StoredDocument> {
+  const adminClient = createSupabaseAdminClient();
+  if (!(await withinUploadLimit(adminClient, ctx, 'upload_finalize', null))) {
+    throw new AppError('RATE_LIMITED');
+  }
+  return storeFinanceDocument(adminClient, quarantinePath, destination);
+}
+
+export async function removeFinanceEvidence(path: string): Promise<void> {
+  await removeFinanceDocument(createSupabaseAdminClient(), path);
+}
+
+const EVIDENCE_DOCUMENT_KIND = {
+  adjustment: 'adjustment_evidence',
+  payout: 'payout_proof',
+} as const satisfies Record<EvidenceKind, SignedDocumentKind>;
+
+// Review of PR #80, M-3: "Lihat bukti". rpc_reveal_finance_evidence checks the superadmin's AAL2 on their own session,
+// names the file and writes the view's pii_revealed event; only then is a 300 s link signed, which goes straight back
+// to the page and is never stored.
+export async function signFinanceEvidence(kind: EvidenceKind, id: string): Promise<EvidenceLink> {
+  const supabase = await createSupabaseServerClient();
+  const path = await asFinanceWrite(() => revealFinanceEvidence(supabase, kind, id));
+  const documentKind = EVIDENCE_DOCUMENT_KIND[kind];
+  const url = await createDocumentSignedUrl(createSupabaseAdminClient(), path, documentKind);
+  return { url, expiresInSeconds: SIGNED_URL_TTL_SECONDS[documentKind] };
 }
