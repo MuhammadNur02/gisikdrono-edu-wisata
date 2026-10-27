@@ -96,17 +96,19 @@ export function githubEnvLines({ ref, password }, { refOnly = false } = {}) {
 }
 
 const STDIN = 0;
-const REF_ONLY_OPTION = '--ref-only';
+// backup.yml's call (third review of PR #98, I3): the URL must be the backup role's, and only the ref is handed on.
+const BACKUP_OPTION = '--backup';
 
 function main() {
   const value = readFileSync(STDIN, 'utf8').trim();
   const [envFile, option] = process.argv.slice(2);
   if (!value) throw new Error('SUPABASE_DB_URL is not set in this GitHub environment');
   if (!envFile) throw new Error('name the GITHUB_ENV file; run this inside a GitHub Actions job');
+  if (option !== undefined && option !== BACKUP_OPTION) throw new Error(`unknown option ${option}`);
   const target = parseSupabaseDbUrl(value);
-  const refOnly = option === REF_ONLY_OPTION;
-  if (refOnly) requireBackupUser(target);
-  const lines = githubEnvLines(target, { refOnly });
+  const isBackup = option === BACKUP_OPTION;
+  if (isBackup) requireBackupUser(target);
+  const lines = githubEnvLines(target, { refOnly: isBackup });
   process.stdout.write(lines.log);
   appendFileSync(envFile, lines.env);
 }

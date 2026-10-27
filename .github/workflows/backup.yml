@@ -60,7 +60,7 @@ jobs:
             echo "::error::The repository variable PRODUCTION_PROJECT_REF is not a 20-letter project ref"
             exit 1
           fi
-          node scripts/supabase-db-url.mjs "$GITHUB_ENV" --ref-only <<< "$SUPABASE_DB_URL"
+          node scripts/supabase-db-url.mjs "$GITHUB_ENV" --backup <<< "$SUPABASE_DB_URL"
       - name: The ref is the pinned one
         env:
           PRODUCTION_PROJECT_REF: ${{ vars.PRODUCTION_PROJECT_REF }}
@@ -75,32 +75,37 @@ jobs:
           sudo apt-get install -y -qq postgresql-common age
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y -qq postgresql-client-17
-      # The connection is the backup role and nothing stronger (delta review of PR #98, N2), and the database says it
-      # is production (the Vault secret of 0007, read through the one internal function the role may call). Every
-      # comparison happens in the database.
+      # The connection is the backup role and nothing stronger (delta review of PR #98, N2; third review, L-a): its one
+      # membership is backup_reader, which belongs to no role itself, and neither reaches pg_read_all_data or
+      # pg_write_all_data. The database says it is production (the Vault secret of 0007, read through the one internal
+      # function the role may call). Every comparison happens in the database.
       - name: The role is the backup role and the database is production
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           answer="$("$PG_BIN/psql" "$SUPABASE_DB_URL" --no-psqlrc --tuples-only --no-align -v ON_ERROR_STOP=1 -c "
             select (current_user = 'gisikdrono_backup'
-                    and pg_has_role(current_user, 'backup_reader', 'member')
+                    and array(select g.rolname::text from pg_auth_members m join pg_roles g on g.oid = m.roleid
+                              where m.member = r.oid) = array['backup_reader']
+                    and not exists (select 1 from pg_auth_members m where m.member = 'backup_reader'::regrole)
+                    and not pg_has_role(current_user, 'pg_read_all_data', 'member')
                     and not pg_has_role(current_user, 'pg_write_all_data', 'member')
                     and not r.rolsuper and not r.rolcreaterole and not r.rolcreatedb and not r.rolreplication)::text
                    || ',' || coalesce(internal.environment() = 'production', false)::text
             from pg_roles r where r.rolname = current_user")"
           if [ "${answer%%,*}" != "true" ]; then
-            echo "::error::The connection is not gisikdrono_backup in backup_reader without other powers; nothing was dumped"
+            echo "::error::The connection is not gisikdrono_backup in backup_reader alone, without other powers; nothing was dumped"
             exit 1
           fi
           if [ "${answer##*,}" != "true" ]; then
             echo "::error::The database's Vault marker is not production; nothing was dumped"
             exit 1
           fi
-      # Custom format, public and auth only, owners and grants left out. The data of every auth table but the staff
-      # accounts, their identities and the SSO settings is left out (review of PR #98, M1, delta N6 and L3, the same
-      # list as pgTAP backup_reader.sql): after a real restore staff sign in again and enrol a new authenticator
-      # (restore-drills.md, part E). An age X25519 recipient is age1 and 58 bech32 characters; a private key never fits.
+      # Custom format, public and auth only, owners and grants left out. Every auth table but the staff accounts, their
+      # identities and the SSO settings is left out whole (review of PR #98, M1, delta N6 and L3, third review D1, the
+      # same list as pgTAP backup_reader.sql): pg_dump neither reads nor locks them, the role may not select them, and
+      # every restore is data-only after the migrations, so their DDL is never needed. After a real restore staff sign
+      # in again and enrol a new authenticator (restore-drills.md, part E). An age X25519 recipient is age1 and 58 bech32 characters; a private key never fits.
       - name: Dump and encrypt
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -112,13 +117,13 @@ jobs:
             exit 1
           fi
           "$PG_BIN/pg_dump" --format=custom --no-owner --no-privileges --schema=public --schema=auth \
-            --exclude-table-data=auth.refresh_tokens --exclude-table-data=auth.sessions \
-            --exclude-table-data=auth.one_time_tokens --exclude-table-data=auth.flow_state \
-            --exclude-table-data=auth.mfa_challenges --exclude-table-data=auth.mfa_factors \
-            --exclude-table-data=auth.mfa_amr_claims --exclude-table-data=auth.saml_relay_states \
-            --exclude-table-data=auth.audit_log_entries --exclude-table-data=auth.schema_migrations \
-            --exclude-table-data=auth.instances --exclude-table-data='auth.oauth_*' \
-            --exclude-table-data='auth.webauthn_*' --exclude-table-data=auth.custom_oauth_providers \
+            --exclude-table=auth.refresh_tokens --exclude-table=auth.sessions \
+            --exclude-table=auth.one_time_tokens --exclude-table=auth.flow_state \
+            --exclude-table=auth.mfa_challenges --exclude-table=auth.mfa_factors \
+            --exclude-table=auth.mfa_amr_claims --exclude-table=auth.saml_relay_states \
+            --exclude-table=auth.audit_log_entries --exclude-table=auth.schema_migrations \
+            --exclude-table=auth.instances --exclude-table='auth.oauth_*' \
+            --exclude-table='auth.webauthn_*' --exclude-table=auth.custom_oauth_providers \
             "$SUPABASE_DB_URL" \
             | age --recipient "$BACKUP_AGE_PUBLIC_KEY" > "$ENCRYPTED_FILE"
           if [ "$(head -c 21 "$ENCRYPTED_FILE")" != "age-encryption.org/v1" ]; then

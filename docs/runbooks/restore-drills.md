@@ -4,7 +4,7 @@ Owner: Dev on call, with the kelurahan's vault holder for the private key. Sourc
 
 **Targets.** RPO 24 hours (1 hour with the PITR add-on), RTO 4 hours for the database (NFR-08). Supabase Pro keeps daily backups for 7 days. The R2 copy is the off-site one, and the only one that outlives the Supabase account.
 
-**What a backup holds.** The output of `pg_dump --format=custom --schema=public --schema=auth`, the two schemas any restore loads. It holds every booker's contact details. Of `auth` it keeps the data of `users`, `identities` and the SSO settings only (`sso_providers`, `sso_domains`, `saml_providers`). The data of every other `auth` table is left out with `--exclude-table-data` (review of PR #98, M1, and its delta review, N6 and L3):
+**What a backup holds.** The output of `pg_dump --format=custom --schema=public --schema=auth`, the two schemas any restore loads. It holds every booker's contact details. Of `auth` it keeps the data of `users`, `identities` and the SSO settings only (`sso_providers`, `sso_domains`, `saml_providers`). Every other `auth` table is left out whole with `--exclude-table`, its definition and its data alike, and the backup role may not even read it (review of PR #98, M1; delta review, N6 and L3; third review, D1). Every restore loads data only, after the migrations, so their definitions are never needed:
 
 - sessions, refresh and one-time tokens, and flow state;
 - MFA factors, challenges and AMR claims, and WebAuthn;
@@ -30,7 +30,13 @@ It never goes into `gisikdrono-staging`, which holds no real visitor data. It ne
 
    Create an R2 API token with **Object Read & Write** on that bucket only. Its access key id, secret and the account id are `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and `R2_ACCOUNT_ID`; the bucket name is `R2_BUCKET`.
 3. **Supabase's root certificate.** In the `gisikdrono-prod` dashboard, open Database settings > SSL configuration > Download certificate. Commit the file as `supabase/certs/prod-ca-2021.crt`. It is public and identifies Supabase's CA, so every connection of the job checks the server (`PGSSLMODE=verify-full`) instead of merely encrypting. The job stops while the file is missing.
-4. **The backup role.** The migration `20261104230000_backup_reader.sql` makes the group `backup_reader`. It has USAGE on `public` and `auth` and SELECT on their tables and sequences (and on every later table postgres adds to `public`), and it may call `internal.environment()`. Nothing else: no `pg_read_all_data`, which would also open `cron`, `vault` and `net`.
+4. **The backup role.** The migration `20261104230000_backup_reader.sql` makes the group `backup_reader`. It has:
+   - USAGE on `public` and `auth`;
+   - SELECT on every table and sequence of `public`, and on every later table postgres adds there;
+   - SELECT on the five `auth` tables the backup copies (`users`, `identities`, `sso_providers`, `sso_domains`, `saml_providers`);
+   - execute on `internal.environment()`.
+
+   Nothing else. No `pg_read_all_data`, which would also open `cron`, `vault` and `net`, and no other `auth` table, whose sessions, tokens and factors it would otherwise read live.
 
    Create the login role that belongs to it in psql, connected to `gisikdrono-prod` as `postgres`. Never use the SQL editor for this, since a password typed there reaches the server and its logs in plain text (delta review L6). `\password` sends only the SCRAM verifier that psql computes on the vault holder's machine; type the password from the vault when it asks:
 
@@ -59,6 +65,11 @@ It never goes into `gisikdrono-staging`, which holds no real visitor data. It ne
    - the Vault marker (`internal.environment()` must answer `production`).
 
    The summary names the object, its size and its sha256. After go-live a failed run is an incident: rerun it, and open `docs/runbooks/cron.md` if it fails twice.
+10. **"permission denied for table auth.<name>".** A Supabase upgrade added a table to `auth`, and `pg_dump` cannot read it (third review of PR #98, L-b). Never grant the role anything by hand. Classify the table in a pull request:
+    - if its rows are part of a staff account, add it to the copied list: a new migration granting `backup_reader` SELECT on it, and pgTAP `backup_reader.sql`;
+    - otherwise add it to the left-out list: an `--exclude-table` in `backup.yml` and the pgTAP list, which `scripts/backup-auth-tables.test.mjs` keeps equal.
+
+    Then run the workflow by hand. Until that pull request merges, no backup is taken, so treat it as urgent.
 
 The backup password, the R2 token and the age key pair are rotated as `docs/runbooks/rotate-keys.md` says.
 

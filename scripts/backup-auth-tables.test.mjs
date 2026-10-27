@@ -10,7 +10,7 @@ const workflow = readFileSync(new URL('../.github/workflows/backup.yml', import.
 const suite = readFileSync(new URL('../supabase/tests/backup_reader.sql', import.meta.url), 'utf8');
 
 function excludedInWorkflow() {
-  return [...workflow.matchAll(/--exclude-table-data='?auth\.([a-z_*]+)'?/g)]
+  return [...workflow.matchAll(/--exclude-table='?auth\.([a-z_*]+)'?/g)]
     .map(([, table]) => table)
     .sort();
 }
@@ -27,6 +27,8 @@ function excludedInSuite() {
 
 describe('the auth tables the backup leaves out', () => {
   it('are the same in backup.yml and in pgTAP backup_reader.sql', () => {
+    // Left out whole, never their data alone (third review of PR #98, D1).
+    expect(workflow).not.toContain('--exclude-table-data');
     expect(excludedInWorkflow().length).toBeGreaterThan(0);
     expect(excludedInWorkflow()).toEqual(excludedInSuite());
   });

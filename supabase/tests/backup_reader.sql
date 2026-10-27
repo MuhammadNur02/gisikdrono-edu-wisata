@@ -4,7 +4,7 @@
 -- no cron, vault or net function, and every table of auth is classified, so a new one fails here until the backup
 -- decides whether its rows are copied.
 begin;
-select plan(17);
+select plan(19);
 
 -- ===== The role itself =====
 
@@ -31,6 +31,29 @@ select ok(has_table_privilege('backup_reader', 'public.bookings', 'select')
   'it reads the tables of public and auth');
 select ok(not has_table_privilege('backup_reader', 'public.bookings', 'insert, update, delete, truncate'),
   'and writes none');
+-- Third review of PR #98, D1: of auth it reads the five tables the backup copies, and no session, token or factor.
+select is(
+  array(
+    select t.tablename::text from pg_tables t
+    where t.schemaname = 'auth'
+      and has_table_privilege('backup_reader', format('%I.%I', t.schemaname, t.tablename)::regclass, 'select')
+    order by 1
+  ),
+  array['identities', 'saml_providers', 'sso_domains', 'sso_providers', 'users'],
+  'of auth it reads exactly the staff accounts, their identities and the SSO settings'
+);
+-- Delta review I5: every table postgres creates sits in public or internal, the schemas the backup and the migrations
+-- cover, or in the CLI's own migration history; a table made anywhere else would be neither backed up nor classified.
+select is(
+  array(
+    select t.schemaname || '.' || t.tablename from pg_tables t
+    where t.tableowner = 'postgres'
+      and t.schemaname not in ('public', 'internal', 'supabase_migrations')
+    order by 1
+  ),
+  array[]::text[],
+  'no table that postgres owns lives outside public and internal'
+);
 -- Supabase lets PUBLIC use some of these schemas; what counts is that nothing names backup_reader itself, and the
 -- calls below, made as the role, are refused.
 select is((select count(*)::int from pg_namespace n cross join lateral aclexplode(n.nspacl) a
