@@ -2634,6 +2634,7 @@ export type Database = {
           failure_reason: string | null
           fee_amount: number
           id: string
+          kelurahan_shortfall: number
           kind: Database["public"]["Enums"]["refund_request_kind"]
           last_attempt_at: string | null
           last_checked_at: string | null
@@ -2661,6 +2662,7 @@ export type Database = {
           failure_reason?: string | null
           fee_amount?: number
           id?: string
+          kelurahan_shortfall?: number
           kind: Database["public"]["Enums"]["refund_request_kind"]
           last_attempt_at?: string | null
           last_checked_at?: string | null
@@ -2688,6 +2690,7 @@ export type Database = {
           failure_reason?: string | null
           fee_amount?: number
           id?: string
+          kelurahan_shortfall?: number
           kind?: Database["public"]["Enums"]["refund_request_kind"]
           last_attempt_at?: string | null
           last_checked_at?: string | null
