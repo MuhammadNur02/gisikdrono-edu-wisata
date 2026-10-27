@@ -18,7 +18,9 @@ end;
 $$;
 -- Whatever an earlier hand may have given it, the group itself never logs in or holds a power.
 alter role backup_reader nologin nobypassrls nocreaterole nocreatedb noreplication;
-revoke pg_read_all_data, pg_write_all_data from backup_reader;
+-- postgres may grant pg_read_all_data, so it takes it back here; pg_write_all_data it can neither grant nor revoke,
+-- so no migration could have given it, and pgTAP backup_reader.sql asserts the role holds neither.
+revoke pg_read_all_data from backup_reader;
 
 grant usage on schema public, auth to backup_reader;
 grant select on all tables in schema public to backup_reader;
