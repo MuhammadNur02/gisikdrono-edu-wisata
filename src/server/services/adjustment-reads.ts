@@ -62,7 +62,23 @@ async function namesOf(
   );
 }
 
-// The applied manual refunds among the rows whose refund_key_mismatch alert is still open (L6).
+const mismatchAlertSchema = z.object({
+  fingerprint: z.string(),
+  details: z.looseObject({ release_note: z.string().optional() }),
+});
+
+// Review of PR #80, L-3: an adjustment is blocked while its latest refund_key_mismatch alert carries no release note,
+// acknowledged or not; a plain acknowledgement releases nothing (release_refund_key_mismatch, 20261104190200).
+function blockedOf(alertsNewestFirst: readonly z.infer<typeof mismatchAlertSchema>[]): Set<string> {
+  const latest = new Map<string, boolean>();
+  for (const alert of alertsNewestFirst) {
+    if (!latest.has(alert.fingerprint)) latest.set(alert.fingerprint, !alert.details.release_note);
+  }
+  const blocked = [...latest].filter(([, isBlocked]) => isBlocked);
+  return new Set(blocked.map(([fingerprint]) => fingerprint.slice(KEY_MISMATCH_PREFIX.length)));
+}
+
+// The applied manual refunds among the rows whose Midtrans disagreement over their key still blocks (L6).
 async function blockedByKeyMismatch(rows: readonly AdjustmentRow[]): Promise<Set<string>> {
   const fingerprints = rows
     .filter((row) => row.type === 'manual_refund' && row.status === 'applied')
@@ -71,11 +87,12 @@ async function blockedByKeyMismatch(rows: readonly AdjustmentRow[]): Promise<Set
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('security_alerts')
-    .select('fingerprint')
+    .select('fingerprint, details')
     .in('fingerprint', fingerprints)
-    .is('acknowledged_at', null);
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false });
   if (error) throw error;
-  return new Set(data.map((alert) => alert.fingerprint.slice(KEY_MISMATCH_PREFIX.length)));
+  return blockedOf(z.array(mismatchAlertSchema).parse(data));
 }
 
 interface RowNames {

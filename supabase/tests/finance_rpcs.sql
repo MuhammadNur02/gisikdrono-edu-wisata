@@ -3,7 +3,7 @@
 -- version closing the one in force the day before with its shares adding up to 100 %, and a payout that stamps its
 -- ledger rows once.
 begin;
-select plan(50);
+select plan(52);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: a paid RW 05 booking with its payment, invoice and ledger =====
@@ -236,6 +236,26 @@ select is((select total_amount from public.payout_batches where id = (select id 
 select is((select count(*)::int from public.revenue_share_entries
            where payout_batch_id = (select id from kelurahan_payout) and amount < 0), 1,
   'and stamps the negative row with it');
+
+-- ===== Review of PR #80, L-5: no payout leaves an unpaid negative row behind (20261104191000) =====
+-- A Rp -5.000 kelurahan row of three days ago, still unpaid, and Rp 20.000 of today.
+insert into public.revenue_share_entries (booking_id, payment_id, entry_type, line_ref, rule_version, beneficiary,
+  beneficiary_key, rw_id, base_amount, pct, amount, created_at)
+values ('00000000-0000-4000-8000-0000000e2001', '00000000-0000-4000-8000-0000000e3001', 'reversal', 'package', '{}',
+        'kelurahan', 'kelurahan', null, 100000, 5, -5000, now() - interval '3 days');
+insert into public.revenue_share_entries (booking_id, payment_id, entry_type, line_ref, rule_version, beneficiary,
+  beneficiary_key, rw_id, base_amount, pct, amount)
+values ('00000000-0000-4000-8000-0000000e2001', '00000000-0000-4000-8000-0000000e3001', 'settlement',
+        'addon:00000000-0000-4000-8000-0000000e9002', '{}', 'kelurahan', 'kelurahan', null, 100000, 20, 20000);
+insert into storage.objects (bucket_id, name) values ('documents', 'payouts/00000000-0000-4000-8000-0000000e4007/bukti.pdf');
+select pg_temp.act_as('superadmin_aal2');
+select is(pg_temp.hint_of($$select public.settle_revenue_entries('kelurahan', public.today_jkt(), public.today_jkt(),
+  'TRF-KEL-LATE', 'payouts/00000000-0000-4000-8000-0000000e4007/bukti.pdf', 20000)$$), 'PAYOUT_NEGATIVE_PENDING',
+  'a period that starts after an unpaid negative row is refused');
+select is((public.settle_revenue_entries('kelurahan', public.today_jkt() - 3, public.today_jkt(), 'TRF-KEL-ALL',
+          'payouts/00000000-0000-4000-8000-0000000e4007/bukti.pdf', 15000) ->> 'total_amount')::bigint, 15000::bigint,
+  'one that starts at it nets it');
+reset role;
 
 select * from finish();
 rollback;

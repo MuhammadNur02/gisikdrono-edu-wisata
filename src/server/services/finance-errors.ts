@@ -7,7 +7,7 @@ import { AppError, raisedHintOf } from '@/lib/errors';
 import { databaseErrorCode } from '@/lib/utils/database-errors';
 import type { ActionErrorCode } from '@/types/action-result';
 
-// The refusals the finance RPCs raise as P0001 with a hint (20261101130100 to 20261104190400, listed once in
+// The refusals the finance RPCs raise as P0001 with a hint (20261101130100 to 20261104191000, listed once in
 // FINANCE_REFUSAL_HINTS), each turned into the Indonesian sentence the page shows. A hint mapError already knows
 // (STATE_INVALID, RATE_LIMITED) is left to it.
 
@@ -27,6 +27,10 @@ const REFUSALS: Readonly<Record<FinanceRefusalHint, { code: ActionErrorCode; mes
   PAYOUT_TOTAL_MISMATCH: {
     code: 'CONFLICT',
     message: financeCopy.payouts.errors.PAYOUT_TOTAL_MISMATCH,
+  },
+  PAYOUT_NEGATIVE_PENDING: {
+    code: 'STATE_INVALID',
+    message: financeCopy.payouts.errors.PAYOUT_NEGATIVE_PENDING,
   },
   PROOF_MISSING: { code: 'VALIDATION', message: adjustmentsCopy.errors.PROOF_MISSING },
   PROOF_REUSED: { code: 'CONFLICT', message: adjustmentsCopy.errors.PROOF_REUSED },
@@ -64,6 +68,7 @@ const REFUSALS: Readonly<Record<FinanceRefusalHint, { code: ActionErrorCode; mes
   },
   RELEASE_INELIGIBLE: { code: 'FORBIDDEN', message: adjustmentsCopy.errors.RELEASE_INELIGIBLE },
   ALERT_NOT_NOTIFIED: { code: 'STATE_INVALID', message: adjustmentsCopy.errors.ALERT_NOT_NOTIFIED },
+  RELEASE_TOO_EARLY: { code: 'STATE_INVALID', message: adjustmentsCopy.errors.RELEASE_TOO_EARLY },
   WEATHER_FEE_UNSET_MANUAL: {
     code: 'STATE_INVALID',
     message: adjustmentsCopy.errors.WEATHER_FEE_UNSET_MANUAL,
@@ -92,11 +97,21 @@ function refusalMessage(hint: FinanceRefusalHint, error: unknown): string {
     : REFUSALS[hint].message;
 }
 
+// Review of PR #80, Info: named_weather_link (20261104181000) refuses a weather link with the shared STATE_INVALID;
+// its message names the link, so the page can say which choice to change.
+const WEATHER_LINK_REFUSAL = /^weather link /;
+
+function isWeatherLinkRefusal(hint: string | undefined, error: unknown): boolean {
+  return hint === 'STATE_INVALID' && WEATHER_LINK_REFUSAL.test(raisedMessageOf(error));
+}
+
 // The readable refusal for a finance RPC's error, or null to let mapError decide.
 export function financeRefusal(error: unknown): AppError | null {
   const hint = raisedHintOf(error);
   if (hint && isRefusalHint(hint))
     return new AppError(REFUSALS[hint].code, refusalMessage(hint, error));
+  if (isWeatherLinkRefusal(hint, error))
+    return new AppError('STATE_INVALID', adjustmentsCopy.errors.WEATHER_LINK_STATE);
   const code = databaseErrorCode(error);
   // The RPCs check the fresh TOTP themselves; a code older than five minutes reads as a step-up to repeat.
   if (code === INSUFFICIENT_PRIVILEGE) return new AppError('FORBIDDEN');

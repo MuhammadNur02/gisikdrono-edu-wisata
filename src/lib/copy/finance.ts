@@ -163,6 +163,8 @@ export const financeCopy = {
       `Pembayaran ${amount} dicatat dan entri buku besarnya ditandai lunas.`,
     errors: {
       PAYOUT_EMPTY: 'Tidak ada entri yang belum dibayar untuk penerima ini dalam periode tersebut.',
+      PAYOUT_NEGATIVE_PENDING:
+        'Penerima ini masih punya entri negatif yang belum dibayar sebelum tanggal awal periode. Mulai periode dari tanggal entri tertua yang belum dibayar agar entri itu ikut diperhitungkan.',
       FUTURE_DAY:
         'Pembayaran hanya untuk hari yang sudah lewat; tanggal akhir paling lambat hari ini.',
       PAYOUT_TOTAL_MISMATCH:

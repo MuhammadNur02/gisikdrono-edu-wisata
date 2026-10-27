@@ -154,6 +154,22 @@ describe('finance refusals (review of PR #80, M-1)', () => {
   });
 });
 
+describe('a weather link refused as STATE_INVALID (review of PR #80, Info)', () => {
+  it('says which choice to change when named_weather_link refuses the link', () => {
+    const refusal = financeRefusal({
+      code: 'P0001',
+      message: "weather link 0192f3a4-5b6c-7d8e-9f01-000000000002 is not held on the booking's settled payment",
+      hint: 'STATE_INVALID',
+    });
+    expect(refusal?.code).toBe('STATE_INVALID');
+    expect(refusal?.userMessage).toMatch(/tautan cuaca/i);
+  });
+
+  it('leaves any other STATE_INVALID to mapError', () => {
+    expect(financeRefusal({ code: 'P0001', message: 'refused', hint: 'STATE_INVALID' })).toBeNull();
+  });
+});
+
 describe('the REFUND_KEY_MISMATCH refusal (review of PR #80, L-1)', () => {
   it('names the applied adjustment Midtrans disagrees with', () => {
     const refusal = financeRefusal({

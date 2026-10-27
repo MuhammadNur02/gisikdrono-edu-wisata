@@ -269,8 +269,10 @@ select is(pg_temp.hint_of($$select public.propose_adjustment('manual_refund', (s
   jsonb_build_object('weather_link_id', upper((select id from weather_link)::text)), (select id from weather_payment))$$),
   'STATE_INVALID', 'whatever case its uuid is written in');
 select throws_ok($$select public.propose_adjustment('manual_refund', (select id from weather), 100,
-  'Refund cuaca manual uji', 'bookings/x', '{"weather_link_id": "bukan-uuid"}', (select id from weather_payment))$$,
-  '22023', null, 'and only as a uuid');
+  'Refund cuaca manual uji', 'bookings/' || (select id from weather) || '/adjustment-' || md5('weather-link')::uuid || '.pdf',
+  '{"weather_link_id": "bukan-uuid"}', (select id from weather_payment))$$,
+  '22023', 'details.weather_link_id names a weather link by its id',
+  'and only as a uuid, refused for that and not for its evidence path (review of PR #80, L-4)');
 reset role;
 
 select * from finish();
