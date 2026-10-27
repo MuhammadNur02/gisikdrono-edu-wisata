@@ -123,9 +123,11 @@ as $$
   from public.payments p where p.booking_id = p_booking and p.status in ('settled', 'partially_refunded');
 $$;
 
+-- The booking's payment, read as the test's owner: the superadmin's session sees no amount column of payments.
 create function pg_temp.payment_row(p_booking uuid) returns public.payments
-  language sql
+  language sql security definer
 as $$ select p.* from public.payments p where p.booking_id = p_booking and p.status <> 'initiated' order by p.attempt_no limit 1; $$;
+grant execute on function pg_temp.payment_row(uuid) to authenticated;
 
 create temporary table booking on commit drop as select pg_temp.paid_booking('+6281300009101') as id;
 grant select on booking to authenticated;
