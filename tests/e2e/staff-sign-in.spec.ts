@@ -216,8 +216,10 @@ test('an RW officer sees only their own groups and never the RwSwitcher', async 
   // The recap opens read only: the RW's own figures, never the superadmin's payment totals or ledger check.
   await page.goto('/dashboard/finance');
   await expect(page.getByRole('heading', { name: 'Rekap keuangan', level: 1 })).toBeVisible();
-  await expect(page.getByText('Bagian bersih periode ini')).toBeVisible();
-  await expect(page.getByText('Pembayaran lunas')).toHaveCount(0);
+  // The RW's net share appears more than once on the page, so the first match is enough. The RW copy says
+  // 'pembayaran lunas' inside a hint, so the superadmin's KPI label is matched whole.
+  await expect(page.getByText('Bagian bersih periode ini', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Pembayaran lunas', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Buku besar cocok', { exact: false })).toHaveCount(0);
 });
 
