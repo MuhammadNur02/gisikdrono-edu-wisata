@@ -57,7 +57,7 @@ export function svcRecordCertificatePdf(
 const phoneCheckSchema = z.enum(['verified', 'mismatch', 'blocked', 'unverified']);
 export type CertificatePhoneCheck = z.infer<typeof phoneCheckSchema>;
 
-// The guest certificate page's step-up (Task P4.5.03, 20261104182000): the four digits and the hashed IP go in, only
+// The guest certificate page's step-up (Task P4.5.03, 20261104210100): the four digits and the hashed IP go in, only
 // the answer comes back; the PIC's number never leaves the database, which counts the wrong tries of the window and
 // records a right one as a pii_revealed event.
 export async function svcCheckCertificatePhone(

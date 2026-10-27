@@ -1,4 +1,4 @@
--- The guest certificate page's step-up (20261104182000; Task P4.5.03, docs/Security.md DOC-02): the last four digits
+-- The guest certificate page's step-up (20261104210100; Task P4.5.03, docs/Security.md DOC-02): the last four digits
 -- of the PIC's verified number are compared in the database, which hands back only the answer; five wrong tries a day
 -- raise one open alert per booking, and the tenth wrong try of the window blocks the step-up for good (review of
 -- PR #94, L1).

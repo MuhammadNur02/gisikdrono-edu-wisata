@@ -93,7 +93,7 @@ async function passesPersonalDataGate(bookingId: string): Promise<boolean> {
 // at AAL2 whose RLS shows them the certificate (certificates_staff_read: an officer of one of its RWs, or the
 // superadmin), and for one that prints a person's name also the personal-data gate above. A visitor gets the same
 // NOT_FOUND as everyone else here: their certificate link and last-4 step-up open /reservasi/[bookingCode]/sertifikat,
-// which hands out a signed URL of its own (Task P4.5.03, guest half).
+// whose PDFs stream from its unduh/[slot] route, never a signed URL (Task P4.5.03, guest half).
 export async function requireCertificateReader(
   certificateId: string,
   bookingId: string,

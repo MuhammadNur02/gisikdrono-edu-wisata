@@ -438,7 +438,7 @@ select columns_are('public', 'bookings', array[
   'guardian_consented_at',
   -- added by 20261101120100: the fingerprint of the tickets the kept ticket file shows
   'ticket_pdf_fingerprint',
-  -- added by 20261104182000: the wrong last-4 tries of the certificate page's step-up
+  -- added by 20261104210100: the wrong last-4 tries of the certificate page's step-up
   'certificate_phone_failures'
 ]);
 select columns_are('public', 'booking_legs', array[

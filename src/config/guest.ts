@@ -79,6 +79,6 @@ export const CERTIFICATE_SLOTS = {
   group: 'rombongan',
   participant: 'peserta',
 } as const;
-// Mirrors internal.certificate_phone_failure_cap() of 20261104182000: the wrong last-4 tries over the window after which
+// Mirrors internal.certificate_phone_failure_cap() of 20261104210100: the wrong last-4 tries over the window after which
 // the step-up stays blocked (review of PR #94, L1). The database decides; the page only reads it to say so.
 export const CERTIFICATE_PHONE_FAILURE_CAP = 10;
