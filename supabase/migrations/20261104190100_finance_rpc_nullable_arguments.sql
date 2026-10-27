@@ -2,9 +2,10 @@
 -- through the typed supabase-js client, whose generated arguments are required unless the function gives them a
 -- default. A package_default rule names no package and a write_off no payment, so those arguments are NULL, which a
 -- required argument cannot be. Both functions are made again with their nullable arguments last, each defaulting to
--- NULL; the bodies are those of 20261101130100 and 20261101130200, unchanged but for one key: a manual_refund keeps
--- details.weather_link_id, a validated uuid and nothing else, which PR #90 reads to make a weather manual refund
--- explicit (review of PR #80; the server side of that key is #90's).
+-- NULL. save_revenue_rule's body is that of 20261101130100 and propose_adjustment's that of 20261104181000, unchanged:
+-- a manual_refund keeps details.weather_link_id, lower-cased (any case is read), and check_adjustment_terms judges the
+-- link through named_weather_link, the booking's own, unresolved and held (held_at), which is L-c of the delta review
+-- of PR #80; a second check here would only repeat it.
 
 drop function public.save_revenue_rule(public.revenue_rule_scope, smallint, uuid, uuid, text, date, jsonb);
 drop function public.propose_adjustment(public.adjustment_type, uuid, uuid, bigint, text, text, jsonb);
@@ -85,27 +86,15 @@ as $$
 declare
   proposed public.payment_adjustments;
   previous_settings jsonb;
-  details jsonb := case when p_type = 'reclassify_share'
-                        then jsonb_build_object('line_ref', p_details ->> 'line_ref', 'from_key', p_details ->> 'from_key',
-                                                'to_key', p_details ->> 'to_key')
-                        else '{}' end;
-  weather_link text := lower(btrim(coalesce(p_details ->> 'weather_link_id', '')));
+  details jsonb := case
+    when p_type = 'reclassify_share'
+      then jsonb_build_object('line_ref', p_details ->> 'line_ref', 'from_key', p_details ->> 'from_key',
+                              'to_key', p_details ->> 'to_key')
+    when p_type = 'manual_refund'
+      then jsonb_strip_nulls(jsonb_build_object('weather_link_id', lower(btrim(p_details ->> 'weather_link_id'))))
+    else '{}' end;
 begin
   perform internal.require_finance_writer();
-  if p_type = 'manual_refund' and weather_link <> '' then
-    if weather_link !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
-      raise exception 'details.weather_link_id names a weather link by its id' using errcode = '22023';
-    end if;
-    -- Delta review of PR #80, L-c: a link of this booking that the sweep holds for the superadmin, window closed and no
-    -- outcome yet; the uuid is read in any case and kept in lower case.
-    if not exists (select 1 from public.weather_notice_bookings w
-                   where w.id = weather_link::uuid and w.booking_id = p_booking_id and w.resolved_at is null
-                     and w.open_until <= now()) then
-      raise exception 'weather link % is not held on booking %', weather_link, p_booking_id
-        using errcode = 'P0001', hint = 'WEATHER_LINK_NOT_HELD';
-    end if;
-    details := jsonb_build_object('weather_link_id', weather_link);
-  end if;
   if p_evidence_path is null
      or p_evidence_path !~ ('^bookings/' || p_booking_id
                             || '/adjustment-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'

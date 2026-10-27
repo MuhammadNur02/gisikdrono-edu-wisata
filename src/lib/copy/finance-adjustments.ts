@@ -133,8 +133,6 @@ export const adjustmentsCopy = {
       'Pengusul atau penyetuju penyesuaian ini tidak bisa melepas blokirnya. Minta superadmin lain memeriksa dan melepasnya.',
     ALERT_NOT_NOTIFIED:
       'Peringatan selisih ini belum terkirim ke Lurah. Tunggu beberapa menit sampai terkirim, lalu coba lagi.',
-    WEATHER_LINK_NOT_HELD:
-      'Tautan cuaca itu tidak sedang ditahan untuk pemesanan ini. Pilih tautan yang ditahan, atau kosongkan pilihan refund cuaca.',
     WEATHER_FEE_UNSET_MANUAL:
       'Atur biaya Midtrans; pengembalian dana cuaca berjalan otomatis. Jangan transfer manual.',
   },

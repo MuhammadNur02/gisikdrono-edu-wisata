@@ -3,7 +3,7 @@
 -- version closing the one in force the day before with its shares adding up to 100 %, and a payout that stamps its
 -- ledger rows once.
 begin;
-select plan(45);
+select plan(50);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: a paid RW 05 booking with its payment, invoice and ledger =====
@@ -157,8 +157,8 @@ select throws_ok($$select public.settle_revenue_entries('rw:5', public.today_jkt
 select throws_ok($$select public.settle_revenue_entries('rw:5', public.today_jkt(), public.today_jkt(), 'TRF-RW5',
   'payouts/00000000-0000-4000-8000-0000000e4001/.bukti.pdf', 70000)$$, '22023', null,
   'and its file name never starts with a dot (N6)');
-select throws_ok($$select public.settle_revenue_entries('rw:5', public.today_jkt() - 1, public.today_jkt(),
-  'TRF-RW5-001', 'payouts/00000000-0000-4000-8000-0000000e4001/bukti.pdf', null)$$, '22023', null,
+select is(pg_temp.hint_of($$select public.settle_revenue_entries('rw:5', public.today_jkt() - 1, public.today_jkt(),
+  'TRF-RW5-001', 'payouts/00000000-0000-4000-8000-0000000e4001/bukti.pdf', null)$$), 'PAYOUT_TOTAL_MISMATCH',
   'a payout names the amount transferred');
 select is(pg_temp.hint_of($$select public.settle_revenue_entries('rw:5', public.today_jkt() - 1, public.today_jkt(),
   'TRF-RW5-001', 'payouts/00000000-0000-4000-8000-0000000e4001/bukti.pdf',
@@ -199,6 +199,43 @@ select pg_temp.act_as('superadmin_stale_totp');
 select throws_ok($$select public.settle_revenue_entries('kelurahan', public.today_jkt(), public.today_jkt(), 'TRF-KEL',
   'payouts/00000000-0000-4000-8000-0000000e4004/bukti.pdf', 30000)$$, '42501', null, 'a payout needs a fresh code');
 reset role;
+
+-- ===== A negative kelurahan row (an A24 shortfall) counts in the payout (#90's review) =====
+-- The kelurahan's unpaid rows of the period net to Rp -10.000 once the shortfall is written.
+insert into public.revenue_share_entries (booking_id, payment_id, entry_type, line_ref, rule_version, beneficiary,
+  beneficiary_key, rw_id, base_amount, pct, amount)
+select '00000000-0000-4000-8000-0000000e2001', '00000000-0000-4000-8000-0000000e3001', 'reversal', 'package', '{}',
+       'kelurahan', 'kelurahan', null, 100000, 30,
+       -(coalesce((select sum(u.amount) from internal.unpaid_entries('kelurahan', public.today_jkt() - 1,
+                                                                     public.today_jkt()) as u), 0) + 10000);
+insert into storage.objects (bucket_id, name) values
+  ('documents', 'payouts/00000000-0000-4000-8000-0000000e4005/bukti.pdf'),
+  ('documents', 'payouts/00000000-0000-4000-8000-0000000e4006/bukti.pdf');
+select pg_temp.act_as('superadmin_aal2');
+select is((public.payout_preview('kelurahan', public.today_jkt() - 1, public.today_jkt()) ->> 'total')::bigint,
+  -10000::bigint, 'the preview nets a negative kelurahan row');
+select is(pg_temp.hint_of($$select public.settle_revenue_entries('kelurahan', public.today_jkt() - 1, public.today_jkt(),
+  'TRF-KEL-NEG', 'payouts/00000000-0000-4000-8000-0000000e4005/bukti.pdf', 30000)$$), 'PAYOUT_EMPTY',
+  'and a net below nothing is no payout, whatever amount is named');
+reset role;
+-- Another Rp 25.000 for the kelurahan: the period now nets Rp 15.000.
+insert into public.revenue_share_entries (booking_id, payment_id, entry_type, line_ref, rule_version, beneficiary,
+  beneficiary_key, rw_id, base_amount, pct, amount)
+values ('00000000-0000-4000-8000-0000000e2001', '00000000-0000-4000-8000-0000000e3001', 'settlement',
+        'addon:00000000-0000-4000-8000-0000000e9001', '{}', 'kelurahan', 'kelurahan', null, 100000, 25, 25000);
+select pg_temp.act_as('superadmin_aal2');
+select is(pg_temp.hint_of($$select public.settle_revenue_entries('kelurahan', public.today_jkt() - 1, public.today_jkt(),
+  'TRF-KEL-POS', 'payouts/00000000-0000-4000-8000-0000000e4005/bukti.pdf', 25000)$$), 'PAYOUT_TOTAL_MISMATCH',
+  'a payout that leaves the negative row out is refused');
+create temporary table kelurahan_payout on commit drop as
+  select (public.settle_revenue_entries('kelurahan', public.today_jkt() - 1, public.today_jkt(), 'TRF-KEL-NET',
+          'payouts/00000000-0000-4000-8000-0000000e4006/bukti.pdf', 15000) ->> 'id')::uuid as id;
+reset role;
+select is((select total_amount from public.payout_batches where id = (select id from kelurahan_payout)), 15000::bigint,
+  'the payout of the net is recorded');
+select is((select count(*)::int from public.revenue_share_entries
+           where payout_batch_id = (select id from kelurahan_payout) and amount < 0), 1,
+  'and stamps the negative row with it');
 
 select * from finish();
 rollback;
