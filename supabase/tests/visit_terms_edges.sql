@@ -5,7 +5,7 @@
 -- weather refund the fee eats whole, the weather window closing, a full target session, the cap of three weather
 -- moves with the ticket sent again after each, and the same cancellation or move asked twice.
 begin;
-select plan(188);
+select plan(195);
 \ir helpers/rls_personas.psql
 \ir helpers/visit_terms.psql
 select set_config('app.qr_key_id', 'k1', true);
@@ -964,6 +964,50 @@ select is(pg_temp.balances((select id from two_vendors)),
   'RW 13 and the kelurahan give all they hold; the vendors give Rp 19.714 and Rp 10.286; RW 05 keeps its share');
 select is(pg_temp.ledger_sum((select id from two_vendors)), 50000::bigint, 'exactly the leg''s Rp 50.000');
 
+-- D-L4 of the final delta review of PR #90: a Rp 60.000 combo on a 5/70/10/15 rule (kelurahan, RW 05, RW 13, a vendor)
+-- holds Rp 3.000, Rp 42.000, Rp 6.000 and Rp 9.000. The leg's Rp 30.000 takes RW 13's Rp 6.000, the kelurahan's
+-- Rp 3.000 and the vendor's Rp 9.000; the Rp 12.000 still short the kelurahan bears (A24). On a rule without a
+-- kelurahan line nobody may bear it, and the leg's refund is refused.
+insert into public.tour_packages (id, category, slug, name, pricing_basis, price_per_pax, status) values
+  ('00000000-0000-4000-8000-0000000e1009', 'combo', 'uji-tepi-kombo-celah-vendor', 'Kombo Uji Celah Vendor', 'per_pax',
+   30000, 'draft'),
+  ('00000000-0000-4000-8000-0000000e100a', 'combo', 'uji-tepi-kombo-tanpa-kelurahan', 'Kombo Uji Tanpa Kelurahan',
+   'per_pax', 30000, 'draft');
+insert into public.tour_package_legs (package_id, rw_id, leg_order) values
+  ('00000000-0000-4000-8000-0000000e1009', 5, 1), ('00000000-0000-4000-8000-0000000e1009', 13, 2),
+  ('00000000-0000-4000-8000-0000000e100a', 5, 1), ('00000000-0000-4000-8000-0000000e100a', 13, 2);
+update public.tour_packages set status = 'published'
+where id in ('00000000-0000-4000-8000-0000000e1009', '00000000-0000-4000-8000-0000000e100a');
+select pg_temp.rule('00000000-0000-4000-8000-0000000e1009', '[{"beneficiary": "kelurahan", "pct": 5},
+  {"beneficiary": "rw_treasury", "rw_id": 5, "pct": 70}, {"beneficiary": "rw_treasury", "rw_id": 13, "pct": 10},
+  {"beneficiary": "umkm_vendor", "vendor_id": "00000000-0000-4000-8000-0000000e1051", "pct": 15}]');
+select pg_temp.rule('00000000-0000-4000-8000-0000000e100a', '[{"beneficiary": "rw_treasury", "rw_id": 5, "pct": 85},
+  {"beneficiary": "rw_treasury", "rw_id": 13, "pct": 15}]');
+insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
+  ('00000000-0000-4000-8000-0000000e3221', 13, public.today_jkt() + 5, '20:30', '21:00', 'Uji tepi celah vendor 13', 40),
+  ('00000000-0000-4000-8000-0000000e3222', 13, public.today_jkt() + 5, '21:15', '21:45', 'Uji tepi tanpa kelurahan 13', 40);
+create temporary table vendor_gap on commit drop as
+select pg_temp.visited_combo_open('00000000-0000-4000-8000-0000000e1009', '00000000-0000-4000-8000-0000000e3221', 2,
+                                  '+6281300004041') as id;
+create temporary table no_kelurahan on commit drop as
+select pg_temp.visited_combo_open('00000000-0000-4000-8000-0000000e100a', '00000000-0000-4000-8000-0000000e3222', 2,
+                                  '+6281300004042') as id;
+select set_config('app.in_rpc', '1', true);
+select set_config('app.actor_role', 'cron', true);
+select internal.take_audit_turn();
+select is((internal.reverse_leg_share((select id from vendor_gap),
+             (select l.id from public.booking_legs l where l.booking_id = (select id from vendor_gap) and l.rw_id = 13),
+             'uji-celah-vendor') ->> 'kelurahan_shortfall')::bigint, 12000::bigint,
+  'D-L4: with the vendor''s share used up, the kelurahan bears the Rp 12.000 still short');
+select is(pg_temp.balances((select id from vendor_gap)),
+  array['kelurahan=-12000', 'rw:13=0', 'rw:5=42000', 'vendor:00000000-0000-4000-8000-0000000e1051=0'],
+  'RW 13, the kelurahan and the vendor give all they hold; RW 05 keeps its share');
+select is(pg_temp.hint_of($$select internal.reverse_leg_share((select id from no_kelurahan),
+  (select l.id from public.booking_legs l where l.booking_id = (select id from no_kelurahan) and l.rw_id = 13),
+  'uji-tanpa-kelurahan')$$), 'STATE_INVALID', 'with no kelurahan line to bear the rest, the leg''s refund is refused');
+select set_config('app.actor_role', '', true);
+select set_config('app.in_rpc', '', true);
+
 -- ===== Follow-ups of the delta3 review of PR #69 and the review of PR #90 (20261104181000) =====
 
 -- An approved manual_refund of the superadmin persona (old enough, with a factor, since the M-2 case above), its
@@ -1162,38 +1206,8 @@ select is(pg_temp.hint_of($$select pg_temp.propose_refund((select id from manual
   (select id from manual_leg_link))$$), 'WEATHER_FEE_UNSET_MANUAL',
   'nor is a visited combo''s leg held for its fee refunded by hand');
 
--- L-3: the backfill marks the holds the sweep made before 20261104181000 from what holds them now.
-create temporary table old_hold on commit drop as
-select pg_temp.paid('00000000-0000-4000-8000-0000000e1001', '00000000-0000-4000-8000-0000000e3042', 2,
-                    '+6281300004035', false) as id;
-select set_config('test.payment_type', 'bank_transfer', true);
-create temporary table old_hold_va on commit drop as
-select pg_temp.paid('00000000-0000-4000-8000-0000000e1001', '00000000-0000-4000-8000-0000000e3043', 2,
-                    '+6281300004036', false) as id;
-select set_config('test.payment_type', '', true);
-select pg_temp.declare('00000000-0000-4000-8000-0000000e3042');
-select pg_temp.declare('00000000-0000-4000-8000-0000000e3043');
-select set_config('app.in_rpc', '1', true);
-update public.weather_notice_bookings set open_until = now() - interval '1 second'
-where booking_id in ((select id from old_hold), (select id from old_hold_va));
-select set_config('app.in_rpc', '', true);
-insert into public.security_alerts (rule, severity, fingerprint, title, first_seen_at)
-select 'weather_refund_fee_unset', 'high', 'weather_refund_fee_unset:' || b.id, 'Uji peringatan lama',
-       now() - interval '2 days'
-from public.bookings b where b.id in ((select id from old_hold), (select id from old_hold_va));
-select internal.backfill_weather_holds();
-select is((select w.held_reason || ':' || (w.held_at = now() - interval '2 days')
-           from public.weather_notice_bookings w where w.booking_id = (select id from old_hold)), 'fee_unset:true',
-  'a link whose fee is still unset is marked fee_unset, from the old alert''s first day');
-select is((select (a.acknowledged_at is not null)::text || ':'
-                  || (select count(*) from public.security_alerts n
-                      where n.fingerprint = 'weather_link_held:' || w.id and n.acknowledged_at is null)
-           from public.security_alerts a join public.weather_notice_bookings w on w.booking_id = (select id from old_hold)
-           where a.fingerprint = 'weather_refund_fee_unset:' || (select id from old_hold)), 'true:1',
-  'with its own alert, the old one closed');
-select is((select coalesce(w.held_reason, 'unmarked') from public.weather_notice_bookings w
-           where w.booking_id = (select id from old_hold_va)), 'unmarked',
-  'a link whose fee is set now is left for the sweep');
+-- D-L4: the backfill marked the holds the sweep made before 20261104181000 once, as the migration ran, and is gone.
+select hasnt_function('internal', 'backfill_weather_holds', 'D-L4: the one-off backfill is dropped once it has run');
 
 -- H-1: a manual_refund that names no link is an ordinary refund.
 select is(pg_temp.approve_and_apply(pg_temp.propose_refund((select id from held_plain), 1000, 'plain')), 'applied',
@@ -1211,6 +1225,11 @@ select internal.settle_lapsed_weather_links(50);
 select is((select (resolved_at is null)::text from public.weather_notice_bookings
            where booking_id = (select id from held_plain)), 'true',
   'M-C: the sweep skips a booking with an open manual_refund, named or not');
+select is((select a.severity || ':' || (a.details ->> 'adjustment_id' = (select id from open_plain)::text) || ':'
+                  || (a.title like '%Rp 500%terapkan atau tarik penyesuaian ini.')
+           from public.security_alerts a join public.weather_notice_bookings w on w.booking_id = (select id from held_plain)
+           where a.fingerprint = 'weather_link_waiting_adjustment:' || w.id and a.acknowledged_at is null),
+  'medium:true:true', 'D-L1: and asks the superadmin to apply or withdraw the adjustment it names');
 select is((select w.resolution || ':' || r.status || ':' || r.amount || ':' || r.fee_amount || ':'
                   || string_agg(l.rw_id || '=' || l.status, ',' order by l.rw_id)
            from public.weather_notice_bookings w join public.refund_requests r on r.booking_id = w.booking_id
@@ -1218,6 +1237,24 @@ select is((select w.resolution || ':' || r.status || ':' || r.amount || ':' || r
            where w.id = (select id from manual_leg_link) group by w.resolution, r.status, r.amount, r.fee_amount),
   'auto_refunded:requested:243443:3457:5=checked_in,13=released',
   'and refunds the visited combo''s leg itself once the QRIS fee is set: its share less the Rp 3.457 fee');
+
+-- D-L2: once the adjustment is withdrawn the sweep takes the link again; its payment was partly refunded by the
+-- Rp 1.000 above, so there is no settled payment to work a weather refund out from, and the link is the superadmin's.
+select set_config('app.in_rpc', '1', true);
+update public.payment_adjustments set status = 'rejected', rejected_reason = 'Ditarik untuk uji'
+where id = (select id from open_plain);
+select set_config('app.in_rpc', '', true);
+select internal.settle_lapsed_weather_links(50);
+select is((select w.held_reason || ':' || (a.title like '%dikembalikan sebagian%')
+                  || ':' || (a.title not like '%Atur biaya Midtrans%')
+           from public.weather_notice_bookings w
+           join public.security_alerts a on a.fingerprint = 'weather_link_held:' || w.id and a.acknowledged_at is null
+           where w.booking_id = (select id from held_plain)), 'payment_refunded:true:true',
+  'D-L2: a link whose payment was partly refunded is held as payment_refunded, with its own alert, not the fee''s');
+select is((select (a.acknowledged_at is not null)::text || ':' || (a.details ->> 'closed')
+           from public.security_alerts a join public.weather_notice_bookings w on w.booking_id = (select id from held_plain)
+           where a.fingerprint = 'weather_link_waiting_adjustment:' || w.id), 'true:adjustment_closed',
+  'and its waiting alert closes');
 
 -- F-2 (H-A, M-B): a visited combo's leg the shares cannot fund is the one refunded by hand. On the 5/80/15 rule of the
 -- L-1 combo of Rp 60.000 the kelurahan holds Rp 3.000, RW 05 Rp 48.000 and RW 13 Rp 9.000. The leg's share is
@@ -1295,6 +1332,16 @@ select is(pg_temp.hint_of($$select public.resolve_weather_link((select id from s
 select throws_ok($$select public.resolve_weather_link((select id from short_link), 'refunded_manually',
   'Transfer bank oleh kelurahan')$$, '22023', null, 'refunded_manually is not an outcome resolve takes');
 reset role;
+
+-- D-M1: after the shortfall the kelurahan's row is below zero; a later ordinary refund draws only from the parties that
+-- still hold a positive share, RW 05 here, and the ledger still balances.
+select is(pg_temp.approve_and_apply(pg_temp.propose_refund((select id from short_combo), 1000, 'short-after')),
+  'applied', 'D-M1: an ordinary Rp 1.000 manual refund after the kelurahan bore a shortfall applies');
+select is(pg_temp.balances((select id from short_combo)), array['kelurahan=-18000', 'rw:13=0', 'rw:5=47000'],
+  'drawn from RW 05 alone, the kelurahan below zero giving nothing more');
+select is((select pg_temp.ledger_sum(b.id) = b.total_amount - p.refunded_amount - internal.weather_refund_fees(b.id)
+           from public.bookings b join public.payments p on p.booking_id = b.id where b.id = (select id from short_combo)),
+  true, 'and the ledger still balances with both refunds');
 
 -- F-4: an answer without a transaction status fails nothing.
 create temporary table no_status on commit drop as select pg_temp.stuck('+6281300004033') as id;
