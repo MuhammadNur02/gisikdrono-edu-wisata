@@ -8,7 +8,7 @@ import { STAFF_STEP_UP_MAX_AGE_SECONDS } from '@/config/staff';
 import { staffCopy } from '@/lib/copy/staff';
 import { walkInCopy } from '@/lib/copy/walk-in';
 import { fail, mapError, ok, raisedHintOf } from '@/lib/errors';
-import { isCashReceivable } from '@/lib/utils/walk-in-cash';
+import { cashBookingOf, isCashReceivable } from '@/lib/utils/walk-in-cash';
 import { bookingTargetSchema } from '@/lib/validations/booking-admin';
 import { recordCashSchema } from '@/lib/validations/walk-in';
 import {
@@ -43,7 +43,18 @@ async function requireBookingAccess(bookingId: string): Promise<BookingAccess> {
 
 // A9: an RW admin at AAL2, for a booking of their own one RW that takes cash now, with a code from the last five
 // minutes. A booking under review, paid, lapsed or past 23:59 WIB of its visit day stops here, before Midtrans.
-async function requireCashTaker(bookingId: string): Promise<GuardResult> {
+// Delta review of PR #91, I-3: cash after the session started counts the group in, and only then, checked here
+// before Midtrans is called, as mark_booking_paid_manually checks it again (ATTENDANCE_REQUIRED).
+function hasAttendanceFor(booking: BookingDetail, attendeeCount: number | null): boolean {
+  const cash = cashBookingOf(booking);
+  if (cash === null) return false;
+  return Date.now() >= Date.parse(cash.sessionStartsAt) === (attendeeCount !== null);
+}
+
+async function requireCashTaker(
+  bookingId: string,
+  attendeeCount: number | null,
+): Promise<GuardResult> {
   const role = await requireRole('admin_rw');
   if (!role.ok) return role;
   if (!role.ctx.isAal2) return fail('FORBIDDEN');
@@ -52,6 +63,9 @@ async function requireCashTaker(bookingId: string): Promise<GuardResult> {
   if (access.booking.rwIds.length !== 1) return fail('FORBIDDEN');
   if (!isCashReceivable(access.booking, true, new Date())) {
     return fail('STATE_INVALID', undefined, walkInCopy.errors.cashRefused);
+  }
+  if (!hasAttendanceFor(access.booking, attendeeCount)) {
+    return fail('STATE_INVALID', undefined, walkInCopy.errors.attendanceRequired);
   }
   const fresh = await requireFreshTotp(STAFF_STEP_UP_MAX_AGE_SECONDS);
   return fresh.ok ? fresh : fail('FORBIDDEN', undefined, staffCopy.notFresh);
@@ -75,7 +89,7 @@ export async function recordWalkInCashAction(input: unknown): Promise<ActionResu
   const parsed = recordCashSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
 
-  const guard = await requireCashTaker(parsed.data.bookingId);
+  const guard = await requireCashTaker(parsed.data.bookingId, parsed.data.attendeeCount);
   if (!guard.ok) return guard;
 
   try {

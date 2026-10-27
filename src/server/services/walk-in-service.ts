@@ -129,7 +129,7 @@ export async function createWalkInBooking(
 // its actor (payment-service.ts), and the RPC still refuses while any payment is open. After the session started the
 // same call checks the group in (A23 addendum).
 export async function recordWalkInCash(ctx: StaffContext, values: RecordCashValues): Promise<void> {
-  await endOpenOrderBeforeCash(values.bookingId, ctx.userId);
+  await endOpenOrderBeforeCash(values.bookingId, ctx.userId, serverEnv.QR_SIGNING_ACTIVE_KID);
   const supabase = await createSupabaseServerClient();
   const answer = await markBookingPaidInCash(supabase, {
     bookingId: values.bookingId,

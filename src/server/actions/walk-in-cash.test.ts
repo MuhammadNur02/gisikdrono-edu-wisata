@@ -15,7 +15,6 @@ import { recordWalkInCash, sendWalkInPayLink } from '@/server/services/walk-in-s
 import { recordWalkInCashAction, sendWalkInPayLinkAction } from './walk-in-cash';
 import { officerBookingDetail } from '../../../tests/fixtures/booking-detail';
 
-
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/server', () => ({ after: vi.fn() }));
 vi.mock('@/server/auth/guards', () => ({
@@ -145,6 +144,14 @@ describe('recordWalkInCashAction', () => {
   });
 
   it('passes the people counted in, and says when they are needed or the QR key id is off the list', async () => {
+    await expect(recordWalkInCashAction({ ...CASH, attendeeCount: 4 })).resolves.toMatchObject({
+      error: { code: 'STATE_INVALID' },
+    });
+    expect(recordWalkInCash).not.toHaveBeenCalled();
+    vi.setSystemTime(new Date('2026-10-30T06:30:00Z')); // 13.30 WIB: the session has started
+    await expect(recordWalkInCashAction(CASH)).resolves.toMatchObject({
+      error: { code: 'STATE_INVALID' },
+    });
     await recordWalkInCashAction({ ...CASH, attendeeCount: 4 });
     expect(recordWalkInCash).toHaveBeenCalledWith(OFFICER, { ...CASH, attendeeCount: 4 });
     for (const [hint, text] of [
@@ -157,7 +164,7 @@ describe('recordWalkInCashAction', () => {
         hint,
         details: '',
       });
-      const refused = await recordWalkInCashAction(CASH);
+      const refused = await recordWalkInCashAction({ ...CASH, attendeeCount: 4 });
       expect(refused.ok ? '' : refused.error.message).toContain(text);
     }
   });

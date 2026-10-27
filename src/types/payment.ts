@@ -10,6 +10,8 @@ export interface OpenPaymentAttempt {
   orderId: string;
   status: PaymentStatus;
   redirectUrl: string | null;
+  // When the attempt's Snap page closes: the hold's deadline, capped at 24 hours (delta review of PR #91, M-A).
+  pageExpiresAt: string | null;
   createdAt: string;
 }
 
