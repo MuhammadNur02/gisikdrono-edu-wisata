@@ -62,6 +62,21 @@ describe('statusHubDataOf', () => {
     expect(svcFlagCancellationForSuperadmin).toHaveBeenCalledWith(adminClient, BOOKING_ID);
   });
 
+  it('says the kelurahan makes a weather refund while its fee is unset, raising nothing', async () => {
+    vi.mocked(manageRightsOf).mockReturnValue({
+      canCancelPaid: false,
+      hasWeather: true,
+      canPassPayLink: false,
+    });
+    vi.mocked(weatherStateOf).mockResolvedValue(WEATHER);
+    vi.mocked(svcRefundPreview).mockRejectedValue({ code: 'P0001', hint: 'WEATHER_FEE_UNSET' });
+
+    const data = await hubData();
+
+    expect(data.weatherRefundNeedsSuperadmin).toBe(true);
+    expect(after).not.toHaveBeenCalled();
+  });
+
   it('raises nothing for a refund the terms simply do not give', async () => {
     vi.mocked(svcRefundPreview).mockRejectedValue({ code: 'P0001', hint: 'STATE_INVALID' });
 
