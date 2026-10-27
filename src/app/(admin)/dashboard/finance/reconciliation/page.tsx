@@ -3,18 +3,22 @@ import type { Metadata } from 'next';
 import { ChainCheck } from '@/components/admin/finance/chain-check';
 import { IssueActions } from '@/components/admin/finance/issue-actions';
 import { IssuesTable, RunsTable } from '@/components/admin/finance/reconciliation-tables';
+import { StatementImportForm } from '@/components/admin/finance/statement-import-form';
 import { FilterBar, type FilterField } from '@/components/admin/security/filter-bar';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { FormAlert } from '@/components/forms/form-alert';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { RECONCILIATION_PATH } from '@/config/finance';
 import { financeCopy } from '@/lib/copy/finance';
 import { reconciliationCopy } from '@/lib/copy/finance-adjustments';
+import { statementCopy } from '@/lib/copy/midtrans-statement';
 import { parseDayFilter, type DayFilter } from '@/lib/validations/finance-filters';
 import {
   checkChainsAction,
   recheckPaymentAction,
   resolveIssueAction,
 } from '@/server/actions/finance-reconciliation';
+import { importMidtransCsvAction } from '@/server/actions/finance-statement';
 import { verifyStaffTotpAction } from '@/server/actions/staff-totp';
 import { requireDashboardStaff } from '@/server/auth/session';
 import { listOpenIssues, listRuns } from '@/server/services/reconciliation-service';
@@ -32,6 +36,25 @@ function filterFields(filter: DayFilter): FilterField[] {
     { kind: 'date', name: 'from', label: text.filters.from, value: filter.from ?? undefined },
     { kind: 'date', name: 'to', label: text.filters.to, value: filter.to ?? undefined },
   ];
+}
+
+// Task P4.7.05 (docs/Security.md REC-02): the Midtrans dashboard's transaction statement, compared with the payments;
+// its differences join the open issues as a csv_import run.
+function StatementCard() {
+  return (
+    <Card>
+      <CardHeader className="space-y-1.5">
+        <CardTitle className="text-h4">{statementCopy.title}</CardTitle>
+        <CardDescription>{statementCopy.description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <StatementImportForm
+          importAction={importMidtransCsvAction}
+          stepUpAction={verifyStaffTotpAction}
+        />
+      </CardContent>
+    </Card>
+  );
 }
 
 // Task P4.7.04 (docs/PRD.md FR-ADMIN-21; docs/Security.md REC-01, REC-09): the reconciliation runs, the issues still
@@ -65,6 +88,7 @@ export default async function ReconciliationPage({ searchParams }: { searchParam
         <FilterBar fields={filterFields(filter)} resetHref={RECONCILIATION_PATH} />
         {issues.hasMore ? <FormAlert tone="info">{text.more}</FormAlert> : null}
         <IssuesTable issues={issues.items} actionsFor={actionsFor} />
+        <StatementCard />
         <ChainCheck checkAction={checkChainsAction} />
         <RunsTable runs={runs} />
       </div>

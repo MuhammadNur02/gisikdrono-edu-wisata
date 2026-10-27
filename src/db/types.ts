@@ -4680,6 +4680,10 @@ export type Database = {
         Args: { event: Json }
         Returns: Json
       }
+      import_midtrans_statement: {
+        Args: { p_file_name: string; p_rows: Json }
+        Returns: Json
+      }
       invite_superadmin: {
         Args: { p_email: string; p_invite_code_hash: string }
         Returns: Json

@@ -180,6 +180,7 @@ export const reconciliationCopy = {
     chain_broken: 'Rantai rusak',
     payout_mismatch: 'Pembayaran bagi hasil tidak cocok',
     duplicate_settlement: 'Pembayaran ganda',
+    unknown_order: 'Order tidak dikenal',
   } as Record<string, string>,
   columns: {
     createdAt: 'Ditemukan',
