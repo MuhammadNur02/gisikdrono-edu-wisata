@@ -8,7 +8,7 @@ Owner: Dev on call, with the kelurahan's vault holder for the private key. Sourc
 
 - sessions, refresh and one-time tokens, and flow state;
 - MFA factors, challenges and AMR claims, and WebAuthn;
-- SAML relay states and OAuth clients, consents and authorizations;
+- SAML relay states, and OAuth clients, consents, authorizations and custom providers;
 - the Auth audit log;
 - GoTrue's own `schema_migrations` and `instances`.
 

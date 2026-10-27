@@ -118,7 +118,7 @@ jobs:
             --exclude-table-data=auth.mfa_amr_claims --exclude-table-data=auth.saml_relay_states \
             --exclude-table-data=auth.audit_log_entries --exclude-table-data=auth.schema_migrations \
             --exclude-table-data=auth.instances --exclude-table-data='auth.oauth_*' \
-            --exclude-table-data='auth.webauthn_*' \
+            --exclude-table-data='auth.webauthn_*' --exclude-table-data=auth.custom_oauth_providers \
             "$SUPABASE_DB_URL" \
             | age --recipient "$BACKUP_AGE_PUBLIC_KEY" > "$ENCRYPTED_FILE"
           if [ "$(head -c 21 "$ENCRYPTED_FILE")" != "age-encryption.org/v1" ]; then

@@ -31,10 +31,11 @@ select ok(has_table_privilege('backup_reader', 'public.bookings', 'select')
   'it reads the tables of public and auth');
 select ok(not has_table_privilege('backup_reader', 'public.bookings', 'insert, update, delete, truncate'),
   'and writes none');
-select ok(not has_schema_privilege('backup_reader', 'cron', 'usage')
-          and not has_schema_privilege('backup_reader', 'vault', 'usage')
-          and not has_schema_privilege('backup_reader', 'net', 'usage'),
-  'it may not use cron, vault or net');
+-- Supabase lets PUBLIC use some of these schemas; what counts is that nothing names backup_reader itself, and the
+-- calls below, made as the role, are refused.
+select is((select count(*)::int from pg_namespace n cross join lateral aclexplode(n.nspacl) a
+           where n.nspname in ('cron', 'vault', 'net') and a.grantee = 'backup_reader'::regrole),
+  0, 'no grant on cron, vault or net names it');
 select is(
   array(
     select p.proname::text from pg_proc p
@@ -70,7 +71,7 @@ select is(
     where t.schemaname = 'auth'
       and t.tablename not in ('users', 'identities', 'sso_providers', 'sso_domains', 'saml_providers')
       -- backup.yml excludes:
-      and t.tablename not in ('refresh_tokens', 'sessions', 'one_time_tokens', 'flow_state', 'mfa_challenges', 'mfa_factors', 'mfa_amr_claims', 'saml_relay_states', 'audit_log_entries', 'schema_migrations', 'instances')
+      and t.tablename not in ('refresh_tokens', 'sessions', 'one_time_tokens', 'flow_state', 'mfa_challenges', 'mfa_factors', 'mfa_amr_claims', 'saml_relay_states', 'audit_log_entries', 'schema_migrations', 'instances', 'custom_oauth_providers')
       and t.tablename not like 'oauth\_%'
       and t.tablename not like 'webauthn\_%'
     order by 1
@@ -81,21 +82,45 @@ select is(
 
 -- ===== As the role =====
 
+-- pgTAP's own functions live where backup_reader may not reach, so each statement is tried as the role by a pg_temp
+-- function that answers 'ok' or the SQLSTATE, and the answers are checked afterwards as postgres.
+create function pg_temp.attempt(p_statement text) returns text
+  language plpgsql
+as $$
+begin
+  execute p_statement;
+  return 'ok';
+exception when others then
+  return sqlstate;
+end;
+$$;
+grant execute on function pg_temp.attempt(text) to backup_reader;
+create temp table attempts (label text primary key, outcome text);
+grant insert on attempts to backup_reader;
+
 do $$
 begin
   execute format('grant backup_reader to %I with inherit false, set true', current_user);
 end;
 $$;
 set local role backup_reader;
-select lives_ok($$select count(*) from public.rw_units$$, 'as backup_reader, a table of public reads');
-select lives_ok($$select internal.environment()$$, 'and it learns the environment');
-select throws_ok($$select count(*) from vault.decrypted_secrets$$, '42501', null, 'but reads no decrypted secret');
-select throws_ok($$select cron.schedule('uji-backup', '* * * * *', 'select 1')$$, '42501', null,
-  'schedules no cron job');
-select throws_ok($$select net.http_get('https://example.test')$$, '42501', null, 'sends no request through net');
-select throws_ok($$select vault.create_secret('uji', 'uji-backup')$$, '42501', null, 'creates no secret');
-select throws_ok($$select vault.update_secret(gen_random_uuid(), 'uji')$$, '42501', null, 'and changes none');
+insert into attempts values
+  ('public', pg_temp.attempt('select count(*) from public.rw_units')),
+  ('environment', pg_temp.attempt('select internal.environment()')),
+  ('decrypted_secrets', pg_temp.attempt('select count(*) from vault.decrypted_secrets')),
+  ('cron.schedule', pg_temp.attempt($q$select cron.schedule('uji-backup', '* * * * *', 'select 1')$q$)),
+  ('net.http_get', pg_temp.attempt($q$select net.http_get('https://example.test')$q$)),
+  ('vault.create_secret', pg_temp.attempt($q$select vault.create_secret('uji', 'uji-backup')$q$)),
+  ('vault.update_secret', pg_temp.attempt($q$select vault.update_secret(gen_random_uuid(), 'uji')$q$));
 reset role;
+
+select is((select outcome from attempts where label = 'public'), 'ok', 'as backup_reader, a table of public reads');
+select is((select outcome from attempts where label = 'environment'), 'ok', 'and it learns the environment');
+select is((select outcome from attempts where label = 'decrypted_secrets'), '42501', 'but reads no decrypted secret');
+select is((select outcome from attempts where label = 'cron.schedule'), '42501', 'schedules no cron job');
+select is((select outcome from attempts where label = 'net.http_get'), '42501', 'sends no request through net');
+select is((select outcome from attempts where label = 'vault.create_secret'), '42501', 'creates no secret');
+select is((select outcome from attempts where label = 'vault.update_secret'), '42501', 'and changes none');
 
 select * from finish();
 rollback;
