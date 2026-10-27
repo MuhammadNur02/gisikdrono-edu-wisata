@@ -1,5 +1,5 @@
--- Task P4.3.10 with the admin booking path of P4.3.08 (20261104200000_admin_channel_pic_phone.sql,
--- 20261104200100_admin_bookings.sql): an officer books a walk-in group through public.create_admin_booking, the PIC's
+-- Task P4.3.10 with the admin booking path of P4.3.08 (20261104220000_admin_channel_pic_phone.sql,
+-- 20261104220100_admin_bookings.sql): an officer books a walk-in group through public.create_admin_booking, the PIC's
 -- number may be E.164 of another country there only, and an RW admin takes the cash through
 -- public.mark_booking_paid_manually. The owner's decisions are pinned here, so a change to them shows: A21 (the
 -- officer's check of the number), A22 (today's sessions until they end) and A23 (cash by an RW admin of a booking of

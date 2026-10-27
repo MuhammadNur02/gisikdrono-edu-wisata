@@ -25,7 +25,7 @@ export async function rpcGetAddonNotes(
   return new Map(rows.map((row) => [row.addon_id, row.notes]));
 }
 
-// Task P4.3.10: an officer's booking at the counter (20261104200100_admin_bookings.sql). The actor is the session's
+// Task P4.3.10: an officer's booking at the counter (20261104220100_admin_bookings.sql). The actor is the session's
 // own auth.uid(); the reply is internal.create_booking's.
 export interface AdminBookingToCreate {
   packageId: string;
