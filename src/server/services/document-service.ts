@@ -3,6 +3,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { svcIncrementBookletDownload } from '@/db/rpc';
+import { revealFinanceEvidence } from '@/db/rpc-finance';
 import type { Database } from '@/db/types';
 import { AppError } from '@/lib/errors';
 import { pepperedHash } from '@/lib/pepper';
@@ -11,9 +12,11 @@ import { getPublicSiteSettings } from '@/lib/queries/settings';
 import { withinRateLimits } from '@/lib/rate-limit';
 // See withinBookletDownloadLimit for why this module creates a service-role client.
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 import type { CertificateSlot } from '@/lib/utils/certificate-slots';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
 import { todayInJakarta } from '@/lib/utils/dates';
+import type { StaffContext } from '@/server/auth/guards';
 import {
   bookingDocumentPdf,
   loadBookingDocument,
@@ -28,7 +31,17 @@ import {
   rerenderBookingCertificates,
 } from '@/server/services/certificate-documents';
 import type { CertificateRow } from '@/server/services/certificate-pages';
+import {
+  SIGNED_URL_TTL_SECONDS,
+  type SignedDocumentKind,
+} from '@/server/services/document-paths';
 import { createDocumentSignedUrl } from '@/server/services/document-urls';
+import {
+  removeFinanceDocument,
+  storeFinanceDocument,
+  type StoredDocument,
+} from '@/server/services/finance-documents';
+import { asFinanceWrite } from '@/server/services/finance-errors';
 import {
   guestCertificateFile,
   type GuestCertificateFile,
@@ -44,8 +57,10 @@ import {
   ticketDocumentPdf,
   type TicketDocument,
 } from '@/server/services/ticket-documents';
+import { withinUploadLimit } from '@/server/services/upload-events';
 import type { GuestCertificateView } from '@/types/certificate';
 import type { VerifiedDocument } from '@/types/documents';
+import type { EvidenceKind, EvidenceLink } from '@/types/finance';
 
 type DatabaseClient = SupabaseClient<Database>;
 
@@ -286,4 +301,39 @@ export async function verifyDocumentCode(
   ]);
   if (!isWithinLimit) return { kind: 'rate_limited' };
   return { kind: 'looked_up', document: await lookupVerifyCode(adminClient, code) };
+}
+
+// The finance pages' proofs and evidence (Task P4.7.02, P4.7.04): the private documents bucket has no policy, so
+// only the service role writes it, at a path finance-service.ts built from a verified booking or payout id, for a
+// superadmin the action's guard has checked. Counted with the other finalizes (docs/Security.md UPL-04).
+export async function storeFinanceEvidence(
+  ctx: StaffContext,
+  quarantinePath: string,
+  destination: string,
+): Promise<StoredDocument> {
+  const adminClient = createSupabaseAdminClient();
+  if (!(await withinUploadLimit(adminClient, ctx, 'upload_finalize', null))) {
+    throw new AppError('RATE_LIMITED');
+  }
+  return storeFinanceDocument(adminClient, quarantinePath, destination);
+}
+
+export async function removeFinanceEvidence(path: string): Promise<void> {
+  await removeFinanceDocument(createSupabaseAdminClient(), path);
+}
+
+const EVIDENCE_DOCUMENT_KIND = {
+  adjustment: 'adjustment_evidence',
+  payout: 'payout_proof',
+} as const satisfies Record<EvidenceKind, SignedDocumentKind>;
+
+// Review of PR #80, M-3: "Lihat bukti". rpc_reveal_finance_evidence checks the superadmin's AAL2 on their own session,
+// names the file and writes the view's pii_revealed event; only then is a 300 s link signed, which goes straight back
+// to the page and is never stored.
+export async function signFinanceEvidence(kind: EvidenceKind, id: string): Promise<EvidenceLink> {
+  const supabase = await createSupabaseServerClient();
+  const path = await asFinanceWrite(() => revealFinanceEvidence(supabase, kind, id));
+  const documentKind = EVIDENCE_DOCUMENT_KIND[kind];
+  const url = await createDocumentSignedUrl(createSupabaseAdminClient(), path, documentKind);
+  return { url, expiresInSeconds: SIGNED_URL_TTL_SECONDS[documentKind] };
 }

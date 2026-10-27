@@ -30,6 +30,8 @@ export const RATE_LIMITS = {
   'booklet:download': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   // Task P4.6.03: the history's "Unduh lagi", per staff member, before each repeat download is logged (review of PR #63).
   'export_download:user': { limit: 30, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  // Review of PR #80, L-7: "Cek status Midtrans" on /dashboard/finance/reconciliation, once a minute per payment.
+  'finance_recheck:payment': { limit: 1, windowSeconds: 60, whenUnavailable: 'fail-closed' },
   // Task P3.6.04 (docs/Security.md §10.3, DOC-01): a booking's own documents (quotation, invoice, receipt), per
   // visitor IP and per booking, counted before the row is looked up, so guessing ids costs the same as reading.
   'document:ip': { limit: 30, windowSeconds: 60, whenUnavailable: 'fail-closed' },

@@ -10,6 +10,7 @@ import {
   formatDateTimeShort,
   formatInstantTimeRange,
   formatMonthLong,
+  jakartaDayBounds,
   jakartaMonthKey,
   sessionStartsAt,
   toJakartaIsoString,
@@ -151,5 +152,14 @@ describe('formatDayMonthShort', () => {
 describe('formatClockTime', () => {
   it('reads an instant on the Semarang clock', () => {
     expect(formatClockTime('2026-10-24T02:05:00Z')).toBe('09.05 WIB');
+  });
+});
+
+describe('jakartaDayBounds', () => {
+  it('runs from Semarang midnight to the next one', () => {
+    expect(jakartaDayBounds('2026-10-25')).toEqual({
+      start: '2026-10-24T17:00:00.000Z',
+      end: '2026-10-25T17:00:00.000Z',
+    });
   });
 });
