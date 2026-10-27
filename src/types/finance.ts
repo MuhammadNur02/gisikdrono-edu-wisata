@@ -66,6 +66,20 @@ export interface FinanceRecap {
   shares: PartyPeriodShare[];
 }
 
+// One day of the ledger's net, for the daily chart.
+export interface RecapDay {
+  day: string;
+  net: number;
+}
+
+// An RW admin's own recap (docs/PRD.md §13.1 A26): their RW's treasury and UMKM vendors, read only.
+export interface RwFinanceRecap {
+  totals: { settled: number; reversed: number; net: number; outstanding: number };
+  days: RecapDay[];
+  balances: PartyBalance[];
+  shares: PartyPeriodShare[];
+}
+
 export interface RuleLine {
   beneficiary: EnumValue<'revenue_beneficiary'>;
   rwId: number | null;
