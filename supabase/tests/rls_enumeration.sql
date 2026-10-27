@@ -73,7 +73,8 @@ select is(
 -- the figures of 20261027080100 and 20261027080200; save_package and its two parts of 20261028080100, security
 -- invoker, so the grants and policies of a direct write decide; issue_mfa_reenrolment_code of 20261029080000; and
 -- acknowledge_alert_as_sole_superadmin of 20261029080400; then the finance RPCs of 20261101130000 to
--- 20261101130200; and onboarding_state of 20261103131200, booleans about the caller's own onboarding only.
+-- 20261101130200 and 20261104190200 to 20261104190500 (release_refund_key_mismatch, payout_preview,
+-- rpc_reveal_finance_evidence); and onboarding_state of 20261103131200, booleans about the caller's own onboarding only.
 select is(
   array(
     select n.nspname || '.' || p.proname from pg_proc p
@@ -90,11 +91,13 @@ select is(
         'public.issue_certificates', 'public.issue_mfa_reenrolment_code', 'public.mark_booking_paid_manually',
         'public.mark_refund_request_failed',
         'public.onboarding_state',
-        'public.owns_any_rw', 'public.owns_rw',
-        'public.propose_adjustment', 'public.record_refund', 'public.reject_adjustment', 'public.reset_staff_mfa',
+        'public.owns_any_rw', 'public.owns_rw', 'public.payout_preview',
+        'public.propose_adjustment', 'public.record_refund', 'public.reject_adjustment',
+        'public.release_refund_key_mismatch', 'public.reset_staff_mfa',
         'public.resolve_weather_link',
         'public.revenue_recap', 'public.revoke_certificate', 'public.revoke_ticket', 'public.rpc_create_export',
         'public.rpc_get_addon_notes', 'public.rpc_get_participants', 'public.rpc_log_ui_event', 'public.rpc_reveal_booking_contact',
+        'public.rpc_reveal_finance_evidence',
         'public.save_package', 'public.save_package_legs', 'public.save_package_tiers', 'public.save_revenue_rule',
         'public.scan_ticket', 'public.send_admin_booking_link', 'public.set_rw_treasury_account', 'public.set_rw_unit_status', 'public.set_staff_role', 'public.set_staff_status',
         'public.set_vendor_bank_account', 'public.settle_revenue_entries', 'public.today_jkt',
