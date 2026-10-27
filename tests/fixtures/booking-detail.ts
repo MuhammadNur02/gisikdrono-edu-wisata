@@ -4,7 +4,7 @@ import type { BookingDetail } from '@/types/booking-admin';
 // 2026-10-30 at 13.00 WIB. Tests change the fields they are about with a spread.
 export const officerBookingDetail: BookingDetail = {
   id: '0192f3a4-5b6c-7d8e-9f01-0000000000d1',
-  bookingCode: 'GSK-ADM0TNAI',
+  bookingCode: 'GSK-ADM0TNA1',
   status: 'pending_payment',
   institutionName: null,
   picFirstName: 'Sari',

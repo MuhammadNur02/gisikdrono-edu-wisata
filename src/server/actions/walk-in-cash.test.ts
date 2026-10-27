@@ -86,7 +86,7 @@ describe('recordWalkInCashAction', () => {
       attemptNo: 1,
       method: null,
       status: 'pending' as const,
-      orderId: 'GSK-ADM0TNAI-01',
+      orderId: 'GSK-ADM0TNA1-01',
       settlementTime: null,
     };
     vi.mocked(getBookingDetail).mockResolvedValueOnce({

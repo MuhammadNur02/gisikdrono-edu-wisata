@@ -433,7 +433,7 @@ select set_config('app.in_rpc', '1', true);
 insert into public.bookings (booking_code, status, channel, package_id, package_snapshot, rw_ids, booker_type,
   pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
   consent_version, consented_at, expires_at, created_by, created_at)
-values ('GSK-ADM0LAMA', 'pending_payment', 'admin', '00000000-0000-4000-8000-0000000ab001', '{}', '{5}', 'individual',
+values ('GSK-ADM0TAMA', 'pending_payment', 'admin', '00000000-0000-4000-8000-0000000ab001', '{}', '{5}', 'individual',
         'Lama', '+447700900128', 'lama@example.test', 1, public.today_jkt() + 3, public.today_jkt() + 3, 30000, 30000,
         'v1', now() - interval '8 days', now() + interval '1 day', '00000000-0000-4000-8000-00000000f005',
         now() - interval '8 days');
@@ -441,7 +441,7 @@ select set_config('app.in_rpc', '', true);
 select internal.payments_housekeeping();
 select is((select (rule, severity)::text from public.security_alerts
            where fingerprint = 'admin_hold_unpaid_long:' || (select id from public.bookings
-                                                             where booking_code = 'GSK-ADM0LAMA')),
+                                                             where booking_code = 'GSK-ADM0TAMA')),
   '(admin_hold_unpaid_long,medium)', 'an officer''s hold unpaid for a week raises a medium alert');
 
 -- ===== The web path is unchanged =====
