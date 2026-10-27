@@ -11,10 +11,7 @@ import {
   officialPhoto,
 } from './official-media.ts';
 
-const seedSql = readFileSync(
-  fileURLToPath(new URL('./seed-demo-content.sql', import.meta.url)),
-  'utf8',
-);
+const seedSql = readFileSync(fileURLToPath(new URL('./seed-demo-content.sql', import.meta.url)), 'utf8');
 const RWS_IN_EDU_WISATA = [5, 13, 8];
 const GALLERY_CATEGORIES = ['activity', 'umkm', 'visit', 'event'];
 const OFFICIAL_PAGES =
