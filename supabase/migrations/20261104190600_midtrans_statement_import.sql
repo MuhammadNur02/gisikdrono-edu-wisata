@@ -36,14 +36,14 @@ create function internal.statement_row_issues(p_row jsonb, p_file_name text)
   set search_path = ''
 as $$
 declare
-  order_id text := btrim(p_row ->> 'order_id');
+  stated_order text := btrim(p_row ->> 'order_id');
   amount bigint := (p_row ->> 'gross_amount')::bigint;
   stated public.payment_status := internal.statement_payment_status(p_row ->> 'status');
   payment public.payments;
-  facts jsonb := jsonb_build_object('order_id', order_id, 'midtrans_status', p_row ->> 'status',
+  facts jsonb := jsonb_build_object('order_id', stated_order, 'midtrans_status', p_row ->> 'status',
                                     'midtrans_amount', amount, 'file_name', p_file_name);
 begin
-  select p.* into payment from public.payments p where p.order_id = statement_row_issues.order_id;
+  select p.* into payment from public.payments p where p.order_id = stated_order;
   if not found then
     return query select 'unknown_order', 'medium'::public.alert_severity, facts, null::uuid, null::uuid;
     return;
@@ -73,7 +73,7 @@ as $$
 declare
   max_rows constant integer := 5000;
   file_name text := left(btrim(coalesce(p_file_name, '')), 200);
-  run_id uuid;
+  new_run_id uuid;
   rows_checked integer;
   issue_count integer;
 begin
@@ -98,15 +98,15 @@ begin
   rows_checked := jsonb_array_length(p_rows);
   insert into public.reconciliation_runs (run_date, source, payments_checked, summary, created_by)
   values (public.today_jkt(), 'csv_import', rows_checked, jsonb_build_object('file_name', file_name), auth.uid())
-  returning id into run_id;
+  returning id into new_run_id;
   insert into public.reconciliation_issues (run_id, booking_id, payment_id, issue_type, severity, details)
-  select run_id, found.booking_id, found.payment_id, found.issue_type, found.severity, found.details
-  from jsonb_array_elements(p_rows) as r, internal.statement_row_issues(r, file_name) as found;
+  select new_run_id, raised.booking_id, raised.payment_id, raised.issue_type, raised.severity, raised.details
+  from jsonb_array_elements(p_rows) as r, internal.statement_row_issues(r, file_name) as raised;
   get diagnostics issue_count = row_count;
-  update public.reconciliation_runs set issues_found = issue_count, finished_at = now() where id = run_id;
-  perform internal.log_audit('reconciliation.csv_import', 'reconciliation_runs', run_id::text,
+  update public.reconciliation_runs set issues_found = issue_count, finished_at = now() where id = new_run_id;
+  perform internal.log_audit('reconciliation.csv_import', 'reconciliation_runs', new_run_id::text,
                              jsonb_build_object('file_name', file_name, 'rows', rows_checked, 'issues', issue_count));
-  return jsonb_build_object('run_id', run_id, 'rows_checked', rows_checked, 'issues_found', issue_count);
+  return jsonb_build_object('run_id', new_run_id, 'rows_checked', rows_checked, 'issues_found', issue_count);
 end;
 $$;
 revoke execute on function public.import_midtrans_statement(text, jsonb) from public, anon, service_role;
