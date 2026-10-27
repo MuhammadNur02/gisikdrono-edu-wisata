@@ -1,8 +1,8 @@
--- Task P4.3.08 (20261104200200_staff_booking_rpcs.sql): the booking screen's staff steps. cancel_booking (unpaid by
+-- Task P4.3.08 (20261104220200_staff_booking_rpcs.sql): the booking screen's staff steps. cancel_booking (unpaid by
 -- staff in scope, paid by the superadmin with a fresh code on the visit terms' refund), extend_booking_hold,
 -- reactivate_booking and request_notification_resend, each from the staff member's own session at AAL2.
 begin;
-select plan(30);
+select plan(33);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -90,7 +90,7 @@ select throws_ok($$select public.cancel_booking((select id from booking where na
 select throws_ok($$select public.cancellation_preview((select id from booking where name = 'paid'))$$,
   '42501', 'a paid booking is cancelled by the superadmin', 'a paid booking''s refund is not the RW officer''s to see');
 select throws_ok($$select public.cancel_booking((select id from booking where name = 'paid'), 'Rombongan batal', 27000,
-    90::smallint)$$,
+    90::smallint, 'guest_request')$$,
   '42501', 'a paid booking is cancelled by the superadmin', 'nor to cancel');
 reset role;
 select set_config('request.jwt.claims', '', true);
@@ -100,19 +100,28 @@ select ok(exists (select 1 from public.notifications where booking_id = (select 
                   and template = 'booking_cancelled'), 'and the PIC hears of it');
 
 select pg_temp.act_as('superadmin_stale_totp');
-select throws_ok($$select public.cancel_booking((select id from booking where name = 'paid'), 'Kelurahan membatalkan',
-    27000, 90::smallint)$$,
+select throws_ok($$select public.cancel_booking((select id from booking where name = 'paid'), 'Tamu minta batal',
+    27000, 90::smallint, 'guest_request')$$,
   '42501', 'confirm with a fresh authenticator code first', 'the superadmin cancels a paid booking with a fresh code');
 reset role;
 select pg_temp.act_as('superadmin_aal2');
 select is((select (p ->> 'amount', p ->> 'refund_pct')::text
-           from public.cancellation_preview((select id from booking where name = 'paid')) as p),
-  '(27000,90)', 'the preview is the visit terms'' refund three days ahead');
-select throws_ok($$select public.cancel_booking((select id from booking where name = 'paid'), 'Kelurahan membatalkan',
-    30000, 100::smallint)$$,
+           from public.cancellation_preview((select id from booking where name = 'paid'), 'guest_request') as p),
+  '(27000,90)', 'the preview at the guest''s request is the visit terms'' refund three days ahead');
+select is((select (p ->> 'amount', p ->> 'refund_pct')::text
+           from public.cancellation_preview((select id from booking where name = 'paid'), 'kelurahan') as p),
+  '(30000,100)', 'A28: from the kelurahan or RW it is the whole payment');
+select throws_ok($$select public.cancel_booking((select id from booking where name = 'paid'), 'Tamu minta batal',
+    27000, 90::smallint)$$,
+  '22023', null, 'A28: a paid booking''s cancellation names its reason category');
+select throws_ok($$select public.cancel_booking((select id from booking where name = 'paid'), 'Tamu minta batal',
+    30000, 100::smallint, 'guest_request')$$,
   'P0001', null, 'a refund other than the preview changes nothing (PRICE_MISMATCH)');
-select is((public.cancel_booking((select id from booking where name = 'paid'), 'Kelurahan membatalkan', 27000,
-            90::smallint)) ->> 'result', 'cancelled', 'and on the preview the paid booking is cancelled');
+select is((public.cancel_booking((select id from booking where name = 'paid'), 'Tamu minta batal', 27000,
+            90::smallint, 'guest_request')) ->> 'result', 'cancelled', 'and on the preview the paid booking is cancelled');
+select ok(exists (select 1 from public.audit_logs where action = 'bookings.staff_cancelled'
+                  and entity_id = (select id::text from booking where name = 'paid')
+                  and metadata ->> 'reason_category' = 'guest_request'), 'A28: audited with its reason category');
 reset role;
 select set_config('request.jwt.claims', '', true);
 select is((select (amount, method, requested_by)::text from public.refund_requests

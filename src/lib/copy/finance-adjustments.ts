@@ -106,6 +106,8 @@ export const adjustmentsCopy = {
     `Midtrans mencatat refund penyesuaian ${adjustmentRef} (yang sudah diterapkan) dengan jumlah lain. Periksa refund di dasbor Midtrans, lalu lepaskan blokirnya di tabel penyesuaian bila angka Midtrans yang benar.`,
   errors: {
     ADJUSTMENT_TYPE_UNSUPPORTED: 'Jenis penyesuaian ini belum bisa diusulkan di sini.',
+    QR_KEY_UNKNOWN:
+      'Kunci tanda tangan tiket belum terdaftar, jadi tiket transfer manual ini tidak bisa dibuat. Hubungi pengelola sistem.',
     ADJUSTMENT_OPEN: 'Pemesanan ini sudah punya usulan penyesuaian sejenis yang belum selesai.',
     ADJUSTMENT_STATE: 'Status penyesuaian sudah berubah. Muat ulang halaman.',
     APPROVER_INELIGIBLE:

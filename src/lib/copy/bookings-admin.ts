@@ -129,6 +129,7 @@ export const bookingsAdminCopy = {
       payment_expired_for_cash: 'Tautan pembayaran dihentikan karena dibayar tunai',
       hold_extended: 'Batas waktu pembayaran diperpanjang petugas',
       reactivated: 'Pemesanan diaktifkan lagi oleh petugas',
+      review_resolved: 'Tinjauan pemesanan diselesaikan Superadmin',
       // The visit terms (20261104080200, docs/PRD.md §13.1 A16–A20).
       cancelled_unpaid: 'Dibatalkan pemesan sebelum membayar',
       cancelled_paid: 'Dibatalkan pemesan, pengembalian dana diminta',

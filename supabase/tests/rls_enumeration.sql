@@ -95,7 +95,7 @@ select is(
         'public.owns_any_rw', 'public.owns_rw', 'public.payout_preview',
         'public.propose_adjustment', 'public.reactivate_booking', 'public.record_refund', 'public.reject_adjustment',
         'public.release_refund_key_mismatch', 'public.request_notification_resend', 'public.reset_staff_mfa',
-        'public.resolve_weather_link',
+        'public.resolve_booking_review', 'public.resolve_weather_link',
         'public.revenue_recap', 'public.revoke_certificate', 'public.revoke_ticket', 'public.rpc_create_export',
         'public.rpc_get_addon_notes', 'public.rpc_get_participants', 'public.rpc_log_ui_event', 'public.rpc_reveal_booking_contact',
         'public.rpc_reveal_finance_evidence',

@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { DB_ENUMS } from '@/db/enums';
 import { resultOf, type DatabaseClient } from '@/db/rpc-result';
-import type { AdjustmentDetails, AdjustmentReply } from '@/types/finance';
+import type { AdjustmentDetails, AdjustmentReply, AppliedAdjustmentReply } from '@/types/finance';
 
 // The adjustment and refund RPCs of Task P4.7.03 (20261101130200, 20261104190100, 20261104190200) on the superadmin's
 // session client.
@@ -22,7 +22,7 @@ function replyOf(reply: unknown): AdjustmentReply {
 }
 
 export interface AdjustmentToPropose {
-  type: 'manual_refund' | 'reclassify_share' | 'write_off';
+  type: 'manual_refund' | 'reclassify_share' | 'write_off' | 'manual_mark_paid';
   bookingId: string;
   paymentId: string | null;
   amount: number;
@@ -43,7 +43,9 @@ export async function proposeAdjustment(
       }
     : proposal.details.weatherLinkId
       ? { weather_link_id: proposal.details.weatherLinkId }
-      : {};
+      : proposal.details.keyId
+        ? { key_id: proposal.details.keyId }
+        : {};
   const reply = await resultOf(
     client.rpc('propose_adjustment', {
       p_type: proposal.type,
@@ -76,11 +78,19 @@ export async function rejectAdjustment(
   );
 }
 
+const transferSchema = z.looseObject({
+  transfer: z.looseObject({ close_orders: z.array(z.string()) }).optional(),
+});
+
 export async function applyAdjustment(
   client: DatabaseClient,
   id: string,
-): Promise<AdjustmentReply> {
-  return replyOf(await resultOf(client.rpc('apply_adjustment', { p_id: id })));
+): Promise<AppliedAdjustmentReply> {
+  const reply = await resultOf(client.rpc('apply_adjustment', { p_id: id }));
+  return {
+    ...replyOf(reply),
+    closeOrders: transferSchema.parse(reply).transfer?.close_orders ?? [],
+  };
 }
 
 // Review of PR #80, L-1: the superadmin releases the L6 block of an applied manual refund, with a note.

@@ -7,6 +7,7 @@ import {
   rejectAdjustment,
   releaseRefundKeyMismatch,
 } from '@/db/rpc-adjustments';
+import { serverEnv } from '@/lib/env';
 import { AppError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { failureFor } from '@/lib/uploads/outcomes';
@@ -15,6 +16,7 @@ import type { ProposeAdjustmentValues, ReleaseKeyMismatchValues } from '@/lib/va
 import type { StaffContext } from '@/server/auth/guards';
 import { removeFinanceEvidence, storeFinanceEvidence } from '@/server/services/document-service';
 import { asFinanceWrite } from '@/server/services/finance-errors';
+import { expireClosedOrders } from '@/server/services/payment-service';
 import type { AdjustmentDetails, AdjustmentReply } from '@/types/finance';
 
 // /dashboard/finance/adjustments (Task P4.7.04; docs/Security.md §3.8, REC-09, REC-16): the dual-controlled money
@@ -31,6 +33,8 @@ function detailsOf(values: ProposeAdjustmentValues): AdjustmentDetails {
       toKey: values.toKey ?? undefined,
     };
   }
+  // A28: a manual transfer's tickets are signed with the key id this server signs with, checked again on apply.
+  if (values.type === 'manual_mark_paid') return { keyId: serverEnv.QR_SIGNING_ACTIVE_KID };
   return values.type === 'manual_refund' && values.weatherLinkId
     ? { weatherLinkId: values.weatherLinkId }
     : {};
@@ -74,9 +78,13 @@ export async function reject(adjustmentId: string, reason: string): Promise<Adju
   return asFinanceWrite(() => rejectAdjustment(supabase, { id: adjustmentId, reason }));
 }
 
+// An applied manual transfer closed the PIC's open Midtrans orders in the database; they end at Midtrans next, best
+// effort, as a cancellation's do (A28).
 export async function apply(adjustmentId: string): Promise<AdjustmentReply> {
   const supabase = await createSupabaseServerClient();
-  return asFinanceWrite(() => applyAdjustment(supabase, adjustmentId));
+  const applied = await asFinanceWrite(() => applyAdjustment(supabase, adjustmentId));
+  await expireClosedOrders(applied.closeOrders);
+  return { id: applied.id, status: applied.status, applyNotBefore: applied.applyNotBefore };
 }
 
 // Review of PR #80, L-1: the superadmin acknowledges an applied manual refund's refund_key_mismatch alert with a note,

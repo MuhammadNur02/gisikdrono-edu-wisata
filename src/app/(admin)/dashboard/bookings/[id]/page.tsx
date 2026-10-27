@@ -17,11 +17,13 @@ import { BookingTickets } from '@/components/admin/bookings/booking-tickets';
 import { ContactPanel } from '@/components/admin/bookings/contact-panel';
 import { ParticipantsPanel } from '@/components/admin/bookings/participants-panel';
 import { ReceiveCashButton } from '@/components/admin/bookings/receive-cash-button';
+import { StaffActions } from '@/components/admin/bookings/staff-actions';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { StatusBadge } from '@/components/admin/status/status-badge';
 import { Button } from '@/components/ui/button';
 import { BOOKINGS_DASHBOARD_PATH } from '@/config/bookings';
 import { bookingsAdminCopy } from '@/lib/copy/bookings-admin';
+import { staffStepsFor, type StaffSteps } from '@/lib/utils/booking-staff-steps';
 import { cashBookingOf, hasOpenPayLink, isCashReceivable } from '@/lib/utils/walk-in-cash';
 import {
   loadAddonNotesAction,
@@ -31,6 +33,14 @@ import {
   saveAdminNotesAction,
   setAddonFulfillmentAction,
 } from '@/server/actions/booking-admin';
+import {
+  cancelBookingAction,
+  extendBookingHoldAction,
+  previewCancellationAction,
+  reactivateBookingAction,
+  resendMessageAction,
+  resolveBookingReviewAction,
+} from '@/server/actions/booking-staff';
 import { verifyStaffTotpAction } from '@/server/actions/staff-totp';
 import { recordWalkInCashAction } from '@/server/actions/walk-in-cash';
 import { requireDashboardStaff } from '@/server/auth/session';
@@ -39,7 +49,9 @@ import {
   listBookingAddons,
   listBookingTimeline,
 } from '@/server/services/booking-admin-service';
+import { listReviewLegs } from '@/server/services/booking-staff-service';
 import type { BookingAddonLine, BookingDetail, BookingTimelineEvent } from '@/types/booking-admin';
+import type { ReviewLeg } from '@/types/booking-staff';
 
 const text = bookingsAdminCopy.detail;
 const idSchema = z.uuid();
@@ -107,15 +119,36 @@ function MainColumn({ booking, addons, isSuperadmin, canReceiveCash }: MainColum
   );
 }
 
+// Task P4.3.08 (docs/PRD.md §13.1 A28): the staff steps the booking takes now.
+const STAFF_STEP_ACTIONS = {
+  cancel: cancelBookingAction,
+  preview: previewCancellationAction,
+  extend: extendBookingHoldAction,
+  reactivate: reactivateBookingAction,
+  resend: resendMessageAction,
+  resolveReview: resolveBookingReviewAction,
+  stepUp: verifyStaffTotpAction,
+};
+
 function SideColumn({
   booking,
   timeline,
+  steps,
+  reviewLegs,
 }: {
   booking: BookingDetail;
   timeline: BookingTimelineEvent[];
+  steps: StaffSteps;
+  reviewLegs: ReviewLeg[];
 }) {
   return (
     <div className="flex flex-col gap-6">
+      <StaffActions
+        booking={{ id: booking.id, code: booking.bookingCode, isPaid: booking.status === 'paid' }}
+        can={steps}
+        reviewLegs={reviewLegs}
+        actions={STAFF_STEP_ACTIONS}
+      />
       <ContactPanel
         bookingId={booking.id}
         contact={booking}
@@ -155,6 +188,12 @@ export default async function BookingDetailPage({ params }: BookingPageProps) {
   const loaded = await loadBooking(parsedId.data);
   if (loaded === null) notFound();
   const { booking, addons, timeline } = loaded;
+  const steps = staffStepsFor(
+    booking,
+    { isSuperadmin: ctx.role === 'superadmin', isAal2: ctx.isAal2 },
+    new Date(),
+  );
+  const reviewLegs = steps.resolveReview ? await listReviewLegs(booking) : [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -177,7 +216,7 @@ export default async function BookingDetailPage({ params }: BookingPageProps) {
             new Date(),
           )}
         />
-        <SideColumn booking={booking} timeline={timeline} />
+        <SideColumn booking={booking} timeline={timeline} steps={steps} reviewLegs={reviewLegs} />
       </div>
     </div>
   );

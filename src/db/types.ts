@@ -4641,6 +4641,7 @@ export type Database = {
           p_expected_amount: number
           p_expected_pct?: number
           p_reason: string
+          p_reason_category?: string
         }
         Returns: Json
       }
@@ -4652,7 +4653,10 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: undefined
       }
-      cancellation_preview: { Args: { p_booking_id: string }; Returns: Json }
+      cancellation_preview: {
+        Args: { p_booking_id: string; p_reason_category?: string }
+        Returns: Json
+      }
       check_in_ticket: {
         Args: {
           p_attempt_id: string
@@ -4801,6 +4805,16 @@ export type Database = {
         Returns: string
       }
       reset_staff_mfa: { Args: { p_user_id: string }; Returns: Json }
+      resolve_booking_review: {
+        Args: {
+          p_booking_id: string
+          p_key_id?: string
+          p_reason: string
+          p_resolution: string
+          p_session_ids?: string[]
+        }
+        Returns: Json
+      }
       resolve_weather_link: {
         Args: { p_link_id: string; p_outcome: string; p_reason: string }
         Returns: Json

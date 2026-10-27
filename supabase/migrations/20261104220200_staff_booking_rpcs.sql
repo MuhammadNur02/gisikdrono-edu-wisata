@@ -2,21 +2,45 @@
 -- steps, each from the staff member's own session at AAL2, the actor auth.uid() and the scope checked again here.
 --
 --   cancel_booking              Staff in scope cancel an unpaid booking; a paid one is the superadmin's, with a fresh
---                               code, on the visit terms' refund (A16) that cancellation_preview showed. The logic is
---                               #69's internal.cancel_booking, moved into internal.apply_cancellation so that the staff
---                               entry point reaches it without the server-only guard; the visitor's path is unchanged.
+--                               code and a reason category (docs/PRD.md §13.1 A28): at the guest's request on the visit
+--                               terms' refund (A16), from the kelurahan or RW in full, as cancellation_preview showed.
+--                               The logic is #69's internal.cancel_booking, moved into internal.apply_cancellation so
+--                               that the staff entry point reaches it without the server-only guard; the visitor's path
+--                               is unchanged.
 --   extend_booking_hold         A running hold moved later, at most 14 days from now and before the first session
 --                               starts (an officer's booking of one RW: before 23:59 WIB of its visit day, A23).
 --   reactivate_booking          An expired, unpaid booking held again, its seats reserved again (QUOTA_UNAVAILABLE when
 --                               they are gone), with a new deadline by the same rules as a new hold and its pay link.
 --   request_notification_resend A message the booking already had, queued again as a new outbox row.
--- resolve_booking_review and the superadmin's manual_transfer follow once their open questions are answered.
+-- resolve_booking_review and the superadmin's manual transfer are in 20261104220300.
 
 
 -- ===== cancel_booking: one cancellation for the visitor and the staff =====
 
+-- A28 (2026-10-28, owner-delegated): the whole payment back, with no visit-terms schedule, when the visitor is not at
+-- fault: a cancellation from the kelurahan or RW, or a late settlement whose session filled (resolve_booking_review).
+create function internal.full_refund_quote(p_booking public.bookings) returns jsonb
+  language plpgsql stable
+  set search_path = ''
+as $$
+declare
+  payment public.payments := internal.settled_payment_of(p_booking.id);
+begin
+  if p_booking.status <> 'paid' or payment.id is null or payment.gross_amount <> p_booking.total_amount then
+    raise exception 'booking % has no settled payment of its total', p_booking.id
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  return jsonb_build_object('kind', 'cancellation', 'days_before', p_booking.visit_date - public.today_jkt(),
+    'refund_pct', 100, 'package_refund', p_booking.subtotal_package - p_booking.discount_amount,
+    'addon_refund', p_booking.subtotal_addons, 'fee_amount', 0, 'amount', payment.gross_amount, 'retained', 0,
+    'paid', payment.gross_amount, 'method', payment.method, 'payment_id', payment.id, 'order_id', payment.order_id);
+end;
+$$;
+revoke execute on function internal.full_refund_quote(public.bookings) from public, anon, authenticated;
+
 create function internal.apply_cancellation(p_booking_id uuid, p_actor_id uuid, p_reason text,
-  p_kind public.refund_request_kind, p_expected_amount bigint, p_expected_pct smallint) returns jsonb
+  p_kind public.refund_request_kind, p_expected_amount bigint, p_expected_pct smallint,
+  p_is_full_refund boolean default false) returns jsonb
   language plpgsql
   set search_path = ''
 as $$
@@ -50,7 +74,8 @@ begin
     outcome := internal.refund_weather_leg(booking, p_actor_id, quote,
                                            case when p_actor_id is null then 'visitor' else 'admin' end);
   elsif booking.status = 'paid' then
-    quote := internal.refund_quote(booking, p_kind);
+    quote := case when p_is_full_refund then internal.full_refund_quote(booking)
+                  else internal.refund_quote(booking, p_kind) end;
     -- The visitor confirms the figures the hub previewed; when the quote has moved since (the day turned, a fee was
     -- set), nothing happens and PRICE_MISMATCH asks them to look again (review of PR #69, M3).
     if (quote ->> 'amount')::bigint is distinct from p_expected_amount
@@ -83,8 +108,22 @@ begin
   return internal.apply_cancellation(p_booking_id, p_actor_id, p_reason, p_kind, p_expected_amount, p_expected_pct);
 end;
 $$;
-revoke execute on function internal.apply_cancellation(uuid, uuid, text, public.refund_request_kind, bigint, smallint)
-  from public, anon, authenticated;
+revoke execute on function internal.apply_cancellation(uuid, uuid, text, public.refund_request_kind, bigint, smallint,
+  boolean) from public, anon, authenticated;
+
+-- A28: why staff cancel a paid booking, which decides its refund.
+create function internal.staff_cancellation_is_full(p_category text) returns boolean
+  language plpgsql immutable
+  set search_path = ''
+as $$
+begin
+  if p_category is null or p_category not in ('guest_request', 'kelurahan') then
+    raise exception 'a paid booking''s cancellation names its reason category' using errcode = '22023';
+  end if;
+  return p_category = 'kelurahan';
+end;
+$$;
+revoke execute on function internal.staff_cancellation_is_full(text) from public, anon, authenticated;
 
 -- Staff in scope at AAL2: an RW admin of one of the booking's RWs, or the superadmin.
 create function internal.require_booking_staff(p_booking_id uuid) returns public.bookings
@@ -106,8 +145,9 @@ end;
 $$;
 revoke execute on function internal.require_booking_staff(uuid) from public, anon, authenticated;
 
--- What a cancellation would give back now: nothing for an unpaid booking, the visit terms' refund for a paid one.
-create function public.cancellation_preview(p_booking_id uuid) returns jsonb
+-- What a cancellation would give back now: nothing for an unpaid booking; for a paid one the visit terms' refund at
+-- the guest's request, the whole payment from the kelurahan or RW (A28).
+create function public.cancellation_preview(p_booking_id uuid, p_reason_category text default null) returns jsonb
   language plpgsql stable security definer
   set search_path = ''
 as $$
@@ -120,17 +160,22 @@ begin
   if not public.is_superadmin() then
     raise exception 'a paid booking is cancelled by the superadmin' using errcode = '42501';
   end if;
+  if internal.staff_cancellation_is_full(p_reason_category) then
+    return internal.full_refund_quote(booking) - 'payment_id' - 'order_id';
+  end if;
   return internal.refund_quote(booking, 'cancellation') - 'payment_id' - 'order_id';
 end;
 $$;
 
 create function public.cancel_booking(p_booking_id uuid, p_reason text, p_expected_amount bigint,
-  p_expected_pct smallint default null) returns jsonb
+  p_expected_pct smallint default null, p_reason_category text default null) returns jsonb
   language plpgsql security definer
   set search_path = ''
 as $$
 declare
   booking public.bookings := internal.require_booking_staff(p_booking_id);
+  is_full_refund boolean := false;
+  outcome jsonb;
 begin
   if length(btrim(coalesce(p_reason, ''))) not between 3 and 300 then
     raise exception 'a cancellation needs a reason of 3 to 300 characters' using errcode = '22023';
@@ -147,9 +192,14 @@ begin
     if not public.fresh_totp() then
       raise exception 'confirm with a fresh authenticator code first' using errcode = '42501', hint = 'FRESH_TOTP';
     end if;
+    is_full_refund := internal.staff_cancellation_is_full(p_reason_category);
   end if;
-  return internal.apply_cancellation(booking.id, auth.uid(), btrim(p_reason), 'cancellation', p_expected_amount,
-                                     p_expected_pct);
+  outcome := internal.apply_cancellation(booking.id, auth.uid(), btrim(p_reason), 'cancellation', p_expected_amount,
+                                         p_expected_pct, is_full_refund);
+  perform internal.log_audit('bookings.staff_cancelled', 'bookings', booking.id::text,
+    jsonb_strip_nulls(jsonb_build_object('status', booking.status, 'reason_category', p_reason_category,
+                                         'reason', btrim(p_reason), 'refund', outcome -> 'refund' -> 'amount')));
+  return outcome;
 end;
 $$;
 
@@ -171,8 +221,8 @@ as $$
 $$;
 revoke execute on function internal.latest_hold_deadline(public.bookings) from public, anon, authenticated;
 
--- The server ends an open Midtrans order first (its Snap page would close at the old deadline); the next pay page
--- opens a new attempt with the new one.
+-- Refused while the PIC has a pay page open, whose Snap expiry follows the old deadline; once it lapses, the next pay
+-- page opens a new attempt with the new one.
 create function public.extend_booking_hold(p_booking_id uuid, p_new_expires_at timestamptz) returns jsonb
   language plpgsql security definer
   set search_path = ''
@@ -183,10 +233,12 @@ declare
 begin
   perform internal.take_audit_turn();
   select * into booking from public.bookings b where b.id = booking.id for update;
-  if booking.status <> 'pending_payment' or booking.needs_review or booking.expires_at <= now()
-     or exists (select 1 from public.payments p where p.booking_id = booking.id
-                and p.status in ('initiated', 'pending', 'needs_review')) then
+  if booking.status <> 'pending_payment' or booking.needs_review or booking.expires_at <= now() then
     raise exception 'this hold is not extended now' using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  if exists (select 1 from public.payments p where p.booking_id = booking.id
+             and p.status in ('initiated', 'pending', 'needs_review')) then
+    raise exception 'the PIC has a pay page open' using errcode = 'P0001', hint = 'PAYMENT_OPEN';
   end if;
   if p_new_expires_at is null or p_new_expires_at <= booking.expires_at
      or p_new_expires_at > internal.latest_hold_deadline(booking) then
@@ -315,11 +367,13 @@ $$;
 
 -- ===== Grants =====
 
-revoke execute on function public.cancellation_preview(uuid), public.cancel_booking(uuid, text, bigint, smallint),
+revoke execute on function public.cancellation_preview(uuid, text),
+  public.cancel_booking(uuid, text, bigint, smallint, text),
   public.extend_booking_hold(uuid, timestamptz), public.reactivate_booking(uuid),
   public.request_notification_resend(uuid, public.notification_template, public.notification_channel)
   from public, anon, service_role;
-grant execute on function public.cancellation_preview(uuid), public.cancel_booking(uuid, text, bigint, smallint),
+grant execute on function public.cancellation_preview(uuid, text),
+  public.cancel_booking(uuid, text, bigint, smallint, text),
   public.extend_booking_hold(uuid, timestamptz), public.reactivate_booking(uuid),
   public.request_notification_resend(uuid, public.notification_template, public.notification_channel)
   to authenticated;
