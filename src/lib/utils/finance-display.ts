@@ -7,6 +7,7 @@ import type {
   FinanceDay,
   FinancePeriod,
   PayoutPreviewState,
+  RecapDay,
   RevenueRule,
 } from '@/types/finance';
 
@@ -50,7 +51,10 @@ export function periodDays(period: FinancePeriod): string[] {
 }
 
 // One point per day of the period, zero where nothing was paid, so the chart never skips a quiet day.
-export function netSeries(daily: readonly FinanceDay[], period: FinancePeriod): DailyValue[] {
+export function netSeries(
+  daily: readonly (FinanceDay | RecapDay)[],
+  period: FinancePeriod,
+): DailyValue[] {
   const net = new Map(daily.map((day) => [day.day, day.net]));
   return periodDays(period).map((day) => ({ day, value: net.get(day) ?? 0 }));
 }

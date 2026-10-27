@@ -57,6 +57,19 @@ export const financeCopy = {
     },
     partiesEmpty: 'Belum ada entri buku besar.',
   },
+  rwRecap: {
+    description:
+      'Bagian kas RW Anda dan UMKM di RW Anda, dibaca langsung dari buku besar. Halaman ini hanya untuk dilihat.',
+    net: 'Bagian bersih periode ini',
+    netHint: 'Kas RW dan UMKM, setelah koreksi',
+    settled: 'Dibukukan',
+    settledHint: 'Bagian dari pembayaran lunas',
+    reversed: 'Dikoreksi',
+    reversedHint: 'Pengurangan karena refund',
+    outstanding: 'Belum dibayar',
+    outstandingHint: 'Sisa hak yang belum disalurkan, seluruh waktu',
+    chartDescription: 'Bagian bersih kas RW dan UMKM per hari Semarang.',
+  },
   parties: {
     kelurahan: 'Kelurahan Gisikdrono',
     rw: (rw: string) => `Kas ${rw}`,

@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { KELURAHAN_KEY } from '@/config/finance';
 import {
   financeBooking,
   financeOverview,
@@ -7,6 +8,7 @@ import {
   type FinanceBookingReply,
 } from '@/db/rpc-finance';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { sumOf } from '@/lib/utils/kpi';
 import { asFinanceWrite } from '@/server/services/finance-errors';
 import type {
   BookingLedgerLine,
@@ -14,6 +16,7 @@ import type {
   FinancePeriod,
   FinanceRecap,
   HeldWeatherLink,
+  RwFinanceRecap,
 } from '@/types/finance';
 
 // /dashboard/finance (Task P4.7.01; docs/Security.md REC-07): the superadmin's recap at AAL2, read only from the
@@ -27,6 +30,28 @@ export async function loadFinanceRecap(period: FinancePeriod): Promise<FinanceRe
     revenueRecap(supabase, period),
   ]);
   return { overview, balances: recap.balances, shares: recap.shares };
+}
+
+// docs/PRD.md §13.1 A26 (owner, 2026-10-27): an RW admin's own recap, read only. revenue_recap alone, which
+// internal.stats_scope keeps to the admin's RW: their treasury's and their vendors' shares and what each is still owed,
+// never a payment, a booker or an account number (finance_overview stays the superadmin's). A kelurahan row, which
+// that scope never returns, is left out here as well, so the page shows the RW's parties only.
+export async function loadRwFinanceRecap(period: FinancePeriod): Promise<RwFinanceRecap> {
+  const supabase = await createSupabaseServerClient();
+  const recap = await revenueRecap(supabase, period);
+  const shares = recap.shares.filter((share) => share.beneficiaryKey !== KELURAHAN_KEY);
+  const balances = recap.balances.filter((balance) => balance.beneficiary !== 'kelurahan');
+  return {
+    totals: {
+      settled: sumOf(shares, (share) => share.settled),
+      reversed: sumOf(shares, (share) => share.reversed),
+      net: sumOf(shares, (share) => share.net),
+      outstanding: sumOf(balances, (balance) => balance.outstanding),
+    },
+    days: recap.days,
+    balances,
+    shares,
+  };
 }
 
 // What each line still holds per beneficiary: settlement, reversal and adjustment rows summed, as the RPCs count it.

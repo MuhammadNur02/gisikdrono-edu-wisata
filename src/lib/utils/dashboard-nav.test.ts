@@ -20,12 +20,17 @@ describe('dashboardNavFor', () => {
     expect(labels(dashboardNavFor('superadmin', null))).toContain('Jadwal Pertunjukan');
   });
 
-  it('gives an RW officer the four RW groups, and leaves out the empty ones', () => {
+  it('gives an RW officer the RW groups, and leaves out the empty ones', () => {
     const rw05 = dashboardNavFor('admin_rw', { scheduleEnabled: false });
 
-    expect(titles(rw05)).toEqual(['Ringkasan', 'Operasional', 'Konten', 'Katalog']);
+    expect(titles(rw05)).toEqual(['Ringkasan', 'Operasional', 'Konten', 'Katalog', 'Keuangan']);
     expect(labels(rw05)).not.toContain('Pengguna');
     expect(labels(rw05)).not.toContain('Ulasan');
+  });
+
+  it('gives an RW officer their own recap and no other finance page (docs/PRD.md §13.1 A26)', () => {
+    const finance = dashboardNavFor('admin_rw', null).find((group) => group.title === 'Keuangan');
+    expect(finance?.items.map((item) => item.label)).toEqual(['Rekap']);
   });
 
   it('shows the performance schedule only to an officer whose RW runs one', () => {
