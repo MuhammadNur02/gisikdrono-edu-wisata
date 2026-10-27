@@ -1,11 +1,13 @@
 name: Weekly database backup
 
 # Task P5.5.04 (docs/Security.md §7.8, RES-01, DB-07; docs/runbooks/restore-drills.md): an encrypted copy of the
-# production database lives outside Supabase, in a private Cloudflare R2 bucket. pg_dump --format=custom runs as the
-# backup role (backup_reader, 20261104190700), never as postgres, and streams through age to BACKUP_AGE_PUBLIC_KEY, so
-# no plain copy touches the runner's disk; only the vault holds the private key, and CI never decrypts. Before
-# anything is dumped the job checks the URL's project against the pinned repository variable PRODUCTION_PROJECT_REF
-# and the database's own Vault marker (internal.environment() = production); no access token is involved. The upload
+# production database lives outside Supabase, in a private Cloudflare R2 bucket. pg_dump --format=custom of public and
+# auth, all any restore loads, runs as the login role gisikdrono_backup of the group backup_reader
+# (20261104230000_backup_reader.sql), never as postgres, and streams through age to BACKUP_AGE_PUBLIC_KEY, so no plain
+# copy touches the runner's disk; only the vault holds the private key, and CI never decrypts. Before anything is
+# dumped the job checks the URL's project against the pinned repository variable PRODUCTION_PROJECT_REF, that the
+# connection is that role and holds no power, and the database's own Vault marker (internal.environment() =
+# production); no access token is involved. The upload
 # is read back and compared before the job passes. It runs only once PRODUCTION_BACKUP_ENABLED is 'true' (set at
 # go-live); from then on a missing secret fails the run. The credentials live in the GitHub environment
 # "production-backup" (main only, no reviewers, so the weekly run never waits), each handed to the step that needs it.
@@ -73,20 +75,31 @@ jobs:
           sudo apt-get install -y -qq postgresql-common age
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y -qq postgresql-client-17
-      # The database says which environment it is (the Vault secret of 0007), read through the one internal function
-      # the backup role may call; the comparison happens in the database.
-      - name: The database says it is production
+      # The connection is the backup role and nothing stronger (delta review of PR #98, N2), and the database says it
+      # is production (the Vault secret of 0007, read through the one internal function the role may call). Every
+      # comparison happens in the database.
+      - name: The role is the backup role and the database is production
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
-          marker="$("$PG_BIN/psql" "$SUPABASE_DB_URL" --no-psqlrc --tuples-only --no-align \
-            -c "select coalesce(internal.environment() = 'production', false)")"
-          if [ "$marker" != "t" ]; then
+          answer="$("$PG_BIN/psql" "$SUPABASE_DB_URL" --no-psqlrc --tuples-only --no-align -v ON_ERROR_STOP=1 -c "
+            select (current_user = 'gisikdrono_backup'
+                    and pg_has_role(current_user, 'backup_reader', 'member')
+                    and not pg_has_role(current_user, 'pg_write_all_data', 'member')
+                    and not r.rolsuper and not r.rolcreaterole and not r.rolcreatedb and not r.rolreplication)::text
+                   || ',' || coalesce(internal.environment() = 'production', false)::text
+            from pg_roles r where r.rolname = current_user")"
+          if [ "${answer%%,*}" != "true" ]; then
+            echo "::error::The connection is not gisikdrono_backup in backup_reader without other powers; nothing was dumped"
+            exit 1
+          fi
+          if [ "${answer##*,}" != "true" ]; then
             echo "::error::The database's Vault marker is not production; nothing was dumped"
             exit 1
           fi
-      # Custom format, every schema, owners and grants left out. The sessions, tokens and MFA rows of auth are never
-      # copied (review of PR #98, M1): after a real restore staff sign in again and enrol a new authenticator
+      # Custom format, public and auth only, owners and grants left out. The data of every auth table but the staff
+      # accounts, their identities and the SSO settings is left out (review of PR #98, M1, delta N6 and L3, the same
+      # list as pgTAP backup_reader.sql): after a real restore staff sign in again and enrol a new authenticator
       # (restore-drills.md, part E). An age X25519 recipient is age1 and 58 bech32 characters; a private key never fits.
       - name: Dump and encrypt
         env:
@@ -98,10 +111,14 @@ jobs:
             echo "::error::BACKUP_AGE_PUBLIC_KEY is not an age public key (age1...)"
             exit 1
           fi
-          "$PG_BIN/pg_dump" --format=custom --no-owner --no-privileges \
+          "$PG_BIN/pg_dump" --format=custom --no-owner --no-privileges --schema=public --schema=auth \
             --exclude-table-data=auth.refresh_tokens --exclude-table-data=auth.sessions \
             --exclude-table-data=auth.one_time_tokens --exclude-table-data=auth.flow_state \
             --exclude-table-data=auth.mfa_challenges --exclude-table-data=auth.mfa_factors \
+            --exclude-table-data=auth.mfa_amr_claims --exclude-table-data=auth.saml_relay_states \
+            --exclude-table-data=auth.audit_log_entries --exclude-table-data=auth.schema_migrations \
+            --exclude-table-data=auth.instances --exclude-table-data='auth.oauth_*' \
+            --exclude-table-data='auth.webauthn_*' \
             "$SUPABASE_DB_URL" \
             | age --recipient "$BACKUP_AGE_PUBLIC_KEY" > "$ENCRYPTED_FILE"
           if [ "$(head -c 21 "$ENCRYPTED_FILE")" != "age-encryption.org/v1" ]; then

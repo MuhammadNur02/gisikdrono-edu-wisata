@@ -17,6 +17,8 @@ const DIRECT_HOST = /^db\.([a-z]{20})\.supabase\.co$/;
 const POOLER_USER = /^[a-z_][a-z0-9_]*\.([a-z]{20})$/;
 // pg_dump must check the server's certificate against the pinned CA, never merely encrypt (staging-db.yml's note).
 const VERIFIED_SSL_MODE = 'verify-full';
+// The backup's login role (restore-drills.md, part A; 20261104230000_backup_reader.sql).
+const BACKUP_LOGIN_ROLE = 'gisikdrono_backup';
 // A value in a workflow command is escaped as GitHub's runner unescapes it, so a % in a password masks itself.
 const COMMAND_ESCAPES = [
   ['%', '%25'],
@@ -64,7 +66,19 @@ export function parseSupabaseDbUrl(value) {
       `SUPABASE_DB_URL asks for sslmode=${sslMode}; leave it out or use ${VERIFIED_SSL_MODE}`,
     );
   }
-  return { ref: projectRefOf(url), password: passwordOf(url) };
+  return {
+    ref: projectRefOf(url),
+    password: passwordOf(url),
+    user: decodeURIComponent(url.username),
+  };
+}
+
+// The backup connects as its own login role only (delta review of PR #98, N2): a URL of postgres, or of any other
+// role, stops the job before it reaches the database.
+export function requireBackupUser({ user }) {
+  if (!user.startsWith(`${BACKUP_LOGIN_ROLE}.`)) {
+    throw new Error(`SUPABASE_DB_URL is not the pooler URL of ${BACKUP_LOGIN_ROLE}.<ref>`);
+  }
 }
 
 export function escapeCommandValue(value) {
@@ -89,7 +103,10 @@ function main() {
   const [envFile, option] = process.argv.slice(2);
   if (!value) throw new Error('SUPABASE_DB_URL is not set in this GitHub environment');
   if (!envFile) throw new Error('name the GITHUB_ENV file; run this inside a GitHub Actions job');
-  const lines = githubEnvLines(parseSupabaseDbUrl(value), { refOnly: option === REF_ONLY_OPTION });
+  const target = parseSupabaseDbUrl(value);
+  const refOnly = option === REF_ONLY_OPTION;
+  if (refOnly) requireBackupUser(target);
+  const lines = githubEnvLines(target, { refOnly });
   process.stdout.write(lines.log);
   appendFileSync(envFile, lines.env);
 }

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { escapeCommandValue, githubEnvLines, parseSupabaseDbUrl } from './supabase-db-url.mjs';
+import {
+  escapeCommandValue,
+  githubEnvLines,
+  parseSupabaseDbUrl,
+  requireBackupUser,
+} from './supabase-db-url.mjs';
 
 const REF = 'abcdefghijklmnopqrst';
 const OTHER_REF = 'zyxwvutsrqponmlkjihg';
@@ -29,6 +34,7 @@ describe('scripts/supabase-db-url.mjs', () => {
     expect(parseSupabaseDbUrl(dbUrl({ password: 'p@ss:w0rd' }))).toEqual({
       ref: REF,
       password: 'p@ss:w0rd',
+      user: 'postgres',
     });
   });
 
@@ -37,6 +43,17 @@ describe('scripts/supabase-db-url.mjs', () => {
     const backup = dbUrl({ user: `gisikdrono_backup.${REF}`, host: POOLER_HOST });
     expect(parseSupabaseDbUrl(release).ref).toBe(REF);
     expect(parseSupabaseDbUrl(backup).ref).toBe(REF);
+  });
+
+  it('lets the backup connect as gisikdrono_backup only', () => {
+    const backup = parseSupabaseDbUrl(
+      dbUrl({ user: `gisikdrono_backup.${REF}`, host: POOLER_HOST }),
+    );
+    expect(() => requireBackupUser(backup)).not.toThrow();
+    for (const user of [`postgres.${REF}`, `gisikdrono_backupx.${REF}`, `backup_reader.${REF}`]) {
+      const other = parseSupabaseDbUrl(dbUrl({ user, host: POOLER_HOST }));
+      expect(() => requireBackupUser(other)).toThrow(/gisikdrono_backup/);
+    }
   });
 
   it('accepts sslmode=verify-full and refuses a weaker one', () => {

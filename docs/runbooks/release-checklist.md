@@ -71,7 +71,11 @@ A migration that stops is a release that stops: fix its cause, never edit an app
 2. **Its secrets.**
    - `SUPABASE_ACCESS_TOKEN`: a personal access token of the project owner, for `supabase link`, the pre-flight and the Advisor.
    - `SUPABASE_DB_URL`: the session pooler's connection string of `gisikdrono-prod` (Connect > Session pooler), port 5432, user `postgres.<ref>`, without `sslmode` or with `sslmode=verify-full`. GitHub's runners reach the internet over IPv4 only, and the direct host `db.<ref>.supabase.co` answers over IPv6 only, so the direct string cannot work here (L5).
-3. **Network restrictions.** Production's database allows the kelurahan office's IP and Vercel's egress only (P5.7.02 parity). A GitHub runner's address is neither, and `supabase db push` connects to the database itself. Decide at go-live how a release gets through, and record the decision here: either allow the runner's address for the run's length and remove it afterwards, or use a runner with a fixed address that the restrictions allow.
+3. **Network restrictions (DB-06): deferred.** Decision of 2026-10-28, review of PR #98, N4; Task P5.8.02.
+   - A GitHub runner has no fixed address, and `supabase db push` connects to the database itself. So production's database gets no network restriction until a runner with a fixed egress address, or a self-hosted runner, exists.
+   - Until then the release and the backup reach it through the session pooler, each with its own credentials and verified TLS.
+   - **Never add an allow-list rule open to the world** (`0.0.0.0/0`, `::/0`) to let a run through.
+   - Revisit this when that runner exists.
 
 ### What a run does
 

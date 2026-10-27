@@ -107,6 +107,15 @@ Lives in Vercel and the Vault (`otp_pepper`). Breaks: every OTP not yet entered 
 2. SQL Editor: `select vault.update_secret((select id from vault.secrets where name = 'otp_pepper'), '<new value>');`
 3. Record `key_rotated`. Note the time in the incident or review notes: `ip_hash` values before and after cannot be compared.
 
+## The backup's credentials (`gisikdrono_backup`, `R2_*`, `BACKUP_AGE_PUBLIC_KEY`)
+
+The weekly backup of `.github/workflows/backup.yml` (`docs/runbooks/restore-drills.md`, part A). Rotate after a leak, when the vault holder changes, and once a year.
+
+1. **The backup role's password.** In psql connected to `gisikdrono-prod` as `postgres`, run `\password gisikdrono_backup` and type the new password from the vault. Never use `alter role ... password '...'` in the SQL editor. Then update `SUPABASE_DB_URL` in the GitHub environment `production-backup`, and run the workflow once by hand.
+2. **The R2 token.** Cloudflare → **R2 → Manage API tokens** → create a new token with **Object Read & Write** on the backup bucket only. Update `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` in `production-backup`, run the workflow once, then delete the old token.
+3. **The age key pair.** Run `age-keygen` on the vault holder's machine, store the new private key in the vault, and update `BACKUP_AGE_PUBLIC_KEY` in `production-backup`. **Keep the old private key** in the vault until the last backup encrypted to it has passed its 56 days in R2, or those backups can never be read. Then delete it.
+4. Record `key_rotated` for each.
+
 ## The others
 
 | Variable | Where it is changed | Then |
