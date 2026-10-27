@@ -211,16 +211,20 @@ end;
 $$;
 
 -- The PIC's pay link by WhatsApp (when the number was checked) and email; enqueue_notification's key sends it once.
+-- Answers how many messages it queued (delta review of PR #91, L-5): enqueue_notification also answers the id of a
+-- message its dedupe key already holds, so the rows are counted before and after.
 create function internal.queue_admin_pay_link(p_booking_id uuid) returns integer
   language plpgsql
   set search_path = ''
 as $$
 declare
-  by_whatsapp uuid := internal.enqueue_notification(p_booking_id, 'booking_created', 'whatsapp',
-                                                    '{"link_scope": "manage"}');
-  by_email uuid := internal.enqueue_notification(p_booking_id, 'booking_created', 'email', '{"link_scope": "manage"}');
+  queued_before integer := (select count(*) from public.notifications n
+                            where n.booking_id = p_booking_id and n.template = 'booking_created');
 begin
-  return (by_whatsapp is not null)::integer + (by_email is not null)::integer;
+  perform internal.enqueue_notification(p_booking_id, 'booking_created', 'whatsapp', '{"link_scope": "manage"}');
+  perform internal.enqueue_notification(p_booking_id, 'booking_created', 'email', '{"link_scope": "manage"}');
+  return (select count(*) from public.notifications n
+          where n.booking_id = p_booking_id and n.template = 'booking_created') - queued_before;
 end;
 $$;
 
