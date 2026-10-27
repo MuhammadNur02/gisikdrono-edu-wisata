@@ -266,33 +266,35 @@ create function internal.open_key_gap_issue(p_adjustment public.payment_adjustme
   set search_path = ''
 as $$
 declare
-  run_id uuid;
-  issue_id uuid;
+  new_run_id uuid;
+  new_issue_id uuid;
 begin
   insert into public.reconciliation_runs (run_date, source, started_at, finished_at, payments_checked, issues_found,
     summary, created_by)
   values (public.today_jkt(), 'manual', now(), now(), 1, 1,
           jsonb_build_object('reason', 'refund_key_mismatch_released'), auth.uid())
-  returning id into run_id;
+  returning id into new_run_id;
   insert into public.reconciliation_issues (run_id, booking_id, payment_id, issue_type, severity, details)
-  values (run_id, p_adjustment.booking_id, p_adjustment.payment_id, 'amount_mismatch', 'high',
+  values (new_run_id, p_adjustment.booking_id, p_adjustment.payment_id, 'amount_mismatch', 'high',
           jsonb_build_object('reason', 'refund_key_mismatch_released', 'adjustment_id', p_adjustment.id,
                              'booked_amount', p_adjustment.amount, 'midtrans_amount', p_listed,
                              'gap', p_adjustment.amount - p_listed))
-  returning id into issue_id;
-  return issue_id;
+  returning id into new_issue_id;
+  return new_issue_id;
 end;
 $$;
 revoke execute on function internal.open_key_gap_issue(public.payment_adjustments, bigint)
   from public, anon, authenticated, service_role;
 
--- The adjustment whose block is released, with what Midtrans lists under its key now: an applied manual refund that
--- the caller neither proposed nor approved (delta review of PR #80, L-b), listed with another amount.
-create function internal.releasable_adjustment(p_adjustment_id uuid, out adjustment public.payment_adjustments,
-  out listed bigint)
+-- What Midtrans lists now under the key of the adjustment whose block is released: an applied manual refund that the
+-- caller neither proposed nor approved (delta review of PR #80, L-b), listed with another amount. The row is locked.
+create function internal.releasable_adjustment(p_adjustment_id uuid) returns bigint
   language plpgsql
   set search_path = ''
 as $$
+declare
+  adjustment public.payment_adjustments;
+  listed bigint;
 begin
   select a.* into adjustment from public.payment_adjustments a
   where a.id = p_adjustment_id and a.type = 'manual_refund' and a.status = 'applied'
@@ -312,6 +314,7 @@ begin
     raise exception 'Midtrans lists nothing to release under adjustment %', p_adjustment_id
       using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
+  return listed;
 end;
 $$;
 revoke execute on function internal.releasable_adjustment(uuid) from public, anon, authenticated, service_role;
@@ -336,7 +339,8 @@ begin
     raise exception 'a release says why in 10 to 300 characters' using errcode = '22023';
   end if;
   perform internal.take_audit_turn();
-  select r.adjustment, r.listed into adjustment, listed from internal.releasable_adjustment(p_adjustment_id) as r;
+  listed := internal.releasable_adjustment(p_adjustment_id);
+  select a.* into adjustment from public.payment_adjustments a where a.id = p_adjustment_id;
   select s.* into alert from public.security_alerts s
   where s.fingerprint = 'refund_key_mismatch:' || p_adjustment_id
   order by s.details ? 'release_note', s.created_at desc, s.id desc
