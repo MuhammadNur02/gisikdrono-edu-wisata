@@ -117,7 +117,8 @@ export const DASHBOARD_NAV_GROUPS: readonly DashboardNavGroup[] = [
   {
     title: 'Keuangan',
     items: [
-      { label: 'Rekap', href: '/dashboard/finance', icon: Wallet, roles: SUPERADMIN_ONLY },
+      // docs/PRD.md §13.1 A26: an RW admin reads their own RW's recap; every other finance page stays the superadmin's.
+      { label: 'Rekap', href: '/dashboard/finance', icon: Wallet, roles: BOTH_ROLES },
       {
         label: 'Bagi Hasil',
         href: '/dashboard/finance/revenue-share',

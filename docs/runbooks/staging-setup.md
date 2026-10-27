@@ -305,7 +305,7 @@ where key in ('booking_enabled', 'whatsapp_enabled', 'email_enabled', 'maintenan
 order by key;
 ```
 
-All four must read `false`. Then check that the QR kid of Part C is in the database's list, since an RW admin's cash at the counter is refused with any other and `/api/health` answers 503 until it is (`20261104200100`, Task P4.3.10):
+All four must read `false`. Then check that the QR kid of Part C is in the database's list, since an RW admin's cash at the counter is refused with any other and `/api/health` answers 503 until it is (`20261104220100`, Task P4.3.10):
 
 ```sql
 select value from public.site_settings where key = 'qr.signing_kids';

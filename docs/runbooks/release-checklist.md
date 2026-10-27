@@ -12,7 +12,7 @@ A migration that stops is a release that stops: fix its cause, never edit an app
 
 ## Notes for particular changes
 
-### Task P4.3.10: the officer's booking at the counter and cash (`20261104200000`, `20261104200100`)
+### Task P4.3.10: the officer's booking at the counter and cash (`20261104220000`, `20261104220100`)
 
 - **The QR kid must be in `qr.signing_kids` before the deploy.** The migration seeds `["k1"]`. Check that it holds the deployed `QR_SIGNING_ACTIVE_KID`: `select value from public.site_settings where key = 'qr.signing_kids';`. Otherwise cash at the counter is refused ("Kunci tanda tangan tiket belum terdaftar") and `/api/health` answers 503 (`unknownQrKid` in the server log). `docs/runbooks/rotate-keys.md` adds a new kid to the list before it becomes active.
 - **Officer holds run longer.** A booking an officer makes for one RW is held until 23:59 WIB of its visit day (docs/PRD.md §13.1 A23). One Snap page still lives 24 hours at most, the payment reminder comes before the first session, and a hold unpaid for 7 days raises the medium alert `admin_hold_unpaid_long`. The list filter "Booking petugas belum dibayar" on /dashboard/bookings shows them.

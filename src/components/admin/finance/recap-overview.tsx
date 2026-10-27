@@ -8,7 +8,13 @@ import { financeCopy } from '@/lib/copy/finance';
 import { formatIDR } from '@/lib/utils/currency';
 import { netSeries } from '@/lib/utils/finance-display';
 import { hasAnyValue } from '@/lib/utils/kpi';
-import type { FinanceOverview, FinancePeriod, LedgerInvariant } from '@/types/finance';
+import type {
+  FinanceDay,
+  FinanceOverview,
+  FinancePeriod,
+  LedgerInvariant,
+  RecapDay,
+} from '@/types/finance';
 
 const text = financeCopy.recap;
 
@@ -79,18 +85,22 @@ function InvariantLines({ invariant }: { invariant: LedgerInvariant }) {
   );
 }
 
+// The daily net, from finance_overview for the superadmin or from revenue_recap for an RW admin (description names
+// which one the days come from).
 export function NetChart({
-  overview,
+  daily,
   period,
+  description = text.chartDescription,
 }: {
-  overview: FinanceOverview;
+  daily: readonly (FinanceDay | RecapDay)[];
   period: FinancePeriod;
+  description?: string;
 }) {
-  const series = netSeries(overview.daily, period);
+  const series = netSeries(daily, period);
   return (
     <ChartCard
       title={text.chartTitle}
-      description={text.chartDescription}
+      description={description}
       hasData={hasAnyValue(series)}
       empty={text.chartEmpty}
     >

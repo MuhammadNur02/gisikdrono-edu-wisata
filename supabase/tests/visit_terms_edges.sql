@@ -5,7 +5,7 @@
 -- weather refund the fee eats whole, the weather window closing, a full target session, the cap of three weather
 -- moves with the ticket sent again after each, and the same cancellation or move asked twice.
 begin;
-select plan(197);
+select plan(202);
 \ir helpers/rls_personas.psql
 \ir helpers/visit_terms.psql
 select set_config('app.qr_key_id', 'k1', true);
@@ -1239,23 +1239,48 @@ select is((select w.resolution || ':' || r.status || ':' || r.amount || ':' || r
   'auto_refunded:requested:243443:3457:5=checked_in,13=released',
   'and refunds the visited combo''s leg itself once the QRIS fee is set: its share less the Rp 3.457 fee');
 
--- D-L2: once the adjustment is withdrawn the sweep takes the link again; its payment was partly refunded by the
--- Rp 1.000 above, so there is no settled payment to work a weather refund out from, and the link is the superadmin's.
+-- D-N1 (20261104210000): the open waiting alert follows the adjustment to apply or withdraw, its amount with dots, and
+-- an acknowledgement holds while the same adjustment waits. A booking has one open manual refund at a time, so the
+-- first is withdrawn and the next proposed before the sweep runs again.
 select set_config('app.in_rpc', '1', true);
 update public.payment_adjustments set status = 'rejected', rejected_reason = 'Ditarik untuk uji'
 where id = (select id from open_plain);
 select set_config('app.in_rpc', '', true);
+create temporary table open_plain_2 on commit drop as
+select pg_temp.propose_refund((select id from held_plain), 1500, 'plain-open-2') as id;
 select internal.settle_lapsed_weather_links(50);
-select is((select w.held_reason || ':' || (a.title like '%dikembalikan sebagian%')
+select is((select count(*)::int || ':' || bool_and(a.details ->> 'adjustment_id' = (select id from open_plain_2)::text)
+                  || ':' || bool_and(a.title like '%Rp 1.500 yang diajukan%')
+           from public.security_alerts a join public.weather_notice_bookings w on w.booking_id = (select id from held_plain)
+           where a.fingerprint = 'weather_link_waiting_adjustment:' || w.id and a.acknowledged_at is null), '1:true:true',
+  'D-N1: the open waiting alert is rewritten to name the adjustment now waiting, Rp 1.500 with its dot');
+update public.security_alerts set acknowledged_at = now()
+where fingerprint = 'weather_link_waiting_adjustment:'
+                    || (select w.id from public.weather_notice_bookings w where w.booking_id = (select id from held_plain))
+  and acknowledged_at is null;
+select internal.settle_lapsed_weather_links(50);
+select is((select count(*)::int from public.security_alerts a join public.weather_notice_bookings w on w.booking_id = (select id from held_plain)
+           where a.fingerprint = 'weather_link_waiting_adjustment:' || w.id and a.acknowledged_at is null), 0,
+  'and once acknowledged it is not raised again while the same adjustment waits');
+select is(internal.format_rupiah(1234500) || ' ' || internal.format_rupiah(0), 'Rp 1.234.500 Rp 0',
+  'D-N3: rupiah print with dots');
+
+-- D-L2: once the adjustment is withdrawn the sweep takes the link again; its payment was partly refunded by the
+-- Rp 1.000 above, so there is no settled payment to work a weather refund out from, and the link is the superadmin's.
+select set_config('app.in_rpc', '1', true);
+update public.payment_adjustments set status = 'rejected', rejected_reason = 'Ditarik untuk uji'
+where id = (select id from open_plain_2);
+select set_config('app.in_rpc', '', true);
+select internal.settle_lapsed_weather_links(50);
+select is((select w.held_reason || ':' || (a.title like '%dikembalikan sebagian%tanpa menyebut tautan cuaca ini%')
                   || ':' || (a.title not like '%Atur biaya Midtrans%')
            from public.weather_notice_bookings w
            join public.security_alerts a on a.fingerprint = 'weather_link_held:' || w.id and a.acknowledged_at is null
            where w.booking_id = (select id from held_plain)), 'payment_refunded:true:true',
   'D-L2: a link whose payment was partly refunded is held as payment_refunded, with its own alert, not the fee''s');
-select is((select (a.acknowledged_at is not null)::text || ':' || (a.details ->> 'closed')
-           from public.security_alerts a join public.weather_notice_bookings w on w.booking_id = (select id from held_plain)
-           where a.fingerprint = 'weather_link_waiting_adjustment:' || w.id), 'true:adjustment_closed',
-  'and its waiting alert closes');
+select is((select count(*)::int from public.security_alerts a join public.weather_notice_bookings w on w.booking_id = (select id from held_plain)
+           where a.fingerprint = 'weather_link_waiting_adjustment:' || w.id and a.acknowledged_at is null), 0,
+  'and no waiting alert stays open');
 
 -- F-2 (H-A, M-B): a visited combo's leg the shares cannot fund is the one refunded by hand. On the 5/80/15 rule of the
 -- L-1 combo of Rp 60.000 the kelurahan holds Rp 3.000, RW 05 Rp 48.000 and RW 13 Rp 9.000. The leg's share is
@@ -1361,6 +1386,36 @@ select is(internal.fail_unconfirmed_refund_by_poll((pg_temp.request_of((select i
   pg_temp.look((select id from no_status), '{}', null)), false, 'F-4: an answer without a transaction status fails nothing');
 select is(internal.fail_unconfirmed_refund_by_poll((pg_temp.request_of((select id from no_status))).id,
   pg_temp.look((select id from no_status))), true, 'the same answer with its status does');
+
+-- D-N2 (20261104210000): a link resolved by a cancellation or by a leg's weather refund closes its held alert, as the
+-- sweep's own resolutions do.
+insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
+  ('00000000-0000-4000-8000-0000000e3047', 5, public.today_jkt() + 6, '16:00', '17:00', 'Uji tepi tutup peringatan', 40),
+  ('00000000-0000-4000-8000-0000000e3223', 13, public.today_jkt() + 5, '22:00', '22:30', 'Uji tepi tutup kaki 13', 40);
+create temporary table closing on commit drop as select
+  pg_temp.paid('00000000-0000-4000-8000-0000000e1001', '00000000-0000-4000-8000-0000000e3047', 2, '+6281300004051',
+               false) as plain,
+  pg_temp.visited_combo_open('00000000-0000-4000-8000-0000000e1005', '00000000-0000-4000-8000-0000000e3223', 2,
+                             '+6281300004052') as combo;
+select pg_temp.declare('00000000-0000-4000-8000-0000000e3047');
+insert into public.security_alerts (rule, severity, fingerprint, title)
+select 'weather_link_held', 'high', 'weather_link_held:' || w.id, 'Uji peringatan tertahan'
+from public.weather_notice_bookings w where w.booking_id in ((select plain from closing), (select combo from closing));
+select internal.cancel_booking((select plain from closing), null, 'Batal uji', 'cancellation',
+  (internal.refund_preview((select plain from closing), 'cancellation') ->> 'amount')::bigint,
+  (internal.refund_preview((select plain from closing), 'cancellation') ->> 'refund_pct')::smallint);
+select internal.cancel_booking((select combo from closing), null, 'Hujan', 'weather',
+  (internal.refund_preview((select combo from closing), 'weather') ->> 'amount')::bigint, null);
+select is((select string_agg(w.resolution || '=' || (a.acknowledged_at is not null), ',' order by w.resolution)
+           from public.weather_notice_bookings w
+           join public.security_alerts a on a.fingerprint = 'weather_link_held:' || w.id
+           where w.booking_id = (select plain from closing)), 'cancelled=true',
+  'D-N2: a cancellation closes the held alert of the link it resolves');
+select is((select string_agg(w.resolution || '=' || (a.acknowledged_at is not null), ',' order by w.resolution)
+           from public.weather_notice_bookings w
+           join public.security_alerts a on a.fingerprint = 'weather_link_held:' || w.id
+           where w.booking_id = (select combo from closing)), 'refunded=true',
+  'and so does a leg''s weather refund');
 
 select * from finish();
 rollback;

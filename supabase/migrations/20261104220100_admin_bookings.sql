@@ -565,23 +565,34 @@ as $$
 $$;
 
 -- The check-in of the scanner's manual path (note_admission, admit_group, record_scan) for each ticket the cash just
--- issued: the group is at the counter. The ticket message would read as a ticket still to use, so it is not sent.
+-- issued: the group is at the counter. Delta review of PR #91, L-A (A23): cash is taken until 23:59 WIB, so a group
+-- past its session's check-in window is let in as an override with the reason cash_after_session, audited as
+-- check_in_override and kept on the scan row; any other verdict refuses the cash. L-B: the WhatsApp ticket message
+-- would read as a ticket still to use, so it is not sent; the email keeps its view link to the receipt.
 create function internal.check_in_at_cash(p_booking_id uuid, p_attendee_count integer) returns void
   language plpgsql
   set search_path = ''
 as $$
 declare
+  override_reason constant text := 'cash_after_session';
   ticket record;
+  verdict public.scan_result;
 begin
   for ticket in select t.id from public.tickets_qr t where t.booking_id = p_booking_id and t.status = 'issued'
                 order by t.id loop
-    perform internal.note_admission(ticket.id, 'manual', 'ok', null);
+    verdict := internal.ticket_verdict(ticket.id, 'manual', false);
+    if verdict not in ('ok', 'outside_window') then
+      raise exception 'the ticket of this cash cannot be checked in: %', verdict
+        using errcode = 'P0001', hint = 'STATE_INVALID';
+    end if;
+    perform internal.note_admission(ticket.id, 'manual', verdict, override_reason);
     perform internal.admit_group(ticket.id, p_attendee_count, 'Hadir saat pembayaran tunai di loket');
-    perform internal.record_scan(gen_random_uuid(), ticket.id, 'check_in', 'ok', 'manual', p_attendee_count, null,
-                                 null, '{}'::jsonb, null);
+    perform internal.record_scan(gen_random_uuid(), ticket.id, 'check_in', 'ok', 'manual', p_attendee_count,
+                                 case when verdict = 'outside_window' then override_reason end, null, '{}'::jsonb, null);
   end loop;
   update public.notifications n set status = 'cancelled', last_error_code = 'checked_in_at_cash'
-  where n.booking_id = p_booking_id and n.template = 'payment_received_ticket' and n.status = 'queued';
+  where n.booking_id = p_booking_id and n.template = 'payment_received_ticket' and n.channel = 'whatsapp'
+    and n.status = 'queued';
 end;
 $$;
 revoke execute on function internal.session_has_started(uuid), internal.check_in_at_cash(uuid, integer)
@@ -764,6 +775,11 @@ begin
       and b.expires_at > now() and due.remind_by > now() and due.remind_by <= now() + reminder_ahead
       and not exists (select 1 from public.notifications n
                       where n.booking_id = b.id and n.template = 'payment_reminder')
+      -- Delta review of PR #91, L-C: an officer's hold is reminded only after its pay link went out.
+      and (b.channel <> 'admin'
+           or exists (select 1 from public.notifications n
+                      where n.booking_id = b.id and n.template = 'booking_created'
+                        and n.status in ('sent', 'delivered', 'read')))
     order by due.remind_by
   loop
     perform internal.enqueue_notification(hold.id, 'payment_reminder', 'whatsapp', '{"link_scope": "pay"}');
@@ -778,7 +794,85 @@ begin
   where b.channel = 'admin' and b.status = 'pending_payment' and b.created_at < now() - unpaid_too_long
     and not exists (select 1 from public.security_alerts a where a.fingerprint = 'admin_hold_unpaid_long:' || b.id)
   on conflict (fingerprint) where acknowledged_at is null do nothing;
+  -- L-D: the alert of a booking that is no longer waiting for its payment closes by itself.
+  update public.security_alerts a
+  set acknowledged_at = now(), details = a.details || jsonb_build_object('closed', 'no_longer_unpaid')
+  from public.bookings b
+  where a.rule = 'admin_hold_unpaid_long' and a.acknowledged_at is null
+    and a.fingerprint = 'admin_hold_unpaid_long:' || b.id and b.status <> 'pending_payment';
   perform internal.restore_settings(previous_settings);
   return jsonb_build_object('suspended', suspended, 'reminded', reminded);
+end;
+$$;
+
+
+-- ===== One Snap page lives 24 hours at most (delta review of PR #91, M-A) =====
+
+-- Replaces the 20261024080000 version: payments.expiry_time is the attempt's page expiry, the hold's deadline capped
+-- at 24 hours as src/lib/midtrans/snap.ts caps Snap's expiry.duration, so startPayment sees a pending page that has
+-- lapsed and replaces it. Everything else is unchanged.
+create or replace function internal.create_payment_attempt(p_booking_id uuid, p_replaces uuid, p_actor_id uuid) returns jsonb
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  min_hold_left constant interval := interval '5 minutes';
+  max_attempts constant integer := 99;   -- the two digits of order_id
+  snap_page_lifetime constant interval := interval '24 hours';
+  previous_settings jsonb;
+  booking public.bookings;
+  open_payment public.payments;
+  attempt integer;
+  payment public.payments;
+begin
+  perform internal.require_server_caller('create_payment_attempt');
+  -- The audit chain's turn before the booking's row lock, the one order every writer keeps (BOOK-01).
+  perform internal.take_audit_turn();
+  previous_settings := internal.push_settings(jsonb_build_object('app.in_rpc', '1')
+    || internal.document_actor(p_actor_id));
+
+  select * into booking from public.bookings b where b.id = p_booking_id for update;
+  if not found then
+    raise exception 'booking % does not exist', p_booking_id using errcode = 'P0002';
+  end if;
+  if booking.needs_review then
+    raise exception 'a booking under review takes no new payment' using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  if booking.status = 'quoted' then
+    perform internal.start_quoted_hold(booking, p_actor_id);
+    select * into booking from public.bookings b where b.id = p_booking_id;
+  elsif booking.status <> 'pending_payment' then
+    raise exception 'a % booking takes no payment', booking.status using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  if booking.expires_at - now() < min_hold_left then
+    raise exception 'less than five minutes of the hold are left' using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+
+  select * into open_payment from public.payments p
+  where p.booking_id = booking.id and p.status in ('initiated', 'pending', 'needs_review') for update;
+  if found then
+    if open_payment.status = 'needs_review' or open_payment.id is distinct from p_replaces then
+      raise exception 'booking % has an open payment attempt', booking.booking_code
+        using errcode = 'P0001', hint = 'STATE_INVALID';
+    end if;
+    update public.payments set status = 'expired' where id = open_payment.id;
+  end if;
+
+  select coalesce(max(p.attempt_no), 0) + 1 into attempt from public.payments p where p.booking_id = booking.id;
+  if attempt > max_attempts then
+    raise exception 'booking % has used all its payment attempts', booking.booking_code
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  insert into public.payments (booking_id, attempt_no, provider, status, order_id, gross_amount, expiry_time)
+  values (booking.id, attempt, 'midtrans', 'initiated', booking.booking_code || '-' || lpad(attempt::text, 2, '0'),
+          booking.total_amount, least(booking.expires_at, now() + snap_page_lifetime))
+  returning * into payment;
+  insert into public.booking_events (booking_id, from_status, to_status, actor_type, actor_id, reason, payload)
+  values (booking.id, booking.status, booking.status, case when p_actor_id is null then 'visitor' else 'admin' end,
+          p_actor_id, 'payment_attempt', jsonb_build_object('order_id', payment.order_id));
+
+  perform internal.restore_settings(previous_settings);
+  return jsonb_build_object('payment_id', payment.id, 'order_id', payment.order_id,
+                            'gross_amount', payment.gross_amount, 'expires_at', booking.expires_at);
 end;
 $$;

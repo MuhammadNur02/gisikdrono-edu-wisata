@@ -1,11 +1,11 @@
--- Task P4.3.10 with the admin booking path of P4.3.08 (20261104200000_admin_channel_pic_phone.sql,
--- 20261104200100_admin_bookings.sql): an officer books a walk-in group through public.create_admin_booking, the PIC's
+-- Task P4.3.10 with the admin booking path of P4.3.08 (20261104220000_admin_channel_pic_phone.sql,
+-- 20261104220100_admin_bookings.sql): an officer books a walk-in group through public.create_admin_booking, the PIC's
 -- number may be E.164 of another country there only, and an RW admin takes the cash through
 -- public.mark_booking_paid_manually. The owner's decisions are pinned here, so a change to them shows: A21 (the
 -- officer's check of the number), A22 (today's sessions until they end) and A23 (cash by an RW admin of a booking of
 -- one RW, until 23:59 WIB of the visit day, so its hold runs until then).
 begin;
-select plan(81);
+select plan(92);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -348,8 +348,8 @@ select case when exists (select 1 from today_walk_in)
 select case when exists (select 1 from today_walk_in)
   then is((select count(*)::int from public.notifications
            where booking_id = (select id from bookings_to_pay where name = 'today')
-             and template = 'payment_received_ticket' and status = 'queued'), 0,
-          'and no ticket message goes out as if the ticket were still to use')
+             and template = 'payment_received_ticket' and channel = 'whatsapp' and status = 'queued'), 0,
+          'and no WhatsApp ticket message goes out as if the ticket were still to use (L-B)')
   else skip('too late in the Jakarta day to pay for a session of today', 1) end;
 
 select is((select (status, amount_paid)::text from public.bookings where id = (select id from walk_in_booking)),
@@ -443,6 +443,102 @@ select is((select (rule, severity)::text from public.security_alerts
            where fingerprint = 'admin_hold_unpaid_long:' || (select id from public.bookings
                                                              where booking_code = 'GSK-ADM0TAMA')),
   '(admin_hold_unpaid_long,medium)', 'an officer''s hold unpaid for a week raises a medium alert');
+select internal.payments_housekeeping();
+select is((select count(*)::int from public.security_alerts where rule = 'admin_hold_unpaid_long'
+           and fingerprint = 'admin_hold_unpaid_long:' || (select id from public.bookings
+                                                           where booking_code = 'GSK-ADM0TAMA')), 1,
+  'L-D: a second run raises no second alert');
+
+-- ===== Delta review of PR #91, L-F: internal.close_attempt_for_cash =====
+create temporary table tama_order on commit drop as select gen_random_uuid() as id;
+select set_config('app.in_rpc', '1', true);
+insert into public.payments (id, booking_id, attempt_no, provider, method, status, order_id, gross_amount)
+select (select id from tama_order), b.id, 1, 'midtrans', 'qris', 'pending', b.booking_code || '-01', 30000
+from public.bookings b where b.booking_code = 'GSK-ADM0TAMA';
+select set_config('app.in_rpc', '', true);
+select internal.close_attempt_for_cash((select id from tama_order), '00000000-0000-4000-8000-00000000f005');
+select is((select status::text from public.payments where id = (select id from tama_order)), 'expired',
+  'L-F: the PIC''s open order is closed as expired');
+select is((select (actor_type, actor_id)::text from public.booking_events
+           where booking_id = (select id from public.bookings where booking_code = 'GSK-ADM0TAMA')
+             and reason = 'payment_expired_for_cash'),
+  '(admin,00000000-0000-4000-8000-00000000f005)', 'with the officer as the event''s actor');
+select internal.close_attempt_for_cash((select p.id from public.payments p
+                                        join public.bookings b on b.id = p.booking_id
+                                        where b.id = (select id from bookings_to_pay where name = 'walk_in')
+                                          and p.status = 'settled'), '00000000-0000-4000-8000-00000000f005');
+select is((select count(*)::int from public.payments p
+           where p.booking_id = (select id from bookings_to_pay where name = 'walk_in') and p.status = 'settled'), 1,
+  'a settled payment is left as it is');
+select is((select count(*)::int from public.booking_events
+           where booking_id = (select id from bookings_to_pay where name = 'walk_in')
+             and reason = 'payment_expired_for_cash'), 0, 'and writes no event');
+create temporary table tama_review on commit drop as select gen_random_uuid() as id;
+select set_config('app.in_rpc', '1', true);
+insert into public.payments (id, booking_id, attempt_no, provider, method, status, order_id, gross_amount)
+select (select id from tama_review), b.id, 2, 'midtrans', 'qris', 'needs_review', b.booking_code || '-02', 30000
+from public.bookings b where b.booking_code = 'GSK-ADM0TAMA';
+select set_config('app.in_rpc', '', true);
+select internal.close_attempt_for_cash((select id from tama_review), '00000000-0000-4000-8000-00000000f005');
+select is((select status::text from public.payments where id = (select id from tama_review)), 'needs_review',
+  'nor does it close a payment under review');
+select ok(not has_function_privilege('authenticated', 'internal.close_attempt_for_cash(uuid, uuid)', 'execute')
+          and not has_function_privilege('anon', 'internal.close_attempt_for_cash(uuid, uuid)', 'execute')
+          and not has_function_privilege('authenticated', 'public.svc_close_attempt_for_cash(uuid, uuid)', 'execute')
+          and not has_function_privilege('anon', 'public.svc_close_attempt_for_cash(uuid, uuid)', 'execute')
+          and has_function_privilege('service_role', 'public.svc_close_attempt_for_cash(uuid, uuid)', 'execute'),
+  'only the service role closes an order for cash');
+select pg_temp.act_as('admin_rw_05');
+select throws_ok($$select public.svc_close_attempt_for_cash(gen_random_uuid(), auth.uid())$$, '42501', null,
+  'an officer''s session cannot call it');
+reset role;
+select set_config('request.jwt.claims', '', true);
+
+-- ===== L-C and the reminder of an officer's hold: before its first session, after its pay link went out =====
+create temporary table soon on commit drop as
+  select (now() + interval '3 hours') at time zone 'Asia/Jakarta' as starts_local;
+insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity)
+select '00000000-0000-4000-8000-0000000ab209', 5, starts_local::date, starts_local::time(0),
+       starts_local::time(0) + interval '30 minutes', 'Segera', 10
+from soon where starts_local::time < time '23:00';
+select set_config('app.in_rpc', '1', true);
+insert into public.bookings (booking_code, status, channel, package_id, package_snapshot, rw_ids, booker_type,
+  pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
+  consent_version, consented_at, expires_at, created_by)
+select code, 'pending_payment', 'admin', '00000000-0000-4000-8000-0000000ab001', '{}', '{5}', 'individual', 'Segera',
+       phone, lower(code) || '@example.test', 1, (select starts_local::date from soon),
+       (select starts_local::date from soon), 30000, 30000, 'v1', now(), now() + interval '20 hours',
+       '00000000-0000-4000-8000-00000000f005'
+from (values ('GSK-ADM0SEGA', '+447700900131'), ('GSK-ADM0SEGB', '+447700900132')) as v(code, phone)
+where exists (select 1 from public.visit_sessions where id = '00000000-0000-4000-8000-0000000ab209');
+insert into public.booking_legs (booking_id, rw_id, visit_session_id, leg_order, pax_count, status, quota_reserved_at)
+select b.id, 5, '00000000-0000-4000-8000-0000000ab209', 1, 1, 'reserved', now()
+from public.bookings b where b.booking_code in ('GSK-ADM0SEGA', 'GSK-ADM0SEGB');
+insert into public.notifications (booking_id, channel, template, recipient, dedupe_key, status, sent_at)
+select b.id, 'email', 'booking_created', b.pic_email, 'booking:' || b.id || ':booking_created:email:', 'sent', now()
+from public.bookings b where b.booking_code = 'GSK-ADM0SEGA';
+select set_config('app.in_rpc', '', true);
+select internal.payments_housekeeping();
+select case when exists (select 1 from public.visit_sessions where id = '00000000-0000-4000-8000-0000000ab209')
+  then is((select count(*)::int from public.notifications n join public.bookings b on b.id = n.booking_id
+           where b.booking_code = 'GSK-ADM0SEGA' and n.template = 'payment_reminder'), 1,
+          'L-2b: an officer''s hold held for 20 hours is reminded before its session three hours ahead')
+  else skip('too late in the Jakarta day for a session three hours ahead', 1) end;
+select case when exists (select 1 from public.visit_sessions where id = '00000000-0000-4000-8000-0000000ab209')
+  then is((select count(*)::int from public.notifications n join public.bookings b on b.id = n.booking_id
+           where b.booking_code = 'GSK-ADM0SEGB' and n.template = 'payment_reminder'), 0,
+          'L-C: but not before its pay link went out')
+  else skip('too late in the Jakarta day for a session three hours ahead', 1) end;
+
+-- L-D: once the booking is no longer waiting for its payment, its alert closes.
+select set_config('app.in_rpc', '1', true);
+update public.bookings set status = 'expired' where booking_code = 'GSK-ADM0TAMA';
+select set_config('app.in_rpc', '', true);
+select internal.payments_housekeeping();
+select ok((select acknowledged_at is not null from public.security_alerts
+           where fingerprint = 'admin_hold_unpaid_long:' || (select id from public.bookings
+                                                             where booking_code = 'GSK-ADM0TAMA')),
+  'L-D: an officer''s hold no longer unpaid closes its alert');
 
 -- ===== The web path is unchanged =====
 select throws_ok($$select internal.create_booking('00000000-0000-4000-8000-0000000ab001',
