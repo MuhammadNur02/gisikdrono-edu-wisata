@@ -282,8 +282,13 @@ select is(pg_temp.hint_of($$select public.release_refund_key_mismatch((select id
 reset role;
 
 -- ===== L-2: the sole active superadmin =====
+-- The persona is left the kelurahan's only active superadmin, whatever else this database holds, as set_staff_status
+-- would leave it (the profiles guard lets a privileged RPC change is_active).
+select set_config('request.jwt.claims', '', true);
+select set_config('app.privileged_rpc', 'on', true);
 update public.profiles set is_active = false
-where id in ('00000000-0000-4000-8000-00000000f002', '00000000-0000-4000-8000-00000000f003');
+where role = 'superadmin' and is_active and id <> '00000000-0000-4000-8000-00000000f001';
+select set_config('app.privileged_rpc', '', true);
 select pg_temp.listed((select id from booking),
   jsonb_build_array(jsonb_build_object('refund_key', (select id from a)::text, 'refund_amount', '95000.00'),
                     jsonb_build_object('refund_key', 'MT-B', 'refund_amount', '5000.00')));
