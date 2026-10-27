@@ -2,7 +2,7 @@
 -- staff in scope, paid by the superadmin with a fresh code on the visit terms' refund), extend_booking_hold,
 -- reactivate_booking and request_notification_resend, each from the staff member's own session at AAL2.
 begin;
-select plan(29);
+select plan(30);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -168,12 +168,17 @@ select throws_ok($$select public.request_notification_resend((select id from boo
 select throws_ok($$select public.request_notification_resend((select id from booking where name = 'again'),
     'visit_reminder_d1', 'email')$$,
   'P0001', null, 'nor a message the booking never had');
-select isnt(public.request_notification_resend((select id from booking where name = 'again'), 'booking_created', 'email'),
+select throws_ok($$select public.request_notification_resend((select id from booking where name = 'again'),
+    'booking_created', 'email')$$,
+  'P0001', 'this message cannot go to the PIC now',
+  'the cap on emails before payment holds for a message sent again too');
+select isnt(public.request_notification_resend((select id from booking where name = 'paid'), 'booking_cancelled',
+    'email'),
   null, 'a message it had goes again, as a new row');
 reset role;
 select set_config('request.jwt.claims', '', true);
 select is((select count(*)::int from public.audit_logs where action = 'notifications.resend'
-           and entity_id = (select id::text from booking where name = 'again')
+           and entity_id = (select id::text from booking where name = 'paid')
            and actor_id = '00000000-0000-4000-8000-00000000f005'), 1, 'audited, with who asked');
 
 select * from finish();

@@ -135,7 +135,12 @@ begin
   if length(btrim(coalesce(p_reason, ''))) not between 3 and 300 then
     raise exception 'a cancellation needs a reason of 3 to 300 characters' using errcode = '22023';
   end if;
-  if booking.status not in ('quoted', 'pending_payment') then
+  -- A booking already over (cancelled, expired, visited, refunded) is refused as such, whoever asks.
+  if booking.status not in ('quoted', 'pending_payment', 'paid') then
+    raise exception 'booking % cannot be cancelled now', booking.booking_code
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  if booking.status = 'paid' then
     if not public.is_superadmin() then
       raise exception 'a paid booking is cancelled by the superadmin' using errcode = '42501';
     end if;
@@ -296,6 +301,10 @@ begin
     || internal.document_actor(auth.uid()));
   queued := internal.enqueue_notification(booking.id, p_template, p_channel, last_params,
                                           'resend:' || sent_before);
+  -- The outbox's own rules still hold: a channel switched off, an unverified number, the cap on emails before payment.
+  if queued is null then
+    raise exception 'this message cannot go to the PIC now' using errcode = 'P0001', hint = 'NOT_SENT';
+  end if;
   perform internal.log_audit('notifications.resend', 'bookings', booking.id::text,
                              jsonb_build_object('template', p_template, 'channel', p_channel, 'notification_id', queued));
   perform internal.restore_settings(previous_settings);
