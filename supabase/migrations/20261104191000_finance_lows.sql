@@ -10,8 +10,16 @@
 --        has an unpaid negative ledger row from before its period, which the payout would otherwise leave behind
 --   Info a release is refused while Midtrans lists an amount under the key that does not read as one (listed < 0)
 --
--- releasable_adjustment and release_refund_key_mismatch are made again from 20261104190200 and settle_revenue_entries
--- from 20261104190400, with these changes; everything else in them is unchanged.
+-- Review of PR #103:
+--   M-1  payout_preview applies L-5's test, so a period no payout may record shows no total, the day of the negative
+--        row and why, before anything is transferred
+--   Low  (decision of the review) the sole superadmin's 24 hours run from the later of the alert's first delivery
+--        (details.first_notified_at, kept by note_refund_seen when a re-sighting sends it again) and the latest time
+--        another superadmin was deactivated, given another role or removed; the superadmin rows are read for share
+--
+-- releasable_adjustment, release_refund_key_mismatch and note_refund_seen are made again from 20261104190200, and
+-- settle_revenue_entries and payout_preview from 20261104190400, with these changes; everything else in them is
+-- unchanged.
 
 
 -- ===== L-2, Info: what a release may accept =====
@@ -46,17 +54,56 @@ end;
 $$;
 revoke execute on function internal.releasable_adjustment(uuid) from public, anon, authenticated, service_role;
 
+-- Review of PR #103 (decision of the review): when an alert was first delivered. A re-sighting sends it again
+-- (note_refund_seen clears notified_at) but keeps the first delivery in details.first_notified_at.
+create function internal.alert_first_delivered_at(p_alert public.security_alerts) returns timestamptz
+  language sql immutable
+  set search_path = ''
+as $$
+  select coalesce((p_alert.details ->> 'first_notified_at')::timestamptz, p_alert.notified_at);
+$$;
+revoke execute on function internal.alert_first_delivered_at(public.security_alerts)
+  from public, anon, authenticated, service_role;
+
+-- Review of PR #103 (decision of the review): the latest time another superadmin stopped being one, deactivated,
+-- given another role or removed, as the profiles audit rows say; null when none ever did.
+create function internal.last_superadmin_drop_at(p_user uuid) returns timestamptz
+  language sql stable
+  set search_path = ''
+as $$
+  select max(l.occurred_at) from public.audit_logs l
+  where l.entity_type = 'profiles' and l.entity_id is distinct from p_user::text
+    and l.action in ('profiles.update', 'profiles.delete')
+    and ((l.before ->> 'role') = 'superadmin' and (l.after ->> 'role') is distinct from 'superadmin'
+         or (l.before ->> 'is_active') = 'true' and (l.after ->> 'is_active') = 'false'
+            and exists (select 1 from public.profiles p where p.id::text = l.entity_id and p.role = 'superadmin'));
+$$;
+revoke execute on function internal.last_superadmin_drop_at(uuid) from public, anon, authenticated, service_role;
+
+-- L-2: the time the sole superadmin's 24 hours run from: the alert's first delivery, or the moment they became the
+-- only one, whichever is later, so nobody waits out the clock and then deactivates the second superadmin.
+create function internal.sole_release_since(p_alert public.security_alerts, p_user uuid) returns timestamptz
+  language sql stable
+  set search_path = ''
+as $$
+  select greatest(internal.alert_first_delivered_at(p_alert), internal.last_superadmin_drop_at(p_user));
+$$;
+revoke execute on function internal.sole_release_since(public.security_alerts, uuid)
+  from public, anon, authenticated, service_role;
+
 -- L-2: whether the caller may release this alert of the adjustment; true when the caller is its proposer or approver
--- and the sole active superadmin, whose release raises its own alert.
+-- and the sole active superadmin, whose release raises its own alert. The superadmin rows are read for share, so no
+-- one is made superadmin or deactivated between the count and the release.
 create function internal.release_by_sole_superadmin(p_adjustment public.payment_adjustments,
   p_alert public.security_alerts) returns boolean
-  language plpgsql stable
+  language plpgsql
   set search_path = ''
 as $$
 begin
   if auth.uid() is distinct from p_adjustment.proposed_by and auth.uid() is distinct from p_adjustment.approved_by then
     return false;
   end if;
+  perform 1 from public.profiles p where p.role = 'superadmin' for share;
   if not internal.is_sole_superadmin(auth.uid()) then
     raise exception 'the proposer or approver of adjustment % does not release its block', p_adjustment.id
       using errcode = 'P0001', hint = 'RELEASE_INELIGIBLE';
@@ -65,15 +112,62 @@ begin
     raise exception 'the refund_key_mismatch alert of adjustment % is not delivered yet', p_adjustment.id
       using errcode = 'P0001', hint = 'ALERT_NOT_NOTIFIED';
   end if;
-  if p_alert.notified_at > now() - interval '24 hours' then
-    raise exception 'the sole superadmin releases adjustment % 24 hours after its alert went out', p_adjustment.id
-      using errcode = 'P0001', hint = 'RELEASE_TOO_EARLY';
+  if internal.sole_release_since(p_alert, auth.uid()) > now() - interval '24 hours' then
+    raise exception 'the sole superadmin releases adjustment % 24 hours after its alert went out and after they became the only one',
+      p_adjustment.id using errcode = 'P0001', hint = 'RELEASE_TOO_EARLY';
   end if;
   return true;
 end;
 $$;
 revoke execute on function internal.release_by_sole_superadmin(public.payment_adjustments, public.security_alerts)
   from public, anon, authenticated, service_role;
+
+-- Review of PR #103: note_refund_seen made again from 20261104190200, unchanged but that a re-sighting of an open
+-- refund_key_mismatch alert keeps its first delivery (details.first_notified_at) before it is sent again.
+create or replace function internal.note_refund_seen(p_payment public.payments, p_target public.payment_status, p_answer jsonb)
+  returns jsonb
+  language plpgsql
+  set search_path = ''
+as $$
+declare
+  refunded_at_midtrans bigint := case when p_target = 'refunded' then p_payment.gross_amount
+                                      else internal.midtrans_refund_total(p_answer) end;
+  mismatched uuid := internal.refund_key_mismatch(p_payment, p_answer);
+begin
+  -- L6: Midtrans lists an applied manual refund's key with another amount.
+  if mismatched is not null then
+    insert into public.security_alerts (rule, severity, fingerprint, title, details)
+    values ('refund_key_mismatch', 'high', 'refund_key_mismatch:' || mismatched,
+            'Refund Midtrans tidak sama dengan penyesuaiannya',
+            jsonb_build_object('adjustment_id', mismatched, 'booking_id', p_payment.booking_id,
+                               'order_id', p_payment.order_id))
+    on conflict (fingerprint) where acknowledged_at is null do update
+    set last_seen_at = now(), occurrences = public.security_alerts.occurrences + 1, notified_at = null,
+        details = case when public.security_alerts.notified_at is not null
+                            and not public.security_alerts.details ? 'first_notified_at'
+                       then public.security_alerts.details
+                            || jsonb_build_object('first_notified_at', public.security_alerts.notified_at)
+                       else public.security_alerts.details end;
+  end if;
+  if refunded_at_midtrans is not null and internal.midtrans_recorded(p_payment) >= refunded_at_midtrans then
+    -- I1: the refunds recorded under Midtrans' word cover what it now reports, so its open alert is answered.
+    perform internal.close_refund_alert('refund_seen:' || p_payment.order_id, internal.midtrans_recorded(p_payment),
+                                        internal.latest_refund_recorder(p_payment));
+    return jsonb_build_object('result', 'ignored', 'processing_result', 'refund_already_recorded',
+                              'payment_status', p_payment.status);
+  end if;
+  insert into public.security_alerts (rule, severity, fingerprint, title, details)
+  values ('refund_seen', 'high', 'refund_seen:' || p_payment.order_id,
+          'Refund terlihat di Midtrans; catat di Keuangan',
+          jsonb_strip_nulls(jsonb_build_object('booking_id', p_payment.booking_id, 'order_id', p_payment.order_id,
+                                               'status', p_target, 'refunded_amount', refunded_at_midtrans)))
+  on conflict (fingerprint) where acknowledged_at is null do update
+  set last_seen_at = now(), occurrences = public.security_alerts.occurrences + 1, details = excluded.details,
+      notified_at = null;
+  return jsonb_build_object('result', 'ignored', 'processing_result', 'refund_awaiting_record',
+                            'payment_status', p_payment.status);
+end;
+$$;
 
 -- L-1: the adjustment's earlier gaps are settled by the one the new release opens.
 create function internal.close_earlier_key_gap_issues(p_adjustment_id uuid, p_new_issue_id uuid) returns uuid[]
@@ -173,7 +267,57 @@ end;
 $$;
 
 
--- ===== settle_revenue_entries (L-5) =====
+-- ===== settle_revenue_entries and payout_preview (L-5) =====
+
+-- L-5: the Jakarta day of the party's oldest unpaid negative ledger row before p_from, or null. A payout of a period
+-- starting after it is refused, and the preview says so before any transfer (review of PR #103, M-1).
+create function internal.negative_pending_since(p_beneficiary_key text, p_from date) returns date
+  language sql stable
+  set search_path = ''
+as $$
+  select min((e.created_at at time zone 'Asia/Jakarta')::date) from public.revenue_share_entries e
+  where e.beneficiary_key = p_beneficiary_key and e.payout_batch_id is null and e.amount < 0
+    and (e.created_at at time zone 'Asia/Jakarta')::date < p_from;
+$$;
+revoke execute on function internal.negative_pending_since(text, date) from public, anon, authenticated, service_role;
+
+-- {beneficiary_key, oldest_unpaid, from, to, total, entries, blocked_since, blocked_reason}: made again from
+-- 20261104190400, unchanged but that a period settle_revenue_entries would refuse for an unpaid negative row before it
+-- has no total, and names that row's day (blocked_since) and why (blocked_reason negative_pending), so the form says
+-- so and offers no payout before anything is transferred (review of PR #103, M-1).
+create or replace function public.payout_preview(p_beneficiary_key text, p_from date default null, p_to date default null)
+  returns jsonb
+  language plpgsql stable security definer
+  set search_path = ''
+as $$
+declare
+  key text := btrim(coalesce(p_beneficiary_key, ''));
+  oldest date;
+  period_from date;
+  period_to date := coalesce(p_to, public.today_jkt());
+  total bigint;
+  entries integer;
+  blocked_since date;
+begin
+  if not (public.is_superadmin() and public.aal2()) then
+    raise exception 'payouts are previewed by the superadmin at AAL2' using errcode = '42501';
+  end if;
+  if key !~ '^(kelurahan|rw:[0-9]{1,2}|vendor:[0-9a-f-]{36})$' then
+    raise exception 'unknown beneficiary %', key using errcode = '22023';
+  end if;
+  select min((e.created_at at time zone 'Asia/Jakarta')::date) into oldest from public.revenue_share_entries e
+  where e.beneficiary_key = key and e.payout_batch_id is null;
+  period_from := coalesce(p_from, oldest, period_to);
+  blocked_since := internal.negative_pending_since(key, period_from);
+  if blocked_since is null and period_from <= period_to and period_to <= public.today_jkt() then
+    select coalesce(sum(u.amount), 0)::bigint, count(*)::integer into total, entries
+    from internal.unpaid_entries(key, period_from, period_to) as u;
+  end if;
+  return jsonb_build_object('beneficiary_key', key, 'oldest_unpaid', oldest, 'from', period_from, 'to', period_to,
+                            'total', total, 'entries', entries, 'blocked_since', blocked_since,
+                            'blocked_reason', case when blocked_since is not null then 'negative_pending' end);
+end;
+$$;
 
 -- The payout batch as jsonb, once its total and its ledger rows are stamped. p_from and p_to are Jakarta days of the rows.
 create or replace function public.settle_revenue_entries(
@@ -209,9 +353,7 @@ begin
 
   perform pg_advisory_xact_lock(hashtext('payout:' || key));
   -- L-5: a negative row left unpaid before the period would be netted by no payout; the period starts at it or earlier.
-  if exists (select 1 from public.revenue_share_entries e
-             where e.beneficiary_key = key and e.payout_batch_id is null and e.amount < 0
-               and (e.created_at at time zone 'Asia/Jakarta')::date < p_from) then
+  if internal.negative_pending_since(key, p_from) is not null then
     raise exception '% has an unpaid negative ledger row before %', key, p_from
       using errcode = 'P0001', hint = 'PAYOUT_NEGATIVE_PENDING';
   end if;

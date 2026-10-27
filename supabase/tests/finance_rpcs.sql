@@ -3,7 +3,7 @@
 -- version closing the one in force the day before with its shares adding up to 100 %, and a payout that stamps its
 -- ledger rows once.
 begin;
-select plan(52);
+select plan(54);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: a paid RW 05 booking with its payment, invoice and ledger =====
@@ -249,6 +249,14 @@ values ('00000000-0000-4000-8000-0000000e2001', '00000000-0000-4000-8000-0000000
         'addon:00000000-0000-4000-8000-0000000e9002', '{}', 'kelurahan', 'kelurahan', null, 100000, 20, 20000);
 insert into storage.objects (bucket_id, name) values ('documents', 'payouts/00000000-0000-4000-8000-0000000e4007/bukti.pdf');
 select pg_temp.act_as('superadmin_aal2');
+-- Review of PR #103, M-1: the preview says so before anything is transferred.
+select is((select (v ->> 'total') is null and (v ->> 'blocked_since')::date = public.today_jkt() - 3
+                 and v ->> 'blocked_reason' = 'negative_pending'
+           from (select public.payout_preview('kelurahan', public.today_jkt(), public.today_jkt()) as v) as preview),
+  true, 'the preview of a period after the unpaid negative row has no total and names that row''s day');
+select is((select (v ->> 'total')::bigint || ':' || coalesce(v ->> 'blocked_since', 'none')
+           from (select public.payout_preview('kelurahan', public.today_jkt() - 3, public.today_jkt()) as v) as preview),
+  '15000:none', 'and one that starts at it shows the net to transfer');
 select is(pg_temp.hint_of($$select public.settle_revenue_entries('kelurahan', public.today_jkt(), public.today_jkt(),
   'TRF-KEL-LATE', 'payouts/00000000-0000-4000-8000-0000000e4007/bukti.pdf', 20000)$$), 'PAYOUT_NEGATIVE_PENDING',
   'a period that starts after an unpaid negative row is refused');

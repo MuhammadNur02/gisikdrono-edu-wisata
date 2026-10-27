@@ -98,20 +98,29 @@ function refusalMessage(hint: FinanceRefusalHint, error: unknown): string {
 }
 
 // Review of PR #80, Info: named_weather_link (20261104181000) refuses a weather link with the shared STATE_INVALID;
-// its message names the link, so the page can say which choice to change.
+// its message names the link, so the page can say which choice to change. Applying an approved adjustment whose link
+// no longer waits for it asks for the adjustment to be withdrawn instead (review of PR #103, Info).
 const WEATHER_LINK_REFUSAL = /^weather link /;
+
+// Which finance write failed, where the same refusal asks for another next step.
+export type FinanceWriteStage = 'write' | 'apply';
 
 function isWeatherLinkRefusal(hint: string | undefined, error: unknown): boolean {
   return hint === 'STATE_INVALID' && WEATHER_LINK_REFUSAL.test(raisedMessageOf(error));
 }
 
 // The readable refusal for a finance RPC's error, or null to let mapError decide.
-export function financeRefusal(error: unknown): AppError | null {
+export function financeRefusal(error: unknown, stage: FinanceWriteStage = 'write'): AppError | null {
   const hint = raisedHintOf(error);
   if (hint && isRefusalHint(hint))
     return new AppError(REFUSALS[hint].code, refusalMessage(hint, error));
-  if (isWeatherLinkRefusal(hint, error))
-    return new AppError('STATE_INVALID', adjustmentsCopy.errors.WEATHER_LINK_STATE);
+  if (isWeatherLinkRefusal(hint, error)) {
+    const message =
+      stage === 'apply'
+        ? adjustmentsCopy.errors.WEATHER_LINK_STATE_APPLY
+        : adjustmentsCopy.errors.WEATHER_LINK_STATE;
+    return new AppError('STATE_INVALID', message);
+  }
   const code = databaseErrorCode(error);
   // The RPCs check the fresh TOTP themselves; a code older than five minutes reads as a step-up to repeat.
   if (code === INSUFFICIENT_PRIVILEGE) return new AppError('FORBIDDEN');
@@ -121,10 +130,13 @@ export function financeRefusal(error: unknown): AppError | null {
 }
 
 // Runs a finance write and throws its readable refusal instead of the raw database error.
-export async function asFinanceWrite<T>(run: () => Promise<T>): Promise<T> {
+export async function asFinanceWrite<T>(
+  run: () => Promise<T>,
+  stage: FinanceWriteStage = 'write',
+): Promise<T> {
   try {
     return await run();
   } catch (error) {
-    throw financeRefusal(error) ?? error;
+    throw financeRefusal(error, stage) ?? error;
   }
 }

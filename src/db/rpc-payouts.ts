@@ -71,6 +71,9 @@ const previewSchema = z.object({
   to: z.string(),
   total: money.nullable(),
   entries: count.nullable(),
+  // Review of PR #103, M-1: an unpaid negative row before the period blocks any payout of it (20261104191000).
+  blocked_since: z.string().nullable(),
+  blocked_reason: z.enum(['negative_pending']).nullable(),
 });
 
 // Review of PR #80, M-2: what a payout of one party would stamp, as of the server's time now (payout_preview).
@@ -93,5 +96,6 @@ export async function payoutPreview(
     to: parsed.to,
     total: parsed.total,
     entries: parsed.entries,
+    blockedSince: parsed.blocked_reason === 'negative_pending' ? parsed.blocked_since : null,
   };
 }

@@ -165,6 +165,18 @@ describe('a weather link refused as STATE_INVALID (review of PR #80, Info)', () 
     expect(refusal?.userMessage).toMatch(/tautan cuaca/i);
   });
 
+  it('asks for the adjustment to be withdrawn when applying it meets that refusal (review of PR #103, Info)', () => {
+    const refusal = financeRefusal(
+      {
+        code: 'P0001',
+        message: 'weather link 0192f3a4-5b6c-7d8e-9f01-000000000002 is no longer one the shares cannot fund',
+        hint: 'STATE_INVALID',
+      },
+      'apply',
+    );
+    expect(refusal?.userMessage).toMatch(/tarik penyesuaian/i);
+  });
+
   it('leaves any other STATE_INVALID to mapError', () => {
     expect(financeRefusal({ code: 'P0001', message: 'refused', hint: 'STATE_INVALID' })).toBeNull();
   });

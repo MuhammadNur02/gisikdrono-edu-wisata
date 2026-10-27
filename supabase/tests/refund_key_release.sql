@@ -8,7 +8,7 @@
 -- L-2 the sole active superadmin releases 24 hours after the alert went out, with an alert of its own; Info a
 -- figure that does not read is no figure to release; L-4 the assertions of the release itself.
 begin;
-select plan(36);
+select plan(38);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: an RW 05 package, three superadmins, a booking paid Rp 300.000 =====
@@ -281,7 +281,29 @@ select is(pg_temp.hint_of($$select public.release_refund_key_mismatch((select id
   'STATE_INVALID', 'Midtrans listing an amount under the key that does not read leaves nothing to release');
 reset role;
 
--- ===== L-2: the sole active superadmin =====
+-- ===== L-2: the sole active superadmin (review of PR #103: the clock and its anchors) =====
+select pg_temp.listed((select id from booking),
+  jsonb_build_array(jsonb_build_object('refund_key', (select id from a)::text, 'refund_amount', '95000.00'),
+                    jsonb_build_object('refund_key', 'MT-B', 'refund_amount', '5000.00')));
+select internal.note_refund_seen(pg_temp.payment_row((select id from booking)), 'partially_refunded', null);
+update public.security_alerts set notified_at = now() - interval '30 hours'
+where fingerprint = 'refund_key_mismatch:' || (select id from a) and acknowledged_at is null;
+-- Midtrans is asked again and still disagrees: the alert goes out again.
+select internal.note_refund_seen(pg_temp.payment_row((select id from booking)), 'partially_refunded', null);
+select is((select (details ->> 'first_notified_at')::timestamptz = now() - interval '30 hours' and notified_at is null
+           from public.security_alerts
+           where fingerprint = 'refund_key_mismatch:' || (select id from a) and acknowledged_at is null),
+  true, 'a re-sighting sends the alert again and keeps its first delivery');
+update public.security_alerts set notified_at = now()
+where fingerprint = 'refund_key_mismatch:' || (select id from a) and acknowledged_at is null;
+select is((select internal.alert_first_delivered_at(s) from public.security_alerts s
+           where s.fingerprint = 'refund_key_mismatch:' || (select id from a) and s.acknowledged_at is null),
+  now() - interval '30 hours', 'so the clock runs from the first delivery, not the latest');
+select pg_temp.act_as('superadmin_aal2');
+select is(pg_temp.hint_of($$select public.release_refund_key_mismatch((select id from a), 'Hanya saya superadmin aktif')$$),
+  'RELEASE_INELIGIBLE', 'A''s proposer, while a second superadmin is active, never releases it, 30 hours on or not');
+reset role;
+
 -- The persona is left the kelurahan's only active superadmin, whatever else this database holds, as set_staff_status
 -- would leave it (the profiles guard lets a privileged RPC change is_active).
 select set_config('request.jwt.claims', '', true);
@@ -289,28 +311,19 @@ select set_config('app.privileged_rpc', 'on', true);
 update public.profiles set is_active = false
 where role = 'superadmin' and is_active and id <> '00000000-0000-4000-8000-00000000f001';
 select set_config('app.privileged_rpc', '', true);
-select pg_temp.listed((select id from booking),
-  jsonb_build_array(jsonb_build_object('refund_key', (select id from a)::text, 'refund_amount', '95000.00'),
-                    jsonb_build_object('refund_key', 'MT-B', 'refund_amount', '5000.00')));
-select internal.note_refund_seen(pg_temp.payment_row((select id from booking)), 'partially_refunded', null);
-update public.security_alerts set notified_at = now()
-where fingerprint = 'refund_key_mismatch:' || (select id from a) and acknowledged_at is null;
 select pg_temp.act_as('superadmin_aal2');
 select is(pg_temp.hint_of($$select public.release_refund_key_mismatch((select id from a), 'Hanya saya superadmin aktif')$$),
-  'RELEASE_TOO_EARLY', 'A''s proposer, now the sole active superadmin, waits 24 hours after the alert went out');
+  'RELEASE_TOO_EARLY', 'now the sole active superadmin, A waits 24 hours from the moment the others were deactivated');
 reset role;
-update public.security_alerts set notified_at = now() - interval '25 hours'
-where fingerprint = 'refund_key_mismatch:' || (select id from a) and acknowledged_at is null;
-select pg_temp.act_as('superadmin_aal2');
-select is((public.release_refund_key_mismatch((select id from a), 'Hanya saya superadmin aktif') ->> 'released_sum')::bigint,
-  95000::bigint, 'and releases it then');
-reset role;
+select is((select internal.sole_release_since(s, '00000000-0000-4000-8000-00000000f001') from public.security_alerts s
+           where s.fingerprint = 'refund_key_mismatch:' || (select id from a) and s.acknowledged_at is null),
+  now(), 'the later of the first delivery and the last deactivation of another superadmin');
+select internal.raise_sole_release_alert((select x from public.payment_adjustments x where x.id = (select id from a)),
+  (select s from public.security_alerts s
+   where s.fingerprint = 'refund_key_mismatch:' || (select id from a) and s.acknowledged_at is null), 95000);
 select is((select severity::text from public.security_alerts
            where rule = 'refund_key_release_by_sole_superadmin' and details ->> 'adjustment_id' = (select id from a)::text),
-  'high', 'which raises the high refund_key_release_by_sole_superadmin alert');
-select is((select string_agg(details ->> 'gap', ',') from public.reconciliation_issues
-           where details ->> 'adjustment_id' = (select id from a)::text and resolved_at is null), '5000',
-  'and leaves one gap open, Rp 5.000');
+  'high', 'a release by the sole superadmin raises the high refund_key_release_by_sole_superadmin alert');
 
 select * from finish();
 rollback;

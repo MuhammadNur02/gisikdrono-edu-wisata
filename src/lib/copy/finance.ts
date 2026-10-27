@@ -170,6 +170,8 @@ export const financeCopy = {
         `Jumlah yang harus ditransfer: ${amount} (${String(entries)} entri buku besar). Catat setelah transfer sebesar ini.`,
       nothing: 'Tidak ada entri yang belum dibayar dalam periode ini.',
       invalid: 'Pilih periode yang sudah lewat, tanggal awal sebelum tanggal akhir.',
+      negativePending: (day: string) =>
+        `Ada saldo minus sejak ${day} yang belum dibayar; mulai periode dari tanggal itu. Jangan transfer dulu.`,
     },
     submit: 'Catat pembayaran',
     saved: (amount: string) =>

@@ -69,7 +69,7 @@ const mismatchAlertSchema = z.object({
 
 // Review of PR #80, L-3: an adjustment is blocked while its latest refund_key_mismatch alert carries no release note,
 // acknowledged or not; a plain acknowledgement releases nothing (release_refund_key_mismatch, 20261104190200).
-function blockedOf(alertsNewestFirst: readonly z.infer<typeof mismatchAlertSchema>[]): Set<string> {
+export function blockedOf(alertsNewestFirst: readonly z.infer<typeof mismatchAlertSchema>[]): Set<string> {
   const latest = new Map<string, boolean>();
   for (const alert of alertsNewestFirst) {
     if (!latest.has(alert.fingerprint)) latest.set(alert.fingerprint, !alert.details.release_note);
