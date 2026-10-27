@@ -1,8 +1,9 @@
 -- The guest certificate page's step-up (20261104182000; Task P4.5.03, docs/Security.md DOC-02): the last four digits
--- of the PIC's verified number are compared in the database, which hands back only the answer, and five wrong tries
--- raise one open alert per booking.
+-- of the PIC's verified number are compared in the database, which hands back only the answer; five wrong tries a day
+-- raise one open alert per booking, and the tenth wrong try of the window blocks the step-up for good (review of
+-- PR #94, L1).
 begin;
-select plan(9);
+select plan(15);
 \ir helpers/rls_personas.psql
 \ir helpers/visit_terms.psql
 select set_config('app.qr_key_id', 'k1', true);
@@ -20,9 +21,18 @@ select set_config('app.in_rpc', '1', true);
 update public.bookings set phone_verified_at = now() where id = (select id from certified);
 select set_config('app.in_rpc', '', true);
 
-select is(internal.check_certificate_phone((select id from certified), '5678'), 'verified',
+select is(internal.check_certificate_phone((select id from certified), '5678', repeat('a', 64)), 'verified',
   'the last four digits of the verified number pass');
+select is((select count(*)::int || ':' || max(actor_role) || ':' || max(ip_hash) || ':' || max(entity_id)
+           || ':' || max(details ->> 'source') from public.security_events
+           where event_type = 'pii_revealed' and entity_id = (select id from certified)::text),
+  '1:visitor:' || repeat('a', 64) || ':' || (select id from certified)::text || ':certificate_phone_step_up',
+  'a right answer opens names, so it is a pii_revealed event of the visitor with the hashed IP');
 select is(internal.check_certificate_phone((select id from certified), '1234'), 'mismatch', 'any other four do not');
+select is((select certificate_phone_failures from public.bookings where id = (select id from certified)), 1::smallint,
+  'and every wrong try of the window is counted on the booking');
+select throws_ok($$select internal.check_certificate_phone((select id from certified), '5678', '10.0.0.1')$$, '22023',
+  null, 'the IP comes hashed, never as it is');
 select throws_ok($$select internal.check_certificate_phone((select id from certified), '56a8')$$, '22023', null,
   'only four digits are compared');
 select throws_ok($$select internal.check_certificate_phone((select id from certified), '+6281300005678')$$, '22023',
@@ -35,6 +45,19 @@ update public.bookings set phone_verified_at = null where id = (select id from c
 select set_config('app.in_rpc', '', true);
 select is(internal.check_certificate_phone((select id from certified), '5678'), 'unverified',
   'a number no WhatsApp code proved opens nothing, even with the right digits');
+
+select set_config('app.in_rpc', '1', true);
+update public.bookings set phone_verified_at = now() where id = (select id from certified);
+select set_config('app.in_rpc', '', true);
+select is(array(select internal.check_certificate_phone((select id from certified), '0000')
+                from generate_series(1, 9)),
+  array['mismatch', 'mismatch', 'mismatch', 'mismatch', 'mismatch', 'mismatch', 'mismatch', 'mismatch', 'blocked'],
+  'the tenth wrong try of the window blocks the step-up');
+select is(internal.check_certificate_phone((select id from certified), '5678'), 'blocked',
+  'for good: not even the right digits open it then');
+select is((select count(*)::int || ':' || max(occurrences) || ':' || max(severity::text) from public.security_alerts
+           where fingerprint = 'certificate_phone_blocked:' || (select id from certified)), '1:2:high',
+  'the block raises one high alert per booking, counted again on every later try');
 
 select internal.lock_certificate_phone((select id from certified));
 select internal.lock_certificate_phone((select id from certified));
