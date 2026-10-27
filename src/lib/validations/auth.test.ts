@@ -40,13 +40,18 @@ describe('forgotPasswordSchema', () => {
 describe('resetPasswordSchema', () => {
   const valid = { password: STRONG, confirmPassword: STRONG, captchaToken: 't' };
 
-  it('accepts 12 or more characters with all four classes, with or without a code', () => {
+  it('accepts 8 or more characters with all four classes, with or without a code', () => {
     expect(resetPasswordSchema.safeParse(valid).success).toBe(true);
     expect(resetPasswordSchema.safeParse({ ...valid, totpCode: '123456' }).success).toBe(true);
+    const shortest = 'Ab3!efgh';
+    expect(
+      resetPasswordSchema.safeParse({ ...valid, password: shortest, confirmPassword: shortest })
+        .success,
+    ).toBe(true);
   });
 
   it.each([
-    ['too short', 'Short-1!aB'],
+    ['too short', 'Sh-1!aB'],
     ['no upper case', 'another-strong-pass-2!'],
     ['no digit', 'Another-Strong-Pass!'],
     ['no symbol', 'AnotherStrongPass2'],
