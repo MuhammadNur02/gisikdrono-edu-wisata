@@ -10,6 +10,7 @@ import type {
   FinancePeriod,
   PartyBalance,
   PartyPeriodShare,
+  RecapDay,
   RuleLine,
   SavedRule,
 } from '@/types/finance';
@@ -85,6 +86,7 @@ export async function financeOverview(
 }
 
 const recapSchema = z.object({
+  daily: z.array(z.looseObject({ day: z.string(), net_amount: money.nullable() })),
   by_beneficiary: z.array(
     z.looseObject({
       beneficiary_key: z.string(),
@@ -106,11 +108,20 @@ const recapSchema = z.object({
 });
 
 export interface RevenueRecap {
+  days: RecapDay[];
   shares: PartyPeriodShare[];
   balances: PartyBalance[];
 }
 
-// revenue_recap: what each party earned in the period, and what it is owed in all (v_revenue_recap_by_party).
+// The ledger's net of each day, every beneficiary of the reader's scope summed (one row per day and beneficiary).
+function recapDaysOf(daily: z.infer<typeof recapSchema>['daily']): RecapDay[] {
+  const net = new Map<string, number>();
+  for (const row of daily) net.set(row.day, (net.get(row.day) ?? 0) + (row.net_amount ?? 0));
+  return [...net].map(([day, value]) => ({ day, net: value }));
+}
+
+// revenue_recap: what each party earned in the period, per day and in all, and what it is owed in all
+// (v_revenue_recap_by_party). An RW admin's reply holds their RW's treasury and vendors only (internal.stats_scope).
 export async function revenueRecap(
   client: DatabaseClient,
   period: FinancePeriod,
@@ -120,6 +131,7 @@ export async function revenueRecap(
   );
   const parsed = recapSchema.parse(reply);
   return {
+    days: recapDaysOf(parsed.daily),
     shares: parsed.by_beneficiary.map((row) => ({
       beneficiaryKey: row.beneficiary_key,
       settled: row.settled_amount ?? 0,
