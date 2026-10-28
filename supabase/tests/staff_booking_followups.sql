@@ -5,7 +5,7 @@
 -- resends are capped, a web hold is extended at most until an hour before its session, and the staff RPCs write no
 -- status column themselves.
 begin;
-select plan(27);
+select plan(31);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -21,6 +21,7 @@ insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time
   ('00000000-0000-4000-8000-0000000af206', 5, public.today_jkt() + 5, '09:00', '10:00', 'Ikut lapang', 20),
   ('00000000-0000-4000-8000-0000000af207', 5, public.today_jkt() + 6, '09:00', '10:00', 'Ikut lain', 20),
   ('00000000-0000-4000-8000-0000000af305', 5, public.today_jkt() + 3, '13:00', '14:00', 'Ikut singkat', 1),
+  ('00000000-0000-4000-8000-0000000af405', 5, public.today_jkt() + 3, '15:00', '16:00', 'Ikut kembali', 1),
   ('00000000-0000-4000-8000-0000000af307', 5, public.today_jkt() + 4, '09:00', '10:00', 'Ikut singkat lapang', 20);
 
 insert into auth.users (id, email) values ('00000000-0000-4000-8000-00000000f002', 'rls-super-b@example.test');
@@ -176,9 +177,17 @@ select pg_temp.expire((select id from booking where name = 'short'));
 insert into booking values ('short_filler', pg_temp.book('00000000-0000-4000-8000-0000000af003',
                                                          '00000000-0000-4000-8000-0000000af305', 1, 'iku-004'));
 select pg_temp.settle_late((select id from booking where name = 'short'));
+insert into booking values ('late_refund', pg_temp.book('00000000-0000-4000-8000-0000000af001',
+                                                        '00000000-0000-4000-8000-0000000af405', 1, 'iku-008'));
+select pg_temp.expire((select id from booking where name = 'late_refund'));
+insert into booking values ('late_filler', pg_temp.book('00000000-0000-4000-8000-0000000af001',
+                                                        '00000000-0000-4000-8000-0000000af405', 1, 'iku-009'));
+select pg_temp.settle_late((select id from booking where name = 'late_refund'));
 insert into booking values
   ('no_show', pg_temp.book('00000000-0000-4000-8000-0000000af001', '00000000-0000-4000-8000-0000000af206', 1,
                            'iku-005')),
+  ('paid_past', pg_temp.book('00000000-0000-4000-8000-0000000af001', '00000000-0000-4000-8000-0000000af206', 1,
+                             'iku-010')),
   ('raced', pg_temp.book('00000000-0000-4000-8000-0000000af001', '00000000-0000-4000-8000-0000000af206', 1,
                          'iku-006')),
   ('under_review', pg_temp.book('00000000-0000-4000-8000-0000000af001', '00000000-0000-4000-8000-0000000af206', 1,
@@ -190,11 +199,12 @@ select is((select string_agg(review_reason, ',' order by review_reason) from pub
 -- ===== 1: close_past_bookings leaves a booking under review for its resolution =====
 select pg_temp.act_as('admin_rw_05');
 select public.mark_booking_paid_manually((select id from booking where name = 'no_show'), 'cash', 30000, 'k1');
+select public.mark_booking_paid_manually((select id from booking where name = 'paid_past'), 'cash', 30000, 'k1');
 reset role;
 select set_config('request.jwt.claims', '', true);
 select set_config('app.in_rpc', '1', true);
 update public.bookings set visit_date = public.today_jkt() - 1, visit_date_end = public.today_jkt() - 1
-where id in (select id from booking where name in ('waiting', 'no_show'));
+where id in (select id from booking where name in ('waiting', 'no_show', 'late_refund'));
 select set_config('app.in_rpc', '', true);
 select internal.close_past_bookings();
 select is((select (status, needs_review)::text from public.bookings where id = (select id from booking where name = 'waiting')),
@@ -210,6 +220,26 @@ select set_config('request.jwt.claims', '', true);
 select is((select (status, needs_review, visit_date - public.today_jkt())::text from public.bookings
            where id = (select id from booking where name = 'waiting')),
   '(paid,f,6)', 'to its new day, out of review');
+-- Decision of 2026-10-29: such a booking never held a seat, so L8 (no refund once the visit date passed) does not
+-- hold for it; a normal paid booking past its day keeps L8.
+select set_config('app.in_rpc', '1', true);
+update public.bookings set visit_date = public.today_jkt() - 1, visit_date_end = public.today_jkt() - 1
+where id = (select id from booking where name = 'paid_past');
+select set_config('app.in_rpc', '', true);
+select pg_temp.act_as('superadmin_aal2');
+select is((public.resolve_booking_review((select id from booking where name = 'late_refund'), 'refund',
+    'Sesi penuh, uang dikembalikan utuh', null, null)) ->> 'result', 'cancelled',
+  '1: a booking paid after its seats were gone is refunded after its old day too');
+select is(pg_temp.hint_of($$select public.cancellation_preview((select id from booking where name = 'paid_past'),
+    'kelurahan')$$), 'STATE_INVALID', 'L8: a normal paid booking past its visit date gets no full refund preview');
+select is(pg_temp.hint_of($$select public.cancel_booking((select id from booking where name = 'paid_past'),
+    'Dibatalkan kelurahan', 30000, 100::smallint, 'kelurahan')$$), 'STATE_INVALID',
+  'nor a full refund through cancel_booking');
+reset role;
+select set_config('request.jwt.claims', '', true);
+select is((select (amount, refund_pct)::text from public.refund_requests
+           where booking_id = (select id from booking where name = 'late_refund')),
+  '(30000,100)', 'the whole payment is to go back, as before the date');
 
 -- ===== 4: a move takes only the sessions a booking of its package could take =====
 select pg_temp.act_as('superadmin_aal2');

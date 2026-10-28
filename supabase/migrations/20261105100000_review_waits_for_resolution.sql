@@ -2,7 +2,8 @@
 --
 --   close_past_bookings        A paid booking whose seats were gone when its late payment settled
 --                              (PAID_AFTER_EXPIRY_NO_QUOTA) waits for resolve_booking_review; its visit day passing
---                              makes it no no_show, since it never held a seat to miss.
+--                              makes it no no_show, since it never held a seat to miss, and its refund resolution
+--                              stays open after that day (decision of 2026-10-29: L8 is for no-shows only).
 --   move_released_legs         A move takes the sessions a new booking of the package could take: internal.booking_sessions
 --                              checks the RW is online and the package's valid_from / valid_to, as the web and the
 --                              officer's path do.
@@ -128,7 +129,44 @@ begin
 end;
 $$;
 
--- A28 (b): out of review, the whole payment goes back through cancel_paid_booking.
+-- The whole payment of a paid booking as a refund quote: no visit-terms schedule, no fee (A28).
+create function internal.whole_payment_quote(p_booking public.bookings) returns jsonb
+  language plpgsql stable
+  set search_path = ''
+as $$
+declare
+  payment public.payments := internal.settled_payment_of(p_booking.id);
+begin
+  if p_booking.status <> 'paid' or payment.id is null or payment.gross_amount <> p_booking.total_amount then
+    raise exception 'booking % has no settled payment of its total', p_booking.id
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  return jsonb_build_object('kind', 'cancellation', 'days_before', p_booking.visit_date - public.today_jkt(),
+    'refund_pct', 100, 'package_refund', p_booking.subtotal_package - p_booking.discount_amount,
+    'addon_refund', p_booking.subtotal_addons, 'fee_amount', 0, 'amount', payment.gross_amount, 'retained', 0,
+    'paid', payment.gross_amount, 'method', payment.method, 'payment_id', payment.id, 'order_id', payment.order_id);
+end;
+$$;
+revoke execute on function internal.whole_payment_quote(public.bookings) from public, anon, authenticated, service_role;
+
+-- Replaces the 20261104220200 version: the same quote, through whole_payment_quote. Review of PR #102, L8, is
+-- unchanged: as refund_quote, a visit that has passed is not refunded here.
+create or replace function internal.full_refund_quote(p_booking public.bookings) returns jsonb
+  language plpgsql stable
+  set search_path = ''
+as $$
+begin
+  if p_booking.visit_date < public.today_jkt() then
+    raise exception 'the visit of booking % has passed', p_booking.id using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  return internal.whole_payment_quote(p_booking);
+end;
+$$;
+
+-- A28 (b): out of review, the whole payment goes back through cancel_paid_booking. Decision of 2026-10-29 on the
+-- follow-ups of PR #102 (1): a booking paid after its seats were gone never held a seat, so its visitor could not
+-- have come; L8 (no refund once the visit date passed) is for no-shows and does not hold here, so the whole payment
+-- goes back after its old day too (whole_payment_quote, not full_refund_quote).
 create function internal.refund_booking_under_review(p_booking public.bookings, p_actor_id uuid, p_reason text)
   returns jsonb
   language plpgsql
@@ -141,7 +179,7 @@ begin
   update public.bookings set needs_review = false, review_reason = null where id = p_booking.id
   returning * into booking;
   outcome := internal.cancel_paid_booking(booking, p_actor_id, p_reason, 'cancellation',
-                                          internal.full_refund_quote(booking), 'admin');
+                                          internal.whole_payment_quote(booking), 'admin');
   perform internal.enqueue_notification(booking.id, 'booking_cancelled', 'whatsapp', '{}');
   perform internal.enqueue_notification(booking.id, 'booking_cancelled', 'email', '{}');
   return outcome;
