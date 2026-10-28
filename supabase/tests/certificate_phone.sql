@@ -1,9 +1,9 @@
 -- The guest certificate page's step-up (20261104210100; Task P4.5.03, docs/Security.md DOC-02): the last four digits
 -- of the PIC's verified number are compared in the database, which hands back only the answer; five wrong tries a day
 -- raise one open alert per booking, and the tenth wrong try of the window blocks the step-up for good (review of
--- PR #94, L1).
+-- PR #94, L1). A right try starts the count again, and every step checks its caller (20261105110000).
 begin;
-select plan(15);
+select plan(19);
 \ir helpers/rls_personas.psql
 \ir helpers/visit_terms.psql
 select set_config('app.qr_key_id', 'k1', true);
@@ -31,6 +31,12 @@ select is((select count(*)::int || ':' || max(actor_role) || ':' || max(ip_hash)
 select is(internal.check_certificate_phone((select id from certified), '1234'), 'mismatch', 'any other four do not');
 select is((select certificate_phone_failures from public.bookings where id = (select id from certified)), 1::smallint,
   'and every wrong try of the window is counted on the booking');
+select is(internal.check_certificate_phone((select id from certified), '5678'), 'verified',
+  'a right try after a wrong one still passes');
+select is((select certificate_phone_failures from public.bookings where id = (select id from certified)), 0::smallint,
+  'and starts the count of wrong tries again, since only guesses that never succeed add up to the block');
+select is(internal.check_certificate_phone((select id from certified), '1234'), 'mismatch',
+  'the next wrong try counts from there');
 select throws_ok($$select internal.check_certificate_phone((select id from certified), '5678', '10.0.0.1')$$, '22023',
   null, 'the IP comes hashed, never as it is');
 select throws_ok($$select internal.check_certificate_phone((select id from certified), '56a8')$$, '22023', null,
@@ -64,6 +70,20 @@ select internal.lock_certificate_phone((select id from certified));
 select is((select count(*)::int || ':' || max(occurrences) || ':' || max(severity::text) from public.security_alerts
            where fingerprint = 'certificate_phone_locked:' || (select id from certified)), '1:2:high',
   'the lock raises one high alert per booking, counted again on every later lock');
+
+select is(
+  array(
+    select p.proname::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'internal' and p.prosecdef
+      and p.proname in ('check_certificate_phone', 'lock_certificate_phone', 'block_certificate_phone',
+                        'record_certificate_phone_proof', 'count_certificate_phone_failure')
+      and strpos(p.prosrc, 'perform internal.require_server_caller(') > 0
+    order by 1
+  ),
+  array['block_certificate_phone', 'check_certificate_phone', 'count_certificate_phone_failure',
+        'lock_certificate_phone', 'record_certificate_phone_proof'],
+  'every security definer step of the step-up checks its caller'
+);
 
 select pg_temp.act_as('anon');
 select throws_ok($$select public.svc_check_certificate_phone((select id from certified), '5678')$$, '42501', null,
