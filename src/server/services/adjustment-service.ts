@@ -97,7 +97,7 @@ export async function apply(ctx: StaffContext, adjustmentId: string): Promise<Ad
   const transferBookingId = await transferBookingOf(adjustmentId);
   if (transferBookingId !== null) await endOpenOrderBeforeTransfer(transferBookingId, ctx.userId);
   const supabase = await createSupabaseServerClient();
-  const applied = await asFinanceWrite(() => applyAdjustment(supabase, adjustmentId));
+  const applied = await asFinanceWrite(() => applyAdjustment(supabase, adjustmentId), 'apply');
   await expireClosedOrders(applied.closeOrders);
   return { id: applied.id, status: applied.status, applyNotBefore: applied.applyNotBefore };
 }

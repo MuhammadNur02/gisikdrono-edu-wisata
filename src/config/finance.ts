@@ -58,6 +58,8 @@ export const FINANCE_REFUSAL_HINTS = [
   'RULE_TARGET_INVALID',
   'PAYOUT_EMPTY',
   'PAYOUT_TOTAL_MISMATCH',
+  // Review of PR #80, L-5: an unpaid negative row of the party lies before the period.
+  'PAYOUT_NEGATIVE_PENDING',
   'PROOF_MISSING',
   'PROOF_REUSED',
   'ADJUSTMENT_TYPE_UNSUPPORTED',
@@ -76,6 +78,8 @@ export const FINANCE_REFUSAL_HINTS = [
   'REFUND_REQUEST_MISMATCH',
   'RELEASE_INELIGIBLE',
   'ALERT_NOT_NOTIFIED',
+  // Review of PR #80, L-2: the sole superadmin releases 24 hours after the alert went out.
+  'RELEASE_TOO_EARLY',
   // PR #90's: a manual refund named for a weather link held for an unset Midtrans fee.
   'WEATHER_FEE_UNSET_MANUAL',
   // A28: a manual transfer's QR key id is not in site_settings qr.signing_kids.

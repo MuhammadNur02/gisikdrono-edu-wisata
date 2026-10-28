@@ -137,8 +137,14 @@ export const adjustmentsCopy = {
       'Pengusul atau penyetuju penyesuaian ini tidak bisa melepas blokirnya. Minta superadmin lain memeriksa dan melepasnya.',
     ALERT_NOT_NOTIFIED:
       'Peringatan selisih ini belum terkirim ke Lurah. Tunggu beberapa menit sampai terkirim, lalu coba lagi.',
+    RELEASE_TOO_EARLY:
+      'Anda satu-satunya superadmin aktif, jadi blokir penyesuaian Anda sendiri baru bisa dilepas 24 jam setelah peringatannya terkirim ke Lurah.',
     WEATHER_FEE_UNSET_MANUAL:
       'Atur biaya Midtrans; pengembalian dana cuaca berjalan otomatis. Jangan transfer manual.',
+    WEATHER_LINK_STATE_APPLY:
+      'Tautan cuaca penyesuaian ini tidak lagi menunggu refund manual, jadi penyesuaian ini tidak bisa diterapkan. Tarik penyesuaian ini (Tolak dengan alasan), lalu ajukan yang baru bila refund masih perlu.',
+    WEATHER_LINK_STATE:
+      'Tautan cuaca itu tidak lagi menunggu refund manual: sudah ditutup, bukan milik pembayaran lunas pemesanan ini, atau bagiannya kini bisa dikembalikan otomatis. Muat ulang halaman, lalu pilih tautan yang masih ditahan atau kosongkan pilihan refund cuaca.',
   },
 } as const;
 
