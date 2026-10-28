@@ -159,7 +159,6 @@ describe('createDocumentSignedUrl', () => {
   it('keeps the lifetimes of docs/Security.md §10.3', () => {
     expect(SIGNED_URL_TTL_SECONDS).toEqual({
       ticket: 600,
-      certificate: 600,
       invoice: 900,
       quotation: 900,
       receipt: 900,
@@ -191,9 +190,10 @@ describe('createDocumentSignedUrl', () => {
 
   it.each([
     ['ticket', 'bookings/b1/ticket.pdf', true],
-    ['certificate', 'certificates/b1/participant-01.pdf', true],
     ['export', 'exports/p1/visits-2026-10.xlsx', true],
-    ['whatsapp_document_header', 'certificates/b1/group.pdf', true],
+    ['whatsapp_document_header', 'bookings/b1/ticket-GSK-7F3K9Q2M-05.pdf', true],
+    ['whatsapp_document_header', 'certificates/b1/group.pdf', false],
+    ['ticket', 'certificates/b1/participant-01.pdf', false],
     ['ticket', 'exports/p1/visits-2026-10.xlsx', false],
     ['invoice', 'payouts/2026-10/batch.csv', false],
     ['payout_proof', 'payouts/0192f3a4-5b6c-7d8e-9f01-000000000001/bukti.webp', true],
