@@ -4,7 +4,14 @@ Owner: Dev on call, with the kelurahan's vault holder for the private key. Sourc
 
 **Targets.** RPO 24 hours (1 hour with the PITR add-on), RTO 4 hours for the database (NFR-08). Supabase Pro keeps daily backups for 7 days. The R2 copy is the off-site one, and the only one that outlives the Supabase account.
 
-**What a backup holds.** The output of `pg_dump --format=custom --schema=public --schema=auth`, the two schemas any restore loads. It holds every booker's contact details. Of `auth` it keeps the data of `users`, `identities` and the SSO settings only (`sso_providers`, `sso_domains`, `saml_providers`). Every other `auth` table is left out whole with `--exclude-table`, its definition and its data alike, and the backup role may not even read it (review of PR #98, M1; delta review, N6 and L3; third review, D1). Every restore loads data only, after the migrations, so their definitions are never needed:
+**What a backup holds.** One tar, `postgres/<time>.tar`, of two age files. Plain text is never written to the runner's disk.
+
+| File | Content |
+|---|---|
+| `public.dump.age` | `pg_dump --format=custom --schema=public`: every booker's contact details and every other row of `public` |
+| `auth-snapshot.json.age` | `internal.backup_auth_snapshot()`: every row of `auth.users`, `auth.identities`, `auth.sso_providers`, `auth.sso_domains` and `auth.saml_providers`, as JSON keyed by table |
+
+`auth` never goes through `pg_dump` (fourth review of PR #98, H1 and H2). Supabase gives postgres USAGE on `auth` without the right to pass it on, so the backup role has none, and the snapshot reads those five tables for it. Visitors have no accounts, so the snapshot is a handful of staff rows. The rest of `auth` is never in a backup (review M1; delta review N6 and L3; third review D1):
 
 - sessions, refresh and one-time tokens, and flow state;
 - MFA factors, challenges and AMR claims, and WebAuthn;
@@ -13,6 +20,8 @@ Owner: Dev on call, with the kelurahan's vault holder for the private key. Sourc
 - GoTrue's own `schema_migrations` and `instances`.
 
 pgTAP `backup_reader.sql` fails on any `auth` table that is in neither list. A restore therefore signs every staff member out and leaves them without an authenticator (part E).
+
+Every restore loads data after the migrations, so no definition is needed from a backup.
 
 **Where a restore may go** (PRD §13.1 A27, owner-delegated 2026-10-28):
 - the drill: a throwaway local stack on the vault holder's encrypted machine;
@@ -31,12 +40,11 @@ It never goes into `gisikdrono-staging`, which holds no real visitor data. It ne
    Create an R2 API token with **Object Read & Write** on that bucket only. Its access key id, secret and the account id are `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and `R2_ACCOUNT_ID`; the bucket name is `R2_BUCKET`.
 3. **Supabase's root certificate.** In the `gisikdrono-prod` dashboard, open Database settings > SSL configuration > Download certificate. Commit the file as `supabase/certs/prod-ca-2021.crt`. It is public and identifies Supabase's CA, so every connection of the job checks the server (`PGSSLMODE=verify-full`) instead of merely encrypting. The job stops while the file is missing.
 4. **The backup role.** The migration `20261104230000_backup_reader.sql` makes the group `backup_reader`. It has:
-   - USAGE on `public` and `auth`;
+   - USAGE on `public`;
    - SELECT on every table and sequence of `public`, and on every later table postgres adds there;
-   - SELECT on the five `auth` tables the backup copies (`users`, `identities`, `sso_providers`, `sso_domains`, `saml_providers`);
-   - execute on `internal.environment()`.
+   - execute on `internal.environment()` and `internal.backup_auth_snapshot()`.
 
-   Nothing else. No `pg_read_all_data`, which would also open `cron`, `vault` and `net`, and no other `auth` table, whose sessions, tokens and factors it would otherwise read live.
+   Nothing else. It has no USAGE on `auth` and no grant on any `auth` table, so it never reads a session, a token or a factor. It holds no `pg_read_all_data`, which would also open `cron`, `vault` and `net`. The snapshot function runs as postgres, only for a session whose login role belongs to `backup_reader`.
 
    Create the login role that belongs to it in psql, connected to `gisikdrono-prod` as `postgres`. Never use the SQL editor for this, since a password typed there reaches the server and its logs in plain text (delta review L6). `\password` sends only the SCRAM verifier that psql computes on the vault holder's machine; type the password from the vault when it asks:
 
@@ -45,7 +53,14 @@ It never goes into `gisikdrono-staging`, which holds no real visitor data. It ne
    \password gisikdrono_backup
    ```
 
-   It needs `bypassrls`: every table forces RLS, and without it `pg_dump` either stops or dumps no rows. It needs nothing else. The job refuses a connection that is not `gisikdrono_backup` in `backup_reader`, or that is a superuser, may create roles or databases, may replicate, or holds `pg_write_all_data`. If Supabase refuses the attribute or the grant, stop and record it here. Never dump as `postgres` instead.
+   It needs `bypassrls`: every table of `public` forces RLS, and without it `pg_dump` either stops or dumps no rows. It needs nothing else.
+
+   The job refuses the connection if any of these fail:
+   - the role is `gisikdrono_backup`, and `backup_reader` is its only membership;
+   - `backup_reader` belongs to no role;
+   - the role is not a superuser, cannot create roles or databases, cannot replicate, and holds neither `pg_read_all_data` nor `pg_write_all_data`.
+
+   CI's db job makes such a role on the local stack and runs the same `pg_dump` and snapshot as it, so a change that breaks either fails there first. If Supabase refuses the attribute or the grant, stop and record it here. Never dump as `postgres` instead.
 5. **The connection string.** Use the session pooler: Connect > Session pooler, port 5432. Put the role and the ref in the user, `gisikdrono_backup.<ref>`, and leave out `sslmode` or set `sslmode=verify-full`. GitHub's runners have IPv4 only, and the direct host `db.<ref>.supabase.co` answers on IPv6 only. Check on the first run that the pooler's certificate verifies against the committed one; if it does not, stop and record it, never lower `PGSSLMODE`.
 6. **Network restrictions.** Production's network restriction (DB-06) is deferred until a runner with a fixed egress address, or a self-hosted runner, exists (Task P5.8.02, Security.md DB-06). Until then the job reaches the database through the pooler with the role's own password and verified TLS.
 
@@ -65,11 +80,11 @@ It never goes into `gisikdrono-staging`, which holds no real visitor data. It ne
    - the Vault marker (`internal.environment()` must answer `production`).
 
    The summary names the object, its size and its sha256. After go-live a failed run is an incident: rerun it, and open `docs/runbooks/cron.md` if it fails twice.
-10. **"permission denied for table auth.<name>".** A Supabase upgrade added a table to `auth`, and `pg_dump` cannot read it (third review of PR #98, L-b). Never grant the role anything by hand. Classify the table in a pull request:
-    - if its rows are part of a staff account, add it to the copied list: a new migration granting `backup_reader` SELECT on it, and pgTAP `backup_reader.sql`;
-    - otherwise add it to the left-out list: an `--exclude-table` in `backup.yml` and the pgTAP list, which `scripts/backup-auth-tables.test.mjs` keeps equal.
+10. **A new table in `auth`.** A Supabase upgrade can add a table to `auth`. pgTAP `backup_reader.sql` then fails on the next pull request, since the table is in neither of its lists (third review of PR #98, L-b). Never grant the role anything by hand. Classify the table in a pull request:
+    - **Its rows belong to a staff account:** add the table to `internal.backup_auth_snapshot()` in a new migration, and to pgTAP's copied list. `scripts/backup-auth-tables.test.mjs` keeps the two equal.
+    - **Otherwise:** add it to pgTAP's never-backed-up list.
 
-    Then run the workflow by hand. Until that pull request merges, no backup is taken, so treat it as urgent.
+    Until that pull request merges, the snapshot leaves the new table out, so treat it as urgent if staff accounts depend on it.
 
 The backup password, the R2 token and the age key pair are rotated as `docs/runbooks/rotate-keys.md` says.
 
@@ -77,8 +92,16 @@ The backup password, the R2 token and the age key pair are rotated as `docs/runb
 
 1. Find the object: `aws s3 ls s3://<bucket>/postgres/ --endpoint-url https://<account id>.r2.cloudflarestorage.com`. Use a read-only R2 token of your own, never the job's.
 2. Download it. Compare its `sha256sum` with the object's `sha256` metadata (`aws s3api head-object ...`) and with the job summary.
-3. Decrypt onto the machine's encrypted disk: `age --decrypt -i <private key file> -o backup.dump <object>.dump.age`. The plain dump never leaves that disk. Delete it when the drill or the restore ends (part D).
-4. Check that it reads: `pg_restore --list backup.dump > /dev/null`.
+3. Unpack it: `tar --extract --file <object>.tar`. That gives `public.dump.age` and `auth-snapshot.json.age`, both still encrypted.
+4. Decrypt onto the machine's encrypted disk:
+
+   ```bash
+   age --decrypt -i <private key file> -o public.dump public.dump.age
+   age --decrypt -i <private key file> -o auth-snapshot.json auth-snapshot.json.age
+   ```
+
+   The plain files never leave that disk. Delete them when the drill or the restore ends (part D).
+5. Check that both read: `pg_restore --list public.dump > /dev/null`, and `jq 'keys' auth-snapshot.json` lists the five tables.
 
 ## C. The quarterly drill (local stack, vault holder's machine)
 
@@ -109,10 +132,10 @@ The drill restores production data onto the vault holder's own machine and nowhe
    $$;
    ```
 
-4. **Load `public`, never `auth`.** `auth` is restored only in a real production restore (part E). `profiles` loads without its `auth.users` rows because the triggers, foreign keys included, are off.
+4. **Load `public`, never `auth`.** The snapshot is loaded only in a real production restore (part E). `profiles` loads without its `auth.users` rows because the triggers, foreign keys included, are off.
 
    ```bash
-   pg_restore --data-only --schema=public --file=data.sql backup.dump
+   pg_restore --data-only --schema=public --file=data.sql public.dump
    psql "$LOCAL_DB_URL" --single-transaction -v ON_ERROR_STOP=1 \
      -c 'set session_replication_role = replica' -f data.sql
    ```
@@ -143,7 +166,7 @@ Before go-live, run it once against the first real backup, so part E has been do
 
 1. **Remove the local copy.** Run `supabase stop --no-backup` in the drill checkout, so no volume keeps production rows.
 2. **Delete what the run left.** Delete `test-results/`, `playwright-report/` and any Playwright trace of the drill checkout, since they hold production rows on screen. Then remove the checkout: `git worktree remove ../gisikdrono-drill`.
-3. **Delete the files.** Delete `backup.dump`, `data.sql` and the downloaded object from the vault holder's machine.
+3. **Delete the files.** Delete `public.dump`, `auth-snapshot.json`, the two `.age` files, `data.sql` and the downloaded object from the vault holder's machine.
 4. **Record the drill** below, and in the quarterly review minutes (Security.md §13.2).
 
 ## E. A real restore of production
@@ -163,8 +186,33 @@ Use this when Supabase's own daily backups (or PITR) cannot help: the project or
 
    The dump never holds the Vault, and `internal.call_job` needs all four.
 4. **Pause cron, and check it,** as in part C, step 2.
-5. **Empty `public` and `auth`.** Empty `public` as in part C, step 3. In the same session, empty every table of the new project's `auth` except `schema_migrations` and `instances` (delta review N6), the same way with `auth.%I`. Those two are the new Auth server's own bookkeeping; the backup leaves out their data, so the new project keeps its own.
-6. **Load `public` and `auth`.** Run `pg_restore --data-only --schema=public --schema=auth`, then load the file as in part C, step 4, into the new project. The tables whose data the backup left out load nothing.
+5. **Empty `public` and `auth`.** Empty `public` as in part C, step 3. In the same session, empty every table of the new project's `auth` except `schema_migrations` and `instances` (delta review N6), the same way with `auth.%I`. Those two are the new Auth server's own bookkeeping, which no backup holds, so the new project keeps its own.
+6. **Load `public` and the staff accounts.**
+   - Load `public` from `public.dump` as in part C, step 4.
+   - Then, in psql as `postgres` with the triggers still off, load the snapshot. Each table takes its columns from the new project, so a generated column is left to Postgres:
+
+   ```sql
+   \set snapshot `cat auth-snapshot.json`
+   select set_config('restore.snapshot', :'snapshot', false);
+   set session_replication_role = replica;
+   do $$
+   declare
+     snapshot jsonb := current_setting('restore.snapshot')::jsonb;
+     t text;
+     columns text;
+   begin
+     foreach t in array array['users', 'identities', 'sso_providers', 'sso_domains', 'saml_providers'] loop
+       select string_agg(quote_ident(c.column_name), ', ' order by c.ordinal_position) into columns
+       from information_schema.columns c
+       where c.table_schema = 'auth' and c.table_name = t and c.is_generated = 'NEVER';
+       execute format('insert into auth.%I (%s) select %s from jsonb_populate_recordset(null::auth.%I, $1 -> %L)',
+                      t, columns, columns, t, t) using snapshot;
+     end loop;
+   end;
+   $$;
+   ```
+
+     The block reads the file's content through `restore.snapshot`, and loads `users` before the tables that point at them.
 7. **Clear the tokens on the staff accounts** (delta review L3). The backup keeps `auth.users` whole, including tokens a mail or a phone change had sent:
 
    ```sql

@@ -1,16 +1,21 @@
 name: Weekly database backup
 
 # Task P5.5.04 (docs/Security.md §7.8, RES-01, DB-07; docs/runbooks/restore-drills.md): an encrypted copy of the
-# production database lives outside Supabase, in a private Cloudflare R2 bucket. pg_dump --format=custom of public and
-# auth, all any restore loads, runs as the login role gisikdrono_backup of the group backup_reader
-# (20261104230000_backup_reader.sql), never as postgres, and streams through age to BACKUP_AGE_PUBLIC_KEY, so no plain
-# copy touches the runner's disk; only the vault holds the private key, and CI never decrypts. Before anything is
-# dumped the job checks the URL's project against the pinned repository variable PRODUCTION_PROJECT_REF, that the
-# connection is that role and holds no power, and the database's own Vault marker (internal.environment() =
-# production); no access token is involved. The upload
-# is read back and compared before the job passes. It runs only once PRODUCTION_BACKUP_ENABLED is 'true' (set at
-# go-live); from then on a missing secret fails the run. The credentials live in the GitHub environment
-# "production-backup" (main only, no reviewers, so the weekly run never waits), each handed to the step that needs it.
+# production database lives outside Supabase, in a private Cloudflare R2 bucket. Each backup is one tar of two age
+# files:
+#   public.dump.age           pg_dump --format=custom of public, the one schema the backup role really uses
+#   auth-snapshot.json.age    internal.backup_auth_snapshot(): the rows of the five auth tables a restore needs
+#                             (fourth review of PR #98, H1 and H2: the role has no USAGE on auth, so auth never goes
+#                             through pg_dump)
+# Both run as the login role gisikdrono_backup of the group backup_reader (20261104230000_backup_reader.sql), never as
+# postgres, and stream through age to BACKUP_AGE_PUBLIC_KEY, so no plain copy touches the runner's disk; only the vault
+# holds the private key, and CI never decrypts. Before anything is read the job checks the URL's project against the
+# pinned repository variable PRODUCTION_PROJECT_REF, that the connection is that role and holds no power, and the
+# database's own Vault marker (internal.environment() = production); no access token is involved. Every connection
+# takes libpq's variables in its own step, never a URL with its password in a process's arguments (L1). The upload is
+# read back and compared before the job passes. It runs only once PRODUCTION_BACKUP_ENABLED is 'true' (set at go-live);
+# from then on a missing secret fails the run. The credentials live in the GitHub environment "production-backup"
+# (main only, no reviewers, so the weekly run never waits), each handed to the step that needs it.
 on:
   schedule:
     - cron: '0 19 * * 6' # Sunday 02:00 WIB
@@ -38,8 +43,13 @@ jobs:
       PGSSLROOTCERT: supabase/certs/prod-ca-2021.crt
       # The production database runs Postgres 17 (supabase/config.toml major_version).
       PG_BIN: /usr/lib/postgresql/17/bin
-      ENCRYPTED_FILE: backup.dump.age
-      VERIFY_FILE: verify.dump.age
+      DUMP_FILE: public.dump.age
+      SNAPSHOT_FILE: auth-snapshot.json.age
+      ARCHIVE_FILE: backup.tar
+      VERIFY_FILE: verify.tar
+      # The schema of public alone, with every function the migrations define, is far larger than this; a dump below it
+      # means pg_dump saw almost nothing, and the run fails rather than keep it (fourth review of PR #98, L3).
+      MIN_DUMP_BYTES: 262144
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -77,13 +87,17 @@ jobs:
           sudo apt-get install -y -qq postgresql-client-17
       # The connection is the backup role and nothing stronger (delta review of PR #98, N2; third review, L-a): its one
       # membership is backup_reader, which belongs to no role itself, and neither reaches pg_read_all_data or
-      # pg_write_all_data. The database says it is production (the Vault secret of 0007, read through the one internal
-      # function the role may call). Every comparison happens in the database.
+      # pg_write_all_data. The database says it is production (the Vault secret of 0007, read through the internal
+      # function the role may call), and the snapshot answers with at least one staff account. Every comparison
+      # happens in the database.
       - name: The role is the backup role and the database is production
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
-          answer="$("$PG_BIN/psql" "$SUPABASE_DB_URL" --no-psqlrc --tuples-only --no-align -v ON_ERROR_STOP=1 -c "
+          set -euo pipefail
+          connection="$(node scripts/supabase-db-url.mjs --libpq --backup <<< "$SUPABASE_DB_URL")"
+          eval "$connection"
+          answer="$("$PG_BIN/psql" --no-psqlrc --tuples-only --no-align -v ON_ERROR_STOP=1 -c "
             select (current_user = 'gisikdrono_backup'
                     and array(select g.rolname::text from pg_auth_members m join pg_roles g on g.oid = m.roleid
                               where m.member = r.oid) = array['backup_reader']
@@ -92,21 +106,26 @@ jobs:
                     and not pg_has_role(current_user, 'pg_write_all_data', 'member')
                     and not r.rolsuper and not r.rolcreaterole and not r.rolcreatedb and not r.rolreplication)::text
                    || ',' || coalesce(internal.environment() = 'production', false)::text
+                   || ',' || (jsonb_array_length(internal.backup_auth_snapshot() -> 'users') > 0)::text
             from pg_roles r where r.rolname = current_user")"
-          if [ "${answer%%,*}" != "true" ]; then
+          IFS=',' read -r is_backup_role is_production has_staff <<< "$answer"
+          if [ "$is_backup_role" != "true" ]; then
             echo "::error::The connection is not gisikdrono_backup in backup_reader alone, without other powers; nothing was dumped"
             exit 1
           fi
-          if [ "${answer##*,}" != "true" ]; then
+          if [ "$is_production" != "true" ]; then
             echo "::error::The database's Vault marker is not production; nothing was dumped"
             exit 1
           fi
-      # Custom format, public and auth only, owners and grants left out. Every auth table but the staff accounts, their
-      # identities and the SSO settings is left out whole (review of PR #98, M1, delta N6 and L3, third review D1, the
-      # same list as pgTAP backup_reader.sql): pg_dump neither reads nor locks them, the role may not select them, and
-      # every restore is data-only after the migrations, so their DDL is never needed. After a real restore staff sign
-      # in again and enrol a new authenticator (restore-drills.md, part E). An age X25519 recipient is age1 and 58 bech32 characters; a private key never fits.
-      - name: Dump and encrypt
+          if [ "$has_staff" != "true" ]; then
+            echo "::error::The auth snapshot holds no staff account; nothing was dumped"
+            exit 1
+          fi
+      # Custom format, public only, owners and grants left out, then the auth snapshot: the rows of auth.users,
+      # identities, sso_providers, sso_domains and saml_providers and nothing else of auth (reviews of PR #98: M1, delta
+      # N6 and L3, third D1, fourth H1 and H2). After a real restore staff sign in again and enrol a new authenticator
+      # (restore-drills.md, part E). An age X25519 recipient is age1 and 58 bech32 characters; a private key never fits.
+      - name: Dump, snapshot and encrypt
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           BACKUP_AGE_PUBLIC_KEY: ${{ secrets.BACKUP_AGE_PUBLIC_KEY }}
@@ -116,20 +135,25 @@ jobs:
             echo "::error::BACKUP_AGE_PUBLIC_KEY is not an age public key (age1...)"
             exit 1
           fi
-          "$PG_BIN/pg_dump" --format=custom --no-owner --no-privileges --schema=public --schema=auth \
-            --exclude-table=auth.refresh_tokens --exclude-table=auth.sessions \
-            --exclude-table=auth.one_time_tokens --exclude-table=auth.flow_state \
-            --exclude-table=auth.mfa_challenges --exclude-table=auth.mfa_factors \
-            --exclude-table=auth.mfa_amr_claims --exclude-table=auth.saml_relay_states \
-            --exclude-table=auth.audit_log_entries --exclude-table=auth.schema_migrations \
-            --exclude-table=auth.instances --exclude-table='auth.oauth_*' \
-            --exclude-table='auth.webauthn_*' --exclude-table=auth.custom_oauth_providers \
-            "$SUPABASE_DB_URL" \
-            | age --recipient "$BACKUP_AGE_PUBLIC_KEY" > "$ENCRYPTED_FILE"
-          if [ "$(head -c 21 "$ENCRYPTED_FILE")" != "age-encryption.org/v1" ]; then
-            echo "::error::The backup is not an age file"
+          connection="$(node scripts/supabase-db-url.mjs --libpq --backup <<< "$SUPABASE_DB_URL")"
+          eval "$connection"
+          "$PG_BIN/pg_dump" --format=custom --no-owner --no-privileges --schema=public \
+            | age --recipient "$BACKUP_AGE_PUBLIC_KEY" > "$DUMP_FILE"
+          "$PG_BIN/psql" --no-psqlrc --tuples-only --no-align -v ON_ERROR_STOP=1 \
+            -c 'select internal.backup_auth_snapshot()' \
+            | age --recipient "$BACKUP_AGE_PUBLIC_KEY" > "$SNAPSHOT_FILE"
+          for file in "$DUMP_FILE" "$SNAPSHOT_FILE"; do
+            if [ "$(head -c 21 "$file")" != "age-encryption.org/v1" ]; then
+              echo "::error::$file is not an age file"
+              exit 1
+            fi
+          done
+          if [ "$(stat -c %s "$DUMP_FILE")" -lt "$MIN_DUMP_BYTES" ]; then
+            echo "::error::The dump of public is smaller than $MIN_DUMP_BYTES bytes; nothing was uploaded"
             exit 1
           fi
+          # Ciphertext only goes into the archive.
+          tar --create --file "$ARCHIVE_FILE" "$DUMP_FILE" "$SNAPSHOT_FILE"
       - name: Upload to R2 and read it back
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -149,16 +173,16 @@ jobs:
             fi
           done
           endpoint="https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
-          key="postgres/$(date -u +%Y-%m-%dT%H%MZ).dump.age"
-          checksum="$(sha256sum "$ENCRYPTED_FILE" | cut -d' ' -f1)"
-          aws s3 cp "$ENCRYPTED_FILE" "s3://$R2_BUCKET/$key" --endpoint-url "$endpoint" \
+          key="postgres/$(date -u +%Y-%m-%dT%H%MZ).tar"
+          checksum="$(sha256sum "$ARCHIVE_FILE" | cut -d' ' -f1)"
+          aws s3 cp "$ARCHIVE_FILE" "s3://$R2_BUCKET/$key" --endpoint-url "$endpoint" \
             --metadata "sha256=$checksum" --only-show-errors
           aws s3 cp "s3://$R2_BUCKET/$key" "$VERIFY_FILE" --endpoint-url "$endpoint" --only-show-errors
           if [ "$(sha256sum "$VERIFY_FILE" | cut -d' ' -f1)" != "$checksum" ]; then
             echo "::error::The object in R2 differs from the backup that was uploaded"
             exit 1
           fi
-          echo "Backup $key: $(stat -c %s "$ENCRYPTED_FILE") bytes, sha256 $checksum" >> "$GITHUB_STEP_SUMMARY"
+          echo "Backup $key: $(stat -c %s "$ARCHIVE_FILE") bytes, sha256 $checksum" >> "$GITHUB_STEP_SUMMARY"
       - name: Remove the local copies
         if: always()
-        run: rm -f "$ENCRYPTED_FILE" "$VERIFY_FILE"
+        run: rm -f "$DUMP_FILE" "$SNAPSHOT_FILE" "$ARCHIVE_FILE" "$VERIFY_FILE"

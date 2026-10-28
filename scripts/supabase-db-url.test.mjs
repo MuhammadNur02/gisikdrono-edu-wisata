@@ -3,8 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   escapeCommandValue,
   githubEnvLines,
+  libpqExports,
   parseSupabaseDbUrl,
-  requireBackupUser,
+  requireJobRole,
 } from './supabase-db-url.mjs';
 
 const REF = 'abcdefghijklmnopqrst';
@@ -35,7 +36,38 @@ describe('scripts/supabase-db-url.mjs', () => {
       ref: REF,
       password: 'p@ss:w0rd',
       user: 'postgres',
+      host: `db.${REF}.supabase.co`,
+      port: '5432',
+      database: 'postgres',
     });
+  });
+
+  it('refuses any parameter but sslmode, a root certificate or client key above all', () => {
+    for (const query of [
+      '?sslrootcert=/tmp/ca.crt',
+      '?sslcert=x',
+      '?sslkey=x',
+      '?host=evil.example',
+    ]) {
+      expect(() => parseSupabaseDbUrl(dbUrl({ query }))).toThrow(/leave every parameter out/);
+    }
+  });
+
+  it('hands one step libpq variables, quoted for the shell, and no URL', () => {
+    const target = parseSupabaseDbUrl(
+      dbUrl({ user: `gisikdrono_backup.${REF}`, password: "it's $x", host: POOLER_HOST }),
+    );
+    expect(libpqExports(target)).toBe(
+      [
+        "export PGHOST='aws-0-ap-southeast-1.pooler.supabase.com'",
+        "export PGPORT='5432'",
+        "export PGDATABASE='postgres'",
+        `export PGUSER='gisikdrono_backup.${REF}'`,
+        `export PGPASSWORD='it'\\''s $x'`,
+        `export SUPABASE_DB_PASSWORD='it'\\''s $x'`,
+        '',
+      ].join(LF),
+    );
   });
 
   it('reads the ref of a pooler URL from its user, for the backup role too', () => {
@@ -45,15 +77,17 @@ describe('scripts/supabase-db-url.mjs', () => {
     expect(parseSupabaseDbUrl(backup).ref).toBe(REF);
   });
 
-  it('lets the backup connect as gisikdrono_backup only', () => {
-    const backup = parseSupabaseDbUrl(
-      dbUrl({ user: `gisikdrono_backup.${REF}`, host: POOLER_HOST }),
-    );
-    expect(() => requireBackupUser(backup)).not.toThrow();
+  it('lets the backup connect as gisikdrono_backup and the release as postgres, nothing else', () => {
+    const urlOf = (user) => parseSupabaseDbUrl(dbUrl({ user, host: POOLER_HOST }));
+    expect(() => requireJobRole(urlOf(`gisikdrono_backup.${REF}`), '--backup')).not.toThrow();
+    expect(() => requireJobRole(urlOf(`postgres.${REF}`), '--release')).not.toThrow();
     for (const user of [`postgres.${REF}`, `gisikdrono_backupx.${REF}`, `backup_reader.${REF}`]) {
-      const other = parseSupabaseDbUrl(dbUrl({ user, host: POOLER_HOST }));
-      expect(() => requireBackupUser(other)).toThrow(/gisikdrono_backup/);
+      expect(() => requireJobRole(urlOf(user), '--backup')).toThrow(/gisikdrono_backup/);
     }
+    expect(() => requireJobRole(urlOf(`gisikdrono_backup.${REF}`), '--release')).toThrow(
+      /postgres/,
+    );
+    expect(() => requireJobRole(urlOf(`postgres.${REF}`), '--ref-only')).toThrow(/unknown job/);
   });
 
   it('accepts sslmode=verify-full and refuses a weaker one', () => {
@@ -96,15 +130,8 @@ describe('scripts/supabase-db-url.mjs', () => {
     expect(messages.join(' ')).not.toContain(password);
   });
 
-  it('masks the password before it hands it to the later steps', () => {
+  it('masks the password and hands the job the ref alone', () => {
     expect(githubEnvLines({ ref: REF, password: 'fixture' })).toEqual({
-      log: `::add-mask::fixture${LF}`,
-      env: `PROJECT_REF=${REF}${LF}SUPABASE_DB_PASSWORD=fixture${LF}`,
-    });
-  });
-
-  it('masks the password but hands on the ref alone for the backup', () => {
-    expect(githubEnvLines({ ref: REF, password: 'fixture' }, { refOnly: true })).toEqual({
       log: `::add-mask::fixture${LF}`,
       env: `PROJECT_REF=${REF}${LF}`,
     });

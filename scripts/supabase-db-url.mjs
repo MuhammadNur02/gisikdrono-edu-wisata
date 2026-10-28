@@ -19,6 +19,9 @@ const POOLER_USER = /^[a-z_][a-z0-9_]*\.([a-z]{20})$/;
 const VERIFIED_SSL_MODE = 'verify-full';
 // The backup's login role (restore-drills.md, part A; 20261104230000_backup_reader.sql).
 const BACKUP_LOGIN_ROLE = 'gisikdrono_backup';
+// The session pooler's port and Supabase's one database, when the URL leaves them out.
+const DEFAULT_PORT = '5432';
+const DEFAULT_DATABASE = 'postgres';
 // A value in a workflow command is escaped as GitHub's runner unescapes it, so a % in a password masks itself.
 const COMMAND_ESCAPES = [
   ['%', '%25'],
@@ -60,24 +63,65 @@ export function parseSupabaseDbUrl(value) {
   if (url.protocol !== 'postgresql:' && url.protocol !== 'postgres:') {
     throw new Error('SUPABASE_DB_URL is not a postgresql:// URL');
   }
+  requireOnlySslMode(url);
+  return {
+    ref: projectRefOf(url),
+    password: passwordOf(url),
+    user: decodeURIComponent(url.username),
+    host: url.hostname,
+    port: url.port || DEFAULT_PORT,
+    database: decodeURIComponent(url.pathname.replace(/^\//, '')) || DEFAULT_DATABASE,
+  };
+}
+
+// The one parameter a URL may carry is sslmode=verify-full: a root certificate, client certificate or key named in
+// the URL would override the pinned CA the job checks against (fourth review of PR #98, info).
+function requireOnlySslMode(url) {
+  for (const key of url.searchParams.keys()) {
+    if (key !== 'sslmode')
+      throw new Error(`SUPABASE_DB_URL carries ${key}; leave every parameter out`);
+  }
   const sslMode = url.searchParams.get('sslmode');
   if (sslMode !== null && sslMode !== VERIFIED_SSL_MODE) {
     throw new Error(
       `SUPABASE_DB_URL asks for sslmode=${sslMode}; leave it out or use ${VERIFIED_SSL_MODE}`,
     );
   }
-  return {
-    ref: projectRefOf(url),
-    password: passwordOf(url),
-    user: decodeURIComponent(url.username),
-  };
 }
 
-// The backup connects as its own login role only (delta review of PR #98, N2): a URL of postgres, or of any other
-// role, stops the job before it reaches the database.
-export function requireBackupUser({ user }) {
-  if (!user.startsWith(`${BACKUP_LOGIN_ROLE}.`)) {
-    throw new Error(`SUPABASE_DB_URL is not the pooler URL of ${BACKUP_LOGIN_ROLE}.<ref>`);
+function shellQuote(value) {
+  return `'${value.split("'").join(`'\\''`)}'`;
+}
+
+// libpq's own variables for one step's shell (fourth review of PR #98, L1): psql, pg_dump and the Supabase CLI then
+// run without a URL, so the password never sits in a process's arguments, and it lives only as long as that step.
+// SUPABASE_DB_PASSWORD is the CLI's own name for it.
+export function libpqExports({ host, port, database, user, password }) {
+  const variables = {
+    PGHOST: host,
+    PGPORT: port,
+    PGDATABASE: database,
+    PGUSER: user,
+    PGPASSWORD: password,
+    SUPABASE_DB_PASSWORD: password,
+  };
+  return Object.entries(variables)
+    .map(
+      ([name, value]) => `export ${name}=${shellQuote(value)}
+`,
+    )
+    .join('');
+}
+
+// Each job connects as its own role only (delta review of PR #98, N2): the backup as gisikdrono_backup, the release
+// as postgres. A URL of any other role stops the job before it reaches the database.
+const ROLE_BY_JOB = { '--backup': BACKUP_LOGIN_ROLE, '--release': 'postgres' };
+
+export function requireJobRole({ user }, job) {
+  const role = ROLE_BY_JOB[job];
+  if (role === undefined) throw new Error(`unknown job ${String(job)}; use --backup or --release`);
+  if (user !== role && !user.startsWith(`${role}.`)) {
+    throw new Error(`SUPABASE_DB_URL is not the pooler URL of ${role}.<ref>`);
   }
 }
 
@@ -85,39 +129,56 @@ export function escapeCommandValue(value) {
   return COMMAND_ESCAPES.reduce((escaped, [raw, code]) => escaped.split(raw).join(code), value);
 }
 
-// GitHub's workflow commands: the mask goes to the log before the value reaches any later step. With refOnly (the
-// backup, whose steps take the URL itself) the password is masked but not handed on to every later step.
-export function githubEnvLines({ ref, password }, { refOnly = false } = {}) {
-  const passwordLine = refOnly ? '' : `SUPABASE_DB_PASSWORD=${password}\n`;
+// GitHub's workflow commands: the mask goes to the log before the value reaches any later step, and only the ref is
+// handed on to the job; each step that connects takes its own --libpq variables.
+export function githubEnvLines({ ref, password }) {
   return {
-    log: `::add-mask::${escapeCommandValue(password)}\n`,
-    env: `PROJECT_REF=${ref}\n${passwordLine}`,
+    log: `::add-mask::${escapeCommandValue(password)}
+`,
+    env: `PROJECT_REF=${ref}
+`,
   };
 }
 
 const STDIN = 0;
-// backup.yml's call (third review of PR #98, I3): the URL must be the backup role's, and only the ref is handed on.
-const BACKUP_OPTION = '--backup';
+// A step's own connection (fourth review of PR #98, L1):
+//   connection="$(node scripts/supabase-db-url.mjs --libpq --backup <<< "$SUPABASE_DB_URL")"; eval "$connection"
+const LIBPQ_OPTION = '--libpq';
 
-function main() {
+function readUrl() {
   const value = readFileSync(STDIN, 'utf8').trim();
-  const [envFile, option] = process.argv.slice(2);
   if (!value) throw new Error('SUPABASE_DB_URL is not set in this GitHub environment');
+  return parseSupabaseDbUrl(value);
+}
+
+function writeLibpqExports(job) {
+  const target = readUrl();
+  requireJobRole(target, job);
+  process.stdout.write(libpqExports(target));
+}
+
+// The first step of a job (third review of PR #98, I3): node scripts/supabase-db-url.mjs "$GITHUB_ENV" --backup.
+function writeGithubEnv(envFile, job) {
   if (!envFile) throw new Error('name the GITHUB_ENV file; run this inside a GitHub Actions job');
-  if (option !== undefined && option !== BACKUP_OPTION) throw new Error(`unknown option ${option}`);
-  const target = parseSupabaseDbUrl(value);
-  const isBackup = option === BACKUP_OPTION;
-  if (isBackup) requireBackupUser(target);
-  const lines = githubEnvLines(target, { refOnly: isBackup });
+  const target = readUrl();
+  requireJobRole(target, job);
+  const lines = githubEnvLines(target);
   process.stdout.write(lines.log);
   appendFileSync(envFile, lines.env);
+}
+
+function main() {
+  const [first, job] = process.argv.slice(2);
+  if (first === LIBPQ_OPTION) writeLibpqExports(job);
+  else writeGithubEnv(first, job);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   try {
     main();
   } catch (error) {
-    process.stdout.write(
+    // stderr, so a step that evaluates --libpq's output never runs the message; the runner reads both streams.
+    process.stderr.write(
       `::error::${error instanceof Error ? error.message : 'unreadable SUPABASE_DB_URL'}\n`,
     );
     process.exitCode = 1;

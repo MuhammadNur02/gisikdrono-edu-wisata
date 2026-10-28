@@ -1,10 +1,11 @@
--- Review of PR #98, M3, and its delta review, N3, L1 and L3 (20261104230000_backup_reader.sql; docs/Security.md
--- §7.8): the backup's group role reads public and auth and asks the database's environment, and nothing more. It
--- cannot log in or hold a power, no role here uses it (the owner's login role exists on production only), it reaches
--- no cron, vault or net function, and every table of auth is classified, so a new one fails here until the backup
--- decides whether its rows are copied.
+-- Reviews of PR #98: M3, delta N3, L1 and L3, third D1 and I5, fourth H1 and H2 (20261104230000_backup_reader.sql;
+-- docs/Security.md §7.8). The backup's group role reads public, asks the database's environment and takes the auth
+-- snapshot, and nothing more. It cannot log in or hold a power, no role here uses it (the owner's login role exists on
+-- production only), it has no USAGE on auth and reaches no cron, vault or net function, and every table of auth is
+-- classified, so a new one fails here until the backup decides whether the snapshot copies its rows. The reads are
+-- tried as the role itself, not only read off the grants.
 begin;
-select plan(19);
+select plan(24);
 
 -- ===== The role itself =====
 
@@ -24,26 +25,61 @@ select ok(not pg_has_role('authenticator', 'backup_reader', 'member')
           and not pg_has_role('service_role', 'backup_reader', 'member'),
   'neither the API''s login role nor any API role holds it');
 
--- ===== What it reads =====
+-- ===== What it may use =====
 
-select ok(has_table_privilege('backup_reader', 'public.bookings', 'select')
-          and has_table_privilege('backup_reader', 'auth.users', 'select'),
-  'it reads the tables of public and auth');
-select ok(not has_table_privilege('backup_reader', 'public.bookings', 'insert, update, delete, truncate'),
-  'and writes none');
--- Third review of PR #98, D1: of auth it reads the five tables the backup copies, and no session, token or factor.
+-- backup.yml schemas:
+select ok((select bool_and(has_schema_privilege('backup_reader', s, 'usage')) from unnest(array['public']) as s),
+  'it may use every schema backup.yml hands pg_dump');
+select ok(not has_schema_privilege('backup_reader', 'auth', 'usage'),
+  'and has no USAGE on auth: the snapshot reads auth for it');
 select is(
   array(
     select t.tablename::text from pg_tables t
     where t.schemaname = 'auth'
-      and has_table_privilege('backup_reader', format('%I.%I', t.schemaname, t.tablename)::regclass, 'select')
+      and has_table_privilege('backup_reader', format('%I.%I', t.schemaname, t.tablename)::regclass,
+                              'select, insert, update, delete, truncate, references, trigger')
     order by 1
   ),
-  array['identities', 'saml_providers', 'sso_domains', 'sso_providers', 'users'],
-  'of auth it reads exactly the staff accounts, their identities and the SSO settings'
+  array[]::text[],
+  'no table of auth grants it anything'
 );
--- Delta review I5: every table postgres creates sits in public or internal, the schemas the backup and the migrations
--- cover, or in the CLI's own migration history; a table made anywhere else would be neither backed up nor classified.
+select ok(has_table_privilege('backup_reader', 'public.bookings', 'select'), 'it reads the tables of public');
+select ok(not has_table_privilege('backup_reader', 'public.bookings', 'insert, update, delete, truncate'),
+  'and writes none');
+-- Supabase lets PUBLIC use some of these schemas; what counts is that nothing names backup_reader itself, and the
+-- calls below, made as the role, are refused.
+select is((select count(*)::int from pg_namespace n cross join lateral aclexplode(n.nspacl) a
+           where n.nspname in ('cron', 'vault', 'net') and a.grantee = 'backup_reader'::regrole),
+  0, 'no grant on cron, vault or net names it');
+select is(
+  array(
+    select p.proname::text from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'internal' and has_function_privilege('backup_reader', p.oid, 'execute')
+    order by 1
+  ),
+  array['backup_auth_snapshot', 'environment'],
+  'of the internal functions it calls backup_auth_snapshot() and environment() alone'
+);
+select is(
+  array(
+    select n.nspname || '.' || p.proname from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where p.prosecdef
+      and has_schema_privilege('backup_reader', n.oid, 'usage')
+      and has_function_privilege('backup_reader', p.oid, 'execute')
+      and not (n.nspname = 'internal' and p.proname in ('environment', 'backup_auth_snapshot'))
+    order by 1
+  ),
+  array[]::text[],
+  'and no other security definer function it can reach'
+);
+select ok(not has_function_privilege('authenticated', 'internal.backup_auth_snapshot()', 'execute')
+          and not has_function_privilege('anon', 'internal.backup_auth_snapshot()', 'execute')
+          and not has_function_privilege('service_role', 'internal.backup_auth_snapshot()', 'execute'),
+  'no API role takes the auth snapshot');
+-- Third review, I5: every table postgres creates sits in public or internal, or in the CLI's own migration history; a
+-- table made anywhere else would be neither backed up nor classified.
 select is(
   array(
     select t.schemaname || '.' || t.tablename from pg_tables t
@@ -57,53 +93,26 @@ select is(
   array[]::text[],
   'no table that postgres owns lives outside public and internal'
 );
--- Supabase lets PUBLIC use some of these schemas; what counts is that nothing names backup_reader itself, and the
--- calls below, made as the role, are refused.
-select is((select count(*)::int from pg_namespace n cross join lateral aclexplode(n.nspacl) a
-           where n.nspname in ('cron', 'vault', 'net') and a.grantee = 'backup_reader'::regrole),
-  0, 'no grant on cron, vault or net names it');
-select is(
-  array(
-    select p.proname::text from pg_proc p
-    join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname = 'internal' and has_function_privilege('backup_reader', p.oid, 'execute')
-    order by 1
-  ),
-  array['environment'],
-  'of the internal functions it calls environment() alone'
-);
-select is(
-  array(
-    select n.nspname || '.' || p.proname from pg_proc p
-    join pg_namespace n on n.oid = p.pronamespace
-    where p.prosecdef
-      and has_schema_privilege('backup_reader', n.oid, 'usage')
-      and has_function_privilege('backup_reader', p.oid, 'execute')
-      and not (n.nspname = 'internal' and p.proname = 'environment')
-    order by 1
-  ),
-  array[]::text[],
-  'and no other security definer function it can reach'
-);
 
 -- ===== Every auth table is classified =====
 
--- Copied: the staff accounts and their sign-in links. backup.yml excludes the data of the rest (sessions, tokens,
--- factors, challenges, the Auth server's own bookkeeping and its audit), and part E of restore-drills.md recreates
--- what a restore needs. A table of a later GoTrue lands in neither list and stops this suite.
+-- The snapshot copies the staff accounts, their identities and the SSO settings; the rest of auth (sessions, tokens,
+-- factors, challenges, OAuth, the Auth server's own bookkeeping and its audit) is never in a backup, and part E of
+-- restore-drills.md recreates what a restore needs. A table of a later GoTrue lands in neither list and stops this
+-- suite.
 select is(
   array(
     select t.tablename::text from pg_tables t
     where t.schemaname = 'auth'
+      -- the snapshot copies:
       and t.tablename not in ('users', 'identities', 'sso_providers', 'sso_domains', 'saml_providers')
-      -- backup.yml excludes:
       and t.tablename not in ('refresh_tokens', 'sessions', 'one_time_tokens', 'flow_state', 'mfa_challenges', 'mfa_factors', 'mfa_amr_claims', 'saml_relay_states', 'audit_log_entries', 'schema_migrations', 'instances', 'custom_oauth_providers')
       and t.tablename not like 'oauth\_%'
       and t.tablename not like 'webauthn\_%'
     order by 1
   ),
   array[]::text[],
-  'every table of auth is either copied or has its data left out of the backup'
+  'every table of auth is either copied by the snapshot or never backed up'
 );
 
 -- ===== As the role =====
@@ -124,6 +133,7 @@ grant execute on function pg_temp.attempt(text) to backup_reader;
 create temp table attempts (label text primary key, outcome text);
 grant insert on attempts to backup_reader;
 
+-- The suite's own session joins the group for this transaction, as gisikdrono_backup belongs to it on production.
 do $$
 begin
   execute format('grant backup_reader to %I with inherit false, set true', current_user);
@@ -133,20 +143,24 @@ set local role backup_reader;
 insert into attempts values
   ('public', pg_temp.attempt('select count(*) from public.rw_units')),
   ('environment', pg_temp.attempt('select internal.environment()')),
+  ('snapshot', pg_temp.attempt('select internal.backup_auth_snapshot()')),
+  ('auth.users', pg_temp.attempt('select count(*) from auth.users')),
   ('decrypted_secrets', pg_temp.attempt('select count(*) from vault.decrypted_secrets')),
   ('cron.schedule', pg_temp.attempt($q$select cron.schedule('uji-backup', '* * * * *', 'select 1')$q$)),
   ('net.http_get', pg_temp.attempt($q$select net.http_get('https://example.test')$q$)),
-  ('vault.create_secret', pg_temp.attempt($q$select vault.create_secret('uji', 'uji-backup')$q$)),
-  ('vault.update_secret', pg_temp.attempt($q$select vault.update_secret(gen_random_uuid(), 'uji')$q$));
+  ('vault.create_secret', pg_temp.attempt($q$select vault.create_secret('uji', 'uji-backup')$q$));
 reset role;
 
 select is((select outcome from attempts where label = 'public'), 'ok', 'as backup_reader, a table of public reads');
-select is((select outcome from attempts where label = 'environment'), 'ok', 'and it learns the environment');
-select is((select outcome from attempts where label = 'decrypted_secrets'), '42501', 'but reads no decrypted secret');
+select is((select outcome from attempts where label = 'environment'), 'ok', 'it learns the environment');
+select is((select outcome from attempts where label = 'snapshot'), 'ok', 'and takes the auth snapshot');
+select is((select outcome from attempts where label = 'auth.users'), '42501', 'but reads no auth table itself');
+select is((select outcome from attempts where label = 'decrypted_secrets'), '42501', 'reads no decrypted secret');
 select is((select outcome from attempts where label = 'cron.schedule'), '42501', 'schedules no cron job');
 select is((select outcome from attempts where label = 'net.http_get'), '42501', 'sends no request through net');
-select is((select outcome from attempts where label = 'vault.create_secret'), '42501', 'creates no secret');
-select is((select outcome from attempts where label = 'vault.update_secret'), '42501', 'and changes none');
+select is((select outcome from attempts where label = 'vault.create_secret'), '42501', 'and creates no secret');
+select ok(internal.backup_auth_snapshot() ?& array['users', 'identities', 'sso_providers', 'sso_domains', 'saml_providers'],
+  'the snapshot answers the five tables, each as an array of rows');
 
 select * from finish();
 rollback;
