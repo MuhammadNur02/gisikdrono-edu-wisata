@@ -237,9 +237,10 @@ $$;
 revoke execute on function internal.expected_midtrans_status(public.payments, bigint)
   from public, anon, authenticated, service_role;
 
--- The looks the run compares: Midtrans' 404s, and the answers no later event of the order superseded and the payment
--- has not moved on from since apply_payment_event processed them (its own write of the answer is no move; delta review
--- of PR #105, M-A). Only these take their payment's turn (L-2).
+-- The looks the run compares: Midtrans' 404s, and the answers no later event of the order superseded. The payment's
+-- own updated_at is no test (third delta review of PR #105): lookAtOrder hands back the first event of a byte-identical
+-- answer, and a payment changed on our side since (a bank-transfer refund, the poll's last_polled_at) would otherwise be
+-- skipped every night. Only these take their payment's turn (L-2) and count as checked.
 create function internal.compared_looks(p_looks jsonb)
   returns table (payment_id uuid, outcome text, event_id bigint)
   language sql stable
@@ -253,7 +254,6 @@ as $$
    and e.id = case when l ->> 'event_id' ~ '^[0-9]{1,18}$' then (l ->> 'event_id')::bigint end
   where l ->> 'outcome' = 'not_found'
      or (l ->> 'outcome' = 'answered' and e.id is not null
-         and p.updated_at <= coalesce(e.processed_at, e.received_at)
          and not exists (select 1 from public.payment_events later
                          where later.order_id = p.order_id and later.id > e.id));
 $$;
@@ -550,8 +550,7 @@ begin
   from (select * from internal.reconcile_look_findings(p_looks)
         union all
         select * from internal.reconcile_invariant_findings()) as f;
-  checked := (select count(*) from jsonb_array_elements(p_looks) as l
-              where l ->> 'outcome' in ('answered', 'not_found'))::integer;
+  checked := (select count(*) from internal.compared_looks(p_looks))::integer;
   unanswered := (select count(*) from jsonb_array_elements(p_looks) as l where l ->> 'outcome' = 'unanswered')::integer;
   waiting := internal.orders_not_reconciled(p_looks, 'paid');
   open_not_asked := internal.orders_not_reconciled(p_looks, 'open');

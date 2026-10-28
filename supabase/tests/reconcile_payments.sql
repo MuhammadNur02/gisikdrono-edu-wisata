@@ -9,7 +9,7 @@
 -- critical; only the server runs it, on looks that name the poll events it stored. reconcile_payments_refunds.sql has
 -- the refunds and their invoices.
 begin;
-select plan(42);
+select plan(43);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -316,8 +316,9 @@ select pg_temp.poll_event((select agreeing from orders), 'refund', '600000.00', 
          as superseded_paid;
 select pg_temp.poll_event('GSK-RC0000C1-01', 'settlement', '50000.00', repeat('6', 64)),
        pg_temp.poll_event((select superseded_paid from orders), 'settlement', '600000.00', repeat('1', 64));
--- M-A, with the times a real run has (pgTAP's now() stands still): the open attempt was written when its answer was
--- processed, which is no move; the other open attempt moved on after its answer arrived.
+-- With the times a real run has (pgTAP's now() stands still): the open attempt was written when its answer was
+-- processed, and the other changed on our side after its answer arrived; both are still compared (M-A, third delta
+-- review: only a later event supersedes an answer).
 alter table public.payment_events disable trigger user;
 update public.payment_events set received_at = now() - interval '10 minutes', processed_at = now() - interval '9 minutes'
 where id = (select open_attempt from third_events);
@@ -354,7 +355,8 @@ select is((select details ->> 'midtrans_status' || ':' || (details ->> 'our_stat
   'refund:settled:high', 'a refund Midtrans reports on a payment we hold as settled is a high disagreement');
 select is((select (details ->> 'midtrans_amount')::bigint || ':' || (details ->> 'our_amount')::bigint
            from public.reconciliation_issues
-           where run_id = (select (reply ->> 'run_id')::uuid from third_run) and issue_type = 'amount_mismatch'),
+           where run_id = (select (reply ->> 'run_id')::uuid from third_run) and issue_type = 'amount_mismatch'
+             and details ->> 'order_id' = (select open_attempt from orders)),
   '1:600000', 'an amount Midtrans states otherwise is an amount mismatch, with both figures');
 select is(pg_temp.issues((select booking_id from booking_of where order_id = (select cancelled_with_ticket from orders)),
                          (select (reply ->> 'run_id')::uuid from third_run)),
@@ -366,10 +368,13 @@ select is((select count(*)::int from public.reconciliation_issues
 select is((select count(*)::int from public.reconciliation_turns t join public.payments p on p.id = t.payment_id
            where p.order_id = (select superseded_paid from orders)),
   0, 'and takes no turn: the payment is compared on a later night (L-2)');
-select is((select count(*)::int from public.reconciliation_issues i join public.payments p on p.id = i.payment_id
+select is((select string_agg(i.issue_type, ',') from public.reconciliation_issues i
+           join public.payments p on p.id = i.payment_id
            where i.run_id = (select (reply ->> 'run_id')::uuid from third_run)
              and p.order_id = (select moved_open from orders)),
-  0, 'an answer the payment moved on from after it was processed is not read (M-A)');
+  'amount_mismatch', 'an answer about a payment changed on our side since it arrived is still compared (M-A)');
+select is((select (reply ->> 'payments_checked')::int from third_run), 4,
+  'and the run counts the four looks it compared, not the two superseded ones');
 select is((select (reply ->> 'audit_chain_ok')::boolean || ':' || (reply ->> 'ledger_chain_ok')::boolean
            from third_chains),
   'false:true', 'the run keeps which chain broke');
