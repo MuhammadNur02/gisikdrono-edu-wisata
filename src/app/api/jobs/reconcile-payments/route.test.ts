@@ -13,7 +13,8 @@ vi.mock('@/server/services/payment-reconciliation', () => ({ reconcilePayments: 
 const REPORT = {
   reconciliationRunId: '00000000-0000-4000-8000-00000000a001',
   paymentsChecked: 4,
-  ordersNotChecked: 0,
+  ordersUnanswered: 0,
+  ordersWaiting: 3,
   issuesFound: 1,
   issuesAlreadyOpen: 2,
   ledgerChainOk: true,
@@ -41,7 +42,7 @@ describe('POST /api/jobs/reconcile-payments', () => {
     expect(svcRecordJobRun).not.toHaveBeenCalled();
   });
 
-  it('reconciles and records a successful run in the heartbeat', async () => {
+  it('records a successful run in the heartbeat, orders still waiting their turn included', async () => {
     const response = await post(`Bearer ${sandboxEnv.CRON_SECRET}`);
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject(REPORT);
@@ -51,13 +52,27 @@ describe('POST /api/jobs/reconcile-payments', () => {
     });
   });
 
-  it('records a run that left orders unchecked as failed and answers 503', async () => {
-    vi.mocked(reconcilePayments).mockResolvedValue({ ...REPORT, ordersNotChecked: 2 });
+  it('records a run with an unanswered order as failed and answers 503', async () => {
+    vi.mocked(reconcilePayments).mockResolvedValue({ ...REPORT, ordersUnanswered: 2 });
     expect((await post(`Bearer ${sandboxEnv.CRON_SECRET}`)).status).toBe(503);
     expect(svcRecordJobRun).toHaveBeenCalledWith(expect.anything(), {
       job: 'reconcile-payments',
       succeeded: false,
       errorCode: 'orders_not_checked',
+    });
+  });
+
+  it('records a run that had no time left for the chains as failed', async () => {
+    vi.mocked(reconcilePayments).mockResolvedValue({
+      ...REPORT,
+      ledgerChainOk: null,
+      auditChainOk: null,
+    });
+    expect((await post(`Bearer ${sandboxEnv.CRON_SECRET}`)).status).toBe(503);
+    expect(svcRecordJobRun).toHaveBeenCalledWith(expect.anything(), {
+      job: 'reconcile-payments',
+      succeeded: false,
+      errorCode: 'chains_not_checked',
     });
   });
 

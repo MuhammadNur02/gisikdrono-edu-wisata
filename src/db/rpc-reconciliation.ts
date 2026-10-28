@@ -35,27 +35,26 @@ export type OrderLookOutcome =
   | { orderId: string; outcome: 'not_found' }
   | { orderId: string; outcome: 'unanswered' };
 
-const reportSchema = z
+const paymentsReportSchema = z
   .object({
     run_id: z.uuid(),
     payments_checked: z.int().nonnegative(),
-    orders_not_checked: z.int().nonnegative(),
+    orders_unanswered: z.int().nonnegative(),
+    orders_waiting: z.int().nonnegative(),
     issues_found: z.int().nonnegative(),
     issues_already_open: z.int().nonnegative(),
-    ledger_chain_ok: z.boolean(),
-    audit_chain_ok: z.boolean(),
   })
   .strict();
 
-export interface ReconciliationReport {
+export interface PaymentsReconciled {
   reconciliationRunId: string;
   paymentsChecked: number;
-  // Orders of either window no answer of this run covers; asked again by the next run.
-  ordersNotChecked: number;
+  // Orders whose ask went unanswered: the run fails, and the next one asks again.
+  ordersUnanswered: number;
+  // Orders of either window this run did not reach: their turn comes on a later night.
+  ordersWaiting: number;
   issuesFound: number;
   issuesAlreadyOpen: number;
-  ledgerChainOk: boolean;
-  auditChainOk: boolean;
 }
 
 function lookRowOf(look: OrderLookOutcome) {
@@ -67,8 +66,8 @@ function lookRowOf(look: OrderLookOutcome) {
 export async function svcReconcilePayments(
   adminClient: DatabaseClient,
   looks: readonly OrderLookOutcome[],
-): Promise<ReconciliationReport> {
-  const report = reportSchema.parse(
+): Promise<PaymentsReconciled> {
+  const report = paymentsReportSchema.parse(
     await resultOf(
       adminClient.rpc('svc_reconcile_payments', { p_looks: looks.map((look) => lookRowOf(look)) }),
     ),
@@ -76,10 +75,41 @@ export async function svcReconcilePayments(
   return {
     reconciliationRunId: report.run_id,
     paymentsChecked: report.payments_checked,
-    ordersNotChecked: report.orders_not_checked,
+    ordersUnanswered: report.orders_unanswered,
+    ordersWaiting: report.orders_waiting,
     issuesFound: report.issues_found,
     issuesAlreadyOpen: report.issues_already_open,
+  };
+}
+
+const chainsReportSchema = z
+  .object({
+    ledger_chain_ok: z.boolean(),
+    audit_chain_ok: z.boolean(),
+    issues_found: z.int().nonnegative(),
+    issues_already_open: z.int().nonnegative(),
+  })
+  .strict();
+
+export interface ChainsReconciled {
+  ledgerChainOk: boolean;
+  auditChainOk: boolean;
+  issuesFound: number;
+  issuesAlreadyOpen: number;
+}
+
+// The run's second step: both hash chains walked and kept on the run.
+export async function svcReconcileChains(
+  adminClient: DatabaseClient,
+  reconciliationRunId: string,
+): Promise<ChainsReconciled> {
+  const report = chainsReportSchema.parse(
+    await resultOf(adminClient.rpc('svc_reconcile_chains', { p_run_id: reconciliationRunId })),
+  );
+  return {
     ledgerChainOk: report.ledger_chain_ok,
     auditChainOk: report.audit_chain_ok,
+    issuesFound: report.issues_found,
+    issuesAlreadyOpen: report.issues_already_open,
   };
 }

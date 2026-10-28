@@ -1,18 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 
-import { svcPaymentsToReconcile, svcReconcilePayments } from '@/db/rpc-reconciliation';
+import {
+  svcPaymentsToReconcile,
+  svcReconcileChains,
+  svcReconcilePayments,
+} from '@/db/rpc-reconciliation';
 
 import { clientAnswering } from '../../tests/fixtures/postgrest-client';
 
 const REPLY = {
   run_id: '00000000-0000-4000-8000-00000000a001',
   payments_checked: 2,
-  orders_not_checked: 0,
+  orders_unanswered: 0,
+  orders_waiting: 5,
   issues_found: 1,
   issues_already_open: 3,
-  ledger_chain_ok: true,
-  audit_chain_ok: false,
 };
 
 describe('svcPaymentsToReconcile', () => {
@@ -47,11 +50,10 @@ describe('svcReconcilePayments', () => {
     ).resolves.toEqual({
       reconciliationRunId: REPLY.run_id,
       paymentsChecked: 2,
-      ordersNotChecked: 0,
+      ordersUnanswered: 0,
+      ordersWaiting: 5,
       issuesFound: 1,
       issuesAlreadyOpen: 3,
-      ledgerChainOk: true,
-      auditChainOk: false,
     });
     expect(requests[0]?.url).toBe('http://supabase.test/rest/v1/rpc/svc_reconcile_payments');
     expect(requests[0]?.body).toEqual({
@@ -66,5 +68,29 @@ describe('svcReconcilePayments', () => {
   it('refuses a report of another shape', async () => {
     const { client } = clientAnswering(200, { ...REPLY, issues_found: -1 });
     await expect(svcReconcilePayments(client, [])).rejects.toBeInstanceOf(ZodError);
+  });
+});
+
+describe('svcReconcileChains', () => {
+  it('walks the chains of the run and reads their verdicts', async () => {
+    const { client, requests } = clientAnswering(200, {
+      ledger_chain_ok: true,
+      audit_chain_ok: false,
+      issues_found: 1,
+      issues_already_open: 0,
+    });
+    await expect(svcReconcileChains(client, REPLY.run_id)).resolves.toEqual({
+      ledgerChainOk: true,
+      auditChainOk: false,
+      issuesFound: 1,
+      issuesAlreadyOpen: 0,
+    });
+    expect(requests[0]?.url).toBe('http://supabase.test/rest/v1/rpc/svc_reconcile_chains');
+    expect(requests[0]?.body).toEqual({ p_run_id: REPLY.run_id });
+  });
+
+  it('refuses a report of another shape', async () => {
+    const { client } = clientAnswering(200, { ledger_chain_ok: true });
+    await expect(svcReconcileChains(client, REPLY.run_id)).rejects.toBeInstanceOf(ZodError);
   });
 });

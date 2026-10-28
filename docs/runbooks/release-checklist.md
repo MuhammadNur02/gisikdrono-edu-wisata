@@ -21,7 +21,7 @@ A migration that stops is a release that stops: fix its cause, never edit an app
   ```
 
   The job runs at 02:30 WIB. To see it work at once, run `select internal.call_job('reconcile-payments');` in the SQL editor, which sends the cron bearer from Vault itself, then a minute later check that `last_success_at` moved and `last_error_code` is empty: `select job, last_success_at, last_failure_at, last_error_code from public.job_heartbeats where job = 'reconcile-payments';`
-- **The first run reports what is already wrong.** Every open mismatch on staging becomes a `reconciliation_issues` row on `/dashboard/finance/reconciliation`, and the day's `reconciliation_digest` alert is mailed to `SECURITY_ALERT_EMAIL`. Bookings still waiting under `REVENUE_RULE_REFUSED` show as `ledger_sum_mismatch`; close each issue once its cause is fixed. A failed run with `orders_not_checked` means Midtrans did not answer every order; the next night asks again.
+- **The first run reports what is already wrong.** Every open mismatch on staging becomes a `reconciliation_issues` row on `/dashboard/finance/reconciliation`, and the day's `reconciliation_digest` alert is mailed to `SECURITY_ALERT_EMAIL`. Bookings still waiting under `REVENUE_RULE_REFUSED` show as `ledger_sum_mismatch`; close each issue once its cause is fixed. A failed run with `orders_not_checked` means Midtrans did not answer every order asked, and `chains_not_checked` that no time was left for the chain walk; the next night tries again. Payments settled in the last 7 days take turns, so a busy week is covered over a few nights.
 
 ### Task P4.3.10: the officer's booking at the counter and cash (`20261104220000`, `20261104220100`)
 

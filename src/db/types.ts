@@ -1964,6 +1964,7 @@ export type Database = {
           id: string
           last_payload: Json | null
           last_polled_at: string | null
+          last_reconciled_at: string | null
           manual_proof_path: string | null
           manual_reference: string | null
           method: Database["public"]["Enums"]["payment_method"] | null
@@ -1993,6 +1994,7 @@ export type Database = {
           id?: string
           last_payload?: Json | null
           last_polled_at?: string | null
+          last_reconciled_at?: string | null
           manual_proof_path?: string | null
           manual_reference?: string | null
           method?: Database["public"]["Enums"]["payment_method"] | null
@@ -2022,6 +2024,7 @@ export type Database = {
           id?: string
           last_payload?: Json | null
           last_polled_at?: string | null
+          last_reconciled_at?: string | null
           manual_proof_path?: string | null
           manual_reference?: string | null
           method?: Database["public"]["Enums"]["payment_method"] | null
@@ -5279,6 +5282,7 @@ export type Database = {
         Args: { p_key: string; p_window_seconds: number }
         Returns: undefined
       }
+      svc_reconcile_chains: { Args: { p_run_id: string }; Returns: Json }
       svc_reconcile_payments: { Args: { p_looks: Json }; Returns: Json }
       svc_record_document_pdf: {
         Args: {

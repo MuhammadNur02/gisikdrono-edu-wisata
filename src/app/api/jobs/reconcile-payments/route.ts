@@ -8,7 +8,10 @@ import { createLogger, requestIdFrom } from '@/lib/logger';
 // only about the orders internal.payments_to_reconcile lists (CLAUDE.md §6.1).
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { hasValidCronSecret } from '@/server/auth/cron-secret';
-import { reconcilePayments } from '@/server/services/payment-reconciliation';
+import {
+  reconcilePayments,
+  type ReconciliationReport,
+} from '@/server/services/payment-reconciliation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,6 +20,16 @@ export const maxDuration = 60;
 const JOB_NAME = 'reconcile-payments';
 const RUN_FAILED = 'run_failed';
 const ORDERS_FAILED = 'orders_not_checked';
+const CHAINS_SKIPPED = 'chains_not_checked';
+
+// The run and its issues are written either way. An ask Midtrans did not answer, or chains left unwalked for lack of
+// time, are tried again next night, but the run counts as failed, so a lasting outage raises the job's alert. Orders
+// still waiting their turn in window B fail nothing.
+function failureOf(report: ReconciliationReport): string | null {
+  if (report.ordersUnanswered > 0) return ORDERS_FAILED;
+  if (report.ledgerChainOk === null || report.auditChainOk === null) return CHAINS_SKIPPED;
+  return null;
+}
 
 // Task P3.9.03: the daily reconciliation at 02:30 WIB (docs/Security.md §3.7, REC-01). A POST, like every job route
 // (internal.call_job): a run applies Midtrans' answers, so nothing that repeats GETs may start one.
@@ -30,16 +43,14 @@ export async function POST(request: Request): Promise<Response> {
   const adminClient = createSupabaseAdminClient();
   try {
     const report = await reconcilePayments(adminClient);
-    // The run and its issues are written; an order nobody could check is asked again next run, but the run counts as
-    // failed, so a lasting outage or backlog raises the job's alert instead of passing unnoticed.
-    const succeeded = report.ordersNotChecked === 0;
+    const errorCode = failureOf(report);
     await svcRecordJobRun(adminClient, {
       job: JOB_NAME,
-      succeeded,
-      ...(succeeded ? {} : { errorCode: ORDERS_FAILED }),
+      succeeded: errorCode === null,
+      ...(errorCode === null ? {} : { errorCode }),
     });
-    if (!succeeded) {
-      log.error('cron_failed', { job: JOB_NAME, runId, ...report });
+    if (errorCode !== null) {
+      log.error('cron_failed', { job: JOB_NAME, runId, errorCode, ...report });
       return Response.json({ runId, ...report }, { status: 503 });
     }
     log.info('job_run', { job: JOB_NAME, runId, ...report });
