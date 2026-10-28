@@ -83,3 +83,7 @@ export const CERTIFICATE_SLOTS = {
 // Mirrors internal.certificate_phone_failure_cap() of 20261104210100: the wrong last-4 tries over the window after which
 // the step-up stays blocked (review of PR #94, L1). The database decides; the page only reads it to say so.
 export const CERTIFICATE_PHONE_FAILURE_CAP = 10;
+// Mirrors internal.certificate_phone_total_failure_cap() of 20261105110000: every wrong try of the window, never reset by
+// a right one, so a forwarded link's holders cannot have their guesses wiped by the PIC's own proofs (review of PR #107,
+// L1).
+export const CERTIFICATE_PHONE_TOTAL_FAILURE_CAP = 30;
