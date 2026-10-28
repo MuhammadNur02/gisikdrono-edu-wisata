@@ -70,6 +70,33 @@ jobs:
           else
             echo "No pgTAP files yet."
           fi
+      # Fourth review of PR #98, H1 and H2: backup.yml's own commands complete as a login role of backup_reader, made
+      # here as the owner makes gisikdrono_backup on production (restore-drills.md, part A). The local stack's
+      # database container runs a Postgres 17 client, as the job installs one; the password is random and lives for
+      # this job only.
+      - name: The backup role dumps public and takes the auth snapshot
+        run: |
+          set -euo pipefail
+          db="$(docker ps --filter 'name=supabase_db_' --format '{{.Names}}' | head -n 1)"
+          password="$(openssl rand -hex 24)"
+          echo "::add-mask::$password"
+          docker exec -i "$db" psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -v password="$password" <<'SQL'
+          create role gisikdrono_backup with login bypassrls in role backup_reader;
+          alter role gisikdrono_backup password :'password';
+          SQL
+          as_backup=(docker exec -e PGPASSWORD="$password" "$db")
+          connect=(-h 127.0.0.1 -U gisikdrono_backup -d postgres)
+          "${as_backup[@]}" pg_dump "${connect[@]}" --format=custom --no-owner --no-privileges --schema=public \
+            --file=/tmp/public.dump
+          size="$("${as_backup[@]}" stat -c %s /tmp/public.dump)"
+          minimum="$(sed -n 's/^ *MIN_DUMP_BYTES: *\([0-9]*\)$/\1/p' .github/workflows/backup.yml)"
+          echo "The dump of public as gisikdrono_backup: $size bytes (backup.yml's minimum: $minimum)"
+          test "$size" -ge "$minimum"
+          staff="$("${as_backup[@]}" psql "${connect[@]}" --no-psqlrc --tuples-only --no-align -v ON_ERROR_STOP=1 \
+            -c "select jsonb_array_length(internal.backup_auth_snapshot() -> 'users')")"
+          echo "The auth snapshot as gisikdrono_backup: $staff staff accounts"
+          test "$staff" -gt 0
+          docker exec "$db" rm -f /tmp/public.dump
       - run: pnpm test:integration
 
   # Task P5.2.01 (docs/Security.md AZ-08, SC-04): the RW isolation suites on their own, so branch protection can
