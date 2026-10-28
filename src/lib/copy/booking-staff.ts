@@ -37,7 +37,7 @@ export const bookingStaffCopy = {
     open: 'Perpanjang batas bayar',
     title: 'Perpanjang batas pembayaran',
     field: 'Batas pembayaran baru (WIB)',
-    hint: 'Paling lama 14 hari dari sekarang dan sebelum sesi pertama dimulai.',
+    hint: 'Paling lama 14 hari dari sekarang dan sebelum sesi pertama dimulai; pemesanan dari web paling lambat 1 jam sebelumnya.',
     submit: 'Perpanjang',
     done: 'Batas pembayaran diperpanjang.',
   },
