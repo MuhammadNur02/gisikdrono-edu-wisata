@@ -277,53 +277,53 @@ insert into public.bookings (booking_code, status, channel, package_id, package_
   pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
   consent_version, consented_at, expires_at, created_by, created_at)
 values
-  ('GSK-IKU0BARU', 'pending_payment', 'admin', '00000000-0000-4000-8000-0000000af001', '{}', '{5}', 'individual',
+  ('GSK-FWP0BARA', 'pending_payment', 'admin', '00000000-0000-4000-8000-0000000af001', '{}', '{5}', 'individual',
    'Baru', '+447700900141', 'iku-baru@example.test', 1, public.today_jkt() + 1, public.today_jkt() + 1, 30000, 30000,
    'v1', now(), now() + interval '1 day', '00000000-0000-4000-8000-00000000f005', now() - interval '10 minutes'),
-  ('GSK-IKU0ANTR', 'pending_payment', 'admin', '00000000-0000-4000-8000-0000000af001', '{}', '{5}', 'individual',
+  ('GSK-FWP0ANTR', 'pending_payment', 'admin', '00000000-0000-4000-8000-0000000af001', '{}', '{5}', 'individual',
    'Antre', '+447700900142', 'iku-antr@example.test', 1, public.today_jkt() + 1, public.today_jkt() + 1, 30000, 30000,
    'v1', now(), now() + interval '1 day', '00000000-0000-4000-8000-00000000f005', now() - interval '40 minutes'),
-  ('GSK-IKU0GAGL', 'pending_payment', 'admin', '00000000-0000-4000-8000-0000000af001', '{}', '{5}', 'individual',
+  ('GSK-FWP0GAGA', 'pending_payment', 'admin', '00000000-0000-4000-8000-0000000af001', '{}', '{5}', 'individual',
    'Gagal', '+447700900143', 'iku-gagl@example.test', 1, public.today_jkt() + 5, public.today_jkt() + 5, 30000, 30000,
    'v1', now(), now() + interval '1 day', '00000000-0000-4000-8000-00000000f005', now() - interval '4 hours');
 insert into public.notifications (booking_id, channel, template, recipient, dedupe_key, status, last_error_code)
 select b.id, 'email', 'booking_created', b.pic_email, 'booking:' || b.id || ':booking_created:email:',
-       case when b.booking_code = 'GSK-IKU0ANTR' then 'queued' else 'failed' end::public.notification_status,
-       case when b.booking_code = 'GSK-IKU0GAGL' then 'provider_rejected' end
-from public.bookings b where b.booking_code in ('GSK-IKU0ANTR', 'GSK-IKU0GAGL');
+       case when b.booking_code = 'GSK-FWP0ANTR' then 'queued' else 'failed' end::public.notification_status,
+       case when b.booking_code = 'GSK-FWP0GAGA' then 'provider_rejected' end
+from public.bookings b where b.booking_code in ('GSK-FWP0ANTR', 'GSK-FWP0GAGA');
 select set_config('app.in_rpc', '', true);
 select internal.payments_housekeeping();
 select ok(not exists (select 1 from public.security_alerts a join public.bookings b
                       on a.fingerprint = 'admin_hold_without_link:' || b.id
-                      where b.booking_code = 'GSK-IKU0BARU'),
+                      where b.booking_code = 'GSK-FWP0BARA'),
   '5: an officer''s hold made ten minutes ago for tomorrow is not flagged yet, the officer may still take the cash');
 select ok(exists (select 1 from public.security_alerts a join public.bookings b
                   on a.fingerprint = 'admin_hold_without_link:' || b.id
-                  where b.booking_code = 'GSK-IKU0ANTR' and a.acknowledged_at is null),
+                  where b.booking_code = 'GSK-FWP0ANTR' and a.acknowledged_at is null),
   'past the grace, a link still queued is no link sent: the hold is flagged');
 select ok(exists (select 1 from public.security_alerts a join public.bookings b
                   on a.fingerprint = 'admin_hold_without_link:' || b.id
-                  where b.booking_code = 'GSK-IKU0GAGL' and a.acknowledged_at is null),
+                  where b.booking_code = 'GSK-FWP0GAGA' and a.acknowledged_at is null),
   'nor is a link whose message failed');
 select set_config('app.in_rpc', '1', true);
 insert into public.notifications (booking_id, channel, template, recipient, dedupe_key, status, sent_at)
 select b.id, 'email', 'booking_created', b.pic_email, 'booking:' || b.id || ':booking_created:email:sent', 'sent',
        now()
-from public.bookings b where b.booking_code = 'GSK-IKU0ANTR';
+from public.bookings b where b.booking_code = 'GSK-FWP0ANTR';
 select set_config('app.in_rpc', '', true);
 select internal.payments_housekeeping();
 select is((select a.details ->> 'closed' from public.security_alerts a join public.bookings b
            on a.fingerprint = 'admin_hold_without_link:' || b.id
-           where b.booking_code = 'GSK-IKU0ANTR' and a.acknowledged_at is not null),
+           where b.booking_code = 'GSK-FWP0ANTR' and a.acknowledged_at is not null),
   'link_sent_or_settled', 'the alert closes once the link''s message was sent');
 select ok(exists (select 1 from public.security_alerts a join public.bookings b
                   on a.fingerprint = 'admin_hold_without_link:' || b.id
-                  where b.booking_code = 'GSK-IKU0GAGL' and a.acknowledged_at is null),
+                  where b.booking_code = 'GSK-FWP0GAGA' and a.acknowledged_at is null),
   'while the one whose link failed stays open');
 
 -- ===== 6: the pay link and the resends are capped =====
 create temporary table capped on commit drop as
-  select id from public.bookings where booking_code = 'GSK-IKU0BARU';
+  select id from public.bookings where booking_code = 'GSK-FWP0BARA';
 grant select on capped to authenticated;
 select pg_temp.act_as('admin_rw_05');
 select is(pg_temp.hint_after($$select public.send_admin_booking_link((select id from capped))$$, 5), null,
@@ -345,16 +345,16 @@ select set_config('app.in_rpc', '1', true);
 insert into public.bookings (booking_code, status, channel, package_id, package_snapshot, rw_ids, booker_type,
   pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
   consent_version, consented_at, phone_verified_at, expires_at)
-values ('GSK-IKU0WEBB', 'pending_payment', 'web', '00000000-0000-4000-8000-0000000af001', '{}', '{5}', 'individual',
+values ('GSK-FWP0WEBB', 'pending_payment', 'web', '00000000-0000-4000-8000-0000000af001', '{}', '{5}', 'individual',
         'Web', '+6281300006901', 'iku-webb@example.test', 1, public.today_jkt() + 5, public.today_jkt() + 5, 30000,
         30000, 'v1', now(), now(), now() + interval '1 hour');
 insert into public.booking_legs (booking_id, rw_id, visit_session_id, leg_order, pax_count, status, quota_reserved_at)
 select b.id, 5, '00000000-0000-4000-8000-0000000af206', 1, 1, 'reserved', now()
-from public.bookings b where b.booking_code = 'GSK-IKU0WEBB';
+from public.bookings b where b.booking_code = 'GSK-FWP0WEBB';
 select set_config('app.in_rpc', '', true);
 create temporary table web_hold on commit drop as
   select b.id, ((public.today_jkt() + 5) + time '09:00') at time zone 'Asia/Jakarta' as first_start
-  from public.bookings b where b.booking_code = 'GSK-IKU0WEBB';
+  from public.bookings b where b.booking_code = 'GSK-FWP0WEBB';
 grant select on web_hold to authenticated;
 select pg_temp.act_as('admin_rw_05');
 select throws_ok($$select public.extend_booking_hold((select id from web_hold),
