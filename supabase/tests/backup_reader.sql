@@ -5,7 +5,7 @@
 -- classified, so a new one fails here until the backup decides whether the snapshot copies its rows. The reads are
 -- tried as the role itself, not only read off the grants.
 begin;
-select plan(24);
+select plan(25);
 
 -- ===== The role itself =====
 
@@ -161,6 +161,14 @@ select is((select outcome from attempts where label = 'net.http_get'), '42501', 
 select is((select outcome from attempts where label = 'vault.create_secret'), '42501', 'and creates no secret');
 select ok(internal.backup_auth_snapshot() ?& array['users', 'identities', 'sso_providers', 'sso_domains', 'saml_providers'],
   'the snapshot answers the five tables, each as an array of rows');
+-- A pending reset link on a staff account must not travel with the backup.
+update auth.users set recovery_token = 'pending-reset', reauthentication_token = 'pending-reauth'
+  where id = (select id from auth.users order by id limit 1);
+select ok((select count(*) from auth.users where recovery_token = 'pending-reset') <= 1
+          and not exists (select 1 from jsonb_array_elements(internal.backup_auth_snapshot()->'users') u
+            where u->>'recovery_token' <> '' or u->>'confirmation_token' <> '' or u->>'reauthentication_token' <> ''
+               or u->>'email_change_token_new' <> '' or u->>'email_change_token_current' <> '' or u->>'phone_change_token' <> ''),
+  'the snapshot blanks every one-time token');
 
 select * from finish();
 rollback;
