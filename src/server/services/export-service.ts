@@ -26,7 +26,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { toCsv } from '@/lib/utils/csv';
 import type { ExportRequest } from '@/lib/validations/export';
 import type { StaffContext } from '@/server/auth/guards';
-import { createDocumentSignedUrl } from '@/server/services/document-service';
+import { createDocumentSignedUrl } from '@/server/services/document-urls';
 import type { CreatedExport } from '@/types/export';
 
 type ExportKind = Database['public']['Enums']['export_kind'];

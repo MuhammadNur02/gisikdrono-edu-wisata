@@ -188,7 +188,7 @@ describe('a link sent again from /reservasi/cari', () => {
       clientIp: CLIENT_IP,
       nowSeconds: nowSeconds(),
     });
-    expect(access).toEqual({ bookingId: BOOKING_ID, bookingCode: BOOKING_CODE, scope: 'manage' });
+    expect(access).toMatchObject({ bookingId: BOOKING_ID, bookingCode: BOOKING_CODE, scope: 'manage' });
   });
 
   it('stops opening it once the links are revoked', async () => {

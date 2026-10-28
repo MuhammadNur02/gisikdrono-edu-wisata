@@ -12,7 +12,8 @@ export type PepperLabel =
   | 'gsk-otp-code-v1'
   | 'gsk-otp-browser-v1'
   | 'gsk-log-email-v1'
-  | 'gsk-staff-invite-v1';
+  | 'gsk-staff-invite-v1'
+  | 'gsk-ip-hash-v1';
 
 export function pepperedHash(label: PepperLabel, value: string): string {
   return createHmac('sha256', serverEnv.OTP_PEPPER).update(`${label}\n${value}`).digest('hex');

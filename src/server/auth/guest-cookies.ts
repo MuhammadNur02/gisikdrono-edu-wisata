@@ -3,12 +3,20 @@ import 'server-only';
 import { cookies } from 'next/headers';
 
 import {
+  CERTIFICATE_PAGE,
+  CERTIFICATE_PROOF_COOKIE_SUFFIX,
   GUEST_BOOKING_PATH,
+  GUEST_LINK_COOKIE_PREFIX,
   GUEST_LINK_TTL_SECONDS,
   OTP_BROWSER_COOKIE,
   OTP_BROWSER_TTL_SECONDS,
   PHONE_PROOF_COOKIE,
 } from '@/config/guest';
+import {
+  isCertificateProof,
+  signCertificateProof,
+  type CertificateProofBinding,
+} from '@/lib/links/certificate-proof';
 import { newOtpBrowserId, readOtpBrowserId, signOtpBrowserId } from '@/lib/links/otp-browser';
 import { readPhoneProof, signPhoneProof, type PhoneProof } from '@/lib/links/phone-proof';
 import { guestLinkCookieName } from '@/lib/links/token';
@@ -78,4 +86,31 @@ export async function ensureOtpBrowserId(): Promise<string> {
     maxAge: OTP_BROWSER_TTL_SECONDS,
   });
   return browserId;
+}
+
+// Task P4.5.03 (docs/Security.md DOC-02): the last four digits of the PIC's number, typed on the certificate page,
+// open the certificates that print a person's name for half an hour, in this browser, on that page and its downloads
+// only, and while the booking's links stand (review of PR #94, L2).
+function certificateProofCookie(bookingCode: string) {
+  return {
+    name: `${GUEST_LINK_COOKIE_PREFIX}${bookingCode}${CERTIFICATE_PROOF_COOKIE_SUFFIX}`,
+    path: `${GUEST_BOOKING_PATH}/${bookingCode}/${CERTIFICATE_PAGE}`,
+  };
+}
+
+export async function rememberCertificateProof(binding: CertificateProofBinding): Promise<void> {
+  const { name, path } = certificateProofCookie(binding.bookingCode);
+  const { value, maxAge } = await signCertificateProof(binding, nowInSeconds());
+  (await cookies()).set(name, value, { ...GUEST_COOKIE_OPTIONS, path, maxAge });
+}
+
+export async function hasCertificateProof(binding: CertificateProofBinding): Promise<boolean> {
+  const value = (await cookies()).get(certificateProofCookie(binding.bookingCode).name)?.value;
+  if (value === undefined) return false;
+  return isCertificateProof(value, { ...binding, nowSeconds: nowInSeconds() });
+}
+
+// "Cabut tautan": the proof goes with the links, though the version would refuse it anyway.
+export async function forgetCertificateProof(bookingCode: string): Promise<void> {
+  (await cookies()).delete(certificateProofCookie(bookingCode));
 }
