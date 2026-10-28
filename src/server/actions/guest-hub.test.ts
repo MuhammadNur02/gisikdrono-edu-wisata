@@ -43,7 +43,7 @@ const CODE = 'GSK-7F3K9Q2M';
 const SESSION = '3f1c2a6e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
 const MANAGE = {
   ok: true as const,
-  guest: { bookingId: 'b-1', bookingCode: CODE, scope: 'manage' as const },
+  guest: { bookingId: 'b-1', bookingCode: CODE, scope: 'manage' as const, tokenVersion: 1 },
 };
 const MS_PER_SECOND = 1000;
 const STALE_SECONDS = 20 * 60;

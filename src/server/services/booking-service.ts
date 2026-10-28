@@ -120,6 +120,8 @@ export interface GuestAccess {
   bookingCode: string;
   // The scope of the link held, which may open more than the scope asked for (a manage link opens a view page).
   scope: GuestLinkScope;
+  // The booking's link version the link was checked against; the certificate page's phone proof is bound to it.
+  tokenVersion: number;
 }
 
 async function tokenVersionOf(adminClient: DatabaseClient, bookingCode: string) {
@@ -164,7 +166,12 @@ export async function verifyGuestAccess(request: {
   const link = { tokenVersion: booking.token_version, required: request.required };
   if (!isCurrentLink(reading.link, link)) return null;
   if (request.required === 'review' && (await hasReview(adminClient, booking.id))) return null;
-  return { bookingId: booking.id, bookingCode: request.bookingCode, scope: reading.link.s };
+  return {
+    bookingId: booking.id,
+    bookingCode: request.bookingCode,
+    scope: reading.link.s,
+    tokenVersion: booking.token_version,
+  };
 }
 
 export async function revokeGuestLinks(bookingId: string): Promise<void> {

@@ -5,6 +5,7 @@ import type { Database } from '@/db/types';
 import { renderCertificatePdf } from '@/lib/pdf/certificate';
 import { splitPdfPages } from '@/lib/pdf/split-pages';
 import {
+  certificateBundlePdf,
   certificateFileName,
   certificatePdf,
   isServable,
@@ -66,7 +67,7 @@ const rowOf = (row: CertificateRow) => ({
 // A typed client whose fetch plays PostgREST and Storage: the booking's certificates, the kept file, the uploads and
 // the svc_record_document_pdf calls.
 function fakeStack(options: { rows?: CertificateRow[]; stored?: Buffer; recordFails?: boolean }) {
-  const calls: { method: string; path: string; body?: string }[] = [];
+  const calls: { method: string; path: string; body?: string; cacheControl: string | null }[] = [];
   const answer = (method: string, path: string): Response => {
     if (path.startsWith('/rest/v1/rpc/')) {
       return options.recordFails
@@ -85,7 +86,8 @@ function fakeStack(options: { rows?: CertificateRow[]; stored?: Buffer; recordFa
     const url = new URL(input instanceof Request ? input.url : input.toString());
     const method = init?.method ?? 'GET';
     const body = typeof init?.body === 'string' ? init.body : undefined;
-    calls.push({ method, path: url.pathname, body });
+    const cacheControl = new Headers(init?.headers).get('cache-control');
+    calls.push({ method, path: url.pathname, body, cacheControl });
     return Promise.resolve(answer(method, url.pathname));
   };
   const client = createClient<Database>('http://supabase.test', 'test-key', {
@@ -203,6 +205,36 @@ describe('certificatePdf', () => {
       code: 'P0001',
     });
     expect(refused.calls.some((call) => call.method === 'DELETE')).toBe(true);
+  });
+});
+
+describe('certificateBundlePdf', () => {
+  it('hands back the class as one document and keeps only the pages that had no file yet', async () => {
+    const { client, calls } = fakeStack({});
+    const kept = { ...ANI, pdfPath: `certificates/${BOOKING_ID}/participant-SERT-GSK-2026-00032.pdf` };
+    await expect(certificateBundlePdf(client, [kept, BUDI], CONTEXT)).resolves.toEqual(BUNDLE);
+    expect(loadCertificatePages).toHaveBeenCalledWith(client, [ANI.id, BUDI.id], CONTEXT.siteUrl);
+    expect(recordedPaths(calls)).toEqual([
+      `certificates/${BOOKING_ID}/participant-SERT-GSK-2026-00033.pdf`,
+    ]);
+  });
+
+  it('uploads every kept file with no cache lifetime (review of PR #94, L3)', async () => {
+    const { client, calls } = fakeStack({});
+    await certificateBundlePdf(client, [ANI, BUDI], CONTEXT);
+    const uploads = calls.filter((call) => call.path.startsWith('/storage/v1/object/'));
+    expect(uploads.map((call) => call.cacheControl)).toEqual(['max-age=0', 'max-age=0']);
+  });
+
+  it('refuses an empty class and one with a certificate that is not handed out', async () => {
+    const { client } = fakeStack({});
+    await expect(certificateBundlePdf(client, [], CONTEXT)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+    await expect(
+      certificateBundlePdf(client, [ANI, { ...BUDI, releasedAt: null }], CONTEXT),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect(renderCertificatePdf).not.toHaveBeenCalled();
   });
 });
 

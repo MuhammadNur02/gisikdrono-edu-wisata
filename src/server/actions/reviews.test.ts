@@ -112,7 +112,12 @@ describe('submitReviewAction', () => {
       .mockReset()
       .mockResolvedValue({
         ok: true,
-        guest: { bookingId: BOOKING_ID, bookingCode: REVIEW.bookingCode, scope: 'review' },
+        guest: {
+          bookingId: BOOKING_ID,
+          bookingCode: REVIEW.bookingCode,
+          scope: 'review',
+          tokenVersion: 1,
+        },
       });
     vi.mocked(withinGuestLimits).mockReset().mockResolvedValue(true);
     vi.mocked(verifyTurnstile).mockReset().mockResolvedValue(true);
