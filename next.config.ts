@@ -114,6 +114,10 @@ const nextConfig: NextConfig = {
   },
   outputFileTracingIncludes: {
     '/api/documents/**/*': ['./src/lib/pdf/fonts/**'],
+    // The certificate PDFs rendered outside api/documents (review of PR #94, M1): the visitor's downloads under the
+    // certificate page, and the staff's Render ulang PDF on /dashboard/certificates.
+    '/reservasi/*/sertifikat/unduh/*': ['./src/lib/pdf/fonts/**'],
+    '/dashboard/certificates': ['./src/lib/pdf/fonts/**'],
     // A package or product published after the build draws its share image at request time, reading the TTF
     // files from disk (src/lib/seo/og-image.tsx).
     '/**/opengraph-image*': ['./public/fonts/*.ttf'],

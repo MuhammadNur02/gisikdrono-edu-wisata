@@ -6,6 +6,12 @@ import { publicMediaUrl } from '@/lib/images/public-media';
 import { createLogger, requestIdFrom } from '@/lib/logger';
 import { getBookletDownload } from '@/lib/queries/booklets';
 import { clientIpFrom } from '@/lib/utils/client-ip';
+import {
+  DOCUMENT_HTTP_STATUS as HTTP_STATUS,
+  NO_STORE_HEADERS,
+  pdfResponse,
+  plainResponse,
+} from '@/lib/utils/document-response';
 import { requireCertificateReader, requireDocumentReader } from '@/server/auth/document-access';
 import {
   BOOKING_DOCUMENT_KINDS,
@@ -46,32 +52,12 @@ const BOOKLET_KIND = 'booklet';
 const TICKET_KIND = 'ticket';
 const CERTIFICATE_KIND = 'certificate';
 const PUBLIC_MEDIA_DOWNLOAD_PARAM = 'download';
-const HTTP_STATUS = {
-  ok: 200,
-  found: 302,
-  notFound: 404,
-  tooManyRequests: 429,
-  unavailable: 503,
-} as const;
-
-const NO_STORE_HEADERS = {
-  'Cache-Control': 'private, no-store',
-  'X-Robots-Tag': 'noindex',
-} as const;
-
 const idSchema = z.uuid();
 
 type RequestLog = ReturnType<typeof createLogger>;
 
 interface DocumentRouteContext {
   params: Promise<{ kind: string; id: string }>;
-}
-
-function plainResponse(status: number, text: string, headers: Record<string, string> = {}) {
-  return new Response(text, {
-    status,
-    headers: { ...NO_STORE_HEADERS, 'Content-Type': 'text/plain; charset=utf-8', ...headers },
-  });
 }
 
 const notFound = () => plainResponse(HTTP_STATUS.notFound, copy.errors.NOT_FOUND);
@@ -108,18 +94,6 @@ async function bookletDownload(id: string, clientIp: string, log: RequestLog): P
 
 function isBookingDocumentKind(kind: string): kind is BookingDocumentKind {
   return (BOOKING_DOCUMENT_KINDS as readonly string[]).includes(kind);
-}
-
-function pdfResponse(fileName: string, pdf: Buffer): Response {
-  return new Response(new Uint8Array(pdf), {
-    status: HTTP_STATUS.ok,
-    headers: {
-      ...NO_STORE_HEADERS,
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="${fileName}"`,
-      'Content-Length': String(pdf.length),
-    },
-  });
 }
 
 // The per-IP limit first, then the row, then the booking's own limit and the reader's right to it. Past the IP limit
@@ -185,7 +159,7 @@ async function ticketDocument(
 }
 
 // The same order for a certificate. One held back, revoked or purged is the same 404 as one that does not exist, and so
-// is every reader but staff in scope until the guest page of Task P4.5.03 brings the visitor's link and last-4 step-up.
+// is every reader but staff in scope: the visitor downloads from /reservasi/[bookingCode]/sertifikat (Task P4.5.03).
 async function certificateDocument(
   certificateId: string,
   clientIp: string,

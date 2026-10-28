@@ -6,13 +6,16 @@ import { svcIncrementBookletDownload } from '@/db/rpc';
 import { revealFinanceEvidence } from '@/db/rpc-finance';
 import type { Database } from '@/db/types';
 import { AppError } from '@/lib/errors';
+import { pepperedHash } from '@/lib/pepper';
 import { publicEnv } from '@/lib/public-env';
 import { getPublicSiteSettings } from '@/lib/queries/settings';
 import { withinRateLimits } from '@/lib/rate-limit';
 // See withinBookletDownloadLimit for why this module creates a service-role client.
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import type { CertificateSlot } from '@/lib/utils/certificate-slots';
 import { rateLimitIpBucket } from '@/lib/utils/client-ip';
+import { todayInJakarta } from '@/lib/utils/dates';
 import type { StaffContext } from '@/server/auth/guards';
 import {
   bookingDocumentPdf,
@@ -29,10 +32,10 @@ import {
 } from '@/server/services/certificate-documents';
 import type { CertificateRow } from '@/server/services/certificate-pages';
 import {
-  isDocumentPathFor,
   SIGNED_URL_TTL_SECONDS,
   type SignedDocumentKind,
 } from '@/server/services/document-paths';
+import { createDocumentSignedUrl } from '@/server/services/document-urls';
 import {
   removeFinanceDocument,
   storeFinanceDocument,
@@ -40,40 +43,26 @@ import {
 } from '@/server/services/finance-documents';
 import { asFinanceWrite } from '@/server/services/finance-errors';
 import {
+  guestCertificateFile,
+  type GuestCertificateFile,
+} from '@/server/services/guest-certificate-downloads';
+import {
+  loadGuestCertificates,
+  stepUpCertificatePhone,
+  type PhoneStepUp,
+} from '@/server/services/guest-certificates';
+import {
   keptTicketPdfPath,
   loadTicketDocument,
   ticketDocumentPdf,
   type TicketDocument,
 } from '@/server/services/ticket-documents';
 import { withinUploadLimit } from '@/server/services/upload-events';
+import type { GuestCertificateView } from '@/types/certificate';
 import type { VerifiedDocument } from '@/types/documents';
 import type { EvidenceKind, EvidenceLink } from '@/types/finance';
 
 type DatabaseClient = SupabaseClient<Database>;
-
-const DOCUMENTS_BUCKET = 'documents';
-
-// The one place a signed URL into the documents bucket is minted. The caller has already authorised the
-// reader for this document; the URL is handed straight back in a redirect and never stored, logged or
-// written into a message (CLAUDE.md §6.6). A path outside the kind's own folder is refused, so a bug in a
-// caller cannot turn a ticket link into a link to someone's export. `downloadName` makes the link save the file under
-// that name instead of opening it (an export).
-export async function createDocumentSignedUrl(
-  adminClient: DatabaseClient,
-  path: string,
-  kind: SignedDocumentKind,
-  downloadName?: string,
-): Promise<string> {
-  if (!isDocumentPathFor(kind, path)) throw new AppError('NOT_FOUND');
-  const bucket = adminClient.storage.from(DOCUMENTS_BUCKET);
-  const ttl = SIGNED_URL_TTL_SECONDS[kind];
-  const { data, error } =
-    downloadName === undefined
-      ? await bucket.createSignedUrl(path, ttl)
-      : await bucket.createSignedUrl(path, ttl, { download: downloadName });
-  if (error) throw error;
-  return data.signedUrl;
-}
 
 // The service role is needed below because the limiter and the counter are internal functions no API role may
 // run (P1.3.24): a public counter would be a public write. The limiter is keyed by the visitor IP alone (hashed
@@ -207,6 +196,74 @@ export async function rerenderCertificateFiles(
   return rerenderBookingCertificates(adminClient, bookingId, {
     siteUrl: publicEnv.NEXT_PUBLIC_SITE_URL,
     readerId: staffId,
+  });
+}
+
+// The visitor's certificate page (Task P4.5.03): the booking id comes from a verified certificate link; what the page
+// may show and hand out is decided in guest-certificates.ts.
+export function guestCertificates(
+  bookingId: string,
+  hasPhoneProof: boolean,
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<GuestCertificateView> {
+  return loadGuestCertificates(adminClient, { bookingId, hasPhoneProof, today: todayInJakarta() });
+}
+
+// The IP as security events and the audit log keep it (docs/Security.md §7.4): a keyed hash, never the address.
+function ipHashOf(clientIp: string): string {
+  return pepperedHash('gsk-ip-hash-v1', clientIp);
+}
+
+export function stepUpGuestCertificates(
+  request: { bookingId: string; lastFour: string; clientIp: string },
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<PhoneStepUp> {
+  return stepUpCertificatePhone(adminClient, {
+    bookingId: request.bookingId,
+    lastFour: request.lastFour,
+    ipBucket: rateLimitIpBucket(request.clientIp),
+    ipHash: ipHashOf(request.clientIp),
+  });
+}
+
+// The certificate downloads' own limits (review of PR #94, M3), apart from the booking documents': per IP before the
+// link is checked (bookingId null), then per booking, and "Unduh semua" once more for the whole class it renders.
+export function withinCertificateDownloadLimits(
+  request: { clientIp: string; bookingId: string | null; slot: CertificateSlot },
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<boolean> {
+  if (request.bookingId === null) {
+    return withinRateLimits(adminClient, [
+      { name: 'certificate_download:ip', subject: rateLimitIpBucket(request.clientIp) },
+    ]);
+  }
+  const perBooking = { name: 'certificate_download:booking', subject: request.bookingId } as const;
+  const perBundle = { name: 'certificate_bundle:booking', subject: request.bookingId } as const;
+  return withinRateLimits(
+    adminClient,
+    request.slot.kind === 'all_participants' ? [perBooking, perBundle] : [perBooking],
+  );
+}
+
+// The PDF of /reservasi/[bookingCode]/sertifikat/unduh/[slot], rendered on this request when it has no kept file.
+export function guestCertificateDownload(
+  request: {
+    bookingId: string;
+    bookingCode: string;
+    slot: CertificateSlot;
+    hasPhoneProof: boolean;
+    clientIp: string;
+  },
+  adminClient: DatabaseClient = createSupabaseAdminClient(),
+): Promise<GuestCertificateFile> {
+  return guestCertificateFile(adminClient, {
+    bookingId: request.bookingId,
+    bookingCode: request.bookingCode,
+    slot: request.slot,
+    hasPhoneProof: request.hasPhoneProof,
+    today: todayInJakarta(),
+    siteUrl: publicEnv.NEXT_PUBLIC_SITE_URL,
+    ipHash: ipHashOf(request.clientIp),
   });
 }
 
