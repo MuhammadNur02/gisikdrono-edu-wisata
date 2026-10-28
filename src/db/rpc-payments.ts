@@ -71,6 +71,17 @@ export function svcRecordPaymentFailure(
   );
 }
 
+// Delta review of PR #91, L-1: the PIC's open order closed before an RW admin takes the cash, with the officer as actor.
+export function svcCloseAttemptForCash(
+  adminClient: DatabaseClient,
+  paymentId: string,
+  actorId: string,
+): Promise<void> {
+  return resultOf(
+    adminClient.rpc('svc_close_attempt_for_cash', { p_payment_id: paymentId, p_actor_id: actorId }),
+  );
+}
+
 const eventReplySchema = z.strictObject({
   event_id: z.int().positive(),
   is_processed: z.boolean(),

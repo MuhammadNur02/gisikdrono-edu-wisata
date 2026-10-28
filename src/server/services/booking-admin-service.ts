@@ -1,6 +1,7 @@
 import 'server-only';
 
 import {
+  ADMIN_UNPAID_VIEW,
   BOOKING_CODE_SEARCH_PREFIX,
   BOOKING_DEFAULT_SORT,
   BOOKING_EVENT_ACTORS,
@@ -84,6 +85,8 @@ export async function listBookingsForStaff(
   if (rw !== null) request = request.contains('rw_ids', [rw]);
   if (pattern !== null) request = request.ilike(searchColumnOf(query.q), pattern);
   if (statuses.length > 0) request = request.in('status', statuses);
+  if (query.category === ADMIN_UNPAID_VIEW)
+    request = request.eq('channel', 'admin').eq('status', 'pending_payment');
   if (visitDate !== null)
     request = request.lte('visit_date', visitDate).gte('visit_date_end', visitDate);
   if (order !== null) request = request.order(order.column, { ascending: order.ascending });

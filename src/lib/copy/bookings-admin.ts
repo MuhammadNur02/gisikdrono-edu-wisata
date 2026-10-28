@@ -12,7 +12,12 @@ export const bookingsAdminCopy = {
     search: 'Cari kode GSK-… atau nama instansi…',
     empty: 'Belum ada reservasi',
     emptyHint: 'Belum ada reservasi. Bagikan tautan paket untuk mulai menerima pemesanan.',
-    facets: { status: 'Status', rw: 'RW' },
+    facets: {
+      status: 'Status',
+      rw: 'RW',
+      view: 'Tampilan',
+      adminUnpaid: 'Booking petugas belum dibayar',
+    },
     columns: {
       booking: 'Reservasi',
       visitDate: 'Kunjungan',
@@ -119,6 +124,9 @@ export const bookingsAdminCopy = {
       payment_expired: 'Batas waktu pembayaran habis',
       refund_recorded: 'Pengembalian dana dicatat',
       write_off: 'Tagihan dihapuskan',
+      admin_phone_confirmed: 'Nomor penanggung jawab dicek petugas',
+      admin_pay_link_sent: 'Tautan pembayaran dikirim petugas',
+      payment_expired_for_cash: 'Tautan pembayaran dihentikan karena dibayar tunai',
       // The visit terms (20261104080200, docs/PRD.md §13.1 A16–A20).
       cancelled_unpaid: 'Dibatalkan pemesan sebelum membayar',
       cancelled_paid: 'Dibatalkan pemesan, pengembalian dana diminta',
