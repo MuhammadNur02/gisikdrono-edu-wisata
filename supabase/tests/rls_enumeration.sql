@@ -74,7 +74,7 @@ select is(
 -- invoker, so the grants and policies of a direct write decide; issue_mfa_reenrolment_code of 20261029080000; and
 -- acknowledge_alert_as_sole_superadmin of 20261029080400; then the finance RPCs of 20261101130000 to
 -- 20261101130200 and 20261104190200 to 20261104190500 (release_refund_key_mismatch, payout_preview,
--- rpc_reveal_finance_evidence); and onboarding_state of 20261103131200, booleans about the caller's own onboarding only.
+-- rpc_reveal_finance_evidence); import_midtrans_statement of 20261104210200; and onboarding_state of 20261103131200, booleans about the caller's own onboarding only.
 select is(
   array(
     select n.nspname || '.' || p.proname from pg_proc p
@@ -88,7 +88,7 @@ select is(
         'public.cancel_superadmin_promotion', 'public.cancellation_preview', 'public.create_admin_booking',
         'public.declare_weather_disruption', 'public.extend_booking_hold', 'public.finance_booking', 'public.finance_overview',
         'public.find_manual_ticket', 'public.fresh_totp', 'public.generate_visit_sessions',
-        'public.get_rw_treasury_account', 'public.get_vendor_bank_account', 'public.invite_superadmin', 'public.is_admin_rw', 'public.is_staff', 'public.is_superadmin',
+        'public.get_rw_treasury_account', 'public.get_vendor_bank_account', 'public.import_midtrans_statement', 'public.invite_superadmin', 'public.is_admin_rw', 'public.is_staff', 'public.is_superadmin',
         'public.issue_certificates', 'public.issue_mfa_reenrolment_code', 'public.mark_booking_paid_manually',
         'public.mark_refund_request_failed',
         'public.onboarding_state',

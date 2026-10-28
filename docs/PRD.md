@@ -1159,7 +1159,7 @@ create table public.reconciliation_issues (
   run_id          uuid not null references public.reconciliation_runs(id),
   booking_id      uuid references public.bookings(id),
   payment_id      uuid references public.payments(id),
-  issue_type      text not null check (issue_type in ('paid_without_tickets','ticket_without_payment','amount_mismatch','status_disagreement','pending_beyond_ttl','ledger_sum_mismatch','chain_broken','payout_mismatch','duplicate_settlement')),
+  issue_type      text not null check (issue_type in ('paid_without_tickets','ticket_without_payment','amount_mismatch','status_disagreement','pending_beyond_ttl','ledger_sum_mismatch','chain_broken','payout_mismatch','duplicate_settlement','unknown_order')),  -- unknown_order: 20261104210200
   severity        public.alert_severity not null,
   details         jsonb not null default '{}',
   resolved_at     timestamptz,

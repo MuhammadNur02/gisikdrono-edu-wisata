@@ -188,6 +188,7 @@ export const reconciliationCopy = {
     chain_broken: 'Rantai rusak',
     payout_mismatch: 'Pembayaran bagi hasil tidak cocok',
     duplicate_settlement: 'Pembayaran ganda',
+    unknown_order: 'Order tidak dikenal',
     manual_transfer_unmatched: 'Transfer manual belum dicocokkan dengan rekening koran',
   } as Record<string, string>,
   columns: {
@@ -196,7 +197,14 @@ export const reconciliationCopy = {
     severity: 'Tingkat',
     booking: 'Pemesanan',
     order: 'Order Midtrans',
+    comparison: 'Midtrans / tercatat',
     action: 'Tindakan',
+  },
+  // Review of PR #99, M2: what a Midtrans statement said beside what the payment holds.
+  statementSide: {
+    midtrans: 'Midtrans',
+    ours: 'Tercatat',
+    missing: 'tidak ada',
   },
   resolve: 'Tutup temuan',
   resolveTitle: 'Tutup temuan',

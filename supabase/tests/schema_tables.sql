@@ -621,7 +621,7 @@ select columns_are('public', 'payment_adjustments', array[
 ]);
 select columns_are('public', 'reconciliation_runs', array[
   'id', 'run_date', 'source', 'started_at', 'finished_at', 'payments_checked', 'issues_found',
-  'ledger_chain_ok', 'audit_chain_ok', 'summary', 'created_by'
+  'ledger_chain_ok', 'audit_chain_ok', 'summary', 'created_by', 'statement_fingerprint'
 ]);
 select columns_are('public', 'reconciliation_issues', array[
   'id', 'run_id', 'booking_id', 'payment_id', 'issue_type', 'severity', 'details', 'resolved_at',

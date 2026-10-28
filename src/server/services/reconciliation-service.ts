@@ -18,6 +18,7 @@ import type {
   FinanceList,
   ReconciliationIssue,
   ReconciliationRun,
+  StatementFacts,
 } from '@/types/finance';
 
 // /dashboard/finance/reconciliation (Task P4.7.04; docs/Security.md REC-01, REC-09): the nightly runs, the issues
@@ -75,6 +76,13 @@ const issueRowSchema = z.object({
   resolution_note: z.string().nullable(),
   bookings: z.object({ booking_code: z.string() }).nullable(),
   payments: z.object({ order_id: z.string() }).nullable(),
+  details: z.looseObject({
+    order_id: z.string().optional(),
+    midtrans_status: z.string().optional(),
+    midtrans_amount: z.number().int().optional(),
+    our_status: z.string().optional(),
+    our_amount: z.number().int().optional(),
+  }),
 });
 
 // The open issues newest first, at most FINANCE_LIST_LIMIT, by the Jakarta days they were found (review of PR #80,
@@ -84,7 +92,7 @@ async function openIssueRows(filter: DayFilter) {
   let query = supabase
     .from('reconciliation_issues')
     .select(
-      'id, run_id, booking_id, payment_id, issue_type, severity, created_at, resolved_at, resolution, resolution_note, bookings(booking_code), payments(order_id)',
+      'id, run_id, booking_id, payment_id, issue_type, severity, created_at, resolved_at, resolution, resolution_note, details, bookings(booking_code), payments(order_id)',
     )
     .is('resolved_at', null);
   if (filter.from) query = query.gte('created_at', jakartaDayBounds(filter.from).start);
@@ -104,20 +112,36 @@ export async function listOpenIssues(filter: DayFilter): Promise<FinanceList<Rec
   };
 }
 
-function issueOf(row: z.infer<typeof issueRowSchema>): ReconciliationIssue {
+type IssueRow = z.infer<typeof issueRowSchema>;
+
+// Review of PR #99, M2: a statement row names its order and Midtrans' figures in details; an unknown order has no
+// payment to name it. Only a statement issue carries Midtrans' status: another with a midtrans_amount, such as the key
+// gap of a released refund, is no statement row (delta review of PR #99, L-a).
+function statementFactsOf(details: IssueRow['details']): StatementFacts | null {
+  if (details.midtrans_status === undefined) return null;
+  return {
+    midtransStatus: details.midtrans_status ?? null,
+    midtransAmount: details.midtrans_amount ?? null,
+    ourStatus: details.our_status ?? null,
+    ourAmount: details.our_amount ?? null,
+  };
+}
+
+function issueOf(row: IssueRow): ReconciliationIssue {
   return {
     id: row.id,
     runId: row.run_id,
     bookingId: row.booking_id,
     bookingCode: row.bookings?.booking_code ?? null,
     paymentId: row.payment_id,
-    orderId: row.payments?.order_id ?? null,
+    orderId: row.payments?.order_id ?? row.details.order_id ?? null,
     issueType: row.issue_type,
     severity: row.severity,
     createdAt: row.created_at,
     resolvedAt: row.resolved_at,
     resolution: row.resolution,
     resolutionNote: row.resolution_note,
+    statement: statementFactsOf(row.details),
   };
 }
 

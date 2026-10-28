@@ -228,6 +228,14 @@ export interface ReconciliationRun {
 // reconciliation_issues.resolution (20261104190000): the cause was fixed, or it was checked and needs no action.
 export type IssueResolution = (typeof ISSUE_RESOLUTIONS)[number];
 
+// What a Midtrans statement row said beside what the payment holds (review of PR #99, M2); null for other issues.
+export interface StatementFacts {
+  midtransStatus: string | null;
+  midtransAmount: number | null;
+  ourStatus: string | null;
+  ourAmount: number | null;
+}
+
 export interface ReconciliationIssue {
   id: string;
   runId: string;
@@ -241,6 +249,7 @@ export interface ReconciliationIssue {
   resolvedAt: string | null;
   resolution: IssueResolution | null;
   resolutionNote: string | null;
+  statement: StatementFacts | null;
 }
 
 export interface ChainState {
