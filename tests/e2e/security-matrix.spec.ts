@@ -43,7 +43,11 @@ const CANARY_IMAGE_ALT = 'Warga memilah sampah plastik di Bank Sampah';
 const CANARY_SAFE_LINK = 'https://gisikdrono.example/jadwal';
 const WEBHOOK_PATHS = ['/api/webhooks/whatsapp', '/api/webhooks/resend'];
 // The jobs security.spec.ts does not already call without a bearer.
-const OTHER_JOB_PATHS = ['/api/jobs/anomaly-scan', '/api/jobs/payments-poll'];
+const OTHER_JOB_PATHS = [
+  '/api/jobs/anomaly-scan',
+  '/api/jobs/payments-poll',
+  '/api/jobs/reconcile-payments',
+];
 
 test.describe('the security smoke, the remaining matrix (Task P5.3.02)', () => {
   for (const path of OTHER_JOB_PATHS) {

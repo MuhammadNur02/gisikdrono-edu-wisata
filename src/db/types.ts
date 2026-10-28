@@ -5256,6 +5256,13 @@ export type Database = {
           reason: string
         }[]
       }
+      svc_payments_to_reconcile: {
+        Args: { p_limit: number }
+        Returns: {
+          order_id: string
+          reason: string
+        }[]
+      }
       svc_placeholder_site_settings: { Args: never; Returns: string[] }
       svc_purgeable_files: {
         Args: { p_limit: number }
@@ -5272,6 +5279,7 @@ export type Database = {
         Args: { p_key: string; p_window_seconds: number }
         Returns: undefined
       }
+      svc_reconcile_payments: { Args: { p_looks: Json }; Returns: Json }
       svc_record_document_pdf: {
         Args: {
           p_actor_id?: string

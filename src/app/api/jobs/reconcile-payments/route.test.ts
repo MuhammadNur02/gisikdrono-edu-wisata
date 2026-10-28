@@ -1,0 +1,80 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { svcRecordJobRun } from '@/db/rpc';
+import { reconcilePayments } from '@/server/services/payment-reconciliation';
+
+import { POST } from './route';
+import { sandboxEnv } from '../../../../../tests/fixtures/env';
+
+vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => ({}) }));
+vi.mock('@/db/rpc', () => ({ svcRecordJobRun: vi.fn() }));
+vi.mock('@/server/services/payment-reconciliation', () => ({ reconcilePayments: vi.fn() }));
+
+const REPORT = {
+  reconciliationRunId: '00000000-0000-4000-8000-00000000a001',
+  paymentsChecked: 4,
+  ordersNotChecked: 0,
+  issuesFound: 1,
+  issuesAlreadyOpen: 2,
+  ledgerChainOk: true,
+  auditChainOk: true,
+};
+
+function post(authorization?: string): Promise<Response> {
+  const headers = authorization ? { authorization } : undefined;
+  return POST(
+    new Request('http://127.0.0.1:3000/api/jobs/reconcile-payments', { method: 'POST', headers }),
+  );
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(reconcilePayments).mockResolvedValue(REPORT);
+  vi.mocked(svcRecordJobRun).mockResolvedValue(undefined);
+});
+
+describe('POST /api/jobs/reconcile-payments', () => {
+  it('answers 401 without the cron secret, reconciling nothing', async () => {
+    expect((await post()).status).toBe(401);
+    expect((await post('Bearer wrong')).status).toBe(401);
+    expect(reconcilePayments).not.toHaveBeenCalled();
+    expect(svcRecordJobRun).not.toHaveBeenCalled();
+  });
+
+  it('reconciles and records a successful run in the heartbeat', async () => {
+    const response = await post(`Bearer ${sandboxEnv.CRON_SECRET}`);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject(REPORT);
+    expect(svcRecordJobRun).toHaveBeenCalledWith(expect.anything(), {
+      job: 'reconcile-payments',
+      succeeded: true,
+    });
+  });
+
+  it('records a run that left orders unchecked as failed and answers 503', async () => {
+    vi.mocked(reconcilePayments).mockResolvedValue({ ...REPORT, ordersNotChecked: 2 });
+    expect((await post(`Bearer ${sandboxEnv.CRON_SECRET}`)).status).toBe(503);
+    expect(svcRecordJobRun).toHaveBeenCalledWith(expect.anything(), {
+      job: 'reconcile-payments',
+      succeeded: false,
+      errorCode: 'orders_not_checked',
+    });
+  });
+
+  it('answers 503 and records a failed run when the run itself fails', async () => {
+    vi.mocked(reconcilePayments).mockRejectedValue(new Error('database down'));
+    const response = await post(`Bearer ${sandboxEnv.CRON_SECRET}`);
+    expect(response.status).toBe(503);
+    expect(svcRecordJobRun).toHaveBeenCalledWith(expect.anything(), {
+      job: 'reconcile-payments',
+      succeeded: false,
+      errorCode: 'run_failed',
+    });
+  });
+
+  it('still answers 503 when the failed run cannot be recorded either', async () => {
+    vi.mocked(reconcilePayments).mockRejectedValue(new Error('database down'));
+    vi.mocked(svcRecordJobRun).mockRejectedValue(new Error('database down'));
+    expect((await post(`Bearer ${sandboxEnv.CRON_SECRET}`)).status).toBe(503);
+  });
+});

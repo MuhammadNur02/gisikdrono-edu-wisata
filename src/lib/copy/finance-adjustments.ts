@@ -190,6 +190,8 @@ export const reconciliationCopy = {
     duplicate_settlement: 'Pembayaran ganda',
     unknown_order: 'Order tidak dikenal',
     manual_transfer_unmatched: 'Transfer manual belum dicocokkan dengan rekening koran',
+    invoice_mismatch: 'Faktur pembayaran tidak cocok',
+    capacity_exceeded: 'Kapasitas sesi terlampaui',
   } as Record<string, string>,
   columns: {
     createdAt: 'Ditemukan',
