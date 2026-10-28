@@ -19,13 +19,25 @@ const packageSnapshotSchema = z.object({
 
 const OPEN_STATUSES = ['initiated', 'pending', 'needs_review'] as const;
 
+// Delta review of PR #91, I-3: the key id tickets would be signed with is in site_settings qr.signing_kids, checked
+// before an open order is ended for cash, as mark_booking_paid_manually checks it again (QR_KEY_UNKNOWN).
+export async function isListedQrKid(adminClient: DatabaseClient, keyId: string): Promise<boolean> {
+  const { data, error } = await adminClient
+    .from('site_settings')
+    .select('value')
+    .eq('key', 'qr.signing_kids')
+    .maybeSingle();
+  if (error) throw error;
+  return Array.isArray(data?.value) && data.value.includes(keyId);
+}
+
 export async function openAttemptOf(
   adminClient: DatabaseClient,
   bookingId: string,
 ): Promise<OpenPaymentAttempt | null> {
   const { data, error } = await adminClient
     .from('payments')
-    .select('id, order_id, status, snap_redirect_url, created_at')
+    .select('id, order_id, status, snap_redirect_url, expiry_time, created_at')
     .eq('booking_id', bookingId)
     .in('status', OPEN_STATUSES)
     .maybeSingle();
@@ -36,6 +48,7 @@ export async function openAttemptOf(
     orderId: data.order_id,
     status: data.status,
     redirectUrl: data.snap_redirect_url,
+    pageExpiresAt: data.expiry_time,
     createdAt: data.created_at,
   };
 }

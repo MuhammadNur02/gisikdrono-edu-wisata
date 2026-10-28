@@ -51,6 +51,7 @@ Record `key_rotated` for `SUPABASE_SERVICE_ROLE_KEY`.
 **Planned rotation** (breaks nothing):
 
 1. Generate a value for the next kid (`k2`, then `k3`; never reuse a kid name).
+Before step 2, add the new kid to the database's allow-list, which an RW admin's cash at the counter is held against (`mark_booking_paid_manually`, Task P4.3.10): `update public.site_settings set value = value || '["k2"]'::jsonb where key = 'qr.signing_kids';` as the superadmin. Until it is there, cash is refused with "the QR key id is not one tickets are signed with". Remove a retired kid from the list in step 4.
 2. Vercel: `QR_SIGNING_KEYS` = `{ "k1": "<old>", "k2": "<new>" }`, `QR_SIGNING_ACTIVE_KID` = `k2`. Redeploy. New tickets carry `k2`; old ones still verify with `k1`.
 3. Find the day `k1` may go: 30 days after the last visit it signed.
 

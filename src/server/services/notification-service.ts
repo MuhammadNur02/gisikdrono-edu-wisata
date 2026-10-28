@@ -9,6 +9,7 @@ import {
   type OutboxRow,
 } from '@/db/rpc-outbox';
 import type { DatabaseClient } from '@/db/rpc-result';
+import { serverEnv } from '@/lib/env';
 import { createLogger } from '@/lib/logger';
 import { SENDABLE_TEMPLATES } from '@/lib/notifications/message-text';
 import { notificationProviders } from '@/lib/notifications/providers';
@@ -109,5 +110,8 @@ export async function readServiceHealth(clientIp: string): Promise<HealthReport 
   const adminClient = createSupabaseAdminClient();
   const subject = rateLimitIpBucket(clientIp);
   if (!(await withinRateLimits(adminClient, [{ name: 'health:ip', subject }]))) return null;
-  return checkServiceHealth(adminClient, publicEnv.VERCEL_ENV === 'production');
+  return checkServiceHealth(adminClient, {
+    isProduction: publicEnv.VERCEL_ENV === 'production',
+    activeQrKid: serverEnv.QR_SIGNING_ACTIVE_KID,
+  });
 }
