@@ -7,17 +7,18 @@ import {
   rejectAdjustment,
   releaseRefundKeyMismatch,
 } from '@/db/rpc-adjustments';
+import type { DatabaseClient } from '@/db/rpc-result';
 import { serverEnv } from '@/lib/env';
-import { AppError } from '@/lib/errors';
+import { AppError, raisedHintOf } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { failureFor } from '@/lib/uploads/outcomes';
 import { createUuidV7 } from '@/lib/utils/uuid-v7';
 import type { ProposeAdjustmentValues, ReleaseKeyMismatchValues } from '@/lib/validations/finance';
 import type { StaffContext } from '@/server/auth/guards';
 import { removeFinanceEvidence, storeFinanceEvidence } from '@/server/services/document-service';
-import { asFinanceWrite } from '@/server/services/finance-errors';
+import { asFinanceWrite, financeRefusal } from '@/server/services/finance-errors';
 import { endOpenOrderBeforeTransfer, expireClosedOrders } from '@/server/services/payment-service';
-import type { AdjustmentDetails, AdjustmentReply } from '@/types/finance';
+import type { AdjustmentDetails, AdjustmentReply, AppliedAdjustmentReply } from '@/types/finance';
 
 // /dashboard/finance/adjustments (Task P4.7.04; docs/Security.md §3.8, REC-09, REC-16): the dual-controlled money
 // adjustments, read under RLS (payment_adjustments_super_read) and written only through their RPCs, which check the
@@ -79,8 +80,10 @@ export async function reject(adjustmentId: string, reason: string): Promise<Adju
 }
 
 // The booking a manual transfer is for, read under the superadmin's RLS (payment_adjustments_super_read).
-async function transferBookingOf(adjustmentId: string): Promise<string | null> {
-  const supabase = await createSupabaseServerClient();
+async function transferBookingOf(
+  supabase: DatabaseClient,
+  adjustmentId: string,
+): Promise<string | null> {
   const { data, error } = await supabase
     .from('payment_adjustments')
     .select('booking_id')
@@ -91,13 +94,35 @@ async function transferBookingOf(adjustmentId: string): Promise<string | null> {
   return data?.booking_id ?? null;
 }
 
-// A28 (review of PR #102, L3): before a manual transfer applies, the PIC's open Midtrans order is ended, as the cash
-// path does; any order the settlement still names ends at Midtrans afterwards, best effort.
+// apply_adjustment's refusal of a manual transfer while the PIC has a Midtrans order open (open_manual_payment).
+const PAYMENT_OPEN_HINT = 'PAYMENT_OPEN';
+
+// A28 (review of PR #102, L3, and its follow-up 2): apply_adjustment refuses a manual transfer with PAYMENT_OPEN while
+// the PIC has a Midtrans order open, and only once every other check of it passed (open_manual_payment). Only then is
+// that order ended, as the cash path does, and the adjustment applied once more, so a refused transfer ends no order
+// for nothing and none stays open when one applies.
+async function applyEndingOpenOrder(
+  supabase: DatabaseClient,
+  actorId: string,
+  adjustmentId: string,
+): Promise<AppliedAdjustmentReply> {
+  try {
+    return await applyAdjustment(supabase, adjustmentId);
+  } catch (error) {
+    const transferBookingId =
+      raisedHintOf(error) === PAYMENT_OPEN_HINT
+        ? await transferBookingOf(supabase, adjustmentId)
+        : null;
+    if (transferBookingId === null) throw financeRefusal(error, 'apply') ?? error;
+    await endOpenOrderBeforeTransfer(transferBookingId, actorId);
+  }
+  return asFinanceWrite(() => applyAdjustment(supabase, adjustmentId), 'apply');
+}
+
+// Any order the settlement still names ends at Midtrans afterwards, best effort.
 export async function apply(ctx: StaffContext, adjustmentId: string): Promise<AdjustmentReply> {
-  const transferBookingId = await transferBookingOf(adjustmentId);
-  if (transferBookingId !== null) await endOpenOrderBeforeTransfer(transferBookingId, ctx.userId);
   const supabase = await createSupabaseServerClient();
-  const applied = await asFinanceWrite(() => applyAdjustment(supabase, adjustmentId), 'apply');
+  const applied = await applyEndingOpenOrder(supabase, ctx.userId, adjustmentId);
   await expireClosedOrders(applied.closeOrders);
   return { id: applied.id, status: applied.status, applyNotBefore: applied.applyNotBefore };
 }
