@@ -73,6 +73,8 @@ const REFUSALS: Readonly<Record<FinanceRefusalHint, { code: ActionErrorCode; mes
     code: 'STATE_INVALID',
     message: adjustmentsCopy.errors.WEATHER_FEE_UNSET_MANUAL,
   },
+  QR_KEY_UNKNOWN: { code: 'STATE_INVALID', message: adjustmentsCopy.errors.QR_KEY_UNKNOWN },
+  PAYMENT_OPEN: { code: 'STATE_INVALID', message: adjustmentsCopy.errors.PAYMENT_OPEN },
 };
 
 const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;

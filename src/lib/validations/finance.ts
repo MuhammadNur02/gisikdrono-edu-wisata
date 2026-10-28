@@ -184,7 +184,14 @@ export type PayoutPreviewValues = z.output<typeof payoutPreviewSchema>;
 
 // ===== Adjustments =====
 
-export const PROPOSABLE_ADJUSTMENTS = ['manual_refund', 'reclassify_share', 'write_off'] as const;
+// docs/PRD.md §13.1 A28 (2026-10-28): a bank transfer the superadmin saw arrive is a manual_mark_paid adjustment, under
+// the same dual control, settled only when it is applied.
+export const PROPOSABLE_ADJUSTMENTS = [
+  'manual_refund',
+  'reclassify_share',
+  'write_off',
+  'manual_mark_paid',
+] as const;
 
 export const bookingLookupSchema = z
   .object({

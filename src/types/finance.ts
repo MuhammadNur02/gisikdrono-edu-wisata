@@ -164,6 +164,8 @@ export interface AdjustmentDetails {
   fromKey?: string;
   toKey?: string;
   weatherLinkId?: string;
+  // A manual transfer's QR key id, from the server (A28).
+  keyId?: string;
 }
 
 // A finance list reads at most FINANCE_LIST_LIMIT rows; hasMore says there are older ones to filter for (L-5).
@@ -262,6 +264,11 @@ export interface AdjustmentReply {
   id: string;
   status: EnumValue<'adjustment_status'>;
   applyNotBefore: string | null;
+}
+
+// An applied manual transfer also names the Midtrans orders it closed, which the server ends next (A28).
+export interface AppliedAdjustmentReply extends AdjustmentReply {
+  closeOrders: string[];
 }
 
 // apply_adjustment (20261104080200, review of PR #69, M-2) answers a bank transfer whose visit-terms request Midtrans

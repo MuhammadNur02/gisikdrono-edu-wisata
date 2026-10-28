@@ -235,11 +235,11 @@ describe('endOpenOrderBeforeCash', () => {
     });
     await endOpenOrderBeforeCash(BOOKING_ID, OFFICER_ID, 'k1');
     expect(expireTransaction).toHaveBeenCalledWith(ABANDONED.orderId);
-    expect(svcCloseAttemptForCash).toHaveBeenCalledWith(
-      expect.anything(),
-      ABANDONED.paymentId,
-      OFFICER_ID,
-    );
+    expect(svcCloseAttemptForCash).toHaveBeenCalledWith(expect.anything(), {
+      paymentId: ABANDONED.paymentId,
+      actorId: OFFICER_ID,
+      isPageMaybeLive: false,
+    });
   });
 
   it('stops the cash when Midtrans says the order was paid', async () => {

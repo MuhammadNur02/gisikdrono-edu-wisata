@@ -82,5 +82,9 @@ export const FINANCE_REFUSAL_HINTS = [
   'RELEASE_TOO_EARLY',
   // PR #90's: a manual refund named for a weather link held for an unset Midtrans fee.
   'WEATHER_FEE_UNSET_MANUAL',
+  // A28: a manual transfer's QR key id is not in site_settings qr.signing_kids.
+  'QR_KEY_UNKNOWN',
+  // Review of PR #102, L3: the PIC still has a Midtrans pay page open when a manual transfer applies.
+  'PAYMENT_OPEN',
 ] as const;
 export type FinanceRefusalHint = (typeof FINANCE_REFUSAL_HINTS)[number];
