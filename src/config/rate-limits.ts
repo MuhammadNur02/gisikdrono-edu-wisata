@@ -39,6 +39,17 @@ export const RATE_LIMITS = {
   // Task P4.5.03 (review of PR #71, L3): "Render ulang PDF" renders a whole class at once, so each staff member may run
   // it five times an hour.
   'certificate_rerender:user': { limit: 5, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  // Task P4.5.03 (docs/Security.md §6.7, DOC-02): the last four digits of the PIC's number typed on the certificate
+  // page, five tries per booking and twenty per IP a day; a right try is given back, so only wrong ones count (review
+  // of PR #94, M3), and the first refusal raises certificate_phone_locked for the superadmin. The database keeps the
+  // wrong tries of the whole window as well and blocks the step-up at the tenth (L1).
+  'certificate_phone:booking': { limit: 5, windowSeconds: 86400, whenUnavailable: 'fail-closed' },
+  'certificate_phone:ip': { limit: 20, windowSeconds: 86400, whenUnavailable: 'fail-closed' },
+  // The certificate page's downloads (review of PR #94, M3), apart from the booking documents' limits: a class of 300
+  // may well open every certificate in a sitting. "Unduh semua" renders the whole class, so it has its own, smaller one.
+  'certificate_download:ip': { limit: 60, windowSeconds: 60, whenUnavailable: 'fail-closed' },
+  'certificate_download:booking': { limit: 400, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
+  'certificate_bundle:booking': { limit: 5, windowSeconds: 3600, whenUnavailable: 'fail-closed' },
   // Task P4.3.02 (decision of 2026-10-26): an RW admin's header-only copy of a booking document, per staff member, on
   // top of document:ip and document:booking.
   'document_restricted:user': { limit: 30, windowSeconds: 600, whenUnavailable: 'fail-closed' },

@@ -20,6 +20,7 @@ test.describe.configure({ timeout: 180_000 });
 
 const LINKS_FLOW = 1;
 const CANCEL_FLOW = 2;
+const CERTIFICATE_FLOW = 3;
 const ONE_HOUR_AGO = -3600;
 let sessions: TestSessions;
 let projectIndex = 6;
@@ -85,4 +86,31 @@ test('cancels an unpaid hold from the manage link and frees its seats', async ({
   await expect(page.getByRole('heading', { name: 'Reservasi ini dibatalkan' })).toBeVisible(STEP);
   expect(await hubStateOf(bookingCode)).toMatchObject({ status: 'cancelled', refund_status: null });
   expect(await reservedOn(sessions.booked.id)).toBe(heldWithThis - PAX);
+});
+
+// Task P4.5.03 (docs/Security.md GUEST-02, DOC-02): the certificate page opens for its own link alone, never for the
+// booking's other links, and before the visit it says when the certificates come.
+test('opens the certificate page with the certificate link only', async ({ page, browser }) => {
+  const bookingCode = await holdThroughWizard(
+    page,
+    sessions,
+    phoneOf(projectIndex, CERTIFICATE_FLOW),
+  );
+  const version = await tokenVersionOf(bookingCode);
+  const stranger = await browser.newContext();
+  const visitor = await stranger.newPage();
+  expect((await visitor.goto(`/reservasi/${bookingCode}/sertifikat`))?.status()).toBe(404);
+  // The manage link this browser holds opens the hub, not the certificates.
+  expect((await page.goto(`/reservasi/${bookingCode}/sertifikat`))?.status()).toBe(404);
+
+  const response = await visitor.goto(guestLink(bookingCode, 'certificate', version));
+  expect(response?.status()).toBe(200);
+  expect(new URL(visitor.url()).searchParams.has('t')).toBe(false);
+  expect(response?.headers()['x-robots-tag']).toContain('noindex');
+  await expect(visitor.getByRole('heading', { name: 'Sertifikat kunjungan' })).toBeVisible(STEP);
+  await expect(
+    visitor.getByText(/Sertifikat terbit setelah rombongan selesai check-in/),
+  ).toBeVisible();
+  await expect(visitor.getByRole('link', { name: /Unduh sertifikat/ })).toHaveCount(0);
+  await stranger.close();
 });

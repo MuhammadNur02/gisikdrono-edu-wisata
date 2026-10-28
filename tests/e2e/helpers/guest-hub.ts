@@ -30,8 +30,18 @@ export async function holdThroughWizard(
   await fillBooker(page, phone);
   await page.getByRole('button', { name: 'Lanjut' }).click();
   await readySummary(page);
+  // Every spec and both projects hold from 127.0.0.1, so the per-IP and per-browser hold limits (booking_create:ip,
+  // booking:ip+ua) count the whole suite's holds; a reset in one spec's beforeAll cannot keep them under for the others.
+  await runSql(`delete from public.rate_limit_buckets
+    where key like 'booking_create:%' or key like 'booking:%'`);
   await page.getByRole('button', { name: 'Konfirmasi & Bayar' }).click();
-  await expect(page).toHaveURL(BOOKING_URL, STEP);
+  try {
+    await expect(page).toHaveURL(BOOKING_URL, STEP);
+  } catch (error) {
+    // The summary's own alert says why the hold was refused (a limit, the quota), which the URL alone does not.
+    const alerts = await page.getByRole('alert').allInnerTexts();
+    throw new Error(`the hold did not reach /bayar: ${alerts.join(' | ') || 'no alert'}`, { cause: error });
+  }
   return BOOKING_URL.exec(page.url())?.[1] ?? '';
 }
 
@@ -41,9 +51,10 @@ function base64Url(bytes: Buffer): string {
 
 // The link src/lib/links/mint.ts makes, signed with the fixture key the e2e server runs with; a past `expiresIn`
 // makes an expired one.
+// A link opens the page of its scope: the status hub, or the certificate page for a certificate link.
 export function guestLink(
   bookingCode: string,
-  scope: 'view' | 'manage' | 'pay',
+  scope: 'view' | 'manage' | 'pay' | 'certificate',
   tokenVersion: number,
   expiresIn = SECONDS_PER_HOUR,
 ): string {
@@ -52,7 +63,9 @@ export function guestLink(
   const signature = createHmac('sha256', sandboxEnv.BOOKING_LINK_SECRET)
     .update(`${LINK_LABEL}\n${bookingCode}.${payload}`)
     .digest();
-  return `/reservasi/${bookingCode}?t=${payload}.${base64Url(signature)}`;
+  const page =
+    scope === 'certificate' ? `/reservasi/${bookingCode}/sertifikat` : `/reservasi/${bookingCode}`;
+  return `${page}?t=${payload}.${base64Url(signature)}`;
 }
 
 export async function tokenVersionOf(bookingCode: string): Promise<number> {

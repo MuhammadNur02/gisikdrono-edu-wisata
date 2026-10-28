@@ -437,7 +437,9 @@ select columns_are('public', 'bookings', array[
   -- added by 20261022140000: when the guardians' consent to the participant list was attested
   'guardian_consented_at',
   -- added by 20261101120100: the fingerprint of the tickets the kept ticket file shows
-  'ticket_pdf_fingerprint'
+  'ticket_pdf_fingerprint',
+  -- added by 20261104210100: the wrong last-4 tries of the certificate page's step-up
+  'certificate_phone_failures'
 ]);
 select columns_are('public', 'booking_legs', array[
   'id', 'booking_id', 'rw_id', 'visit_session_id', 'leg_order', 'pax_count', 'status',

@@ -7,7 +7,10 @@ import { serverEnv } from '@/lib/env';
 // src/middleware.ts runs on the Edge runtime and checks a link's signature before it stores the link (review of
 // PR #20, L2); crypto.subtle.verify compares the signature in constant time, as timingSafeEqual does.
 export type SignatureLabel =
-  'gsk-guest-link-v1' | 'gsk-phone-proof-v1' | 'gsk-otp-browser-cookie-v1';
+  | 'gsk-guest-link-v1'
+  | 'gsk-phone-proof-v1'
+  | 'gsk-otp-browser-cookie-v1'
+  | 'gsk-certificate-phone-v1';
 
 // HMAC-SHA256 gives 32 bytes, 43 base64url characters; anything else is refused before it is decoded, and the length
 // of a genuine signature is no secret.
