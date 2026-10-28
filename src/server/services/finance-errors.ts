@@ -7,7 +7,7 @@ import { AppError, raisedHintOf } from '@/lib/errors';
 import { databaseErrorCode } from '@/lib/utils/database-errors';
 import type { ActionErrorCode } from '@/types/action-result';
 
-// The refusals the finance RPCs raise as P0001 with a hint (20261101130100 to 20261104191000, listed once in
+// The refusals the finance RPCs raise as P0001 with a hint (20261101130100 to 20261104210300, listed once in
 // FINANCE_REFUSAL_HINTS), each turned into the Indonesian sentence the page shows. A hint mapError already knows
 // (STATE_INVALID, RATE_LIMITED) is left to it.
 

@@ -237,7 +237,7 @@ select is((select count(*)::int from public.revenue_share_entries
            where payout_batch_id = (select id from kelurahan_payout) and amount < 0), 1,
   'and stamps the negative row with it');
 
--- ===== Review of PR #80, L-5: no payout leaves an unpaid negative row behind (20261104191000) =====
+-- ===== Review of PR #80, L-5: no payout leaves an unpaid negative row behind (20261104210300) =====
 -- A Rp -5.000 kelurahan row of three days ago, still unpaid, and Rp 20.000 of today.
 insert into public.revenue_share_entries (booking_id, payment_id, entry_type, line_ref, rule_version, beneficiary,
   beneficiary_key, rw_id, base_amount, pct, amount, created_at)

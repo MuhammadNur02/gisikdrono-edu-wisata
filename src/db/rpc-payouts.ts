@@ -71,7 +71,7 @@ const previewSchema = z.object({
   to: z.string(),
   total: money.nullable(),
   entries: count.nullable(),
-  // Review of PR #103, M-1: an unpaid negative row before the period blocks any payout of it (20261104191000).
+  // Review of PR #103, M-1: an unpaid negative row before the period blocks any payout of it (20261104210300).
   blocked_since: z.string().nullable(),
   blocked_reason: z.enum(['negative_pending']).nullable(),
 });

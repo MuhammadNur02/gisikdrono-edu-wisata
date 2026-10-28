@@ -4,7 +4,7 @@
 -- gap between what A booked and that sum is a reconciliation issue of its own, not a booking. L-a: the release holds
 -- only for the figure it accepted. L-b: the alert must have been delivered, and neither A's proposer nor its approver
 -- releases it; a plainly acknowledged alert is released through as well.
--- The Lows of the review of PR #80 (20261104191000): L-1 a release closes the adjustment's earlier gap issues;
+-- The Lows of the review of PR #80 (20261104210300): L-1 a release closes the adjustment's earlier gap issues;
 -- L-2 the sole active superadmin releases 24 hours after the alert went out, with an alert of its own; Info a
 -- figure that does not read is no figure to release; L-4 the assertions of the release itself.
 begin;
