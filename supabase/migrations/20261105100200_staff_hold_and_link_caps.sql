@@ -33,8 +33,8 @@ $$;
 -- ===== send_admin_booking_link =====
 
 -- Replaces the 20261104220100 version (follow-up of PR #102, 6): the link is asked for at most link_cap times an hour
--- per booking, the hit counted before the booking's lock and kept only by a call that goes through. Everything else is
--- unchanged.
+-- per booking, counted once the booking is found in the officer's scope (so an officer of another RW learns nothing of
+-- it) and kept only by a call that goes through. Everything else is unchanged.
 create or replace function public.send_admin_booking_link(p_booking_id uuid) returns void
   language plpgsql security definer
   set search_path = ''
@@ -48,16 +48,16 @@ begin
   if not (public.is_staff() and public.aal2()) then
     raise exception 'only an officer at AAL2 sends a pay link' using errcode = '42501';
   end if;
-  if not internal.rate_limit_hit('admin_pay_link:booking:' || p_booking_id::text, link_cap, link_window) then
-    raise exception 'the pay link of this booking was asked for % times this hour', link_cap
-      using errcode = 'P0001', hint = 'RATE_LIMITED';
-  end if;
   perform internal.take_audit_turn();
   select * into booking from public.bookings b where b.id = p_booking_id for update;
   -- Every RW of the booking is the officer's (delta review of PR #91, L-5); a combo is the superadmin's.
   if not found or not (public.is_superadmin()
                        or (public.is_admin_rw() and booking.rw_ids <@ array[public.app_rw_id()])) then
     raise exception 'booking % is not in this officer''s RW', p_booking_id using errcode = 'P0002';
+  end if;
+  if not internal.rate_limit_hit('admin_pay_link:booking:' || booking.id::text, link_cap, link_window) then
+    raise exception 'the pay link of this booking was asked for % times this hour', link_cap
+      using errcode = 'P0001', hint = 'RATE_LIMITED';
   end if;
   if booking.channel <> 'admin' or booking.status <> 'pending_payment' or booking.expires_at <= now() then
     raise exception 'this booking takes no pay link now' using errcode = 'P0001', hint = 'STATE_INVALID';

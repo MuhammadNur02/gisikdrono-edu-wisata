@@ -5,7 +5,7 @@
 -- resends are capped, a web hold is extended at most until an hour before its session, and the staff RPCs write no
 -- status column themselves.
 begin;
-select plan(31);
+select plan(33);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -78,20 +78,25 @@ end;
 $$;
 grant execute on function pg_temp.hint_of(text) to authenticated;
 
--- The hint of the last of p_times runs of a statement, or null when every run went through.
-create function pg_temp.hint_after(p_sql text, p_times integer) returns text
+-- How many of p_times runs of a statement went through.
+create function pg_temp.runs_through(p_sql text, p_times integer) returns integer
   language plpgsql
-as $$
+as $
 declare
-  last_hint text;
+  went_through integer := 0;
 begin
   for run in 1..p_times loop
-    last_hint := pg_temp.hint_of(p_sql);
+    begin
+      execute p_sql;
+      went_through := went_through + 1;
+    exception when others then
+      null;
+    end;
   end loop;
-  return last_hint;
+  return went_through;
 end;
-$$;
-grant execute on function pg_temp.hint_after(text, integer) to authenticated;
+$;
+grant execute on function pg_temp.runs_through(text, integer) to authenticated;
 
 -- An officer's booking of RW 05, as create_admin_booking makes it.
 create function pg_temp.book(p_package uuid, p_session uuid, p_pax integer, p_key text) returns uuid
@@ -191,7 +196,9 @@ insert into booking values
   ('raced', pg_temp.book('00000000-0000-4000-8000-0000000af001', '00000000-0000-4000-8000-0000000af206', 1,
                          'iku-006')),
   ('under_review', pg_temp.book('00000000-0000-4000-8000-0000000af001', '00000000-0000-4000-8000-0000000af206', 1,
-                                'iku-007'));
+                                'iku-007')),
+  ('capped_attempts', pg_temp.book('00000000-0000-4000-8000-0000000af001', '00000000-0000-4000-8000-0000000af206',
+                                   1, 'iku-011'));
 select is((select string_agg(review_reason, ',' order by review_reason) from public.bookings
            where id in (select id from booking where name in ('waiting', 'short'))),
   'PAID_AFTER_EXPIRY_NO_QUOTA,PAID_AFTER_EXPIRY_NO_QUOTA', 'two bookings were paid after their seats were gone');
@@ -256,8 +263,14 @@ select is(pg_temp.hint_of($$select public.resolve_booking_review((select id from
 reset role;
 select set_config('request.jwt.claims', '', true);
 update public.rw_units set is_active = true where id = 5;
-select is((select reserved_pax from public.visit_sessions where id = '00000000-0000-4000-8000-0000000af307'), 0,
-  'a refused move reserves nothing');
+select pg_temp.act_as('superadmin_aal2');
+select is(pg_temp.hint_of($select public.resolve_booking_review((select id from booking where name = 'short'), 'move',
+    'Pindah ke sesi lain yang masih kosong', array['00000000-0000-4000-8000-0000000af305']::uuid[], 'k1')$),
+  'QUOTA_UNAVAILABLE', 'a full session inside the package''s days passes the session rules and refuses on its seats');
+reset role;
+select set_config('request.jwt.claims', '', true);
+select is((select reserved_pax from public.visit_sessions where id = '00000000-0000-4000-8000-0000000af305'), 1,
+  'which stay at its capacity');
 select pg_temp.act_as('superadmin_aal2');
 select is((public.resolve_booking_review((select id from booking where name = 'short'), 'move',
     'Pindah ke sesi lain yang masih kosong', array['00000000-0000-4000-8000-0000000af307']::uuid[], 'k1'))
@@ -269,7 +282,8 @@ select set_config('request.jwt.claims', '', true);
 create temporary table transfer (name text primary key, id uuid) on commit drop;
 grant select on transfer to authenticated;
 insert into transfer values ('raced', pg_temp.approved_transfer((select id from booking where name = 'raced'))),
-  ('under_review', pg_temp.approved_transfer((select id from booking where name = 'under_review')));
+  ('under_review', pg_temp.approved_transfer((select id from booking where name = 'under_review'))),
+  ('capped_attempts', pg_temp.approved_transfer((select id from booking where name = 'capped_attempts')));
 -- The cash comes in between the transfer's approval and its apply.
 select pg_temp.act_as('admin_rw_05');
 select public.mark_booking_paid_manually((select id from booking where name = 'raced'), 'cash', 30000, 'k1');
@@ -298,6 +312,21 @@ select set_config('app.in_rpc', '', true);
 select pg_temp.act_as('superadmin_aal2');
 select is(pg_temp.hint_of($$select public.apply_adjustment((select id from transfer where name = 'under_review'))$$),
   'PAYMENT_OPEN', 'with nothing else in the way, the open order is what refuses it');
+reset role;
+select set_config('request.jwt.claims', '', true);
+-- open_manual_payment: the attempt cap comes before the open order, so ending that order could not help the transfer.
+-- The 98 attempts before the open 99th failed; the old order of the checks answered PAYMENT_OPEN here.
+select set_config('app.in_rpc', '1', true);
+insert into public.payments (booking_id, attempt_no, provider, method, status, order_id, gross_amount)
+select b.id, attempt.no, 'midtrans', 'qris',
+       case when attempt.no = 99 then 'pending' else 'failed' end::public.payment_status,
+       b.booking_code || '-' || lpad(attempt.no::text, 2, '0'), b.total_amount
+from public.bookings b cross join generate_series(1, 99) as attempt(no)
+where b.id = (select id from booking where name = 'capped_attempts');
+select set_config('app.in_rpc', '', true);
+select pg_temp.act_as('superadmin_aal2');
+select is(pg_temp.hint_of($select public.apply_adjustment((select id from transfer where name = 'capped_attempts'))$),
+  'STATE_INVALID', '2: a booking with no attempt left refuses the transfer before its open order is looked at');
 reset role;
 select set_config('request.jwt.claims', '', true);
 
@@ -356,12 +385,12 @@ create temporary table capped on commit drop as
   select id from public.bookings where booking_code = 'GSK-FWP0BARA';
 grant select on capped to authenticated;
 select pg_temp.act_as('admin_rw_05');
-select is(pg_temp.hint_after($$select public.send_admin_booking_link((select id from capped))$$, 5), null,
+select is(pg_temp.runs_through($select public.send_admin_booking_link((select id from capped))$, 5), 5,
   '6: an officer asks for a booking''s pay link five times an hour');
 select is(pg_temp.hint_of($$select public.send_admin_booking_link((select id from capped))$$), 'RATE_LIMITED',
   'and the sixth is refused as too many');
-select is(pg_temp.hint_after($$select public.request_notification_resend((select id from booking where name = 'raced'),
-    'payment_received_ticket', 'email')$$, 10), null, 'a booking''s message is sent again ten times a day');
+select is(pg_temp.runs_through($select public.request_notification_resend((select id from booking where name = 'raced'),
+    'payment_received_ticket', 'email')$, 10), 10, 'a booking''s message is sent again ten times a day');
 select is(pg_temp.hint_of($$select public.request_notification_resend((select id from booking where name = 'raced'),
     'payment_received_ticket', 'email')$$), 'RATE_LIMITED', 'and the eleventh resend is refused');
 reset role;
@@ -413,7 +442,8 @@ select ok(not has_function_privilege('authenticated',
           and not has_function_privilege('authenticated',
             'internal.move_booking_under_review(public.bookings, uuid[])', 'execute')
           and not has_function_privilege('authenticated',
-            'internal.refund_booking_under_review(public.bookings, uuid, text)', 'execute'),
+            'internal.refund_booking_under_review(public.bookings, uuid, text)', 'execute')
+          and not has_function_privilege('authenticated', 'internal.whole_payment_quote(public.bookings)', 'execute'),
   'and those functions are no API role''s');
 
 select * from finish();

@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Database } from '@/db/types';
 import { adjustmentsCopy } from '@/lib/copy/finance-adjustments';
-import { AppError } from '@/lib/errors';
+import { copy } from '@/lib/copy/id';
+import { AppError, mapError } from '@/lib/errors';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import type { StaffContext } from '@/server/auth/guards';
 import { apply } from '@/server/services/adjustment-service';
@@ -65,8 +66,9 @@ function sessionAnswering(applyAnswers: (() => Response)[], transferBookingId: s
   return applyCalls;
 }
 
+// resetAllMocks, not clearAllMocks: a test's mockRejectedValue must not reach the next test.
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
 });
 
 describe('apply (follow-up of PR #102, 2: the open order ends only once nothing else refuses)', () => {
@@ -123,8 +125,18 @@ describe('apply (follow-up of PR #102, 2: the open order ends only once nothing 
   });
 
   it('answers the second refusal readably when the transfer is refused again after the order ended', async () => {
-    sessionAnswering([() => refusal('PAYMENT_OPEN'), () => refusal('STATE_INVALID')], BOOKING_ID);
-    await expect(apply(SUPERADMIN, ADJUSTMENT_ID)).rejects.toBeDefined();
+    const applyCalls = sessionAnswering(
+      [() => refusal('PAYMENT_OPEN'), () => refusal('STATE_INVALID')],
+      BOOKING_ID,
+    );
+    const refused: unknown = await apply(SUPERADMIN, ADJUSTMENT_ID).catch(
+      (error: unknown) => error,
+    );
     expect(endOpenOrderBeforeTransfer).toHaveBeenCalledTimes(1);
+    expect(applyCalls).toHaveLength(2);
+    await expect(mapError(refused)).resolves.toEqual({
+      ok: false,
+      error: { code: 'STATE_INVALID', message: copy.errors.STATE_INVALID },
+    });
   });
 });

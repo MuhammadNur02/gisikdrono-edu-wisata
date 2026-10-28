@@ -36,7 +36,8 @@ begin
       and not exists (select 1 from public.weather_notice_bookings w
                       where w.booking_id = b.id and w.resolved_at is null)
       -- Follow-up of PR #102 (1): a booking paid after its seats were gone waits for resolve_booking_review.
-      and not (b.status = 'paid' and b.needs_review and b.review_reason = 'PAID_AFTER_EXPIRY_NO_QUOTA')
+      and not (b.status = 'paid' and b.needs_review
+               and b.review_reason is not distinct from 'PAID_AFTER_EXPIRY_NO_QUOTA')
     order by b.id
     for update skip locked
   loop
