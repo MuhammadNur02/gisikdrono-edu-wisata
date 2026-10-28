@@ -482,11 +482,11 @@ select set_config('app.in_rpc', '', true);
 select internal.close_attempt_for_cash((select id from tama_review), '00000000-0000-4000-8000-00000000f005');
 select is((select status::text from public.payments where id = (select id from tama_review)), 'needs_review',
   'nor does it close a payment under review');
-select ok(not has_function_privilege('authenticated', 'internal.close_attempt_for_cash(uuid, uuid)', 'execute')
-          and not has_function_privilege('anon', 'internal.close_attempt_for_cash(uuid, uuid)', 'execute')
-          and not has_function_privilege('authenticated', 'public.svc_close_attempt_for_cash(uuid, uuid)', 'execute')
-          and not has_function_privilege('anon', 'public.svc_close_attempt_for_cash(uuid, uuid)', 'execute')
-          and has_function_privilege('service_role', 'public.svc_close_attempt_for_cash(uuid, uuid)', 'execute'),
+select ok(not has_function_privilege('authenticated', 'internal.close_attempt_for_cash(uuid, uuid, boolean)', 'execute')
+          and not has_function_privilege('anon', 'internal.close_attempt_for_cash(uuid, uuid, boolean)', 'execute')
+          and not has_function_privilege('authenticated', 'public.svc_close_attempt_for_cash(uuid, uuid, boolean)', 'execute')
+          and not has_function_privilege('anon', 'public.svc_close_attempt_for_cash(uuid, uuid, boolean)', 'execute')
+          and has_function_privilege('service_role', 'public.svc_close_attempt_for_cash(uuid, uuid, boolean)', 'execute'),
   'only the service role closes an order for cash');
 select pg_temp.act_as('admin_rw_05');
 select throws_ok($$select public.svc_close_attempt_for_cash(gen_random_uuid(), auth.uid())$$, '42501', null,

@@ -59,7 +59,7 @@ export function cashBookingOf(booking: BookingDetail): CashBooking | null {
   };
 }
 
-// The PIC has a Midtrans order open, which taking the cash ends ("Tautan pembayaran yang terbuka akan dihentikan").
+// The PIC has a Midtrans order open, which taking the cash ends; a payment made through it afterwards is refunded.
 export function hasOpenPayLink(booking: Pick<BookingDetail, 'payments'>): boolean {
   return booking.payments.some((payment) => OPEN_PAY_LINK.has(payment.status));
 }

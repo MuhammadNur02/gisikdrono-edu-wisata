@@ -92,11 +92,21 @@ describe('hasPayableTotal (review of PR #80, M-2)', () => {
     from: '2026-10-01',
     to: '2026-10-25',
     entries: 3,
+    blockedSince: null,
   };
   it('lets a payout be recorded only on a figure above nothing', () => {
     expect(hasPayableTotal({ status: 'ready', preview: { ...preview, total: 70000 } })).toBe(true);
     expect(hasPayableTotal({ status: 'ready', preview: { ...preview, total: 0 } })).toBe(false);
     expect(hasPayableTotal({ status: 'ready', preview: { ...preview, total: null } })).toBe(false);
     expect(hasPayableTotal({ status: 'loading' })).toBe(false);
+  });
+
+  it('offers no payout while an unpaid negative row lies before the period (review of PR #103, M-1)', () => {
+    expect(
+      hasPayableTotal({
+        status: 'ready',
+        preview: { ...preview, total: null, entries: null, blockedSince: '2026-09-28' },
+      }),
+    ).toBe(false);
   });
 });

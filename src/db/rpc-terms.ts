@@ -43,18 +43,9 @@ export interface RefundQuote {
   method: PaymentMethod | null;
 }
 
-export async function svcRefundPreview(
-  adminClient: DatabaseClient,
-  request: { bookingId: string; kind: RefundKind },
-): Promise<RefundQuote> {
-  const reply = quoteSchema.parse(
-    await resultOf(
-      adminClient.rpc('svc_refund_preview', {
-        p_booking_id: request.bookingId,
-        p_kind: request.kind,
-      }),
-    ),
-  );
+// The refund quote as internal.refund_preview and public.cancellation_preview answer it.
+export function toRefundQuote(answer: unknown): RefundQuote {
+  const reply = quoteSchema.parse(answer);
   return {
     kind: reply.kind,
     amount: reply.amount,
@@ -67,6 +58,20 @@ export async function svcRefundPreview(
     retained: reply.retained ?? 0,
     method: reply.method ?? null,
   };
+}
+
+export async function svcRefundPreview(
+  adminClient: DatabaseClient,
+  request: { bookingId: string; kind: RefundKind },
+): Promise<RefundQuote> {
+  return toRefundQuote(
+    await resultOf(
+      adminClient.rpc('svc_refund_preview', {
+        p_booking_id: request.bookingId,
+        p_kind: request.kind,
+      }),
+    ),
+  );
 }
 
 const cancelReplySchema = z.strictObject({
@@ -106,21 +111,9 @@ export interface CancellationRequest {
   expectedPct: number | null;
 }
 
-export async function svcCancelBooking(
-  adminClient: DatabaseClient,
-  request: CancellationRequest,
-): Promise<CancellationOutcome> {
-  const reply = cancelReplySchema.parse(
-    await resultOf(
-      adminClient.rpc('svc_cancel_booking', {
-        p_booking_id: request.bookingId,
-        p_reason: request.reason,
-        p_kind: request.kind,
-        p_expected_amount: request.expectedAmount,
-        ...(request.expectedPct === null ? {} : { p_expected_pct: request.expectedPct }),
-      }),
-    ),
-  );
+// A cancellation's answer, from the visitor's svc_cancel_booking or the staff's public.cancel_booking.
+export function toCancellationOutcome(answer: unknown): CancellationOutcome {
+  const reply = cancelReplySchema.parse(answer);
   return {
     closeOrders: reply.close_orders,
     refund: reply.refund && {
@@ -131,6 +124,23 @@ export async function svcCancelBooking(
       orderId: reply.refund.order_id,
     },
   };
+}
+
+export async function svcCancelBooking(
+  adminClient: DatabaseClient,
+  request: CancellationRequest,
+): Promise<CancellationOutcome> {
+  return toCancellationOutcome(
+    await resultOf(
+      adminClient.rpc('svc_cancel_booking', {
+        p_booking_id: request.bookingId,
+        p_reason: request.reason,
+        p_kind: request.kind,
+        p_expected_amount: request.expectedAmount,
+        ...(request.expectedPct === null ? {} : { p_expected_pct: request.expectedPct }),
+      }),
+    ),
+  );
 }
 
 // After Midtrans' refund call: submitted when Midtrans took it, failed (with its status code) when it refused in so

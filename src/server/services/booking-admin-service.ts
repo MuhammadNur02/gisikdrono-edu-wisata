@@ -176,7 +176,7 @@ function staffRpcRefusal(error: unknown): AppError | null {
   return null;
 }
 
-async function asStaffRpcStep<T>(run: () => Promise<T>): Promise<T> {
+export async function asStaffRpcStep<T>(run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {

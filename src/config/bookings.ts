@@ -33,3 +33,23 @@ export const PARTICIPANTS_HIDDEN_KEEP_MS = 5 * 60 * 1000;
 
 // Who moved a booking, as booking_events.actor_type records it (its CHECK in 0003_tables.sql).
 export const BOOKING_EVENT_ACTORS = ['system', 'webhook', 'admin', 'cron', 'visitor'] as const;
+
+// Task P4.3.08, docs/PRD.md §13.1 A28: why staff cancel a paid booking, which decides its refund (the visit terms at
+// the guest's request, the whole payment from the kelurahan or RW), and how the superadmin resolves a booking paid after
+// its seats were gone. The reasons follow the RPCs' own limits (20261104220200, 20261104220300).
+export const STAFF_CANCEL_CATEGORIES = ['guest_request', 'kelurahan'] as const;
+export const REVIEW_RESOLUTIONS = ['move', 'refund'] as const;
+export const CANCEL_REASON_LIMITS = { min: 3, max: 300 } as const;
+export const REVIEW_REASON_LIMITS = { min: 10, max: 300 } as const;
+// The PIC's messages a staff member may send again (request_notification_resend's own list, the ones a PIC acts on).
+export const RESENDABLE_TEMPLATES = [
+  'booking_created',
+  'payment_reminder',
+  'payment_received_ticket',
+  'booking_cancelled',
+  'visit_reminder_d1',
+  'certificate_ready',
+  'refund_processed',
+] as const;
+// The review a booking paid after its hold lapsed and its session filled waits in (internal.settle_payment).
+export const NO_SEATS_REVIEW_REASON = 'PAID_AFTER_EXPIRY_NO_QUOTA';

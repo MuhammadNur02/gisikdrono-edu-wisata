@@ -48,7 +48,7 @@ export const walkInCopy = {
   linkSent: 'Tautan pembayaran dikirim ke penanggung jawab.',
   linkNotSent:
     'Tautan pembayaran belum terkirim karena koneksi terputus. Hubungi penanggung jawab, atau catat uang tunainya dari halaman pemesanan.',
-  openLinkNote: 'Tautan pembayaran yang terbuka akan dihentikan',
+  openLinkNote: 'Pembayaran lewat tautan setelah ini akan dikembalikan',
   present: 'Rombongan sudah hadir',
   attendees: 'Jumlah yang hadir',
   attendeesHint: (max: number) =>

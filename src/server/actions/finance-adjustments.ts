@@ -123,7 +123,7 @@ export async function applyAdjustmentAction(
   if (!guard.ok) return guard;
 
   try {
-    const applied = await apply(parsed.data.adjustmentId);
+    const applied = await apply(guard.ctx, parsed.data.adjustmentId);
     revalidateAdjustments();
     return ok({ ...applied, outcome: applyOutcomeOf(applied.status) });
   } catch (error) {

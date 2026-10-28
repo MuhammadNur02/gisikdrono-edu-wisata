@@ -164,6 +164,8 @@ export interface AdjustmentDetails {
   fromKey?: string;
   toKey?: string;
   weatherLinkId?: string;
+  // A manual transfer's QR key id, from the server (A28).
+  keyId?: string;
 }
 
 // A finance list reads at most FINANCE_LIST_LIMIT rows; hasMore says there are older ones to filter for (L-5).
@@ -273,6 +275,11 @@ export interface AdjustmentReply {
   applyNotBefore: string | null;
 }
 
+// An applied manual transfer also names the Midtrans orders it closed, which the server ends next (A28).
+export interface AppliedAdjustmentReply extends AdjustmentReply {
+  closeOrders: string[];
+}
+
 // apply_adjustment (20261104080200, review of PR #69, M-2) answers a bank transfer whose visit-terms request Midtrans
 // refunded meanwhile with the row rejected, not an error, so its refund_paid_twice_detected alert stays: 'overtaken'.
 export type ApplyOutcome = 'applied' | 'overtaken';
@@ -290,6 +297,8 @@ export interface PayoutPreview {
   // Null while the period is not one a payout may cover.
   total: number | null;
   entries: number | null;
+  // Review of PR #103, M-1: the day of an unpaid negative row before the period, which no payout of it may leave behind.
+  blockedSince: string | null;
 }
 
 // What the payout form shows of the preview while it is asked again.

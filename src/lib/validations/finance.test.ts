@@ -178,8 +178,16 @@ describe('proposeAdjustmentSchema', () => {
       false,
     );
     expect(
-      proposeAdjustmentSchema.safeParse({ ...PROPOSAL, type: 'manual_mark_paid' }).success,
+      proposeAdjustmentSchema.safeParse({ ...PROPOSAL, type: 'pax_correction' }).success,
     ).toBe(false);
+  });
+
+  // docs/PRD.md §13.1 A28: a bank transfer the superadmin saw arrive is proposed like any adjustment.
+  it('takes a manual transfer, which names no payment of its own', () => {
+    expect(
+      proposeAdjustmentSchema.safeParse({ ...PROPOSAL, type: 'manual_mark_paid', paymentId: null })
+        .success,
+    ).toBe(true);
   });
 });
 

@@ -35,6 +35,7 @@ import type { MarkRefundFailedValues } from '@/lib/validations/refund-request';
 import {
   checkTimeLeft,
   closeOpenOrderForCash,
+  closeOpenOrderForTransfer,
   endAbandonedAttempt,
   isReusablePage,
   openSnapPage,
@@ -276,4 +277,13 @@ export async function endOpenOrderBeforeCash(
     throw new AppError('STATE_INVALID', walkInCopy.errors.qrKeyUnknown);
   }
   await closeOpenOrderForCash(adminClient, bookingId, actorId);
+}
+
+// docs/PRD.md §13.1 A28 (review of PR #102, L3): the PIC's open Midtrans order ends before a manual transfer applies,
+// so a page left open cannot settle the booking a second time; apply_manual_transfer refuses one still open.
+export async function endOpenOrderBeforeTransfer(
+  bookingId: string,
+  actorId: string,
+): Promise<void> {
+  await closeOpenOrderForTransfer(createSupabaseAdminClient(), bookingId, actorId);
 }

@@ -4641,6 +4641,16 @@ export type Database = {
       app_rw_id: { Args: never; Returns: number }
       apply_adjustment: { Args: { p_id: string }; Returns: Json }
       approve_adjustment: { Args: { p_id: string }; Returns: Json }
+      cancel_booking: {
+        Args: {
+          p_booking_id: string
+          p_expected_amount: number
+          p_expected_pct?: number
+          p_reason: string
+          p_reason_category?: string
+        }
+        Returns: Json
+      }
       cancel_staff_mfa_reset: {
         Args: { p_user_id: string }
         Returns: undefined
@@ -4648,6 +4658,10 @@ export type Database = {
       cancel_superadmin_promotion: {
         Args: { p_user_id: string }
         Returns: undefined
+      }
+      cancellation_preview: {
+        Args: { p_booking_id: string; p_reason_category?: string }
+        Returns: Json
       }
       check_in_ticket: {
         Args: {
@@ -4678,6 +4692,10 @@ export type Database = {
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       declare_weather_disruption: {
         Args: { p_reason: string; p_session_id: string }
+        Returns: Json
+      }
+      extend_booking_hold: {
+        Args: { p_booking_id: string; p_new_expires_at: string }
         Returns: Json
       }
       finance_booking: { Args: { p_booking_id: string }; Returns: Json }
@@ -4773,6 +4791,7 @@ export type Database = {
         }
         Returns: Json
       }
+      reactivate_booking: { Args: { p_booking_id: string }; Returns: Json }
       record_refund: {
         Args: {
           p_amount: number
@@ -4792,7 +4811,25 @@ export type Database = {
         Args: { p_adjustment_id: string; p_note: string }
         Returns: Json
       }
+      request_notification_resend: {
+        Args: {
+          p_booking_id: string
+          p_channel: Database["public"]["Enums"]["notification_channel"]
+          p_template: Database["public"]["Enums"]["notification_template"]
+        }
+        Returns: string
+      }
       reset_staff_mfa: { Args: { p_user_id: string }; Returns: Json }
+      resolve_booking_review: {
+        Args: {
+          p_booking_id: string
+          p_key_id?: string
+          p_reason: string
+          p_resolution: string
+          p_session_ids?: string[]
+        }
+        Returns: Json
+      }
       resolve_weather_link: {
         Args: { p_link_id: string; p_outcome: string; p_reason: string }
         Returns: Json
@@ -5066,6 +5103,14 @@ export type Database = {
         Returns: Json
       }
       svc_close_attempt_for_cash: {
+        Args: {
+          p_actor_id: string
+          p_page_may_be_live?: boolean
+          p_payment_id: string
+        }
+        Returns: undefined
+      }
+      svc_close_attempt_for_transfer: {
         Args: { p_actor_id: string; p_payment_id: string }
         Returns: undefined
       }
