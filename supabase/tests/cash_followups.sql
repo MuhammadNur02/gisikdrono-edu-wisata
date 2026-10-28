@@ -61,7 +61,7 @@ select case when exists (select 1 from late_cash)
           'cash after the check-in window, before 23:59 WIB, is taken and the group checked in')
   else skip('the Jakarta day is a minute old, so no session of today has ended yet', 1) end;
 select case when exists (select 1 from late_cash)
-  then is((select (status, checked_in_pax)::text from public.tickets_qr t join public.bookings b on b.id = t.booking_id
+  then is((select (t.status, t.checked_in_pax)::text from public.tickets_qr t join public.bookings b on b.id = t.booking_id
            where b.booking_code = 'GSK-TNA0TEKT'), '(used,2)', 'its ticket is used, with the count')
   else skip('the Jakarta day is a minute old, so no session of today has ended yet', 1) end;
 select case when exists (select 1 from late_cash)

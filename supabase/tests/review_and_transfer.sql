@@ -100,9 +100,10 @@ declare
   answer jsonb;
 begin
   perform set_config('app.in_rpc', '1', true);
-  insert into public.payments (booking_id, attempt_no, provider, method, status, order_id, gross_amount)
+  insert into public.payments (booking_id, attempt_no, provider, method, status, order_id, gross_amount,
+    transaction_time)
   select b.id, attempt.next, 'midtrans', 'qris', 'pending', b.booking_code || '-' || lpad(attempt.next::text, 2, '0'),
-         b.total_amount
+         b.total_amount, now()
   from public.bookings b
   cross join lateral (select coalesce(max(p.attempt_no), 0) + 1 as next from public.payments p
                       where p.booking_id = b.id) as attempt

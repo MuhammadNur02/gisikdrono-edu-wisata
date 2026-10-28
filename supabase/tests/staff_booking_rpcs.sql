@@ -207,9 +207,11 @@ insert into booking select 'lapsed_quote', id from public.bookings where booking
 insert into booking select 'unproven', id from public.bookings where booking_code = 'GSK-STF0TNPA';
 
 -- ===== reactivate_booking =====
-select pg_temp.act_as('admin_rw_05');
+select pg_temp.act_as('superadmin_aal2');
 select throws_ok($$select public.reactivate_booking((select id from booking where name = 'combo'))$$,
   'P0001', null, 'a running hold is not reactivated');
+reset role;
+select pg_temp.act_as('admin_rw_05');
 select throws_ok($$select public.reactivate_booking((select id from booking where name = 'crowded'))$$,
   'P0001', null, 'nor an expired one whose seats another group took (QUOTA_UNAVAILABLE)');
 select is(pg_temp.hint_of($$select public.reactivate_booking((select id from booking where name = 'lapsed_quote'))$$),
