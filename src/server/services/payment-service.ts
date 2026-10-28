@@ -4,12 +4,9 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import {
   svcApplyPaymentEvent,
-  svcAttachSnapToken,
   svcCreatePaymentAttempt,
   svcRecordPaymentEvent,
-  svcRecordPaymentFailure,
   svcRecordWebhookRejection,
-  type PaymentAttempt,
   type PaymentEventOutcome,
   type WebhookRejection,
 } from '@/db/rpc-payments';
@@ -17,51 +14,50 @@ import { markRefundRequestFailed } from '@/db/rpc-refunds';
 import type { DatabaseClient } from '@/db/rpc-result';
 import type { CancellationOutcome } from '@/db/rpc-terms';
 import type { Json } from '@/db/types';
-import { copy } from '@/lib/copy/id';
 import { staffCopy } from '@/lib/copy/staff';
+import { walkInCopy } from '@/lib/copy/walk-in';
 import { serverEnv } from '@/lib/env';
 import { AppError, privilegeHintOf } from '@/lib/errors';
 import { createLogger } from '@/lib/logger';
 import { isSameAmount } from '@/lib/midtrans/amount';
 import {
-  createSnapTransaction,
   expireTransaction,
   getTransactionStatus,
   WEBHOOK_STATUS_TIMEOUT_MS,
 } from '@/lib/midtrans/client';
 import { mapMidtransStatus, needsStatusConfirmation } from '@/lib/midtrans/map-status';
 import type { MidtransNotification } from '@/lib/midtrans/schemas';
-import { buildSnapPayload } from '@/lib/midtrans/snap';
-import { publicEnv } from '@/lib/public-env';
 import { withinRateLimits, type RateLimitCheck } from '@/lib/rate-limit';
-// Visitors have no session and Midtrans is no user, so payments run with the service role (CLAUDE.md §6.1). Every
-// call is keyed by what the server checked first: a booking id a verified guest link gave (startPayment, the page), or
-// an order id inside a notification whose signature passed (the webhook). Status and money columns are written only by
-// the internal.* functions behind the svc_* wrappers.
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { jsonValueSchema } from '@/lib/validations/json-value';
 import type { MarkRefundFailedValues } from '@/lib/validations/refund-request';
+import {
+  checkTimeLeft,
+  closeOpenOrderForCash,
+  endAbandonedAttempt,
+  isReusablePage,
+  openSnapPage,
+} from '@/server/services/payment-attempts';
 import { askMidtransForRefund } from '@/server/services/payment-poll';
 import {
+  isListedQrKid,
   openAttemptOf,
   paymentPageOf,
   snapBookingOf,
-  type PreparedSnapBooking,
 } from '@/server/services/payment-reads';
 import { lookAtRefundRequest } from '@/server/services/refund-looks';
 import type { RecheckOutcome } from '@/types/finance';
-import type { OpenPaymentAttempt, PaymentPageView } from '@/types/payment';
+import type { PaymentPageView } from '@/types/payment';
 
-// Task P3.7.04 and P3.8.03–04 (docs/Security.md §3.2, §3.3): opening a booking's Snap page, and taking Midtrans'
-// notifications in.
+// Visitors have no session and Midtrans is no user, so payments run with the service role (CLAUDE.md §6.1). Every
+// call is keyed by what the server checked first: a booking id a verified guest link gave (startPayment, the page), an
+// order id inside a notification whose signature passed (the webhook), or a booking an RW admin was guarded for and
+// found able to take cash under their own RLS (endOpenOrderBeforeCash, from src/server/actions/walk-in-cash.ts).
+// Status and money columns are written only by the internal.* functions behind the svc_* wrappers.
 
-const text = copy.booking.payment;
-const MS_PER_MINUTE = 60_000;
-const MIN_HOLD_LEFT_MINUTES = 5;
-const MIN_HOLD_LEFT_MS = MIN_HOLD_LEFT_MINUTES * MS_PER_MINUTE;
-// An attempt this young without its Snap page is another request still asking Midtrans for one.
-const SNAP_REQUEST_GRACE_MS = 20_000;
+// Task P3.7.04 and P3.8.03–04 (docs/Security.md §3.2, §3.3): opening a booking's Snap page (its attempts in
+// payment-attempts.ts), and taking Midtrans' notifications in.
 
 export function withinPaymentLimits(checks: readonly RateLimitCheck[]): Promise<boolean> {
   return withinRateLimits(createSupabaseAdminClient(), checks);
@@ -71,59 +67,10 @@ export function loadPaymentPage(bookingId: string): Promise<PaymentPageView> {
   return paymentPageOf(createSupabaseAdminClient(), bookingId);
 }
 
-// docs/Security.md §3.2 (WH-16): an attempt left without its Snap page is ended at Midtrans before another replaces
-// it; an open page is reused, and an attempt under review blocks a new one.
-async function endAbandonedAttempt(open: OpenPaymentAttempt | null): Promise<string | null> {
-  if (open === null) return null;
-  if (open.status === 'needs_review') throw new AppError('STATE_INVALID', text.underReview);
-  if (open.status !== 'initiated') throw new AppError('STATE_INVALID');
-  if (Date.now() - Date.parse(open.createdAt) < SNAP_REQUEST_GRACE_MS) {
-    throw new AppError('CONFLICT', text.errors.preparing);
-  }
-  if ((await expireTransaction(open.orderId)) === 'refused') throw new AppError('PAYMENT');
-  return open.paymentId;
-}
-
-// BOOK-14: no new page with less than five minutes of the hold left. A quoted booking has no deadline yet; it gets one
-// with its first attempt (create_payment_attempt), which checks the same.
-function checkTimeLeft(prepared: PreparedSnapBooking): void {
-  const expiresAt = prepared.booking.expiresAt;
-  if (expiresAt !== null && Date.parse(expiresAt) - Date.now() < MIN_HOLD_LEFT_MS) {
-    throw new AppError('STATE_INVALID', text.errors.tooLate);
-  }
-}
-
-// The attempt closes when Midtrans makes no page for it, so the visitor's next try starts a new one.
-async function openSnapPage(
-  adminClient: DatabaseClient,
-  prepared: PreparedSnapBooking,
-  attempt: PaymentAttempt,
-): Promise<{ redirectUrl: string }> {
-  try {
-    const payload = buildSnapPayload(
-      { ...prepared.booking, orderId: attempt.orderId, expiresAt: attempt.expiresAt },
-      prepared.addons,
-      { siteUrl: publicEnv.NEXT_PUBLIC_SITE_URL, now: new Date() },
-    );
-    const page = await createSnapTransaction(payload);
-    await svcAttachSnapToken(adminClient, {
-      paymentId: attempt.paymentId,
-      snapToken: page.token,
-      redirectUrl: page.redirectUrl,
-    });
-    return { redirectUrl: page.redirectUrl };
-  } catch {
-    await svcRecordPaymentFailure(adminClient, attempt.paymentId, 'failed');
-    throw new AppError('PAYMENT');
-  }
-}
-
 export async function startPayment(bookingId: string): Promise<{ redirectUrl: string }> {
   const adminClient = createSupabaseAdminClient();
   const open = await openAttemptOf(adminClient, bookingId);
-  if (open?.status === 'pending' && open.redirectUrl !== null) {
-    return { redirectUrl: open.redirectUrl };
-  }
+  if (isReusablePage(open)) return { redirectUrl: open.redirectUrl };
   const prepared = await snapBookingOf(adminClient, bookingId);
   checkTimeLeft(prepared);
   const replacesPaymentId = await endAbandonedAttempt(open);
@@ -315,4 +262,18 @@ export async function markRefundRequestFailedByStaff(
       throw new AppError('FORBIDDEN', staffCopy.notFresh);
     throw error;
   }
+}
+
+// The officer's cash (Task P4.3.10): the PIC's open order is ended first (payment-attempts.ts), once the key id the
+// tickets will carry is known to be listed (delta review of PR #91, I-3).
+export async function endOpenOrderBeforeCash(
+  bookingId: string,
+  actorId: string,
+  keyId: string,
+): Promise<void> {
+  const adminClient = createSupabaseAdminClient();
+  if (!(await isListedQrKid(adminClient, keyId))) {
+    throw new AppError('STATE_INVALID', walkInCopy.errors.qrKeyUnknown);
+  }
+  await closeOpenOrderForCash(adminClient, bookingId, actorId);
 }

@@ -16,11 +16,13 @@ import {
 import { BookingTickets } from '@/components/admin/bookings/booking-tickets';
 import { ContactPanel } from '@/components/admin/bookings/contact-panel';
 import { ParticipantsPanel } from '@/components/admin/bookings/participants-panel';
+import { ReceiveCashButton } from '@/components/admin/bookings/receive-cash-button';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { StatusBadge } from '@/components/admin/status/status-badge';
 import { Button } from '@/components/ui/button';
 import { BOOKINGS_DASHBOARD_PATH } from '@/config/bookings';
 import { bookingsAdminCopy } from '@/lib/copy/bookings-admin';
+import { cashBookingOf, hasOpenPayLink, isCashReceivable } from '@/lib/utils/walk-in-cash';
 import {
   loadAddonNotesAction,
   loadBookingParticipantsAction,
@@ -30,6 +32,7 @@ import {
   setAddonFulfillmentAction,
 } from '@/server/actions/booking-admin';
 import { verifyStaffTotpAction } from '@/server/actions/staff-totp';
+import { recordWalkInCashAction } from '@/server/actions/walk-in-cash';
 import { requireDashboardStaff } from '@/server/auth/session';
 import {
   getBookingDetail,
@@ -62,9 +65,25 @@ interface MainColumnProps {
   booking: BookingDetail;
   addons: BookingAddonLine[];
   isSuperadmin: boolean;
+  canReceiveCash: boolean;
 }
 
-function MainColumn({ booking, addons, isSuperadmin }: MainColumnProps) {
+// Task P4.3.10 (A23): the cash an RW admin takes later for an officer's booking of their RW, also while the PIC has
+// a pay link open, which the cash ends (delta review of PR #91, M-1).
+function ReceiveCash({ booking }: { booking: BookingDetail }) {
+  const cash = cashBookingOf(booking);
+  if (cash === null) return null;
+  return (
+    <ReceiveCashButton
+      booking={cash}
+      hasOpenPayLink={hasOpenPayLink(booking)}
+      action={recordWalkInCashAction}
+      stepUpAction={verifyStaffTotpAction}
+    />
+  );
+}
+
+function MainColumn({ booking, addons, isSuperadmin, canReceiveCash }: MainColumnProps) {
   return (
     <div className="flex flex-col gap-6 lg:col-span-2">
       <BookingSummary booking={booking} />
@@ -81,6 +100,7 @@ function MainColumn({ booking, addons, isSuperadmin }: MainColumnProps) {
           isSuperadmin ? { revoke: revokeTicketAction, stepUp: verifyStaffTotpAction } : null
         }
       />
+      {canReceiveCash ? <ReceiveCash booking={booking} /> : null}
       <BookingPayments booking={booking} />
       <BookingInvoices booking={booking} />
     </div>
@@ -147,7 +167,16 @@ export default async function BookingDetailPage({ params }: BookingPageProps) {
         action={<StatusBadge kind="booking_status" value={booking.status} />}
       />
       <div className="grid gap-6 lg:grid-cols-3">
-        <MainColumn booking={booking} addons={addons} isSuperadmin={ctx.role === 'superadmin'} />
+        <MainColumn
+          booking={booking}
+          addons={addons}
+          isSuperadmin={ctx.role === 'superadmin'}
+          canReceiveCash={isCashReceivable(
+            booking,
+            ctx.role === 'admin_rw' && ctx.isAal2,
+            new Date(),
+          )}
+        />
         <SideColumn booking={booking} timeline={timeline} />
       </div>
     </div>

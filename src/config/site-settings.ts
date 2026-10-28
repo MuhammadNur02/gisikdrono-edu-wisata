@@ -43,7 +43,9 @@ export const SETTING_LIMITS = {
   holdMinutesMin: 15,
   holdMinutesMax: 1440,
   holdHoursMin: 1,
-  // A hold may be extended to 14 days at most (extend_booking_hold), so it never starts longer.
+  // A hold may be extended to 14 days at most (extend_booking_hold), so it never starts longer. An officer's booking of
+  // one RW is the exception these numbers do not set: it is held until 23:59 WIB of its visit day (docs/PRD.md §13.1
+  // A23 and its addendum; docs/Security.md §4.2).
   holdHoursMax: 336,
   quotationDaysMin: 1,
   quotationDaysMax: 90,

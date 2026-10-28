@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   formatPhone,
+  INTERNATIONAL_PHONE_PATTERN,
   lastFourDigits,
   localDigits,
   maskPhone,
@@ -61,5 +62,25 @@ describe('display helpers', () => {
     expect(localDigits('+6281234567890')).toBe('81234567890');
     expect(localDigits('0812')).toBe('0812');
     expect(lastFourDigits('+6281234567890')).toBe('7890');
+  });
+});
+
+// Task P4.3.10: a group from abroad, registered by an officer, keeps its number as written in E.164.
+describe('numbers from abroad', () => {
+  it('match the CHECK of an officer booking, never the +62 one', () => {
+    expect(INTERNATIONAL_PHONE_PATTERN.test('+447700900123')).toBe(true);
+    expect(INTERNATIONAL_PHONE_PATTERN.test('+6281234567890')).toBe(true);
+    expect(INTERNATIONAL_PHONE_PATTERN.test('+0447700900123')).toBe(false);
+    expect(INTERNATIONAL_PHONE_PATTERN.test('+1234567')).toBe(false);
+    expect(INTERNATIONAL_PHONE_PATTERN.test('+1234567890123456')).toBe(false);
+    expect(PHONE_PATTERN.test('+447700900123')).toBe(false);
+  });
+
+  it('are shown in E.164 and masked to their country code and at most half the digits', () => {
+    expect(formatPhone('+447700900123')).toBe('+447700900123');
+    expect(maskPhone('+447700900123')).toBe('+44 ••••0123');
+    expect(maskPhone('+14155550100')).toBe('+1 ••••0100');
+    expect(maskPhone('+35312345678')).toBe('+353 ••••78');
+    expect(lastFourDigits('+447700900123')).toBe('0123');
   });
 });
