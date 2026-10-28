@@ -8,12 +8,15 @@ import type { z } from 'zod';
 import { FormAlert } from '@/components/forms/form-alert';
 import { FormField } from '@/components/forms/form-field';
 import { PostForm } from '@/components/forms/post-form';
+import { TurnstileField } from '@/components/forms/turnstile-field';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { TURNSTILE_ACTIONS } from '@/config/auth';
 import { PHONE_LAST_DIGITS } from '@/config/guest';
 import { useActionForm } from '@/hooks/use-action-form';
 import { useRefreshAfter } from '@/hooks/use-refresh-after';
+import { useTurnstileToken } from '@/hooks/use-turnstile-token';
 import { certificatesCopy } from '@/lib/copy/certificates';
 import { certificatePhoneSchema } from '@/lib/validations/guest-certificate';
 import type { ActionResult } from '@/types/action-result';
@@ -56,20 +59,25 @@ function LastFourField({ control }: { control: Control<StepUpValues> }) {
   );
 }
 
-// The page reads itself again once the proof is kept, to show the names.
+// The page reads itself again once the proof is kept, to show the names. A token is good once, so a refused try asks
+// Turnstile for a new one.
 function useStepUpForm(bookingCode: string, action: ProveCertificatePhoneAction) {
   const refresh = useRefreshAfter();
   const form = useForm({
     resolver: zodResolver(certificatePhoneSchema),
-    defaultValues: { bookingCode, lastFour: '' },
+    defaultValues: { bookingCode, lastFour: '', turnstileToken: '' },
+  });
+  const captcha = useTurnstileToken((token) => {
+    form.setValue('turnstileToken', token, { shouldValidate: token !== '' });
   });
   const { submit, failure } = useActionForm({
     form,
     action,
-    fields: ['lastFour'],
+    fields: ['lastFour', 'turnstileToken'],
     onSuccess: refresh,
+    onFailure: captcha.renew,
   });
-  return { form, submit, failure };
+  return { form, captcha, submit, failure };
 }
 
 // Task P4.5.03 (docs/Security.md DOC-02): the last four digits of the PIC's WhatsApp number open the certificates that
@@ -81,7 +89,7 @@ export function CertificatePhoneStepUp({
   bookingCode: string;
   action: ProveCertificatePhoneAction;
 }) {
-  const { form, submit, failure } = useStepUpForm(bookingCode, action);
+  const { form, captcha, submit, failure } = useStepUpForm(bookingCode, action);
   return (
     <section
       aria-labelledby="certificate-step-up"
@@ -92,6 +100,12 @@ export function CertificatePhoneStepUp({
       <Form {...form}>
         <PostForm onSubmit={submit}>
           <LastFourField control={form.control} />
+          <TurnstileField
+            ref={captcha.ref}
+            action={TURNSTILE_ACTIONS.certificatePhone}
+            onToken={captcha.onToken}
+            error={form.formState.errors.turnstileToken?.message}
+          />
           <Button
             type="submit"
             size="lg"
