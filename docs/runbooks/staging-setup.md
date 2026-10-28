@@ -54,7 +54,7 @@ Staging uses the **Free** plan (decision of 2026-10-23: staging free, production
 | Image transformations (`/storage/v1/render/image`) | no | yes | Built with `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS=off`: photos are served as their plain `public-media` files (`src/lib/images/public-object-loader.ts`), already shrunk to 1600 px WebP on upload. Production refuses the flag and keeps the transformer |
 | Leaked-password protection | no | yes | **Production only**; staging relies on the 8-character password policy and TOTP |
 | Session time-box (12 h) and inactivity timeout (2 h) | no | yes | **Production only**; staging sessions are not time-boxed, so sign out of the dashboard after use |
-| Daily backups | no | yes (7 days) | None on staging; it holds demo content only, which the workflow can write again. The restore drill of `docs/Security.md` §11 waits for a Pro project |
+| Daily backups | no | yes (7 days) | None on staging; it holds demo content only, which the workflow can write again. No backup of production is ever restored here: the restore drill runs on a throwaway local stack (`docs/runbooks/restore-drills.md`, PRD §13.1 A27) |
 | Always on | **paused after 7 days without activity** | always on | See "When Supabase pauses the staging project" in part F |
 | Custom access token hook | yes | yes | Same as production; the app's roles come from it |
 | TOTP MFA, captcha, rate limits, custom SMTP | yes | yes | Same as production |
