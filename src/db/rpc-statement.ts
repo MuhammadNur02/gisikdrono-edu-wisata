@@ -6,7 +6,7 @@ import { resultOf, type DatabaseClient } from '@/db/rpc-result';
 import type { StatementPeriod, StatementRow } from '@/lib/midtrans/statement-csv';
 import type { StatementImportSummary } from '@/types/midtrans-statement';
 
-// public.import_midtrans_statement (Task P4.7.05, 20261104190600) on the superadmin's session client: the function
+// public.import_midtrans_statement (Task P4.7.05, 20261104210200) on the superadmin's session client: the function
 // checks the role, the fresh authenticator code and its hourly limit itself and writes the run, its issues and the
 // audit row. A statement imported before answers with its earlier run (review of PR #99, M1).
 

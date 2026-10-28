@@ -7,7 +7,7 @@
 // with its record numbers (L2), the rows sent stay under the Server Action's body limit (L3), and the period of the
 // statement's transaction times, when the file has them, goes with the rows (Info).
 
-// Mirrors max_rows of public.import_midtrans_statement (20261104190600).
+// Mirrors max_rows of public.import_midtrans_statement (20261104210200).
 export const STATEMENT_MAX_ROWS = 5000;
 // L3: the rows as sent stay below the 512 KB body limit of a Server Action (next.config.ts), with room for the rest:
 // 450 KB (450 x 1024 bytes).

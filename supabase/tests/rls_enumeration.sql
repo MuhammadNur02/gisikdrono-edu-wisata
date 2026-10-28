@@ -74,7 +74,7 @@ select is(
 -- invoker, so the grants and policies of a direct write decide; issue_mfa_reenrolment_code of 20261029080000; and
 -- acknowledge_alert_as_sole_superadmin of 20261029080400; then the finance RPCs of 20261101130000 to
 -- 20261101130200 and 20261104190200 to 20261104190500 (release_refund_key_mismatch, payout_preview,
--- rpc_reveal_finance_evidence); import_midtrans_statement of 20261104190600; and onboarding_state of 20261103131200, booleans about the caller's own onboarding only.
+-- rpc_reveal_finance_evidence); import_midtrans_statement of 20261104210200; and onboarding_state of 20261103131200, booleans about the caller's own onboarding only.
 select is(
   array(
     select n.nspname || '.' || p.proname from pg_proc p
