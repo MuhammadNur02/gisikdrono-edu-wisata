@@ -228,7 +228,7 @@ describe('requireFreshTotp', () => {
 
 describe('requireGuestToken', () => {
   const CODE = 'GSK-7F3K9Q2M';
-  const ACCESS = { bookingId: 'b-1', bookingCode: CODE, scope: 'manage' as const };
+  const ACCESS = { bookingId: 'b-1', bookingCode: CODE, scope: 'manage' as const, tokenVersion: 1 };
 
   beforeEach(() => {
     guestCookies.clear();

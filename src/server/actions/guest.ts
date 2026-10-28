@@ -31,7 +31,7 @@ import {
   rescheduleBookingSchema,
 } from '@/lib/validations/guest';
 import { requireGuestToken } from '@/server/auth/guards';
-import { readPhoneProofCookie } from '@/server/auth/guest-cookies';
+import { forgetCertificateProof, readPhoneProofCookie } from '@/server/auth/guest-cookies';
 import {
   bookingSessionDays,
   cancelGuestBooking,
@@ -78,7 +78,8 @@ export async function lookupBookingAction(input: unknown): Promise<ActionResult<
 
 const revokeSchema = z.object({ bookingCode: z.string().regex(BOOKING_CODE_PATTERN) }).strict();
 
-// Every link of the booking stops working, the one in this browser included; a new one comes through /reservasi/cari.
+// Every link of the booking stops working, the one in this browser included, and the certificate page's phone proof
+// with them (review of PR #94, L2); a new one comes through /reservasi/cari.
 export async function revokeGuestLinksAction(input: unknown): Promise<ActionResult<null>> {
   const parsed = revokeSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
@@ -95,6 +96,7 @@ export async function revokeGuestLinksAction(input: unknown): Promise<ActionResu
     for (const name of guestLinkCookieNames(bookingCode)) {
       jar.delete({ name, path: `${GUEST_BOOKING_PATH}/${bookingCode}` });
     }
+    await forgetCertificateProof(bookingCode);
     return ok(null);
   } catch (error) {
     return mapError(error);

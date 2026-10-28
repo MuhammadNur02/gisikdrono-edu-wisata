@@ -17,7 +17,7 @@ const CODE = 'GSK-7F3K9Q2M';
 const BOOKING_ID = '0192f3a4-5b6c-7d8e-9f01-0000000000bb';
 const GUEST = {
   ok: true as const,
-  guest: { bookingId: BOOKING_ID, bookingCode: CODE, scope: 'pay' as const },
+  guest: { bookingId: BOOKING_ID, bookingCode: CODE, scope: 'pay' as const, tokenVersion: 1 },
 };
 const NOT_FOUND = { ok: false as const, error: { code: 'NOT_FOUND' as const, message: 'x' } };
 const PAGE_URL = 'https://app.sandbox.midtrans.com/snap/v4/redirection/token';
