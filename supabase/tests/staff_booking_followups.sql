@@ -81,7 +81,7 @@ grant execute on function pg_temp.hint_of(text) to authenticated;
 -- How many of p_times runs of a statement went through.
 create function pg_temp.runs_through(p_sql text, p_times integer) returns integer
   language plpgsql
-as $
+as $$
 declare
   went_through integer := 0;
 begin
@@ -95,7 +95,7 @@ begin
   end loop;
   return went_through;
 end;
-$;
+$$;
 grant execute on function pg_temp.runs_through(text, integer) to authenticated;
 
 -- An officer's booking of RW 05, as create_admin_booking makes it.
@@ -264,8 +264,8 @@ reset role;
 select set_config('request.jwt.claims', '', true);
 update public.rw_units set is_active = true where id = 5;
 select pg_temp.act_as('superadmin_aal2');
-select is(pg_temp.hint_of($select public.resolve_booking_review((select id from booking where name = 'short'), 'move',
-    'Pindah ke sesi lain yang masih kosong', array['00000000-0000-4000-8000-0000000af305']::uuid[], 'k1')$),
+select is(pg_temp.hint_of($$select public.resolve_booking_review((select id from booking where name = 'short'), 'move',
+    'Pindah ke sesi lain yang masih kosong', array['00000000-0000-4000-8000-0000000af305']::uuid[], 'k1')$$),
   'QUOTA_UNAVAILABLE', 'a full session inside the package''s days passes the session rules and refuses on its seats');
 reset role;
 select set_config('request.jwt.claims', '', true);
@@ -325,7 +325,7 @@ from public.bookings b cross join generate_series(1, 99) as attempt(no)
 where b.id = (select id from booking where name = 'capped_attempts');
 select set_config('app.in_rpc', '', true);
 select pg_temp.act_as('superadmin_aal2');
-select is(pg_temp.hint_of($select public.apply_adjustment((select id from transfer where name = 'capped_attempts'))$),
+select is(pg_temp.hint_of($$select public.apply_adjustment((select id from transfer where name = 'capped_attempts'))$$),
   'STATE_INVALID', '2: a booking with no attempt left refuses the transfer before its open order is looked at');
 reset role;
 select set_config('request.jwt.claims', '', true);
@@ -385,12 +385,12 @@ create temporary table capped on commit drop as
   select id from public.bookings where booking_code = 'GSK-FWP0BARA';
 grant select on capped to authenticated;
 select pg_temp.act_as('admin_rw_05');
-select is(pg_temp.runs_through($select public.send_admin_booking_link((select id from capped))$, 5), 5,
+select is(pg_temp.runs_through($$select public.send_admin_booking_link((select id from capped))$$, 5), 5,
   '6: an officer asks for a booking''s pay link five times an hour');
 select is(pg_temp.hint_of($$select public.send_admin_booking_link((select id from capped))$$), 'RATE_LIMITED',
   'and the sixth is refused as too many');
-select is(pg_temp.runs_through($select public.request_notification_resend((select id from booking where name = 'raced'),
-    'payment_received_ticket', 'email')$, 10), 10, 'a booking''s message is sent again ten times a day');
+select is(pg_temp.runs_through($$select public.request_notification_resend((select id from booking where name = 'raced'),
+    'payment_received_ticket', 'email')$$, 10), 10, 'a booking''s message is sent again ten times a day');
 select is(pg_temp.hint_of($$select public.request_notification_resend((select id from booking where name = 'raced'),
     'payment_received_ticket', 'email')$$), 'RATE_LIMITED', 'and the eleventh resend is refused');
 reset role;
