@@ -106,6 +106,8 @@ export const adjustmentsCopy = {
     `Midtrans mencatat refund penyesuaian ${adjustmentRef} (yang sudah diterapkan) dengan jumlah lain. Periksa refund di dasbor Midtrans, lalu lepaskan blokirnya di tabel penyesuaian bila angka Midtrans yang benar.`,
   errors: {
     ADJUSTMENT_TYPE_UNSUPPORTED: 'Jenis penyesuaian ini belum bisa diusulkan di sini.',
+    PAYMENT_OPEN:
+      'Penanggung jawab masih membuka tautan pembayaran Midtrans yang belum bisa dihentikan. Coba terapkan lagi sebentar lagi.',
     QR_KEY_UNKNOWN:
       'Kunci tanda tangan tiket belum terdaftar, jadi tiket transfer manual ini tidak bisa dibuat. Hubungi pengelola sistem.',
     ADJUSTMENT_OPEN: 'Pemesanan ini sudah punya usulan penyesuaian sejenis yang belum selesai.',
@@ -180,6 +182,7 @@ export const reconciliationCopy = {
     chain_broken: 'Rantai rusak',
     payout_mismatch: 'Pembayaran bagi hasil tidak cocok',
     duplicate_settlement: 'Pembayaran ganda',
+    manual_transfer_unmatched: 'Transfer manual belum dicocokkan dengan rekening koran',
   } as Record<string, string>,
   columns: {
     createdAt: 'Ditemukan',

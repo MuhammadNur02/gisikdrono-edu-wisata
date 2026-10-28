@@ -3,6 +3,7 @@ import 'server-only';
 import {
   svcAttachSnapToken,
   svcCloseAttemptForCash,
+  svcCloseAttemptForTransfer,
   svcRecordPaymentFailure,
   type PaymentAttempt,
 } from '@/db/rpc-payments';
@@ -97,16 +98,43 @@ export async function openSnapPage(
 // Midtrans order of it is ended at Midtrans and closed as expired with the officer as actor, so the PIC cannot pay it
 // too. An order Midtrans says was paid stops the cash, and mark_booking_paid_manually still refuses while any payment
 // is open or settled.
+// The same before a manual transfer applies (review of PR #102, L3).
+interface EndedOrder {
+  paymentId: string;
+  isPageMaybeLive: boolean;
+}
+
+async function endOpenOrder(
+  adminClient: DatabaseClient,
+  bookingId: string,
+): Promise<EndedOrder | null> {
+  const open = await openAttemptOf(adminClient, bookingId);
+  if (open === null) return null;
+  if (open.status === 'needs_review') throw new AppError('STATE_INVALID', text.underReview);
+  const outcome = await expireTransaction(open.orderId);
+  if (outcome === 'refused') throw new AppError('PAYMENT');
+  const status = await getTransactionStatus(open.orderId);
+  if (PAID_STATUSES.has(status.transaction_status ?? '')) throw new AppError('STATE_INVALID');
+  return {
+    paymentId: open.paymentId,
+    isPageMaybeLive: outcome === 'not_charged' && open.redirectUrl !== null,
+  };
+}
+
 export async function closeOpenOrderForCash(
   adminClient: DatabaseClient,
   bookingId: string,
   actorId: string,
 ): Promise<void> {
-  const open = await openAttemptOf(adminClient, bookingId);
-  if (open === null) return;
-  if (open.status === 'needs_review') throw new AppError('STATE_INVALID', text.underReview);
-  if ((await expireTransaction(open.orderId)) === 'refused') throw new AppError('PAYMENT');
-  const status = await getTransactionStatus(open.orderId);
-  if (PAID_STATUSES.has(status.transaction_status ?? '')) throw new AppError('STATE_INVALID');
-  await svcCloseAttemptForCash(adminClient, open.paymentId, actorId);
+  const ended = await endOpenOrder(adminClient, bookingId);
+  if (ended) await svcCloseAttemptForCash(adminClient, { ...ended, actorId });
+}
+
+export async function closeOpenOrderForTransfer(
+  adminClient: DatabaseClient,
+  bookingId: string,
+  actorId: string,
+): Promise<void> {
+  const ended = await endOpenOrder(adminClient, bookingId);
+  if (ended) await svcCloseAttemptForTransfer(adminClient, ended.paymentId, actorId);
 }

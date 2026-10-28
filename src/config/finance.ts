@@ -80,5 +80,7 @@ export const FINANCE_REFUSAL_HINTS = [
   'WEATHER_FEE_UNSET_MANUAL',
   // A28: a manual transfer's QR key id is not in site_settings qr.signing_kids.
   'QR_KEY_UNKNOWN',
+  // Review of PR #102, L3: the PIC still has a Midtrans pay page open when a manual transfer applies.
+  'PAYMENT_OPEN',
 ] as const;
 export type FinanceRefusalHint = (typeof FINANCE_REFUSAL_HINTS)[number];

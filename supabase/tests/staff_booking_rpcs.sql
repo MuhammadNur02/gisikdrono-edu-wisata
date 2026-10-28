@@ -2,8 +2,23 @@
 -- staff in scope, paid by the superadmin with a fresh code on the visit terms' refund), extend_booking_hold,
 -- reactivate_booking and request_notification_resend, each from the staff member's own session at AAL2.
 begin;
-select plan(33);
+select plan(38);
 \ir helpers/rls_personas.psql
+-- The hint a statement is refused with, or null when it runs.
+create function pg_temp.hint_of(p_sql text) returns text
+  language plpgsql
+as $$
+declare
+  raised_hint text;
+begin
+  execute p_sql;
+  return null;
+exception when others then
+  get stacked diagnostics raised_hint = pg_exception_hint;
+  return raised_hint;
+end;
+$$;
+grant execute on function pg_temp.hint_of(text) to authenticated;
 select set_config('app.qr_key_id', 'k1', true);
 
 -- ===== Fixtures: an RW 05 package and a combo of RW 05 and RW 13, their sessions, and officers' bookings =====
@@ -28,7 +43,7 @@ as $$
   select (internal.create_booking(p_package, p_sessions, p_pax,
     jsonb_build_object('booker_type', 'individual', 'institution_name', null, 'pic_name', 'Sari Staf',
                        'pic_phone', '+6281300009' || right(p_key, 3), 'pic_email', 'staf-' || p_key || '@example.test',
-                       'notes', null, 'admin', jsonb_build_object('phone_confirmed', false, 'cash_on_the_spot', false)),
+                       'notes', null, 'admin', jsonb_build_object('phone_confirmed', true, 'cash_on_the_spot', false)),
     '[]', '[]', 'pay', 'admin', p_key, null,
     jsonb_build_object('version', '2026-10-18', 'attested_by', p_actor::text), p_actor, '{}',
     internal.booking_quote_hash(internal.booking_quote(p_package, p_pax, '[]',
@@ -138,20 +153,58 @@ select throws_ok($$select public.extend_booking_hold((select id from booking whe
 reset role;
 select pg_temp.act_as('admin_rw_05');
 select throws_ok($$select public.extend_booking_hold((select id from booking where name = 'combo'),
+    (select at from first_start) - interval '1 hour')$$,
+  'P0002', null, 'review of PR #102, L6: a combo is not one RW''s officer''s, as the action says too');
+reset role;
+select pg_temp.act_as('superadmin_aal2');
+select throws_ok($$select public.extend_booking_hold((select id from booking where name = 'combo'),
     (select at from first_start) + interval '1 minute')$$,
   '22023', null, 'a hold never runs past the first session''s start');
 select throws_ok($$select public.extend_booking_hold((select id from booking where name = 'combo'), now() + interval '1 hour')$$,
   '22023', null, 'and only moves later');
 select lives_ok($$select public.extend_booking_hold((select id from booking where name = 'combo'),
     (select at from first_start) - interval '1 hour')$$,
-  'an officer of one of the combo''s RWs extends its hold up to an hour before it starts');
+  'the superadmin extends the combo''s hold up to an hour before it starts');
 reset role;
 select set_config('request.jwt.claims', '', true);
 select is((select expires_at from public.bookings where id = (select id from booking where name = 'combo')),
   (select at from first_start) - interval '1 hour', 'the hold runs until then');
 select ok(exists (select 1 from public.booking_events where booking_id = (select id from booking where name = 'combo')
-                  and reason = 'hold_extended' and actor_id = '00000000-0000-4000-8000-00000000f005'),
+                  and reason = 'hold_extended' and actor_id = '00000000-0000-4000-8000-00000000f001'),
   'and the timeline says who moved it');
+-- Review of PR #102, L10: a hold whose PIC has a pay page open keeps its deadline (PAYMENT_OPEN).
+select set_config('app.in_rpc', '1', true);
+insert into public.payments (booking_id, attempt_no, provider, method, status, order_id, gross_amount)
+select b.id, 1, 'midtrans', 'qris', 'pending', b.booking_code || '-01', b.total_amount
+from public.bookings b where b.id = (select id from booking where name = 'combo');
+select set_config('app.in_rpc', '', true);
+select pg_temp.act_as('superadmin_aal2');
+select is(pg_temp.hint_of($$select public.extend_booking_hold((select id from booking where name = 'combo'),
+    (select at from first_start) - interval '30 minutes')$$),
+  'PAYMENT_OPEN', 'a hold is not extended while the PIC has a pay page open');
+reset role;
+select set_config('request.jwt.claims', '', true);
+
+-- Review of PR #102, HIGH 1: a quotation that lapsed (its leg unreserved) and a lapsed hold of an unproven phone.
+select set_config('app.in_rpc', '1', true);
+insert into public.bookings (booking_code, status, channel, package_id, package_snapshot, rw_ids, booker_type,
+  pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
+  consent_version, consented_at, phone_verified_at, created_by)
+values
+  ('GSK-STF0KWTA', 'expired', 'admin', '00000000-0000-4000-8000-0000000ad001', '{}', '{5}', 'individual', 'Kuota',
+   '+6281300009801', 'kwta@example.test', 1, public.today_jkt() + 3, public.today_jkt() + 3, 30000, 30000, 'v1',
+   now(), now(), '00000000-0000-4000-8000-00000000f005'),
+  ('GSK-STF0TNPA', 'expired', 'admin', '00000000-0000-4000-8000-0000000ad001', '{}', '{5}', 'individual', 'Tanpa',
+   '+6281300009802', 'tnpa@example.test', 1, public.today_jkt() + 3, public.today_jkt() + 3, 30000, 30000, 'v1',
+   now(), null, '00000000-0000-4000-8000-00000000f005');
+insert into public.booking_legs (booking_id, rw_id, visit_session_id, leg_order, pax_count, status, quota_released_at)
+select b.id, 5, '00000000-0000-4000-8000-0000000ad205', 1, 1,
+       case when b.booking_code = 'GSK-STF0KWTA' then 'unreserved' else 'released' end::public.booking_leg_status,
+       case when b.booking_code = 'GSK-STF0KWTA' then null else now() end
+from public.bookings b where b.booking_code in ('GSK-STF0KWTA', 'GSK-STF0TNPA');
+select set_config('app.in_rpc', '', true);
+insert into booking select 'lapsed_quote', id from public.bookings where booking_code = 'GSK-STF0KWTA';
+insert into booking select 'unproven', id from public.bookings where booking_code = 'GSK-STF0TNPA';
 
 -- ===== reactivate_booking =====
 select pg_temp.act_as('admin_rw_05');
@@ -159,6 +212,10 @@ select throws_ok($$select public.reactivate_booking((select id from booking wher
   'P0001', null, 'a running hold is not reactivated');
 select throws_ok($$select public.reactivate_booking((select id from booking where name = 'crowded'))$$,
   'P0001', null, 'nor an expired one whose seats another group took (QUOTA_UNAVAILABLE)');
+select is(pg_temp.hint_of($$select public.reactivate_booking((select id from booking where name = 'lapsed_quote'))$$),
+  'STATE_INVALID', 'HIGH 1: a lapsed quotation, which never reserved its seats, is not held again');
+select is(pg_temp.hint_of($$select public.reactivate_booking((select id from booking where name = 'unproven'))$$),
+  'STATE_INVALID', 'nor a lapsed hold of a phone nobody proved');
 select is((public.reactivate_booking((select id from booking where name = 'again'))) ->> 'expires_at',
   to_jsonb(((public.today_jkt() + 3) + time '23:59') at time zone 'Asia/Jakarta') #>> '{}',
   'an expired officer''s booking is held again until 23:59 WIB of its visit day (A23)');
@@ -181,6 +238,9 @@ select throws_ok($$select public.request_notification_resend((select id from boo
     'booking_created', 'email')$$,
   'P0001', 'this message cannot go to the PIC now',
   'the cap on emails before payment holds for a message sent again too');
+select is(pg_temp.hint_of($$select public.request_notification_resend((select id from booking where name = 'unpaid'),
+    'booking_created', 'email')$$),
+  'STATE_INVALID', 'L7: a cancelled booking gets no pay link again');
 select isnt(public.request_notification_resend((select id from booking where name = 'paid'), 'booking_cancelled',
     'email'),
   null, 'a message it had goes again, as a new row');

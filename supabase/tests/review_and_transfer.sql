@@ -2,7 +2,7 @@
 -- booking paid after its seats were gone, by moving it or refunding it in full, and records a bank transfer as a
 -- manual_mark_paid adjustment under dual control.
 begin;
-select plan(27);
+select plan(38);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -74,7 +74,7 @@ as $$
   select (internal.create_booking('00000000-0000-4000-8000-0000000ae001', array[p_session], p_pax,
     jsonb_build_object('booker_type', 'individual', 'institution_name', null, 'pic_name', 'Sari Tinjau',
                        'pic_phone', '+6281300008' || right(p_key, 3), 'pic_email', 'tinjau-' || p_key || '@example.test',
-                       'notes', null, 'admin', jsonb_build_object('phone_confirmed', false, 'cash_on_the_spot', false)),
+                       'notes', null, 'admin', jsonb_build_object('phone_confirmed', true, 'cash_on_the_spot', false)),
     '[]', '[]', 'pay', 'admin', p_key, null,
     jsonb_build_object('version', '2026-10-18', 'attested_by', '00000000-0000-4000-8000-00000000f005'),
     '00000000-0000-4000-8000-00000000f005', '{}',
@@ -101,8 +101,12 @@ declare
 begin
   perform set_config('app.in_rpc', '1', true);
   insert into public.payments (booking_id, attempt_no, provider, method, status, order_id, gross_amount)
-  select b.id, 1, 'midtrans', 'qris', 'pending', b.booking_code || '-01', b.total_amount
-  from public.bookings b where b.id = p_booking
+  select b.id, attempt.next, 'midtrans', 'qris', 'pending', b.booking_code || '-' || lpad(attempt.next::text, 2, '0'),
+         b.total_amount
+  from public.bookings b
+  cross join lateral (select coalesce(max(p.attempt_no), 0) + 1 as next from public.payments p
+                      where p.booking_id = b.id) as attempt
+  where b.id = p_booking
   returning * into payment;
   -- As apply_payment_event calls it: inside a transition, so the status columns may move.
   answer := internal.settle_payment((select b from public.bookings b where b.id = p_booking), payment,
@@ -112,6 +116,41 @@ begin
 end;
 $$;
 
+insert into public.tour_packages (id, category, slug, name, pricing_basis, price_per_pax, status) values
+  ('00000000-0000-4000-8000-0000000ae002', 'combo', 'uji-tinjau-kombo', 'Kombo Tinjau', 'per_pax', 40000, 'draft');
+insert into public.tour_package_legs (package_id, rw_id, leg_order) values
+  ('00000000-0000-4000-8000-0000000ae002', 5, 1), ('00000000-0000-4000-8000-0000000ae002', 13, 2);
+update public.tour_packages set status = 'published' where id = '00000000-0000-4000-8000-0000000ae002';
+insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
+  ('00000000-0000-4000-8000-0000000ae305', 5, public.today_jkt() + 4, '09:00', '10:00', 'Kombo 05', 2),
+  ('00000000-0000-4000-8000-0000000ae313', 13, public.today_jkt() + 4, '11:00', '12:00', 'Kombo 13', 2),
+  ('00000000-0000-4000-8000-0000000ae306', 5, public.today_jkt() + 6, '09:00', '10:00', 'Kombo 05 baru', 5),
+  ('00000000-0000-4000-8000-0000000ae314', 13, public.today_jkt() + 6, '11:00', '12:00', 'Kombo 13 penuh', 1);
+
+create function pg_temp.book_combo(p_key text) returns uuid
+  language sql
+as $$
+  select (internal.create_booking('00000000-0000-4000-8000-0000000ae002',
+    array['00000000-0000-4000-8000-0000000ae305', '00000000-0000-4000-8000-0000000ae313']::uuid[], 1,
+    jsonb_build_object('booker_type', 'individual', 'institution_name', null, 'pic_name', 'Sari Kombo',
+                       'pic_phone', '+6281300007' || right(p_key, 3), 'pic_email', 'kombo-' || p_key || '@example.test',
+                       'notes', null, 'admin', jsonb_build_object('phone_confirmed', true, 'cash_on_the_spot', false)),
+    '[]', '[]', 'pay', 'admin', p_key, null,
+    jsonb_build_object('version', '2026-10-18', 'attested_by', '00000000-0000-4000-8000-00000000f001'),
+    '00000000-0000-4000-8000-00000000f001', '{}',
+    internal.booking_quote_hash(internal.booking_quote('00000000-0000-4000-8000-0000000ae002', 1, '[]', '{5,13}')))
+    ->> 'booking_id')::uuid;
+$$;
+
+-- A session full as another group's seats leave it, set here as reserve_session_quota would leave it.
+create function pg_temp.fill(p_session uuid) returns void
+  language sql
+as $$
+  select set_config('app.in_rpc', '1', true);
+  update public.visit_sessions set reserved_pax = capacity where id = p_session;
+  select set_config('app.in_rpc', '', true);
+$$;
+
 create temporary table booking (name text primary key, id uuid) on commit drop;
 -- Each lapses in turn, its two seats free for the next; the last group keeps them.
 insert into booking values ('moved', pg_temp.book('00000000-0000-4000-8000-0000000ae205', 2, 'tin-001'));
@@ -119,9 +158,25 @@ grant select on booking to authenticated;
 select pg_temp.expire((select id from booking where name = 'moved'));
 insert into booking values ('refunded', pg_temp.book('00000000-0000-4000-8000-0000000ae205', 2, 'tin-002'));
 select pg_temp.expire((select id from booking where name = 'refunded'));
+insert into booking values ('ledgerless', pg_temp.book('00000000-0000-4000-8000-0000000ae205', 2, 'tin-005'));
+select pg_temp.expire((select id from booking where name = 'ledgerless'));
 insert into booking values ('filler', pg_temp.book('00000000-0000-4000-8000-0000000ae205', 2, 'tin-003'));
 select pg_temp.settle_late((select id from booking where name = 'moved'));
 select pg_temp.settle_late((select id from booking where name = 'refunded'));
+insert into booking values ('combo', pg_temp.book_combo('tin-006'));
+select pg_temp.expire((select id from booking where name = 'combo'));
+select pg_temp.fill('00000000-0000-4000-8000-0000000ae305');
+select pg_temp.fill('00000000-0000-4000-8000-0000000ae314');
+select pg_temp.settle_late((select id from booking where name = 'combo'));
+-- Review of PR #102, M2: the late settlement of a booking whose revenue rules are off reaches no ledger row.
+create temporary table rules_off on commit drop as
+  select id from public.revenue_share_rules where is_active;
+select set_config('app.in_rpc', '1', true);
+select set_config('app.privileged_rpc', 'on', true);
+update public.revenue_share_rules set is_active = false where id in (select id from rules_off);
+select set_config('app.privileged_rpc', '', true);
+select set_config('app.in_rpc', '', true);
+select pg_temp.settle_late((select id from booking where name = 'ledgerless'));
 
 -- ===== resolve_booking_review =====
 select is((select string_agg(review_reason, ',' order by review_reason) from public.bookings
@@ -160,6 +215,35 @@ select is((public.resolve_booking_review((select id from booking where name = 'r
 select is(pg_temp.hint_of($$select public.resolve_booking_review((select id from booking where name = 'moved'),
     'refund', 'Sesi penuh, uang dikembalikan utuh', null, null)$$),
   'STATE_INVALID', 'once');
+select is(pg_temp.hint_of($$select public.resolve_booking_review((select id from booking where name = 'ledgerless'),
+    'move', 'Pindah ke sesi lain yang masih kosong', array['00000000-0000-4000-8000-0000000ae206']::uuid[], 'k1')$$),
+  'LEDGER_MISSING', 'M2: no resolution while the settlement has no revenue-share rows');
+select is(pg_temp.hint_of($$select public.resolve_booking_review((select id from booking where name = 'combo'),
+    'move', 'Pindah kombo ke sesi lain',
+    array['00000000-0000-4000-8000-0000000ae306', '00000000-0000-4000-8000-0000000ae314']::uuid[], 'k1')$$),
+  'QUOTA_UNAVAILABLE', 'L10: a combo whose one new session is full does not move');
+reset role;
+select set_config('request.jwt.claims', '', true);
+select is((select reserved_pax from public.visit_sessions where id = '00000000-0000-4000-8000-0000000ae306'), 0,
+  'and the other new session gives its seat back with the rest of the transaction');
+select is((select string_agg(status::text, ',') from public.booking_legs
+           where booking_id = (select id from booking where name = 'combo')), 'released,released',
+  'both legs still wait for seats');
+select set_config('app.in_rpc', '1', true);
+select set_config('app.privileged_rpc', 'on', true);
+update public.revenue_share_rules set is_active = true where id in (select id from rules_off);
+select set_config('app.privileged_rpc', '', true);
+select set_config('app.in_rpc', '', true);
+select pg_temp.act_as('superadmin_aal2');
+select is((public.resolve_booking_review((select id from booking where name = 'ledgerless'), 'move',
+    'Pindah ke sesi lain yang masih kosong', array['00000000-0000-4000-8000-0000000ae206']::uuid[], 'k1'))
+    ->> 'result', 'moved', 'once the rules are back, the allocation is tried again and the booking moves');
+reset role;
+select set_config('request.jwt.claims', '', true);
+select ok(exists (select 1 from public.revenue_share_entries e
+                  where e.booking_id = (select id from booking where name = 'ledgerless')
+                    and e.entry_type = 'settlement'), 'with its revenue-share rows');
+select pg_temp.act_as('superadmin_aal2');
 reset role;
 select set_config('request.jwt.claims', '', true);
 
@@ -169,8 +253,8 @@ select is((select (status, needs_review, visit_date - public.today_jkt())::text 
 select is((select (l.status, l.visit_session_id)::text from public.booking_legs l
            where l.booking_id = (select id from booking where name = 'moved')),
   '(reserved,00000000-0000-4000-8000-0000000ae206)', 'its leg holds seats in the new session');
-select is((select reserved_pax from public.visit_sessions where id = '00000000-0000-4000-8000-0000000ae206'), 2,
-  'which counts them');
+select is((select reserved_pax from public.visit_sessions where id = '00000000-0000-4000-8000-0000000ae206'), 4,
+  'which counts them, with the seats of the booking moved once its ledger was there');
 select is((select count(*)::int from public.tickets_qr
            where booking_id = (select id from booking where name = 'moved') and status = 'issued'), 1,
   'its ticket is issued');
@@ -226,12 +310,82 @@ select is((select (b.status, p.provider, p.method, p.status)::text
 select is((select count(*)::int from public.tickets_qr
            where booking_id = (select id from booking where name = 'transfer') and status = 'issued'), 1,
   'with its ticket, as a Midtrans settlement would issue it');
+select is((select count(*)::int from public.reconciliation_issues
+           where booking_id = (select id from booking where name = 'transfer')
+             and issue_type = 'manual_transfer_unmatched' and resolved_at is null), 1,
+  'REC-09 (b): and an open issue until the bank statement shows the transfer');
+select is((pg_temp.settle_late((select id from booking where name = 'transfer'))) ->> 'result', 'duplicate',
+  'L3: a Midtrans settlement after the transfer is a duplicate, not a second payment');
 select pg_temp.act_as('superadmin_aal2');
 select is(pg_temp.hint_of($$select public.propose_adjustment('manual_mark_paid',
     (select id from booking where name = 'transfer'), 30000, 'Transfer BCA dari bendahara sekolah',
     pg_temp.doc(format('bookings/%s/adjustment-%s.pdf', (select id from booking where name = 'transfer'),
                        gen_random_uuid())), '{"key_id": "k1"}')$$),
   'STATE_INVALID', 'a paid booking takes no second transfer');
+reset role;
+select set_config('request.jwt.claims', '', true);
+
+-- HIGH 1 and L4: no transfer for a lapsed quotation, nor once the first session started.
+insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity)
+select '00000000-0000-4000-8000-0000000ae207', 5, (now() - interval '1 hour') at time zone 'Asia/Jakarta',
+       ((now() - interval '1 hour') at time zone 'Asia/Jakarta')::time(0), time '23:59', 'Sudah mulai', 10;
+select set_config('app.in_rpc', '1', true);
+insert into public.bookings (booking_code, status, channel, package_id, package_snapshot, rw_ids, booker_type,
+  pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
+  consent_version, consented_at, phone_verified_at, expires_at, created_by)
+values
+  ('GSK-TNJ0KWTA', 'expired', 'admin', '00000000-0000-4000-8000-0000000ae001', '{}', '{5}', 'individual', 'Kuota',
+   '+6281300008901', 'tnj-kwta@example.test', 1, public.today_jkt() + 5, public.today_jkt() + 5, 30000, 30000, 'v1',
+   now(), now(), null, '00000000-0000-4000-8000-00000000f005'),
+  ('GSK-TNJ0MVTA', 'pending_payment', 'admin', '00000000-0000-4000-8000-0000000ae001', '{}', '{5}', 'individual',
+   'Mulai', '+6281300008902', 'tnj-mvla@example.test', 1,
+   ((now() - interval '1 hour') at time zone 'Asia/Jakarta')::date,
+   ((now() - interval '1 hour') at time zone 'Asia/Jakarta')::date, 30000, 30000, 'v1', now(), now(),
+   now() + interval '6 hours', '00000000-0000-4000-8000-00000000f005');
+insert into public.booking_legs (booking_id, rw_id, visit_session_id, leg_order, pax_count, status, quota_reserved_at)
+select b.id, 5, case when b.booking_code = 'GSK-TNJ0KWTA' then '00000000-0000-4000-8000-0000000ae206'
+                     else '00000000-0000-4000-8000-0000000ae207' end::uuid, 1, 1,
+       case when b.booking_code = 'GSK-TNJ0KWTA' then 'unreserved' else 'reserved' end::public.booking_leg_status,
+       case when b.booking_code = 'GSK-TNJ0KWTA' then null else now() end
+from public.bookings b where b.booking_code in ('GSK-TNJ0KWTA', 'GSK-TNJ0MVTA');
+select set_config('app.in_rpc', '', true);
+insert into booking select 'quote_lapsed', id from public.bookings where booking_code = 'GSK-TNJ0KWTA';
+insert into booking select 'started', id from public.bookings where booking_code = 'GSK-TNJ0MVTA';
+select pg_temp.act_as('superadmin_aal2');
+select is(pg_temp.hint_of($$select public.propose_adjustment('manual_mark_paid',
+    (select id from booking where name = 'quote_lapsed'), 30000, 'Transfer BCA dari bendahara sekolah',
+    pg_temp.doc(format('bookings/%s/adjustment-%s.pdf', (select id from booking where name = 'quote_lapsed'),
+                       gen_random_uuid())), '{"key_id": "k1"}')$$),
+  'STATE_INVALID', 'HIGH 1: a lapsed quotation, which never reserved its seats, takes no transfer');
+select is(pg_temp.hint_of($$select public.propose_adjustment('manual_mark_paid',
+    (select id from booking where name = 'started'), 30000, 'Transfer BCA dari bendahara sekolah',
+    pg_temp.doc(format('bookings/%s/adjustment-%s.pdf', (select id from booking where name = 'started'),
+                       gen_random_uuid())), '{"key_id": "k1"}')$$),
+  'STATE_INVALID', 'L4: nor a booking whose first session has started');
+reset role;
+
+-- L3: a pay page the PIC still has open when the transfer applies refuses it (PAYMENT_OPEN).
+insert into booking values ('open_page', pg_temp.book('00000000-0000-4000-8000-0000000ae206', 1, 'tin-007'));
+create temporary table open_transfer on commit drop as select null::uuid as id;
+grant select, update on open_transfer to authenticated;
+select pg_temp.act_as('superadmin_aal2');
+update open_transfer set id = (public.propose_adjustment('manual_mark_paid',
+  (select id from booking where name = 'open_page'), 30000, 'Transfer BCA dari bendahara sekolah',
+  pg_temp.doc(format('bookings/%s/adjustment-%s.pdf', (select id from booking where name = 'open_page'),
+                     gen_random_uuid())), '{"key_id": "k1"}') ->> 'id')::uuid;
+reset role;
+select pg_temp.act_as_super_b();
+select public.approve_adjustment((select id from open_transfer where id is not null));
+reset role;
+select set_config('request.jwt.claims', '', true);
+select set_config('app.in_rpc', '1', true);
+insert into public.payments (booking_id, attempt_no, provider, method, status, order_id, gross_amount)
+select b.id, 1, 'midtrans', 'qris', 'pending', b.booking_code || '-01', b.total_amount
+from public.bookings b where b.id = (select id from booking where name = 'open_page');
+select set_config('app.in_rpc', '', true);
+select pg_temp.act_as('superadmin_aal2');
+select is(pg_temp.hint_of($$select public.apply_adjustment((select id from open_transfer where id is not null))$$),
+  'PAYMENT_OPEN', 'L3: a transfer is not applied while the PIC has a pay page open');
 reset role;
 
 select * from finish();

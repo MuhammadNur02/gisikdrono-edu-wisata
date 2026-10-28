@@ -5091,6 +5091,14 @@ export type Database = {
         Returns: Json
       }
       svc_close_attempt_for_cash: {
+        Args: {
+          p_actor_id: string
+          p_page_may_be_live?: boolean
+          p_payment_id: string
+        }
+        Returns: undefined
+      }
+      svc_close_attempt_for_transfer: {
         Args: { p_actor_id: string; p_payment_id: string }
         Returns: undefined
       }

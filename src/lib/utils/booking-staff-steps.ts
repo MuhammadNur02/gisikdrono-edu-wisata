@@ -14,7 +14,14 @@ export interface StaffSteps {
 
 type StepBooking = Pick<
   BookingDetail,
-  'status' | 'needsReview' | 'reviewReason' | 'expiresAt' | 'payments' | 'isAnonymised'
+  | 'status'
+  | 'needsReview'
+  | 'reviewReason'
+  | 'expiresAt'
+  | 'payments'
+  | 'isAnonymised'
+  | 'isPhoneVerified'
+  | 'legs'
 >;
 
 const UNPAID: ReadonlySet<string> = new Set(['quoted', 'pending_payment']);
@@ -42,6 +49,17 @@ function canCancel(booking: StepBooking, isSuperadmin: boolean): boolean {
   return UNPAID.has(booking.status) || (booking.status === 'paid' && isSuperadmin);
 }
 
+// Review of PR #102, HIGH 1: a hold that lapsed (every leg released) of a proven phone, never a lapsed quotation.
+function canReactivate(booking: StepBooking): boolean {
+  return (
+    booking.status === 'expired' &&
+    !booking.needsReview &&
+    booking.isPhoneVerified &&
+    booking.legs.length > 0 &&
+    booking.legs.every((leg) => leg.status === 'released')
+  );
+}
+
 function canResolveReview(booking: StepBooking, isSuperadmin: boolean): boolean {
   return (
     isSuperadmin &&
@@ -60,7 +78,7 @@ export function staffStepsFor(
   return {
     cancel: canCancel(booking, staff.isSuperadmin),
     extend: canExtend(booking, now),
-    reactivate: booking.status === 'expired' && !booking.needsReview,
+    reactivate: canReactivate(booking),
     resend: booking.status !== 'quoted',
     resolveReview: canResolveReview(booking, staff.isSuperadmin),
   };

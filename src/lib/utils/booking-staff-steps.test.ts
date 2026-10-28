@@ -38,9 +38,21 @@ describe('staffStepsFor', () => {
     expect(staffStepsFor(paid, SUPERADMIN, NOW).cancel).toBe(true);
   });
 
-  it('reactivates an expired booking', () => {
-    const expired = { ...officerBookingDetail, status: 'expired' as const };
-    expect(staffStepsFor(expired, OFFICER, NOW).reactivate).toBe(true);
+  it('reactivates a lapsed hold of a verified phone, never a lapsed quotation (review of PR #102, HIGH 1)', () => {
+    const released = officerBookingDetail.legs.map((leg) => ({
+      ...leg,
+      status: 'released' as const,
+    }));
+    const lapsed = { ...officerBookingDetail, status: 'expired' as const, legs: released };
+    expect(staffStepsFor(lapsed, OFFICER, NOW).reactivate).toBe(true);
+    expect(staffStepsFor({ ...lapsed, isPhoneVerified: false }, OFFICER, NOW).reactivate).toBe(
+      false,
+    );
+    const unreserved = officerBookingDetail.legs.map((leg) => ({
+      ...leg,
+      status: 'unreserved' as const,
+    }));
+    expect(staffStepsFor({ ...lapsed, legs: unreserved }, OFFICER, NOW).reactivate).toBe(false);
   });
 
   it('offers the superadmin the review of a booking paid without seats, and nothing else of it', () => {

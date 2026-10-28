@@ -30,6 +30,10 @@ begin
     raise exception 'booking % has no settled payment of its total', p_booking.id
       using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
+  -- Review of PR #102, L8: as refund_quote, a visit that has passed is not refunded here.
+  if p_booking.visit_date < public.today_jkt() then
+    raise exception 'the visit of booking % has passed', p_booking.id using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
   return jsonb_build_object('kind', 'cancellation', 'days_before', p_booking.visit_date - public.today_jkt(),
     'refund_pct', 100, 'package_refund', p_booking.subtotal_package - p_booking.discount_amount,
     'addon_refund', p_booking.subtotal_addons, 'fee_amount', 0, 'amount', payment.gross_amount, 'retained', 0,
@@ -125,7 +129,8 @@ end;
 $$;
 revoke execute on function internal.staff_cancellation_is_full(text) from public, anon, authenticated;
 
--- Staff in scope at AAL2: an RW admin of one of the booking's RWs, or the superadmin.
+-- Staff in scope at AAL2: an RW admin of every RW of the booking, or the superadmin (review of PR #102, L6: the same
+-- rule as src/server/actions/booking-staff.ts, so a combo is the superadmin's).
 create function internal.require_booking_staff(p_booking_id uuid) returns public.bookings
   language plpgsql stable
   set search_path = ''
@@ -137,7 +142,8 @@ begin
     raise exception 'only staff at AAL2 take this step' using errcode = '42501';
   end if;
   select * into booking from public.bookings b where b.id = p_booking_id;
-  if not found or not (public.is_superadmin() or public.owns_any_rw(booking.rw_ids)) then
+  if not found or not (public.is_superadmin()
+                       or (public.is_admin_rw() and booking.rw_ids <@ array[public.app_rw_id()])) then
     raise exception 'booking % is not in this staff member''s scope', p_booking_id using errcode = 'P0002';
   end if;
   return booking;
@@ -273,6 +279,18 @@ as $$
 $$;
 revoke execute on function internal.renewed_hold_deadline(public.bookings) from public, anon, authenticated;
 
+-- A hold that lapsed: every leg released, the PIC's phone proven, the booking not anonymised (review of PR #102,
+-- HIGH 1, L5). A lapsed quotation keeps its legs unreserved and is no hold to revive.
+create function internal.is_lapsed_hold(p_booking public.bookings) returns boolean
+  language sql stable
+  set search_path = ''
+as $$
+  select p_booking.phone_verified_at is not null and p_booking.pii_purged_at is null
+     and exists (select 1 from public.booking_legs l where l.booking_id = p_booking.id)
+     and not exists (select 1 from public.booking_legs l where l.booking_id = p_booking.id and l.status <> 'released');
+$$;
+revoke execute on function internal.is_lapsed_hold(public.bookings) from public, anon, authenticated;
+
 create function public.reactivate_booking(p_booking_id uuid) returns jsonb
   language plpgsql security definer
   set search_path = ''
@@ -289,6 +307,12 @@ begin
      or exists (select 1 from public.payments p where p.booking_id = booking.id
                 and p.status in ('initiated', 'pending', 'needs_review', 'settled')) then
     raise exception 'only an expired, unpaid booking is held again' using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  -- Review of PR #102, HIGH 1 and L5: a hold that lapsed (every leg released), not a quotation that lapsed with its
+  -- legs unreserved, which never passed the phone code and the reservation; of a proven phone; not anonymised.
+  if not internal.is_lapsed_hold(booking) then
+    raise exception 'only a lapsed hold of a verified phone is held again' using errcode = 'P0001',
+      hint = 'STATE_INVALID';
   end if;
   deadline := internal.renewed_hold_deadline(booking);
   if deadline is null or deadline < now() + min_hold_left then
@@ -321,6 +345,32 @@ $$;
 -- A message the booking already had, with the same parameters, as a new outbox row (its dedupe scope names the n-th
 -- resend). The recipient is the booking's contact now, by the outbox's own rules: WhatsApp only to a verified number,
 -- nothing while the channel is switched off (then the answer is null).
+-- Review of PR #102, L7: the booking states each guest message is true in, so a resend never tells a PIC something
+-- that is no longer so (a pay link for a paid booking, a ticket for a cancelled one).
+create function internal.message_fits_state(p_template public.notification_template,
+  p_status public.booking_status) returns boolean
+  language sql immutable
+  set search_path = ''
+as $$
+  select p_status = any (case p_template
+    when 'booking_created' then array['pending_payment']
+    when 'payment_reminder' then array['pending_payment']
+    when 'quotation_ready' then array['quoted']
+    when 'booking_link' then array['quoted', 'pending_payment', 'paid', 'checked_in']
+    when 'payment_received_ticket' then array['paid', 'checked_in']
+    when 'visit_reminder_d1' then array['paid']
+    when 'weather_disruption' then array['paid', 'checked_in']
+    when 'booking_expired' then array['expired']
+    when 'booking_cancelled' then array['cancelled', 'refunded']
+    when 'refund_processed' then array['cancelled', 'refunded']
+    when 'checked_in_thanks' then array['checked_in', 'completed']
+    when 'certificate_ready' then array['checked_in', 'completed']
+    when 'review_invite' then array['completed']
+    else array[]::text[] end::public.booking_status[]);
+$$;
+revoke execute on function internal.message_fits_state(public.notification_template, public.booking_status)
+  from public, anon, authenticated;
+
 create function public.request_notification_resend(p_booking_id uuid, p_template public.notification_template,
   p_channel public.notification_channel) returns uuid
   language plpgsql security definer
@@ -339,6 +389,10 @@ declare
 begin
   if p_template is null or not (p_template = any (guest_templates)) or p_channel is null then
     raise exception 'only a guest''s message is sent again' using errcode = '22023';
+  end if;
+  if not internal.message_fits_state(p_template, booking.status) then
+    raise exception 'a % message does not fit a % booking', p_template, booking.status
+      using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
   select n.params, count(*) over () into last_params, sent_before
   from public.notifications n

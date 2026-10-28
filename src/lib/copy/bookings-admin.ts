@@ -127,6 +127,8 @@ export const bookingsAdminCopy = {
       admin_phone_confirmed: 'Nomor penanggung jawab dicek petugas',
       admin_pay_link_sent: 'Tautan pembayaran dikirim petugas',
       payment_expired_for_cash: 'Tautan pembayaran dihentikan karena dibayar tunai',
+      payment_expired_for_transfer:
+        'Tautan pembayaran dihentikan karena dibayar lewat transfer bank',
       hold_extended: 'Batas waktu pembayaran diperpanjang petugas',
       reactivated: 'Pemesanan diaktifkan lagi oleh petugas',
       review_resolved: 'Tinjauan pemesanan diselesaikan Superadmin',

@@ -62,6 +62,33 @@ end;
 $$;
 revoke execute on function internal.move_released_legs(public.bookings, uuid[]) from public, anon, authenticated;
 
+-- Review of PR #102, M2: settle_payment may have flagged REVENUE_RULE_REFUSED before PAID_AFTER_EXPIRY_NO_QUOTA took
+-- review_reason over, so the settled payment's ledger rows are looked for, the allocation tried once more, and the
+-- resolution refused (LEDGER_MISSING) while they are still missing: a moved booking without them would be refunded
+-- against nothing and paid out to no one.
+create function internal.require_booking_ledger(p_booking public.bookings) returns void
+  language plpgsql
+  set search_path = ''
+as $$
+declare
+  payment public.payments := internal.settled_payment_of(p_booking.id);
+begin
+  if payment.id is null then
+    raise exception 'booking % has no settled payment', p_booking.booking_code
+      using errcode = 'P0001', hint = 'STATE_INVALID';
+  end if;
+  if exists (select 1 from public.revenue_share_entries e
+             where e.payment_id = payment.id and e.entry_type = 'settlement') then
+    return;
+  end if;
+  if not internal.try_allocate_revenue_share(p_booking.id, payment.id) then
+    raise exception 'the settlement of booking % has no revenue-share rows', p_booking.booking_code
+      using errcode = 'P0001', hint = 'LEDGER_MISSING';
+  end if;
+end;
+$$;
+revoke execute on function internal.require_booking_ledger(public.bookings) from public, anon, authenticated;
+
 -- A28 (2026-10-28, owner-delegated): 'move' keeps the money and issues the tickets of the new sessions; 'refund' gives
 -- the whole payment back through cancel_paid_booking. Either is audited with its reason. The answer of a refund is the
 -- cancellation's, whose QRIS refund the server asks of Midtrans (payment-service.ts settleCancellation).
@@ -103,6 +130,7 @@ begin
   previous_settings := internal.push_settings(jsonb_build_object('app.in_rpc', '1')
     || case when p_resolution = 'move' then jsonb_build_object('app.qr_key_id', p_key_id) else '{}'::jsonb end
     || internal.document_actor(auth.uid()));
+  perform internal.require_booking_ledger(booking);
   if p_resolution = 'move' then
     perform internal.move_released_legs(booking, p_session_ids);
     perform internal.issue_booking_tickets(booking.id);
@@ -241,7 +269,8 @@ begin
     end if;
     if booking.status not in ('pending_payment', 'expired') or booking.needs_review
        or exists (select 1 from public.payments p where p.booking_id = p_booking_id
-                  and p.status in ('needs_review', 'settled')) then
+                  and p.status in ('needs_review', 'settled'))
+       or not internal.holds_its_seats_or_lapsed(booking) then
       raise exception 'booking % takes no manual transfer now', p_booking_id
         using errcode = 'P0001', hint = 'STATE_INVALID';
     end if;
@@ -261,8 +290,27 @@ begin
 end;
 $$;
 
+-- Review of PR #102, HIGH 1, L4, L5: a transfer pays for a booking whose phone was proven, that is not anonymised and
+-- whose first session has not started, and that is a running hold (every leg reserved) or a lapsed one (every leg
+-- released, which settle_payment takes back or leaves for review); never a quotation whose legs are unreserved.
+create function internal.holds_its_seats_or_lapsed(p_booking public.bookings) returns boolean
+  language sql stable
+  set search_path = ''
+as $$
+  select p_booking.phone_verified_at is not null and p_booking.pii_purged_at is null
+     and exists (select 1 from public.booking_legs l where l.booking_id = p_booking.id)
+     and not exists (
+       select 1 from public.booking_legs l join public.visit_sessions s on s.id = l.visit_session_id
+       where l.booking_id = p_booking.id
+         and (l.status <> case when p_booking.status = 'expired' then 'released' else 'reserved' end
+              or (s.session_date + s.start_time) at time zone 'Asia/Jakarta' <= now()));
+$$;
+revoke execute on function internal.holds_its_seats_or_lapsed(public.bookings) from public, anon, authenticated;
+
 -- The manual transfer's payment, settled as a Midtrans one is: invoice and receipt numbers, ledger, tickets, messages.
--- A Midtrans order the PIC still had open is closed by settle_payment and named in close_orders for the server to end.
+-- The server ends a Midtrans order the PIC still had open before applying (review of PR #102, L3), so one still open
+-- here refuses the transfer (PAYMENT_OPEN). REC-09 (b): no Status API can confirm a bank transfer, so each applied
+-- transfer opens a reconciliation issue the superadmin closes once the bank statement shows it.
 create function internal.apply_manual_transfer(p_adjustment public.payment_adjustments) returns jsonb
   language plpgsql
   set search_path = ''
@@ -273,15 +321,14 @@ declare
   booking public.bookings;
   attempt integer;
   payment public.payments;
-  closed_orders text[];
   answer jsonb;
+  run_id uuid;
 begin
   select * into booking from public.bookings b where b.id = p_adjustment.booking_id for update;
-  with closed as (
-    update public.payments set status = 'cancelled'
-    where booking_id = booking.id and status in ('initiated', 'pending')
-    returning order_id)
-  select coalesce(array_agg(order_id order by order_id), '{}') into closed_orders from closed;
+  if exists (select 1 from public.payments p where p.booking_id = booking.id and p.status in ('initiated', 'pending'))
+  then
+    raise exception 'the PIC has a pay page open' using errcode = 'P0001', hint = 'PAYMENT_OPEN';
+  end if;
   select coalesce(max(p.attempt_no), 0) + 1 into attempt from public.payments p where p.booking_id = booking.id;
   if attempt > max_attempts then
     raise exception 'booking % has used all its payment attempts', booking.booking_code
@@ -297,8 +344,17 @@ begin
   answer := internal.settle_payment(booking, payment,
     jsonb_build_object('source', 'manual_transfer', 'adjustment_id', p_adjustment.id), 'admin');
   perform internal.restore_settings(previous_settings);
+  insert into public.reconciliation_runs (run_date, source, started_at, finished_at, payments_checked, issues_found,
+    summary, created_by)
+  values (public.today_jkt(), 'manual', now(), now(), 1, 1,
+          jsonb_build_object('reason', 'manual_transfer_applied'), auth.uid())
+  returning id into run_id;
+  insert into public.reconciliation_issues (run_id, booking_id, payment_id, issue_type, severity, details)
+  values (run_id, booking.id, payment.id, 'manual_transfer_unmatched', 'medium',
+          jsonb_build_object('adjustment_id', p_adjustment.id, 'order_id', payment.order_id,
+                             'amount', payment.gross_amount));
   return jsonb_build_object('result', answer ->> 'result', 'order_id', payment.order_id,
-    'close_orders', to_jsonb(closed_orders) || coalesce(answer -> 'close_orders', '[]'::jsonb));
+    'close_orders', coalesce(answer -> 'close_orders', '[]'::jsonb));
 end;
 $$;
 revoke execute on function internal.apply_manual_transfer(public.payment_adjustments) from public, anon, authenticated;
@@ -381,5 +437,195 @@ begin
   end if;
   perform internal.restore_settings(previous_settings);
   return to_jsonb(adjustment) || transfer;
+end;
+$$;
+
+
+-- ===== REC-09 (b): the bank statement match of a manual transfer =====
+
+alter table public.reconciliation_issues drop constraint reconciliation_issues_issue_type_check;
+alter table public.reconciliation_issues add constraint reconciliation_issues_issue_type_check
+  check (issue_type in ('paid_without_tickets', 'ticket_without_payment', 'amount_mismatch', 'status_disagreement',
+                        'pending_beyond_ttl', 'ledger_sum_mismatch', 'chain_broken', 'payout_mismatch',
+                        'duplicate_settlement', 'manual_transfer_unmatched'));
+
+
+-- ===== Review of PR #102, L3: the PIC's open order ended before a transfer applies =====
+
+-- payment-service.ts ends the order at Midtrans first, then closes it here as expired with the superadmin as actor.
+create function internal.close_attempt_for_transfer(p_payment_id uuid, p_actor_id uuid) returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  previous_settings jsonb;
+  closed public.payments;
+begin
+  perform internal.require_server_caller('close_attempt_for_transfer');
+  perform internal.take_audit_turn();
+  previous_settings := internal.push_settings(jsonb_build_object('app.in_rpc', '1')
+    || internal.document_actor(p_actor_id));
+  update public.payments set status = 'expired'
+  where id = p_payment_id and status in ('initiated', 'pending')
+  returning * into closed;
+  if closed.id is not null then
+    insert into public.booking_events (booking_id, from_status, to_status, actor_type, actor_id, reason, payload)
+    select b.id, b.status, b.status, 'admin', p_actor_id, 'payment_expired_for_transfer',
+           jsonb_build_object('order_id', closed.order_id)
+    from public.bookings b where b.id = closed.booking_id;
+  end if;
+  perform internal.restore_settings(previous_settings);
+end;
+$$;
+revoke execute on function internal.close_attempt_for_transfer(uuid, uuid) from public, anon, authenticated;
+
+create function public.svc_close_attempt_for_transfer(p_payment_id uuid, p_actor_id uuid) returns void
+  language sql security definer
+  set search_path = ''
+as $$ select internal.close_attempt_for_transfer(p_payment_id, p_actor_id); $$;
+revoke execute on function public.svc_close_attempt_for_transfer(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.svc_close_attempt_for_transfer(uuid, uuid) to service_role;
+
+
+-- ===== Follow-ups of PR #91 =====
+
+-- (a) Replaces the 20261104220100 version: Midtrans knew no transaction for the closed order (not_charged) while the PIC
+-- had its Snap page, which can still create one, so an info alert says a later payment through it is to be refunded.
+drop function public.svc_close_attempt_for_cash(uuid, uuid);
+drop function internal.close_attempt_for_cash(uuid, uuid);
+create function internal.close_attempt_for_cash(p_payment_id uuid, p_actor_id uuid,
+  p_page_may_be_live boolean default false) returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  previous_settings jsonb;
+  closed public.payments;
+begin
+  perform internal.require_server_caller('close_attempt_for_cash');
+  perform internal.take_audit_turn();
+  previous_settings := internal.push_settings(jsonb_build_object('app.in_rpc', '1')
+    || internal.document_actor(p_actor_id));
+  update public.payments set status = 'expired'
+  where id = p_payment_id and status in ('initiated', 'pending')
+  returning * into closed;
+  if closed.id is not null then
+    insert into public.booking_events (booking_id, from_status, to_status, actor_type, actor_id, reason, payload)
+    select b.id, b.status, b.status, 'admin', p_actor_id, 'payment_expired_for_cash',
+           jsonb_build_object('order_id', closed.order_id)
+    from public.bookings b where b.id = closed.booking_id;
+    if p_page_may_be_live and closed.snap_redirect_url is not null then
+      insert into public.security_alerts (rule, severity, fingerprint, title, details)
+      select 'cash_pay_page_open', 'info', 'cash_pay_page_open:' || closed.id,
+             'Tautan pembayaran mungkin masih bisa dipakai setelah dibayar tunai: ' || b.booking_code,
+             jsonb_build_object('booking_id', b.id, 'order_id', closed.order_id)
+      from public.bookings b where b.id = closed.booking_id
+      on conflict (fingerprint) where acknowledged_at is null do nothing;
+    end if;
+  end if;
+  perform internal.restore_settings(previous_settings);
+end;
+$$;
+revoke execute on function internal.close_attempt_for_cash(uuid, uuid, boolean) from public, anon, authenticated;
+
+create function public.svc_close_attempt_for_cash(p_payment_id uuid, p_actor_id uuid,
+  p_page_may_be_live boolean default false) returns void
+  language sql security definer
+  set search_path = ''
+as $$ select internal.close_attempt_for_cash(p_payment_id, p_actor_id, p_page_may_be_live); $$;
+revoke execute on function public.svc_close_attempt_for_cash(uuid, uuid, boolean) from public, anon, authenticated;
+grant execute on function public.svc_close_attempt_for_cash(uuid, uuid, boolean) to service_role;
+
+-- (b) Replaces the 20261104220100 version with the alert of an officer's hold left without its pay link; everything
+-- else is unchanged.
+create or replace function internal.payments_housekeeping() returns jsonb
+  language plpgsql security definer
+  set search_path = ''
+as $$
+declare
+  reminder_ahead constant interval := interval '6 hours';
+  unpaid_too_long constant interval := interval '7 days';
+  without_link_after constant interval := interval '3 hours';
+  previous_settings jsonb;
+  orphan record;
+  hold record;
+  suspended integer := 0;
+  reminded integer := 0;
+begin
+  perform internal.require_server_caller('payments_housekeeping');
+  perform internal.take_audit_turn();
+  previous_settings := internal.begin_scheduled_job();
+  for orphan in
+    select distinct t.booking_id from public.tickets_qr t join public.bookings b on b.id = t.booking_id
+    where t.status = 'issued' and t.valid_until > now() and b.status not in ('paid', 'checked_in')
+    order by t.booking_id
+  loop
+    suspended := suspended + internal.suspend_booking_tickets(orphan.booking_id, 'booking_not_paid');
+    insert into public.security_alerts (rule, severity, fingerprint, title, details)
+    values ('tickets_without_payment', 'critical', 'tickets_without_payment:' || orphan.booking_id,
+            'Tiket masih berlaku untuk pesanan yang tidak lunas; tiketnya ditangguhkan',
+            jsonb_build_object('booking_id', orphan.booking_id))
+    on conflict (fingerprint) where acknowledged_at is null do update
+    set last_seen_at = now(), occurrences = public.security_alerts.occurrences + 1, notified_at = null;
+  end loop;
+
+  for hold in
+    select b.id from public.bookings b
+    cross join lateral (select min((s.session_date + s.start_time) at time zone 'Asia/Jakarta') as first_start
+                        from public.booking_legs l join public.visit_sessions s on s.id = l.visit_session_id
+                        where l.booking_id = b.id) as legs
+    cross join lateral (select case when b.channel = 'admin' then least(b.expires_at, legs.first_start)
+                                    else b.expires_at end as remind_by) as due
+    where b.status = 'pending_payment' and not b.needs_review
+      and (b.channel = 'admin' or b.booker_type in ('school', 'university', 'government', 'company'))
+      and b.expires_at > now() and due.remind_by > now() and due.remind_by <= now() + reminder_ahead
+      and not exists (select 1 from public.notifications n
+                      where n.booking_id = b.id and n.template = 'payment_reminder')
+      -- Delta review of PR #91, L-C: an officer's hold is reminded only after its pay link went out.
+      and (b.channel <> 'admin'
+           or exists (select 1 from public.notifications n
+                      where n.booking_id = b.id and n.template = 'booking_created'
+                        and n.status in ('sent', 'delivered', 'read')))
+    order by due.remind_by
+  loop
+    perform internal.enqueue_notification(hold.id, 'payment_reminder', 'whatsapp', '{"link_scope": "pay"}');
+    perform internal.enqueue_notification(hold.id, 'payment_reminder', 'email', '{"link_scope": "pay"}');
+    reminded := reminded + 1;
+  end loop;
+  insert into public.security_alerts (rule, severity, fingerprint, title, details)
+  select 'admin_hold_unpaid_long', 'medium', 'admin_hold_unpaid_long:' || b.id,
+         'Pemesanan petugas belum dibayar lebih dari 7 hari: ' || b.booking_code,
+         jsonb_build_object('booking_id', b.id, 'rw_ids', b.rw_ids, 'created_by', b.created_by)
+  from public.bookings b
+  where b.channel = 'admin' and b.status = 'pending_payment' and b.created_at < now() - unpaid_too_long
+    and not exists (select 1 from public.security_alerts a where a.fingerprint = 'admin_hold_unpaid_long:' || b.id)
+  on conflict (fingerprint) where acknowledged_at is null do nothing;
+  -- Follow-up of PR #91 (b): an officer's hold left without its cash and without the PIC's pay link (the cash step
+  -- was left and the link never queued) is raised three hours on, or from the day before the visit.
+  insert into public.security_alerts (rule, severity, fingerprint, title, details)
+  select 'admin_hold_without_link', 'medium', 'admin_hold_without_link:' || b.id,
+         'Pemesanan petugas belum dibayar dan belum dikirimi tautan pembayaran: ' || b.booking_code,
+         jsonb_build_object('booking_id', b.id, 'rw_ids', b.rw_ids, 'created_by', b.created_by)
+  from public.bookings b
+  where b.channel = 'admin' and b.status = 'pending_payment'
+    and (b.created_at < now() - without_link_after or b.visit_date <= public.today_jkt() + 1)
+    and not exists (select 1 from public.notifications n where n.booking_id = b.id and n.template = 'booking_created')
+    and not exists (select 1 from public.security_alerts a where a.fingerprint = 'admin_hold_without_link:' || b.id)
+  on conflict (fingerprint) where acknowledged_at is null do nothing;
+  update public.security_alerts a
+  set acknowledged_at = now(), details = a.details || jsonb_build_object('closed', 'link_sent_or_settled')
+  from public.bookings b
+  where a.rule = 'admin_hold_without_link' and a.acknowledged_at is null
+    and a.fingerprint = 'admin_hold_without_link:' || b.id
+    and (b.status <> 'pending_payment'
+         or exists (select 1 from public.notifications n where n.booking_id = b.id and n.template = 'booking_created'));
+  -- L-D: the alert of a booking that is no longer waiting for its payment closes by itself.
+  update public.security_alerts a
+  set acknowledged_at = now(), details = a.details || jsonb_build_object('closed', 'no_longer_unpaid')
+  from public.bookings b
+  where a.rule = 'admin_hold_unpaid_long' and a.acknowledged_at is null
+    and a.fingerprint = 'admin_hold_unpaid_long:' || b.id and b.status <> 'pending_payment';
+  perform internal.restore_settings(previous_settings);
+  return jsonb_build_object('suspended', suspended, 'reminded', reminded);
 end;
 $$;

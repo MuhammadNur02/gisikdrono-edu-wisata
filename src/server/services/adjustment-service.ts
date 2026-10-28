@@ -16,7 +16,7 @@ import type { ProposeAdjustmentValues, ReleaseKeyMismatchValues } from '@/lib/va
 import type { StaffContext } from '@/server/auth/guards';
 import { removeFinanceEvidence, storeFinanceEvidence } from '@/server/services/document-service';
 import { asFinanceWrite } from '@/server/services/finance-errors';
-import { expireClosedOrders } from '@/server/services/payment-service';
+import { endOpenOrderBeforeTransfer, expireClosedOrders } from '@/server/services/payment-service';
 import type { AdjustmentDetails, AdjustmentReply } from '@/types/finance';
 
 // /dashboard/finance/adjustments (Task P4.7.04; docs/Security.md §3.8, REC-09, REC-16): the dual-controlled money
@@ -78,9 +78,24 @@ export async function reject(adjustmentId: string, reason: string): Promise<Adju
   return asFinanceWrite(() => rejectAdjustment(supabase, { id: adjustmentId, reason }));
 }
 
-// An applied manual transfer closed the PIC's open Midtrans orders in the database; they end at Midtrans next, best
-// effort, as a cancellation's do (A28).
-export async function apply(adjustmentId: string): Promise<AdjustmentReply> {
+// The booking a manual transfer is for, read under the superadmin's RLS (payment_adjustments_super_read).
+async function transferBookingOf(adjustmentId: string): Promise<string | null> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('payment_adjustments')
+    .select('booking_id')
+    .eq('id', adjustmentId)
+    .eq('type', 'manual_mark_paid')
+    .maybeSingle();
+  if (error) throw error;
+  return data?.booking_id ?? null;
+}
+
+// A28 (review of PR #102, L3): before a manual transfer applies, the PIC's open Midtrans order is ended, as the cash
+// path does; any order the settlement still names ends at Midtrans afterwards, best effort.
+export async function apply(ctx: StaffContext, adjustmentId: string): Promise<AdjustmentReply> {
+  const transferBookingId = await transferBookingOf(adjustmentId);
+  if (transferBookingId !== null) await endOpenOrderBeforeTransfer(transferBookingId, ctx.userId);
   const supabase = await createSupabaseServerClient();
   const applied = await asFinanceWrite(() => applyAdjustment(supabase, adjustmentId));
   await expireClosedOrders(applied.closeOrders);

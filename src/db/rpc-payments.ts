@@ -72,13 +72,32 @@ export function svcRecordPaymentFailure(
 }
 
 // Delta review of PR #91, L-1: the PIC's open order closed before an RW admin takes the cash, with the officer as actor.
+// isPageMaybeLive: Midtrans knew no transaction for the order (not_charged) while the PIC had its Snap page, which can
+// still create one, so the database raises an info alert (follow-up of PR #91 (a)).
 export function svcCloseAttemptForCash(
+  adminClient: DatabaseClient,
+  close: { paymentId: string; actorId: string; isPageMaybeLive: boolean },
+): Promise<void> {
+  return resultOf(
+    adminClient.rpc('svc_close_attempt_for_cash', {
+      p_payment_id: close.paymentId,
+      p_actor_id: close.actorId,
+      p_page_may_be_live: close.isPageMaybeLive,
+    }),
+  );
+}
+
+// Review of PR #102, L3: the PIC's open order closed before a manual transfer applies, with the superadmin as actor.
+export function svcCloseAttemptForTransfer(
   adminClient: DatabaseClient,
   paymentId: string,
   actorId: string,
 ): Promise<void> {
   return resultOf(
-    adminClient.rpc('svc_close_attempt_for_cash', { p_payment_id: paymentId, p_actor_id: actorId }),
+    adminClient.rpc('svc_close_attempt_for_transfer', {
+      p_payment_id: paymentId,
+      p_actor_id: actorId,
+    }),
   );
 }
 

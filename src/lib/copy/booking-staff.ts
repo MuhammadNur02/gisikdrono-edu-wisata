@@ -99,6 +99,8 @@ export const bookingStaffCopy = {
       'Pesan tidak bisa dikirim sekarang: salurannya dimatikan, nomor belum terverifikasi, atau batas email sebelum pembayaran sudah tercapai.',
     qrKeyUnknown:
       'Kunci tanda tangan tiket belum terdaftar, jadi tiket tidak bisa dibuat. Hubungi pengelola sistem.',
+    ledgerMissing:
+      'Pembayaran pemesanan ini belum masuk pembagian hasil, jadi tinjauannya belum bisa diselesaikan. Periksa aturan bagi hasil paketnya, lalu coba lagi.',
     holdOpenPayment:
       'Penanggung jawab sedang membuka tautan pembayaran. Perpanjang setelah tautan itu kedaluwarsa.',
   },

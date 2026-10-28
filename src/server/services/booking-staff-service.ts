@@ -46,6 +46,7 @@ const REFUSAL_MESSAGES: Readonly<
   NOT_SENT: { code: 'STATE_INVALID', message: text.notSent },
   QR_KEY_UNKNOWN: { code: 'STATE_INVALID', message: text.qrKeyUnknown },
   PAYMENT_OPEN: { code: 'STATE_INVALID', message: text.holdOpenPayment },
+  LEDGER_MISSING: { code: 'STATE_INVALID', message: text.ledgerMissing },
 };
 
 // The refusals these RPCs raise with a hint, each with the sentence the page shows.
