@@ -99,15 +99,15 @@ $$;
 select is(array(select distinct a from unnest(pg_temp.alternate((select id from alternated), 29)) a),
   array['mismatch/verified'],
   'twenty-nine wrong tries, each followed by a right one, never reach the block of ten in a row');
-select is((select certificate_phone_failures || ':' || certificate_phone_failures_total from public.bookings
+select is((select certificate_phone_failures || ':' || certificate_phone_failures_in_window from public.bookings
            where id = (select id from alternated)), '0:29',
   'the right tries reset the count since the last right one, never the window''s total');
 select is(internal.check_certificate_phone((select id from alternated), '0000'), 'blocked',
   'the thirtieth wrong try of the window blocks the step-up');
 select is(internal.check_certificate_phone((select id from alternated), '5679'), 'blocked',
   'for good: a right try after it opens nothing, nor resets anything');
-select is((select certificate_phone_failures_total || ':' || (select max(occurrences) from public.security_alerts
-             where fingerprint = 'certificate_phone_blocked:' || (select id from alternated)))
+select is((select certificate_phone_failures_in_window || ':' || (select max(occurrences) from public.security_alerts
+             where fingerprint = 'certificate_phone_blocked:' || (select id from alternated))
            from public.bookings where id = (select id from alternated)), '30:2',
   'with the same high alert as the ten in a row, counted again on the later try');
 

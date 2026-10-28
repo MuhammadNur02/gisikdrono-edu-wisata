@@ -5,7 +5,7 @@
 --    mistyped now and then; the tenth wrong try since the last right one blocks the step-up. But the link may have been
 --    forwarded, every holder shares the booking's count, and the PIC proves the number again on every visit (the proof
 --    lives 30 minutes), so that reset alone would wipe an outsider's tally each time: five tries a day over the 90 days
---    would come back to some 450 guesses at 10 000 numbers. bookings.certificate_phone_failures_total therefore counts
+--    would come back to some 450 guesses at 10 000 numbers. bookings.certificate_phone_failures_in_window therefore counts
 --    every wrong try of the booking's window and is never reset; at the thirtieth the step-up is blocked the same way,
 --    with the same answer and the same high certificate_phone_blocked alert (independent review of PR #107, L1).
 --    A blocked booking stays blocked: check_certificate_phone answers blocked before it compares anything, so no right
@@ -16,8 +16,8 @@
 
 -- Every wrong try of the window, never reset. Written only by internal.count_certificate_phone_failure; no API role is
 -- granted the column.
-alter table public.bookings add column certificate_phone_failures_total smallint not null default 0
-  constraint bookings_certificate_phone_failures_total_ok check (certificate_phone_failures_total >= 0);
+alter table public.bookings add column certificate_phone_failures_in_window smallint not null default 0
+  constraint bookings_certificate_phone_failures_in_window_ok check (certificate_phone_failures_in_window >= 0);
 
 -- Mirrored by CERTIFICATE_PHONE_TOTAL_FAILURE_CAP in src/config/guest.ts.
 create function internal.certificate_phone_total_failure_cap() returns smallint
@@ -31,7 +31,7 @@ create function internal.is_certificate_phone_blocked(p_booking public.bookings)
   set search_path = ''
 as $$
   select p_booking.certificate_phone_failures >= internal.certificate_phone_failure_cap()
-      or p_booking.certificate_phone_failures_total >= internal.certificate_phone_total_failure_cap();
+      or p_booking.certificate_phone_failures_in_window >= internal.certificate_phone_total_failure_cap();
 $$;
 
 create or replace function internal.block_certificate_phone(p_booking public.bookings) returns void
@@ -85,7 +85,7 @@ begin
   previous_settings := internal.push_settings('{"app.actor_role": "visitor"}');
   update public.bookings b
   set certificate_phone_failures = b.certificate_phone_failures + 1,
-      certificate_phone_failures_total = b.certificate_phone_failures_total + 1
+      certificate_phone_failures_in_window = b.certificate_phone_failures_in_window + 1
   where b.id = p_booking.id
   returning b.* into counted;
   perform internal.restore_settings(previous_settings);

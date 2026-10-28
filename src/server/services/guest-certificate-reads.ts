@@ -20,7 +20,7 @@ export async function certificateBookingOf(
   const { data, error } = await adminClient
     .from('bookings')
     .select(
-      'visit_date_end, phone_verified_at, certificate_phone_failures, certificate_phone_failures_total',
+      'visit_date_end, phone_verified_at, certificate_phone_failures, certificate_phone_failures_in_window',
     )
     .eq('id', bookingId)
     .single();
@@ -30,7 +30,7 @@ export async function certificateBookingOf(
     isPhoneProven: data.phone_verified_at !== null,
     isPhoneBlocked:
       data.certificate_phone_failures >= CERTIFICATE_PHONE_FAILURE_CAP ||
-      data.certificate_phone_failures_total >= CERTIFICATE_PHONE_TOTAL_FAILURE_CAP,
+      data.certificate_phone_failures_in_window >= CERTIFICATE_PHONE_TOTAL_FAILURE_CAP,
   };
 }
 

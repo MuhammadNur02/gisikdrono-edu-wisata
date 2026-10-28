@@ -441,7 +441,7 @@ select columns_are('public', 'bookings', array[
   -- added by 20261104210100: the wrong last-4 tries of the certificate page's step-up
   'certificate_phone_failures',
   -- added by 20261105110000: every wrong last-4 try of the window, never reset
-  'certificate_phone_failures_total'
+  'certificate_phone_failures_in_window'
 ]);
 select columns_are('public', 'booking_legs', array[
   'id', 'booking_id', 'rw_id', 'visit_session_id', 'leg_order', 'pax_count', 'status',
