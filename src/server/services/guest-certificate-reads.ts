@@ -44,3 +44,22 @@ export async function standingCertificatesOf(adminClient: DatabaseClient, bookin
 }
 
 export type StandingCertificate = Awaited<ReturnType<typeof standingCertificatesOf>>[number];
+
+// Every participant certificate the booking was ever issued, in the order it was issued, whatever became of it since:
+// the order a download slot counts in (follow-up of the review of PR #94). No certificate row is deleted (the booking
+// restricts it, the purge only marks it), and a later one is issued after, so revoking, holding back or purging one
+// never moves another's slot onto a different person.
+export async function participantCertificateIdsOf(
+  adminClient: DatabaseClient,
+  bookingId: string,
+): Promise<string[]> {
+  const { data, error } = await adminClient
+    .from('certificates')
+    .select('id')
+    .eq('booking_id', bookingId)
+    .eq('kind', 'participant')
+    .order('issued_at')
+    .order('certificate_number');
+  if (error) throw error;
+  return data.map((row) => row.id);
+}

@@ -12,11 +12,11 @@ import {
   servableCertificatesOf,
 } from '@/server/services/certificate-documents';
 import type { CertificateRow } from '@/server/services/certificate-pages';
-import { certificateBookingOf } from '@/server/services/guest-certificate-reads';
 import {
-  certificatesAvailableUntil,
-  phoneStepUpOf,
-} from '@/server/services/guest-certificates';
+  certificateBookingOf,
+  participantCertificateIdsOf,
+} from '@/server/services/guest-certificate-reads';
+import { certificatesAvailableUntil, phoneStepUpOf } from '@/server/services/guest-certificates';
 
 // The guest certificate page's downloads (review of PR #94, M1, M2, M3): /reservasi/<code>/sertifikat/unduh/<slot>
 // renders the PDF on this request when it has no kept file yet and streams it inline, private and no-store, so no
@@ -38,15 +38,19 @@ export interface GuestCertificateFile {
   pdf: Buffer;
 }
 
-function certificatesInSlot(
-  servable: readonly CertificateRow[],
+// A participant's slot counts over every participant certificate the booking was ever issued
+// (participantCertificateIdsOf), so the slot of one revoked or held back since is empty, never the next person's.
+async function certificatesInSlot(
+  adminClient: DatabaseClient,
+  bookingId: string,
   slot: CertificateSlot,
-): CertificateRow[] {
+): Promise<CertificateRow[]> {
+  const servable = await servableCertificatesOf(adminClient, bookingId);
   if (slot.kind === 'group') return servable.filter((row) => row.kind === 'group').slice(0, 1);
   const participants = servable.filter((row) => row.kind === 'participant');
   if (slot.kind === 'all_participants') return participants;
-  const chosen = participants[slot.position - 1];
-  return chosen ? [chosen] : [];
+  const chosenId = (await participantCertificateIdsOf(adminClient, bookingId))[slot.position - 1];
+  return participants.filter((row) => row.id === chosenId);
 }
 
 // The certificates the slot opens for this visitor: NOT_FOUND for an empty slot, the window passed, a number no code
@@ -59,10 +63,7 @@ async function openedCertificates(
   if (request.today > certificatesAvailableUntil(booking.visitDateEnd)) {
     throw new AppError('NOT_FOUND');
   }
-  const chosen = certificatesInSlot(
-    await servableCertificatesOf(adminClient, request.bookingId),
-    request.slot,
-  );
+  const chosen = await certificatesInSlot(adminClient, request.bookingId, request.slot);
   if (chosen.length === 0) throw new AppError('NOT_FOUND');
   if (chosen.some(printsAPersonsName)) {
     if (phoneStepUpOf(booking) !== 'open') throw new AppError('NOT_FOUND');
@@ -113,7 +114,10 @@ export async function guestCertificateFile(
           fileName: `participants-${request.bookingCode}.pdf`,
           pdf: await certificateBundlePdf(adminClient, certificates, context),
         }
-      : { fileName: certificateFileName(only), pdf: await certificatePdf(adminClient, only, context) };
+      : {
+          fileName: certificateFileName(only),
+          pdf: await certificatePdf(adminClient, only, context),
+        };
   await auditDownload(adminClient, request, certificates);
   return file;
 }

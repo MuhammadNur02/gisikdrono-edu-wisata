@@ -11,6 +11,7 @@ import { isFirstRefusal, refundRateLimits, withinRateLimits } from '@/lib/rate-l
 import { formatCertificateSlot } from '@/lib/utils/certificate-slots';
 import {
   certificateBookingOf,
+  participantCertificateIdsOf,
   standingCertificatesOf,
   type CertificateBooking,
   type StandingCertificate,
@@ -53,22 +54,35 @@ function toGuestCertificate(
 ): GuestCertificate {
   const needsPhone = row.kind === 'participant' || row.institution_name === null;
   const recipient = needsPhone ? (hasPhoneProof ? row.recipient_name : null) : row.institution_name;
-  return { id: row.id, kind: row.kind, number: row.certificate_number, recipient, needsPhone, slot };
+  return {
+    id: row.id,
+    kind: row.kind,
+    number: row.certificate_number,
+    recipient,
+    needsPhone,
+    slot,
+  };
 }
 
-// The released certificates in the page's order, each with its download slot: participants by their place in the list.
-function listedCertificates(rows: readonly StandingCertificate[], hasPhoneProof: boolean) {
-  let position = 0;
-  return rows
-    .filter((row) => row.released_at !== null)
-    .map((row) => {
-      if (row.kind === 'group') {
-        return toGuestCertificate(row, formatCertificateSlot({ kind: 'group' }), hasPhoneProof);
-      }
-      position += 1;
-      const slot = formatCertificateSlot({ kind: 'participant', position });
-      return toGuestCertificate(row, slot, hasPhoneProof);
-    });
+// A participant's slot is its place among every participant certificate the booking was ever issued, never its place
+// in this list, so a certificate revoked or held back since leaves a gap instead of handing its slot to the next person.
+function slotOf(row: StandingCertificate, participantIds: readonly string[]): string | null {
+  if (row.kind === 'group') return formatCertificateSlot({ kind: 'group' });
+  const index = participantIds.indexOf(row.id);
+  return index < 0 ? null : formatCertificateSlot({ kind: 'participant', position: index + 1 });
+}
+
+// The released certificates in the page's order, each with its download slot.
+function listedCertificates(
+  rows: readonly StandingCertificate[],
+  participantIds: readonly string[],
+  hasPhoneProof: boolean,
+): GuestCertificate[] {
+  return rows.flatMap((row) => {
+    const slot = slotOf(row, participantIds);
+    if (row.released_at === null || slot === null) return [];
+    return [toGuestCertificate(row, slot, hasPhoneProof)];
+  });
 }
 
 export async function loadGuestCertificates(
@@ -83,7 +97,8 @@ export async function loadGuestCertificates(
   if (rows.every((row) => row.released_at === null)) return { state: 'held', availableUntil };
   const phoneStepUp = phoneStepUpOf(booking);
   const hasPhoneProof = phoneStepUp === 'open' && request.hasPhoneProof;
-  const certificates = listedCertificates(rows, hasPhoneProof).filter(
+  const participantIds = await participantCertificateIdsOf(adminClient, request.bookingId);
+  const certificates = listedCertificates(rows, participantIds, hasPhoneProof).filter(
     (certificate) => phoneStepUp !== 'unverified' || !certificate.needsPhone,
   );
   return { state: 'ready', availableUntil, certificates, hasPhoneProof, phoneStepUp };
