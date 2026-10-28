@@ -3,9 +3,11 @@
 -- snapshot, and nothing more. It cannot log in or hold a power, no role here uses it (the owner's login role exists on
 -- production only), it has no USAGE on auth and reaches no cron, vault or net function, and every table of auth is
 -- classified, so a new one fails here until the backup decides whether the snapshot copies its rows. The reads are
--- tried as the role itself, not only read off the grants.
+-- tried as the role itself, not only read off the grants. Follow-ups of the review (20261105110100): every table and
+-- sequence of public is readable to the role, so a new one cannot silently miss the dump, and the snapshot refuses a
+-- session that cannot act as the role.
 begin;
-select plan(25);
+select plan(28);
 
 -- ===== The role itself =====
 
@@ -44,6 +46,29 @@ select is(
   'no table of auth grants it anything'
 );
 select ok(has_table_privilege('backup_reader', 'public.bookings', 'select'), 'it reads the tables of public');
+-- The default privileges of 20261104230000 cover what postgres creates later; a table made by another role, or a grant
+-- taken back, would leave its rows out of every backup without a word.
+select is(
+  array(
+    select t.tablename::text from pg_tables t
+    where t.schemaname = 'public'
+      and not has_table_privilege('backup_reader', format('%I.%I', t.schemaname, t.tablename)::regclass, 'select')
+    order by 1
+  ),
+  array[]::text[],
+  'every table of public is readable to it, so none is left out of the dump'
+);
+select is(
+  array(
+    select c.relname::text from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind = 'S'
+      and not has_sequence_privilege('backup_reader', c.oid, 'select')
+    order by 1
+  ),
+  array[]::text[],
+  'and so is every sequence of public'
+);
 select ok(not has_table_privilege('backup_reader', 'public.bookings', 'insert, update, delete, truncate'),
   'and writes none');
 -- Supabase lets PUBLIC use some of these schemas; what counts is that nothing names backup_reader itself, and the
@@ -78,6 +103,10 @@ select ok(not has_function_privilege('authenticated', 'internal.backup_auth_snap
           and not has_function_privilege('anon', 'internal.backup_auth_snapshot()', 'execute')
           and not has_function_privilege('service_role', 'internal.backup_auth_snapshot()', 'execute'),
   'no API role takes the auth snapshot');
+-- The guard itself, before the suite's session joins the group below: postgres, which created the group and so holds
+-- only its ADMIN membership, may execute the function as its owner and is still refused.
+select throws_ok('select internal.backup_auth_snapshot()', '42501', 'the auth snapshot is read by the backup role only',
+  'a session whose login role cannot act as backup_reader is refused the auth snapshot');
 -- Third review, I5: every table postgres creates sits in public or internal, or in the CLI's own migration history; a
 -- table made anywhere else would be neither backed up nor classified.
 select is(
