@@ -55,7 +55,7 @@ alter table public.reconciliation_issues add constraint reconciliation_issues_is
 
 -- When the nightly run last compared a payment with an answer about its order (or Midtrans' 404). Kept apart from
 -- payments (delta review of PR #105, M-B): a stamp there would move payments.updated_at, which the anomaly scan's
--- refund_volume rule and the look findings below read as the payment's own last change. Bookkeeping of the run alone:
+-- refund_volume rule reads as the payment's own last change. Bookkeeping of the run alone:
 -- written only by internal.reconcile_payments, read by internal.reconciliation_window, reached by no API role, so it
 -- has RLS enabled and forced, every privilege revoked and no policy at all. Not audited: it holds no money and no
 -- personal data, and an audit row per payment per night would say nothing anyone acts on.
