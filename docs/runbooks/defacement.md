@@ -34,7 +34,7 @@ order by occurred_at desc;
 ## 3. Put the right content back
 
 - The audit row's `before` holds the previous values of the audited columns: copy them back through the dashboard form of that item and save (the save revalidates the public page).
-- A column the audit trail does not keep (for example a long article body), or an unaudited table: restore the latest good backup into **staging** (Supabase daily backup, or the weekly encrypted dump of `.github/workflows/backup.yml`; the drill procedure is Task P5.5.04), read the row there, and re-enter it through the production dashboard. Never restore a backup over production for a content fix.
+- A column the audit trail does not keep (for example a long article body), or an unaudited table: restore the latest good weekly dump into the throwaway local stack of `docs/runbooks/restore-drills.md` part C, on the vault holder's machine. Read the row there, and re-enter it through the production dashboard, then clean up as part D says. Never restore a backup into staging, which holds no real visitor data, or over production for a content fix (PRD §13.1 A27).
 - After any fix made in SQL instead of the dashboard, refresh the caches: Vercel → project → **Settings → Data Cache → Purge Everything**, then reload the page to check.
 
 ## 4. Remove files that are not ours

@@ -1,0 +1,122 @@
+name: Production release
+
+# Task P5.7.02 (docs/runbooks/release-checklist.md; CLAUDE.md §6.4, §12.1 no. 19). Migrations are the only path into
+# the gisikdrono-prod schema, and this job is the only one that pushes them. It runs by hand only, before go-live and
+# after it (decision of 2026-10-28, review of PR #98, L7): from main, and by default as a dry run that lists the
+# migrations and changes nothing. The production credentials live in the GitHub environment "production", whose
+# required reviewers approve every run before a step starts; the job's `if` on main is defence in depth only, the
+# environment's branch rule is what holds (release checklist, "One-time setup"). Each secret is handed only to the
+# steps that use it, and a step that connects takes libpq's variables in its own shell, never a URL with its password
+# in a process's arguments (fourth review, L1 and L2). The order of a release: check the project, run the pre-flight
+# and the Advisor, migrate, the Advisor again; the Vercel production deploy follows the migration (release checklist,
+# "Then deploy"). Never --include-all or --include-seed.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only check the project, run the pre-flight and list the migrations that would run; change nothing'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: migrate the production database
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: production
+    env:
+      # The name docs/Task.md P5.7.01 gives the project; any other project behind the URL is refused.
+      PRODUCTION_PROJECT_NAME: gisikdrono-prod
+      # Writes run only when the input says false in so many words; an input that is missing or null reads as a dry run
+      # (fourth review, info): format() turns null into '' where a plain comparison would let null equal false.
+      APPLY: ${{ format('{0}', inputs.dry_run) == 'false' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
+        with:
+          version: 2.117.0
+      # The ref comes from SUPABASE_DB_URL itself (scripts/supabase-db-url.mjs), its password masked before any later
+      # step runs, so no second secret can point at another project.
+      - name: Read the project of the database URL
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: node scripts/supabase-db-url.mjs "$GITHUB_ENV" --release <<< "$SUPABASE_DB_URL"
+      - name: The URL belongs to the production project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN is not set in the GitHub environment 'production'"
+            exit 1
+          fi
+          name="$(supabase projects list -o json \
+            | jq -r --arg ref "$PROJECT_REF" '.[] | select(.id == $ref or .ref == $ref) | .name')"
+          if [ "$name" != "$PRODUCTION_PROJECT_NAME" ]; then
+            echo "::error::That URL is not the project $PRODUCTION_PROJECT_NAME; nothing was checked or migrated"
+            exit 1
+          fi
+      - name: Link the production project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          connection="$(node scripts/supabase-db-url.mjs --libpq --release <<< "$SUPABASE_DB_URL")"
+          eval "$connection"
+          supabase link --project-ref "$PROJECT_REF"
+      # Read only, counts only: a row that a migration's new check would refuse stops the release here, before any
+      # migration starts (release checklist, "What a run does").
+      - name: Pre-flight
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase db query --linked --file scripts/release-preflight.sql > /dev/null
+      # docs/Security.md §8.7, DB-01: an error the Security Advisor already shows stops the release before anything
+      # is pushed (review of PR #98, L1).
+      - name: Security Advisor before the push, errors only
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          connection="$(node scripts/supabase-db-url.mjs --libpq --release <<< "$SUPABASE_DB_URL")"
+          eval "$connection"
+          supabase db advisors --linked --type security --level error --fail-on error
+      - name: Migrations that would run
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          connection="$(node scripts/supabase-db-url.mjs --libpq --release <<< "$SUPABASE_DB_URL")"
+          eval "$connection"
+          supabase db push --linked --dry-run
+      - name: Apply the migrations
+        if: env.APPLY == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          connection="$(node scripts/supabase-db-url.mjs --libpq --release <<< "$SUPABASE_DB_URL")"
+          eval "$connection"
+          supabase db push --linked --yes
+      # An error that appears after the push means a migration caused it. Migrations are forward-only: do not deploy
+      # Vercel, and fix it with a new migration (release checklist, "If a check fails after the push").
+      - name: Security Advisor after the push, errors only
+        if: env.APPLY == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          connection="$(node scripts/supabase-db-url.mjs --libpq --release <<< "$SUPABASE_DB_URL")"
+          eval "$connection"
+          supabase db advisors --linked --type security --level error --fail-on error
