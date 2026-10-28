@@ -63,7 +63,8 @@ select is(
     select c.relname::text from pg_class c
     join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relkind = 'S'
-      and not has_sequence_privilege('backup_reader', c.oid, 'select')
+      -- has_sequence_privilege raises on any other relation, and the planner may call it before relkind is checked.
+      and case when c.relkind = 'S' then not has_sequence_privilege('backup_reader', c.oid, 'select') else false end
     order by 1
   ),
   array[]::text[],
