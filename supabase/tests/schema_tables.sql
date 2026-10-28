@@ -604,7 +604,7 @@ select columns_are('public', 'payments', array[
   'gross_amount', 'snap_token', 'snap_redirect_url', 'payment_type_raw', 'va_bank', 'va_number',
   'transaction_time', 'settlement_time', 'expiry_time', 'fraud_status', 'status_code',
   'last_payload', 'manual_proof_path', 'manual_reference', 'recorded_by', 'refunded_amount',
-  'created_at', 'updated_at', 'last_polled_at', 'last_reconciled_at'
+  'created_at', 'updated_at', 'last_polled_at'
 ]);
 select columns_are('public', 'payment_events', array[
   'id', 'payment_id', 'order_id', 'source', 'event_hash', 'transaction_status', 'fraud_status',
@@ -1251,7 +1251,7 @@ select throws_ok(
 
 select tables_are(
   'public',
-  array['rw_units', 'profiles', 'staff_invites', 'site_settings', 'session_templates', 'visit_sessions', 'tour_packages', 'tour_package_legs', 'tour_package_price_tiers', 'umkm_vendors', 'products_umkm', 'package_price_history', 'bookings', 'booking_legs', 'booking_addons', 'booking_participants', 'booking_events', 'guest_otps', 'payments', 'payment_events', 'webhook_rejections', 'payment_adjustments', 'reconciliation_runs', 'reconciliation_issues', 'quotations', 'invoices', 'document_sequences', 'certificates', 'tickets_qr', 'ticket_scans', 'galleries', 'articles', 'booklets', 'hero_banners', 'activity_points', 'performance_schedules', 'reviews', 'revenue_share_rules', 'revenue_share_rule_lines', 'revenue_share_entries', 'payout_batches', 'notifications', 'security_events', 'security_alerts', 'exports', 'dsr_requests', 'audit_logs', 'login_attempts', 'rate_limit_buckets', 'job_heartbeats', 'booklet_page_claims', 'weather_notices', 'weather_notice_bookings', 'refund_requests', 'finance_proofs'],
+  array['rw_units', 'profiles', 'staff_invites', 'site_settings', 'session_templates', 'visit_sessions', 'tour_packages', 'tour_package_legs', 'tour_package_price_tiers', 'umkm_vendors', 'products_umkm', 'package_price_history', 'bookings', 'booking_legs', 'booking_addons', 'booking_participants', 'booking_events', 'guest_otps', 'payments', 'payment_events', 'webhook_rejections', 'payment_adjustments', 'reconciliation_runs', 'reconciliation_issues', 'reconciliation_turns', 'quotations', 'invoices', 'document_sequences', 'certificates', 'tickets_qr', 'ticket_scans', 'galleries', 'articles', 'booklets', 'hero_banners', 'activity_points', 'performance_schedules', 'reviews', 'revenue_share_rules', 'revenue_share_rule_lines', 'revenue_share_entries', 'payout_batches', 'notifications', 'security_events', 'security_alerts', 'exports', 'dsr_requests', 'audit_logs', 'login_attempts', 'rate_limit_buckets', 'job_heartbeats', 'booklet_page_claims', 'weather_notices', 'weather_notice_bookings', 'refund_requests', 'finance_proofs'],
   'public holds exactly the 55 tables of the CLAUDE.md A.1 registry, job_heartbeats of 0007, booklet_page_claims of 20261019080000 and the visit terms'' weather_notices, weather_notice_bookings and refund_requests of 20261104080100 and finance_proofs of 20261104190300 included'
 );
 

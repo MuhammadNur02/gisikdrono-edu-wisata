@@ -1964,7 +1964,6 @@ export type Database = {
           id: string
           last_payload: Json | null
           last_polled_at: string | null
-          last_reconciled_at: string | null
           manual_proof_path: string | null
           manual_reference: string | null
           method: Database["public"]["Enums"]["payment_method"] | null
@@ -1994,7 +1993,6 @@ export type Database = {
           id?: string
           last_payload?: Json | null
           last_polled_at?: string | null
-          last_reconciled_at?: string | null
           manual_proof_path?: string | null
           manual_reference?: string | null
           method?: Database["public"]["Enums"]["payment_method"] | null
@@ -2024,7 +2022,6 @@ export type Database = {
           id?: string
           last_payload?: Json | null
           last_polled_at?: string | null
-          last_reconciled_at?: string | null
           manual_proof_path?: string | null
           manual_reference?: string | null
           method?: Database["public"]["Enums"]["payment_method"] | null
@@ -2649,6 +2646,29 @@ export type Database = {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reconciliation_turns: {
+        Row: {
+          last_reconciled_at: string
+          payment_id: string
+        }
+        Insert: {
+          last_reconciled_at: string
+          payment_id: string
+        }
+        Update: {
+          last_reconciled_at?: string
+          payment_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reconciliation_turns_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: true
+            referencedRelation: "payments"
             referencedColumns: ["id"]
           },
         ]

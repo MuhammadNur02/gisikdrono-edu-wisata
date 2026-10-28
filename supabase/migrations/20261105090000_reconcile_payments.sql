@@ -10,7 +10,7 @@
 --             amount and its refunds against what was recorded under Midtrans' word (internal.midtrans_recorded, the
 --             measure note_refund_seen uses), so a bank-transfer refund Midtrans never made is no disagreement and a
 --             Midtrans refund the books do not hold, or hold otherwise, is one; a paid order Midtrans no longer knows
---             is a high status_disagreement. The window takes turns by payments.last_reconciled_at, never asked first,
+--             is a high status_disagreement. The window takes turns by reconciliation_turns, never compared first,
 --             so each night asks different payments and the whole window is asked within a few nights.
 --   invariants  one invoice per settled payment, paid, or voided under a credit note once refunded
 --             (invoice_mismatch, new), at most one settled payment per booking (duplicate_settlement), the ledger of
@@ -24,8 +24,8 @@
 --             alert and a chain_broken issue, and each chain's verdict is kept on the run
 --
 -- Each finding names its subject (type, booking, payment) and its facts, the figures that make it the finding it is.
--- It is not raised again while an issue with the same subject holds those facts, open, or closed as ignored; a changed
--- fact is a new issue. The audit turn is taken only for the writes, never for the scans or the chain walk. A run that
+-- It is not raised again while an open issue with the same subject holds those facts, or one closed as ignored in the
+-- last 30 days holds its whole details; a changed fact is a new issue. The audit turn is taken only for the writes, never for the scans or the chain walk. A run that
 -- wrote new issues raises one reconciliation_digest alert for its Jakarta day, high or critical, raised to critical by
 -- a later run of the day that finds something critical, which the outbox job's alert sender mails to
 -- SECURITY_ALERT_EMAIL (rule, severity and time only; the issues stay on /dashboard/finance/reconciliation). Nothing
@@ -53,95 +53,20 @@ alter table public.reconciliation_issues add constraint reconciliation_issues_is
 
 -- ===== Window B takes turns =====
 
--- When the nightly run last had an answer about the payment's order (or Midtrans' 404): its own bookkeeping, like
--- last_polled_at, so a settled payment may have it stamped and the audit log leaves it out.
-alter table public.payments add column last_reconciled_at timestamptz;
-create index payments_reconcile_order_idx on public.payments (last_reconciled_at nulls first, settlement_time)
-  where provider = 'midtrans' and status in ('settled', 'partially_refunded');
-
--- Replaces the 20261024120100 version: last_reconciled_at joins last_polled_at as bookkeeping a settled payment may
--- still have stamped. Everything else is unchanged.
-create or replace function internal.payments_immutable_guard() returns trigger
-  language plpgsql security definer
-  set search_path = ''
-as $$
-begin
-  if tg_op = 'DELETE' then
-    raise exception 'payments are never deleted' using errcode = '42501';
-  end if;
-  if (new.gross_amount, new.order_id, new.provider, new.booking_id, new.attempt_no)
-     is distinct from (old.gross_amount, old.order_id, old.provider, old.booking_id, old.attempt_no) then
-    raise exception 'gross_amount, order_id, provider, booking_id and attempt_no never change'
-      using errcode = '42501';
-  end if;
-  if old.status in ('settled', 'refunded', 'partially_refunded', 'disputed', 'duplicate')
-     and not internal.in_adjustment()
-     and (to_jsonb(new) - 'status' - 'refunded_amount' - 'updated_at' - 'last_polled_at' - 'last_reconciled_at')
-         is distinct from
-         (to_jsonb(old) - 'status' - 'refunded_amount' - 'updated_at' - 'last_polled_at' - 'last_reconciled_at') then
-    raise exception 'a payment Midtrans settled only changes its status and refunded amount'
-      using errcode = 'P0001', hint = 'STATE_INVALID';
-  end if;
-  return new;
-end;
-$$;
-
--- Replaces the 20261024100300 version: payments.last_reconciled_at, like updated_at and last_polled_at, writes no
--- audit row when it is the only change, or each night would add up to 100 rows to the chain that say nothing anyone
--- acts on. Everything else is unchanged.
-create or replace function internal.log_audit() returns trigger
-  language plpgsql security definer
-  set search_path = ''
-as $$
-declare
-  allowed text[] := internal.audit_columns(tg_table_name);
-  before_row jsonb := case when tg_op <> 'INSERT' then to_jsonb(old) end;
-  after_row jsonb := case when tg_op <> 'DELETE' then to_jsonb(new) end;
-  subject jsonb := coalesce(after_row, before_row);
-  names_only boolean := coalesce(current_setting('app.audit_mode', true), '') = 'names_only';
-  changed text[];
-  kept_before jsonb;
-  kept_after jsonb;
-begin
-  if tg_op = 'UPDATE' then
-    select array_agg(column_name order by column_name) into changed
-    from jsonb_object_keys(after_row) as column_name
-    where before_row -> column_name is distinct from after_row -> column_name
-      and column_name not in ('updated_at', 'last_polled_at', 'last_reconciled_at');
-    if changed is null then
-      return null;
-    end if;
-  end if;
-
-  if not names_only then
-    select jsonb_object_agg(column_name, before_row -> column_name) into kept_before
-    from unnest(allowed) as column_name
-    where before_row ? column_name and (changed is null or column_name = any (changed));
-    select jsonb_object_agg(column_name, after_row -> column_name) into kept_after
-    from unnest(allowed) as column_name
-    where after_row ? column_name and (changed is null or column_name = any (changed));
-  end if;
-
-  -- Public contact numbers in site_settings are still phone numbers, and the data protection officer is a named
-  -- person with a mailbox; their values stay out too.
-  if tg_table_name = 'site_settings'
-     and (subject ->> 'key' like 'contact.%' or subject ->> 'key' like 'privacy.dpo\_%') then
-    kept_before := kept_before - 'value';
-    kept_after := kept_after - 'value';
-  end if;
-
-  perform internal.write_audit_row(
-    tg_table_name || '.' || lower(tg_op),
-    tg_table_name,
-    coalesce(subject ->> 'id', subject ->> 'key'),
-    coalesce((subject ->> 'rw_id')::smallint, (subject -> 'rw_ids' ->> 0)::smallint),
-    kept_before,
-    kept_after,
-    jsonb_strip_nulls(jsonb_build_object('changed_columns', to_jsonb(changed), 'audit_mode', nullif(current_setting('app.audit_mode', true), '')))
-  );
-  return null;
-end;
-$$;
+-- When the nightly run last compared a payment with an answer about its order (or Midtrans' 404). Kept apart from
+-- payments (delta review of PR #105, M-B): a stamp there would move payments.updated_at, which the anomaly scan's
+-- refund_volume rule and the look findings below read as the payment's own last change. Bookkeeping of the run alone:
+-- written only by internal.reconcile_payments, read by internal.reconciliation_window, reached by no API role, so it
+-- has RLS enabled and forced, every privilege revoked and no policy at all. Not audited: it holds no money and no
+-- personal data, and an audit row per payment per night would say nothing anyone acts on.
+create table public.reconciliation_turns (
+  payment_id         uuid primary key references public.payments(id),
+  last_reconciled_at timestamptz not null
+);
+create index reconciliation_turns_last_idx on public.reconciliation_turns (last_reconciled_at);
+alter table public.reconciliation_turns enable row level security;
+alter table public.reconciliation_turns force row level security;
+revoke all on public.reconciliation_turns from anon, authenticated;
 
 
 -- ===== The chains, walked once =====
@@ -222,7 +147,7 @@ $$;
 
 -- Window A and window B. p_young leaves out what is younger: an attempt the visitor is still paying (2 min, as the poll
 -- does), or, when the run counts what waits, what came into a window while the run was asking (5 min, beyond the
--- route's 60 s). turn is window B's last_reconciled_at.
+-- route's 60 s). turn is when window B last compared the payment (reconciliation_turns).
 create function internal.reconciliation_window(p_young interval)
   returns table (order_id text, reason text, since timestamptz, turn timestamptz)
   language sql stable
@@ -233,8 +158,9 @@ as $$
   where p.provider = 'midtrans' and p.status in ('initiated', 'pending')
     and p.created_at >= now() - interval '72 hours' and p.created_at < now() - p_young
   union all
-  select p.order_id, 'paid', coalesce(p.settlement_time, p.created_at), p.last_reconciled_at
+  select p.order_id, 'paid', coalesce(p.settlement_time, p.created_at), t.last_reconciled_at
   from public.payments p
+  left join public.reconciliation_turns t on t.payment_id = p.id
   where p.provider = 'midtrans' and p.status in ('settled', 'partially_refunded')
     and coalesce(p.settlement_time, p.created_at) >= now() - interval '7 days'
     and coalesce(p.settlement_time, p.created_at) < now() - p_young;
@@ -311,11 +237,32 @@ $$;
 revoke execute on function internal.expected_midtrans_status(public.payments, bigint)
   from public, anon, authenticated, service_role;
 
+-- The looks the run compares: Midtrans' 404s, and the answers no later event of the order superseded and the payment
+-- has not moved on from since apply_payment_event processed them (its own write of the answer is no move; delta review
+-- of PR #105, M-A). Only these take their payment's turn (L-2).
+create function internal.compared_looks(p_looks jsonb)
+  returns table (payment_id uuid, outcome text, event_id bigint)
+  language sql stable
+  set search_path = ''
+as $$
+  select p.id, l ->> 'outcome', e.id
+  from jsonb_array_elements(p_looks) as l
+  join public.payments p on p.order_id = l ->> 'order_id'
+  left join public.payment_events e
+    on l ->> 'outcome' = 'answered' and e.order_id = p.order_id
+   and e.id = case when l ->> 'event_id' ~ '^[0-9]{1,18}$' then (l ->> 'event_id')::bigint end
+  where l ->> 'outcome' = 'not_found'
+     or (l ->> 'outcome' = 'answered' and e.id is not null
+         and p.updated_at <= coalesce(e.processed_at, e.received_at)
+         and not exists (select 1 from public.payment_events later
+                         where later.order_id = p.order_id and later.id > e.id));
+$$;
+revoke execute on function internal.compared_looks(jsonb) from public, anon, authenticated, service_role;
+
 -- What Midtrans' stored answers say against our payments, after they were applied: (issue_type, severity, booking_id,
 -- payment_id, facts, details). Facts name Midtrans' figures as the statement import does (order_id, midtrans_status,
--- midtrans_amount), so the dashboard shows both sides and the same difference is raised once; a figure it cannot read
--- is left out. An answer a later event of the order superseded, or one the payment moved on from since it arrived, is
--- not read: whatever moved it is the word that counts, and apply_payment_event already judged it.
+-- midtrans_amount) and our status, so the dashboard shows both sides and the same difference is raised once; a figure
+-- it cannot read is left out.
 create function internal.reconcile_look_findings(p_looks jsonb)
   returns table (issue_type text, severity public.alert_severity, booking_id uuid, payment_id uuid, facts jsonb,
                  details jsonb)
@@ -324,7 +271,7 @@ create function internal.reconcile_look_findings(p_looks jsonb)
 as $$
   with looked as (
     select p.id as payment_id, p.booking_id, p.order_id, p.status as ours, p.gross_amount,
-           l ->> 'outcome' as outcome, e.payload,
+           c.outcome, e.payload,
            internal.midtrans_payment_status(e.payload ->> 'transaction_status', e.payload ->> 'fraud_status') as stated,
            case when e.payload ->> 'gross_amount' ~ '^[0-9]{1,15}(\.0{1,2})?$'
                 then split_part(e.payload ->> 'gross_amount', '.', 1)::bigint end as stated_amount,
@@ -332,23 +279,16 @@ as $$
                 else coalesce(internal.midtrans_refund_total(e.payload), 0) end as stated_refunded,
            recorded.amount as recorded,
            internal.expected_midtrans_status(p, recorded.amount) as expected
-    from jsonb_array_elements(p_looks) as l
-    join public.payments p on p.order_id = l ->> 'order_id'
+    from internal.compared_looks(p_looks) as c
+    join public.payments p on p.id = c.payment_id
     cross join lateral (select internal.midtrans_recorded(p) as amount) as recorded
-    left join public.payment_events e
-      on l ->> 'outcome' = 'answered' and e.order_id = p.order_id
-     and e.id = case when l ->> 'event_id' ~ '^[0-9]{1,18}$' then (l ->> 'event_id')::bigint end
-    where l ->> 'outcome' = 'not_found'
-       or (l ->> 'outcome' = 'answered' and p.updated_at <= e.received_at
-           and not exists (select 1 from public.payment_events later
-                           where later.order_id = p.order_id and later.id > e.id))
+    left join public.payment_events e on e.id = c.event_id
   ), facts as (
     select k.*,
            jsonb_strip_nulls(jsonb_build_object(
              'order_id', k.order_id, 'midtrans_status', coalesce(k.payload ->> 'transaction_status', 'not_found'),
-             'midtrans_amount', k.stated_amount)) as said,
-           jsonb_build_object('our_status', k.ours, 'our_amount', k.gross_amount, 'our_midtrans_refunded', k.recorded)
-             as ours_said
+             'midtrans_amount', k.stated_amount, 'our_status', k.ours)) as said,
+           jsonb_build_object('our_amount', k.gross_amount, 'our_midtrans_refunded', k.recorded) as ours_said
     from looked k
   )
   -- Money we hold as taken for an order Midtrans has no transaction for.
@@ -374,7 +314,7 @@ as $$
   -- nobody recorded, or one beside a bank transfer already made), or less than was booked as Midtrans'.
   select 'amount_mismatch', 'high'::public.alert_severity, f.booking_id, f.payment_id,
          jsonb_build_object('order_id', f.order_id, 'reason', 'refund_amount', 'midtrans_refunded', f.stated_refunded,
-                            'our_midtrans_refunded', f.recorded),
+                            'our_midtrans_refunded', f.recorded, 'our_status', f.ours),
          f.said || f.ours_said || jsonb_build_object('reason', 'refund_amount', 'midtrans_refunded', f.stated_refunded)
   from facts f
   where f.outcome = 'answered' and coalesce(internal.statement_status_agrees(f.stated, f.expected), false)
@@ -424,9 +364,11 @@ as $$
   where sums.ledger <> sums.expected
   union all
   -- Ten minutes, as the anomaly scan waits: the settlement writes the tickets in its own transaction. A booking under
-  -- review already waits for resolve_booking_review.
-  select 'paid_without_tickets', 'critical'::public.alert_severity, b.id, null::uuid, '{}'::jsonb, '{}'::jsonb
+  -- review already waits for resolve_booking_review. Its legs are what the tickets were owed to.
+  select 'paid_without_tickets', 'critical'::public.alert_severity, b.id, null::uuid, legs.said, legs.said
   from public.bookings b
+  cross join lateral (select jsonb_build_object('legs', count(*), 'pax', coalesce(sum(l.pax_count), 0)) as said
+                      from public.booking_legs l where l.booking_id = b.id) as legs
   where b.status = 'paid' and not b.needs_review and b.paid_at < now() - interval '10 minutes'
     and not exists (select 1 from public.tickets_qr t where t.booking_id = b.id)
   union all
@@ -437,7 +379,8 @@ as $$
   join public.bookings b on b.id = t.booking_id
   where t.status = 'issued' and b.status not in ('paid', 'checked_in')
   union all
-  -- The counts move with every booking; the session and its capacity are what the issue is about.
+  -- The counts move with every booking: an open issue is about the session and its capacity, while a closing as
+  -- ignored covers only the counts it was closed on (reconciliation_issue_said).
   select 'capacity_exceeded', 'high'::public.alert_severity, null::uuid, null::uuid,
          jsonb_build_object('session_id', s.id, 'capacity', s.capacity),
          jsonb_build_object('session_id', s.id, 'capacity', s.capacity, 'reserved_pax', s.reserved_pax,
@@ -468,10 +411,12 @@ revoke execute on function internal.chain_findings(jsonb, jsonb) from public, an
 
 -- ===== Writing the run =====
 
--- An issue with the same subject that holds the same facts, still open or closed as ignored. Any issue counts, a
--- statement issue holding the same Midtrans status and amount included.
+-- An issue with the same subject that says the same: an open one holding the finding's facts, or one closed as
+-- ignored in the last 30 days holding its whole details, the counts it was closed on included (delta review of
+-- PR #105, L-1), so a closing hides only what it saw, and only for a while. Any issue counts, a statement issue
+-- holding the same Midtrans status and amount included.
 create function internal.reconciliation_issue_said(p_issue_type text, p_booking_id uuid, p_payment_id uuid,
-  p_facts jsonb) returns boolean
+  p_facts jsonb, p_details jsonb) returns boolean
   language sql stable
   set search_path = ''
 as $$
@@ -479,10 +424,11 @@ as $$
                  where o.issue_type = p_issue_type
                    and o.booking_id is not distinct from p_booking_id
                    and o.payment_id is not distinct from p_payment_id
-                   and o.details @> p_facts
-                   and (o.resolved_at is null or o.resolution = 'ignored'));
+                   and ((o.resolved_at is null and o.details @> p_facts)
+                        or (o.resolution = 'ignored' and o.resolved_at > now() - interval '30 days'
+                            and o.details @> p_details)));
 $$;
-revoke execute on function internal.reconciliation_issue_said(text, uuid, uuid, jsonb)
+revoke execute on function internal.reconciliation_issue_said(text, uuid, uuid, jsonb, jsonb)
   from public, anon, authenticated, service_role;
 
 -- Findings as the finding functions return them, gathered as jsonb before the audit turn is taken.
@@ -538,7 +484,7 @@ begin
     insert into public.reconciliation_issues (run_id, booking_id, payment_id, issue_type, severity, details)
     select p_run_id, f.booking_id, f.payment_id, f.issue_type, f.severity, f.details
     from findings f
-    where not internal.reconciliation_issue_said(f.issue_type, f.booking_id, f.payment_id, f.facts)
+    where not internal.reconciliation_issue_said(f.issue_type, f.booking_id, f.payment_id, f.facts, f.details)
     returning reconciliation_issues.issue_type, reconciliation_issues.severity
   )
   select (select count(*) from findings)::integer, (select count(*) from new_issues)::integer,
@@ -555,16 +501,32 @@ $$;
 revoke execute on function internal.write_reconciliation_findings(uuid, jsonb)
   from public, anon, authenticated, service_role;
 
--- The orders of both windows no answer of this run covers, older than the run: those waiting their turn.
-create function internal.orders_not_reconciled(p_looks jsonb) returns integer
+-- The orders of p_reason's window, older than the run, that this run did not compare: window B's wait their turn
+-- (delta review of PR #105, L-3), window A's were left unasked by the time budget.
+create function internal.orders_not_reconciled(p_looks jsonb, p_reason text) returns integer
   language sql stable
   set search_path = ''
 as $$
   select count(*)::integer from internal.reconciliation_window(interval '5 minutes') as w
-  where not exists (select 1 from jsonb_array_elements(p_looks) as l
-                    where l ->> 'order_id' = w.order_id and l ->> 'outcome' in ('answered', 'not_found'));
+  where w.reason = p_reason
+    and not exists (select 1 from internal.compared_looks(p_looks) as c
+                    join public.payments p on p.id = c.payment_id
+                    where p.order_id = w.order_id);
 $$;
-revoke execute on function internal.orders_not_reconciled(jsonb) from public, anon, authenticated, service_role;
+revoke execute on function internal.orders_not_reconciled(jsonb, text) from public, anon, authenticated, service_role;
+
+-- Window B's turn moves for the settled payments this run compared, and only those (L-2).
+create function internal.take_reconciliation_turns(p_looks jsonb) returns void
+  language sql
+  set search_path = ''
+as $$
+  insert into public.reconciliation_turns (payment_id, last_reconciled_at)
+  select p.id, now() from internal.compared_looks(p_looks) as c
+  join public.payments p on p.id = c.payment_id
+  where p.status in ('settled', 'partially_refunded')
+  on conflict (payment_id) do update set last_reconciled_at = excluded.last_reconciled_at;
+$$;
+revoke execute on function internal.take_reconciliation_turns(jsonb) from public, anon, authenticated, service_role;
 
 -- {run_id, payments_checked, orders_unanswered, orders_waiting, issues_found, issues_already_open}. The chains are the
 -- run's next step (reconcile_chains). The scans run before the audit turn is taken.
@@ -580,6 +542,7 @@ declare
   checked integer;
   unanswered integer;
   waiting integer;
+  open_not_asked integer;
 begin
   perform internal.require_server_caller('reconcile_payments');
   perform internal.check_reconciliation_looks(p_looks);
@@ -590,7 +553,8 @@ begin
   checked := (select count(*) from jsonb_array_elements(p_looks) as l
               where l ->> 'outcome' in ('answered', 'not_found'))::integer;
   unanswered := (select count(*) from jsonb_array_elements(p_looks) as l where l ->> 'outcome' = 'unanswered')::integer;
-  waiting := internal.orders_not_reconciled(p_looks);
+  waiting := internal.orders_not_reconciled(p_looks, 'paid');
+  open_not_asked := internal.orders_not_reconciled(p_looks, 'open');
 
   perform internal.take_audit_turn();
   previous_settings := internal.push_settings(jsonb_build_object('app.actor_role', 'cron'));
@@ -599,15 +563,13 @@ begin
   returning id into new_run_id;
   select w.raised, w.written, w.by_type into counted
   from internal.write_reconciliation_findings(new_run_id, findings) as w;
-  update public.payments p set last_reconciled_at = now()
-  where p.order_id in (select l ->> 'order_id' from jsonb_array_elements(p_looks) as l
-                       where l ->> 'outcome' in ('answered', 'not_found'));
+  perform internal.take_reconciliation_turns(p_looks);
   update public.reconciliation_runs
   set issues_found = counted.written, finished_at = now(),
       summary = jsonb_build_object(
         'not_found', (select count(*) from jsonb_array_elements(p_looks) as l where l ->> 'outcome' = 'not_found'),
-        'unanswered', unanswered, 'waiting', waiting, 'issues_already_open', counted.raised - counted.written,
-        'by_type', counted.by_type)
+        'unanswered', unanswered, 'orders_waiting', waiting, 'open_orders_not_asked', open_not_asked,
+        'issues_already_open', counted.raised - counted.written, 'by_type', counted.by_type)
   where id = new_run_id;
   perform internal.restore_settings(previous_settings);
   return jsonb_build_object('run_id', new_run_id, 'payments_checked', checked, 'orders_unanswered', unanswered,

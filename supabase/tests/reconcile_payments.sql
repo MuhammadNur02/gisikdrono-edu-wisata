@@ -9,7 +9,7 @@
 -- critical; only the server runs it, on looks that name the poll events it stored. reconcile_payments_refunds.sql has
 -- the refunds and their invoices.
 begin;
-select plan(37);
+select plan(42);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -90,9 +90,11 @@ $$;
 create temporary table orders on commit drop as
 select pg_temp.paid_order('+6281300002101', repeat('c', 64)) as agreeing,
        pg_temp.attempt(pg_temp.hold('+6281300002102')) as open_attempt,
-       pg_temp.paid_order('+6281300002103', repeat('d', 64)) as cancelled_with_ticket;
+       pg_temp.paid_order('+6281300002103', repeat('d', 64)) as cancelled_with_ticket,
+       pg_temp.paid_order('+6281300002106', repeat('4', 64)) as superseded_paid,
+       pg_temp.attempt(pg_temp.hold('+6281300002107')) as moved_open;
 update public.payments set created_at = now() - interval '10 minutes'
-where order_id = (select open_attempt from orders);
+where order_id in ((select open_attempt from orders), (select moved_open from orders));
 create temporary table booking_of on commit drop as
 select o.agreeing as order_id, p.booking_id from orders o join public.payments p on p.order_id = o.agreeing
 union all
@@ -232,11 +234,11 @@ select is((select severity || ':' || (notified_at is null) from public.security_
 select is((select (reply ->> 'orders_waiting')::int from first_run) > 0
           and (select (reply ->> 'orders_unanswered')::int from first_run) = 0, true,
   'the second settlement nobody asked about waits its turn; nothing went unanswered');
-select is((select (last_reconciled_at is not null)::text from public.payments
-            where order_id = (select agreeing from orders))
-           || ',' || (select (last_reconciled_at is not null)::text from public.payments
-                      where order_id = 'GSK-RC0000C1-02'),
-  'true,false', 'an order the run had an answer about is stamped, one it did not ask about is not');
+select is((select count(*)::text from public.reconciliation_turns t join public.payments p on p.id = t.payment_id
+            where p.order_id = (select agreeing from orders))
+           || ',' || (select count(*)::text from public.reconciliation_turns t join public.payments p on p.id = t.payment_id
+                      where p.order_id = 'GSK-RC0000C1-02'),
+  '1,0', 'a settled payment the run compared takes its turn, one it did not ask about does not');
 select ok(pg_temp.turn_of('GSK-RC0000C1-02') < pg_temp.turn_of('GSK-RC0000C1-01'),
   'so the next night asks the unstamped one before it (M3)');
 
@@ -258,17 +260,36 @@ select is((select count(*)::int from public.security_alerts
            where fingerprint = 'reconciliation_digest:' || public.today_jkt()::text and acknowledged_at is null),
   1, 'the day keeps one digest alert');
 
--- M2: an issue closed as ignored stays quiet while its facts hold, and a session's moving counts open nothing new.
+-- M2, L-1: an issue closed as ignored stays quiet while its figures hold, for 30 days; an open session issue stays the
+-- one issue while its counts move.
+create function pg_temp.new_issues() returns integer
+  language sql
+as $$
+  select (internal.reconcile_payments(pg_temp.looks(jsonb_build_array(
+    jsonb_build_object('order_id', 'GSK-RC0000C1-02', 'outcome', 'not_found')))) ->> 'issues_found')::int;
+$$;
 update public.reconciliation_issues
 set resolution = 'ignored', resolved_by = '00000000-0000-4000-8000-00000000f001', resolution_note = 'Diabaikan uji'
-where booking_id = '00000000-0000-4000-8000-0000000e3001' and issue_type = 'paid_without_tickets';
+where booking_id = '00000000-0000-4000-8000-0000000e3001' and issue_type = 'ledger_sum_mismatch';
 alter table public.booking_legs disable trigger user;
 insert into public.booking_legs (booking_id, rw_id, visit_session_id, leg_order, pax_count, status, quota_reserved_at)
 values ('00000000-0000-4000-8000-0000000e3002', 5, '00000000-0000-4000-8000-0000000e2002', 1, 3, 'reserved', now());
 alter table public.booking_legs enable trigger user;
-select is((internal.reconcile_payments(pg_temp.looks(jsonb_build_array(
-    jsonb_build_object('order_id', 'GSK-RC0000C1-02', 'outcome', 'not_found')))) ->> 'issues_found')::int, 0,
-  'neither the ignored issue nor the fuller session is raised again (M2)');
+select is(pg_temp.new_issues(), 0,
+  'a ledger gap ignored on the same figures, and an open session issue whose counts moved, are not raised again (M2)');
+update public.reconciliation_issues
+set resolution = 'ignored', resolved_by = '00000000-0000-4000-8000-00000000f001', resolution_note = 'Diabaikan uji'
+where issue_type = 'capacity_exceeded' and resolved_at is null
+  and details ->> 'session_id' = '00000000-0000-4000-8000-0000000e2002';
+alter table public.booking_legs disable trigger user;
+update public.booking_legs set pax_count = 4 where booking_id = '00000000-0000-4000-8000-0000000e3002';
+alter table public.booking_legs enable trigger user;
+select is(pg_temp.new_issues(), 1, 'a session ignored on other counts is raised again (L-1)');
+alter table public.reconciliation_issues disable trigger user;
+update public.reconciliation_issues set resolved_at = now() - interval '31 days'
+where booking_id = '00000000-0000-4000-8000-0000000e3001' and issue_type = 'ledger_sum_mismatch';
+alter table public.reconciliation_issues enable trigger user;
+select is(pg_temp.new_issues(), 1, 'and a closing as ignored older than 30 days hides nothing (L-1)');
 
 -- ===== Midtrans says otherwise, and the audit chain is broken =====
 -- A statement already holds what Midtrans now says of the cancelled booking's payment.
@@ -283,10 +304,30 @@ select statement_run.id, p.booking_id, p.id, 'status_disagreement', 'high',
        jsonb_build_object('order_id', p.order_id, 'midtrans_status', 'refund', 'midtrans_amount', 600000,
                           'our_status', 'settled', 'our_amount', 600000, 'file_name', 'midtrans.csv')
 from statement_run, public.payments p where p.order_id = (select cancelled_with_ticket from orders);
--- An answer about the broken booking that a later event superseded.
-create temporary table superseded on commit drop as
-  select pg_temp.poll_event('GSK-RC0000C1-01', 'expire', '50000.00', repeat('7', 64)) as event_id;
-select pg_temp.poll_event('GSK-RC0000C1-01', 'settlement', '50000.00', repeat('6', 64));
+create temporary table third_events on commit drop as
+select pg_temp.poll_event((select agreeing from orders), 'refund', '600000.00', repeat('9', 64)) as agreeing,
+       pg_temp.poll_event((select open_attempt from orders), 'pending', '1.00', repeat('8', 64)) as open_attempt,
+       pg_temp.poll_event((select cancelled_with_ticket from orders), 'refund', '600000.00', repeat('5', 64))
+         as cancelled_with_ticket,
+       pg_temp.poll_event((select moved_open from orders), 'pending', '2.00', repeat('3', 64)) as moved_open,
+       -- Answers a later event superseded: one about the broken booking, one about a payment never compared yet.
+       pg_temp.poll_event('GSK-RC0000C1-01', 'expire', '50000.00', repeat('7', 64)) as superseded_broken,
+       pg_temp.poll_event((select superseded_paid from orders), 'refund', '600000.00', repeat('2', 64))
+         as superseded_paid;
+select pg_temp.poll_event('GSK-RC0000C1-01', 'settlement', '50000.00', repeat('6', 64)),
+       pg_temp.poll_event((select superseded_paid from orders), 'settlement', '600000.00', repeat('1', 64));
+-- M-A, with the times a real run has (pgTAP's now() stands still): the open attempt was written when its answer was
+-- processed, which is no move; the other open attempt moved on after its answer arrived.
+alter table public.payment_events disable trigger user;
+update public.payment_events set received_at = now() - interval '10 minutes', processed_at = now() - interval '9 minutes'
+where id = (select open_attempt from third_events);
+update public.payment_events set received_at = now() - interval '10 minutes', processed_at = null
+where id = (select moved_open from third_events);
+alter table public.payment_events enable trigger user;
+alter table public.payments disable trigger user;
+update public.payments set updated_at = now() - interval '9 minutes' where order_id = (select open_attempt from orders);
+update public.payments set updated_at = now() - interval '1 minute' where order_id = (select moved_open from orders);
+alter table public.payments enable trigger user;
 alter table public.audit_logs disable trigger append_only;
 update public.audit_logs set metadata = coalesce(metadata, '{}') || '{"tampered": true}'
 where id = (select max(id) from public.audit_logs);
@@ -294,16 +335,17 @@ alter table public.audit_logs enable trigger append_only;
 create temporary table third_run on commit drop as
   select internal.reconcile_payments(jsonb_build_array(
     jsonb_build_object('order_id', (select agreeing from orders), 'outcome', 'answered',
-                       'event_id', pg_temp.poll_event((select agreeing from orders), 'refund', '600000.00',
-                                                      repeat('9', 64))),
+                       'event_id', (select agreeing from third_events)),
     jsonb_build_object('order_id', (select open_attempt from orders), 'outcome', 'answered',
-                       'event_id', pg_temp.poll_event((select open_attempt from orders), 'pending', '1.00',
-                                                      repeat('8', 64))),
+                       'event_id', (select open_attempt from third_events)),
     jsonb_build_object('order_id', (select cancelled_with_ticket from orders), 'outcome', 'answered',
-                       'event_id', pg_temp.poll_event((select cancelled_with_ticket from orders), 'refund',
-                                                      '600000.00', repeat('5', 64))),
+                       'event_id', (select cancelled_with_ticket from third_events)),
+    jsonb_build_object('order_id', (select moved_open from orders), 'outcome', 'answered',
+                       'event_id', (select moved_open from third_events)),
     jsonb_build_object('order_id', 'GSK-RC0000C1-01', 'outcome', 'answered',
-                       'event_id', (select event_id from superseded)))) as reply;
+                       'event_id', (select superseded_broken from third_events)),
+    jsonb_build_object('order_id', (select superseded_paid from orders), 'outcome', 'answered',
+                       'event_id', (select superseded_paid from third_events)))) as reply;
 create temporary table third_chains on commit drop as
   select internal.reconcile_chains((select (reply ->> 'run_id')::uuid from third_run)) as reply;
 select is((select details ->> 'midtrans_status' || ':' || (details ->> 'our_status') || ':' || severity
@@ -321,6 +363,13 @@ select is((select count(*)::int from public.reconciliation_issues
            where run_id = (select (reply ->> 'run_id')::uuid from third_run)
              and payment_id = '00000000-0000-4000-8000-0000000e4001'),
   0, 'an answer a later event superseded is not read (L2)');
+select is((select count(*)::int from public.reconciliation_turns t join public.payments p on p.id = t.payment_id
+           where p.order_id = (select superseded_paid from orders)),
+  0, 'and takes no turn: the payment is compared on a later night (L-2)');
+select is((select count(*)::int from public.reconciliation_issues i join public.payments p on p.id = i.payment_id
+           where i.run_id = (select (reply ->> 'run_id')::uuid from third_run)
+             and p.order_id = (select moved_open from orders)),
+  0, 'an answer the payment moved on from after it was processed is not read (M-A)');
 select is((select (reply ->> 'audit_chain_ok')::boolean || ':' || (reply ->> 'ledger_chain_ok')::boolean
            from third_chains),
   'false:true', 'the run keeps which chain broke');
@@ -333,6 +382,12 @@ select is((select severity::text from public.security_alerts
 select is(internal.anomaly_chains(), 1, 'which the hourly check, walking the same chains, still reports');
 
 -- ===== Only the server =====
+select ok((select c.relrowsecurity and c.relforcerowsecurity from pg_class c
+           where c.oid = 'public.reconciliation_turns'::regclass)
+          and not has_table_privilege('anon', 'public.reconciliation_turns', 'select, insert, update, delete')
+          and not has_table_privilege('authenticated', 'public.reconciliation_turns', 'select, insert, update, delete')
+          and not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'reconciliation_turns'),
+  'reconciliation_turns has RLS enabled and forced, no API grant and no policy: the run''s own bookkeeping');
 select ok(not has_function_privilege('anon', 'public.svc_reconcile_payments(jsonb)', 'execute')
           and not has_function_privilege('authenticated', 'public.svc_reconcile_payments(jsonb)', 'execute')
           and not has_function_privilege('anon', 'public.svc_payments_to_reconcile(integer)', 'execute')

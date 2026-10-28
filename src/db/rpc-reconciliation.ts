@@ -51,7 +51,7 @@ export interface PaymentsReconciled {
   paymentsChecked: number;
   // Orders whose ask went unanswered: the run fails, and the next one asks again.
   ordersUnanswered: number;
-  // Orders of either window this run did not reach: their turn comes on a later night.
+  // Window B payments this run did not compare: their turn comes on a later night.
   ordersWaiting: number;
   issuesFound: number;
   issuesAlreadyOpen: number;
