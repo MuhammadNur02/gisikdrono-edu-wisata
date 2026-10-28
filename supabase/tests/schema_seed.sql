@@ -23,7 +23,7 @@ select is(
         'kelurahan.signatory_name:false', 'kelurahan.signatory_title:false', 'maintenance_mode:true',
         'midtrans.fee_qris_permille:false', 'midtrans.fee_va_idr:false',
         'pii_retention_months:false', 'pricing.min_price_per_pax:false', 'privacy.dpo_email:true',
-        'privacy.dpo_name:true', 'rate_limit_profile:false',
+        'privacy.dpo_name:true', 'qr.signing_kids:false', 'rate_limit_profile:false',
         'seo.default_description:true', 'whatsapp.weather_template_approved:false', 'whatsapp_enabled:false'],
   'every key of docs/PRD.md §8.6 is seeded, public exactly where the PRD says'
 );

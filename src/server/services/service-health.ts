@@ -30,6 +30,9 @@ export interface HealthReport {
     maintenanceMode: boolean;
     // Production only (go-live check #19): the settings still holding a seeded placeholder.
     placeholderSettings: number;
+    // Delta review of PR #91, L-4: QR_SIGNING_ACTIVE_KID is not in site_settings qr.signing_kids, so every ticket
+    // the cash or a settlement would issue is refused.
+    unknownQrKid: boolean;
   };
 }
 
@@ -56,41 +59,58 @@ async function countRecentlyDeadMessages(adminClient: DatabaseClient, now: Date)
   return count ?? 0;
 }
 
-async function isMaintenanceMode(adminClient: DatabaseClient): Promise<boolean> {
+const MAINTENANCE_KEY = 'maintenance_mode';
+const QR_KIDS_KEY = 'qr.signing_kids';
+
+interface SettingsHealth {
+  maintenanceMode: boolean;
+  unknownQrKid: boolean;
+}
+
+async function readSettingsHealth(
+  adminClient: DatabaseClient,
+  activeQrKid: string,
+): Promise<SettingsHealth> {
   const { data, error } = await adminClient
     .from('site_settings')
-    .select('value')
-    .eq('key', 'maintenance_mode')
-    .maybeSingle();
+    .select('key, value')
+    .in('key', [MAINTENANCE_KEY, QR_KIDS_KEY]);
   if (error) throw error;
-  return data?.value === true;
+  const valueOf = (key: string) => data.find((setting) => setting.key === key)?.value;
+  const kids = valueOf(QR_KIDS_KEY);
+  return {
+    maintenanceMode: valueOf(MAINTENANCE_KEY) === true,
+    unknownQrKid: !(Array.isArray(kids) && kids.includes(activeQrKid)),
+  };
 }
 
 // Throws when the database cannot be read at all, which the route answers as down.
 export async function checkServiceHealth(
   adminClient: DatabaseClient,
-  isProduction: boolean,
+  environment: { isProduction: boolean; activeQrKid: string },
   now: Date = new Date(),
 ): Promise<HealthReport> {
-  const [jobs, overdueMessages, deadMessages, maintenanceMode, placeholders] = await Promise.all([
+  const [jobs, overdueMessages, deadMessages, settings, placeholders] = await Promise.all([
     svcJobHealth(adminClient),
     countOverdueMessages(adminClient, now),
     countRecentlyDeadMessages(adminClient, now),
-    isMaintenanceMode(adminClient),
-    isProduction ? svcPlaceholderSiteSettings(adminClient) : Promise.resolve([]),
+    readSettingsHealth(adminClient, environment.activeQrKid),
+    environment.isProduction ? svcPlaceholderSiteSettings(adminClient) : Promise.resolve([]),
   ]);
   const checks = {
     stalledJobs: jobs.filter((job) => job.isStalled).length,
     overdueMessages,
     deadMessages,
-    maintenanceMode,
+    maintenanceMode: settings.maintenanceMode,
     placeholderSettings: placeholders.length,
+    unknownQrKid: settings.unknownQrKid,
   };
   const isHealthy =
     checks.stalledJobs === 0 &&
     checks.overdueMessages === 0 &&
     checks.deadMessages === 0 &&
     !checks.maintenanceMode &&
-    checks.placeholderSettings === 0;
+    checks.placeholderSettings === 0 &&
+    !checks.unknownQrKid;
   return { status: isHealthy ? 'ok' : 'degraded', checks };
 }

@@ -193,7 +193,7 @@ Preview deployments refuse Cloudflare's test keys (`src/lib/public-env.ts`), so 
 | `RESEND_API_KEY` | S | fixed placeholder `email-off-on-staging` | required by `src/lib/env.ts`; email stays off; replaced when Resend is set up (P0.1.09) |
 | `EMAIL_FROM` | S | fixed placeholder | replaced with the `mail.<domain>` sender later |
 | `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS` | P | fixed `off` | Supabase Free has no image transformer, so photos are served as plain files; production leaves it unset and refuses `off` |
-| `QR_SIGNING_KEYS`, `QR_SIGNING_ACTIVE_KID` | S | generated, kid `k1` | |
+| `QR_SIGNING_KEYS`, `QR_SIGNING_ACTIVE_KID` | S | generated, kid `k1` | the kid must also be in `site_settings` `qr.signing_kids` (D.4), which the migration seeds as `["k1"]` |
 | `BOOKING_LINK_SECRET` | S | generated | |
 | `OTP_PEPPER` | S | generated | also Vault `otp_pepper` (D.1) |
 | `CRON_SECRET` | S | generated | also Vault `cron_secret` (D.1) |
@@ -305,7 +305,15 @@ where key in ('booking_enabled', 'whatsapp_enabled', 'email_enabled', 'maintenan
 order by key;
 ```
 
-All four must read `false`. `booking_enabled` is already off from the migration `20261023090000`; the two channel switches default to on, so they are turned off here. Booking is opened only by the later migration of Task P3.12.01, never by hand (a short trial needs the superadmin's fresh TOTP and is closed again straight after; `docs/runbooks/release-checklist.md`).
+All four must read `false`. Then check that the QR kid of Part C is in the database's list, since an RW admin's cash at the counter is refused with any other and `/api/health` answers 503 until it is (`20261104220100`, Task P4.3.10):
+
+```sql
+select value from public.site_settings where key = 'qr.signing_kids';
+```
+
+It must contain the `QR_SIGNING_ACTIVE_KID` you set (`["k1"]` for the generated secrets). For another kid, add it as the superadmin: `update public.site_settings set value = value || '["<kid>"]'::jsonb where key = 'qr.signing_kids';`.
+
+`booking_enabled` is already off from the migration `20261023090000`; the two channel switches default to on, so they are turned off here. Booking is opened only by the later migration of Task P3.12.01, never by hand (a short trial needs the superadmin's fresh TOTP and is closed again straight after; `docs/runbooks/release-checklist.md`).
 
 ### D.5 Pause the jobs whose routes do not exist yet
 
