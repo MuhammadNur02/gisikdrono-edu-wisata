@@ -97,15 +97,18 @@ create function pg_temp.settle_late(p_booking uuid) returns jsonb
 as $$
 declare
   payment public.payments;
+  answer jsonb;
 begin
   perform set_config('app.in_rpc', '1', true);
   insert into public.payments (booking_id, attempt_no, provider, method, status, order_id, gross_amount)
   select b.id, 1, 'midtrans', 'qris', 'pending', b.booking_code || '-01', b.total_amount
   from public.bookings b where b.id = p_booking
   returning * into payment;
+  -- As apply_payment_event calls it: inside a transition, so the status columns may move.
+  answer := internal.settle_payment((select b from public.bookings b where b.id = p_booking), payment,
+                                    '{"transaction_status": "settlement"}', 'webhook');
   perform set_config('app.in_rpc', '', true);
-  return internal.settle_payment((select b from public.bookings b where b.id = p_booking), payment,
-                                 '{"transaction_status": "settlement"}', 'webhook');
+  return answer;
 end;
 $$;
 
