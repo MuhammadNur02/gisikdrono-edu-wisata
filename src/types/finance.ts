@@ -281,6 +281,8 @@ export interface PayoutPreview {
   // Null while the period is not one a payout may cover.
   total: number | null;
   entries: number | null;
+  // Review of PR #103, M-1: the day of an unpaid negative row before the period, which no payout of it may leave behind.
+  blockedSince: string | null;
 }
 
 // What the payout form shows of the preview while it is asked again.

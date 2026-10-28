@@ -76,7 +76,7 @@ export async function reject(adjustmentId: string, reason: string): Promise<Adju
 
 export async function apply(adjustmentId: string): Promise<AdjustmentReply> {
   const supabase = await createSupabaseServerClient();
-  return asFinanceWrite(() => applyAdjustment(supabase, adjustmentId));
+  return asFinanceWrite(() => applyAdjustment(supabase, adjustmentId), 'apply');
 }
 
 // Review of PR #80, L-1: the superadmin acknowledges an applied manual refund's refund_key_mismatch alert with a note,

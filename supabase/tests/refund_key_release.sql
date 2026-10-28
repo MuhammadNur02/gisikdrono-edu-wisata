@@ -4,8 +4,11 @@
 -- gap between what A booked and that sum is a reconciliation issue of its own, not a booking. L-a: the release holds
 -- only for the figure it accepted. L-b: the alert must have been delivered, and neither A's proposer nor its approver
 -- releases it; a plainly acknowledged alert is released through as well.
+-- The Lows of the review of PR #80 (20261104210300): L-1 a release closes the adjustment's earlier gap issues;
+-- L-2 the sole active superadmin releases 24 hours after the alert went out, with an alert of its own; Info a
+-- figure that does not read is no figure to release; L-4 the assertions of the release itself.
 begin;
-select plan(21);
+select plan(38);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: an RW 05 package, three superadmins, a booking paid Rp 300.000 =====
@@ -118,7 +121,10 @@ as $$
   select p.id, p.order_id, 'status_api', md5(p.id::text || p_refunds::text || clock_timestamp()::text), 'partial_refund',
          '200', p.gross_amount || '.00',
          jsonb_build_object('order_id', p.order_id, 'currency', 'IDR', 'refunds', p_refunds,
-                            'refund_amount', (select sum((r ->> 'refund_amount')::numeric) from jsonb_array_elements(p_refunds) r)::bigint || '.00'),
+                            'refund_amount', coalesce((select sum((r ->> 'refund_amount')::numeric)
+                                                       from jsonb_array_elements(p_refunds) r
+                                                       where r ->> 'refund_amount' ~ '^[0-9]+(\.[0-9]+)?$'), 0)::bigint
+                                             || '.00'),
          now()
   from public.payments p where p.booking_id = p_booking and p.status in ('settled', 'partially_refunded');
 $$;
@@ -173,6 +179,15 @@ select pg_temp.act_as_super('00000000-0000-4000-8000-00000000f003');
 select is(pg_temp.hint_of($$select public.release_refund_key_mismatch((select id from a), 'Angka Midtrans sudah dicek')$$),
   'ALERT_NOT_NOTIFIED', 'and nobody before the alert was delivered');
 reset role;
+-- L-4: the note and the fresh code.
+select pg_temp.act_as_super('00000000-0000-4000-8000-00000000f003');
+select throws_ok($$select public.release_refund_key_mismatch((select id from a), 'singkat')$$, '22023', null,
+  'a release says why in at least 10 characters');
+reset role;
+select pg_temp.act_as('superadmin_stale_totp');
+select throws_ok($$select public.release_refund_key_mismatch((select id from a), 'Angka Midtrans sudah dicek')$$,
+  '42501', null, 'and needs a fresh code');
+reset role;
 update public.security_alerts set notified_at = now() where fingerprint = 'refund_key_mismatch:' || (select id from a);
 select pg_temp.act_as_super('00000000-0000-4000-8000-00000000f003');
 select is((public.release_refund_key_mismatch((select id from a), 'Angka Midtrans sudah dicek') ->> 'released_sum')::bigint,
@@ -200,17 +215,39 @@ select ok(exists (select 1 from public.audit_logs where action = 'refund.key_mis
                   and entity_id = (select id from a)::text and metadata ->> 'released_sum' = '80000'),
   'the release is audited with its figure');
 
+-- ===== L-4: once released, another Midtrans refund is recorded over the mismatch =====
+select pg_temp.listed((select id from booking),
+  jsonb_build_array(jsonb_build_object('refund_key', (select id from a)::text, 'refund_amount', '80000.00'),
+                    jsonb_build_object('refund_key', 'MT-B', 'refund_amount', '5000.00')));
+select is(internal.refund_key_mismatch(pg_temp.payment_row((select id from booking)), null), null,
+  'the released mismatch blocks nothing any more');
+select pg_temp.act_as('superadmin_aal2');
+select is(public.record_refund((select id from booking), 5000, 'MT-B', 'Refund QRIS lain dicatat', null,
+  pg_temp.doc('bookings/' || (select id from booking) || '/refund-' || md5('mt-b')::uuid || '.pdf')) ->> 'result',
+  'recorded', 'so record_refund books what Midtrans reports, its figure counting');
+reset role;
+select ok(exists (select 1 from public.audit_logs where action = 'refund.recorded_over_key_mismatch'
+                  and entity_id = (select id from a)::text), 'each record over a released mismatch is audited');
+select is((select severity::text from public.security_alerts
+           where fingerprint = 'refund_key_mismatch_overridden:' || (pg_temp.payment_row((select id from booking))).order_id
+                               || ':MT-B'), 'high', 'and raises the high refund_key_mismatch_overridden alert');
+select internal.note_refund_seen(pg_temp.payment_row((select id from booking)), 'partially_refunded', null);
+select is((select count(*)::int from public.security_alerts
+           where fingerprint = 'refund_key_mismatch:' || (select id from a) and acknowledged_at is null), 0,
+  'and a released mismatch raises no new refund_key_mismatch alert');
+
 -- ===== L-a: a new figure blocks again =====
 select pg_temp.listed((select id from booking),
-  jsonb_build_array(jsonb_build_object('refund_key', (select id from a)::text, 'refund_amount', '90000.00')));
+  jsonb_build_array(jsonb_build_object('refund_key', (select id from a)::text, 'refund_amount', '90000.00'),
+                    jsonb_build_object('refund_key', 'MT-B', 'refund_amount', '5000.00')));
 select is(internal.refund_key_mismatch(pg_temp.payment_row((select id from booking)), null), (select id from a),
   'a figure other than the one released blocks again');
 select internal.note_refund_seen(pg_temp.payment_row((select id from booking)), 'partially_refunded', null);
 select is((select count(*)::int from public.security_alerts
            where fingerprint = 'refund_key_mismatch:' || (select id from a) and acknowledged_at is null), 1,
   'with a new alert');
-select is(internal.midtrans_recorded(pg_temp.payment_row((select id from booking))), 0::bigint,
-  'and the released figure no longer counts');
+select is(internal.midtrans_recorded(pg_temp.payment_row((select id from booking))), 5000::bigint,
+  'and the released figure no longer counts, only MT-B''s Rp 5.000');
 
 -- L-b: an alert acknowledged plainly is released through all the same.
 update public.security_alerts set acknowledged_by = '00000000-0000-4000-8000-00000000f003', notified_at = now()
@@ -221,6 +258,72 @@ select pg_temp.act_as_super('00000000-0000-4000-8000-00000000f003');
 select is((public.release_refund_key_mismatch((select id from a), 'Angka Midtrans baru sudah dicek') ->> 'released_sum')::bigint,
   90000::bigint, 'the release goes through the latest alert, acknowledged or not');
 reset role;
+
+-- ===== L-1: the new release settles the earlier gap =====
+select is((select resolution from public.reconciliation_issues
+           where details ->> 'adjustment_id' = (select id from a)::text and (details ->> 'gap')::bigint = 20000),
+  'resolved', 'the second release closes the first gap issue as resolved');
+select ok((select resolution_note from public.reconciliation_issues
+           where details ->> 'adjustment_id' = (select id from a)::text and (details ->> 'gap')::bigint = 20000)
+          like '%' || (select id::text from public.reconciliation_issues
+                       where details ->> 'adjustment_id' = (select id from a)::text and resolved_at is null) || '%',
+  'its note naming the issue the new release opened');
+select is((select string_agg(details ->> 'gap', ',') from public.reconciliation_issues
+           where details ->> 'adjustment_id' = (select id from a)::text and resolved_at is null), '10000',
+  'so one gap is open, the Rp 10.000 of the figure now released');
+
+-- ===== Info: a figure that does not read is none to release =====
+select pg_temp.listed((select id from booking),
+  jsonb_build_array(jsonb_build_object('refund_key', (select id from a)::text, 'refund_amount', 'bukan-angka'),
+                    jsonb_build_object('refund_key', 'MT-B', 'refund_amount', '5000.00')));
+select pg_temp.act_as_super('00000000-0000-4000-8000-00000000f003');
+select is(pg_temp.hint_of($$select public.release_refund_key_mismatch((select id from a), 'Angka Midtrans tidak terbaca')$$),
+  'STATE_INVALID', 'Midtrans listing an amount under the key that does not read leaves nothing to release');
+reset role;
+
+-- ===== L-2: the sole active superadmin (review of PR #103: the clock and its anchors) =====
+select pg_temp.listed((select id from booking),
+  jsonb_build_array(jsonb_build_object('refund_key', (select id from a)::text, 'refund_amount', '95000.00'),
+                    jsonb_build_object('refund_key', 'MT-B', 'refund_amount', '5000.00')));
+select internal.note_refund_seen(pg_temp.payment_row((select id from booking)), 'partially_refunded', null);
+update public.security_alerts set notified_at = now() - interval '30 hours'
+where fingerprint = 'refund_key_mismatch:' || (select id from a) and acknowledged_at is null;
+-- Midtrans is asked again and still disagrees: the alert goes out again.
+select internal.note_refund_seen(pg_temp.payment_row((select id from booking)), 'partially_refunded', null);
+select is((select (details ->> 'first_notified_at')::timestamptz = now() - interval '30 hours' and notified_at is null
+           from public.security_alerts
+           where fingerprint = 'refund_key_mismatch:' || (select id from a) and acknowledged_at is null),
+  true, 'a re-sighting sends the alert again and keeps its first delivery');
+update public.security_alerts set notified_at = now()
+where fingerprint = 'refund_key_mismatch:' || (select id from a) and acknowledged_at is null;
+select is((select internal.alert_first_delivered_at(s) from public.security_alerts s
+           where s.fingerprint = 'refund_key_mismatch:' || (select id from a) and s.acknowledged_at is null),
+  now() - interval '30 hours', 'so the clock runs from the first delivery, not the latest');
+select pg_temp.act_as('superadmin_aal2');
+select is(pg_temp.hint_of($$select public.release_refund_key_mismatch((select id from a), 'Hanya saya superadmin aktif')$$),
+  'RELEASE_INELIGIBLE', 'A''s proposer, while a second superadmin is active, never releases it, 30 hours on or not');
+reset role;
+
+-- The persona is left the kelurahan's only active superadmin, whatever else this database holds, as set_staff_status
+-- would leave it (the profiles guard lets a privileged RPC change is_active).
+select set_config('request.jwt.claims', '', true);
+select set_config('app.privileged_rpc', 'on', true);
+update public.profiles set is_active = false
+where role = 'superadmin' and is_active and id <> '00000000-0000-4000-8000-00000000f001';
+select set_config('app.privileged_rpc', '', true);
+select pg_temp.act_as('superadmin_aal2');
+select is(pg_temp.hint_of($$select public.release_refund_key_mismatch((select id from a), 'Hanya saya superadmin aktif')$$),
+  'RELEASE_TOO_EARLY', 'now the sole active superadmin, A waits 24 hours from the moment the others were deactivated');
+reset role;
+select is((select internal.sole_release_since(s, '00000000-0000-4000-8000-00000000f001') from public.security_alerts s
+           where s.fingerprint = 'refund_key_mismatch:' || (select id from a) and s.acknowledged_at is null),
+  now(), 'the later of the first delivery and the last deactivation of another superadmin');
+select internal.raise_sole_release_alert((select x from public.payment_adjustments x where x.id = (select id from a)),
+  (select s from public.security_alerts s
+   where s.fingerprint = 'refund_key_mismatch:' || (select id from a) and s.acknowledged_at is null), 95000);
+select is((select severity::text from public.security_alerts
+           where rule = 'refund_key_release_by_sole_superadmin' and details ->> 'adjustment_id' = (select id from a)::text),
+  'high', 'a release by the sole superadmin raises the high refund_key_release_by_sole_superadmin alert');
 
 select * from finish();
 rollback;
