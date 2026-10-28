@@ -61,3 +61,24 @@ export const LOOKUP_MIN_RESPONSE_MS = 1200;
 // The address the local Mailpit of `supabase start` listens on (supabase/config.toml [inbucket]). Only the local
 // notification provider talks to it.
 export const LOCAL_MAILPIT_URL = 'http://127.0.0.1:54324';
+
+// The guest certificate page (Task P4.5.03; docs/Security.md §6.7, DOC-02): a certificate that prints a person's name
+// opens only after the visitor types the last four digits of the PIC's verified WhatsApp number, which this browser then
+// remembers for half an hour under the certificate page alone. The page answers until 90 days after the last visit day,
+// when internal.purge_participants removes the names and their files.
+export const CERTIFICATE_PROOF_COOKIE_SUFFIX = '_certificate_phone';
+export const CERTIFICATE_PROOF_TTL_SECONDS = 30 * 60;
+export const CERTIFICATE_PAGE = 'sertifikat';
+export const CERTIFICATE_RETENTION_DAYS = 90;
+export const PHONE_LAST_DIGITS = 4;
+// The certificate page's downloads (review of PR #94, M1): /reservasi/<code>/sertifikat/unduh/<slot>, under the paths of
+// the certificate link's and the proof's cookies, so the browser sends both. A slot names the group's certificate, one
+// participant's by its place in the page's list, or every participant's as one PDF.
+export const CERTIFICATE_DOWNLOAD_SEGMENT = 'unduh';
+export const CERTIFICATE_SLOTS = {
+  group: 'rombongan',
+  participant: 'peserta',
+} as const;
+// Mirrors internal.certificate_phone_failure_cap() of 20261104210100: the wrong last-4 tries over the window after which
+// the step-up stays blocked (review of PR #94, L1). The database decides; the page only reads it to say so.
+export const CERTIFICATE_PHONE_FAILURE_CAP = 10;

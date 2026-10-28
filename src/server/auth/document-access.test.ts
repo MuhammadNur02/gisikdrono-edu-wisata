@@ -41,6 +41,7 @@ const GUEST = {
     bookingId: '0192f3a4-5b6c-7d8e-9f01-0000000000bb',
     bookingCode: CODE,
     scope: 'view' as const,
+    tokenVersion: 1,
   },
 };
 

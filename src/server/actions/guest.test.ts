@@ -5,6 +5,7 @@ import { LOOKUP_MIN_RESPONSE_MS } from '@/config/guest';
 import { fail } from '@/lib/errors';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { requireGuestToken } from '@/server/auth/guards';
+import { forgetCertificateProof } from '@/server/auth/guest-cookies';
 import {
   resendBookingLink,
   revokeGuestLinks,
@@ -32,7 +33,10 @@ vi.mock('@/server/services/payment-service', () => ({
   settleCancellation: vi.fn(),
   startPayment: vi.fn(),
 }));
-vi.mock('@/server/auth/guest-cookies', () => ({ readPhoneProofCookie: vi.fn() }));
+vi.mock('@/server/auth/guest-cookies', () => ({
+  forgetCertificateProof: vi.fn(),
+  readPhoneProofCookie: vi.fn(),
+}));
 
 const LOOKUP = {
   bookingCode: 'gsk 7f3k-9q2m',
@@ -121,7 +125,7 @@ describe('revokeGuestLinksAction', () => {
   it('revokes every link of the booking and forgets this browser’s one', async () => {
     vi.mocked(requireGuestToken).mockResolvedValue({
       ok: true,
-      guest: { bookingId: 'b-1', bookingCode: 'GSK-7F3K9Q2M', scope: 'manage' },
+      guest: { bookingId: 'b-1', bookingCode: 'GSK-7F3K9Q2M', scope: 'manage', tokenVersion: 1 },
     });
     expect(await revokeGuestLinksAction({ bookingCode: 'GSK-7F3K9Q2M' })).toEqual({
       ok: true,
@@ -134,12 +138,13 @@ describe('revokeGuestLinksAction', () => {
         path: '/reservasi/GSK-7F3K9Q2M',
       })),
     );
+    expect(forgetCertificateProof).toHaveBeenCalledWith('GSK-7F3K9Q2M');
   });
 
   it('limits revocations per booking', async () => {
     vi.mocked(requireGuestToken).mockResolvedValue({
       ok: true,
-      guest: { bookingId: 'b-1', bookingCode: 'GSK-7F3K9Q2M', scope: 'manage' },
+      guest: { bookingId: 'b-1', bookingCode: 'GSK-7F3K9Q2M', scope: 'manage', tokenVersion: 1 },
     });
     vi.mocked(withinGuestLimits).mockResolvedValueOnce(false);
     expect(await revokeGuestLinksAction({ bookingCode: 'GSK-7F3K9Q2M' })).toMatchObject({

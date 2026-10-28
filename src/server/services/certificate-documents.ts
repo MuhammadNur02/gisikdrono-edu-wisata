@@ -21,6 +21,9 @@ import {
 
 const DOCUMENTS_BUCKET = 'documents';
 const PDF_TYPE = 'application/pdf';
+// A kept file is read only by the server and handed out with private, no-store, so no cache may hold a copy that
+// outlives the purge (review of PR #94, L3).
+const NO_CACHE = '0';
 // Files are uploaded and recorded a few at a time, so a class of 300 neither waits on one at a time nor floods Storage.
 const KEEP_BATCH_SIZE = 8;
 
@@ -66,7 +69,7 @@ export async function loadCertificate(
   return data === null ? null : toCertificateRow(data);
 }
 
-async function servableCertificatesOf(
+export async function servableCertificatesOf(
   adminClient: DatabaseClient,
   bookingId: string,
 ): Promise<CertificateRow[]> {
@@ -92,7 +95,11 @@ async function keepPdf(
 ): Promise<void> {
   const path = storagePathFor(certificate);
   const bucket = adminClient.storage.from(DOCUMENTS_BUCKET);
-  const upload = await bucket.upload(path, pdf, { contentType: PDF_TYPE, upsert: true });
+  const upload = await bucket.upload(path, pdf, {
+    contentType: PDF_TYPE,
+    cacheControl: NO_CACHE,
+    upsert: true,
+  });
   if (upload.error) throw upload.error;
   try {
     await svcRecordCertificatePdf(adminClient, { certificateId: certificate.id, path, readerId });
@@ -115,17 +122,21 @@ async function keepAll(
   }
 }
 
-// Renders these certificates as one document, one page each, and keeps every page as its own certificate's file.
-async function renderAndKeep(
+interface RenderedBatch {
+  bundle: Buffer;
+  files: { certificate: CertificateRow; pdf: Buffer }[];
+}
+
+// Renders these certificates as one document, one page each, and splits it into every certificate's own page.
+async function renderBatch(
   adminClient: DatabaseClient,
   certificates: readonly CertificateRow[],
-  context: CertificateContext,
-): Promise<Map<string, Buffer>> {
-  if (certificates.length === 0) return new Map();
+  siteUrl: string,
+): Promise<RenderedBatch> {
   const input = await loadCertificatePages(
     adminClient,
     certificates.map((certificate) => certificate.id),
-    context.siteUrl,
+    siteUrl,
   );
   const bundle = await renderCertificatePdf(input);
   const pages = await splitPdfPages(
@@ -141,8 +152,36 @@ async function renderAndKeep(
     const pdf = pages[index];
     return certificate && pdf ? [{ certificate, pdf }] : [];
   });
+  return { bundle, files };
+}
+
+// Renders these certificates as one document and keeps every page as its own certificate's file.
+async function renderAndKeep(
+  adminClient: DatabaseClient,
+  certificates: readonly CertificateRow[],
+  context: CertificateContext,
+): Promise<Map<string, Buffer>> {
+  if (certificates.length === 0) return new Map();
+  const { files } = await renderBatch(adminClient, certificates, context.siteUrl);
   await keepAll(adminClient, files, context.readerId);
   return new Map(files.map((file) => [file.certificate.id, file.pdf]));
+}
+
+// "Unduh semua (satu PDF)" of the guest certificate page (review of PR #94, M3): the class's multi-page document,
+// rendered for this request and handed straight back, never kept, so the retention run has nothing more to remove.
+// The pages of certificates without a kept file yet are kept on the way, as a first single download would.
+export async function certificateBundlePdf(
+  adminClient: DatabaseClient,
+  certificates: readonly CertificateRow[],
+  context: CertificateContext,
+): Promise<Buffer> {
+  if (certificates.length === 0 || !certificates.every(isServable)) {
+    throw new AppError('NOT_FOUND');
+  }
+  const { bundle, files } = await renderBatch(adminClient, certificates, context.siteUrl);
+  const unkept = files.filter((file) => file.certificate.pdfPath === null);
+  await keepAll(adminClient, unkept, context.readerId);
+  return bundle;
 }
 
 async function storedPdf(adminClient: DatabaseClient, path: string): Promise<Buffer | null> {
