@@ -302,7 +302,8 @@ as $$
      and not exists (
        select 1 from public.booking_legs l join public.visit_sessions s on s.id = l.visit_session_id
        where l.booking_id = p_booking.id
-         and (l.status <> case when p_booking.status = 'expired' then 'released' else 'reserved' end
+         and (l.status <> (case when p_booking.status = 'expired' then 'released'
+                                else 'reserved' end)::public.booking_leg_status
               or (s.session_date + s.start_time) at time zone 'Asia/Jakarta' <= now()));
 $$;
 revoke execute on function internal.holds_its_seats_or_lapsed(public.bookings) from public, anon, authenticated;
