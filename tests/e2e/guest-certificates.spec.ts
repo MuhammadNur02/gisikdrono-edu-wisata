@@ -18,6 +18,16 @@ const PARTICIPANTS = ['Ani Sertifikat', 'Budi Sertifikat'];
 const RETENTION_DAYS_PLUS_ONE = 91;
 const countRowsSchema = z.array(z.object({ count: z.coerce.number() }));
 const STEP = { timeout: 15_000 };
+// Every guest page, action and download checks its link against link_verify:ip (30 a minute, src/config/rate-limits.ts),
+// and a refusal is the page's 404. Without x-real-ip the local server counts every request of the suite, both workers'
+// included, in one bucket (src/lib/utils/client-ip.ts), so another spec's guest pages in the same minute could push
+// this visitor's reload over the limit and onto the 404. Each project's visitor comes from its own TEST-NET-3 address,
+// as staff-lockout.spec.ts does for sign-ins, so the ten or so checks this test makes are counted for it alone.
+const VISITOR_IP_BY_PROJECT: Record<string, string> = {
+  desktop: '203.0.113.31',
+  'phone-360': '203.0.113.32',
+};
+const FALLBACK_VISITOR_IP = '203.0.113.39';
 
 test.afterAll(async () => {
   await removeUnbookedPackages();
@@ -69,11 +79,14 @@ test('reaches a released certificate through the certificate link and the last-4
   const ticket = await paidTicketToday(5, testInfo);
   await checkInAndCertify(ticket);
   const base = `/reservasi/${ticket.bookingCode}/sertifikat`;
-  const visitor = await browser.newContext();
+  const visitorIp = VISITOR_IP_BY_PROJECT[testInfo.project.name] ?? FALLBACK_VISITOR_IP;
+  const visitor = await browser.newContext({ extraHTTPHeaders: { 'x-real-ip': visitorIp } });
   const page = await visitor.newPage();
 
   expect((await visitor.request.get(`${base}/unduh/rombongan`)).status()).toBe(404);
-  await page.goto(guestLink(ticket.bookingCode, 'certificate', await tokenVersionOf(ticket.bookingCode)));
+  await page.goto(
+    guestLink(ticket.bookingCode, 'certificate', await tokenVersionOf(ticket.bookingCode)),
+  );
   await expect(page.getByText(ticket.institutionName)).toBeVisible(STEP);
   await expectPdf(visitor, `${base}/unduh/rombongan`);
   const waiting = await visitor.request.get(`${base}/unduh/peserta-1`, { maxRedirects: 0 });
