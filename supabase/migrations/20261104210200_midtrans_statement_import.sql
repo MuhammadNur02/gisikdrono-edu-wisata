@@ -16,9 +16,10 @@
 -- Review of PR #99:
 --   M1   a statement is imported once: the run keeps the fingerprint of its rows (statement_fingerprint, one
 --        csv_import run per fingerprint), and the same rows again answer with that run (already_imported). A row
---        raises no issue while one of its type is still open for the same payment, or for the same order when no
---        payment holds it, from any run, so overlapping weekly statements (docs/runbooks/payouts.md) raise each
---        difference once
+--        raises no issue while a statement issue of its type is still open for the same payment, or for the same order
+--        when no payment holds it, with the same Midtrans status and amount, so overlapping weekly statements
+--        (docs/runbooks/payouts.md) raise each difference once; a changed or worsened one is a new issue (delta review,
+--        M-A)
 --   L2   a row whose status midtrans_payment_status does not map is refused (STATEMENT_INVALID)
 --   L4   at most five imports an hour per superadmin (statement_import:<user>), counted in the transaction, so a
 --        limiter that cannot answer refuses
@@ -143,7 +144,23 @@ as $$
 $$;
 revoke execute on function internal.statement_fingerprint(jsonb) from public, anon, authenticated, service_role;
 
--- M1: a run's issues, but none a still-open issue already says; how many the rows raised and how many were written.
+-- The open issues of a statement row's type and subject: its payment, or its order when no payment holds it.
+create function internal.open_statement_subject_issues(p_issue_type text, p_payment_id uuid, p_details jsonb)
+  returns setof public.reconciliation_issues
+  language sql stable
+  set search_path = ''
+as $$
+  select o.* from public.reconciliation_issues o
+  where o.resolved_at is null and o.issue_type = p_issue_type
+    and coalesce(o.payment_id::text, o.details ->> 'order_id') = coalesce(p_payment_id::text, p_details ->> 'order_id');
+$$;
+revoke execute on function internal.open_statement_subject_issues(text, uuid, jsonb)
+  from public, anon, authenticated, service_role;
+
+-- M1: a run's issues, but none a still-open statement issue already says in the same words: Midtrans' status and
+-- amount both as before (delta review of PR #99, M-A). An issue no statement opened (the key gap of
+-- open_key_gap_issue, a nightly one) hides nothing, and a changed figure is a new issue, at the severity of the
+-- worst issue still open for that subject when that is higher. How many the rows raised and how many were written.
 create function internal.insert_statement_issues(p_run_id uuid, p_rows jsonb, p_file_name text,
   out raised integer, out written integer)
   language plpgsql
@@ -155,12 +172,15 @@ begin
     from jsonb_array_elements(p_rows) as r, internal.statement_row_issues(r, p_file_name) as i
   ), new_issues as (
     insert into public.reconciliation_issues (run_id, booking_id, payment_id, issue_type, severity, details)
-    select p_run_id, f.booking_id, f.payment_id, f.issue_type, f.severity, f.details
+    select p_run_id, f.booking_id, f.payment_id, f.issue_type,
+           greatest(f.severity, (select max(o.severity)
+                                 from internal.open_statement_subject_issues(f.issue_type, f.payment_id, f.details) o)),
+           f.details
     from found_issues f
-    where not exists (select 1 from public.reconciliation_issues o
-                      where o.resolved_at is null and o.issue_type = f.issue_type
-                        and coalesce(o.payment_id::text, o.details ->> 'order_id')
-                            = coalesce(f.payment_id::text, f.details ->> 'order_id'))
+    where not exists (select 1 from internal.open_statement_subject_issues(f.issue_type, f.payment_id, f.details) o
+                      where o.details ? 'midtrans_status'
+                        and o.details ->> 'midtrans_status' = f.details ->> 'midtrans_status'
+                        and o.details -> 'midtrans_amount' = f.details -> 'midtrans_amount')
     returning 1
   )
   select (select count(*) from found_issues)::integer, (select count(*) from new_issues)::integer

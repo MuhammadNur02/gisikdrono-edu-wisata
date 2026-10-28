@@ -92,6 +92,10 @@ describe('wholeRupiah', () => {
     'gratis',
     '',
     '1234567890123456',
+    // Delta review of PR #99: three decimals read as neither cents nor a thousands group.
+    '300000.000',
+    '300,000.000',
+    '1.250,500',
   ])('refuses %s', (raw) => {
     expect(wholeRupiah(raw)).toBeNull();
   });

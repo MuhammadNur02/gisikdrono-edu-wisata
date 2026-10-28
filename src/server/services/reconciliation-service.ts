@@ -115,9 +115,10 @@ export async function listOpenIssues(filter: DayFilter): Promise<FinanceList<Rec
 type IssueRow = z.infer<typeof issueRowSchema>;
 
 // Review of PR #99, M2: a statement row names its order and Midtrans' figures in details; an unknown order has no
-// payment to name it.
+// payment to name it. Only a statement issue carries Midtrans' status: another with a midtrans_amount, such as the key
+// gap of a released refund, is no statement row (delta review of PR #99, L-a).
 function statementFactsOf(details: IssueRow['details']): StatementFacts | null {
-  if (details.midtrans_status === undefined && details.midtrans_amount === undefined) return null;
+  if (details.midtrans_status === undefined) return null;
   return {
     midtransStatus: details.midtrans_status ?? null,
     midtransAmount: details.midtrans_amount ?? null,

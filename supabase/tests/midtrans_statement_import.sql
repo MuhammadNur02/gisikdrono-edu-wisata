@@ -2,10 +2,10 @@
 -- order_id, as a csv_import reconciliation run: an unknown order, an amount and a status that differ each become an
 -- issue; a row that agrees, a capture included, raises nothing. Only the superadmin with a fresh code imports.
 -- Review of PR #99: the same statement again is the run it made (M1), an overlapping one raises no issue already open
--- (M1), a status Midtrans' map does not know is refused (L2), five imports an hour (L4), the period on the run and a
+-- (M1) unless Midtrans now says something else (delta review, M-A), a status Midtrans' map does not know is refused (L2), five imports an hour (L4), the period on the run and a
 -- refunded duplicate raising nothing (Info), and nothing outside the reconciliation tables changes (L1).
 begin;
-select plan(28);
+select plan(32);
 \ir helpers/rls_personas.psql
 
 create function pg_temp.hint_of(p_sql text) returns text
@@ -107,6 +107,22 @@ select is(pg_temp.hint_of($$select public.import_midtrans_statement('periode.csv
   '[{"order_id": "GSK-SC0000A1-01", "status": "settlement", "gross_amount": "100000"}]', '2026-10-31', '2026-10-01')$$),
   'STATEMENT_INVALID', 'and a period that ends before it starts');
 
+-- Delta review of PR #99, M-A: the key gap a released refund opened for a payment (open_key_gap_issue) is no
+-- statement issue, so it hides none.
+reset role;
+with gap_run as (
+  insert into public.reconciliation_runs (run_date, source, started_at, finished_at, payments_checked, issues_found,
+    summary, created_by)
+  values (public.today_jkt(), 'manual', now(), now(), 1, 1, '{"reason": "refund_key_mismatch_released"}',
+          '00000000-0000-4000-8000-00000000f001')
+  returning id
+)
+insert into public.reconciliation_issues (run_id, booking_id, payment_id, issue_type, severity, details)
+select gap_run.id, '00000000-0000-4000-8000-0000000d2003', '00000000-0000-4000-8000-0000000d3003', 'amount_mismatch',
+       'high', '{"reason": "refund_key_mismatch_released", "booked_amount": 70000, "midtrans_amount": 60000, "gap": 10000}'
+from gap_run;
+select pg_temp.act_as('superadmin_aal2');
+
 -- ===== The comparison =====
 create temporary table imported on commit drop as
   select public.import_midtrans_statement('midtrans-oktober.csv', '[
@@ -152,6 +168,10 @@ select is((select count(*)::int from public.reconciliation_issues
 select is((select (metadata ->> 'issues')::int from public.audit_logs
            where action = 'reconciliation.csv_import' and entity_id = (select reply ->> 'run_id' from imported)), 4,
   'and the import is in the audit log');
+select is((select count(*)::int from public.reconciliation_issues
+           where resolved_at is null and issue_type = 'amount_mismatch'
+             and payment_id = '00000000-0000-4000-8000-0000000d3003'), 2,
+  'the key gap open for that payment hides no amount the statement disagrees on (M-A)');
 
 -- ===== M1: the same statement again is the run it made =====
 select pg_temp.act_as('superadmin_aal2');
@@ -189,12 +209,30 @@ reset role;
 select is((select (reply ->> 'issues_found') || ':' || (reply ->> 'issues_already_open') from overlapping), '1:2',
   'an overlapping week raises its new unknown order and leaves the two differences already open');
 select is((select count(*)::int from public.reconciliation_issues
-           where resolved_at is null and issue_type = 'amount_mismatch'
+           where resolved_at is null and issue_type = 'amount_mismatch' and details ? 'midtrans_status'
              and payment_id = '00000000-0000-4000-8000-0000000d3003'), 1,
-  'so one amount issue stays open for that payment');
+  'so one statement amount issue stays open for that payment');
 select is((select count(*)::int from public.reconciliation_issues
            where payment_id = '00000000-0000-4000-8000-0000000d3005'), 0,
   'and a duplicate payment Midtrans refunded raises nothing (Info)');
+
+-- ===== M-A: what Midtrans now says otherwise is a new issue =====
+select pg_temp.act_as('superadmin_aal2');
+create temporary table settled_later on commit drop as
+  select public.import_midtrans_statement('midtrans-minggu-6.csv', '[
+    {"order_id": "GSK-SC0000A4-01", "status": "settlement", "gross_amount": "40000"}]') as reply;
+create temporary table expired_later on commit drop as
+  select public.import_midtrans_statement('midtrans-minggu-7.csv', '[
+    {"order_id": "GSK-SC0000A2-01", "status": "expire", "gross_amount": "50000"}]') as reply;
+reset role;
+select is((select (reply ->> 'issues_found') || ':' || (reply ->> 'issues_already_open') from settled_later), '1:0',
+  'Midtrans settling an order it reported expired is not hidden behind the open expiry');
+select is((select severity::text || ':' || (details ->> 'midtrans_status') from public.reconciliation_issues
+           where run_id = (select (reply ->> 'run_id')::uuid from settled_later)),
+  'high:settlement', 'and is the high issue money taken on that order is');
+select is((select severity::text || ':' || (details ->> 'midtrans_status') from public.reconciliation_issues
+           where run_id = (select (reply ->> 'run_id')::uuid from expired_later)),
+  'high:expire', 'a changed status whose own severity is lower keeps the worst still open for that payment');
 
 -- ===== L1: the import compares; it changes nothing it compares with =====
 select is((select (select md5(coalesce(string_agg(p::text, '|' order by p.id), '')) from public.payments p)

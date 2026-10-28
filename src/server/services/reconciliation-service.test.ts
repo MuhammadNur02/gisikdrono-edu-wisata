@@ -89,6 +89,20 @@ describe('listOpenIssues', () => {
     expect(items[0]).toMatchObject({ orderId: null, statement: null });
   });
 
+  it('reads a key gap, which names an amount but no Midtrans status, as no statement issue (L-a)', async () => {
+    server.rows = [
+      {
+        ...ISSUE,
+        issue_type: 'amount_mismatch',
+        payment_id: '0192f3a4-5b6c-7d8e-9f01-0000000000a3',
+        payments: { order_id: 'GSK-SC0000A3-01' },
+        details: { reason: 'refund_key_mismatch_released', midtrans_amount: 60000, booked_amount: 70000 },
+      },
+    ];
+    const { items } = await listOpenIssues(NO_FILTER);
+    expect(items[0]).toMatchObject({ orderId: 'GSK-SC0000A3-01', statement: null });
+  });
+
   it('refuses details of another shape', async () => {
     server.rows = [{ ...ISSUE, details: { midtrans_amount: 'seribu' } }];
     await expect(listOpenIssues(NO_FILTER)).rejects.toBeInstanceOf(ZodError);
