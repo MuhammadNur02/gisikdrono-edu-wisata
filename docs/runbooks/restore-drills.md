@@ -44,7 +44,7 @@ It never goes into `gisikdrono-staging`, which holds no real visitor data. It ne
    - SELECT on every table and sequence of `public`, and on every later table postgres adds there;
    - execute on `internal.environment()` and `internal.backup_auth_snapshot()`.
 
-   Nothing else. It has no USAGE on `auth` and no grant on any `auth` table, so it never reads a session, a token or a factor. It holds no `pg_read_all_data`, which would also open `cron`, `vault` and `net`. The snapshot function runs as postgres, only for a session whose login role belongs to `backup_reader`.
+   Nothing else. It has no USAGE on `auth` and no grant on any `auth` table, so it never reads a session, a token or a factor. It holds no `pg_read_all_data`, which would also open `cron`, `vault` and `net`. The snapshot function runs as postgres, only for a session whose login role may act as `backup_reader` (SET membership, which `in role backup_reader` gives; 20261105110100). pgTAP `backup_reader.sql` proves that a session without it is refused, and that every table and sequence of `public` is readable to the role, so a new table cannot miss the dump.
 
    Create the login role that belongs to it in psql, connected to `gisikdrono-prod` as `postgres`. Never use the SQL editor for this, since a password typed there reaches the server and its logs in plain text (delta review L6). `\password` sends only the SCRAM verifier that psql computes on the vault holder's machine; type the password from the vault when it asks:
 
@@ -158,8 +158,8 @@ Before go-live, run it once against the first real backup, so part E has been do
 
 1. **Make a project for this rehearsal only.** Name it `gisikdrono-drill-<YYYY-MM-DD>`, in `ap-southeast-1`, with no Vercel binding. In its network restrictions, allow the vault holder's IP alone.
 2. **Migrate it from the vault holder's machine** (delta review L4). No GitHub environment, secret or variable changes for a rehearsal, and the release workflow is not used. From the drill checkout, run `supabase link --project-ref <the rehearsal's ref>`, then `supabase db push --linked`, then `supabase unlink`.
-3. **Set its Vault secrets** as part E step 3 lists, but with `environment` = `drill` and `jobs_base_url` = `https://example.invalid`. `drill` is outside the allow-list, so `internal.environment()` reads it as unrecognised: the rehearsal never counts as production, staging or local.
-4. **Restore.** Follow part E steps 4 to 8 against it, without lifting `maintenance_mode` and without pointing anything at it.
+3. **Pause cron, then set its Vault secrets,** as part E steps 3 and 4 do, but with `environment` = `drill` and `jobs_base_url` = `https://example.invalid`. `drill` is outside the allow-list, so `internal.environment()` reads it as unrecognised: the rehearsal never counts as production, staging or local.
+4. **Restore.** Follow part E steps 5 to 8 against it, without lifting `maintenance_mode` and without pointing anything at it.
 5. **Delete it the same day.** Delete the project, and with it its backups. Record the deletion and its date in the table below.
 
 ## D. After the drill
@@ -175,7 +175,8 @@ Use this when Supabase's own daily backups (or PITR) cannot help: the project or
 
 1. **Close the site.** Put it in `maintenance_mode` on whatever still answers, and tell the kelurahan office.
 2. **Create the new project and migrate it.** Create the project in `ap-southeast-1`, named `gisikdrono-prod`. Update the environment's secrets and `PRODUCTION_PROJECT_REF`, then apply the migrations with `.github/workflows/release.yml`.
-3. **Recreate the Vault secrets** before any job runs (delta review L8). These are the four of `docs/runbooks/staging-setup.md` D.1, with production's values from the vault:
+3. **Pause cron, and check it,** as in part C, step 2, as soon as the migrations are in. The migrations schedule every job, so they start the minute the release ends; pausing them before the Vault holds anything means no job ever runs with production's address and `CRON_SECRET` against a database that is still being emptied and loaded (follow-up of the review of PR #98: this step used to come after the Vault).
+4. **Recreate the Vault secrets** while cron is paused (delta review L8). These are the four of `docs/runbooks/staging-setup.md` D.1, with production's values from the vault:
 
    | Secret | Value |
    |---|---|
@@ -184,12 +185,14 @@ Use this when Supabase's own daily backups (or PITR) cannot help: the project or
    | `cron_secret` | the `CRON_SECRET` value |
    | `otp_pepper` | the `OTP_PEPPER` value |
 
-   The dump never holds the Vault, and `internal.call_job` needs all four.
-4. **Pause cron, and check it,** as in part C, step 2.
+   The dump never holds the Vault, and `internal.call_job` needs all four before the jobs resume in step 10.
 5. **Empty `public` and `auth`.** Empty `public` as in part C, step 3. In the same session, empty every table of the new project's `auth` except `schema_migrations` and `instances` (delta review N6), the same way with `auth.%I`. Those two are the new Auth server's own bookkeeping, which no backup holds, so the new project keeps its own.
 6. **Load `public` and the staff accounts.**
    - Load `public` from `public.dump` as in part C, step 4.
-   - Then, in psql as `postgres` with the triggers still off, load the snapshot. Each table takes its columns from the new project, so a generated column is left to Postgres:
+   - Then, in psql as `postgres` with the triggers still off, load the snapshot. A newer Auth server may have added or dropped columns since the backup, so each table writes only the columns both sides have (follow-up of the review of PR #98):
+     - a column of the new project that the backup does not name keeps the new project's default, never a null;
+     - a column the backup names that the new project lacks is left out, and the block names it in a notice;
+     - a generated column, or an identity column Postgres always fills, is left to Postgres.
 
    ```sql
    \set snapshot `cat auth-snapshot.json`
@@ -200,19 +203,31 @@ Use this when Supabase's own daily backups (or PITR) cannot help: the project or
      snapshot jsonb := current_setting('restore.snapshot')::jsonb;
      t text;
      columns text;
+     left_out text;
    begin
      foreach t in array array['users', 'identities', 'sso_providers', 'sso_domains', 'saml_providers'] loop
        select string_agg(quote_ident(c.column_name), ', ' order by c.ordinal_position) into columns
        from information_schema.columns c
-       where c.table_schema = 'auth' and c.table_name = t and c.is_generated = 'NEVER';
-       execute format('insert into auth.%I (%s) select %s from jsonb_populate_recordset(null::auth.%I, $1 -> %L)',
-                      t, columns, columns, t, t) using snapshot;
+       where c.table_schema = 'auth' and c.table_name = t
+         and c.is_generated = 'NEVER' and c.identity_generation is distinct from 'ALWAYS'
+         and exists (select 1 from jsonb_array_elements(snapshot -> t) r where r ? c.column_name);
+       select string_agg(distinct k, ', ') into left_out
+       from jsonb_array_elements(snapshot -> t) r cross join lateral jsonb_object_keys(r) k
+       where not exists (select 1 from information_schema.columns c
+                         where c.table_schema = 'auth' and c.table_name = t and c.column_name = k);
+       if left_out is not null then
+         raise notice 'auth.%: the backup''s columns % are not in this project and were left out', t, left_out;
+       end if;
+       if columns is not null then
+         execute format('insert into auth.%I (%s) select %s from jsonb_populate_recordset(null::auth.%I, $1 -> %L)',
+                        t, columns, columns, t, t) using snapshot;
+       end if;
      end loop;
    end;
    $$;
    ```
 
-     The block reads the file's content through `restore.snapshot`, and loads `users` before the tables that point at them.
+     The block reads the file's content through `restore.snapshot`, and loads `users` before the tables that point at them. A table with no rows in the backup loads nothing. Read every notice before going on: a column left out of `users` or `identities` may be one a staff account needs, so record it below and check it with step 8.
 7. **Clear the tokens on the staff accounts** (delta review L3). The backup keeps `auth.users` whole, including tokens a mail or a phone change had sent:
 
    ```sql
