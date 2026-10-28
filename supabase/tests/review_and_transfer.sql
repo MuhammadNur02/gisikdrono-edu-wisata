@@ -2,7 +2,7 @@
 -- booking paid after its seats were gone, by moving it or refunding it in full, and records a bank transfer as a
 -- manual_mark_paid adjustment under dual control.
 begin;
-select plan(38);
+select plan(40);
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -352,7 +352,35 @@ from public.bookings b where b.booking_code in ('GSK-TNJ0KWTA', 'GSK-TNJ0MVTA');
 select set_config('app.in_rpc', '', true);
 insert into booking select 'quote_lapsed', id from public.bookings where booking_code = 'GSK-TNJ0KWTA';
 insert into booking select 'started', id from public.bookings where booking_code = 'GSK-TNJ0MVTA';
+-- A28: an officer's booking needs no proven phone for a transfer, a web booking does.
+select set_config('app.in_rpc', '1', true);
+insert into public.bookings (booking_code, status, channel, package_id, package_snapshot, rw_ids, booker_type,
+  pic_name, pic_phone, pic_email, pax_count, visit_date, visit_date_end, subtotal_package, total_amount,
+  consent_version, consented_at, phone_verified_at, expires_at, created_by)
+values
+  ('GSK-TNJ0ADMN', 'pending_payment', 'admin', '00000000-0000-4000-8000-0000000ae001', '{}', '{5}', 'individual',
+   'Petugas', '+6281300008903', 'tnj-admn@example.test', 1, public.today_jkt() + 5, public.today_jkt() + 5, 30000,
+   30000, 'v1', now(), null, now() + interval '1 day', '00000000-0000-4000-8000-00000000f005'),
+  ('GSK-TNJ0WEBB', 'pending_payment', 'web', '00000000-0000-4000-8000-0000000ae001', '{}', '{5}', 'individual',
+   'Web', '+6281300008904', 'tnj-webb@example.test', 1, public.today_jkt() + 5, public.today_jkt() + 5, 30000, 30000,
+   'v1', now(), null, now() + interval '1 day', null);
+insert into public.booking_legs (booking_id, rw_id, visit_session_id, leg_order, pax_count, status, quota_reserved_at)
+select b.id, 5, '00000000-0000-4000-8000-0000000ae206', 1, 1, 'reserved', now()
+from public.bookings b where b.booking_code in ('GSK-TNJ0ADMN', 'GSK-TNJ0WEBB');
+select set_config('app.in_rpc', '', true);
+insert into booking select 'officer_unproven', id from public.bookings where booking_code = 'GSK-TNJ0ADMN';
+insert into booking select 'web_unproven', id from public.bookings where booking_code = 'GSK-TNJ0WEBB';
 select pg_temp.act_as('superadmin_aal2');
+select is(pg_temp.hint_of($$select public.propose_adjustment('manual_mark_paid',
+    (select id from booking where name = 'officer_unproven'), 30000, 'Transfer BCA dari bendahara sekolah',
+    pg_temp.doc(format('bookings/%s/adjustment-%s.pdf', (select id from booking where name = 'officer_unproven'),
+                       gen_random_uuid())), '{"key_id": "k1"}')$$),
+  null, 'A28: an officer''s booking takes a transfer without a proven phone');
+select is(pg_temp.hint_of($$select public.propose_adjustment('manual_mark_paid',
+    (select id from booking where name = 'web_unproven'), 30000, 'Transfer BCA dari bendahara sekolah',
+    pg_temp.doc(format('bookings/%s/adjustment-%s.pdf', (select id from booking where name = 'web_unproven'),
+                       gen_random_uuid())), '{"key_id": "k1"}')$$),
+  'STATE_INVALID', 'a web booking whose phone nobody proved does not');
 select is(pg_temp.hint_of($$select public.propose_adjustment('manual_mark_paid',
     (select id from booking where name = 'quote_lapsed'), 30000, 'Transfer BCA dari bendahara sekolah',
     pg_temp.doc(format('bookings/%s/adjustment-%s.pdf', (select id from booking where name = 'quote_lapsed'),

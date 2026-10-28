@@ -22,6 +22,7 @@ type StepBooking = Pick<
   | 'isAnonymised'
   | 'isPhoneVerified'
   | 'legs'
+  | 'channel'
 >;
 
 const UNPAID: ReadonlySet<string> = new Set(['quoted', 'pending_payment']);
@@ -49,12 +50,13 @@ function canCancel(booking: StepBooking, isSuperadmin: boolean): boolean {
   return UNPAID.has(booking.status) || (booking.status === 'paid' && isSuperadmin);
 }
 
-// Review of PR #102, HIGH 1: a hold that lapsed (every leg released) of a proven phone, never a lapsed quotation.
+// Review of PR #102, HIGH 1: a hold that lapsed (every leg released), never a lapsed quotation; a web booking's phone
+// proven, an officer's exempt (A28, owner-delegated decision of 2026-10-28).
 function canReactivate(booking: StepBooking): boolean {
   return (
     booking.status === 'expired' &&
     !booking.needsReview &&
-    booking.isPhoneVerified &&
+    (booking.channel === 'admin' || booking.isPhoneVerified) &&
     booking.legs.length > 0 &&
     booking.legs.every((leg) => leg.status === 'released')
   );

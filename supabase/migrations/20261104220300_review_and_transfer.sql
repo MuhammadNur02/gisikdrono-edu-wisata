@@ -290,14 +290,15 @@ begin
 end;
 $$;
 
--- Review of PR #102, HIGH 1, L4, L5: a transfer pays for a booking whose phone was proven, that is not anonymised and
+-- Review of PR #102, HIGH 1, L4, L5: a transfer pays for a booking whose phone was proven (a web booking; an officer's is
+-- exempt, owner-delegated decision of 2026-10-28, A28), that is not anonymised and
 -- whose first session has not started, and that is a running hold (every leg reserved) or a lapsed one (every leg
 -- released, which settle_payment takes back or leaves for review); never a quotation whose legs are unreserved.
 create function internal.holds_its_seats_or_lapsed(p_booking public.bookings) returns boolean
   language sql stable
   set search_path = ''
 as $$
-  select p_booking.phone_verified_at is not null and p_booking.pii_purged_at is null
+  select (p_booking.channel = 'admin' or p_booking.phone_verified_at is not null) and p_booking.pii_purged_at is null
      and exists (select 1 from public.booking_legs l where l.booking_id = p_booking.id)
      and not exists (
        select 1 from public.booking_legs l join public.visit_sessions s on s.id = l.visit_session_id

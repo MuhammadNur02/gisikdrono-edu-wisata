@@ -279,13 +279,15 @@ as $$
 $$;
 revoke execute on function internal.renewed_hold_deadline(public.bookings) from public, anon, authenticated;
 
--- A hold that lapsed: every leg released, the PIC's phone proven, the booking not anonymised (review of PR #102,
--- HIGH 1, L5). A lapsed quotation keeps its legs unreserved and is no hold to revive.
+-- A hold that lapsed: every leg released, the booking not anonymised, and for a web booking the PIC's phone proven
+-- (review of PR #102, HIGH 1, L5). An officer's booking is exempt from the phone (owner-delegated decision of
+-- 2026-10-28, A28): the officer entered and checked the contact (A21) and holds the seats under staff authority. A lapsed
+-- quotation keeps its legs unreserved and is no hold to revive.
 create function internal.is_lapsed_hold(p_booking public.bookings) returns boolean
   language sql stable
   set search_path = ''
 as $$
-  select p_booking.phone_verified_at is not null and p_booking.pii_purged_at is null
+  select (p_booking.channel = 'admin' or p_booking.phone_verified_at is not null) and p_booking.pii_purged_at is null
      and exists (select 1 from public.booking_legs l where l.booking_id = p_booking.id)
      and not exists (select 1 from public.booking_legs l where l.booking_id = p_booking.id and l.status <> 'released');
 $$;

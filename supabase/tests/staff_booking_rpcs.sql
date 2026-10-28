@@ -2,7 +2,7 @@
 -- staff in scope, paid by the superadmin with a fresh code on the visit terms' refund), extend_booking_hold,
 -- reactivate_booking and request_notification_resend, each from the staff member's own session at AAL2.
 begin;
-select plan(38);
+select plan(39);
 \ir helpers/rls_personas.psql
 -- The hint a statement is refused with, or null when it runs.
 create function pg_temp.hint_of(p_sql text) returns text
@@ -196,15 +196,19 @@ values
    now(), now(), '00000000-0000-4000-8000-00000000f005'),
   ('GSK-STF0TNPA', 'expired', 'admin', '00000000-0000-4000-8000-0000000ad001', '{}', '{5}', 'individual', 'Tanpa',
    '+6281300009802', 'tnpa@example.test', 1, public.today_jkt() + 3, public.today_jkt() + 3, 30000, 30000, 'v1',
-   now(), null, '00000000-0000-4000-8000-00000000f005');
+   now(), null, '00000000-0000-4000-8000-00000000f005'),
+  ('GSK-STF0WEBA', 'expired', 'web', '00000000-0000-4000-8000-0000000ad001', '{}', '{5}', 'individual', 'Web',
+   '+6281300009803', 'weba@example.test', 1, public.today_jkt() + 3, public.today_jkt() + 3, 30000, 30000, 'v1',
+   now(), null, null);
 insert into public.booking_legs (booking_id, rw_id, visit_session_id, leg_order, pax_count, status, quota_released_at)
 select b.id, 5, '00000000-0000-4000-8000-0000000ad205', 1, 1,
        case when b.booking_code = 'GSK-STF0KWTA' then 'unreserved' else 'released' end::public.booking_leg_status,
        case when b.booking_code = 'GSK-STF0KWTA' then null else now() end
-from public.bookings b where b.booking_code in ('GSK-STF0KWTA', 'GSK-STF0TNPA');
+from public.bookings b where b.booking_code in ('GSK-STF0KWTA', 'GSK-STF0TNPA', 'GSK-STF0WEBA');
 select set_config('app.in_rpc', '', true);
 insert into booking select 'lapsed_quote', id from public.bookings where booking_code = 'GSK-STF0KWTA';
 insert into booking select 'unproven', id from public.bookings where booking_code = 'GSK-STF0TNPA';
+insert into booking select 'unproven_web', id from public.bookings where booking_code = 'GSK-STF0WEBA';
 
 -- ===== reactivate_booking =====
 select pg_temp.act_as('superadmin_aal2');
@@ -216,8 +220,10 @@ select throws_ok($$select public.reactivate_booking((select id from booking wher
   'P0001', null, 'nor an expired one whose seats another group took (QUOTA_UNAVAILABLE)');
 select is(pg_temp.hint_of($$select public.reactivate_booking((select id from booking where name = 'lapsed_quote'))$$),
   'STATE_INVALID', 'HIGH 1: a lapsed quotation, which never reserved its seats, is not held again');
-select is(pg_temp.hint_of($$select public.reactivate_booking((select id from booking where name = 'unproven'))$$),
-  'STATE_INVALID', 'nor a lapsed hold of a phone nobody proved');
+select is(pg_temp.hint_of($$select public.reactivate_booking((select id from booking where name = 'unproven_web'))$$),
+  'STATE_INVALID', 'nor a lapsed web hold of a phone nobody proved');
+select lives_ok($$select public.reactivate_booking((select id from booking where name = 'unproven'))$$,
+  'A28: an officer''s lapsed hold is held again without a proven phone, the officer having checked the contact');
 select is((public.reactivate_booking((select id from booking where name = 'again'))) ->> 'expires_at',
   to_jsonb(((public.today_jkt() + 3) + time '23:59') at time zone 'Asia/Jakarta') #>> '{}',
   'an expired officer''s booking is held again until 23:59 WIB of its visit day (A23)');

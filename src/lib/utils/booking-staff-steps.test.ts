@@ -45,9 +45,12 @@ describe('staffStepsFor', () => {
     }));
     const lapsed = { ...officerBookingDetail, status: 'expired' as const, legs: released };
     expect(staffStepsFor(lapsed, OFFICER, NOW).reactivate).toBe(true);
+    // A28: an officer's booking is exempt from the proven phone, a web booking is not.
     expect(staffStepsFor({ ...lapsed, isPhoneVerified: false }, OFFICER, NOW).reactivate).toBe(
-      false,
+      true,
     );
+    const unprovenWeb = { ...lapsed, channel: 'web' as const, isPhoneVerified: false };
+    expect(staffStepsFor(unprovenWeb, OFFICER, NOW).reactivate).toBe(false);
     const unreserved = officerBookingDetail.legs.map((leg) => ({
       ...leg,
       status: 'unreserved' as const,
