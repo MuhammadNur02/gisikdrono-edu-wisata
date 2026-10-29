@@ -209,6 +209,21 @@ describe('createBookingAction', () => {
     expect(createHold).not.toHaveBeenCalled();
   });
 
+  // docs/Security.md §8.9: a pre-launch build answers that booking opens soon, and books nothing.
+  it('refuses a booking or a quotation in a pre-launch build, before Turnstile or the hold', async () => {
+    const prelaunch = { ...WIZARD, isOpen: false, isPrelaunch: true };
+    vi.mocked(loadBookingWizard).mockResolvedValue(prelaunch);
+    for (const action of [createBookingAction, requestQuotationAction]) {
+      await expect(action(REQUEST)).resolves.toEqual({
+        ok: false,
+        error: { code: 'STATE_INVALID', message: text.prelaunch },
+      });
+    }
+    expect(verifyTurnstile).not.toHaveBeenCalled();
+    expect(createHold).not.toHaveBeenCalled();
+    expect(createQuotedBooking).not.toHaveBeenCalled();
+  });
+
   it.each([['pay_to_confirm' as const], ['resent' as const], ['reverify' as const]])(
     'answers %s as it is and keeps the unspent code',
     async (kind) => {

@@ -28,3 +28,21 @@ export const sandboxEnv = {
   SECURITY_ALERT_EMAIL: 'keamanan@example.test',
   SECURITY_ALERT_WA_PHONE: '+6281200000001',
 };
+
+// docs/Security.md §8.9: the overrides that turn sandboxEnv into a pre-launch production with no Midtrans and no
+// WhatsApp at all. Empty reads as unset (emptyStringAsUndefined).
+export const prelaunchProductionEnv = {
+  VERCEL_ENV: 'production',
+  NEXT_PUBLIC_FLAG_PRELAUNCH: 'on',
+  NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS: 'off',
+  NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: '+6281234567890',
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY: '0x4AAAAAAAsiteOwnKey',
+  TURNSTILE_SECRET_KEY: '0x4AAAAAAAsiteOwnSecretForTests',
+  MIDTRANS_IS_PRODUCTION: 'true',
+  MIDTRANS_SERVER_KEY: '',
+  MIDTRANS_CLIENT_KEY: '',
+  MIDTRANS_MERCHANT_ID: '',
+  MIDTRANS_WEBHOOK_PATH_TOKEN: '',
+  WHATSAPP_APP_SECRET: '',
+  WHATSAPP_VERIFY_TOKEN: '',
+};

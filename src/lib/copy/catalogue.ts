@@ -88,6 +88,10 @@ export const packageDetailCopy = {
   requestQuotation: 'Minta surat penawaran',
   panelNote:
     'Belum ada pembayaran sampai kamu mengonfirmasi di langkah Ringkasan. Bayar hanya lewat QRIS atau Virtual Account.',
+  // Pre-launch (docs/Security.md §8.9): the panel says booking opens soon instead of leading into a closed wizard.
+  bookingSoon: 'Pemesanan segera dibuka',
+  prelaunchNote:
+    'Pemesanan online belum dibuka. Untuk menanyakan jadwal kunjungan rombongan, hubungi kelurahan lewat WhatsApp.',
   otherEyebrow: 'Paket lain',
   otherTitle: 'Mungkin juga cocok',
 };

@@ -57,6 +57,8 @@ export const copy = {
   // Card labels shared by the home page, the RW pages and the catalogues of Task P2.4.
   catalogue: {
     bookNow: 'Pesan Sekarang',
+    // Pre-launch (docs/Security.md §8.9): the sticky bar's call to action while booking has not opened.
+    bookingSoon: 'Segera dibuka',
     viewPackage: 'Lihat paket',
     viewProduct: 'Lihat Produk',
     fromPrice: 'mulai',

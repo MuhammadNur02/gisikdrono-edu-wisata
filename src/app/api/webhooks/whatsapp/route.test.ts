@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { serverEnv } from '@/lib/env';
 import {
@@ -11,6 +11,7 @@ import {
 } from '@/server/services/provider-reports';
 
 import { GET, POST } from './route';
+import { prelaunchProductionEnv } from '../../../../../tests/fixtures/env';
 
 vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => ({}) }));
 vi.mock('@/server/services/provider-reports', () => ({
@@ -57,7 +58,7 @@ describe('GET /api/webhooks/whatsapp', () => {
   it('echoes the challenge for our verify token', async () => {
     const query = new URLSearchParams({
       'hub.mode': 'subscribe',
-      'hub.verify_token': serverEnv.WHATSAPP_VERIFY_TOKEN,
+      'hub.verify_token': serverEnv.WHATSAPP_VERIFY_TOKEN ?? '',
       'hub.challenge': '42',
     });
     const response = GET(new Request(`${URL_BASE}?${query.toString()}`));
@@ -158,5 +159,46 @@ describe('POST /api/webhooks/whatsapp', () => {
   it('answers 503 when the database is out of reach, so Meta retries', async () => {
     vi.mocked(recordProviderReports).mockRejectedValue(new Error('down'));
     expect((await post(BODY)).status).toBe(503);
+  });
+});
+
+// Security review of PR #112, L-2: a pre-launch production may hold no WhatsApp secrets at all (docs/Security.md §8.9).
+// The route is read fresh from an environment without them.
+async function routeWithoutSecrets() {
+  for (const [name, value] of Object.entries(prelaunchProductionEnv)) vi.stubEnv(name, value);
+  vi.resetModules();
+  const providerReports = await import('@/server/services/provider-reports');
+  const route = await import('./route');
+  return { route, providerReports };
+}
+
+describe('/api/webhooks/whatsapp without the WhatsApp secrets', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('answers every POST 404 before any limit is counted or anything is written', async () => {
+    const { route, providerReports } = await routeWithoutSecrets();
+    const response = await route.POST(
+      new Request(URL_BASE, {
+        method: 'POST',
+        body: BODY,
+        headers: { 'content-type': 'application/json', 'x-hub-signature-256': 'sha256=00' },
+      }),
+    );
+    expect(response.status).toBe(404);
+    expect(providerReports.withinSenderLimit).not.toHaveBeenCalled();
+    expect(providerReports.recordSignatureFailure).not.toHaveBeenCalled();
+    expect(providerReports.recordProviderReports).not.toHaveBeenCalled();
+  });
+
+  it('keeps answering the handshake 403, whatever token is offered', async () => {
+    const { route } = await routeWithoutSecrets();
+    const query = new URLSearchParams({
+      'hub.mode': 'subscribe',
+      'hub.verify_token': '',
+      'hub.challenge': '42',
+    });
+    expect(route.GET(new Request(`${URL_BASE}?${query.toString()}`)).status).toBe(403);
   });
 });

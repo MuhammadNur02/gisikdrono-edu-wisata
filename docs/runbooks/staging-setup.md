@@ -493,7 +493,7 @@ To resume: Supabase dashboard > the `gisikdrono-staging` project > **Restore pro
 11. Never share the superadmin login. Never disable the superadmin's TOTP.
 12. Never point `.github/workflows/backup.yml` or the repository-level `SUPABASE_DB_URL` secret at staging; that job backs up production.
 13. Never move the `staging` branch by hand around the workflow once it exists (a deploy before its migrations breaks the build), except in the fallback of D.3, which migrates first too.
-14. Never set `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS=off` for Production (the build refuses it), and never run the demo content step or paste `scripts/seed-demo-content.sql` into a production project (the file refuses one marked `production`).
+14. Never set `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS=off` for a launched Production (the build refuses it outside pre-launch), never set `NEXT_PUBLIC_FLAG_PRELAUNCH` for staging, and never run the demo content step or paste `scripts/seed-demo-content.sql` into a production project (the file refuses one marked `production`).
 15. Never forget that the repository is public: no staging address, project ref, key, password, screenshot of a settings page with values, or log excerpt with values goes into a commit, issue, pull request or discussion. Staging's only protection is that its address stays unpublished, plus noindex.
 
 ---
@@ -507,13 +507,13 @@ To resume: Supabase dashboard > the `gisikdrono-staging` project > **Restore pro
 
 ## At go-live (Phase 5)
 
-When the production project is set up (Task P5.7), undo what is staging-only here:
+Production is set up by `docs/runbooks/production-setup.md`: first in pre-launch on the free plans (`NEXT_PUBLIC_FLAG_PRELAUNCH=on`, booking and payment closed, its own Hobby account and Vercel project built from the `production` branch), then on Pro at launch. When the production project is set up (Task P5.7), undo what is staging-only here:
 
-- **Paid plans first.** Production needs Supabase **Pro** (image transformations, leaked-password protection, session time-box, daily backups, never paused, organisation-wide MFA) and a Vercel **Pro** team (commercial use, Password Protection if wanted); none of that is optional for go-live. Create the production Supabase project `gisikdrono-prod` in the Pro organisation, and transfer this Vercel project from the Hobby account to the Pro team (**Settings** > **General** > **Transfer**), or import the repository there afresh.
-- Production leaves `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS` unset; the build refuses `off` there. Do the steps marked **production only** in this guide on the production project.
+- **Paid plans first.** Production needs Supabase **Pro** (image transformations, leaked-password protection, session time-box, daily backups, never paused, organisation-wide MFA) and a Vercel **Pro** team (commercial use, Password Protection if wanted); none of that is optional for go-live. Create the production Supabase project `gisikdrono-prod` in the Pro organisation, and move the production Vercel project of `docs/runbooks/production-setup.md` into the Pro team (part 2 there); this staging project stays where it is.
+- A launched production leaves `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS` unset; the build refuses `off` there unless it is in pre-launch (`docs/Security.md` §8.9). Do the steps marked **production only** in this guide on the production project.
 - Staging may stay on Free and Hobby, or move to the paid plans as well; if it moves, drop the flag from its Preview variables and redeploy so photos use the transformer again.
-- Remove the **Ignored Build Step** of part B step 5 (or narrow it), so `main` builds as Production again with its own Production-scoped variables.
-- Add `"main": true` to `git.deploymentEnabled` in `vercel.json`. Since 2026-10-24 it creates deployments for the `staging` branch only, because the Hobby limit of 100 deployments a day was reached by the cancelled builds of every PR push.
+- Keep the **Ignored Build Step** of part B step 5 on this staging project: production is a Vercel project of its own, with its own Ignored Build Step and Production-scoped variables (`docs/runbooks/production-setup.md`, part 1 step 2.2).
+- `vercel.json` `git.deploymentEnabled` creates deployments for the `staging` branch only since 2026-10-24, because the Hobby limit of 100 deployments a day was reached by the cancelled builds of every PR push, and for the `production` branch since 2026-10-29, which production builds from (`docs/runbooks/production-setup.md`). Do not add `"main": true`: a merge must never deploy production before its migration.
 - Keep the `staging` domain on Preview; production gets its own domain on Production.
 - Revisit the Deployment Protection choice of part B for the new team setup.
 - Production is migrated only by its own release job (Task P5.7.02), never by this workflow.

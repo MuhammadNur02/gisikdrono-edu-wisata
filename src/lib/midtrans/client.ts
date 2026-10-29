@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { isPrelaunch } from '@/config/launch';
 import { serverEnv } from '@/lib/env';
 import { midtransApiBaseUrl, midtransSnapBaseUrl } from '@/lib/midtrans/environment';
 import {
@@ -20,9 +21,10 @@ const MAX_TRIES = 2;
 const UNKNOWN_ORDER_CODE = '404';
 const EXPIRED_CODE = '407';
 
+// not_configured: nothing was sent, since this deployment is pre-launch or holds no server key (docs/Security.md §8.9).
 export class MidtransError extends Error {
   constructor(
-    readonly reason: 'unreachable' | 'refused' | 'malformed',
+    readonly reason: 'unreachable' | 'refused' | 'malformed' | 'not_configured',
     readonly httpStatus?: number,
   ) {
     super(`Midtrans ${reason}${httpStatus === undefined ? '' : ` (${String(httpStatus)})`}`);
@@ -39,8 +41,11 @@ function hosts(): { api: string; snap: string } {
   };
 }
 
+// Fails closed before any request is built: a pre-launch build never calls Midtrans, even with a key set.
 function authorization(): string {
-  return `Basic ${Buffer.from(`${serverEnv.MIDTRANS_SERVER_KEY}:`).toString('base64')}`;
+  const serverKey = serverEnv.MIDTRANS_SERVER_KEY;
+  if (isPrelaunch() || serverKey === undefined) throw new MidtransError('not_configured');
+  return `Basic ${Buffer.from(`${serverKey}:`).toString('base64')}`;
 }
 
 function isTimeout(error: unknown): boolean {
@@ -48,6 +53,7 @@ function isTimeout(error: unknown): boolean {
 }
 
 async function send(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const credentials = authorization();
   for (let attempt = 1; ; attempt += 1) {
     try {
       return await fetch(url, {
@@ -55,7 +61,7 @@ async function send(url: string, init: RequestInit, timeoutMs: number): Promise<
         headers: {
           Accept: 'application/json',
           'Content-Type': 'application/json',
-          Authorization: authorization(),
+          Authorization: credentials,
         },
         cache: 'no-store',
         signal: AbortSignal.timeout(timeoutMs),

@@ -25,8 +25,9 @@ const LEGACY_SANDBOX_PREFIX = 'SB-';
 
 type KeyKind = 'server' | 'client';
 
+// A key that is not set has no format to check; whether it may be missing is src/lib/env.ts's to say.
 export type MidtransKeys = {
-  serverKey: string;
+  serverKey?: string | undefined;
   previousServerKey?: string | undefined;
   clientKey?: string | undefined;
 };

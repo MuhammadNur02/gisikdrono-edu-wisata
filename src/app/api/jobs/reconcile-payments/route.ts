@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
+import { isPrelaunch } from '@/config/launch';
 import { svcRecordJobRun } from '@/db/rpc';
+import type { DatabaseClient } from '@/db/rpc-result';
 import { createLogger, requestIdFrom } from '@/lib/logger';
 // The service role is needed because this job runs without a signed-in user, applies Midtrans' answers through
 // internal.apply_payment_event and reads every payment, invoice, ledger row, ticket and session to write
@@ -12,6 +14,7 @@ import {
   reconcilePayments,
   type ReconciliationReport,
 } from '@/server/services/payment-reconciliation';
+import { PRELAUNCH_SKIP, recordPrelaunchSkip } from '@/server/services/prelaunch-jobs';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,6 +34,23 @@ function failureOf(report: ReconciliationReport): string | null {
   return null;
 }
 
+type JobLogger = ReturnType<typeof createLogger>;
+
+// docs/Security.md §8.9: no Midtrans to compare with before launch; the heartbeat still moves. The audit chain is
+// still walked hourly by anomaly-scan.
+async function skippedForPrelaunch(
+  adminClient: DatabaseClient,
+  log: JobLogger,
+  runId: string,
+): Promise<Response> {
+  if (!(await recordPrelaunchSkip(adminClient, JOB_NAME))) {
+    log.error('cron_failed', { job: JOB_NAME, runId, heartbeat: 'not_recorded' });
+    return Response.json({ runId }, { status: 503 });
+  }
+  log.info('job_run', { job: JOB_NAME, runId, skipped: PRELAUNCH_SKIP });
+  return Response.json({ runId, skipped: PRELAUNCH_SKIP });
+}
+
 // Task P3.9.03: the daily reconciliation at 02:30 WIB (docs/Security.md §3.7, REC-01). A POST, like every job route
 // (internal.call_job): a run applies Midtrans' answers, so nothing that repeats GETs may start one.
 export async function POST(request: Request): Promise<Response> {
@@ -41,6 +61,7 @@ export async function POST(request: Request): Promise<Response> {
   const log = createLogger(requestIdFrom(request.headers));
   const runId = randomUUID();
   const adminClient = createSupabaseAdminClient();
+  if (isPrelaunch()) return skippedForPrelaunch(adminClient, log, runId);
   try {
     const report = await reconcilePayments(adminClient);
     const errorCode = failureOf(report);

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { isPrelaunch } from '@/config/launch';
 import {
   svcAttachSnapToken,
   svcCloseAttemptForCash,
@@ -54,6 +55,10 @@ vi.mock('@/server/services/payment-reads', () => ({
   snapBookingOf: vi.fn(),
 }));
 vi.mock('@/lib/rate-limit', () => ({ withinRateLimits: vi.fn() }));
+vi.mock('@/config/launch', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  isPrelaunch: vi.fn(() => false),
+}));
 
 const BOOKING_ID = '0192f3a4-5b6c-7d8e-9f01-0000000000bb';
 const PAGE_URL = 'https://app.sandbox.midtrans.com/snap/v4/redirection/token';
@@ -100,6 +105,18 @@ beforeEach(() => {
 });
 
 describe('startPayment', () => {
+  // docs/Security.md §8.9: no attempt, no Snap page and no read of the booking before launch.
+  it('opens nothing in a pre-launch build', async () => {
+    vi.mocked(isPrelaunch).mockReturnValueOnce(true);
+    await expect(startPayment(BOOKING_ID)).rejects.toMatchObject({
+      code: 'STATE_INVALID',
+      userMessage: copy.booking.wizard.prelaunch,
+    });
+    expect(openAttemptOf).not.toHaveBeenCalled();
+    expect(svcCreatePaymentAttempt).not.toHaveBeenCalled();
+    expect(createSnapTransaction).not.toHaveBeenCalled();
+  });
+
   it('makes the first attempt and its Snap page from the booking rows', async () => {
     await expect(startPayment(BOOKING_ID)).resolves.toEqual({ redirectUrl: PAGE_URL });
     expect(svcCreatePaymentAttempt).toHaveBeenCalledWith(expect.anything(), {

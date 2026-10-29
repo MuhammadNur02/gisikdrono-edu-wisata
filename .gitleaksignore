@@ -2,3 +2,5 @@
 # Pinned by exact fingerprint so CI's full-history scan of every branch passes; new findings still fail.
 bc40b2f80c0b2284435e0cee830e2a7fc43d0fdc:src/lib/midtrans/client.test.ts:generic-api-key:176
 bc40b2f80c0b2284435e0cee830e2a7fc43d0fdc:src/server/services/payment-poll.test.ts:generic-api-key:74
+# Fake Midtrans path segment (a1b2c3d4e5f6, not a secret) in src/middleware.test.ts, commit 150bb39e on test/p5-staging-security; renamed in the next commit.
+150bb39e03e11447e3969c96570ddfd3a9e98fce:src/middleware.test.ts:generic-api-key:16

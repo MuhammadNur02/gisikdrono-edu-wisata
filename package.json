@@ -41,6 +41,7 @@
     "check:secrets": "node scripts/check-client-bundle-secrets.mjs",
     "check:table-tests": "node scripts/check-table-tests.mjs",
     "check:doc-headings": "node scripts/check-doc-headings.mjs",
+    "security:probe": "tsx scripts/security-probe.ts",
     "analyze": "next build"
   },
   "dependencies": {

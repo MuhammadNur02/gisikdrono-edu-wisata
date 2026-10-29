@@ -123,6 +123,16 @@ describe('publicEnv', () => {
     expect(env.VERCEL_ENV).toBe('production');
   });
 
+  it('reads the pre-launch flag, and refuses a value that is neither on nor off', async () => {
+    expect(
+      (await loadPublicEnv({ NEXT_PUBLIC_FLAG_PRELAUNCH: 'on' })).NEXT_PUBLIC_FLAG_PRELAUNCH,
+    ).toBe('on');
+    expect(
+      (await loadPublicEnv({ NEXT_PUBLIC_FLAG_PRELAUNCH: '' })).NEXT_PUBLIC_FLAG_PRELAUNCH,
+    ).toBeUndefined();
+    await expect(loadPublicEnv({ NEXT_PUBLIC_FLAG_PRELAUNCH: 'yes' })).rejects.toThrow();
+  });
+
   it("refuses Cloudflare's test site key on a production build", async () => {
     await expect(
       loadPublicEnv({
@@ -139,16 +149,42 @@ describe('findPublicEnvProblems and NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS', () => {
     NEXT_PUBLIC_TURNSTILE_SITE_KEY: SITE_KEY,
   };
 
-  it('refuses images without the transformer on production', () => {
+  it('refuses images without the transformer on a launched production', () => {
+    for (const NEXT_PUBLIC_FLAG_PRELAUNCH of [undefined, 'off'] as const) {
+      expect(
+        findPublicEnvProblems({
+          ...values,
+          VERCEL_ENV: 'production',
+          NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS: 'off',
+          NEXT_PUBLIC_FLAG_PRELAUNCH,
+        }),
+      ).toEqual([
+        'NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS=off is for a Free-plan project (staging, or production in pre-launch); a launched production resizes images',
+      ]);
+    }
+  });
+
+  // docs/Security.md §8.9: pre-launch production runs on Supabase Free, which has no transformer.
+  it('lets a pre-launch production switch the transformer off', () => {
     expect(
       findPublicEnvProblems({
         ...values,
         VERCEL_ENV: 'production',
         NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS: 'off',
+        NEXT_PUBLIC_FLAG_PRELAUNCH: 'on',
       }),
-    ).toEqual([
-      'NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS=off is for a Free-plan staging project; production resizes images',
-    ]);
+    ).toEqual([]);
+  });
+
+  it('relaxes nothing else on a pre-launch production', () => {
+    expect(
+      findPublicEnvProblems({
+        VERCEL_ENV: 'production',
+        NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: SAMPLE_NUMBER,
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
+        NEXT_PUBLIC_FLAG_PRELAUNCH: 'on',
+      }),
+    ).toHaveLength(2);
   });
 
   it('lets production keep the transformer, by default or explicitly', () => {

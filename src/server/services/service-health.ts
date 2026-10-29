@@ -33,6 +33,9 @@ export interface HealthReport {
     // Delta review of PR #91, L-4: QR_SIGNING_ACTIVE_KID is not in site_settings qr.signing_kids, so every ticket
     // the cash or a settlement would issue is refused.
     unknownQrKid: boolean;
+    // Pre-launch only (docs/Security.md §8.9): booking_enabled or whatsapp_enabled is not off. The code keeps booking
+    // closed and holds the outbox anyway; the switches are the second layer the runbook turns off.
+    prelaunchSwitchOn: boolean;
   };
 }
 
@@ -61,40 +64,63 @@ async function countRecentlyDeadMessages(adminClient: DatabaseClient, now: Date)
 
 const MAINTENANCE_KEY = 'maintenance_mode';
 const QR_KIDS_KEY = 'qr.signing_kids';
+const PRELAUNCH_OFF_KEYS = ['booking_enabled', 'whatsapp_enabled'] as const;
 
 interface SettingsHealth {
   maintenanceMode: boolean;
   unknownQrKid: boolean;
+  prelaunchSwitchOn: boolean;
+}
+
+interface HealthEnvironment {
+  isProduction: boolean;
+  isPrelaunch: boolean;
+  activeQrKid: string;
 }
 
 async function readSettingsHealth(
   adminClient: DatabaseClient,
-  activeQrKid: string,
+  environment: HealthEnvironment,
 ): Promise<SettingsHealth> {
   const { data, error } = await adminClient
     .from('site_settings')
     .select('key, value')
-    .in('key', [MAINTENANCE_KEY, QR_KIDS_KEY]);
+    .in('key', [MAINTENANCE_KEY, QR_KIDS_KEY, ...PRELAUNCH_OFF_KEYS]);
   if (error) throw error;
   const valueOf = (key: string) => data.find((setting) => setting.key === key)?.value;
   const kids = valueOf(QR_KIDS_KEY);
   return {
     maintenanceMode: valueOf(MAINTENANCE_KEY) === true,
-    unknownQrKid: !(Array.isArray(kids) && kids.includes(activeQrKid)),
+    unknownQrKid: !(Array.isArray(kids) && kids.includes(environment.activeQrKid)),
+    // A switch whose row is missing counts as on: only a stored false is off.
+    prelaunchSwitchOn:
+      environment.isPrelaunch && PRELAUNCH_OFF_KEYS.some((key) => valueOf(key) !== false),
   };
+}
+
+function isHealthy(checks: HealthReport['checks']): boolean {
+  return (
+    checks.stalledJobs === 0 &&
+    checks.overdueMessages === 0 &&
+    checks.deadMessages === 0 &&
+    !checks.maintenanceMode &&
+    checks.placeholderSettings === 0 &&
+    !checks.unknownQrKid &&
+    !checks.prelaunchSwitchOn
+  );
 }
 
 // Throws when the database cannot be read at all, which the route answers as down.
 export async function checkServiceHealth(
   adminClient: DatabaseClient,
-  environment: { isProduction: boolean; activeQrKid: string },
+  environment: HealthEnvironment,
   now: Date = new Date(),
 ): Promise<HealthReport> {
   const [jobs, overdueMessages, deadMessages, settings, placeholders] = await Promise.all([
     svcJobHealth(adminClient),
     countOverdueMessages(adminClient, now),
     countRecentlyDeadMessages(adminClient, now),
-    readSettingsHealth(adminClient, environment.activeQrKid),
+    readSettingsHealth(adminClient, environment),
     environment.isProduction ? svcPlaceholderSiteSettings(adminClient) : Promise.resolve([]),
   ]);
   const checks = {
@@ -104,13 +130,7 @@ export async function checkServiceHealth(
     maintenanceMode: settings.maintenanceMode,
     placeholderSettings: placeholders.length,
     unknownQrKid: settings.unknownQrKid,
+    prelaunchSwitchOn: settings.prelaunchSwitchOn,
   };
-  const isHealthy =
-    checks.stalledJobs === 0 &&
-    checks.overdueMessages === 0 &&
-    checks.deadMessages === 0 &&
-    !checks.maintenanceMode &&
-    checks.placeholderSettings === 0 &&
-    !checks.unknownQrKid;
-  return { status: isHealthy ? 'ok' : 'degraded', checks };
+  return { status: isHealthy(checks) ? 'ok' : 'degraded', checks };
 }
