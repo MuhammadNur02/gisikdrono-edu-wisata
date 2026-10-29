@@ -22,13 +22,26 @@ import { copy } from '../../src/lib/copy/id';
 // hashes the tests cannot single out, so a reset that landed in the middle of these tries wiped their count and the
 // sixth read as an ordinary failure (#72, #69). Alone at the end, nothing resets them under it.
 
-// Two addresses, six sign-ins each (I78-2 of the review of PR #78: the bound the test had in staff-sign-in.spec.ts).
-const LOCKOUT_TEST_MS = 180_000;
+// Two addresses, six sign-ins each (I78-2 of the review of PR #78: the bound the test had in staff-sign-in.spec.ts),
+// plus up to two waits for a fresh rate-limit window.
+const LOCKOUT_TEST_MS = 360_000;
 test.describe.configure({ timeout: LOCKOUT_TEST_MS });
 
 // login:ip+email allows five tries in fifteen minutes; the sixth is refused before Supabase Auth is asked.
 const SIGN_IN_TRIES = 6;
 const createdAccounts: string[] = [];
+
+// internal.rate_limit_hit counts in fixed windows aligned to the epoch (floor(epoch / window) * window), so six tries
+// that straddle a :00/:15/:30/:45 boundary land in two windows and the sixth reads as an ordinary failure (the e2e
+// flakes on PR #111 and PR #114). Six tries take well under the margin.
+const RATE_WINDOW_MS = 15 * 60 * 1000;
+const WINDOW_MARGIN_MS = 90_000;
+
+async function startInOneWindow(): Promise<void> {
+  const msLeft = RATE_WINDOW_MS - (Date.now() % RATE_WINDOW_MS);
+  if (msLeft >= WINDOW_MARGIN_MS) return;
+  await new Promise((resolve) => setTimeout(resolve, msLeft + 1_000));
+}
 
 test.beforeAll(async () => {
   await resetAuthLimits();
@@ -39,6 +52,7 @@ test.afterAll(async () => {
 });
 
 async function sixWrongPasswords(page: Page, email: string, clientIp: string): Promise<string[]> {
+  await startInOneWindow();
   await page.unroute('**/login*');
   const answers = await recordSignInAnswers(page, clientIp);
   await page.goto('/login');
