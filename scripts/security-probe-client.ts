@@ -78,8 +78,27 @@ export function guarded(name: string, check: () => Promise<string[] | ProbeOutco
       const answer = await check();
       return Array.isArray(answer) ? { name, problems: answer } : { name, ...answer };
     } catch (error) {
-      const reason = error instanceof Error ? error.name : 'unknown error';
-      return { name, problems: [`the request failed (${reason})`] };
+      return { name, problems: [`the request failed (${errorNameOf(error)})`] };
     }
   };
+}
+
+// Only the error's name (TypeError, TimeoutError, AbortError): fetch's messages and causes name the host it could
+// not reach, which the output must never carry.
+function errorNameOf(error: unknown): string {
+  return error instanceof Error ? error.name : 'unknown error';
+}
+
+// A request outside any check, such as the probe's first look at `/`: a DNS, TLS or connect failure becomes an
+// error that names the path and the error's kind, never the host.
+export async function requestOrExplain(
+  probe: Probe,
+  path: string,
+  init?: RequestInit,
+): Promise<Response> {
+  try {
+    return await probe.request(path, init);
+  } catch (error) {
+    throw new Error(`the request for ${path} failed (${errorNameOf(error)})`);
+  }
 }

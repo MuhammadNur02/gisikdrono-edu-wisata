@@ -89,22 +89,22 @@ Run the whole table three times: as `A05` against RW 13 and RW 08 ids, as `A13` 
 
 ### 3.3 Staff RPCs and tables through PostgREST
 
-As each RW admin, with that admin's token, against foreign ids (same rotation as §3.2). Every staff RPC of CLAUDE.md Appendix A.4 that takes an RW-scoped id is here, plus those the database has beyond it (R29). For every call that would write, the expected result also means: the row is unchanged and no `notifications` row was enqueued for that booking (count them as `SA` in Supabase Studio before and after the step). Rows marked **superadmin only** are refused for an admin_rw on their own RW's ids as well: try them with an own-RW id too.
+As each RW admin, with that admin's token, against foreign ids (same rotation as §3.2). Every staff RPC of CLAUDE.md Appendix A.4 that takes an RW-scoped id is here, plus those the database has beyond it (R29, R29a). For every call that would write, the expected result also means: the row is unchanged and no `notifications` row was enqueued for that booking (count them as `SA` in Supabase Studio before and after the step). Rows marked **superadmin only** are refused for an admin_rw on their own RW's ids as well: try them with an own-RW id too. Send each call with the exact argument names of `src/db/types.ts` (`Database['public']['Functions']`): PostgREST answers `PGRST202` ("Could not find the function") when a name or an argument is wrong, and that is a wrong call shape, never a pass; fix the payload and send it again.
 
 | # | Call | Expected | Result A05 | Result A13 | Result A08 |
 |---|---|---|---|---|---|
 | R1 | `rpc/rpc_get_participants` `{"p_booking_id": "<foreign booking>"}` | refused or `[]` | | | |
 | R2 | `rpc/rpc_reveal_booking_contact` `{"p_booking_id": "<foreign>", "p_reason": "uji isolasi"}` | refused; no contact; no `pii_revealed` event for that booking | | | |
-| R3 | `rpc/validate_ticket` with a foreign ticket id, a fresh `p_attempt_id` | `wrong_rw` (or `forbidden`) | | | |
+| R3 | `rpc/validate_ticket` `{"p_ticket_id": "<foreign ticket>", "p_attempt_id": "<new uuid>"}` | `wrong_rw` (or `forbidden`) | | | |
 | R4 | `rpc/check_in_ticket` `{"p_ticket_id": "<foreign>", "p_attempt_id": "<new uuid>", "p_attendee_count": 1}` | raises / `wrong_rw`; ticket stays `issued` | | | |
 | R5 | `rpc/revoke_ticket` `{"p_ticket_id": "<foreign>", "p_reason": "uji"}` | raises; ticket unchanged | | | |
 | R6 | `rpc/issue_certificates` `{"p_booking_id": "<foreign>"}` | raises; no certificate | | | |
 | R7 | `rpc/generate_visit_sessions` `{"p_rw_id": <foreign>, "p_from": "<date>", "p_to": "<date>"}` | raises; no session created | | | |
 | R8 | `rpc/visit_stats` `{"p_from": "...", "p_to": "...", "p_rw_id": <foreign>}` | refused, or own RW only | | | |
-| R9 | `rpc/revenue_recap` with `p_rw_id` foreign | refused, or own RW only | | | |
-| R10 | `rpc/cancel_booking`, `rpc/extend_booking_hold`, `rpc/mark_booking_paid_manually` on a foreign booking | raise; booking unchanged | | | |
-| R11 | `rpc/set_staff_role` / `rpc/set_staff_status` on any account, including their own | raise (superadmin only, never own row) | | | |
-| R12 | `rpc/rpc_create_export` `{"p_kind": "finance", ...}` | raises (admin_rw exports own-RW attendance only) | | | |
+| R9 | `rpc/revenue_recap` `{"p_from": "<date>", "p_to": "<date>", "p_rw_id": <foreign>}` | refused, or own RW only | | | |
+| R10 | On a foreign booking: `rpc/cancel_booking` `{"p_booking_id": "<foreign>", "p_expected_amount": 0, "p_reason": "uji"}`; `rpc/extend_booking_hold` `{"p_booking_id": "<foreign>", "p_new_expires_at": "<timestamptz>"}`; `rpc/mark_booking_paid_manually` `{"p_booking_id": "<foreign>", "p_method": "cash", "p_amount": 1000, "p_key_id": "<new uuid>"}` | raise; booking unchanged; nothing enqueued | | | |
+| R11 | `rpc/set_staff_role` `{"p_user_id": "<any staff id, own included>", "p_role": "superadmin"}`; `rpc/set_staff_status` `{"p_user_id": "<any staff id, own included>", "p_is_active": false, "p_reason": "uji"}`, **superadmin only** | `42501` (superadmin only, never own row); role and status unchanged | | | |
+| R12 | `rpc/rpc_create_export` `{"p_kind": "finance", "p_format": "csv", "p_filters": {}, "p_reason": "uji"}` | raises (admin_rw exports own-RW attendance only); no `exports` row | | | |
 | R13 | `GET v_bookings_staff?rw_id=eq.<foreign>`, `booking_legs`, `tickets_qr`, `payments`, `revenue_share_entries`, `visit_sessions` | `[]` | | | |
 | R14 | `GET bookings?select=*` and `booking_participants?select=*` | `[]` (no direct SELECT for `authenticated`) | | | |
 | R15 | `PATCH tour_packages?id=eq.<foreign>` `{"title": "x"}` (with `Prefer: return=representation`) | `[]` or `42501`; row unchanged | | | |
@@ -118,10 +118,11 @@ As each RW admin, with that admin's token, against foreign ids (same rotation as
 | R23 | `rpc/request_notification_resend` `{"p_booking_id": "<foreign>", "p_channel": "whatsapp", "p_template": "payment_received_ticket"}` | refused; **no** new `notifications` row; nothing sent | | | |
 | R24 | `rpc/settle_revenue_entries` (any beneficiary of a foreign RW, `p_from`/`p_to`, `p_expected_total`, `p_reference`, `p_proof_path`), **superadmin only** | admin_rw must be refused; no `payout_batches` row; ledger unchanged | | | |
 | R25 | `rpc/propose_adjustment` `{"p_booking_id": "<paid booking>", "p_type": "write_off", "p_amount": 1000, "p_reason": "uji", "p_evidence_path": "bookings/<id>/x.pdf"}`, **superadmin only** | admin_rw must be refused; no `payment_adjustments` row | | | |
-| R26 | `rpc/approve_adjustment` and `rpc/reject_adjustment` `{"p_id": "<a proposed adjustment>"}`, **superadmin only** | admin_rw must be refused; status stays `proposed` | | | |
+| R26 | `rpc/approve_adjustment` `{"p_id": "<a proposed adjustment>"}` and `rpc/reject_adjustment` `{"p_id": "<a proposed adjustment>", "p_reason": "uji penolakan"}`, **superadmin only** | `42501` for both; status stays `proposed` | | | |
 | R27 | `rpc/apply_adjustment` `{"p_id": "<an approved adjustment>"}`, **superadmin only** | admin_rw must be refused; status stays `approved`; ledger unchanged | | | |
 | R28 | `rpc/reset_staff_mfa` `{"p_user_id": "<another staff member>"}` (and their own id), **superadmin only** | admin_rw must be refused; the factor is untouched | | | |
-| R29 | The RW-scoped RPCs beyond Appendix A.4 (arguments in `src/db/types.ts`): `create_admin_booking`, `send_admin_booking_link`, `cancellation_preview`, `declare_weather_disruption`, `find_manual_ticket`, `scan_ticket`, `unlock_scanner_officer`, `save_package` / `save_package_legs` / `save_package_tiers`, `rpc_get_addon_notes`, `finance_booking`, `get_rw_treasury_account` / `set_rw_treasury_account`, `get_vendor_bank_account` / `set_vendor_bank_account`, `set_rw_unit_status`, each with a foreign RW, booking, package or vendor id | refused or empty; nothing written; nothing enqueued; no account number shown | | | |
+| R29 | The RW-scoped RPCs beyond Appendix A.4 (arguments in `src/db/types.ts`): `create_admin_booking`, `send_admin_booking_link`, `cancellation_preview`, `declare_weather_disruption`, `find_manual_ticket`, `scan_ticket`, `save_package` / `save_package_legs` / `save_package_tiers`, `rpc_get_addon_notes`, each with a foreign RW, booking or package id | refused or empty; nothing written; nothing enqueued | | | |
+| R29a | The superadmin-only RPCs beyond Appendix A.4 (arguments in `src/db/types.ts`): `finance_booking`, `set_rw_unit_status`, `unlock_scanner_officer`, and the bank accounts behind `internal.require_bank_superadmin`: `get_rw_treasury_account`, `set_rw_treasury_account`, `get_vendor_bank_account`, `set_vendor_bank_account`, **superadmin only** | admin_rw must be refused, also with own-RW ids: `42501`; no account number shown; nothing written | | | |
 | R30 | Any `svc_*` function (for example `rpc/svc_enqueue_notification`, `rpc/svc_create_booking`) with a staff token | `42501` permission denied (service role only) | | | |
 
 ### 3.4 Storage prefixes
@@ -178,8 +179,8 @@ The authenticated scan stays **passive** and **manual**: ZAP proxies a browser s
 > **Warning.** During the session, click no button that saves, archives, cancels, refunds, revokes, sends, approves or changes a staff member. Open pages, lists, detail views, filters and dialogs only, and close a dialog with *Batal* or Escape. If a page cannot be covered without a write, do that write only on a dedicated test record created for this session, and note it in §5.4.
 
 1. On the owner's machine: `docker pull ghcr.io/zaproxy/zaproxy:stable`.
-2. Start ZAP with its UI (or the desktop install) and its proxy on `127.0.0.1:8080`; in *Options → Scan rules / Active Scan* nothing is needed, as no active scan is started.
-3. Create a context `staging-dashboard` including `$STAGING_URL/dashboard.*` and `$STAGING_URL/api/.*`, excluding `.*/auth/signout.*`, `.*/api/webhooks/.*` and `.*/api/jobs/.*`. Under *Options → Passive Scan Rules* keep the defaults; start nothing from *Attack* or *Spider*.
+2. Start ZAP with its UI (or the desktop install) and its proxy on `127.0.0.1:8080`, then set **Mode → Safe** (the toolbar's mode menu) before any browsing: in Safe mode ZAP refuses every potentially dangerous action, spiders and active scans included, even if one is started by mistake; in *Options → Scan rules / Active Scan* nothing is needed, as no active scan is started.
+3. Create a context `staging-dashboard` including `$STAGING_URL/dashboard.*` and `$STAGING_URL/api/.*`, excluding `.*/auth/signout.*`, `.*/api/webhooks/.*` and `.*/api/jobs/.*`. Under *Options → Passive Scan Rules* keep the defaults; start nothing from *Attack* or *Spider*. As a second net, leave out of the context every request that carries a `Next-Action` header (a Server Action, which is how the dashboard writes): add it as an exclusion in the context, or as a *Request Header* filter in *Options → Global Exclusions* if your ZAP version offers one, so nothing ZAP replays could reach an action.
 4. Set the context's *Session management* to *Cookie-based*. Sign in **manually** in a browser proxied through ZAP (password, then TOTP) as the staging test superadmin; ZAP keeps the `sb-*` cookies. Do not store the password or the TOTP secret in ZAP.
 5. Browse by hand, through the proxy, every dashboard page of `src/config/nav.ts` once, read-only as the warning above says: open each list, one detail page of each kind (booking, package, product, article), the filters and the *Tambah* / edit sheets without saving them. Do not start a spider.
 6. Repeat 4–5 as one RW admin (`A05`), so the admin_rw pages and their headers are covered.

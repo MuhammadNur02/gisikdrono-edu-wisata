@@ -1,7 +1,12 @@
 import { parseArgs } from 'node:util';
 
 import { accessChecks } from './security-probe-access';
-import { createProbe, type Probe, type ProbeResult } from './security-probe-client';
+import {
+  createProbe,
+  requestOrExplain,
+  type Probe,
+  type ProbeResult,
+} from './security-probe-client';
 import { isNoIndex } from './security-probe-rules';
 import { surfaceChecks } from './security-probe-surface';
 
@@ -41,7 +46,7 @@ function optionsFromArgs(): ProbeOptions {
 // target without it is probed only when the caller says it is production, so its headers are judged as production's.
 async function assertPreviewUnlessProduction(probe: Probe): Promise<void> {
   if (probe.isProduction) return;
-  const home = await probe.request('/');
+  const home = await requestOrExplain(probe, '/');
   if (!isNoIndex(home.headers)) {
     throw new Error(
       '/ carries no X-Robots-Tag: noindex, so this is not a preview; pass --production to probe it',
