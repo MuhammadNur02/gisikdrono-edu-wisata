@@ -44,6 +44,8 @@ const REFUSAL_MESSAGES: Readonly<
   PRICE_MISMATCH: { code: 'PRICE_MISMATCH', message: text.priceChanged },
   QUOTA_UNAVAILABLE: { code: 'QUOTA_EXCEEDED', message: text.quotaUnavailable },
   NOT_SENT: { code: 'STATE_INVALID', message: text.notSent },
+  // A resent D-1 reminder whose last row was queued before reminders carried their day (20261105140200).
+  REMINDER_DAY_UNKNOWN: { code: 'STATE_INVALID', message: text.reminderDayUnknown },
   QR_KEY_UNKNOWN: { code: 'STATE_INVALID', message: text.qrKeyUnknown },
   PAYMENT_OPEN: { code: 'STATE_INVALID', message: text.holdOpenPayment },
   LEDGER_MISSING: { code: 'STATE_INVALID', message: text.ledgerMissing },

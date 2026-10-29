@@ -77,7 +77,12 @@ const BOOKING_ROW = {
       leg_order: 1,
       status: 'reserved',
       rw_units: { name: 'RW 05 Ecowastreme' },
-      visit_sessions: { session_date: '2026-11-12', start_time: '09:05:00', end_time: '10:05:00' },
+      visit_sessions: {
+        session_date: '2026-11-12',
+        start_time: '09:05:00',
+        end_time: '10:05:00',
+        weather_notices: null,
+      },
     },
   ],
   quotations: [],
@@ -211,6 +216,21 @@ describe('processNotifications', () => {
       ),
     );
     expect(outbox.failed).toHaveLength(3);
+  });
+
+  it('hands a reminder of a day no longer visited to the outbox as stale_day, which cancels it', async () => {
+    outbox.claimed = [
+      row({
+        template: 'visit_reminder_d1',
+        booking_id: BOOKING_ID,
+        channel: 'email',
+        params: { link_scope: 'view', session_date: '2026-11-13' },
+      }),
+    ];
+    const { providers, sent } = recordingProviders();
+    await processNotifications(adminClientWith({}), providers, NOW);
+    expect(sent).toEqual([]);
+    expect(outbox.failed).toEqual([expect.objectContaining({ errorCode: 'stale_day' })]);
   });
 
   it('retries a message whose booking could not be read', async () => {
