@@ -4829,6 +4829,10 @@ export type Database = {
         }
         Returns: Json
       }
+      refund_key_blocked_adjustments: {
+        Args: { p_adjustment_ids: string[] }
+        Returns: string[]
+      }
       reject_adjustment: {
         Args: { p_id: string; p_reason: string }
         Returns: Json

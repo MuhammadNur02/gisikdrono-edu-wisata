@@ -169,7 +169,8 @@ export const financeCopy = {
       total: (amount: string, entries: number) =>
         `Jumlah yang harus ditransfer: ${amount} (${String(entries)} entri buku besar). Catat setelah transfer sebesar ini.`,
       nothing: 'Tidak ada entri yang belum dibayar dalam periode ini.',
-      invalid: 'Pilih periode yang sudah lewat, tanggal awal sebelum tanggal akhir.',
+      invalid:
+        'Pilih periode yang sudah lewat (tanggal akhir paling lambat kemarin), tanggal awal sebelum tanggal akhir.',
       negativePending: (day: string) =>
         `Ada saldo minus sejak ${day} yang belum dibayar; mulai periode dari tanggal itu. Jangan transfer dulu.`,
     },
@@ -181,7 +182,7 @@ export const financeCopy = {
       PAYOUT_NEGATIVE_PENDING:
         'Penerima ini masih punya entri negatif yang belum dibayar sebelum tanggal awal periode. Mulai periode dari tanggal entri tertua yang belum dibayar agar entri itu ikut diperhitungkan.',
       FUTURE_DAY:
-        'Pembayaran hanya untuk hari yang sudah lewat; tanggal akhir paling lambat hari ini.',
+        'Pembayaran hanya untuk hari yang sudah lewat; tanggal akhir paling lambat kemarin, karena buku besar hari ini masih bisa bertambah.',
       PAYOUT_TOTAL_MISMATCH:
         'Total bagian periode ini menurut buku besar tidak sama dengan jumlah yang Anda transfer. Periksa pratinjau, lalu catat pembayaran sebesar yang benar-benar ditransfer.',
       TRANSFER_MISMATCH:

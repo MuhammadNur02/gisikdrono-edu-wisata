@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { FINANCE_LIST_LIMIT } from '@/config/finance';
 import { DB_ENUMS } from '@/db/enums';
+import { refundKeyBlockedAdjustments } from '@/db/rpc-adjustments';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { jakartaDayBounds } from '@/lib/utils/dates';
 import type { AdjustmentFilter } from '@/lib/validations/finance-filters';
@@ -42,7 +43,6 @@ type AdjustmentRow = z.infer<typeof adjustmentRowSchema>;
 
 const ADJUSTMENT_COLUMNS =
   'id, booking_id, payment_id, type, status, amount, reason, details, evidence_path, proposed_by, proposed_at, approved_by, approved_at, apply_not_before, applied_at, rejected_reason';
-const KEY_MISMATCH_PREFIX = 'refund_key_mismatch:';
 
 async function namesOf(
   table: 'profiles' | 'bookings',
@@ -62,37 +62,18 @@ async function namesOf(
   );
 }
 
-const mismatchAlertSchema = z.object({
-  fingerprint: z.string(),
-  details: z.looseObject({ release_note: z.string().optional() }),
-});
-
-// Review of PR #80, L-3: an adjustment is blocked while its latest refund_key_mismatch alert carries no release note,
-// acknowledged or not; a plain acknowledgement releases nothing (release_refund_key_mismatch, 20261104190200).
-export function blockedOf(alertsNewestFirst: readonly z.infer<typeof mismatchAlertSchema>[]): Set<string> {
-  const latest = new Map<string, boolean>();
-  for (const alert of alertsNewestFirst) {
-    if (!latest.has(alert.fingerprint)) latest.set(alert.fingerprint, !alert.details.release_note);
-  }
-  const blocked = [...latest].filter(([, isBlocked]) => isBlocked);
-  return new Set(blocked.map(([fingerprint]) => fingerprint.slice(KEY_MISMATCH_PREFIX.length)));
-}
-
-// The applied manual refunds among the rows whose Midtrans disagreement over their key still blocks (L6).
-async function blockedByKeyMismatch(rows: readonly AdjustmentRow[]): Promise<Set<string>> {
-  const fingerprints = rows
+// The applied manual refunds among the rows whose Midtrans disagreement over their key still blocks record_refund
+// (L6), as the database itself judges it (refund_key_blocked_adjustments, review of PR #103): a release of the figure
+// Midtrans lists, or Midtrans later listing exactly the amount booked, lifts the badge; a plain acknowledgement of the
+// alert does not (review of PR #80, L-3).
+export async function blockedByKeyMismatch(
+  rows: readonly Pick<AdjustmentRow, 'id' | 'type' | 'status'>[],
+): Promise<Set<string>> {
+  const ids = rows
     .filter((row) => row.type === 'manual_refund' && row.status === 'applied')
-    .map((row) => `${KEY_MISMATCH_PREFIX}${row.id}`);
-  if (fingerprints.length === 0) return new Set();
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from('security_alerts')
-    .select('fingerprint, details')
-    .in('fingerprint', fingerprints)
-    .order('created_at', { ascending: false })
-    .order('id', { ascending: false });
-  if (error) throw error;
-  return blockedOf(z.array(mismatchAlertSchema).parse(data));
+    .map((row) => row.id);
+  if (ids.length === 0) return new Set();
+  return refundKeyBlockedAdjustments(await createSupabaseServerClient(), ids);
 }
 
 interface RowNames {

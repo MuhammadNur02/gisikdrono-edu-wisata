@@ -1,38 +1,58 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { blockedOf } from './adjustment-reads';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+
+import { blockedByKeyMismatch } from './adjustment-reads';
+import { clientAnswering } from '../../../tests/fixtures/postgrest-client';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/server', () => ({ createSupabaseServerClient: vi.fn() }));
 
 const A = '0192f3a4-5b6c-7d8e-9f01-0000000000a1';
 const B = '0192f3a4-5b6c-7d8e-9f01-0000000000b2';
-const RELEASED = { release_note: 'Angka Midtrans sudah dicek', released_sum: 80000 };
+const C = '0192f3a4-5b6c-7d8e-9f01-0000000000c3';
 
-// Review of PR #80, L-3, tested as the review of PR #103 asks: an adjustment is blocked while its latest
-// refund_key_mismatch alert has no release note, whether that alert was acknowledged or not.
-describe('blockedOf', () => {
-  it('blocks on a latest alert without a release note', () => {
-    expect(blockedOf([{ fingerprint: `refund_key_mismatch:${A}`, details: {} }])).toEqual(new Set([A]));
+const APPLIED_REFUND = { type: 'manual_refund', status: 'applied' } as const;
+
+function answering(reply: unknown) {
+  const answer = clientAnswering(200, reply);
+  vi.mocked(createSupabaseServerClient).mockResolvedValue(answer.client);
+  return answer.requests;
+}
+
+// Review of PR #103: the badge follows the database's own blocking state (refund_key_blocked_adjustments), so it goes
+// away once a release or Midtrans' own figure lifts the block, however the alert was left.
+describe('blockedByKeyMismatch', () => {
+  beforeEach(() => {
+    vi.mocked(createSupabaseServerClient).mockReset();
   });
 
-  it('releases on a latest alert that carries one', () => {
-    expect(blockedOf([{ fingerprint: `refund_key_mismatch:${A}`, details: RELEASED }])).toEqual(new Set());
+  it('asks the database about the applied manual refunds only', async () => {
+    const requests = answering([A]);
+    const rows = [
+      { id: A, ...APPLIED_REFUND },
+      { id: B, type: 'manual_refund', status: 'approved' },
+      { id: C, type: 'write_off', status: 'applied' },
+    ] as const;
+    await expect(blockedByKeyMismatch(rows)).resolves.toEqual(new Set([A]));
+    expect(requests[0]?.url).toContain('/rest/v1/rpc/refund_key_blocked_adjustments');
+    expect(requests[0]?.body).toEqual({ p_adjustment_ids: [A] });
   });
 
-  it('reads only the newest alert of each adjustment', () => {
-    const alerts = [
-      { fingerprint: `refund_key_mismatch:${A}`, details: {} },
-      { fingerprint: `refund_key_mismatch:${B}`, details: RELEASED },
-      { fingerprint: `refund_key_mismatch:${A}`, details: RELEASED },
-      { fingerprint: `refund_key_mismatch:${B}`, details: {} },
-    ];
-    expect(blockedOf(alerts)).toEqual(new Set([A]));
+  it('shows no badge for a refund the database no longer blocks', async () => {
+    answering([]);
+    await expect(blockedByKeyMismatch([{ id: A, ...APPLIED_REFUND }])).resolves.toEqual(new Set());
   });
 
-  it('treats an empty release note as none', () => {
-    expect(
-      blockedOf([{ fingerprint: `refund_key_mismatch:${A}`, details: { release_note: '' } }]),
-    ).toEqual(new Set([A]));
+  it('asks nothing when no row is an applied manual refund', async () => {
+    await expect(
+      blockedByKeyMismatch([{ id: B, type: 'reclassify_share', status: 'applied' }]),
+    ).resolves.toEqual(new Set());
+    expect(createSupabaseServerClient).not.toHaveBeenCalled();
+  });
+
+  it('refuses an answer that is not a list of ids', async () => {
+    answering(['not-an-id']);
+    await expect(blockedByKeyMismatch([{ id: A, ...APPLIED_REFUND }])).rejects.toThrow();
   });
 });

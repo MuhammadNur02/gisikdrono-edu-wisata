@@ -25,6 +25,7 @@ const FINANCE_RPCS = [
   'public.settle_revenue_entries',
   'public.payout_preview',
   'public.release_refund_key_mismatch',
+  'public.refund_key_blocked_adjustments',
   'public.rpc_reveal_finance_evidence',
 ] as const;
 // A 42501 reads as the step-up to repeat (financeRefusal), whatever its hint.
