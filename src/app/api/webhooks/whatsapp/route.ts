@@ -31,7 +31,9 @@ export const maxDuration = 15;
 // middleware (src/middleware.ts matcher). 200 for processed reports and for unknown ones older than five minutes, 503
 // for an unknown one younger than that, whose send the outbox may not have recorded yet; 400, 413 and 415 for a malformed
 // body; 403 for a bad signature and for a wrong verify token (CLAUDE.md §5.4); 429 past the rate limit and 503 while
-// the database is out of reach or the app secret is not set, so Meta retries. Nothing here touches a booking or money.
+// the database is out of reach, so Meta retries. Without an app secret (pre-launch, docs/Security.md §8.9) no report
+// can be verified, so every POST answers 404 before any limit is counted, as the Midtrans route does with no account
+// (security review of PR #112, L-2). Nothing here touches a booking or money.
 
 const WEBHOOK_BODY_LIMIT_BYTES = 65_536;
 const PROVIDER = 'whatsapp';
@@ -40,6 +42,7 @@ const HTTP_STATUS = {
   ok: 200,
   badRequest: 400,
   forbidden: 403,
+  notFound: 404,
   tooManyRequests: 429,
   unavailable: 503,
 } as const;
@@ -75,17 +78,12 @@ type Verified = { webhook: MetaWebhook } | { refusal: Response };
 // unsigned sender can use up Meta's share (re-review of PR #70, M-2).
 async function verifiedWebhook(
   request: Request,
-  adminClient: DatabaseClient,
-  clientIp: string,
+  sender: { adminClient: DatabaseClient; clientIp: string; appSecret: string },
   log: Log,
 ): Promise<Verified> {
+  const { adminClient, clientIp, appSecret } = sender;
   const body = await readJsonText(request, WEBHOOK_BODY_LIMIT_BYTES);
   if (!body.ok) return { refusal: empty(body.status) };
-  const appSecret = serverEnv.WHATSAPP_APP_SECRET;
-  if (appSecret === undefined) {
-    log.error('internal_error', { route: 'webhooks/whatsapp', reason: 'not_configured' });
-    return { refusal: empty(HTTP_STATUS.unavailable) };
-  }
   if (!hasValidMetaSignature(body.text, request.headers.get('x-hub-signature-256'), appSecret)) {
     log.warn('webhook_signature_invalid', { provider: PROVIDER });
     await recordSignatureFailure(adminClient, PROVIDER, clientIp);
@@ -99,14 +97,14 @@ async function verifiedWebhook(
   return webhook === null ? { refusal: empty(HTTP_STATUS.badRequest) } : { webhook };
 }
 
-async function receive(request: Request, log: Log): Promise<Response> {
+async function receive(request: Request, appSecret: string, log: Log): Promise<Response> {
   const adminClient = createSupabaseAdminClient();
   const clientIp = clientIpFrom(request.headers);
   if (!(await withinSenderLimit(adminClient, PROVIDER, clientIp))) {
     log.info('rate_limited', { limit: SENDER_LIMIT_OF[PROVIDER] });
     return empty(HTTP_STATUS.tooManyRequests);
   }
-  const verified = await verifiedWebhook(request, adminClient, clientIp, log);
+  const verified = await verifiedWebhook(request, { adminClient, clientIp, appSecret }, log);
   if ('refusal' in verified) return verified.refusal;
   const { webhook } = verified;
   const counts = await recordProviderReports(adminClient, PROVIDER, metaReportsOf(webhook));
@@ -117,8 +115,13 @@ async function receive(request: Request, log: Log): Promise<Response> {
 
 export async function POST(request: Request): Promise<Response> {
   const log = createLogger(requestIdFrom(request.headers));
+  const appSecret = serverEnv.WHATSAPP_APP_SECRET;
+  if (appSecret === undefined) {
+    log.info('provider_webhook', { provider: PROVIDER, result: 'not_configured' });
+    return empty(HTTP_STATUS.notFound);
+  }
   try {
-    return await receive(request, log);
+    return await receive(request, appSecret, log);
   } catch {
     log.error('internal_error', { route: 'webhooks/whatsapp' });
     return empty(HTTP_STATUS.unavailable);

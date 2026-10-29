@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { findEnvProblems } from '@/lib/env';
 
+import { prelaunchProductionEnv } from '../../tests/fixtures/env';
+
 // docs/Security.md §8.9: the env matrix of the pre-launch flag. Every combination of production or preview, flag on
 // or off, and the Midtrans and WhatsApp credentials present, absent or sandbox ones. The flag may relax a missing
 // credential on a production deployment only, and nothing else: a key that is present keeps every check, and a
@@ -190,21 +192,8 @@ async function loadServerEnv(overrides: Record<string, string>) {
   return serverEnv;
 }
 
-const PRODUCTION_WITHOUT_PAYMENTS = {
-  VERCEL_ENV: 'production',
-  NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: '+6281234567890',
-  NEXT_PUBLIC_TURNSTILE_SITE_KEY: '0x4AAAAAAAsiteOwnKey',
-  NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS: 'off',
-  TURNSTILE_SECRET_KEY: '0x4AAAAAAAsiteOwnSecretForTests',
-  MIDTRANS_IS_PRODUCTION: 'true',
-  // Empty reads as unset (emptyStringAsUndefined).
-  MIDTRANS_SERVER_KEY: '',
-  MIDTRANS_CLIENT_KEY: '',
-  MIDTRANS_MERCHANT_ID: '',
-  MIDTRANS_WEBHOOK_PATH_TOKEN: '',
-  WHATSAPP_APP_SECRET: '',
-  WHATSAPP_VERIFY_TOKEN: '',
-};
+// Each case sets the flag itself.
+const PRODUCTION_WITHOUT_PAYMENTS: Record<string, string> = prelaunchProductionEnv;
 
 describe('serverEnv on a production build', () => {
   afterEach(() => {
