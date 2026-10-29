@@ -170,7 +170,7 @@ jobs:
           fi
           # 2 means no such branch yet (the first release creates it); any other failure stops the job.
           found=0
-          git ls-remote --exit-code --heads origin production > /dev/null || found=$?
+          git ls-remote --exit-code origin refs/heads/production > /dev/null || found=$?
           if [ "$found" -ne 0 ] && [ "$found" -ne 2 ]; then
             echo "::error::could not read the production branch; production was not moved"
             exit 1
