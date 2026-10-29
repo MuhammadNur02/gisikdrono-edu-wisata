@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  MACHINE_ROUTE_CSP,
+  MACHINE_ROUTE_HEADERS,
+  MACHINE_ROUTE_PERMISSIONS_POLICY,
+  MACHINE_ROUTE_SOURCES,
+} from '@/config/machine-routes';
+import {
   buildContentSecurityPolicy,
   cspHeaderNameFor,
+  ENFORCED_CSP_HEADER,
   isPrivateRoute,
   permissionsPolicyFor,
 } from '@/lib/csp';
@@ -192,5 +199,29 @@ describe('permissionsPolicyFor', () => {
     for (const path of ['/', '/dashboard', '/dashboard/scanners', '/v/GSK.k1.abc']) {
       expect(permissionsPolicyFor(path)).toMatch(/^camera=\(\)/);
     }
+  });
+});
+
+// Staging ZAP baseline and probe of 2026-10-29 (docs/security-tests.md): the routes the middleware skips get their
+// headers from next.config.ts instead, and they must not drift from what the middleware gives every other route.
+describe('the headers of the routes the middleware skips', () => {
+  it('close the same features as every page but the scanner', () => {
+    expect(MACHINE_ROUTE_PERMISSIONS_POLICY).toBe(permissionsPolicyFor('/api/health'));
+  });
+
+  it('allow no source and no framing, enforced on every deployment', () => {
+    expect(MACHINE_ROUTE_CSP).toBe("default-src 'none'; object-src 'none'; frame-ancestors 'none'");
+    expect(MACHINE_ROUTE_HEADERS).toEqual([
+      { key: ENFORCED_CSP_HEADER, value: MACHINE_ROUTE_CSP },
+      { key: 'Permissions-Policy', value: MACHINE_ROUTE_PERMISSIONS_POLICY },
+    ]);
+  });
+
+  it('cover the webhooks, the jobs and the health check, and no page', () => {
+    expect(MACHINE_ROUTE_SOURCES).toEqual([
+      '/api/webhooks/:path*',
+      '/api/jobs/:path*',
+      '/api/health',
+    ]);
   });
 });
