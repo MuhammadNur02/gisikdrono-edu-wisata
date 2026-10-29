@@ -6,8 +6,9 @@ import {
 } from '@/config/guest';
 
 // The <slot> of /reservasi/<code>/sertifikat/unduh/<slot> (review of PR #94, M1): `rombongan` for the group's
-// certificate, `peserta-<n>` for the n-th participant's in the page's list (by certificate number), and `peserta` for
-// every participant's as one PDF. No certificate id travels in the address.
+// certificate, `peserta-<n>` for the n-th participant certificate the booking was ever issued (in issue order, whatever
+// became of it since, so a revoked one leaves its slot empty), and `peserta` for every participant's as one PDF. No
+// certificate id travels in the address (CLAUDE.md §7.5).
 
 export type CertificateSlot =
   | { kind: 'group' }

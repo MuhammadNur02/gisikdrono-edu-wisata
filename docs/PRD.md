@@ -2102,7 +2102,7 @@ Auth hooks (`supabase_auth_admin`): `public.custom_access_token_hook(event jsonb
 |---|---|---|---|---|
 | `uploads-quarantine` | private, 50 MB, `image/jpeg`, `image/png`, `image/webp`, `application/pdf` | Raw admin uploads via 5-min signed upload URL | `rw-NN/<uuid>` (`rw-05`, `rw-13`, `rw-08`), `kelurahan/<uuid>` | No policy for any API role (the signed URL is the only way in; 0006, decision of 2026-10-17); `api/uploads/sign` holds images to 10 MB; `api/uploads/finalize` reads it with the service role, re-encodes images (sharp: strip EXIF, max 1600 px, webp, magic-byte check) or scans PDFs (`pdf-lib` catalog walk rejecting `/OpenAction /AA /JavaScript /JS /Launch /EmbeddedFile /RichMedia` and non-allow-listed `/URI`), moves to `public-media`, deletes the object; hourly purge > 24 h; SVG rejected |
 | `public-media` | public, 50 MB, `image/webp`, `application/pdf` (what finalize writes) | Gallery, products, packages, hero, articles, activity points, booklets (PDF + `pages/0001.webp`), staff avatars | `rw-NN/…` (`rw-05`, `rw-13`, `rw-08`), `kelurahan/…` then `gallery/<uuid>.webp`, `products/<id>/<uuid>.webp`, `packages/<id>/<uuid>.webp`, `articles/<id>/<uuid>.webp`, `hero/<uuid>.webp`, `activity-points/<id>/<uuid>.webp`, `booklets/<id>/booklet.pdf`, `staff/<profile_id>.webp` | No policy for any API role (security review of PR #5): `api/uploads/finalize` with the service role is the only writer, so no file reaches the public site without being re-encoded or scanned; anyone downloads a file by its URL, nobody lists the bucket, so a draft's files cannot be browsed; booklet PDFs served as attachment |
-| `documents` | private, 20 MB, `application/pdf`, `image/jpeg`, `image/png`, `image/webp`, `text/csv`, XLSX (server-written PDFs, proof photos, exports) | Tickets, quotations, invoices, receipts, credit notes, certificates, payment/payout proofs, adjustment evidence, exports | `bookings/<id>/…`, `certificates/<booking_id>/…`, `payouts/<batch>/…`, `exports/<profile_id>/…` | No anon/authenticated policies; server-issued signed URLs after authorisation, each kind only from its own folder (`createDocumentSignedUrl`): 600 s tickets/certificates, 900 s invoices, 300 s exports, 60 min WhatsApp document header; never persisted or messaged |
+| `documents` | private, 20 MB, `application/pdf`, `image/jpeg`, `image/png`, `image/webp`, `text/csv`, XLSX (server-written PDFs, proof photos, exports) | Tickets, quotations, invoices, receipts, credit notes, certificates, payment/payout proofs, adjustment evidence, exports | `bookings/<id>/…`, `certificates/<booking_id>/…`, `payouts/<batch>/…`, `exports/<profile_id>/…` | No anon/authenticated policies; server-issued signed URLs after authorisation, each kind only from its own folder (`createDocumentSignedUrl`): 600 s tickets, 900 s invoices, 300 s exports, 60 min WhatsApp document header (the ticket's); never persisted or messaged. Certificates are streamed, never signed, and no kind may sign from `certificates/` |
 
 `0006_storage.sql` creates the three buckets and nothing else: no API role holds any policy on `storage.objects` or `storage.buckets`, so every upload goes through the server-bound signed URL of `api/uploads/sign` and every published file through the service-role finalize (security review of PR #5, which replaces the staff write policies on `public-media` and their `storage_owner_prefix_ok` helper; Security §6.8 and §8.4). `supabase/tests/rls_storage.sql` checks that no persona can write, rename, delete or list anything in any bucket.
 
@@ -2376,7 +2376,7 @@ sequenceDiagram
   participant CR as close_past_bookings (23:30 WIB)
   participant OB as notifications outbox
   participant G as Visitor
-  participant DOC as api/documents/certificate/[id]
+  participant DOC as reservasi/{code}/sertifikat/unduh/{slot}
   participant PDF as src/lib/pdf/certificate.tsx + pdf-lib
 
   RPC->>CERT: all legs used -> issue_certificates(booking_id)
@@ -2385,11 +2385,11 @@ sequenceDiagram
   CERT->>DB: released_at = now() when unpaid_pax = 0 (else NULL until superadmin waiver)
   CERT->>OB: enqueue certificate_ready (gsk_certificate_ready_v1 with certificate link 90 d)
   CR->>DB: checked_in bookings with visit_date_end < today -> completed — enqueue review_invite (gsk_review_invite_v1, review link 14 d)
-  G->>DOC: GET /api/documents/certificate/{id} (certificate cookie + last-4 phone)
+  G->>DOC: GET /reservasi/{code}/sertifikat/unduh/{slot} (certificate cookie + last-4 phone proof cookie)
   DOC->>DOC: authorise — refuse after visit_date + 90 d
   DOC->>PDF: render lazily on first request (group: 1 page — participants: one multi-page PDF, page extracted per participant)
   PDF->>DB: upsert documents path, rendered_at
-  DOC-->>G: 302 to signed URL (600 s), Content-Disposition inline
+  DOC-->>G: 200 PDF streamed inline, private, no-store (no signed URL)
   G->>DB: /reservasi/{code}/ulasan -> internal.submit_review (requires used ticket, one per booking) -> pending
   Note over DB: superadmin moderates on /dashboard/reviews — published rows appear in v_public_reviews
 ```

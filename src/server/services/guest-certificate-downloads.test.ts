@@ -9,7 +9,10 @@ import {
 } from '@/server/services/certificate-documents';
 import type { CertificateRow } from '@/server/services/certificate-pages';
 import { guestCertificateFile } from '@/server/services/guest-certificate-downloads';
-import { certificateBookingOf } from '@/server/services/guest-certificate-reads';
+import {
+  certificateBookingOf,
+  participantCertificateIdsOf,
+} from '@/server/services/guest-certificate-reads';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/db/rpc', () => ({ svcLogAudit: vi.fn() }));
@@ -21,6 +24,7 @@ vi.mock('@/server/services/certificate-documents', async (importOriginal) => ({
 }));
 vi.mock('@/server/services/guest-certificate-reads', () => ({
   certificateBookingOf: vi.fn(),
+  participantCertificateIdsOf: vi.fn(),
   standingCertificatesOf: vi.fn(),
 }));
 
@@ -70,6 +74,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(certificateBookingOf).mockResolvedValue(OPEN_BOOKING);
   vi.mocked(servableCertificatesOf).mockResolvedValue([GROUP, ANI, BUDI]);
+  vi.mocked(participantCertificateIdsOf).mockResolvedValue([ANI.id, BUDI.id]);
   vi.mocked(certificatePdf).mockResolvedValue(SINGLE);
   vi.mocked(certificateBundlePdf).mockResolvedValue(BUNDLE);
 });
@@ -117,16 +122,32 @@ describe('guestCertificateFile (review of PR #94, M1, M2)', () => {
     await expect(
       guestCertificateFile(adminClient, { ...request, hasPhoneProof: false }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
-    vi.mocked(certificateBookingOf).mockResolvedValueOnce({ ...OPEN_BOOKING, isPhoneBlocked: true });
+    vi.mocked(certificateBookingOf).mockResolvedValueOnce({
+      ...OPEN_BOOKING,
+      isPhoneBlocked: true,
+    });
     await expect(guestCertificateFile(adminClient, request)).rejects.toMatchObject({
       code: 'NOT_FOUND',
     });
-    vi.mocked(certificateBookingOf).mockResolvedValueOnce({ ...OPEN_BOOKING, isPhoneProven: false });
+    vi.mocked(certificateBookingOf).mockResolvedValueOnce({
+      ...OPEN_BOOKING,
+      isPhoneProven: false,
+    });
     await expect(guestCertificateFile(adminClient, request)).rejects.toMatchObject({
       code: 'NOT_FOUND',
     });
     expect(certificatePdf).not.toHaveBeenCalled();
     expect(svcLogAudit).not.toHaveBeenCalled();
+  });
+
+  it("keeps a participant's slot when a certificate before it is revoked, and leaves the revoked one's empty", async () => {
+    vi.mocked(servableCertificatesOf).mockResolvedValue([GROUP, BUDI]);
+    await expect(
+      guestCertificateFile(adminClient, { ...request, slot: { kind: 'participant', position: 1 } }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await guestCertificateFile(adminClient, request);
+    expect(certificatePdf).toHaveBeenCalledWith(adminClient, BUDI, CONTEXT);
+    expect(certificatePdf).toHaveBeenCalledTimes(1);
   });
 
   it('refuses an empty slot, and everything after the 90 days (L6)', async () => {

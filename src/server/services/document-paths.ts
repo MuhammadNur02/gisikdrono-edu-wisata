@@ -4,10 +4,11 @@ import 'server-only';
 // document-service.ts, which signs them (delta review of PR #80, L-f).
 
 // How long a signed URL to a private document stays valid (docs/Security.md §10.3). The WhatsApp document
-// header lives longest because Meta fetches the file some time after the message is queued.
+// header lives longest because Meta fetches the file some time after the message is queued. A certificate is never
+// signed: the visitor's and the staff's downloads stream it (review of PR #94, M1), so it has no kind here and no
+// kind may sign from certificates/ (follow-up of the review of PR #94).
 export const SIGNED_URL_TTL_SECONDS = {
   ticket: 600,
-  certificate: 600,
   invoice: 900,
   quotation: 900,
   receipt: 900,
@@ -22,11 +23,10 @@ export const SIGNED_URL_TTL_SECONDS = {
 export type SignedDocumentKind = keyof typeof SIGNED_URL_TTL_SECONDS;
 
 // The folders of the documents bucket each kind may be signed from (CLAUDE.md §6.6): booking papers under
-// bookings/<id>/, certificates under certificates/<booking_id>/, exports under exports/<profile_id>/, and a payout's
-// proof under payouts/<batch>/ to the superadmin alone (signFinanceEvidence).
+// bookings/<id>/, exports under exports/<profile_id>/, and a payout's proof under payouts/<batch>/ to the superadmin
+// alone (signFinanceEvidence).
 const DOCUMENT_FOLDERS_BY_KIND: Record<SignedDocumentKind, readonly string[]> = {
   ticket: ['bookings'],
-  certificate: ['certificates'],
   invoice: ['bookings'],
   quotation: ['bookings'],
   receipt: ['bookings'],
@@ -34,7 +34,8 @@ const DOCUMENT_FOLDERS_BY_KIND: Record<SignedDocumentKind, readonly string[]> = 
   export: ['exports'],
   adjustment_evidence: ['bookings'],
   payout_proof: ['payouts'],
-  whatsapp_document_header: ['bookings', 'certificates'],
+  // Only the ticket of gsk_ticket_issued_v1 goes out as a document header (ticketWhatsAppDocument).
+  whatsapp_document_header: ['bookings'],
 };
 // A segment starts with a letter or digit, so neither "." nor ".." can climb out of its folder.
 const PATH_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;

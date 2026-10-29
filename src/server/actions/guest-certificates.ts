@@ -2,8 +2,11 @@
 
 import { headers } from 'next/headers';
 
+import { TURNSTILE_ACTIONS } from '@/config/auth';
 import { certificatesCopy } from '@/lib/copy/certificates';
+import { copy } from '@/lib/copy/id';
 import { fail, mapError, ok } from '@/lib/errors';
+import { verifyTurnstile } from '@/lib/turnstile';
 import { clientIpFrom } from '@/lib/utils/client-ip';
 import { certificatePhoneSchema } from '@/lib/validations/guest-certificate';
 import { requireGuestToken } from '@/server/auth/guards';
@@ -17,17 +20,26 @@ import type { ActionResult } from '@/types/action-result';
 
 const text = certificatesCopy.guest;
 
+// Turnstile comes after the link, so only a browser holding the certificate link reaches siteverify, and before the
+// tries are counted, so a script cannot spend the booking's five tries a day and lock the PIC out (CLAUDE.md §5.2;
+// follow-up of the review of PR #94).
 export async function proveCertificatePhoneAction(input: unknown): Promise<ActionResult<null>> {
   const parsed = certificatePhoneSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
   const guard = await requireGuestToken(parsed.data.bookingCode, 'certificate');
   if (!guard.ok) return guard;
+  const clientIp = clientIpFrom(await headers());
 
   try {
+    const token = parsed.data.turnstileToken;
+    if (!(await verifyTurnstile(token, clientIp, TURNSTILE_ACTIONS.certificatePhone))) {
+      const captchaFailed = copy.booking.otp.captchaFailed;
+      return fail('VALIDATION', { turnstileToken: [captchaFailed] }, captchaFailed);
+    }
     const answer = await stepUpGuestCertificates({
       bookingId: guard.guest.bookingId,
       lastFour: parsed.data.lastFour,
-      clientIp: clientIpFrom(await headers()),
+      clientIp,
     });
     if (answer === 'verified') {
       await rememberCertificateProof(guard.guest);
