@@ -4,9 +4,10 @@
 --   REC-16  a releaser who neither proposed nor approved the adjustment released it with no test at all, so a sole
 --           superadmin who invited a second-mailbox superadmin could, once the invite was accepted, release through
 --           that account at once and skip the refund_key_release_by_sole_superadmin alert. The dual-control test of
---           an approver (internal.approver_is_eligible: an active superadmin for at least 7 days, a factor verified
---           before the proposal, not invited by the proposer in the last 30 days) now decides who counts:
---             - a releaser who is no party to the adjustment and is eligible releases it at once, as before;
+--           an approver (internal.approver_is_eligible: an active superadmin whose account (profiles.created_at) is at
+--           least 7 days old, with a factor verified before the proposal, not created by the proposer in the last
+--           30 days) now decides who counts:
+--             - a releaser who is no party to the adjustment and is eligible releases it at once;
 --             - anyone else, a party or an ineligible superadmin, releases it only as the sole superadmin: while no
 --               other active superadmin is eligible for this adjustment (RELEASE_INELIGIBLE otherwise), 24 hours
 --               after the alert went out and after the last other superadmin stopped counting (RELEASE_TOO_EARLY),

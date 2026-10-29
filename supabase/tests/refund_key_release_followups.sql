@@ -1,5 +1,7 @@
--- Deferred findings of the review of PR #103 (20261105120200, 20261105120300; docs/Security.md "Refunds", REC-16):
---   REC-16  a releaser who is no party to the adjustment must meet the dual-control test (approver_is_eligible); a
+-- Deferred findings of the review of PR #103 (20261105120200, 20261105120300, 20261105120600; docs/Security.md
+-- "Refunds", REC-16):
+--   REC-16  a releaser who is no party to the adjustment must meet the dual-control test (approver_is_eligible)
+--           against both parties (review of PR #108, L3); a
 --           superadmin who does not, a second-mailbox account invited by the proposer included, neither releases while
 --           an eligible one is active nor keeps the sole eligible superadmin from releasing, which raises its alert
 --   tests   a successful release by the sole superadmin, end to end, and the set_staff_status path: deactivating the
@@ -9,7 +11,7 @@
 --   badge   refund_key_blocked_adjustments answers what record_refund refuses: blocked until a release or Midtrans'
 --           own figure lifts it, a plainly left alert notwithstanding
 begin;
-select plan(21);
+select plan(22);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: an RW 05 package, superadmin B (eligible), X (invited by A this week), a booking paid Rp 300.000 =====
@@ -22,15 +24,22 @@ insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-00000000f0b2', 'rls-super-b2@example.test'),
   ('00000000-0000-4000-8000-00000000f0c3', 'rls-super-c3@example.test'),
-  ('00000000-0000-4000-8000-00000000f0d4', 'rls-super-x4@example.test');
+  ('00000000-0000-4000-8000-00000000f0d4', 'rls-super-x4@example.test'),
+  ('00000000-0000-4000-8000-00000000f0e6', 'rls-super-y6@example.test');
 insert into public.profiles (id, email, full_name, role, rw_id) values
   ('00000000-0000-4000-8000-00000000f0b2', 'rls-super-b2@example.test', 'Super B2', 'superadmin', null);
 -- X: a second mailbox of A's, invited by A and onboarded this week, with a factor of today.
 insert into public.profiles (id, email, full_name, role, rw_id, created_by) values
   ('00000000-0000-4000-8000-00000000f0d4', 'rls-super-x4@example.test', 'Super X4', 'superadmin', null,
    '00000000-0000-4000-8000-00000000f001');
+-- Y: a second mailbox of B's, invited by B ten days ago, its factor enrolled before A proposed anything (review of
+-- PR #108, L3).
+insert into public.profiles (id, email, full_name, role, rw_id, created_by, created_at) values
+  ('00000000-0000-4000-8000-00000000f0e6', 'rls-super-y6@example.test', 'Super Y6', 'superadmin', null,
+   '00000000-0000-4000-8000-00000000f0b2', now() - interval '10 days');
 update public.profiles set created_at = now() - interval '40 days'
 where id in ('00000000-0000-4000-8000-00000000f001', '00000000-0000-4000-8000-00000000f0b2');
+update public.profiles set created_at = now() - interval '10 days' where id = '00000000-0000-4000-8000-00000000f0e6';
 -- Any other superadmin this database holds (the development seed's) left long ago, beyond any clock this suite reads:
 -- the rows change without an audit row of today.
 alter table public.profiles disable trigger log_audit;
@@ -38,13 +47,14 @@ select set_config('app.privileged_rpc', 'on', true);
 update public.profiles set is_active = false
 where role = 'superadmin' and is_active
   and id not in ('00000000-0000-4000-8000-00000000f001', '00000000-0000-4000-8000-00000000f0b2',
-                 '00000000-0000-4000-8000-00000000f0d4');
+                 '00000000-0000-4000-8000-00000000f0d4', '00000000-0000-4000-8000-00000000f0e6');
 select set_config('app.privileged_rpc', '', true);
 alter table public.profiles enable trigger log_audit;
 insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at) values
   (gen_random_uuid(), '00000000-0000-4000-8000-00000000f001', 'uji-a', 'totp', 'verified', now() - interval '39 days', now()),
   (gen_random_uuid(), '00000000-0000-4000-8000-00000000f0b2', 'uji-b', 'totp', 'verified', now() - interval '39 days', now()),
-  (gen_random_uuid(), '00000000-0000-4000-8000-00000000f0d4', 'uji-x', 'totp', 'verified', now(), now());
+  (gen_random_uuid(), '00000000-0000-4000-8000-00000000f0d4', 'uji-x', 'totp', 'verified', now(), now()),
+  (gen_random_uuid(), '00000000-0000-4000-8000-00000000f0e6', 'uji-y', 'totp', 'verified', now() - interval '9 days', now());
 
 create function pg_temp.act_as_super(p_user uuid) returns void
   language plpgsql
@@ -190,6 +200,11 @@ reset role;
 select pg_temp.act_as_super('00000000-0000-4000-8000-00000000f0d4');
 select is(pg_temp.hint_of($$select public.release_refund_key_mismatch((select id from a), 'Angka Midtrans sudah dicek')$$),
   'RELEASE_INELIGIBLE', 'X, invited by A this week, does not release it while an eligible superadmin is active');
+reset role;
+-- Review of PR #108, L3: the test runs against the approver too.
+select pg_temp.act_as_super('00000000-0000-4000-8000-00000000f0e6');
+select is(pg_temp.hint_of($$select public.release_refund_key_mismatch((select id from a), 'Angka Midtrans sudah dicek')$$),
+  'RELEASE_INELIGIBLE', 'nor does Y, invited by the approver B ten days ago, though nothing ties Y to the proposer');
 reset role;
 select pg_temp.act_as('superadmin_aal2');
 select is(pg_temp.hint_of($$select public.release_refund_key_mismatch((select id from a), 'Angka Midtrans sudah dicek')$$),

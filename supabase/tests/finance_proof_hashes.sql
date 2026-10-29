@@ -86,7 +86,7 @@ select is((select count(*)::int from public.finance_proofs
 
 -- settle_revenue_entries checks the content before it stamps anything.
 select pg_temp.act_as('superadmin_aal2');
-select is(pg_temp.hint_of($$select public.settle_revenue_entries('rw:5', public.today_jkt() - 1, public.today_jkt(),
+select is(pg_temp.hint_of($$select public.settle_revenue_entries('rw:5', public.today_jkt() - 2, public.today_jkt() - 1,
   'TRF-HASH-2', 'payouts/00000000-0000-4000-8000-0000000f7002/bukti.pdf', 50000)$$), 'PROOF_REUSED',
   'a payout whose proof is a copy of another payout''s is refused');
 reset role;
