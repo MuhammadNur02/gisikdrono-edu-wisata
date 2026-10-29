@@ -75,10 +75,14 @@ export interface OrderLook {
 }
 
 // What Midtrans says of one order now, stored and applied as a poll event. Throws when the Status API cannot be
-// reached, so no caller ever acts on an older answer instead (re-review of PR #69, M-2).
+// reached, so no caller ever acts on an older answer instead (re-review of PR #69, M-2). expireBefore, a Date.now()
+// deadline, leaves the orders a settlement closed unexpired at Midtrans once it has passed, so a caller with a hard
+// time limit (the nightly reconciliation) never waits on them; their Snap pages still end at the hold's deadline, and a
+// payment made on one meanwhile is a duplicate that is refunded.
 export async function lookAtOrder(
   adminClient: DatabaseClient,
   orderId: string,
+  expireBefore?: number,
 ): Promise<OrderLook> {
   const keyId = serverEnv.QR_SIGNING_ACTIVE_KID;
   const answer = await getTransactionStatus(orderId, STATUS_TIMEOUT_MS);
@@ -97,7 +101,8 @@ export async function lookAtOrder(
     confirmed: null,
     keyId,
   });
-  await expireOrders(outcome.closeOrders);
+  if (expireBefore === undefined || Date.now() < expireBefore)
+    await expireOrders(outcome.closeOrders);
   return { eventId: event.eventId, isBooked: outcome.result === 'applied' };
 }
 

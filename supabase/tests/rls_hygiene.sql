@@ -60,8 +60,8 @@ select is(
                         and coalesce(p.qual, '') ~ 'aal2\(')
     order by 1
   ),
-  array['booklet_page_claims', 'document_sequences', 'guest_otps', 'rate_limit_buckets'],
-  'only the four tables no API role touches go without it; booking_participants carries it, ready for a grant'
+  array['booklet_page_claims', 'document_sequences', 'guest_otps', 'rate_limit_buckets', 'reconciliation_turns'],
+  'only the five tables no API role touches go without it; booking_participants carries it, ready for a grant'
 );
 -- docs/Security.md §5.3: the superadmin's own writes need a TOTP code from the last five minutes, not only AAL2.
 select is(
@@ -84,15 +84,15 @@ select is(
       and not exists (select 1 from pg_policies p where p.schemaname = 'public' and p.tablename = t.tablename)
     order by 1
   ),
-  array['booklet_page_claims', 'document_sequences', 'guest_otps', 'rate_limit_buckets'],
-  'only the four tables no API role touches go without a policy'
+  array['booklet_page_claims', 'document_sequences', 'guest_otps', 'rate_limit_buckets', 'reconciliation_turns'],
+  'only the five tables no API role touches go without a policy'
 );
 select is(
   array(
     select distinct table_name::text from information_schema.role_column_grants
     where table_schema = 'public' and grantee in ('anon', 'authenticated')
       and table_name in ('booklet_page_claims', 'document_sequences', 'guest_otps', 'rate_limit_buckets',
-                         'booking_participants')
+                         'reconciliation_turns', 'booking_participants')
     order by 1
   ),
   array[]::text[],

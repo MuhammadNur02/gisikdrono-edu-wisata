@@ -12,6 +12,17 @@ A migration that stops is a release that stops: fix its cause, never edit an app
 
 ## Notes for particular changes
 
+### Task P3.9.03: the nightly reconciliation (`20261105090000_reconcile_payments.sql`)
+
+- **Resume `reconcile-payments` on staging in this release, not before.** It was paused in `docs/runbooks/staging-setup.md` D.5 because its route did not exist, which is why `/api/health` reports its heartbeat as stalled. After the deploy:
+
+  ```sql
+  select cron.alter_job(job_id := (select jobid from cron.job where jobname = 'reconcile-payments'), active := true);
+  ```
+
+  The job runs at 02:30 WIB. To see it work at once, run `select internal.call_job('reconcile-payments');` in the SQL editor, which sends the cron bearer from Vault itself, then a minute later check that `last_success_at` moved and `last_error_code` is empty: `select job, last_success_at, last_failure_at, last_error_code from public.job_heartbeats where job = 'reconcile-payments';`
+- **The first run reports what is already wrong.** Every open mismatch on staging becomes a `reconciliation_issues` row on `/dashboard/finance/reconciliation`, and the day's `reconciliation_digest` alert is mailed to `SECURITY_ALERT_EMAIL`. Bookings still waiting under `REVENUE_RULE_REFUSED` show as `ledger_sum_mismatch`; close each issue once its cause is fixed. A failed run with `orders_not_checked` means Midtrans did not answer every order asked, and `chains_not_checked` that no time was left for the chain walk; the next night tries again. Payments settled in the last 7 days take turns, so a busy week is covered over a few nights.
+
 ### Task P4.3.10: the officer's booking at the counter and cash (`20261104220000`, `20261104220100`)
 
 - **The QR kid must be in `qr.signing_kids` before the deploy.** The migration seeds `["k1"]`. Check that it holds the deployed `QR_SIGNING_ACTIVE_KID`: `select value from public.site_settings where key = 'qr.signing_kids';`. Otherwise cash at the counter is refused ("Kunci tanda tangan tiket belum terdaftar") and `/api/health` answers 503 (`unknownQrKid` in the server log). `docs/runbooks/rotate-keys.md` adds a new kid to the list before it becomes active.
