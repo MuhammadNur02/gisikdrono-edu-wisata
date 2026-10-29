@@ -2,7 +2,9 @@
 
 Owner: the on-call owner for R1/R2 named at go-live (`docs/Security.md` §13.1 #15), with the Dev on call. Source of truth: `docs/Security.md` §3.5–§3.7, §11.4 (R1). Target: tickets out within 1 hour of the report; a group at the gate today goes first (step 7).
 
-Signs: a PIC sends a Midtrans receipt but `/reservasi/<code>` still asks for payment; an open `paid_without_tickets` reconciliation issue; an `admin_booking_needs_review` notification.
+Signs: a PIC sends a Midtrans receipt but `/reservasi/<code>` still asks for payment; an open `paid_without_tickets` reconciliation issue or anomaly alert; an `admin_booking_needs_review` notification.
+
+`paid_without_tickets` (the anomaly scan and the nightly reconciliation) leaves out only a booking under review for `PAID_AFTER_EXPIRY_NO_QUOTA`: it was paid after its seats were gone, so it has no tickets on purpose until the superadmin resolves it, and it raises `booking_review_unresolved` after 24 hours instead (20261105130300). Every other paid booking without tickets raises it, one under review included, for example `REVENUE_RULE_REFUSED`, whose tickets the payments poll keeps retrying.
 
 ## 1. Identify the order
 

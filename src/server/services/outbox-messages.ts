@@ -68,9 +68,13 @@ const LINKED_TEMPLATES: ReadonlySet<NotificationTemplate> = new Set([
   'booking_link',
 ]);
 
+// The legs that still hold a seat: a released leg (a booking paid after its seats were gone, a weather refund) or one
+// never reserved is no visit day of the booking (review of PR #109, L2).
+const SEAT_HOLDING_LEG_STATUSES: ReadonlySet<string> = new Set(['reserved', 'checked_in']);
+
 const BOOKING_COLUMNS = `booking_code, token_version, email_verified_at, package_snapshot, visit_date, pax_count,
   total_amount, expires_at, institution_name,
-  booking_legs(leg_order, rw_units(name), visit_sessions(session_date, start_time, end_time)),
+  booking_legs(leg_order, status, rw_units(name), visit_sessions(session_date, start_time, end_time)),
   quotations(quotation_number, valid_until, issued_at), payments(refunded_amount)`;
 
 const linkScopeSchema = z.object({ link_scope: z.enum(GUEST_LINK_SCOPES) });
@@ -116,7 +120,8 @@ function sessionsOf(legs: readonly LoadedLeg[]): string {
 }
 
 // The booking's visit days in date order, each with the sessions and the gate of its own legs.
-function daysOf(legs: readonly LoadedLeg[]): VisitDay[] {
+function daysOf(allLegs: readonly LoadedLeg[]): VisitDay[] {
+  const legs = allLegs.filter((leg) => SEAT_HOLDING_LEG_STATUSES.has(leg.status));
   const dates = [...new Set(legs.map((leg) => leg.visit_sessions.session_date))].sort(
     (left, right) => left.localeCompare(right),
   );
