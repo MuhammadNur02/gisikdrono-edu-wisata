@@ -18,11 +18,9 @@ export interface ProductSummary {
 }
 
 // A product the booking wizard offers as an add-on (docs/PRD.md FR-BOOK-04, switched off by the decision of 2026-10-29):
-// on sale as one, ordered within the quantities its vendor takes. The vendor's id is the quote's (its hash binds it);
-// the vendor's name is no public information.
+// on sale as one, ordered within the quantities its vendor takes. Nothing of its vendor is public information.
 export interface AddonProduct {
   id: string;
-  vendorId: string;
   rw: RwBadge;
   name: string;
   unitLabel: string;

@@ -10,14 +10,14 @@ import { rwBadgeFor } from '@/lib/utils/rw-units';
 import type { AddonProduct, ProductDetail, ProductSummary } from '@/types/product';
 import type { RwBadge } from '@/types/rw-unit';
 
-// Decision of 2026-10-29 (20261105160300): who makes a product is no public information, so no read here names a
-// vendor; anon holds nothing of umkm_vendors.
+// Decision of 2026-10-29 (20261105160300, 20261105160600): who makes a product is no public information, so no read
+// here names a vendor: anon holds nothing of umkm_vendors, nor products_umkm.vendor_id.
 const SUMMARY_COLUMNS =
   'id, slug, name, category, rw_id, price, unit_label, is_available, is_featured, image_paths';
 const DETAIL_COLUMNS = `${SUMMARY_COLUMNS}, description_md, min_order_qty, max_order_qty, lead_time_days`;
 
 const ADDON_COLUMNS =
-  'id, rw_id, vendor_id, name, unit_label, price, min_order_qty, max_order_qty, lead_time_days, image_paths';
+  'id, rw_id, name, unit_label, price, min_order_qty, max_order_qty, lead_time_days, image_paths';
 
 const PRODUCT_TAGS = [TAGS.allProducts, TAGS.rwUnits];
 
@@ -60,7 +60,6 @@ type AddonRow = Pick<
   Tables<'products_umkm'>,
   | 'id'
   | 'rw_id'
-  | 'vendor_id'
   | 'name'
   | 'unit_label'
   | 'price'
@@ -76,7 +75,6 @@ type AddonRow = Pick<
 function toAddonProduct(row: AddonRow, units: readonly RwBadge[]): AddonProduct {
   return {
     id: row.id,
-    vendorId: row.vendor_id,
     rw: rwBadgeFor(row.rw_id, units),
     name: row.name,
     unitLabel: row.unit_label,

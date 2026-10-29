@@ -5,6 +5,7 @@
 -- written once.
 begin;
 select plan(88);
+\ir helpers/addons_on.psql
 
 -- ===== Fixtures =====
 insert into public.umkm_vendors (id, rw_id, slug, name) values

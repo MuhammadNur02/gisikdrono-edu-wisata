@@ -102,11 +102,15 @@ export function QuotedConfirm({
 function cancelBody(view: StatusHubView, quote: RefundQuote | null): string {
   if (view.booking.status !== 'paid') return text.cancel.unpaidBody;
   if (!quote || quote.amount === 0) return text.cancel.paidNothing;
-  const breakdown = text.cancel.breakdown(
-    formatIDR(quote.packageRefund),
-    quote.refundPct ?? 0,
-    formatIDR(quote.addonRefund),
-  );
+  // The add-on part only for a booking that holds add-ons (decision of 2026-10-29: none is sold any more).
+  const breakdown =
+    view.addons.length > 0
+      ? text.cancel.breakdown(
+          formatIDR(quote.packageRefund),
+          quote.refundPct ?? 0,
+          formatIDR(quote.addonRefund),
+        )
+      : text.cancel.packageBreakdown(formatIDR(quote.packageRefund), quote.refundPct ?? 0);
   return `${text.cancel.paidBody(formatIDR(quote.amount))} ${breakdown}`;
 }
 

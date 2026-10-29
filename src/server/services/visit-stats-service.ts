@@ -3,13 +3,7 @@ import 'server-only';
 import type { RwId } from '@/config/rw';
 import { rpcRevenueRecapDays, rpcVisitStats, type VisitStatsBucket } from '@/db/rpc-stats';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import {
-  monthRanges,
-  sumOf,
-  visitDateAfter,
-  type DailyValue,
-  type DateRange,
-} from '@/lib/utils/kpi';
+import { sumOf, visitDateAfter, type DailyValue, type DateRange } from '@/lib/utils/kpi';
 
 // The overview's figures over a period, from the stats RPCs of P4.2.01 alone (Task P4.2.03, CLAUDE.md §10,
 // docs/PRD.md §8.7.1): visit_stats counts bookings, people and add-ons by the day they visit, and revenue_recap reads
@@ -79,17 +73,4 @@ export async function countUpcomingVisits(rw: RwId, today: string): Promise<numb
     granularity: 'month',
   });
   return sumOf(buckets, (bucket) => bucket.bookings);
-}
-
-// "Produk terjual": the add-on units of the RW's paid visits this month by visit day, cancelled lines left out.
-export async function readProductsSoldThisMonth(rw: RwId, now: Date = new Date()): Promise<number> {
-  const supabase = await createSupabaseServerClient();
-  const { current } = monthRanges(now);
-  const buckets = await rpcVisitStats(supabase, {
-    from: current.from,
-    to: current.to,
-    rwId: rw,
-    granularity: 'month',
-  });
-  return sumOf(buckets, (bucket) => bucket.products_sold);
 }

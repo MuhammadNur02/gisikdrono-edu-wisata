@@ -27,7 +27,6 @@ export interface PackageQuoteLine {
 export interface AddonQuoteLine {
   kind: 'addon';
   productId: string;
-  vendorId: string;
   rwId: RwId;
   name: string;
   unitLabel: string;

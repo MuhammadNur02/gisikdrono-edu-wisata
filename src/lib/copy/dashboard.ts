@@ -82,8 +82,6 @@ export const dashboardCopy = {
       upcomingHint: 'Lunas, 30 hari ke depan.',
       checkInsToday: 'Check-in hari ini',
       checkInsTodayHint: 'Diperbarui tiap 15 detik.',
-      productsSold: 'Produk terjual',
-      productsSoldHint: 'Produk tambahan dari kunjungan lunas, bulan ini s.d. hari ini.',
     },
     revenueChart: {
       title: 'Pendapatan 30 hari terakhir',

@@ -128,8 +128,9 @@ export const productDetailCopy = {
   orderTitle: 'Cara memesan',
   orderHow: 'Pesan lewat WhatsApp Koperasi Merah Putih, koperasi Kelurahan Gisikdrono.',
   orderButton: 'Pesan via WhatsApp',
-  orderButtonLabel: (product: string) =>
-    `Pesan ${product} via WhatsApp ke Koperasi Merah Putih, terbuka di WhatsApp`,
+  // WCAG 2.5.3: the accessible name starts with the visible label.
+  orderButtonLabel: (product: string) => `Pesan via WhatsApp: ${product} (Koperasi Merah Putih)`,
+  orderUnavailable: 'Sedang tidak tersedia.',
   orderMessage: (product: string, rw: string) =>
     `Halo Koperasi Merah Putih, saya ingin memesan ${product} (${rw}). Jumlah: `,
   pickup: (address: string | null) =>

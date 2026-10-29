@@ -23,7 +23,7 @@ export const bookingWizardCopy = {
   prelaunch:
     'Pemesanan dan pembayaran online untuk kunjungan edukasi akan segera dibuka. Sementara itu, silakan lihat paket dan kegiatan kami, atau hubungi kelurahan lewat WhatsApp.',
   unavailableChoice:
-    'Pilihan Anda sudah tidak tersedia lagi: sesinya, paketnya, atau pesanan tambahannya berubah. Periksa lagi pilihan Anda, ya.',
+    'Pilihan Anda sudah tidak tersedia lagi: sesinya atau paketnya berubah. Periksa lagi pilihan Anda, ya.',
   quoteNeedsWhatsApp:
     'Surat penawaran membutuhkan nomor WhatsApp yang sudah terverifikasi. Untuk sekarang, Anda bisa langsung Konfirmasi & Bayar, atau hubungi kelurahan, ya.',
   quoteForInstitutions:

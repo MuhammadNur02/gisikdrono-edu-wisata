@@ -64,7 +64,14 @@ export function HubDetails({ view }: { view: StatusHubView }) {
 }
 
 // docs/PRD.md §13.1 A16–A17, go-live check #27: the terms in force, read from site_settings.
-export function HubTerms({ terms }: { terms: StatusHubView['terms'] }) {
+// The add-on term only for a booking that holds add-ons (decision of 2026-10-29: none is sold any more).
+export function HubTerms({
+  terms,
+  hasAddons,
+}: {
+  terms: StatusHubView['terms'];
+  hasAddons: boolean;
+}) {
   return (
     <section aria-labelledby="hub-terms" className={CARD}>
       <h2 id="hub-terms" className="text-h4 font-bold">
@@ -74,7 +81,7 @@ export function HubTerms({ terms }: { terms: StatusHubView['terms'] }) {
         {terms.refundSchedule.map((step) => (
           <li key={step.minDays}>{text.terms.refundLine(step.minDays, step.pct)}</li>
         ))}
-        <li>{text.terms.addons}</li>
+        {hasAddons && <li>{text.terms.addons}</li>}
         <li>{text.terms.weather(terms.weatherMax, terms.weatherHours)}</li>
       </ul>
     </section>

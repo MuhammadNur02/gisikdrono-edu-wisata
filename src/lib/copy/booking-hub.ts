@@ -166,6 +166,8 @@ export const bookingHubCopy = {
       'Tiket akan dicabut dan kuota sesi dilepas. Menurut syarat kunjungan, tidak ada dana yang dikembalikan. Tindakan ini tidak bisa diurungkan.',
     breakdown: (packagePart: string, pct: number, addons: string) =>
       `${String(pct)} % paket (${packagePart}) dan produk tambahan (${addons}).`,
+    packageBreakdown: (packagePart: string, pct: number) =>
+      `${String(pct)} % paket (${packagePart}).`,
     confirm: 'Ya, batalkan',
     keep: 'Tidak jadi',
     needsSuperadmin: 'Hubungi kelurahan untuk pembatalan reservasi ini.',

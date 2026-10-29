@@ -57,7 +57,6 @@ const COMBO: PackageDetail = {
 function addon(id: string, rw: RwBadge, price: number): AddonProduct {
   return {
     id,
-    vendorId: `${id.slice(0, -2)}ff`,
     rw,
     name: `Produk ${id.slice(-2)}`,
     unitLabel: 'kantong',

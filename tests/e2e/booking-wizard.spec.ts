@@ -78,7 +78,6 @@ test('tells a session that filled meanwhile as full, and offers another', async 
   const phone = phoneOf(isDesktop ? 0 : 1, 2);
   await chooseSchedule(page, sessions, sessions.filled.time);
   await fillBooker(page, phone);
-  await page.getByRole('button', { name: 'Lanjut' }).click();
   await readySummary(page);
   await runSql(`select set_config('app.in_rpc', '1', true);
     update public.visit_sessions set reserved_pax = capacity where id = '${sessions.filled.id}'`);
@@ -106,7 +105,6 @@ test('sends the link of a hold the visitor already has again, and lets the draft
     await forgetOtpMessages(phone);
     await chooseSchedule(page, sessions, sessions.booked.time);
     await fillBooker(page, phone);
-    await page.getByRole('button', { name: 'Lanjut' }).click();
     await readySummary(page);
     await page.getByRole('button', { name: 'Konfirmasi & Bayar' }).click();
     if (attempt === 'hold') await expect(page).toHaveURL(/\/bayar$/, STEP);
@@ -137,7 +135,6 @@ test('issues a quotation for a school without holding a seat', async ({ page }, 
   await page.getByLabel(/Nama penanggung jawab/).fill('Ani Uji E2E');
   await page.getByLabel(/Email penanggung jawab/).fill(`sekolah${RUN}@contoh.test`);
   await proveWhatsApp(page, phone);
-  await page.getByRole('button', { name: 'Lanjut' }).click();
   await page.getByRole('button', { name: 'Lanjut' }).click();
   await readySummary(page);
   // The other tests of this project hold seats on the same session, so the check is that this one adds none.

@@ -23,7 +23,6 @@ import {
   countPaidBookings,
   countUpcomingVisits,
   dailyValuesOf,
-  readProductsSoldThisMonth,
   readRevenueDays,
   readVisitDays,
 } from '@/server/services/visit-stats-service';
@@ -222,12 +221,11 @@ export async function loadRwOverview(rw: RwId, now: Date = new Date()): Promise<
   const supabase = await createSupabaseServerClient();
   const today = todayInJakarta(now);
   const days = lastDays(CHART_DAYS, now);
-  const [sessions, upcoming, checkInsToday, checkIns, productsSold] = await Promise.allSettled([
+  const [sessions, upcoming, checkInsToday, checkIns] = await Promise.allSettled([
     listTodaySessions(supabase, rw, today),
     countUpcomingVisits(rw, today),
     countCheckInsToday(rw),
     readVisitDays(rw, days[0] ?? today, today, supabase),
-    readProductsSoldThisMonth(rw, now),
   ]);
   const todaySessions = figureOf(sessions, 'today_sessions');
   const visitDays = figureOf(checkIns, 'check_ins');
@@ -239,6 +237,5 @@ export async function loadRwOverview(rw: RwId, now: Date = new Date()): Promise<
     checkInsToday: figureOf(checkInsToday, 'check_ins_today'),
     checkIns: checkInRows === null ? null : fillDailySeries(days, checkInRows),
     todaySessions,
-    productsSold: figureOf(productsSold, 'products_sold'),
   };
 }

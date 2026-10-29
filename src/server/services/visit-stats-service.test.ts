@@ -6,14 +6,11 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import {
   countUpcomingVisits,
   dailyValuesOf,
-  readProductsSoldThisMonth,
   readRevenueDays,
   readVisitDays,
 } from '@/server/services/visit-stats-service';
 
 vi.mock('@/lib/supabase/server', () => ({ createSupabaseServerClient: vi.fn() }));
-
-const NOW = new Date('2026-11-18T03:00:00Z');
 
 function sessionAnswering(answer: unknown): unknown[] {
   const bodies: unknown[] = [];
@@ -38,23 +35,6 @@ const bucket = (productsSold: number, day = '2026-11-01') => ({
   tickets_used: 3,
   products_sold: productsSold,
   gross_amount: null,
-});
-
-describe('readProductsSoldThisMonth', () => {
-  it('asks visit_stats for the RW from the first of the month to today', async () => {
-    const bodies = sessionAnswering([bucket(17)]);
-    await expect(readProductsSoldThisMonth(5, NOW)).resolves.toBe(17);
-    expect(bodies).toEqual([
-      { p_from: '2026-11-01', p_to: '2026-11-18', p_granularity: 'month', p_rw_id: 5 },
-    ]);
-  });
-
-  it('reads zero for a month without sales, and refuses an answer of the wrong shape', async () => {
-    sessionAnswering([bucket(0)]);
-    await expect(readProductsSoldThisMonth(8, NOW)).resolves.toBe(0);
-    sessionAnswering([{ bucket: '2026-11-01' }]);
-    await expect(readProductsSoldThisMonth(8, NOW)).rejects.toBeDefined();
-  });
 });
 
 describe('readVisitDays', () => {

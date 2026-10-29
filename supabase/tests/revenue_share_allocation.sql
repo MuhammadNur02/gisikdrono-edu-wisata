@@ -3,6 +3,7 @@
 -- chain verifies; a refused split leaves the settlement standing under review; a reversal mirrors the settlement.
 begin;
 select plan(19);
+\ir helpers/addons_on.psql
 select set_config('app.qr_key_id', 'k1', true);
 
 -- ===== Fixtures: an RW 05 package with an add-on, and a flat-priced combo of RW 05 and RW 13 =====

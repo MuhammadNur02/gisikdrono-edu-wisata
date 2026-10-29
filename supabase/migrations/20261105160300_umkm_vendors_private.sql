@@ -4,9 +4,8 @@
 --
 -- So the anonymous role reads nothing of umkm_vendors any more: 0005 granted it the name, slug, story and logo of an
 -- active vendor through umkm_vendors_public_read, and both go. No view or function exposes a vendor to anon (none is
--- granted to it), and the public product reads no longer embed one. products_umkm.vendor_id stays readable: an opaque
--- id that names nobody, which the add-on quote binds into its hash (internal.booking_quote_hash) should add-ons ever
--- return.
+-- granted to it), and the public product reads no longer embed one. products_umkm.vendor_id goes too, in
+-- 20261105160600 (no public read needs it).
 --
 -- Staff keep what they had: the superadmin every vendor, an RW admin the vendors of their own RW (umkm_vendors_staff_read),
 -- which the finance policies of revenue_share_entries and payout_batches read to show that RW's vendor rows; the bank

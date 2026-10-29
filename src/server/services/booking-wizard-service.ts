@@ -121,7 +121,6 @@ export function quoteWizardBooking(wizard: BookingWizard, request: QuoteRequest)
     tiers: tourPackage.priceTiers,
     products: wizard.addons.map((product) => ({
       id: product.id,
-      vendorId: product.vendorId,
       rwId: product.rw.id,
       name: product.name,
       unitLabel: product.unitLabel,

@@ -15,6 +15,12 @@
 -- to start would overlap the new one and is switched off; nothing has used it yet, since a settlement reads the rule
 -- of its own day. Rules of one package (scope package) and the add-on defaults are left as they are.
 --
+-- The new split applies from deploy time (review of PR #114, L-2). Unlike save_revenue_rule, whose new version starts
+-- tomorrow at the earliest so that today's settlements keep the terms they were made under, this one starts today:
+-- a booking settled earlier on the day of the deploy keeps the old rule in its ledger rows, and one settled after it
+-- follows the new one, though the old version's effective_to then says yesterday. Acceptable before launch, when no
+-- real booking settles (docs/PRD.md §13.1 A29).
+--
 -- The superadmin can still change any of these afterwards on /dashboard/finance/revenue-share (save_revenue_rule).
 
 do $$

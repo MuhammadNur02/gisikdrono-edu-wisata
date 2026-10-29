@@ -6,6 +6,7 @@
 -- settlement's day, when the payments poll completes the booking, and the review stays for staff to close (M3).
 begin;
 select plan(21);
+\ir helpers/addons_on.psql
 select set_config('app.qr_key_id', 'k1', true);
 
 -- ===== Fixtures =====

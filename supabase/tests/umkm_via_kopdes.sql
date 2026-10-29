@@ -4,7 +4,7 @@
 -- row and audited without their values; and the sellers behind the products are no public information, while the
 -- products stay public and staff keep their access.
 begin;
-select plan(24);
+select plan(25);
 \ir helpers/rls_personas.psql
 
 insert into public.umkm_vendors (id, rw_id, slug, name, owner_name, phone, is_active) values
@@ -39,6 +39,10 @@ select throws_ok(
       '[{"product_id": "00000000-0000-4000-8000-0000000b5a05", "qty": 2}]', array[5]::smallint[])$$,
   'P0001', null,
   'while an add-on line is refused, so a stale wizard draft cannot book one'
+);
+select throws_ok(
+  $$update public.products_umkm set is_addon_eligible = true where id = '00000000-0000-4000-8000-0000000b5a05'$$,
+  '23514', null, 'and no write may make a product an add-on again (products_umkm_addons_switched_off)'
 );
 select ok(
   (select count(*) > 0 from information_schema.tables where table_schema = 'public' and table_name = 'booking_addons'),
@@ -95,8 +99,8 @@ select is(
   'uji-kopdes-kompos',
   'the product stays public'
 );
-select throws_ok($$select created_by from public.products_umkm$$, '42501', null,
-  'with no more of it than before');
+select throws_ok($$select vendor_id from public.products_umkm$$, '42501', null,
+  'without the id of its seller (20261105160600)');
 reset role;
 select is(
   (select count(*)::int from pg_policies

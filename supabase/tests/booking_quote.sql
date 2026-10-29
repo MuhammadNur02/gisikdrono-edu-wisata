@@ -4,6 +4,7 @@
 -- stand in for the phone (Q7).
 begin;
 select plan(44);
+\ir helpers/addons_on.psql
 
 -- ===== The booking code: GSK- and 8 Crockford base32 symbols from 40 random bits (BOOK-10, GUEST-01) =====
 select is(internal.crockford_base32('\x0000000000', 8), '00000000', 'forty zero bits are eight zeros');

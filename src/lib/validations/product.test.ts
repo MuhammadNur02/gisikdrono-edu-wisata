@@ -20,7 +20,7 @@ const PRODUCT = {
   minOrderQty: 1,
   maxOrderQty: null,
   leadTimeDays: 2,
-  isAddonEligible: true,
+  isAddonEligible: false,
   isAvailable: true,
   isFeatured: false,
   imagePaths: [],
@@ -59,6 +59,15 @@ describe('createProductSchema', () => {
     ]) {
       expect(createProductSchema.safeParse({ ...PRODUCT, ...change }).success).toBe(false);
     }
+  });
+
+  it('refuses to make a product an add-on, which the decision of 2026-10-29 switched off', () => {
+    expect(createProductSchema.safeParse({ ...PRODUCT, isAddonEligible: true }).success).toBe(
+      false,
+    );
+    expect(
+      updateProductSchema.safeParse({ ...PRODUCT, id: ROW_ID, isAddonEligible: true }).success,
+    ).toBe(false);
   });
 
   it('needs the row id to update', () => {

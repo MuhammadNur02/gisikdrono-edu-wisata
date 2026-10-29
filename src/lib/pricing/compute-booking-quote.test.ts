@@ -26,7 +26,6 @@ const VOLUME_TIERS = [
 
 const KERIPIK: QuotedProduct = {
   id: 'prd-keripik',
-  vendorId: 'vnd-pkk-rw05',
   rwId: 5,
   name: 'Keripik Daun Kelor',
   unitLabel: 'bungkus',
@@ -37,7 +36,6 @@ const KERIPIK: QuotedProduct = {
 
 const SELENDANG: QuotedProduct = {
   id: 'prd-selendang',
-  vendorId: 'vnd-sanggar-rw08',
   rwId: 8,
   name: 'Selendang Batik Sanggar',
   unitLabel: 'helai',
@@ -151,7 +149,6 @@ describe('computeBookingQuote: combo legs and add-ons', () => {
       {
         kind: 'addon',
         productId: 'prd-keripik',
-        vendorId: 'vnd-pkk-rw05',
         rwId: 5,
         name: 'Keripik Daun Kelor',
         unitLabel: 'bungkus',

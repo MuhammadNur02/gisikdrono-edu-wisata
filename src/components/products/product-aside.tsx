@@ -61,8 +61,12 @@ function OrderTerms({ order }: { order: ProductOrder }) {
 }
 
 // The order button: a plain wa.me link to the Kopdes with the message written (no server call, nothing about the
-// visitor in it). While the Kopdes has no number, the question goes to the site's own WhatsApp instead.
+// visitor in it). While the Kopdes has no number, the question goes to the site's own WhatsApp instead; a product not
+// on sale has no button at all, only a neutral line.
 function OrderButton({ product, order }: { product: ProductDetail; order: ProductOrder }) {
+  if (!product.isAvailable) {
+    return <p className="text-body-sm text-muted-foreground">{text.orderUnavailable}</p>;
+  }
   if (order.chatUrl === null) {
     return (
       <WhatsAppLinkButton

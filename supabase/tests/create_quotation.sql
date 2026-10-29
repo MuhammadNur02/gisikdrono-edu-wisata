@@ -3,6 +3,7 @@
 -- seat, queues quotation_ready, and gets three versions at most.
 begin;
 select plan(18);
+\ir helpers/addons_on.psql
 
 -- ===== Fixtures: an RW 05 package with an add-on, one session, and quoted bookings of a school =====
 insert into public.umkm_vendors (id, rw_id, slug, name) values

@@ -36,7 +36,9 @@ const productFields = {
   minOrderQty: quantitySchema,
   maxOrderQty: quantitySchema.nullable(),
   leadTimeDays: z.int().min(0).max(PRODUCT_LIMITS.leadTimeDaysMax),
-  isAddonEligible: z.boolean(),
+  // Decision of 2026-10-29 (docs/PRD.md FR-BOOK-04): no product is an add-on, here as at the row
+  // (products_umkm_addons_switched_off), so a crafted request cannot turn UMKM money back on.
+  isAddonEligible: z.literal(false),
   isAvailable: z.boolean(),
   isFeatured: z.boolean(),
   imagePaths: z.array(imagePathSchema.unwrap()).max(PRODUCT_LIMITS.images),
