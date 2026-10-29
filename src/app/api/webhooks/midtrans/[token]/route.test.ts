@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { isPrelaunch } from '@/config/launch';
 import { midtransSignature } from '@/lib/midtrans/verify-signature';
 import { kickNotificationWorker } from '@/server/services/notification-service';
 import {
@@ -25,6 +26,10 @@ vi.mock('@/server/services/payment-service', () => ({
   withinPaymentLimits: vi.fn(),
 }));
 vi.mock('@/server/services/notification-service', () => ({ kickNotificationWorker: vi.fn() }));
+vi.mock('@/config/launch', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  isPrelaunch: vi.fn(() => false),
+}));
 
 const SIGNED = { order_id: 'GSK-7F3K9Q2M-01', status_code: '200', gross_amount: '600000.00' };
 const NOTIFICATION = {
@@ -87,6 +92,16 @@ describe('POST /api/webhooks/midtrans/[token]', () => {
     const response = await post(JSON.stringify(NOTIFICATION), { token: 'wrong' });
     expect(response.status).toBe(404);
     expect(withinPaymentLimits).not.toHaveBeenCalled();
+  });
+
+  // docs/Security.md §8.9: there is no Midtrans account and maybe no key to verify with before launch.
+  it('answers 404 even to the right path token in a pre-launch build, counting and writing nothing', async () => {
+    vi.mocked(isPrelaunch).mockReturnValueOnce(true);
+    const response = await post(JSON.stringify(NOTIFICATION));
+    expect(response.status).toBe(404);
+    expect(withinPaymentLimits).not.toHaveBeenCalled();
+    expect(recordWebhookRejection).not.toHaveBeenCalled();
+    expect(processMidtransNotification).not.toHaveBeenCalled();
   });
 
   it('counts the sender and everyone before anything else (step 2)', async () => {

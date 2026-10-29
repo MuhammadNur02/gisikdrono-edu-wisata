@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createHash, randomUUID } from 'node:crypto';
 
+import { isPrelaunch } from '@/config/launch';
 import {
   svcApplyPaymentEvent,
   svcCreatePaymentAttempt,
@@ -14,6 +15,7 @@ import { markRefundRequestFailed } from '@/db/rpc-refunds';
 import type { DatabaseClient } from '@/db/rpc-result';
 import type { CancellationOutcome } from '@/db/rpc-terms';
 import type { Json } from '@/db/types';
+import { copy } from '@/lib/copy/id';
 import { staffCopy } from '@/lib/copy/staff';
 import { walkInCopy } from '@/lib/copy/walk-in';
 import { serverEnv } from '@/lib/env';
@@ -68,7 +70,10 @@ export function loadPaymentPage(bookingId: string): Promise<PaymentPageView> {
   return paymentPageOf(createSupabaseAdminClient(), bookingId);
 }
 
+// A pre-launch build opens no attempt and no Snap page, whatever booking_enabled says (docs/Security.md §8.9); the
+// Midtrans client would refuse the call as well.
 export async function startPayment(bookingId: string): Promise<{ redirectUrl: string }> {
+  if (isPrelaunch()) throw new AppError('STATE_INVALID', copy.booking.wizard.prelaunch);
   const adminClient = createSupabaseAdminClient();
   const open = await openAttemptOf(adminClient, bookingId);
   if (isReusablePage(open)) return { redirectUrl: open.redirectUrl };

@@ -4,7 +4,8 @@
   "git": {
     "deploymentEnabled": {
       "**": false,
-      "staging": true
+      "staging": true,
+      "production": true
     }
   }
 }

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
+import { isPrelaunch } from '@/config/launch';
 import { PACKAGE_CATEGORY } from '@/config/status';
 import { copy } from '@/lib/copy/id';
 import { formatIDR } from '@/lib/utils/currency';
@@ -41,9 +42,16 @@ export function StickyBookingBar({ pkg }: { pkg: PackageSummary }) {
     <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/96 pb-safe shadow-bar backdrop-blur-lg md:hidden">
       <div className="flex min-h-20 items-center justify-between gap-4 px-5 py-3">
         <BarPrice pkg={pkg} />
-        <Button asChild size="lg" className="shrink-0">
-          <Link href={bookingPath(pkg.slug)}>{copy.catalogue.bookNow}</Link>
-        </Button>
+        {isPrelaunch() ? (
+          // Pre-launch (docs/Security.md §8.9): disabled, never a link into the closed wizard.
+          <Button size="lg" disabled className="shrink-0">
+            {copy.catalogue.bookingSoon}
+          </Button>
+        ) : (
+          <Button asChild size="lg" className="shrink-0">
+            <Link href={bookingPath(pkg.slug)}>{copy.catalogue.bookNow}</Link>
+          </Button>
+        )}
       </div>
     </div>
   );

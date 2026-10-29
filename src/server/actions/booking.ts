@@ -59,7 +59,9 @@ type WizardRead = { ok: true; wizard: BookingWizard } | ReturnType<typeof fail>;
 async function openWizard(packageSlug: string): Promise<WizardRead> {
   const wizard = await loadBookingWizard(packageSlug);
   if (!wizard) return fail('NOT_FOUND');
-  if (!wizard.isOpen) return fail('STATE_INVALID', undefined, text.closed);
+  if (!wizard.isOpen) {
+    return fail('STATE_INVALID', undefined, wizard.isPrelaunch ? text.prelaunch : text.closed);
+  }
   return { ok: true, wizard };
 }
 

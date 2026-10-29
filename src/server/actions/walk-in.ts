@@ -3,6 +3,7 @@
 import { revalidatePath, revalidateTag } from 'next/cache';
 
 import { BOOKINGS_DASHBOARD_PATH } from '@/config/bookings';
+import { isPrelaunch } from '@/config/launch';
 import { walkInCopy } from '@/lib/copy/walk-in';
 import { fail, mapError, ok } from '@/lib/errors';
 import { getPublicSiteSettings } from '@/lib/queries/settings';
@@ -40,8 +41,10 @@ async function requireOfficer(): Promise<GuardResult> {
 type PackageRead =
   { ok: true; wizard: BookingWizard; canTakeCash: boolean } | ReturnType<typeof fail>;
 
-// The package when the officer may book it, each of its RWs checked by requireRwAccess.
+// The package when the officer may book it, each of its RWs checked by requireRwAccess. A booking at the counter
+// holds seats and may send a pay link, so a pre-launch build opens no package to it (docs/Security.md §8.9).
 async function openPackage(ctx: StaffContext, packageId: string): Promise<PackageRead> {
+  if (isPrelaunch()) return fail('STATE_INVALID', undefined, walkInCopy.errors.prelaunch);
   const wizard = await loadWalkInPackage(ctx, packageId);
   if (!wizard) return fail('NOT_FOUND');
   for (const rw of wizard.package.rws) {

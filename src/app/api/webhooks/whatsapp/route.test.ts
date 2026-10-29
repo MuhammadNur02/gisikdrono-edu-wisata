@@ -57,7 +57,7 @@ describe('GET /api/webhooks/whatsapp', () => {
   it('echoes the challenge for our verify token', async () => {
     const query = new URLSearchParams({
       'hub.mode': 'subscribe',
-      'hub.verify_token': serverEnv.WHATSAPP_VERIFY_TOKEN,
+      'hub.verify_token': serverEnv.WHATSAPP_VERIFY_TOKEN ?? '',
       'hub.challenge': '42',
     });
     const response = GET(new Request(`${URL_BASE}?${query.toString()}`));

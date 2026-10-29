@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { isPrelaunch } from '@/config/launch';
 import { bookingQuoteHash } from '@/lib/pricing/quote-hash';
 import { getPackageBySlug } from '@/lib/queries/packages';
 import { listAddonProducts } from '@/lib/queries/products';
@@ -22,6 +23,7 @@ vi.mock('@/lib/queries/packages', () => ({ getPackageBySlug: vi.fn() }));
 vi.mock('@/lib/queries/products', () => ({ listAddonProducts: vi.fn() }));
 vi.mock('@/lib/queries/sessions', () => ({ listAvailableSessions: vi.fn() }));
 vi.mock('@/lib/queries/settings', () => ({ getPublicSiteSettings: vi.fn() }));
+vi.mock('@/config/launch', () => ({ isPrelaunch: vi.fn() }));
 
 const RW05 = { id: 5, label: 'RW 05', accentKey: 'leaf' } as const;
 const RW13 = { id: 13, label: 'RW 13', accentKey: 'terracotta' } as const;
@@ -110,6 +112,7 @@ beforeEach(() => {
   vi.mocked(getPublicSiteSettings).mockReset().mockResolvedValue(SETTINGS);
   vi.mocked(listAddonProducts).mockReset().mockResolvedValue([KOMPOS, BATIK, ELSEWHERE]);
   vi.mocked(listAvailableSessions).mockReset().mockResolvedValue([]);
+  vi.mocked(isPrelaunch).mockReset().mockReturnValue(false);
 });
 
 describe('loadBookingWizard', () => {
@@ -120,6 +123,7 @@ describe('loadBookingWizard', () => {
       addons: [KOMPOS, BATIK],
       rules: { minLeadHours: 12, maxAdvanceDays: 180, maxPax: 500 },
       isOpen: true,
+      isPrelaunch: false,
     });
   });
 
@@ -134,6 +138,15 @@ describe('loadBookingWizard', () => {
   ])('is closed while %s (docs/PRD.md FR-BOOK-01)', async (_case, change) => {
     vi.mocked(getPublicSiteSettings).mockResolvedValue({ ...SETTINGS, ...change });
     await expect(loadBookingWizard('paket-kombinasi')).resolves.toMatchObject({ isOpen: false });
+  });
+
+  // docs/Security.md §8.9: the code flag wins over booking_enabled, so the DB switch alone can never open booking.
+  it('is closed in a pre-launch build even with booking_enabled on', async () => {
+    vi.mocked(isPrelaunch).mockReturnValue(true);
+    await expect(loadBookingWizard('paket-kombinasi')).resolves.toMatchObject({
+      isOpen: false,
+      isPrelaunch: true,
+    });
   });
 });
 

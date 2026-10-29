@@ -27,6 +27,7 @@ interface PublicEnvValues {
   NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: string;
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: string;
   NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS?: 'on' | 'off' | undefined;
+  NEXT_PUBLIC_FLAG_PRELAUNCH?: 'on' | 'off' | undefined;
 }
 
 export function findPublicEnvProblems(values: PublicEnvValues): string[] {
@@ -48,10 +49,15 @@ export function findPublicEnvProblems(values: PublicEnvValues): string[] {
       `NEXT_PUBLIC_TURNSTILE_SITE_KEY is one of Cloudflare's test keys, which let every visitor through; ${vercelEnv} needs the site's own key`,
     );
   }
-  // Only a Free-plan project such as staging goes without the transformer; production runs on Pro (docs/PRD.md A3).
-  if (vercelEnv === 'production' && values.NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS === 'off') {
+  // Only a Free-plan project goes without the transformer: staging, and production while it is pre-launch on the free
+  // plans (docs/Security.md §8.9). A launched production runs on Pro and resizes images (docs/PRD.md A3).
+  if (
+    vercelEnv === 'production' &&
+    values.NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS === 'off' &&
+    values.NEXT_PUBLIC_FLAG_PRELAUNCH !== 'on'
+  ) {
     problems.push(
-      'NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS=off is for a Free-plan staging project; production resizes images',
+      'NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS=off is for a Free-plan project (staging, or production in pre-launch); a launched production resizes images',
     );
   }
   return problems;
@@ -69,6 +75,8 @@ export const publicEnv = createEnv({
     NEXT_PUBLIC_SENTRY_DSN: z.optional(z.url()),
     // Build-time flag (src/config/images.ts): off serves photos without Supabase's transformer.
     NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS: z.optional(z.enum(['on', 'off'])),
+    // Build-time flag (src/config/launch.ts): on keeps booking and payments closed (docs/Security.md §8.9).
+    NEXT_PUBLIC_FLAG_PRELAUNCH: z.optional(z.enum(['on', 'off'])),
   },
   // Set by Node and Vercel, not by us. VERCEL_ENV is only defined on the server side.
   shared: {
@@ -85,6 +93,7 @@ export const publicEnv = createEnv({
     NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER: process.env.NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER,
     NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
     NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS: process.env.NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS,
+    NEXT_PUBLIC_FLAG_PRELAUNCH: process.env.NEXT_PUBLIC_FLAG_PRELAUNCH,
   },
   emptyStringAsUndefined: true,
   // VERCEL_ENV is undefined in the browser, so the check only bites on the server and at build time.

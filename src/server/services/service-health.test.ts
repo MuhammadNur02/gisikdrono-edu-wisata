@@ -16,11 +16,13 @@ function clientWith({
   dead = 0,
   maintenance = false,
   qrKids = ['k1'],
+  switches = [],
 }: {
   overdue?: number;
   dead?: number;
   maintenance?: boolean;
   qrKids?: string[];
+  switches?: { key: string; value: boolean }[];
 }) {
   const counted = {
     in: (column: string, values: unknown) => {
@@ -37,6 +39,7 @@ function clientWith({
         data: [
           { key: 'maintenance_mode', value: maintenance },
           { key: 'qr.signing_kids', value: qrKids },
+          ...switches,
         ],
         error: null,
       }),
@@ -53,10 +56,11 @@ const HEALTHY_CHECKS = {
   maintenanceMode: false,
   placeholderSettings: 0,
   unknownQrKid: false,
+  prelaunchSwitchOn: false,
 };
 
-const STAGING = { isProduction: false, activeQrKid: 'k1' };
-const PRODUCTION = { isProduction: true, activeQrKid: 'k1' };
+const STAGING = { isProduction: false, isPrelaunch: false, activeQrKid: 'k1' };
+const PRODUCTION = { isProduction: true, isPrelaunch: false, activeQrKid: 'k1' };
 
 describe('checkServiceHealth', () => {
   it('is ok while every job keeps its heartbeat, nothing waits or dies and the site is open', async () => {
@@ -113,6 +117,30 @@ describe('checkServiceHealth', () => {
       status: 'degraded',
       checks: { unknownQrKid: true },
     });
+  });
+
+  // docs/Security.md §8.9: the code keeps booking closed and the outbox held; the monitor sees a switch left on.
+  it('in pre-launch also by booking_enabled or whatsapp_enabled not stored as off', async () => {
+    vi.mocked(svcJobHealth).mockResolvedValue([]);
+    const prelaunch = { ...STAGING, isPrelaunch: true };
+    const bookingOff = { key: 'booking_enabled', value: false };
+    const whatsappOff = { key: 'whatsapp_enabled', value: false };
+    await expect(
+      checkServiceHealth(clientWith({ switches: [bookingOff, whatsappOff] }), prelaunch),
+    ).resolves.toMatchObject({ status: 'ok' });
+    // whatsapp_enabled missing, then booking_enabled on.
+    for (const switches of [[bookingOff], [{ ...bookingOff, value: true }, whatsappOff]]) {
+      await expect(checkServiceHealth(clientWith({ switches }), prelaunch)).resolves.toMatchObject({
+        status: 'degraded',
+        checks: { prelaunchSwitchOn: true },
+      });
+    }
+    await expect(
+      checkServiceHealth(
+        clientWith({ switches: [{ key: 'booking_enabled', value: true }] }),
+        STAGING,
+      ),
+    ).resolves.toMatchObject({ status: 'ok' });
   });
 
   it('in production also by a setting still holding its placeholder', async () => {

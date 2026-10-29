@@ -48,11 +48,11 @@ type Log = ReturnType<typeof createLogger>;
 
 const empty = (status: number) => new Response(null, { status });
 
+// A pre-launch production may hold no verify token yet (src/lib/env.ts), and then no handshake can pass.
 export function GET(request: Request): Response {
-  const challenge = verifiedChallenge(
-    new URL(request.url).searchParams,
-    serverEnv.WHATSAPP_VERIFY_TOKEN,
-  );
+  const verifyToken = serverEnv.WHATSAPP_VERIFY_TOKEN;
+  if (verifyToken === undefined) return empty(HTTP_STATUS.forbidden);
+  const challenge = verifiedChallenge(new URL(request.url).searchParams, verifyToken);
   if (challenge === null) return empty(HTTP_STATUS.forbidden);
   return new Response(challenge, {
     status: HTTP_STATUS.ok,

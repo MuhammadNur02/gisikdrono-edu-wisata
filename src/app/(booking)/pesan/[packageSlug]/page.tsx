@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 
+import { BookingClosedNotice } from '@/components/booking/booking-closed-notice';
 import { WizardHeader } from '@/components/booking/wizard-header';
 import { WizardPackageCard } from '@/components/booking/wizard-package-card';
 import { WizardShell } from '@/components/booking/wizard-shell';
-import { FormAlert } from '@/components/forms/form-alert';
 import { copy } from '@/lib/copy/id';
 import { isBookingStep } from '@/lib/utils/booking-wizard';
 import { bookingPath } from '@/lib/utils/paths';
@@ -44,17 +44,6 @@ export async function generateMetadata({ params }: BookingWizardPageProps): Prom
 
 const MAIN_CONTENT_ID = 'konten';
 
-function BookingClosed() {
-  return (
-    <div className="mx-auto w-full max-w-md px-5 py-16 md:py-24">
-      <FormAlert tone="info">
-        <p className="font-medium">{text.closedTitle}</p>
-        <p>{text.closed}</p>
-      </FormAlert>
-    </div>
-  );
-}
-
 // docs/PRD.md FR-BOOK-01 (Task P3.5.01): the booking wizard of one package. The server reads the package, its
 // add-ons and the sessions it can book; the browser keeps the draft and asks the server for every seat count and
 // price again. DESIGN-SPEC §3.10: the wizard header in place of the site's, then the steps beside the summary.
@@ -69,7 +58,7 @@ export default async function BookingWizardPage({ params, searchParams }: Bookin
       <>
         {header}
         <main id={MAIN_CONTENT_ID} className="flex-1">
-          <BookingClosed />
+          <BookingClosedNotice isPrelaunch={wizard.isPrelaunch} />
         </main>
       </>
     );

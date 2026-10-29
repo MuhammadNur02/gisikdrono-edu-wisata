@@ -2,6 +2,7 @@ import 'server-only';
 
 import { randomUUID } from 'node:crypto';
 
+import { isPrelaunch } from '@/config/launch';
 import {
   svcClaimNotifications,
   svcCompleteNotification,
@@ -32,6 +33,24 @@ import { checkServiceHealth, type HealthReport } from '@/server/services/service
 
 export const OUTBOX_BATCH_SIZE = 20;
 const MS_PER_SECOND = 1000;
+const WHATSAPP_SWITCH_KEY = 'whatsapp_enabled';
+const NOTHING_SENT: OutboxRun = { processed: 0, failed: 0 };
+
+// docs/Security.md §8.9: a pre-launch build holds no WhatsApp credentials. With whatsapp_enabled off, as the production
+// runbook sets it, the claim cancels every WhatsApp message before it picks any, so email goes out as usual. While the
+// switch is still on (or its row is missing) the worker claims nothing at all: a WhatsApp message would only fail for
+// want of credentials and dead-letter into an alert, and a claim cannot leave one channel behind. /api/health reports
+// the switch until it is off.
+async function isHeldForPrelaunch(adminClient: DatabaseClient): Promise<boolean> {
+  if (!isPrelaunch()) return false;
+  const { data, error } = await adminClient
+    .from('site_settings')
+    .select('value')
+    .eq('key', WHATSAPP_SWITCH_KEY)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.value !== false;
+}
 
 async function attemptSend(
   adminClient: DatabaseClient,
@@ -76,6 +95,7 @@ export async function processNotifications(
   providers: NotificationProviders,
   nowSeconds: number = Math.floor(Date.now() / MS_PER_SECOND),
 ): Promise<OutboxRun> {
+  if (await isHeldForPrelaunch(adminClient)) return NOTHING_SENT;
   const batch = await svcClaimNotifications(adminClient, {
     limit: OUTBOX_BATCH_SIZE,
     templates: SENDABLE_TEMPLATES,
@@ -112,6 +132,7 @@ export async function readServiceHealth(clientIp: string): Promise<HealthReport 
   if (!(await withinRateLimits(adminClient, [{ name: 'health:ip', subject }]))) return null;
   return checkServiceHealth(adminClient, {
     isProduction: publicEnv.VERCEL_ENV === 'production',
+    isPrelaunch: isPrelaunch(),
     activeQrKid: serverEnv.QR_SIGNING_ACTIVE_KID,
   });
 }

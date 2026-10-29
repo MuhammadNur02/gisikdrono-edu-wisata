@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 
 import { after } from 'next/server';
 
+import { isPrelaunch } from '@/config/launch';
 import type { WebhookRejectionReason } from '@/db/rpc-payments';
 import { serverEnv } from '@/lib/env';
 import { createLogger, requestIdFrom } from '@/lib/logger';
@@ -33,18 +34,21 @@ const PAYLOAD_TOO_LARGE = 413;
 
 type Log = ReturnType<typeof createLogger>;
 
-// Step 1. Both sides are hashed first, so the comparison takes the same time whatever the token's length.
+// Step 1. Both sides are hashed first, so the comparison takes the same time whatever the token's length. A pre-launch
+// deployment has no Midtrans account to hear from and may have no token at all, so every path is unknown there
+// (docs/Security.md §8.9).
 function isOurPathToken(token: string): boolean {
+  const ourToken = serverEnv.MIDTRANS_WEBHOOK_PATH_TOKEN;
+  if (isPrelaunch() || ourToken === undefined) return false;
   const sha256 = (value: string) => createHash('sha256').update(value).digest();
-  return timingSafeEqual(sha256(token), sha256(serverEnv.MIDTRANS_WEBHOOK_PATH_TOKEN));
+  return timingSafeEqual(sha256(token), sha256(ourToken));
 }
 
 // Step 5: the previous key is still accepted during a rotation's overlap (docs/Security.md §3.9).
 function serverKeys(): string[] {
-  const previous = serverEnv.MIDTRANS_SERVER_KEY_PREVIOUS;
-  return previous === undefined
-    ? [serverEnv.MIDTRANS_SERVER_KEY]
-    : [serverEnv.MIDTRANS_SERVER_KEY, previous];
+  return [serverEnv.MIDTRANS_SERVER_KEY, serverEnv.MIDTRANS_SERVER_KEY_PREVIOUS].filter(
+    (key): key is string => key !== undefined,
+  );
 }
 
 function parseNotification(rawBody: string): MidtransNotification | null {

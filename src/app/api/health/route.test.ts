@@ -16,6 +16,7 @@ const CHECKS = {
   maintenanceMode: false,
   placeholderSettings: 0,
   unknownQrKid: false,
+  prelaunchSwitchOn: false,
 };
 
 describe('GET /api/health', () => {
