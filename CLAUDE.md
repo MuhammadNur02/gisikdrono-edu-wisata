@@ -751,7 +751,7 @@ PRD requirement cited; migration + RLS + pgTAP merged; types regenerated; valida
 | `TURNSTILE_SECRET_KEY` | S | Turnstile siteverify |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | P | Turnstile widget |
 | `NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER` | P | Floating WhatsApp chat button |
-| `NEXT_PUBLIC_FLAG_*` | P | Build-time feature flags read in `src/config`; `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS=off` only on a Supabase Free staging project without image transformations (refused in production) |
+| `NEXT_PUBLIC_FLAG_*` | P | Build-time feature flags read in `src/config`; `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS=off` only on a Supabase Free staging project without image transformations (refused in a launched production); `NEXT_PUBLIC_FLAG_PRELAUNCH=on` only on a pre-launch Production deployment (booking and payment closed in code; Midtrans and WhatsApp credentials optional there, and image transforms may be `off`; `docs/Security.md` §8.9) |
 | `SECURITY_ALERT_EMAIL`, `SECURITY_ALERT_WA_PHONE` | S | Out-of-band critical alert recipients |
 | `NEXT_PUBLIC_SENTRY_DSN` | P | Sentry client/server DSN |
 | `SENTRY_AUTH_TOKEN` | CI | Source-map upload |

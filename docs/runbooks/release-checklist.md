@@ -1,11 +1,11 @@
 # Runbook: releasing to staging or production
 
-Owner: Dev on call. Source of truth: `CLAUDE.md` §6.4 and §10.1, `docs/Task.md` P5.3.03 and P5.7.02, `docs/Security.md` §13.1. Task P5.3.03 adds the Midtrans sandbox checklist here; this page starts with the order every release keeps and the notes particular changes need.
+Owner: Dev on call. Source of truth: `CLAUDE.md` §6.4 and §10.1, `docs/Task.md` P5.3.03 and P5.7.02, `docs/Security.md` §13.1. Task P5.3.03 adds the Midtrans sandbox checklist here; this page starts with the order every release keeps and the notes particular changes need. Setting up production the first time, in pre-launch on the free plans and then at launch, is `docs/runbooks/production-setup.md`.
 
 ## The order of a release
 
 1. **Migrate first.** `pnpm db:push --linked` applies the new migrations to the target project. Only CI runs it; nobody pushes production by hand (`CLAUDE.md` §12.1 no. 19). Production is migrated by `.github/workflows/release.yml` (Task P5.7.02; see "The production release job" below), staging by `.github/workflows/staging-db.yml` (`docs/runbooks/staging-setup.md`, part D). Both run by hand, from `main`, and as a dry run unless that box is unticked.
-2. **Then deploy.** The Vercel deployment builds after the database has moved. The public pages are prerendered from the database: the RW pages are built from `rw_units` (`generateStaticParams`), and the redirects of `src/config/redirects.ts` point at RW pages that must exist. A build against an older database bakes in the old slugs.
+2. **Then deploy.** The Vercel deployment builds after the database has moved: staging when its workflow moves the `staging` branch, production when the owner moves the `production` branch to the commit the release job migrated (`docs/runbooks/production-setup.md`, part 1 step 5.4). The public pages are prerendered from the database: the RW pages are built from `rw_units` (`generateStaticParams`), and the redirects of `src/config/redirects.ts` point at RW pages that must exist. A build against an older database bakes in the old slugs.
 3. **Then check.** Open `/api/health` (200 on production) and the pages the change touched.
 
 A migration that stops is a release that stops: fix its cause, never edit an applied migration (`CLAUDE.md` §6.4).

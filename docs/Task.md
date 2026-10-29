@@ -802,6 +802,8 @@ Requirements: NFR-03, NFR-04, NFR-05, NFR-06.
 
 Requirements: NFR-08, NFR-10; assumptions A10, A11, A12.
 
+Note (decision of 2026-10-29): production goes public in two phases, both in `docs/runbooks/production-setup.md`. Part 1, **pre-launch**, runs production on the real domain on Vercel Hobby and Supabase Free with `NEXT_PUBLIC_FLAG_PRELAUNCH=on` (`docs/Security.md` §8.9): public pages and the staff dashboard live, booking and payment closed in code, no Midtrans or WhatsApp credentials; it covers the pre-launch part of P5.7.01 (variables without Midtrans and WhatsApp), P5.7.02 (the first `release.yml` run and the deploy by moving the `production` branch) and P5.7.04 (apex and `www`). Part 2, **launch**, moves to Pro, adds the Midtrans production keys (§3.9) and WhatsApp, removes the flag and then runs P5.7.03, P5.7.05 to P5.7.07 and Appendix C before booking opens. The items below stay open until part 2 is done.
+
 | ID | Status | Task | Est | Dep | Owner |
 |---|---|---|---|---|---|
 | P5.7.01 | `[ ]` | Vercel Production environment: every Appendix A variable set (server ones flagged Sensitive), `MIDTRANS_IS_PRODUCTION=true` with `Mid-server-` / `Mid-client-` keys that `pnpm midtrans:check` confirmed as production keys before they were saved (`docs/Security.md` §3.9), `NEXT_PUBLIC_SITE_URL=https://<domain>`, functions region `sin1`; `pnpm check:secrets` on the production build; Deployment Protection kept on previews (PAY-02, SEC-01, RL-06) | S | P5.5.03 | Dev |
@@ -866,7 +868,7 @@ Values never appear in the repository. P = public bundle (`NEXT_PUBLIC_*` only),
 | `CRON_SECRET` | S | Vercel per environment **and** Supabase Vault `cron_secret` | `openssl rand -base64 32`; rotated in both places in one change | P0.3.02, P0.3.03, P1.6.02 |
 | `TURNSTILE_SECRET_KEY`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | S / P | Vercel per environment | Cloudflare Turnstile (managed mode); Cloudflare test keys only locally and in CI, refused on preview and production | P0.1.10, P3.2.02 |
 | `NEXT_PUBLIC_WHATSAPP_CONTACT_NUMBER` | P | Vercel per environment | Kelurahan contact number for the floating button | P2.2.02 |
-| `NEXT_PUBLIC_FLAG_*` | P | Vercel per environment | Build-time feature flags read in `src/config`; `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS` = `off` on the Free-plan staging project only (`docs/runbooks/staging-setup.md`), unset elsewhere | P1.1.08 |
+| `NEXT_PUBLIC_FLAG_*` | P | Vercel per environment | Build-time feature flags read in `src/config`; `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS` = `off` on the Free-plan staging project only (`docs/runbooks/staging-setup.md`), unset elsewhere; `NEXT_PUBLIC_FLAG_PRELAUNCH` = `on` on the pre-launch Production deployment only, which may also set `NEXT_PUBLIC_FLAG_IMAGE_TRANSFORMS=off` (`docs/Security.md` §8.9) | P1.1.08, P5.7.01 |
 | `SECURITY_ALERT_EMAIL`, `SECURITY_ALERT_WA_PHONE` | S | Vercel per environment | `keamanan@<domain>` and a kelurahan-owned number | P0.4.03, P3.11.08 |
 | `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_AUTH_TOKEN` | P / CI | Vercel; GitHub Actions | Sentry project; auth token for source maps only | P0.1.11, P5.7.05 |
 | `VERCEL_AUTOMATION_BYPASS_SECRET` | CI | GitHub Actions secrets | Vercel project → Deployment Protection → Protection Bypass for Automation; regenerate on leak or when anyone with Vercel access leaves. Until the `e2e` job targets the preview, Playwright runs against a local production build | P1.1.16 |
