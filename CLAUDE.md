@@ -74,7 +74,7 @@ The platform is operated by a small municipal team: one Superadmin Kelurahan and
 | Testing | Vitest (`@vitest/coverage-v8`), Playwright, pgTAP (`supabase test db`) | See §9; projects `unit` (`src/**/*.test.ts`) and `integration` (`tests/integration`) in `vitest.config.ts` |
 | Lint, format, hooks | ESLint 9 flat config (`eslint-config-next` loaded through `@eslint/eslintrc` `FlatCompat`, `typescript-eslint`, `eslint-plugin-check-file` for kebab-case filenames), Prettier + `prettier-plugin-tailwindcss`, Husky + `lint-staged`, `@commitlint/cli` + `@commitlint/config-conventional`, gitleaks | Husky is enabled once per clone with `pnpm exec husky` because `ignore-scripts=true` skips `prepare`; see §9.2 |
 | Scripts and local tools | `tsx` for `scripts/*.ts`, `react-email` CLI for `pnpm email:preview`, `@next/bundle-analyzer` for `pnpm analyze`; Supabase CLI and `cloudflared` installed globally | The `supabase` npm package is not used because its binary download is an install script, which `ignore-scripts=true` blocks; `.npmrc` `shell-emulator=true` makes scripts run the same on Windows and Linux |
-| Hosting | Vercel (Production from `main` code: production builds only from the `production` branch, which only the release workflow moves, fast-forward, to a `main` commit it has just migrated (`.github/workflows/release.yml`); Preview = staging Supabase + Midtrans sandbox) | pg_cron + pg_net drive scheduled jobs |
+| Hosting | Vercel (Production from `main` code: production builds only from the `production` branch, which only the release workflow moves, fast-forward, to a `main` commit it has just migrated, through a deploy key held as a `production` environment secret (`.github/workflows/release.yml`); Preview = staging Supabase + Midtrans sandbox) | pg_cron + pg_net drive scheduled jobs |
 
 ### 2.2 Architecture
 
@@ -727,6 +727,7 @@ PRD requirement cited; migration + RLS + pgTAP merged; types regenerated; valida
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | P | Publishable key for server/browser RLS clients |
 | `SUPABASE_SERVICE_ROLE_KEY` | S | Service-role key for `admin.ts` (allow-listed modules only) |
 | `SUPABASE_DB_URL`, `SUPABASE_ACCESS_TOKEN` | CI | Migrations and pgTAP in CI only |
+| `PRODUCTION_DEPLOY_KEY` | CI | Private half of the write-enabled deploy key with which `release.yml` fast-forwards the `production` branch; a secret of the GitHub environment `production` only, never a repository secret; the `production` ruleset's only bypass actor (`docs/runbooks/production-setup.md`) |
 | `MIDTRANS_SERVER_KEY` | S | Snap/Status API auth, webhook signature |
 | `MIDTRANS_SERVER_KEY_PREVIOUS` | S | Rotation overlap (max 15 min) |
 | `MIDTRANS_CLIENT_KEY` | S | Kept server-side; redirect mode needs no browser key |
@@ -995,4 +996,4 @@ Public: `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABAS
 
 Server-only: `SUPABASE_SERVICE_ROLE_KEY`, `MIDTRANS_SERVER_KEY`, `MIDTRANS_SERVER_KEY_PREVIOUS`, `MIDTRANS_CLIENT_KEY`, `MIDTRANS_IS_PRODUCTION`, `MIDTRANS_MERCHANT_ID`, `MIDTRANS_WEBHOOK_PATH_TOKEN`, `MIDTRANS_LOCAL_STUB_URL` (local and CI only), `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `EMAIL_FROM`, `QR_SIGNING_KEYS`, `QR_SIGNING_ACTIVE_KID`, `BOOKING_LINK_SECRET`, `OTP_PEPPER`, `PARTICIPANT_PII_KEYS`, `PARTICIPANT_PII_ACTIVE_KID`, `CRON_SECRET`, `TURNSTILE_SECRET_KEY`, `SECURITY_ALERT_EMAIL`, `SECURITY_ALERT_WA_PHONE`.
 
-CI-only: `SUPABASE_DB_URL`, `SUPABASE_ACCESS_TOKEN`, `SENTRY_AUTH_TOKEN`, `VERCEL_AUTOMATION_BYPASS_SECRET`, `BACKUP_AGE_PUBLIC_KEY`, `R2_*`; repository variables `PRODUCTION_PROJECT_REF`, `PRODUCTION_BACKUP_ENABLED`.
+CI-only: `SUPABASE_DB_URL`, `SUPABASE_ACCESS_TOKEN`, `SENTRY_AUTH_TOKEN`, `VERCEL_AUTOMATION_BYPASS_SECRET`, `BACKUP_AGE_PUBLIC_KEY`, `R2_*`, `PRODUCTION_DEPLOY_KEY`; repository variables `PRODUCTION_PROJECT_REF`, `PRODUCTION_BACKUP_ENABLED`.

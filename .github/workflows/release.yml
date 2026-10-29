@@ -11,8 +11,9 @@ name: Production release
 # and the Advisor, migrate, the Advisor again; the Vercel production deploy follows the migration (release checklist,
 # "Then deploy"). Never --include-all or --include-seed. The deploy is the job "deploy": once a run that applied has
 # passed every step of "migrate", it fast-forwards the production branch, which Vercel builds as production, to the
-# very commit it migrated, and no one moves that branch by hand (docs/runbooks/production-setup.md, security review of
-# PR #112, M-1).
+# very commit it migrated, through the deploy key PRODUCTION_DEPLOY_KEY held as a secret of the production
+# environment, and no one moves that branch by hand (docs/runbooks/production-setup.md; security review of PR #112,
+# M-1, and its delta review, M-A).
 on:
   workflow_dispatch:
     inputs:
@@ -124,12 +125,15 @@ jobs:
           eval "$connection"
           supabase db advisors --linked --type security --level error --fail-on error
 
-  # docs/runbooks/production-setup.md, part 1 step 5.4: production builds only from the production branch, which only
-  # this job moves, fast-forward, to the main commit the job above has just migrated. It runs only after "migrate"
-  # applied and passed both Advisor checks, waits for the environment's reviewers again, and is the one job that may
-  # write to the repository. A plain push only fast-forwards: when production holds a commit this one does not contain,
-  # GitHub refuses the push and the job fails, so production never jumps back or sideways. The production ruleset lets
-  # only GitHub Actions update the branch (production-setup.md, step 5.2).
+  # docs/runbooks/production-setup.md, part 1 steps 3 and 4: production builds only from the production branch, which
+  # only this job moves, fast-forward, to the main commit the job above has just migrated. It runs only after "migrate"
+  # applied and passed both Advisor checks, and waits for the environment's reviewers again. It pushes over SSH with
+  # the write-enabled deploy key PRODUCTION_DEPLOY_KEY, a secret of the production environment only, which is the one
+  # bypass actor of the production ruleset; GITHUB_TOKEN stays read-only and could not move the branch (delta review of
+  # PR #112, M-A). A plain push only fast-forwards: when production holds a commit this one does not contain, GitHub
+  # refuses the push and the job fails, so production never jumps back or sideways. A deploy-key push would start
+  # workflows that listen to it, and none does: ci.yml runs on pull requests and on pushes to main only, and the other
+  # workflows run by hand or on a schedule.
   deploy:
     name: move the production branch (Vercel deploys it)
     needs: migrate
@@ -138,11 +142,27 @@ jobs:
     timeout-minutes: 5
     environment: production
     permissions:
-      contents: write
+      contents: read
     steps:
+      - name: The deploy key is set
+        env:
+          PRODUCTION_DEPLOY_KEY: ${{ secrets.PRODUCTION_DEPLOY_KEY }}
+        run: |
+          if [ -z "$PRODUCTION_DEPLOY_KEY" ]; then
+            echo "::error::PRODUCTION_DEPLOY_KEY is not set in the GitHub environment 'production'; production was not moved"
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        # The credentials stay for the push below, the only step of this job; nothing else runs here.
+        # The key stays for the push below, the only step after this one; nothing else runs here.
         with:
           fetch-depth: 0
+          ssh-key: ${{ secrets.PRODUCTION_DEPLOY_KEY }}
+      # With ssh-key, checkout points origin at the SSH address; anything else would push with the read-only token.
       - name: Fast-forward production to the migrated commit
-        run: git push origin "${GITHUB_SHA}:refs/heads/production"
+        run: |
+          remote="$(git remote get-url origin)"
+          if [[ "$remote" != git@github.com:* ]]; then
+            echo "::error::origin is not the SSH address, so the deploy key would not be used; production was not moved"
+            exit 1
+          fi
+          git push origin "${GITHUB_SHA}:refs/heads/production"

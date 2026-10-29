@@ -21,7 +21,7 @@ Throughout this guide `<domain>` means the kelurahan's domain without `https://`
 |---|---|---|
 | 1 | Supabase production project and its settings | nothing |
 | 2 | Production secrets, the Vercel production project and its variables | 1 |
-| 3 | Protect the `production` branch | nothing |
+| 3 | The GitHub environment `production`, the deploy key, and the ruleset that protects the `production` branch | nothing |
 | 4 | Migrate with `release.yml`, close the database switches, then let the same run deploy | 1, 2, 3 |
 | 5 | No demo content | always |
 | 6 | First superadmin | 4 |
@@ -162,28 +162,55 @@ Production gets its own Vercel project under its own account, never the staging 
 
 ### 3. Protect the `production` branch
 
-Production builds only from the `production` branch, which only the release workflow moves, fast-forward, to a `main` commit it has just migrated. Nobody pushes to it by hand, the owner included. A GitHub ruleset makes that the rule:
+Production builds only from the `production` branch, which only the release workflow moves, fast-forward, to a `main` commit it has just migrated. Nobody pushes to it by hand, the owner included. The workflow moves it with a **deploy key**, an SSH key that belongs to this repository alone, kept as a secret of the GitHub environment `production`; a ruleset refuses every other push. GitHub's own workflow token cannot be let through a ruleset (it is not a bypass actor), and it would cover every workflow on every branch if it could, so the key is what makes the release job, and only it, able to move production.
+
+#### 3.1 The GitHub environment `production`
+
+GitHub > the repository > **Settings** > **Environments** > **New environment** `production`:
+
+- **Deployment branches and tags**: selected branches, `main` only.
+- **Required reviewers**: you (and a second maintainer once there is one). **Prevent self-review** on as soon as a second reviewer exists; with one owner the run waits for your own approval.
+- **Environment secrets**: `SUPABASE_ACCESS_TOKEN`, a personal access token of the institutional Supabase account (https://supabase.com/dashboard/account/tokens, name `github-production-release`, the shortest expiry, put the date in your calendar), and `SUPABASE_DB_URL`, the **session pooler** string of `gisikdrono-prod` (project > **Connect** > **Session pooler**, port 5432, user `postgres.<prod-ref>`, with the database password filled in, no `sslmode` or `sslmode=verify-full`). The direct `db.<prod-ref>.supabase.co` address is IPv6 only and cannot work from GitHub. The third secret, `PRODUCTION_DEPLOY_KEY`, comes in 3.2.
+
+#### 3.2 The deploy key
+
+1. In PowerShell, make a folder **outside** the repository and a new key in it (`ssh-keygen` comes with Windows):
+
+   ```powershell
+   New-Item -ItemType Directory "$env:USERPROFILE\gisikdrono-deploy-key"
+   ssh-keygen -t ed25519 -C "production release" -f "$env:USERPROFILE\gisikdrono-deploy-key\production_release"
+   ```
+
+   When it asks for a passphrase, press **Enter** twice: the workflow cannot type one. It writes two files: `production_release.pub` (the public key) and `production_release` (the private key).
+2. **The public key.** Copy it with `Get-Content "$env:USERPROFILE\gisikdrono-deploy-key\production_release.pub" | Set-Clipboard`. GitHub > the repository > **Settings** > **Deploy keys** > **Add deploy key**: **Title** `production release`, **Key**: paste, tick **Allow write access**, **Add key**. The list must show no other key with write access: every write-enabled deploy key passes the ruleset of 3.3, so remove any other one.
+3. **The private key.** Copy it whole, including its first and last line: `Get-Content -Raw "$env:USERPROFILE\gisikdrono-deploy-key\production_release" | Set-Clipboard`. GitHub > **Settings** > **Environments** > `production` > **Environment secrets** > **Add environment secret**: **Name** `PRODUCTION_DEPLOY_KEY`, **Value**: paste, **Add secret**. It must be an **environment** secret of `production`, never a repository secret under **Secrets and variables** > **Actions**: only a job in that environment, which runs from `main` after a reviewer's approval, may read it.
+4. **Delete the files and the clipboard** straight away; GitHub now holds the only copy, and a lost key is simply replaced by a new one (these same steps, then remove the old deploy key):
+
+   ```powershell
+   Remove-Item -Recurse "$env:USERPROFILE\gisikdrono-deploy-key"
+   Set-Clipboard -Value " "
+   ```
+
+   Keep no other copy of the private key: not in Bitwarden, a chat, an email or a file in the repository. A suspected leak: delete the deploy key in **Settings** > **Deploy keys** at once, then make a new one.
+
+#### 3.3 The ruleset
 
 1. GitHub > the repository > **Settings** > **Rules** > **Rulesets** > **New ruleset** > **New branch ruleset**.
 2. **Ruleset Name**: `production`. **Enforcement status**: **Active**.
-3. **Bypass list** > **Add bypass**: choose **GitHub Actions** (it may be listed among the apps) and set it to **Always allow**. Add nobody else: not yourself, not the **Repository admin** role. If the list offers no GitHub Actions entry, stop and ask the Dev on call; never add a person instead.
+3. **Bypass list** > **Add bypass** > **Deploy keys**, mode **Always allow**. Add nothing else: not yourself, not the **Repository admin** role, no team and no app.
 4. **Target branches** > **Add target** > **Include by pattern**: `production`.
 5. **Branch rules**: tick **Restrict creations**, **Restrict updates**, **Restrict deletions** and **Block force pushes**. Leave the other rules as they are.
 6. **Create**.
 
-From now on a direct push to `production` from any computer is refused, and only the job **move the production branch** of **Production release**, which runs as GitHub Actions, can create or move the branch. That job pushes without force, so a move that is not a fast-forward is refused too and the job fails. After the first release (step 4), **Rulesets** > `production` > **Insights** shows that one update, made by `github-actions`.
+From now on a push to `production` from any computer, or from any workflow with GitHub's own token, is refused. Only the job **move the production branch** of **Production release** can create or move the branch, by pushing with the deploy key. Its first push in step 4 **creates** the branch, through the bypass; every later one moves it. It pushes without force, so a move that is not a fast-forward is refused and the job fails. That push starts no other workflow: `ci.yml` runs on pull requests and on pushes to `main` only, and the other workflows run by hand or on a schedule. After the first release, **Rulesets** > `production` > **Insights** shows that one update, made by the deploy key.
 
 ### 4. Migrate, close the switches, then deploy
 
 Production's schema comes only from `.github/workflows/release.yml` (`CLAUDE.md` §6.4, §12.1 no. 19), and the same run deploys: after the migration passed, its second job fast-forwards `production` to the commit it migrated, and Vercel builds that. Read "The production release job" in `docs/runbooks/release-checklist.md` before the first run; in short:
 
-1. **One-time setup.** GitHub > **Settings** > **Environments** > **New environment** `production`:
-   - **Deployment branches and tags**: selected branches, `main` only.
-   - **Required reviewers**: you (and a second maintainer once there is one). **Prevent self-review** on as soon as a second reviewer exists; with one owner the run waits for your own approval.
-   - **Environment secrets**: `SUPABASE_ACCESS_TOKEN`, a personal access token of the institutional Supabase account (https://supabase.com/dashboard/account/tokens, name `github-production-release`, the shortest expiry, put the date in your calendar), and `SUPABASE_DB_URL`, the **session pooler** string of `gisikdrono-prod` (project > **Connect** > **Session pooler**, port 5432, user `postgres.<prod-ref>`, with the database password filled in, no `sslmode` or `sslmode=verify-full`). The direct `db.<prod-ref>.supabase.co` address is IPv6 only and cannot work from GitHub.
-2. **Dry run.** **Actions** > **Production release** > **Run workflow**, branch `main`. The only input is **dry_run**, ticked by default. Approve the job **migrate the production database** when GitHub asks. It checks that the URL belongs to a project named `gisikdrono-prod`, runs the read-only pre-flight (`scripts/release-preflight.sql`) and the Security Advisor (errors stop the run), then lists every migration from `0001_extensions.sql` to the newest under **Migrations that would run**. It changes nothing and deploys nothing.
-3. **Apply.** Run it again with **dry_run** unticked and approve **migrate the production database**. It applies the migrations with `supabase db push --linked` (never `--include-all`, never `--include-seed`) and runs the Advisor again.
-4. **Before you approve the deploy, close the switches.** When **migrate** has finished, the second job, **move the production branch (Vercel deploys it)**, waits for your approval. Leave it waiting. The migrations leave `booking_enabled` **on** (`20261104080300_booking_open.sql`) and `whatsapp_enabled` on; the code keeps both closed in pre-launch anyway, but the switches are the second layer, so production must never serve with them on. There is no superadmin yet, and `booking_enabled` has no switch in the dashboard at all, so this first time it is SQL. Supabase > **SQL Editor**:
+1. **Dry run.** With step 3 done, **Actions** > **Production release** > **Run workflow**, branch `main`. The only input is **dry_run**, ticked by default. Approve the job **migrate the production database** when GitHub asks. It checks that the URL belongs to a project named `gisikdrono-prod`, runs the read-only pre-flight (`scripts/release-preflight.sql`) and the Security Advisor (errors stop the run), then lists every migration from `0001_extensions.sql` to the newest under **Migrations that would run**. It changes nothing and deploys nothing.
+2. **Apply.** Run it again with **dry_run** unticked and approve **migrate the production database**. It applies the migrations with `supabase db push --linked` (never `--include-all`, never `--include-seed`) and runs the Advisor again.
+3. **Before you approve the deploy, close the switches.** When **migrate** has finished, the second job, **move the production branch (Vercel deploys it)**, waits for your approval. Leave it waiting. The migrations leave `booking_enabled` **on** (`20261104080300_booking_open.sql`) and `whatsapp_enabled` on; the code keeps both closed in pre-launch anyway, but the switches are the second layer, so production must never serve with them on. There is no superadmin yet, and `booking_enabled` has no switch in the dashboard at all, so this first time it is SQL. Supabase > **SQL Editor**:
 
    ```sql
    update public.site_settings set value = to_jsonb(false)
@@ -195,8 +222,8 @@ Production's schema comes only from `.github/workflows/release.yml` (`CLAUDE.md`
    ```
 
    It must show `booking_enabled` `false`, `whatsapp_enabled` `false`, `email_enabled` `true`, `maintenance_mode` `false` and `qr.signing_kids` containing `"k1"`. The SQL editor runs as `postgres`, outside the app, so the change carries no staff member as its audit actor: use it for this initial setup only. Later, `whatsapp_enabled` and the other switches change in **/dashboard/settings** as the superadmin with a fresh TOTP, which records who changed what.
-5. **Deploy.** Approve **move the production branch**. It fast-forwards `production` to the commit the run migrated, and Vercel > **Deployments** shows a **Production** build of `production`; wait for **Ready**. A build that fails names the missing or malformed variable (`src/lib/env.ts`): fix it in Vercel and **Redeploy** that deployment. If the move itself fails, either `production` holds a commit that the run's commit does not contain, or the ruleset of step 3 lacks its GitHub Actions bypass: ask the Dev on call, and never push the branch by hand.
-6. If **migrate** fails before the push, nothing changed and nothing deploys: fix the cause and run again. If the Advisor fails after the push, the deploy job does not run; follow "If a check fails after the push" in the release checklist and fix forward with a new migration.
+4. **Deploy.** Approve **move the production branch**. The first time it creates `production`; afterwards it fast-forwards `production` to the commit the run migrated, and Vercel > **Deployments** shows a **Production** build of `production`; wait for **Ready**. A build that fails names the missing or malformed variable (`src/lib/env.ts`): fix it in Vercel and **Redeploy** that deployment. If the move itself fails, either `production` holds a commit that the run's commit does not contain, or the deploy key of step 3.2 is missing, read-only, or not let through by the ruleset of step 3.3 (the job names which): ask the Dev on call, and never push the branch by hand.
+5. If **migrate** fails before the push, nothing changed and nothing deploys: fix the cause and run again. If the Advisor fails after the push, the deploy job does not run; follow "If a check fails after the push" in the release checklist and fix forward with a new migration.
 
 Then turn on the **Customize Access Token** hook of 1.4, which needs the function the migrations created. Every later release is the same run: dry run, then apply, approve **migrate**, then approve **move the production branch**.
 

@@ -114,12 +114,10 @@ async function receive(request: Request, appSecret: string, log: Log): Promise<R
 }
 
 export async function POST(request: Request): Promise<Response> {
-  const log = createLogger(requestIdFrom(request.headers));
+  // No log line here: anyone may call this address, and a 404 written for every call would be an unthrottled log flood.
   const appSecret = serverEnv.WHATSAPP_APP_SECRET;
-  if (appSecret === undefined) {
-    log.info('provider_webhook', { provider: PROVIDER, result: 'not_configured' });
-    return empty(HTTP_STATUS.notFound);
-  }
+  if (appSecret === undefined) return empty(HTTP_STATUS.notFound);
+  const log = createLogger(requestIdFrom(request.headers));
   try {
     return await receive(request, appSecret, log);
   } catch {
