@@ -155,12 +155,13 @@ const payoutFields = {
   proofUpload: z.string().min(1).max(UPLOAD_PATH_MAX_LENGTH),
 };
 
-// A payout covers days that have passed: it ends today in Semarang at the latest (M-2).
+// A payout covers days that have passed (M-2): it ends yesterday in Semarang at the latest, as payout_preview counts
+// only days whose ledger no longer changes (review of PR #103).
 function checkPayoutPeriod(payout: { from: string; to: string }, context: z.RefinementCtx) {
   if (payout.to < payout.from) {
     context.addIssue({ code: 'custom', path: ['to'], message: financeCopy.period.invalid });
   }
-  if (payout.to > todayInJakarta()) {
+  if (payout.to >= todayInJakarta()) {
     context.addIssue({
       code: 'custom',
       path: ['to'],

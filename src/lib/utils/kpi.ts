@@ -127,3 +127,7 @@ export function visitDateAfter(visitDate: string, days: number): string {
 export function dayAfter(visitDate: string): string {
   return visitDateAfter(visitDate, 1);
 }
+
+export function dayBefore(visitDate: string): string {
+  return visitDateAfter(visitDate, -1);
+}

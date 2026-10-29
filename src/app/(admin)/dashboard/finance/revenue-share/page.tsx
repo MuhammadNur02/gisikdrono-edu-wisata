@@ -12,7 +12,7 @@ import { financeCopy } from '@/lib/copy/finance';
 import { formatIDR } from '@/lib/utils/currency';
 import { todayInJakarta } from '@/lib/utils/dates';
 import { partyLabel } from '@/lib/utils/finance-display';
-import { visitDateAfter } from '@/lib/utils/kpi';
+import { dayBefore, visitDateAfter } from '@/lib/utils/kpi';
 import {
   previewPayoutAction,
   saveRevenueRuleAction,
@@ -79,7 +79,7 @@ function pageActions(data: Awaited<ReturnType<typeof loadRevenueShare>>, today: 
     recordPayout: (
       <PayoutDialog
         parties={partyOptions(data.balances)}
-        today={today}
+        lastPayableDay={dayBefore(today)}
         previewAction={previewPayoutAction}
         settleAction={settlePayoutAction}
         stepUpAction={verifyStaffTotpAction}

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { todayInJakarta } from '@/lib/utils/dates';
+
 import {
   bookingLookupSchema,
   evidenceLinkSchema,
@@ -113,6 +115,8 @@ describe('settlePayoutSchema', () => {
     [{ expectedTotal: 0 }],
     [{ expectedTotal: 10.5 }],
     [{ to: '2999-01-01' }],
+    // Review of PR #103: today's ledger still changes, so a payout ends yesterday at the latest.
+    [{ to: todayInJakarta() }],
   ])('refuses %o', (change) => {
     expect(settlePayoutSchema.safeParse({ ...PAYOUT, ...change }).success).toBe(false);
   });

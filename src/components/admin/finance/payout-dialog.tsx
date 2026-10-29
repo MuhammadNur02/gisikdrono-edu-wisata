@@ -19,7 +19,7 @@ const text = financeCopy.payouts;
 
 export interface PayoutDialogProps {
   parties: readonly Option[];
-  today: string;
+  lastPayableDay: string;
   previewAction: (values: unknown) => Promise<ActionResult<PayoutPreview>>;
   settleAction: (values: unknown) => Promise<ActionResult<PayoutBatch>>;
   stepUpAction: (values: unknown) => Promise<ActionResult<null>>;

@@ -3,7 +3,7 @@
 -- version closing the one in force the day before with its shares adding up to 100 %, and a payout that stamps its
 -- ledger rows once.
 begin;
-select plan(54);
+select plan(55);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures: a paid RW 05 booking with its payment, invoice and ledger =====
@@ -141,17 +141,26 @@ reset role;
 select pg_temp.act_as('admin_rw_05');
 select throws_ok($$select public.payout_preview('rw:5')$$, '42501', null, 'an RW admin previews no payout');
 reset role;
+-- What the rows of yesterday and today add up to for RW 05, read as the test's owner: the preview shows no figure for a
+-- period that reaches today (review of PR #103), while settle_revenue_entries still stamps one.
+create temporary table period_preview on commit drop as
+  select jsonb_build_object('total', (select coalesce(sum(u.amount), 0)::bigint
+                                      from internal.unpaid_entries('rw:5', public.today_jkt() - 1, public.today_jkt()) as u))
+    as value;
+grant select on period_preview to authenticated;
 select pg_temp.act_as('superadmin_aal2');
 create temporary table party_preview on commit drop as select public.payout_preview('rw:5') as value;
-select is((select value ->> 'from' from party_preview), (select value ->> 'oldest_unpaid' from party_preview),
-  'a preview without a start begins at the party''s oldest unpaid day');
-select is((select value ->> 'to' from party_preview), public.today_jkt()::text, 'and ends today');
+select is((select value ->> 'from' from party_preview),
+  (select least((value ->> 'oldest_unpaid')::date, public.today_jkt() - 1)::text from party_preview),
+  'a preview without a start begins at the party''s oldest unpaid day, or at its end when every row is younger');
+select is((select value ->> 'to' from party_preview), (public.today_jkt() - 1)::text,
+  'and ends yesterday, the last day whose ledger no longer changes (review of PR #103)');
 select is((public.payout_preview('rw:5', public.today_jkt(), public.today_jkt() + 1) ->> 'total'), null,
   'a period reaching past today has no figure');
-create temporary table period_preview on commit drop as
-  select public.payout_preview('rw:5', public.today_jkt() - 1, public.today_jkt()) as value;
+select is((public.payout_preview('rw:5', public.today_jkt() - 1, public.today_jkt()) ->> 'total'), null,
+  'nor one reaching today, whose ledger may still change before the payout is recorded (review of PR #103)');
 select cmp_ok((select (value ->> 'total')::bigint from period_preview), '>=', 70000::bigint,
-  'the period''s figure counts what RW 05 is owed');
+  'the period''s rows count what RW 05 is owed');
 select throws_ok($$select public.settle_revenue_entries('rw:5', public.today_jkt(), public.today_jkt(), 'TRF-RW5',
   'proofs/x.pdf', 70000)$$, '22023', null, 'a payout keeps its proof under documents/payouts/');
 select throws_ok($$select public.settle_revenue_entries('rw:5', public.today_jkt(), public.today_jkt(), 'TRF-RW5',
@@ -211,9 +220,10 @@ select '00000000-0000-4000-8000-0000000e2001', '00000000-0000-4000-8000-0000000e
 insert into storage.objects (bucket_id, name) values
   ('documents', 'payouts/00000000-0000-4000-8000-0000000e4005/bukti.pdf'),
   ('documents', 'payouts/00000000-0000-4000-8000-0000000e4006/bukti.pdf');
+select is((select coalesce(sum(u.amount), 0)::bigint
+           from internal.unpaid_entries('kelurahan', public.today_jkt() - 1, public.today_jkt()) as u),
+  -10000::bigint, 'the period nets a negative kelurahan row');
 select pg_temp.act_as('superadmin_aal2');
-select is((public.payout_preview('kelurahan', public.today_jkt() - 1, public.today_jkt()) ->> 'total')::bigint,
-  -10000::bigint, 'the preview nets a negative kelurahan row');
 select is(pg_temp.hint_of($$select public.settle_revenue_entries('kelurahan', public.today_jkt() - 1, public.today_jkt(),
   'TRF-KEL-NEG', 'payouts/00000000-0000-4000-8000-0000000e4005/bukti.pdf', 30000)$$), 'PAYOUT_EMPTY',
   'and a net below nothing is no payout, whatever amount is named');
@@ -255,8 +265,8 @@ select is((select (v ->> 'total') is null and (v ->> 'blocked_since')::date = pu
            from (select public.payout_preview('kelurahan', public.today_jkt(), public.today_jkt()) as v) as preview),
   true, 'the preview of a period after the unpaid negative row has no total and names that row''s day');
 select is((select (v ->> 'total')::bigint || ':' || coalesce(v ->> 'blocked_since', 'none')
-           from (select public.payout_preview('kelurahan', public.today_jkt() - 3, public.today_jkt()) as v) as preview),
-  '15000:none', 'and one that starts at it shows the net to transfer');
+           from (select public.payout_preview('kelurahan', public.today_jkt() - 3, public.today_jkt() - 1) as v) as preview),
+  '-5000:none', 'and one that starts at it, over days that have ended, nets it (review of PR #103)');
 select is(pg_temp.hint_of($$select public.settle_revenue_entries('kelurahan', public.today_jkt(), public.today_jkt(),
   'TRF-KEL-LATE', 'payouts/00000000-0000-4000-8000-0000000e4007/bukti.pdf', 20000)$$), 'PAYOUT_NEGATIVE_PENDING',
   'a period that starts after an unpaid negative row is refused');

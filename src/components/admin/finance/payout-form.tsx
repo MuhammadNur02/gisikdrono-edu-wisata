@@ -29,7 +29,8 @@ import type { PayoutBatch } from '@/types/finance';
 // transfer's reference, its proof, the last four digits of the payout account the Midtrans dashboard shows, and the
 // authenticator code. The server compares the digits with site_settings before anything is written. Review of PR #80,
 // M-2: the period starts at the party's oldest unpaid day, the server's figure for it is shown before submitting, and
-// the payout carries that figure, which must be what was transferred.
+// the payout carries that figure, which must be what was transferred. Review of PR #103: the period ends yesterday at
+// the latest, since today's ledger is still being written and would change the figure between transfer and record.
 
 const text = financeCopy.payouts;
 type PayoutInput = z.input<typeof settlePayoutFormSchema>;
@@ -38,13 +39,13 @@ type PayoutForm = UseFormReturn<PayoutInput, unknown, PayoutValues>;
 
 export interface PayoutFormProps {
   parties: readonly Option[];
-  today: string;
+  lastPayableDay: string;
   previewAction: PreviewAction;
   submit: (values: unknown) => Promise<ActionResult<PayoutBatch>>;
   onDone: (batch: PayoutBatch) => void;
 }
 
-function PeriodFields({ form, today }: { form: PayoutForm; today: string }) {
+function PeriodFields({ form, lastPayableDay }: { form: PayoutForm; lastPayableDay: string }) {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <FormField
@@ -52,14 +53,14 @@ function PeriodFields({ form, today }: { form: PayoutForm; today: string }) {
         name="from"
         label={text.fields.from}
         required
-        render={(field) => <Input {...field} type="date" max={today} className="h-11" />}
+        render={(field) => <Input {...field} type="date" max={lastPayableDay} className="h-11" />}
       />
       <FormField
         control={form.control}
         name="to"
         label={text.fields.to}
         required
-        render={(field) => <Input {...field} type="date" max={today} className="h-11" />}
+        render={(field) => <Input {...field} type="date" max={lastPayableDay} className="h-11" />}
       />
     </div>
   );
@@ -145,13 +146,13 @@ function PartyField({ form, parties }: { form: PayoutForm; parties: readonly Opt
   );
 }
 
-function usePayoutForm(today: string) {
+function usePayoutForm(lastPayableDay: string) {
   return useForm<PayoutInput, unknown, PayoutValues>({
     resolver: zodResolver(settlePayoutFormSchema),
     defaultValues: {
       beneficiaryKey: '',
-      from: today,
-      to: today,
+      from: lastPayableDay,
+      to: lastPayableDay,
       expectedTotal: 0,
       transferredAmount: Number.NaN,
       reference: '',
@@ -188,12 +189,12 @@ const FIELDS = [
 
 export function PayoutForm({
   parties,
-  today,
+  lastPayableDay,
   previewAction,
   submit: action,
   onDone,
 }: PayoutFormProps) {
-  const form = usePayoutForm(today);
+  const form = usePayoutForm(lastPayableDay);
   const [beneficiaryKey, from, to] = form.watch(['beneficiaryKey', 'from', 'to']);
   const preview = usePayoutPreview(
     { beneficiaryKey, from, to },
@@ -206,7 +207,7 @@ export function PayoutForm({
       <PostForm onSubmit={submit}>
         {failure ? <FormAlert tone="danger">{failure}</FormAlert> : null}
         <PartyField form={form} parties={parties} />
-        <PeriodFields form={form} today={today} />
+        <PeriodFields form={form} lastPayableDay={lastPayableDay} />
         <PayoutPreviewLine state={preview} />
         <TransferredAmountField form={form} />
         <TransferFields form={form} />
