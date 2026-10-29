@@ -7,7 +7,7 @@ A secret has leaked when it was seen anywhere outside Vercel, the Supabase Vault
 ## 1. First 15 minutes: name it and stop the bleeding
 
 1. Write down, in the incident note: which variable, which environment, where it was seen, and the earliest moment it could have been seen (the exposure window starts there).
-2. Rotate it now with `docs/runbooks/rotate-keys.md`, ahead of every other step. Order when several leaked: `SUPABASE_SERVICE_ROLE_KEY` → `MIDTRANS_SERVER_KEY` (+ path token) → `QR_SIGNING_KEYS` kid → `CRON_SECRET` → `BOOKING_LINK_SECRET` → `OTP_PEPPER` → the rest.
+2. Rotate it now with `docs/runbooks/rotate-keys.md`, ahead of every other step. Order when several leaked: `SUPABASE_SERVICE_ROLE_KEY` → `MIDTRANS_SERVER_KEY` (+ path token) → `QR_SIGNING_KEYS` kid → `CRON_SECRET` → `BOOKING_LINK_SECRET` → `OTP_PEPPER` → the rest. A leaked `PRODUCTION_DEPLOY_KEY` (the deploy key that moves `production`): delete it in **Settings** > **Deploy keys** at once, then see "The production deploy key" in `docs/runbooks/rotate-keys.md`, and check **Rulesets** > `production` > **Insights** and the repository's branches and tags for pushes it made.
 3. Leaked in a git commit: rotating is the fix; rewriting history is not (forks and caches keep it). Close the GitHub secret-scanning alert as "revoked" after rotation.
 4. Leaked from a person's account or laptop: also run `docs/runbooks/account-takeover.md` for that person.
 

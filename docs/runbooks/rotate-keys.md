@@ -117,6 +117,10 @@ The weekly backup of `.github/workflows/backup.yml` (`docs/runbooks/restore-dril
 3. **The age key pair.** Run `age-keygen` on the vault holder's machine, store the new private key in the vault, and update `BACKUP_AGE_PUBLIC_KEY` in `production-backup`. **Keep the old private key** in the vault until the last backup encrypted to it has passed its 56 days in R2, or those backups can never be read. Then delete it.
 4. Record `key_rotated` for each.
 
+## The production deploy key (`PRODUCTION_DEPLOY_KEY`)
+
+The write-enabled deploy key with which `.github/workflows/release.yml` moves the `production` branch, and the only bypass actor of the `production` ruleset. Rotate every 6 months, at once on a suspected leak, and when someone with admin rights on the repository leaves. Follow `docs/runbooks/production-setup.md`, part 1 step 3.2: a new key with this month in its title (`production release <YYYY-MM>`), `gh secret set PRODUCTION_DEPLOY_KEY --env production` from its file, then delete the old deploy key straight away, so **Settings** > **Deploy keys** again shows one write key. On a leak, delete the old deploy key **first**, then add the new one; no release can run in between. Record `key_rotated`.
+
 ## The others
 
 | Variable | Where it is changed | Then |

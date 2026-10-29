@@ -169,29 +169,53 @@ Production builds only from the `production` branch, which only the release work
 GitHub > the repository > **Settings** > **Environments** > **New environment** `production`:
 
 - **Deployment branches and tags**: selected branches, `main` only.
-- **Required reviewers**: you (and a second maintainer once there is one). **Prevent self-review** on as soon as a second reviewer exists; with one owner the run waits for your own approval.
+- **Required reviewers**: you, and a second maintainer once there is one.
+- **Prevent self-review**: turn it on as soon as a second reviewer exists, so the person who starts a run cannot approve it. Until then it stays off and you, the single owner, approve your own runs; `docs/runbooks/release-checklist.md` says the same.
 - **Environment secrets**: `SUPABASE_ACCESS_TOKEN`, a personal access token of the institutional Supabase account (https://supabase.com/dashboard/account/tokens, name `github-production-release`, the shortest expiry, put the date in your calendar), and `SUPABASE_DB_URL`, the **session pooler** string of `gisikdrono-prod` (project > **Connect** > **Session pooler**, port 5432, user `postgres.<prod-ref>`, with the database password filled in, no `sslmode` or `sslmode=verify-full`). The direct `db.<prod-ref>.supabase.co` address is IPv6 only and cannot work from GitHub. The third secret, `PRODUCTION_DEPLOY_KEY`, comes in 3.2.
 
 #### 3.2 The deploy key
+
+The main path never uses the clipboard: the GitHub CLI (`gh`, signed in once with `gh auth login` as the repository owner) reads both keys straight from their files. Each key carries the month it was made in its title, `production release <YYYY-MM>` (for example `production release 2026-10`), so a rotation can tell the old key from the new one.
 
 1. In PowerShell, make a folder **outside** the repository and a new key in it (`ssh-keygen` comes with Windows):
 
    ```powershell
    New-Item -ItemType Directory "$env:USERPROFILE\gisikdrono-deploy-key"
-   ssh-keygen -t ed25519 -C "production release" -f "$env:USERPROFILE\gisikdrono-deploy-key\production_release"
+   ssh-keygen -t ed25519 -C "production release 2026-10" -f "$env:USERPROFILE\gisikdrono-deploy-key\production_release"
    ```
 
    When it asks for a passphrase, press **Enter** twice: the workflow cannot type one. It writes two files: `production_release.pub` (the public key) and `production_release` (the private key).
-2. **The public key.** Copy it with `Get-Content "$env:USERPROFILE\gisikdrono-deploy-key\production_release.pub" | Set-Clipboard`. GitHub > the repository > **Settings** > **Deploy keys** > **Add deploy key**: **Title** `production release`, **Key**: paste, tick **Allow write access**, **Add key**. The list must show no other key with write access: every write-enabled deploy key passes the ruleset of 3.3, so remove any other one.
-3. **The private key.** Copy it whole, including its first and last line: `Get-Content -Raw "$env:USERPROFILE\gisikdrono-deploy-key\production_release" | Set-Clipboard`. GitHub > **Settings** > **Environments** > `production` > **Environment secrets** > **Add environment secret**: **Name** `PRODUCTION_DEPLOY_KEY`, **Value**: paste, **Add secret**. It must be an **environment** secret of `production`, never a repository secret under **Secrets and variables** > **Actions**: only a job in that environment, which runs from `main` after a reviewer's approval, may read it.
-4. **Delete the files and the clipboard** straight away; GitHub now holds the only copy, and a lost key is simply replaced by a new one (these same steps, then remove the old deploy key):
+2. **The public key**, as a write-enabled deploy key. From your clone (`cd $env:USERPROFILE\gisikdrono-edu-wisata`):
+
+   ```powershell
+   gh repo deploy-key add "$env:USERPROFILE\gisikdrono-deploy-key\production_release.pub" --allow-write --title "production release 2026-10"
+   gh repo deploy-key list
+   ```
+
+   (Use the current month in both titles.) The list must show exactly one key with write access, its title starting with `production release`: every write-enabled deploy key passes the ruleset of 3.3, so remove any other one (`gh repo deploy-key delete <id>`).
+
+   A key added through `gh repo deploy-key add` is tied to the GitHub CLI's authorisation: revoking the GitHub CLI app or its token (GitHub > **Settings** > **Applications**, or a new `gh auth login`) deletes the deploy key as well, and the next release then fails at the push. Add it again as in this step 3.2; the per-release check of the release checklist catches a missing key.
+3. **The private key**, as an **environment** secret of `production`, never a repository secret under **Secrets and variables** > **Actions**: only a job in that environment, which runs from `main` after a reviewer's approval, may read it. Still in the clone:
+
+   ```powershell
+   cmd /c 'gh secret set PRODUCTION_DEPLOY_KEY --env production < "%USERPROFILE%\gisikdrono-deploy-key\production_release"'
+   gh secret list --env production
+   ```
+
+   `cmd /c` with `<` passes the file to `gh` as it is. Avoid PowerShell pipes here (`Get-Content -Raw … | gh secret set …`): what they hand a program depends on `$OutputEncoding`, so the key may not arrive exactly as written. The list must show `PRODUCTION_DEPLOY_KEY` (names only, never values).
+4. **Delete the files** straight away; GitHub now holds the only copy, and a lost key is simply replaced by a new one:
 
    ```powershell
    Remove-Item -Recurse "$env:USERPROFILE\gisikdrono-deploy-key"
-   Set-Clipboard -Value " "
    ```
 
    Keep no other copy of the private key: not in Bitwarden, a chat, an email or a file in the repository. A suspected leak: delete the deploy key in **Settings** > **Deploy keys** at once, then make a new one.
+
+**Fallback without the GitHub CLI.** Add the public key in **Settings** > **Deploy keys** > **Add deploy key** (**Title** `production release <YYYY-MM>`, **Key**: the content of `production_release.pub`, tick **Allow write access**), and the private key in **Settings** > **Environments** > `production` > **Environment secrets** > **Add environment secret** (**Name** `PRODUCTION_DEPLOY_KEY`, **Value**: the whole content of `production_release`, its first and last line included), copying each with `Get-Content -Raw <file> | Set-Clipboard`. Then clear the clipboard at once, history included: Windows **Settings** > **System** > **Clipboard** > **Clear clipboard data**, and check there whether **Sync across your devices** is on; if it is, the key has also reached your other devices' clipboard, so turn it off for this and clear the clipboard there too.
+
+**Rotation: every 6 months** (`docs/Security.md` §8.5, CI secrets), and at once on a suspected leak or when someone with admin rights leaves: make a new key with the same steps and this month in its title, set the secret again (it replaces the old value), and right after adding the new key delete the old one (the older month in `gh repo deploy-key list`) with `gh repo deploy-key delete <id>`, so the list again holds one write key. `docs/runbooks/rotate-keys.md` points here.
+
+**What the key can do.** A write-enabled deploy key can push to **any** branch of this repository that no rule of its own protects; the `production` ruleset lets it through on `production`, and `main`'s branch protection keeps it off `main`. It can also create tags, and push a new branch whose workflows listen to `on: push` and would then run; such a run could read **repository-level** Actions secrets. So keep every secret in a GitHub **environment** with a deployment-branch rule (`production` and `production-backup` allow `main` only), never at repository level. That is also why the key itself lives only in the `production` environment and nowhere else.
 
 #### 3.3 The ruleset
 
@@ -202,7 +226,7 @@ GitHub > the repository > **Settings** > **Environments** > **New environment** 
 5. **Branch rules**: tick **Restrict creations**, **Restrict updates**, **Restrict deletions** and **Block force pushes**. Leave the other rules as they are.
 6. **Create**.
 
-From now on a push to `production` from any computer, or from any workflow with GitHub's own token, is refused. Only the job **move the production branch** of **Production release** can create or move the branch, by pushing with the deploy key. Its first push in step 4 **creates** the branch, through the bypass; every later one moves it. It pushes without force, so a move that is not a fast-forward is refused and the job fails. That push starts no other workflow: `ci.yml` runs on pull requests and on pushes to `main` only, and the other workflows run by hand or on a schedule. After the first release, **Rulesets** > `production` > **Insights** shows that one update, made by the deploy key.
+From now on a push to `production` from any computer, or from any workflow with GitHub's own token, is refused. Only the job **move the production branch** of **Production release** can create or move the branch, by pushing with the deploy key. Its first push in step 4 **creates** the branch, through the bypass; every later one moves it. The bypass also skips **Block force pushes**, so GitHub itself would accept a rewrite from the key: what keeps every move a fast-forward is the job, which checks that `production` is an ancestor of the commit it migrated before it pushes, and then pushes without force. A move that is not a fast-forward fails the job. That push starts no other workflow: `ci.yml` runs on pull requests and on pushes to `main` only, and the other workflows run by hand or on a schedule. After the first release, **Rulesets** > `production` > **Insights** shows that one update, made by the deploy key.
 
 ### 4. Migrate, close the switches, then deploy
 

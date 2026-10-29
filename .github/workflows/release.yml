@@ -130,8 +130,9 @@ jobs:
   # applied and passed both Advisor checks, and waits for the environment's reviewers again. It pushes over SSH with
   # the write-enabled deploy key PRODUCTION_DEPLOY_KEY, a secret of the production environment only, which is the one
   # bypass actor of the production ruleset; GITHUB_TOKEN stays read-only and could not move the branch (delta review of
-  # PR #112, M-A). A plain push only fast-forwards: when production holds a commit this one does not contain, GitHub
-  # refuses the push and the job fails, so production never jumps back or sideways. A deploy-key push would start
+  # PR #112, M-A). The key bypasses "Block force pushes" too, so GitHub would accept a rewrite from it: the job checks
+  # that production is an ancestor of this commit before it pushes, and pushes without --force, so production never
+  # jumps back or sideways and the job fails instead (final delta review of PR #112). A deploy-key push would start
   # workflows that listen to it, and none does: ci.yml runs on pull requests and on pushes to main only, and the other
   # workflows run by hand or on a schedule.
   deploy:
@@ -158,11 +159,27 @@ jobs:
           fetch-depth: 0
           ssh-key: ${{ secrets.PRODUCTION_DEPLOY_KEY }}
       # With ssh-key, checkout points origin at the SSH address; anything else would push with the read-only token.
+      # The deploy key bypasses every rule of the production ruleset, "Block force pushes" included, so GitHub would
+      # not refuse a rewrite from it: this guard and the push without --force are what keep the move a fast-forward.
       - name: Fast-forward production to the migrated commit
         run: |
           remote="$(git remote get-url origin)"
           if [[ "$remote" != git@github.com:* ]]; then
             echo "::error::origin is not the SSH address, so the deploy key would not be used; production was not moved"
             exit 1
+          fi
+          # 2 means no such branch yet (the first release creates it); any other failure stops the job.
+          found=0
+          git ls-remote --exit-code origin refs/heads/production > /dev/null || found=$?
+          if [ "$found" -ne 0 ] && [ "$found" -ne 2 ]; then
+            echo "::error::could not read the production branch; production was not moved"
+            exit 1
+          fi
+          if [ "$found" -eq 0 ]; then
+            git fetch --no-tags origin "+refs/heads/production:refs/remotes/origin/production"
+            if ! git merge-base --is-ancestor origin/production "$GITHUB_SHA"; then
+              echo "::error::production holds a commit that ${GITHUB_SHA} does not contain, so this is no fast-forward; production was not moved"
+              exit 1
+            fi
           fi
           git push origin "${GITHUB_SHA}:refs/heads/production"
