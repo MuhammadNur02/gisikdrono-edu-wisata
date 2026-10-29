@@ -18,6 +18,7 @@ import {
   staffParamsSchema,
   type BookingFacts,
   type GuestTemplate,
+  type VisitDay,
 } from '@/lib/notifications/compose';
 import { sendFailure, type SendFailure } from '@/lib/notifications/send-result';
 import { templateParamsSchemas, type NotificationTemplate } from '@/lib/notifications/templates';
@@ -69,7 +70,7 @@ const LINKED_TEMPLATES: ReadonlySet<NotificationTemplate> = new Set([
 
 const BOOKING_COLUMNS = `booking_code, token_version, email_verified_at, package_snapshot, visit_date, pax_count,
   total_amount, expires_at, institution_name,
-  booking_legs(leg_order, rw_units(name), visit_sessions(start_time, end_time)),
+  booking_legs(leg_order, rw_units(name), visit_sessions(session_date, start_time, end_time)),
   quotations(quotation_number, valid_until, issued_at), payments(refunded_amount)`;
 
 const linkScopeSchema = z.object({ link_scope: z.enum(GUEST_LINK_SCOPES) });
@@ -114,6 +115,17 @@ function sessionsOf(legs: readonly LoadedLeg[]): string {
   return legs.map((leg) => `${leg.rw_units.name} ${sessionOf(leg)}`).join(', ');
 }
 
+// The booking's visit days in date order, each with the sessions and the gate of its own legs.
+function daysOf(legs: readonly LoadedLeg[]): VisitDay[] {
+  const dates = [...new Set(legs.map((leg) => leg.visit_sessions.session_date))].sort(
+    (left, right) => left.localeCompare(right),
+  );
+  return dates.map((date) => {
+    const legsOfDay = legs.filter((leg) => leg.visit_sessions.session_date === date);
+    return { date, session: sessionsOf(legsOfDay), gate: legsOfDay[0]?.rw_units.name ?? '' };
+  });
+}
+
 function factsOf(booking: LoadedBooking): BookingFacts {
   const legs = [...booking.booking_legs].sort((left, right) => left.leg_order - right.leg_order);
   const quotation = [...booking.quotations].sort((a, b) =>
@@ -125,6 +137,7 @@ function factsOf(booking: LoadedBooking): BookingFacts {
     visitDate: booking.visit_date,
     session: sessionsOf(legs),
     gate: legs[0]?.rw_units.name ?? '',
+    days: daysOf(legs),
     pax: booking.pax_count,
     total: booking.total_amount,
     deadline: booking.expires_at,

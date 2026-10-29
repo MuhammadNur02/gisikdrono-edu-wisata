@@ -76,7 +76,7 @@ const BOOKING_ROW = {
     {
       leg_order: 1,
       rw_units: { name: 'RW 05 Ecowastreme' },
-      visit_sessions: { start_time: '09:05:00', end_time: '10:05:00' },
+      visit_sessions: { session_date: '2026-11-12', start_time: '09:05:00', end_time: '10:05:00' },
     },
   ],
   quotations: [],

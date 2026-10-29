@@ -37,7 +37,7 @@ const BOOKING = {
     {
       leg_order: 1,
       rw_units: { name: 'RW 05 Ecowastreme' },
-      visit_sessions: { start_time: '09:05:00', end_time: '10:05:00' },
+      visit_sessions: { session_date: '2026-11-12', start_time: '09:05:00', end_time: '10:05:00' },
     },
   ],
   quotations: [
@@ -48,6 +48,13 @@ const BOOKING = {
     },
   ],
   payments: [{ refunded_amount: 100000 }, { refunded_amount: 50000 }],
+};
+
+// A combo's second leg, a day after the first (internal.enqueue_visit_reminders reminds of each day apart).
+const RW13_LEG_NEXT_DAY = {
+  leg_order: 2,
+  rw_units: { name: 'RW 13 Kampung Budaya & Seni' },
+  visit_sessions: { session_date: '2026-11-13', start_time: '13:00:00', end_time: '14:30:00' },
 };
 
 function clientWith(booking: Partial<typeof BOOKING> = {}) {
@@ -196,25 +203,24 @@ describe('composeMessage for a guest', () => {
     });
   });
 
-  it('names each leg of a combo in its session, and the first RW as the gate', async () => {
-    const message = await messageFor(
-      { template: 'visit_reminder_d1', params: { link_scope: 'view' } },
-      {
-        booking_legs: [
-          {
-            leg_order: 2,
-            rw_units: { name: 'RW 13 Kampung Budaya & Seni' },
-            visit_sessions: { start_time: '13:00:00', end_time: '14:30:00' },
-          },
-          ...BOOKING.booking_legs,
-        ],
-      },
-    );
-    expect(message.bodyParams).toEqual({
+  it('names a combo’s legs, or the one visit day its reminder is about', async () => {
+    const reminder = (params: Record<string, string>) =>
+      messageFor(
+        { template: 'visit_reminder_d1', params },
+        { booking_legs: [RW13_LEG_NEXT_DAY, ...BOOKING.booking_legs] },
+      );
+    // A row without its day speaks of the whole booking; a row of one day, of that day only.
+    expect((await reminder({ link_scope: 'view' })).bodyParams).toEqual({
       name: 'Ani',
       date: 'Kamis, 12 November 2026',
       session: 'RW 05 Ecowastreme 09.05–10.05 WIB, RW 13 Kampung Budaya & Seni 13.00–14.30 WIB',
       gate: 'RW 05 Ecowastreme',
+    });
+    const nextDay = await reminder({ link_scope: 'view', session_date: '2026-11-13' });
+    expect(nextDay.bodyParams).toMatchObject({
+      date: 'Jumat, 13 November 2026',
+      session: '13.00–14.30 WIB',
+      gate: 'RW 13 Kampung Budaya & Seni',
     });
   });
 

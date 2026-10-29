@@ -10,6 +10,14 @@ import { formatDateLong, formatDateTimeShort } from '@/lib/utils/dates';
 // now, since the outbox row keeps only its link scope (notifications_guest_guard refuses anything that could carry a
 // link). The template's own schema checks them, and its order is the order WhatsApp numbers them ({{1}}, {{2}}, ...).
 
+// One day of a booking's visit: its legs' sessions of that day, read as `session` is, and the RW of its first leg.
+export interface VisitDay {
+  // 'YYYY-MM-DD'.
+  date: string;
+  session: string;
+  gate: string;
+}
+
 // What a guest message may say about its booking, read by the worker (src/server/services/notification-service.ts).
 export interface BookingFacts {
   bookingCode: string;
@@ -20,6 +28,8 @@ export interface BookingFacts {
   session: string;
   // Where the group reports: the first leg's RW.
   gate: string;
+  // Each day of the visit in date order; a combo may visit its RWs on two days.
+  days: readonly VisitDay[];
   pax: number;
   total: number;
   // The hold's deadline, ISO with offset; null for a booking no longer held.
@@ -40,7 +50,8 @@ const rowParamsSchema = z.looseObject({
   valid_until: z.string().optional(),
   // record_refund queues each refund with its own amount (review of PR #68, L4).
   refund_amount: z.number().int().positive().optional(),
-  // The weather notice of the row (internal.queue_weather_messages): its RW, its session's day, the window's end.
+  // The weather notice of the row (internal.queue_weather_messages): its RW, its session's day, the window's end. A
+  // D-1 reminder carries its visit day as session_date too (internal.enqueue_visit_reminders queues one per day).
   rw_name: z.string().optional(),
   session_date: z.string().optional(),
   open_until: z.string().optional(),
@@ -55,6 +66,13 @@ interface GuestParamsInput {
 
 function named({ name, facts }: GuestParamsInput) {
   return { name, booking_code: facts.bookingCode };
+}
+
+// The day a D-1 reminder is about, with that day's sessions and gate. A row queued before reminders carried their day,
+// or naming a day the booking no longer visits, speaks of the booking as a whole.
+function reminderDay({ facts, queued }: GuestParamsInput): VisitDay {
+  const day = facts.days.find((candidate) => candidate.date === queued?.session_date);
+  return day ?? { date: facts.visitDate, session: facts.session, gate: facts.gate };
 }
 
 const GUEST_PARAMS: Record<GuestTemplate, (input: GuestParamsInput) => Record<string, unknown>> = {
@@ -84,12 +102,10 @@ const GUEST_PARAMS: Record<GuestTemplate, (input: GuestParamsInput) => Record<st
     session: input.facts.session,
     pax: input.facts.pax,
   }),
-  visit_reminder_d1: ({ name, facts }) => ({
-    name,
-    date: facts.visitDate,
-    session: facts.session,
-    gate: facts.gate,
-  }),
+  visit_reminder_d1: (input) => {
+    const day = reminderDay(input);
+    return { name: input.name, date: day.date, session: day.session, gate: day.gate };
+  },
   checked_in_thanks: ({ name, facts }) => ({ name, institution: facts.institution }),
   review_invite: ({ name }) => ({ name }),
   refund_processed: (input) => ({
