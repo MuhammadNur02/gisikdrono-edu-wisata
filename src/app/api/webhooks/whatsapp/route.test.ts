@@ -14,6 +14,15 @@ import { GET, POST } from './route';
 import { prelaunchProductionEnv } from '../../../../../tests/fixtures/env';
 
 vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => ({}) }));
+// The route's logger, so a test can tell whether a request wrote a log line at all.
+const logger = vi.hoisted(() => {
+  const lines = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  return { lines, createLogger: vi.fn(() => lines) };
+});
+vi.mock('@/lib/logger', () => ({
+  createLogger: logger.createLogger,
+  requestIdFrom: () => 'request-1',
+}));
 vi.mock('@/server/services/provider-reports', () => ({
   ALL_META_LIMIT: 'webhook_whatsapp:all',
   SENDER_LIMIT_OF: { whatsapp: 'webhook_whatsapp:ip', resend: 'webhook_resend:ip' },
@@ -177,8 +186,9 @@ describe('/api/webhooks/whatsapp without the WhatsApp secrets', () => {
     vi.unstubAllEnvs();
   });
 
-  it('answers every POST 404 before any limit is counted or anything is written', async () => {
+  it('answers every POST 404 before any limit is counted, anything is written or a line is logged', async () => {
     const { route, providerReports } = await routeWithoutSecrets();
+    vi.clearAllMocks();
     const response = await route.POST(
       new Request(URL_BASE, {
         method: 'POST',
@@ -190,6 +200,9 @@ describe('/api/webhooks/whatsapp without the WhatsApp secrets', () => {
     expect(providerReports.withinSenderLimit).not.toHaveBeenCalled();
     expect(providerReports.recordSignatureFailure).not.toHaveBeenCalled();
     expect(providerReports.recordProviderReports).not.toHaveBeenCalled();
+    // Anyone may call this address: a line per 404 would be an unthrottled log flood (final delta review of PR #112).
+    expect(logger.createLogger).not.toHaveBeenCalled();
+    for (const write of Object.values(logger.lines)) expect(write).not.toHaveBeenCalled();
   });
 
   it('keeps answering the handshake 403, whatever token is offered', async () => {
