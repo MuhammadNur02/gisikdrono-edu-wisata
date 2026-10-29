@@ -44,7 +44,9 @@ const ROOMY = 200;
 const TIGHT = 2 * PAX;
 const SESSIONS = { roomy: randomUUID(), tight: randomUUID(), duplicate: randomUUID() };
 const SLOW_MS = 120_000;
-const START_MINUTE = randomInt(7 * 60, 14 * 60);
+// An odd minute, so neither this session nor the two an hour and two after it can land on a generated session of
+// RW 05, which all start on the hour or the half hour (visit_sessions is unique on rw, date and start time).
+const START_MINUTE = 7 * 60 + 1 + 2 * randomInt(0, (7 * 60) / 2);
 
 let stub: MidtransStub;
 
