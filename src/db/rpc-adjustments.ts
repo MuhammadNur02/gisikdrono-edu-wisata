@@ -105,3 +105,15 @@ export async function releaseRefundKeyMismatch(
     }),
   );
 }
+
+// Review of PR #103: the applied manual refunds among ids whose Midtrans key disagreement record_refund still refuses,
+// as the database itself judges it (refund_key_blocked_adjustments, 20261105120300).
+export async function refundKeyBlockedAdjustments(
+  client: DatabaseClient,
+  ids: readonly string[],
+): Promise<Set<string>> {
+  const reply = await resultOf(
+    client.rpc('refund_key_blocked_adjustments', { p_adjustment_ids: [...ids] }),
+  );
+  return new Set(z.array(z.uuid()).parse(reply));
+}

@@ -134,11 +134,11 @@ export const adjustmentsCopy = {
     REFUND_NOT_AT_MIDTRANS:
       'Midtrans belum mencatat refund sebesar itu untuk pembayaran ini. Refund lewat transfer bank dicatat sebagai penyesuaian Refund manual.',
     RELEASE_INELIGIBLE:
-      'Pengusul atau penyetuju penyesuaian ini tidak bisa melepas blokirnya. Minta superadmin lain memeriksa dan melepasnya.',
+      'Anda pengusul atau penyetuju penyesuaian ini, atau akun Anda belum memenuhi syarat (umur akun, autentikator, dan bukan undangan pengusul atau penyetuju), sementara superadmin lain yang memenuhi syarat masih aktif. Minta superadmin tersebut memeriksa dan melepas blokirnya.',
     ALERT_NOT_NOTIFIED:
       'Peringatan selisih ini belum terkirim ke Lurah. Tunggu beberapa menit sampai terkirim, lalu coba lagi.',
     RELEASE_TOO_EARLY:
-      'Anda satu-satunya superadmin aktif, jadi blokir penyesuaian Anda sendiri baru bisa dilepas 24 jam setelah peringatannya terkirim ke Lurah.',
+      'Tidak ada superadmin lain yang memenuhi syarat, jadi blokir ini baru bisa Anda lepas 24 jam setelah peringatannya terkirim ke Lurah atau sejak superadmin lain berhenti memenuhi syarat (dinonaktifkan, perannya dicabut, atau MFA-nya direset), mana yang lebih akhir.',
     WEATHER_FEE_UNSET_MANUAL:
       'Atur biaya Midtrans; pengembalian dana cuaca berjalan otomatis. Jangan transfer manual.',
     WEATHER_LINK_STATE_APPLY:

@@ -74,7 +74,8 @@ select is(
 -- invoker, so the grants and policies of a direct write decide; issue_mfa_reenrolment_code of 20261029080000; and
 -- acknowledge_alert_as_sole_superadmin of 20261029080400; then the finance RPCs of 20261101130000 to
 -- 20261101130200 and 20261104190200 to 20261104190500 (release_refund_key_mismatch, payout_preview,
--- rpc_reveal_finance_evidence); import_midtrans_statement of 20261104210200; and onboarding_state of 20261103131200, booleans about the caller's own onboarding only.
+-- rpc_reveal_finance_evidence); import_midtrans_statement of 20261104210200; refund_key_blocked_adjustments of
+-- 20261105120300, which reads; and onboarding_state of 20261103131200, booleans about the caller's own onboarding only.
 select is(
   array(
     select n.nspname || '.' || p.proname from pg_proc p
@@ -93,7 +94,8 @@ select is(
         'public.mark_refund_request_failed',
         'public.onboarding_state',
         'public.owns_any_rw', 'public.owns_rw', 'public.payout_preview',
-        'public.propose_adjustment', 'public.reactivate_booking', 'public.record_refund', 'public.reject_adjustment',
+        'public.propose_adjustment', 'public.reactivate_booking', 'public.record_refund',
+        'public.refund_key_blocked_adjustments', 'public.reject_adjustment',
         'public.release_refund_key_mismatch', 'public.request_notification_resend', 'public.reset_staff_mfa',
         'public.resolve_booking_review', 'public.resolve_weather_link',
         'public.revenue_recap', 'public.revoke_certificate', 'public.revoke_ticket', 'public.rpc_create_export',

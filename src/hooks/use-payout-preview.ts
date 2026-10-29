@@ -14,7 +14,7 @@ export interface PreviewQuery {
 }
 
 interface PreviewCallbacks {
-  // A party just chosen starts at its oldest unpaid day and ends today, as the server answers.
+  // A party just chosen starts at its oldest unpaid day and ends yesterday, as the server answers.
   onPeriod: (from: string, to: string) => void;
   onTotal: (total: number) => void;
 }

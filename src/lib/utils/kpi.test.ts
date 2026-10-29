@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   averageOf,
   dayAfter,
+  dayBefore,
   fillDailySeries,
   hasAnyValue,
   lastDays,
@@ -135,6 +136,10 @@ describe('Semarang days of instants', () => {
   it('steps to the next day across a month and a year', () => {
     expect(dayAfter('2026-10-31')).toBe('2026-11-01');
     expect(dayAfter('2026-12-31')).toBe('2027-01-01');
+  });
+
+  it('steps to the day before across a year', () => {
+    expect(dayBefore('2027-01-01')).toBe('2026-12-31');
   });
 });
 
