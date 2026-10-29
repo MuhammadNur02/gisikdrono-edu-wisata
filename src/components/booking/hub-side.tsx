@@ -26,8 +26,9 @@ function sessionLines(view: StatusHubView): string[] {
   );
 }
 
+// Only a booking made while add-ons were on sale holds any (decision of 2026-10-29: UMKM products are ordered from the
+// Koperasi Merah Putih now), so the row shows only then.
 function addonLine(view: StatusHubView): string {
-  if (view.addons.length === 0) return text.details.noAddons;
   return view.addons.map((addon) => `${addon.name} × ${String(addon.qty)}`).join(', ');
 }
 
@@ -51,7 +52,7 @@ export function HubDetails({ view }: { view: StatusHubView }) {
         <Row label={text.details.pax}>{text.details.paxCount(booking.paxCount)}</Row>
         {view.institutionName && <Row label={text.details.group}>{view.institutionName}</Row>}
         {view.picShortName && <Row label={text.details.pic}>{view.picShortName}</Row>}
-        <Row label={text.details.addons}>{addonLine(view)}</Row>
+        {view.addons.length > 0 && <Row label={text.details.addons}>{addonLine(view)}</Row>}
         <Row label={text.details.total}>
           <span className="text-h4 font-display font-extrabold tabular-nums">
             {formatIDR(booking.totalAmount)}

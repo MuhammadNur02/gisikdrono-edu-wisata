@@ -18,6 +18,8 @@ const SEEDED_ROWS = [
   { key: 'seo.default_description', value: 'Edu Wisata Kelurahan Gisikdrono, Semarang Barat.' },
   { key: 'privacy.dpo_name', value: '[Nama Pejabat Pelindungan Data]' },
   { key: 'privacy.dpo_email', value: 'privasi@example.invalid' },
+  { key: 'contact.kopdes_whatsapp_number', value: '+620000000000' },
+  { key: 'contact.kopdes_address', value: '[Alamat Koperasi Merah Putih]' },
 ];
 
 describe('isPlaceholderSetting', () => {
@@ -44,6 +46,8 @@ describe('parsePublicSettings', () => {
       contactEmail: null,
       kelurahanAddress:
         'Kelurahan Gisikdrono, Kecamatan Semarang Barat, Kota Semarang, Jawa Tengah',
+      kopdesWhatsappNumber: null,
+      kopdesAddress: null,
       seoDefaultDescription: 'Edu Wisata Kelurahan Gisikdrono, Semarang Barat.',
       dpoName: null,
       dpoEmail: null,
@@ -56,6 +60,18 @@ describe('parsePublicSettings', () => {
     );
 
     expect(parsePublicSettings(rows).contactEmail).toBe('kelurahan@semarangkota.go.id');
+  });
+
+  it('reads the Kopdes order number and pickup address once they are set', () => {
+    const rows = SEEDED_ROWS.map((row) => {
+      if (row.key === 'contact.kopdes_whatsapp_number') return { ...row, value: '+6281298765432' };
+      if (row.key === 'contact.kopdes_address') return { ...row, value: 'Jl. Contoh No. 1' };
+      return row;
+    });
+    expect(parsePublicSettings(rows)).toMatchObject({
+      kopdesWhatsappNumber: '+6281298765432',
+      kopdesAddress: 'Jl. Contoh No. 1',
+    });
   });
 
   it('fails loudly when a public key is missing or has the wrong type', () => {

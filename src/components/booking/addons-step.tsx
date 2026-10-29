@@ -59,8 +59,8 @@ function useAddonsForm({ draft, update }: AddonsStepProps): AddonsForm {
   return form;
 }
 
-// DESIGN-SPEC §3.10 step 3: a 72 px tile (the product's photo, or its RW's tint with an icon), then the name, the
-// vendor and the price per unit.
+// DESIGN-SPEC §3.10 step 3: a 72 px tile (the product's photo, or its RW's tint with an icon), then the name and the
+// price per unit; no seller, whom the public site never names (decision of 2026-10-29).
 function ProductTile({ product }: { product: AddonProduct }) {
   if (product.cover) {
     return (
@@ -89,7 +89,6 @@ function ProductInfo({ product }: { product: AddonProduct }) {
       <ProductTile product={product} />
       <div className="min-w-0 space-y-0.5">
         <p className="text-h4 font-bold">{product.name}</p>
-        <p className="text-body-sm text-muted-foreground">{product.vendorName}</p>
         <p className="text-body-sm tabular-nums">
           <span className="font-semibold text-foreground">{formatIDR(product.price)}</span>
           <span className="text-muted-foreground"> / {product.unitLabel}</span>

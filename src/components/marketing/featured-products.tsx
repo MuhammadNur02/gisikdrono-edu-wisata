@@ -1,4 +1,4 @@
-import { ArrowRight, PackagePlus } from 'lucide-react';
+import { ArrowRight, Store } from 'lucide-react';
 import Link from 'next/link';
 
 import { Section } from '@/components/layout/section';
@@ -26,13 +26,14 @@ function AllProductsButton({ className }: { className?: string }) {
   );
 }
 
-// How an add-on is ordered, on night beside the cards: three numbered steps from md, one sentence on a phone. The step
-// numbers settle in one after another (DESIGN-SPEC §4, Add-on panel).
-function AddonPanel() {
+// How a product is ordered (decision of 2026-10-29: through the WhatsApp of the Koperasi Merah Putih, picked up and paid
+// for there), on night beside the cards: three numbered steps from md, one sentence on a phone. The step numbers settle
+// in one after another (DESIGN-SPEC §4, Add-on panel).
+function OrderPanel() {
   return (
     <aside className="kawung flex flex-col gap-5 rounded-lg bg-night p-7 text-white ring-on-dark kawung-6 md:reveal">
       <p className="flex items-center gap-3 md:flex-col md:items-start md:gap-5">
-        <PackagePlus aria-hidden className="size-7 shrink-0 text-gold" />
+        <Store aria-hidden className="size-7 shrink-0 text-gold" />
         <span className="font-display text-xl leading-tight font-bold md:text-2xl">
           {homeCopy.products.panelTitle}
         </span>
@@ -60,7 +61,7 @@ const ROW_CLASS =
   'flex snap-x snap-mandatory gap-4 overflow-x-auto scrollbar-none max-md:pr-container max-md:pl-container md:contents';
 
 // docs/PRD.md FR-PUB-04 and the products the kelurahan marks is_featured (Task P2.4.01), DESIGN-SPEC §3.1 `Produk UMKM`:
-// three cards and the add-on panel in one row from lg; on a phone the cards are a carousel of 220 px and the panel
+// three cards and the order panel in one row from lg; on a phone the cards are a carousel of 220 px and the panel
 // follows at full width.
 export function FeaturedProducts({ id, products }: FeaturedProductsProps) {
   const rowId = `${id}-baris`;
@@ -83,7 +84,7 @@ export function FeaturedProducts({ id, products }: FeaturedProductsProps) {
           </ul>
           <SnapRail targetId={rowId} count={products.length} barsClassName="px-5 md:hidden" />
         </div>
-        <AddonPanel />
+        <OrderPanel />
       </div>
       <AllProductsButton className="w-full md:hidden" />
     </Section>

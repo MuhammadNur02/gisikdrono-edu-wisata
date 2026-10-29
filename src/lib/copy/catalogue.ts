@@ -21,14 +21,13 @@ export const packagesPageCopy = {
     'Di langkah Ringkasan, minta Surat Penawaran resmi untuk diajukan ke bendahara. Kuota baru dikunci saat kamu mengonfirmasi dan membayar.',
   institutionCta: 'Baca cara memesan',
   stepsEyebrow: 'Cara memesan',
-  stepsTitle: 'Empat langkah, tanpa membuat akun',
+  stepsTitle: 'Tiga langkah, tanpa membuat akun',
   steps: [
     { title: 'Pilih jadwal', body: 'Tanggal dan sesi dengan sisa kursi yang terlihat langsung.' },
     {
       title: 'Isi data & verifikasi',
       body: 'Data penanggung jawab rombongan, lalu kode OTP lewat WhatsApp.',
     },
-    { title: 'Tambahan (opsional)', body: 'Pesan produk UMKM untuk diambil saat kunjungan.' },
     {
       title: 'Bayar & terima tiket',
       body: 'QRIS atau Virtual Account. Tiket QR dikirim ke WhatsApp dan email.',
@@ -55,7 +54,7 @@ export const packageDetailCopy = {
     minutes === null ? 'Alur kegiatan' : `Alur kegiatan · ${String(minutes)} menit`,
   itineraryNote: 'Urutan di lapangan mengikuti arahan warga.',
   prices: { orang: 'Harga per orang', rombongan: 'Harga per rombongan' },
-  pricesNote: 'Total dihitung sistem dari jumlah peserta dan produk tambahan.',
+  pricesNote: 'Total dihitung sistem dari jumlah peserta.',
   priceColumns: {
     who: 'Jenis peserta',
     minimum: 'Peserta',
@@ -95,24 +94,21 @@ export const packageDetailCopy = {
 
 export const productsPageCopy = {
   title: 'Produk UMKM warga',
-  lead: 'Oleh-oleh dari bank sampah, kebun, dan sanggar kampung. Pesan sebagai tambahan saat memesan kunjungan, lalu ambil pada hari kunjungan.',
+  lead: 'Oleh-oleh dari bank sampah, kebun, dan sanggar kampung. Pesan lewat WhatsApp Koperasi Merah Putih, lalu ambil dan bayar di koperasi.',
   noCartTitle: 'Tanpa keranjang belanja',
-  noCartBody: 'Produk dipesan bersama kunjungan, di langkah Tambahan.',
+  noCartBody:
+    'Pesan lewat WhatsApp Koperasi Merah Putih. Pembayaran di koperasi, tidak lewat situs ini.',
   filterRw: 'Kampung',
   filterCategory: 'Kategori',
   noun: 'produk',
   searchLabel: 'Cari produk',
   searchPlaceholder: 'Cari produk',
-  addonTitle: 'Pesan sebagai tambahan',
-  addonSteps: [
-    'Pilih paket dan sesi kunjungan',
-    'Di langkah Tambahan, pilih produk dan jumlahnya',
-    'Ambil pesananmu saat hari kunjungan',
+  orderTitle: 'Pesan lewat Koperasi Merah Putih',
+  orderSteps: [
+    'Buka halaman produk yang kamu mau',
+    'Tekan Pesan via WhatsApp, lalu kirim pesannya ke Koperasi Merah Putih',
+    'Ambil dan bayar pesananmu di Koperasi Merah Putih',
   ],
-  vendorsEyebrow: 'Pelaku UMKM',
-  vendorsTitle: 'Dibuat oleh tetangga di kampung',
-  vendorsLead: 'Setiap produk tercatat atas nama kelompok warga di RW-nya.',
-  vendorProducts: (count: number) => `${String(count)} produk`,
   emptyFilteredTitle: 'Belum ada produk untuk pilihan ini',
   emptyFilteredBody: 'Hapus salah satu filter atau ubah kata pencarian.',
   emptyAllTitle: 'Produk warga sedang didata',
@@ -122,12 +118,22 @@ export const productsPageCopy = {
   whatsAppTopic: 'produk UMKM warga',
 };
 
+// Decision of 2026-10-29: a product is ordered through the one WhatsApp number of the Koperasi Merah Putih (Kopdes),
+// picked up and paid for there; nothing is paid through the site.
 export const productDetailCopy = {
   orderTitle: 'Cara memesan',
-  orderAsAddon:
-    'Produk ini dipesan sebagai tambahan saat memesan kunjungan, di langkah Tambahan, lalu diambil pada hari kunjungan.',
-  orderAsk:
-    'Produk ini belum bisa dipesan sebagai tambahan. Tanyakan ketersediaannya lewat WhatsApp.',
+  orderHow: 'Pesan lewat WhatsApp Koperasi Merah Putih, koperasi Kelurahan Gisikdrono.',
+  orderButton: 'Pesan via WhatsApp',
+  orderButtonLabel: (product: string) =>
+    `Pesan ${product} via WhatsApp ke Koperasi Merah Putih, terbuka di WhatsApp`,
+  orderMessage: (product: string, rw: string) =>
+    `Halo Koperasi Merah Putih, saya ingin memesan ${product} (${rw}). Jumlah: `,
+  pickup: (address: string | null) =>
+    address === null
+      ? 'Ambil di Koperasi Merah Putih'
+      : `Ambil di Koperasi Merah Putih, ${address}`,
+  payAtKopdes: 'Bayar di Koperasi Merah Putih saat mengambil pesanan, tidak lewat situs ini.',
+  orderAsk: 'Untuk memesan produk ini, tanyakan dulu lewat WhatsApp pengelola.',
   otherEyebrow: 'Produk lain',
   otherTitle: 'Dari kampung yang sama',
 };

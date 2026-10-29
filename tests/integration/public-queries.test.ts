@@ -15,7 +15,6 @@ import { listSchedules } from '@/lib/queries/schedules';
 import { listAvailableSessions } from '@/lib/queries/sessions';
 import { getPublicSiteSettings } from '@/lib/queries/settings';
 import { listArticleSitemapEntries, listBookletSitemapEntries } from '@/lib/queries/sitemap';
-import { getVendorBySlug, listVendors } from '@/lib/queries/vendors';
 
 import { localStack, runSql } from '../../scripts/local-stack';
 
@@ -134,21 +133,18 @@ describe('public queries as a visitor', () => {
     expect(await getPackageBySlug('paket-tidak-ada')).toBeNull();
   });
 
-  it('reads products with their vendor, and vendors without owner or bank details', async () => {
+  // Decision of 2026-10-29 (20261105160300): the products stay public, the seller behind each does not.
+  it('reads products without naming who makes them', async () => {
     const products = await listProducts();
     const compost = await getProductBySlug('pupuk-kompos-1kg');
-    const vendor = await getVendorBySlug('bank-sampah-lestari');
 
-    expect(products.every((product) => product.vendor !== null)).toBe(true);
+    expect(products.length).toBeGreaterThanOrEqual(2);
     expect(compost).toMatchObject({
       rw: { id: 5, label: 'RW 05', accentKey: 'leaf' },
       price: 15000,
-      vendor: { name: 'Bank Sampah Lestari' },
     });
-    expect((await listVendors()).length).toBeGreaterThanOrEqual(2);
-    expect(vendor && Object.keys(vendor).sort()).toEqual(
-      ['descriptionMd', 'id', 'logo', 'name', 'rwId', 'slug'].sort(),
-    );
+    expect(compost).not.toHaveProperty('vendor');
+    expect(JSON.stringify(products)).not.toContain('Bank Sampah Lestari');
   });
 
   it('reads articles with a reading time', async () => {

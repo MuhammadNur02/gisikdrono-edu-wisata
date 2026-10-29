@@ -54,6 +54,8 @@ export const siteSettingsSchema = z
     contactWhatsappNumber: z.string().trim().regex(PHONE_PATTERN, messages.phone),
     contactEmail: emailSchema,
     kelurahanAddress: contentText(LIMITS.address),
+    kopdesWhatsappNumber: z.string().trim().regex(PHONE_PATTERN, messages.phone),
+    kopdesAddress: contentText(LIMITS.address),
     dpoName: contentText(LIMITS.shortText),
     dpoEmail: emailSchema,
     signatoryName: contentText(LIMITS.shortText),

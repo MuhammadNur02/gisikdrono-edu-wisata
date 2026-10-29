@@ -59,6 +59,7 @@ export function wizardPackageOf(wizard: BookingWizard): WizardPackage {
     rws: tourPackage.rws,
     minPax: tourPackage.minPax,
     maxPax: Math.min(tourPackage.maxPax, wizard.rules.maxPax),
+    offersAddons: wizard.addons.length > 0,
   };
 }
 

@@ -21,6 +21,8 @@ const SETTINGS: SiteSettingsInput = {
   contactWhatsappNumber: '+6281234567890',
   contactEmail: ' Kontak@Gisikdrono.Go.Id ',
   kelurahanAddress: 'Jl. Gisikdrono, Semarang Barat',
+  kopdesWhatsappNumber: '+6281298765432',
+  kopdesAddress: 'Jl. Gisikdrono, Semarang Barat',
   dpoName: 'Siti Aminah',
   dpoEmail: 'privasi@gisikdrono.go.id',
   signatoryName: 'Budi Santoso',
@@ -61,6 +63,8 @@ describe('siteSettingsSchema', () => {
     expect(issuePaths({ contactWhatsappNumber: '081234567890' })).toEqual([
       'contactWhatsappNumber',
     ]);
+    expect(issuePaths({ kopdesWhatsappNumber: '081234567890' })).toEqual(['kopdesWhatsappNumber']);
+    expect(issuePaths({ kopdesAddress: '  ' })).toEqual(['kopdesAddress']);
   });
 
   it('refuses an unknown rate-limit profile and an empty address', () => {

@@ -44,8 +44,8 @@ select is((select count(*)::int from public.tour_package_legs where pg_temp.is_f
   'the legs of published packages');
 select is((select count(*)::int from public.tour_package_price_tiers where pg_temp.is_fixture_package(package_id)), 2,
   'and their price tiers');
-select is((select string_agg(slug, ',' order by slug) from public.umkm_vendors where slug in ('v5', 'v5i', 'v8')),
-  'v5,v8', 'the active vendors');
+-- Decision of 2026-10-29 (20261105160300): who sells a product is no public information.
+select throws_ok($$select id, slug, name from public.umkm_vendors$$, '42501', null, 'no vendor at all, active or not');
 select throws_ok($$select bank_name from public.umkm_vendors$$, '42501', null, 'never a vendor''s bank account');
 select throws_ok($$select owner_name, phone from public.umkm_vendors$$, '42501', null, 'nor its owner''s name and phone');
 select is((select string_agg(slug, ',' order by slug) from public.products_umkm where slug in ('pr5', 'pr5d', 'pr8')),

@@ -50,9 +50,7 @@ function product(slug: string, category: ProductSummary['category'], rwId: numbe
     price: 15000,
     unitLabel: 'pcs',
     isAvailable: true,
-    isAddonEligible: false,
     isFeatured: false,
-    vendor: null,
     cover: null,
   } satisfies ProductSummary;
 }

@@ -54,6 +54,9 @@ export interface WizardPackage {
   minPax: number;
   // The smaller of the package's max_pax and site_settings booking.max_pax.
   maxPax: number;
+  // Whether any product of its RWs is on sale as an add-on. Since the decision of 2026-10-29 none is (UMKM products are
+  // ordered from the Koperasi Merah Putih), so the wizard leaves out its Tambahan step.
+  offersAddons: boolean;
 }
 
 // previewQuoteAction's answer (Task P3.5.03): the quote with the fingerprint the summary sends, or what the catalogue

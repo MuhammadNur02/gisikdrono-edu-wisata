@@ -1,4 +1,3 @@
-import { PackagePlus } from 'lucide-react';
 import Link from 'next/link';
 
 import { RwTag } from '@/components/layout/rw-tag';
@@ -47,28 +46,15 @@ function ProductCover({ product }: ProductCardProps) {
   );
 }
 
-// The add-on hint, only for a product the wizard offers (DESIGN-SPEC §2.5); shorter on a phone.
-function AddonHint() {
-  return (
-    <p className="flex items-center gap-2 pt-1 text-caption font-medium text-ink-2">
-      <PackagePlus aria-hidden className="size-4 shrink-0 text-primary-ink" />
-      <span className="md:hidden">{copy.catalogue.addonEligible}</span>
-      <span className="max-md:hidden">{copy.catalogue.addonEligibleLong}</span>
-    </p>
-  );
-}
-
 // Card/Product of DESIGN-SPEC §2.5 (docs/StyleGuide.md §5.9): the square photo, or the RW-tinted placeholder with
-// `Foto menyusul`, with the RW badge on the surface; the vendor, the name, the price with its unit and, for an add-on,
-// the hint. No cart. The name link stretches over the card, so the whole card opens the product.
+// `Foto menyusul`, with the RW badge on the surface; the name and the price with its unit. No cart, and no seller:
+// the product page orders it from the Koperasi Merah Putih (decisions of 2026-10-29). The name link stretches over
+// the card, so the whole card opens the product.
 export function ProductCard({ product }: ProductCardProps) {
   return (
     <article className="group relative flex h-full w-full hover-rise flex-col">
       <ProductCover product={product} />
       <div className="flex flex-1 flex-col gap-1.5 pt-4">
-        {product.vendor ? (
-          <p className="text-caption font-medium text-muted-foreground">{product.vendor.name}</p>
-        ) : null}
         <h3 className="font-display text-lg font-semibold text-balance transition-colors duration-200 group-hover:text-primary-ink">
           <Link
             href={productPath(product.slug)}
@@ -84,7 +70,6 @@ export function ProductCard({ product }: ProductCardProps) {
           </span>{' '}
           / {product.unitLabel}
         </p>
-        {product.isAddonEligible ? <AddonHint /> : null}
         {product.isAvailable ? null : (
           <Badge variant="neutral" size="sm" className="mt-1">
             {copy.catalogue.unavailable}

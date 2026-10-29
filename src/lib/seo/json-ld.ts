@@ -175,8 +175,6 @@ export interface ProductInput {
   description?: string;
   path: string;
   imageUrls?: readonly string[];
-  // The UMKM vendor's name for products, absent for tour packages.
-  brandName?: string;
   // Absent when the catalogue holds no price for it, so no Offer ever claims a price of 0.
   offer?: OfferInput;
 }
@@ -188,7 +186,6 @@ export function productJsonLd(input: ProductInput): Node<Product> {
     description: input.description,
     url: absoluteUrl(input.path),
     image: input.imageUrls ? [...input.imageUrls] : undefined,
-    brand: input.brandName ? { '@type': 'Brand', name: input.brandName } : undefined,
     offers: input.offer ? offerJsonLd(input.offer) : undefined,
   };
 }

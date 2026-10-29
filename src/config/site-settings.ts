@@ -20,6 +20,8 @@ export const EDITABLE_SETTING_KEYS = {
   contactWhatsappNumber: 'contact.whatsapp_number',
   contactEmail: 'contact.email',
   kelurahanAddress: 'kelurahan.address',
+  kopdesWhatsappNumber: 'contact.kopdes_whatsapp_number',
+  kopdesAddress: 'contact.kopdes_address',
   signatoryName: 'kelurahan.signatory_name',
   signatoryTitle: 'kelurahan.signatory_title',
   certificateTemplateVersion: 'certificate.template_version',

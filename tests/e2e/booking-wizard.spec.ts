@@ -2,7 +2,6 @@ import { expect, test } from '@playwright/test';
 import { z } from 'zod';
 
 import {
-  addOneAddon,
   bookingOf,
   chooseSchedule,
   createSessions,
@@ -45,7 +44,8 @@ test.afterAll(async () => {
   await removeSessions(sessions.label, projectIndex);
 });
 
-test('books a hold through all four steps and lands on its pay page with its manage link', async ({
+// Since the decision of 2026-10-29 no product is an add-on, so the wizard has three steps: no Tambahan.
+test('books a hold through all three steps and lands on its pay page with its manage link', async ({
   page,
   context,
 }, testInfo) => {
@@ -54,7 +54,6 @@ test('books a hold through all four steps and lands on its pay page with its man
   await chooseSchedule(page, sessions, sessions.booked.time);
   await fillBooker(page, phone);
   if (!isDesktop) await expectNoSideScroll(page);
-  await addOneAddon(page);
   await readySummary(page);
   if (!isDesktop) await expectNoSideScroll(page);
   await page.getByRole('button', { name: 'Konfirmasi & Bayar' }).click();
@@ -217,11 +216,6 @@ test('can be completed with the keyboard alone', async ({ page }, testInfo) => {
   await page.getByRole('button', { name: 'Lanjut' }).focus();
   await page.keyboard.press('Enter');
 
-  await expect(page.getByRole('heading', { name: 'Pesanan tambahan (tidak wajib)' })).toBeVisible(
-    STEP,
-  );
-  await page.getByRole('button', { name: 'Lanjut' }).focus();
-  await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: 'Ringkasan pesanan' })).toBeVisible(STEP);
   await expect(
     page.getByRole('region', { name: 'Rincian biaya' }).getByText('Total', { exact: true }),

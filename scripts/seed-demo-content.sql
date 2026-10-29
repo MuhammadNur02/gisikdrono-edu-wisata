@@ -46,11 +46,11 @@ on conflict do nothing;
 insert into public.products_umkm (rw_id, vendor_id, slug, name, category, description_md, price, unit_label,
   is_addon_eligible, status) values
   (5, '0de00000-0000-4000-8000-0000000000a5', 'pupuk-kompos-1kg', 'Pupuk Kompos 1 kg', 'compost',
-   'Kompos matang dari sampah organik warga.', 15000, 'kantong', true, 'published'),
+   'Kompos matang dari sampah organik warga.', 15000, 'kantong', false, 'published'),
   (5, '0de00000-0000-4000-8000-0000000000a5', 'bibit-cabai', 'Bibit Cabai', 'seedling',
-   'Bibit cabai rawit dalam polybag.', 5000, 'polybag', true, 'published'),
+   'Bibit cabai rawit dalam polybag.', 5000, 'polybag', false, 'published'),
   (13, '0de00000-0000-4000-8000-000000000a13', 'gantungan-kunci-batik', 'Gantungan Kunci Batik', 'souvenir',
-   'Gantungan kunci kain batik buatan anak sanggar.', 20000, 'buah', true, 'published')
+   'Gantungan kunci kain batik buatan anak sanggar.', 20000, 'buah', false, 'published')
 on conflict do nothing;
 
 -- DATA CONTOH: packages, durations and prices are invented.

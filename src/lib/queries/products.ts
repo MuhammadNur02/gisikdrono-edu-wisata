@@ -10,12 +10,14 @@ import { rwBadgeFor } from '@/lib/utils/rw-units';
 import type { AddonProduct, ProductDetail, ProductSummary } from '@/types/product';
 import type { RwBadge } from '@/types/rw-unit';
 
+// Decision of 2026-10-29 (20261105160300): who makes a product is no public information, so no read here names a
+// vendor; anon holds nothing of umkm_vendors.
 const SUMMARY_COLUMNS =
-  'id, slug, name, category, rw_id, price, unit_label, is_available, is_addon_eligible, is_featured, image_paths, umkm_vendors(slug, name)';
+  'id, slug, name, category, rw_id, price, unit_label, is_available, is_featured, image_paths';
 const DETAIL_COLUMNS = `${SUMMARY_COLUMNS}, description_md, min_order_qty, max_order_qty, lead_time_days`;
 
 const ADDON_COLUMNS =
-  'id, rw_id, vendor_id, name, unit_label, price, min_order_qty, max_order_qty, lead_time_days, image_paths, umkm_vendors(name)';
+  'id, rw_id, vendor_id, name, unit_label, price, min_order_qty, max_order_qty, lead_time_days, image_paths';
 
 const PRODUCT_TAGS = [TAGS.allProducts, TAGS.rwUnits];
 
@@ -29,10 +31,9 @@ type ProductRow = Pick<
   | 'price'
   | 'unit_label'
   | 'is_available'
-  | 'is_addon_eligible'
   | 'is_featured'
   | 'image_paths'
-> & { umkm_vendors: Pick<Tables<'umkm_vendors'>, 'slug' | 'name'> | null };
+>;
 
 type ProductDetailRow = ProductRow &
   Pick<
@@ -50,9 +51,7 @@ function toProductSummary(row: ProductRow, units: readonly RwBadge[]): ProductSu
     price: row.price,
     unitLabel: row.unit_label,
     isAvailable: row.is_available,
-    isAddonEligible: row.is_addon_eligible,
     isFeatured: row.is_featured,
-    vendor: row.umkm_vendors,
     cover: toPublicImages(row.image_paths, row.name)[0] ?? null,
   };
 }
@@ -69,30 +68,24 @@ type AddonRow = Pick<
   | 'max_order_qty'
   | 'lead_time_days'
   | 'image_paths'
-> & { umkm_vendors: Pick<Tables<'umkm_vendors'>, 'name'> | null };
+>;
 
-// The public sees no deactivated vendor, so a product whose vendor stopped selling arrives without one and is no
-// add-on: internal.booking_quote refuses it as well (independent review of PR #26, L5).
-function toAddonProducts(rows: AddonRow[], units: readonly RwBadge[]): AddonProduct[] {
-  return rows.flatMap((row) =>
-    row.umkm_vendors
-      ? [
-          {
-            id: row.id,
-            vendorId: row.vendor_id,
-            vendorName: row.umkm_vendors.name,
-            rw: rwBadgeFor(row.rw_id, units),
-            name: row.name,
-            unitLabel: row.unit_label,
-            price: row.price,
-            minOrderQty: row.min_order_qty,
-            maxOrderQty: row.max_order_qty,
-            leadTimeDays: row.lead_time_days,
-            cover: toPublicImages(row.image_paths, row.name)[0] ?? null,
-          },
-        ]
-      : [],
-  );
+// The public no longer sees the vendor, so a product whose vendor stopped selling is offered like any other and
+// internal.booking_quote refuses it, as it always did (independent review of PR #26, L5). Since the decision of
+// 2026-10-29 no product is an add-on, so the list is empty until add-ons return.
+function toAddonProduct(row: AddonRow, units: readonly RwBadge[]): AddonProduct {
+  return {
+    id: row.id,
+    vendorId: row.vendor_id,
+    rw: rwBadgeFor(row.rw_id, units),
+    name: row.name,
+    unitLabel: row.unit_label,
+    price: row.price,
+    minOrderQty: row.min_order_qty,
+    maxOrderQty: row.max_order_qty,
+    leadTimeDays: row.lead_time_days,
+    cover: toPublicImages(row.image_paths, row.name)[0] ?? null,
+  };
 }
 
 function toProductDetail(row: ProductDetailRow, units: readonly RwBadge[]): ProductDetail {
@@ -136,7 +129,7 @@ export const listAddonProducts = cachedPublicRead(
         .order('name'),
       listRwUnits(),
     ]);
-    return toAddonProducts(rowsOf(result, 'products_umkm'), units);
+    return rowsOf(result, 'products_umkm').map((row) => toAddonProduct(row, units));
   },
   ['products', 'addons'],
   PRODUCT_TAGS,

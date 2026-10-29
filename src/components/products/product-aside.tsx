@@ -1,15 +1,13 @@
-import { ArrowRight, PackagePlus, ShieldCheck } from 'lucide-react';
-import Link from 'next/link';
+import { HandCoins, Store } from 'lucide-react';
 
+import { WhatsAppIcon } from '@/components/layout/whatsapp-icon';
 import { WhatsAppLinkButton } from '@/components/marketing/whatsapp-link-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { productDetailCopy as text } from '@/lib/copy/catalogue';
 import { copy } from '@/lib/copy/id';
-import { rwFilterFor } from '@/lib/utils/catalogue-filters';
 import { formatIDR } from '@/lib/utils/currency';
-import { PUBLIC_PATHS } from '@/lib/utils/paths';
-import type { ProductDetail } from '@/types/product';
+import type { ProductDetail, ProductOrder } from '@/types/product';
 
 function OrderFacts({ product }: { product: ProductDetail }) {
   return (
@@ -38,39 +36,68 @@ function PriceBlock({ product }: { product: ProductDetail }) {
   );
 }
 
+// Where the order goes and how it is paid: picked up and paid for at the Kopdes, never through the site, so the site's
+// QRIS/VA trust line does not belong here.
+function OrderTerms({ order }: { order: ProductOrder }) {
+  return (
+    <div className="space-y-3 border-t border-border pt-6">
+      <p className="text-body font-semibold">{text.orderTitle}</p>
+      <ul className="space-y-2.5 text-body-sm text-ink-2">
+        <li className="flex gap-2.5">
+          <WhatsAppIcon className="mt-0.5 size-4.5 shrink-0 text-primary-ink" />
+          {order.chatUrl === null ? text.orderAsk : text.orderHow}
+        </li>
+        <li className="flex gap-2.5">
+          <Store aria-hidden className="mt-0.5 size-4.5 shrink-0 text-primary-ink" />
+          {text.pickup(order.pickupAddress)}
+        </li>
+        <li className="flex gap-2.5">
+          <HandCoins aria-hidden className="mt-0.5 size-4.5 shrink-0 text-primary-ink" />
+          {text.payAtKopdes}
+        </li>
+      </ul>
+    </div>
+  );
+}
+
+// The order button: a plain wa.me link to the Kopdes with the message written (no server call, nothing about the
+// visitor in it). While the Kopdes has no number, the question goes to the site's own WhatsApp instead.
+function OrderButton({ product, order }: { product: ProductDetail; order: ProductOrder }) {
+  if (order.chatUrl === null) {
+    return (
+      <WhatsAppLinkButton
+        size="lg"
+        label={copy.catalogue.askOnWhatsApp}
+        message={copy.layout.whatsAppGreeting(product.name)}
+      />
+    );
+  }
+  return (
+    <Button asChild variant="whatsapp" size="lg">
+      <a
+        href={order.chatUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={text.orderButtonLabel(product.name)}
+      >
+        <WhatsAppIcon className="size-4.5" />
+        {text.orderButton}
+      </a>
+    </Button>
+  );
+}
+
 // docs/StyleGuide.md §5.9, DESIGN-SPEC §3.6: no cart. The panel of the product page (the surface, radius 20, the panel
-// shadow from md): the price in Jakarta 36/800 with its unit, how it is ordered, and the way to do it: as an add-on of a
-// package booking, which opens the catalogue on the product's own RW, or a question on WhatsApp.
-export function ProductAside({ product }: { product: ProductDetail }) {
+// shadow from md): the price in Jakarta 36/800 with its unit, how it is ordered (decision of 2026-10-29: through the
+// WhatsApp of the Koperasi Merah Putih, picked up and paid for there), and the button that does it.
+export function ProductAside({ product, order }: { product: ProductDetail; order: ProductOrder }) {
   return (
     <aside className="space-y-6 rounded-2xl border border-border bg-card p-5 md:p-7 md:shadow-panel">
       <PriceBlock product={product} />
-      <div className="space-y-3 border-t border-border pt-6">
-        <p className="text-body font-semibold">{text.orderTitle}</p>
-        <p className="flex gap-2.5 text-body-sm text-ink-2">
-          <PackagePlus aria-hidden className="mt-0.5 size-4.5 shrink-0 text-primary-ink" />
-          {product.isAddonEligible ? text.orderAsAddon : text.orderAsk}
-        </p>
-      </div>
+      <OrderTerms order={order} />
       <div className="flex flex-col gap-3">
-        {product.isAddonEligible ? (
-          <Button size="lg" asChild>
-            <Link href={`${PUBLIC_PATHS.packages}?rw=${rwFilterFor(product.rw.id)}`}>
-              {copy.catalogue.addOnHint}
-              <ArrowRight aria-hidden data-icon="trailing" />
-            </Link>
-          </Button>
-        ) : null}
-        <WhatsAppLinkButton
-          size="lg"
-          label={copy.catalogue.askOnWhatsApp}
-          message={copy.layout.whatsAppGreeting(product.name)}
-        />
+        <OrderButton product={product} order={order} />
       </div>
-      <p className="flex gap-2.5 text-caption text-muted-foreground">
-        <ShieldCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-rw05" />
-        {copy.layout.paymentTrust}
-      </p>
     </aside>
   );
 }

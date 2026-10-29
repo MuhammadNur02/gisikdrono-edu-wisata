@@ -10,6 +10,7 @@ import { bookingLayoutCopy } from '@/lib/copy/booking-layout';
 import { copy } from '@/lib/copy/id';
 import { sessionsOn, type BookingDraft } from '@/lib/utils/booking-wizard';
 import { formatDateLong, formatTimeRange } from '@/lib/utils/dates';
+import type { WizardPackage } from '@/types/booking';
 import type { BookableLeg } from '@/types/session';
 
 const text = copy.booking.wizard;
@@ -87,13 +88,26 @@ function addonsText(draft: BookingDraft, preview: QuotePreviewState): string {
     .join(' · ');
 }
 
-export function SummaryDetails(props: {
+export interface SummaryDetailsProps {
   draft: BookingDraft;
   legs: readonly BookableLeg[];
   preview: QuotePreviewState;
+  wizardPackage: WizardPackage;
   onOpen: (step: BookingStep) => void;
-}) {
-  const { draft, legs, preview, onOpen } = props;
+}
+
+// No add-on block when the package offers none (decision of 2026-10-29), since there is no step to change it in.
+function AddonsBlock({ draft, preview, wizardPackage, onOpen }: SummaryDetailsProps) {
+  if (!wizardPackage.offersAddons) return null;
+  return (
+    <DetailBlock title={aside.addons} step="tambahan" onOpen={onOpen}>
+      <DetailRow label={summary.products}>{addonsText(draft, preview)}</DetailRow>
+    </DetailBlock>
+  );
+}
+
+export function SummaryDetails(props: SummaryDetailsProps) {
+  const { draft, legs, onOpen } = props;
   return (
     <div className="divide-y divide-border rounded-2xl border border-border bg-card p-5 md:p-7">
       <DetailBlock title={summary.visit} step="jadwal" onOpen={onOpen}>
@@ -120,9 +134,7 @@ export function SummaryDetails(props: {
           {draft.contact?.channel === 'email' ? draft.contact.email : draft.picEmail}
         </DetailRow>
       </DetailBlock>
-      <DetailBlock title={aside.addons} step="tambahan" onOpen={onOpen}>
-        <DetailRow label={summary.products}>{addonsText(draft, preview)}</DetailRow>
-      </DetailBlock>
+      <AddonsBlock {...props} />
     </div>
   );
 }

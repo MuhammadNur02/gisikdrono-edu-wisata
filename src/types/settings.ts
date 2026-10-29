@@ -12,6 +12,9 @@ export interface PublicSiteSettings {
   contactWhatsappNumber: string | null;
   contactEmail: string | null;
   kelurahanAddress: string | null;
+  // Where UMKM products are ordered, picked up and paid for (decision of 2026-10-29): the Koperasi Merah Putih.
+  kopdesWhatsappNumber: string | null;
+  kopdesAddress: string | null;
   seoDefaultDescription: string;
   // The Pejabat Pelindungan Data named on /privasi (docs/Security.md §7.6).
   dpoName: string | null;

@@ -3,7 +3,7 @@
 export const productsCopy = {
   title: 'Produk UMKM',
   description:
-    'Produk warga yang tampil di situs dan bisa dipesan sebagai tambahan kunjungan. Produk dan UMKM didaftarkan oleh superadmin.',
+    'Produk warga yang tampil di situs dan dipesan pengunjung lewat WhatsApp Koperasi Merah Putih. Produk dan UMKM didaftarkan oleh superadmin.',
   noun: 'produk UMKM',
   add: 'Tambah produk',
   newTitle: 'Produk baru',
@@ -40,7 +40,7 @@ export const productsCopy = {
     archive: 'Arsipkan',
     archiveTitle: (name: string) => `Arsipkan produk "${name}"?`,
     archiveConsequence:
-      'Produk hilang dari situs dan tidak bisa dipesan sebagai tambahan lagi. Pesanan yang sudah ada tidak berubah.',
+      'Produk hilang dari situs. Pesanan tambahan pada reservasi yang sudah ada tidak berubah.',
     archived: 'Produk diarsipkan.',
   },
   sections: {
@@ -61,8 +61,10 @@ export const productsCopy = {
     minOrderQty: 'Pesan minimal',
     maxOrderQty: 'Pesan maksimal (opsional)',
     leadTimeDays: 'Lama pembuatan (hari)',
-    leadTimeDaysHint: 'Berapa hari sebelum kunjungan pesanan harus masuk. Isi 0 bila selalu siap.',
-    isAddonEligible: 'Bisa dipesan sebagai tambahan saat reservasi kunjungan',
+    leadTimeDaysHint: 'Berapa hari sebelum diambil pesanan harus masuk. Isi 0 bila selalu siap.',
+    // Decision of 2026-10-29: no product is an add-on of a visit booking any more, so the switch is gone.
+    addonNote:
+      'Produk tidak lagi dijual sebagai tambahan reservasi kunjungan. Pengunjung memesannya lewat WhatsApp Koperasi Merah Putih, lalu mengambil dan membayar di koperasi.',
     isAvailable: 'Sedang tersedia',
     isFeatured: 'Tampilkan sebagai produk unggulan',
     status: 'Status',

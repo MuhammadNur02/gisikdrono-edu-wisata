@@ -136,7 +136,7 @@ export function ProductOrdering({ control }: { control: ProductControl }) {
         description={fields.leadTimeDaysHint}
         emptyAs={0}
       />
-      <CheckboxField control={control} name="isAddonEligible" label={fields.isAddonEligible} />
+      <p className="text-body-sm text-muted-foreground">{fields.addonNote}</p>
       <CheckboxField control={control} name="isAvailable" label={fields.isAvailable} />
     </FormSection>
   );

@@ -249,7 +249,7 @@ function useSummaryStep(props: SummaryStepProps) {
 }
 
 export function SummaryStep(props: SummaryStepProps) {
-  const { draft, wizardPackage, legs, preview, onOpen, onBack } = props;
+  const { draft, wizardPackage, preview, onOpen, onBack } = props;
   const { form, captcha, send, needsReverify, state, canAskQuotation } = useSummaryStep(props);
   return (
     <Form {...form}>
@@ -261,7 +261,7 @@ export function SummaryStep(props: SummaryStepProps) {
           backLabel={props.backLabel}
           actions={<span aria-hidden />}
         >
-          <SummaryDetails draft={draft} legs={legs} preview={preview} onOpen={onOpen} />
+          <SummaryDetails {...props} />
           <QuotePreviewPanel
             state={preview}
             wizardPackage={wizardPackage}

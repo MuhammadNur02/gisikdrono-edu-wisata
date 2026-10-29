@@ -7,7 +7,7 @@ import {
   type CatalogueBrowserProps,
 } from '@/components/marketing/catalogue-browser';
 import { ProductCard } from '@/components/products/product-card';
-import { AddonPanel } from '@/components/products/product-list-sections';
+import { OrderPanel } from '@/components/products/product-list-sections';
 import { PRODUCT_CATEGORY } from '@/config/status';
 import { DB_ENUMS } from '@/db/enums';
 import { productsPageCopy as text } from '@/lib/copy/catalogue';
@@ -57,9 +57,7 @@ function entryFor(product: ProductSummary): CatalogueBrowserEntry {
   return {
     key: product.id,
     facets: productFacets(product),
-    searchText: [product.name, product.vendor?.name, PRODUCT_CATEGORY[product.category].label].join(
-      ' ',
-    ),
+    searchText: [product.name, PRODUCT_CATEGORY[product.category].label].join(' '),
     card: <ProductCard product={product} />,
   };
 }
@@ -70,9 +68,9 @@ export interface ProductCatalogueProps {
 }
 
 // docs/PRD.md FR-PUB-13 (DESIGN-SPEC §3.6): `?rw=` and `?category=` in one row of chips, the count and the search. The
-// add-on panel closes the grid when a product can be ordered with a visit. Every card is rendered here on the server.
+// panel on ordering through the Koperasi Merah Putih (FR-PUB-13a) closes the grid. Every card is rendered here on the
+// server.
 export function ProductCatalogue({ products, rws }: ProductCatalogueProps) {
-  const hasAddons = products.some((product) => product.isAddonEligible);
   const props: CatalogueBrowserProps = {
     entries: products.map(entryFor),
     groups: [rwGroup(products, rws), categoryGroup(products)],
@@ -86,7 +84,7 @@ export function ProductCatalogue({ products, rws }: ProductCatalogueProps) {
       askLabel: text.emptyAsk,
       askMessage: copy.layout.whatsAppGreeting(text.whatsAppTopic),
     },
-    trailing: hasAddons ? <AddonPanel /> : undefined,
+    trailing: <OrderPanel />,
     ...PRODUCT_GRID,
   };
   return (

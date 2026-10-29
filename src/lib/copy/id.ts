@@ -64,8 +64,6 @@ export const copy = {
     minutes: (minutes: number) => `${String(minutes)} menit`,
     paxRange: (min: number, max: number) => `${String(min)}–${String(max)} orang`,
     combo: 'Kombinasi',
-    addonEligible: 'Bisa jadi tambahan',
-    addonEligibleLong: 'Bisa dipesan sebagai tambahan',
     // A product card whose photo has not been taken yet (DESIGN-SPEC §0, §2.5).
     photoComing: 'Foto menyusul',
     exploreRw: (rwLabel: string) => 'Jelajahi ' + rwLabel,
@@ -85,10 +83,8 @@ export const copy = {
         : from
           ? `Berlaku mulai ${from}`
           : `Berlaku sampai ${to ?? ''}`,
-    addOnHint: 'Tambahkan saat pesan paket',
     askOnWhatsApp: 'Tanya via WhatsApp',
-    vendorTitle: 'Dibuat oleh',
-    leadTime: (days: number) => `Dipesan paling lambat ${String(days)} hari sebelum kunjungan`,
+    leadTime: (days: number) => `Pesan paling lambat ${String(days)} hari sebelum diambil`,
     orderRange: (min: number, max: number | null, unit: string) =>
       max === null ? `Minimal ${String(min)} ${unit}` : `${String(min)}–${String(max)} ${unit}`,
   },

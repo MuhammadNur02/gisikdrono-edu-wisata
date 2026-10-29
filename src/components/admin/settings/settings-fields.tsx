@@ -166,6 +166,8 @@ export function ContactSettings(props: SettingsGroupProps) {
       <TextSetting {...props} name="contactWhatsappNumber" maxLength={LIMITS.shortText} />
       <TextSetting {...props} name="contactEmail" maxLength={LIMITS.email} type="email" />
       <TextSetting {...props} name="kelurahanAddress" maxLength={LIMITS.address} multiline />
+      <TextSetting {...props} name="kopdesWhatsappNumber" maxLength={LIMITS.shortText} />
+      <TextSetting {...props} name="kopdesAddress" maxLength={LIMITS.address} multiline />
       <TextSetting {...props} name="dpoName" maxLength={LIMITS.shortText} />
       <TextSetting {...props} name="dpoEmail" maxLength={LIMITS.email} type="email" />
     </FormSection>

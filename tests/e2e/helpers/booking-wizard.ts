@@ -165,19 +165,10 @@ export async function fillBooker(page: Page, phone: string) {
   await page.getByLabel(/Nama penanggung jawab/).fill('Tamu Uji E2E');
   // An address of the phone's own, so the holds of every spec and project never share the per-address limit
   // (booking:email, five a day), which a reset in one spec's beforeAll cannot keep under for the others.
-  await page.getByLabel(/Email penanggung jawab/).fill(`e2e${phone.replace(/\D/g, '')}@contoh.test`);
+  await page
+    .getByLabel(/Email penanggung jawab/)
+    .fill(`e2e${phone.replace(/\D/g, '')}@contoh.test`);
   await proveWhatsApp(page, phone);
-  await page.getByRole('button', { name: 'Lanjut' }).click();
-}
-
-export async function addOneAddon(page: Page) {
-  await expect(page.getByRole('heading', { name: 'Pesanan tambahan (tidak wajib)' })).toBeVisible(
-    STEP,
-  );
-  await page.getByRole('button', { name: 'Tambah' }).first().click();
-  await expect(
-    page.getByRole('region', { name: 'Rincian biaya' }).getByText('Total', { exact: true }),
-  ).toBeVisible(STEP);
   await page.getByRole('button', { name: 'Lanjut' }).click();
 }
 

@@ -104,7 +104,6 @@ export const bookingHubCopy = {
     group: 'Rombongan',
     pic: 'Penanggung jawab',
     addons: 'Tambahan',
-    noAddons: 'Tidak ada',
     total: 'Total',
   },
   documents: {
