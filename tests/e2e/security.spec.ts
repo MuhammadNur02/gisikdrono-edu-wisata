@@ -187,6 +187,25 @@ test.describe('security headers (docs/Security.md §8.2)', () => {
     expect(link.headers()['referrer-policy']).toBe('same-origin');
   });
 
+  // The routes the middleware skips (src/config/machine-routes.ts; staging triage of 2026-10-29).
+  test('the health check, a job and a webhook allow no source and close the camera', async ({
+    request,
+  }) => {
+    const responses = [
+      await request.get('/api/health', NO_REDIRECTS),
+      await request.post(JOB_PATHS[0] ?? '', NO_REDIRECTS),
+      await request.get('/api/webhooks/whatsapp', NO_REDIRECTS),
+    ];
+    for (const response of responses) {
+      const headers = response.headers();
+      expect(headers['content-security-policy'], response.url()).toBe(
+        "default-src 'none'; object-src 'none'; frame-ancestors 'none'",
+      );
+      expect(headers['permissions-policy'], response.url()).toMatch(/^camera=\(\),/);
+      expect(headers['x-frame-options'], response.url()).toBe('DENY');
+    }
+  });
+
   test('the camera opens on the scanner only', async ({ request }) => {
     const home = (await request.get('/', NO_REDIRECTS)).headers()['permissions-policy'];
     const scanner = (await request.get(SCANNER_PATH, NO_REDIRECTS)).headers()['permissions-policy'];
