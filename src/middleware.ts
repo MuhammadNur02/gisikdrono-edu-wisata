@@ -177,7 +177,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Webhooks, jobs and the health check authenticate themselves and never carry a staff session.
+  // Webhooks, jobs and the health check authenticate themselves and never carry a staff session; their CSP and
+  // Permissions-Policy come from next.config.ts (src/config/machine-routes.ts), so keep the two lists together.
   matcher: [
     '/((?!_next/static|_next/image|favicon.ico|icons/|fonts/|og/|map/|vendor/|sw.js|scanner.webmanifest|api/webhooks|api/jobs|api/health|monitoring).*)',
   ],

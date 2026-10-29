@@ -6,6 +6,7 @@ import type { NextConfig } from 'next';
 import { PHASE_DEVELOPMENT_SERVER } from 'next/constants';
 
 import { IMAGE_DEVICE_WIDTHS, imageLoaderFileFor } from './src/config/images';
+import { MACHINE_ROUTE_HEADERS, MACHINE_ROUTE_SOURCES } from './src/config/machine-routes';
 import { MOVED_PATHS } from './src/config/redirects';
 import { PRIVATE_ROUTE_PREFIXES } from './src/config/routes';
 import { SCANNER_OFFLINE_PATH, SCANNER_SERVICE_WORKER } from './src/config/scanner';
@@ -19,7 +20,8 @@ const withBundleAnalyzer = bundleAnalyzer({
 const isProductionDeployment = publicEnv.VERCEL_ENV === 'production';
 const supabaseUrl = new URL(publicEnv.NEXT_PUBLIC_SUPABASE_URL);
 
-// docs/Security.md §8.2. Permissions-Policy and the CSP are per request, so they live in src/middleware.ts.
+// docs/Security.md §8.2. Permissions-Policy and the CSP are per request, so they live in src/middleware.ts; the
+// routes its matcher skips get fixed ones here (src/config/machine-routes.ts).
 const baselineHeaders = [
   { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
@@ -129,6 +131,7 @@ const nextConfig: NextConfig = {
       { source: '/:path*', headers: baselineHeaders },
       ...(isProductionDeployment ? [] : [{ source: '/:path*', headers: [noIndex] }]),
       ...privateRoutes.map((source) => ({ source, headers: privateNoIndexHeaders })),
+      ...MACHINE_ROUTE_SOURCES.map((source) => ({ source, headers: MACHINE_ROUTE_HEADERS })),
       { source: SCANNER_SERVICE_WORKER.url, headers: serviceWorkerHeaders },
       ...noReferrerRoutes.map((source) => ({
         source,
