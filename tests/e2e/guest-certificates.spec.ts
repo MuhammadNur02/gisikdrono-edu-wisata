@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { paidTicketToday, removeUnbookedPackages, type GateTicket } from './helpers/gate';
 import { guestLink, tokenVersionOf } from './helpers/guest-hub';
+import { waitForTurnstile } from './helpers/staff';
 import { runSql, sqlText } from '../../scripts/local-stack';
 
 // Review of PR #94, L6 (Task P4.5.03; docs/PRD.md FR-POST-02, FR-POST-03; docs/Security.md §6.7, §10.3, DOC-02): a
@@ -95,6 +96,7 @@ test('reaches a released certificate through the certificate link and the last-4
   await expect(page.getByText(PARTICIPANTS[0] ?? '')).toHaveCount(0);
 
   await page.getByLabel('Empat digit terakhir').fill(ticket.phoneLastDigits);
+  await waitForTurnstile(page);
   await page.getByRole('button', { name: 'Buka sertifikat peserta' }).click();
   await expect(page.getByText(PARTICIPANTS[0] ?? '')).toBeVisible(STEP);
   await expect(page.getByRole('link', { name: /Unduh semua sertifikat peserta/ })).toBeVisible();

@@ -73,7 +73,8 @@ export const CERTIFICATE_RETENTION_DAYS = 90;
 export const PHONE_LAST_DIGITS = 4;
 // The certificate page's downloads (review of PR #94, M1): /reservasi/<code>/sertifikat/unduh/<slot>, under the paths of
 // the certificate link's and the proof's cookies, so the browser sends both. A slot names the group's certificate, one
-// participant's by its place in the page's list, or every participant's as one PDF.
+// participant's by its place in the order the booking's participant certificates were issued, or every participant's
+// as one PDF.
 export const CERTIFICATE_DOWNLOAD_SEGMENT = 'unduh';
 export const CERTIFICATE_SLOTS = {
   group: 'rombongan',
@@ -82,3 +83,7 @@ export const CERTIFICATE_SLOTS = {
 // Mirrors internal.certificate_phone_failure_cap() of 20261104210100: the wrong last-4 tries over the window after which
 // the step-up stays blocked (review of PR #94, L1). The database decides; the page only reads it to say so.
 export const CERTIFICATE_PHONE_FAILURE_CAP = 10;
+// Mirrors internal.certificate_phone_total_failure_cap() of 20261105110000: every wrong try of the window, never reset by
+// a right one, so a forwarded link's holders cannot have their guesses wiped by the PIC's own proofs (review of PR #107,
+// L1).
+export const CERTIFICATE_PHONE_TOTAL_FAILURE_CAP = 30;

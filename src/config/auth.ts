@@ -73,5 +73,7 @@ export const TURNSTILE_ACTIONS = {
   bookingCreate: 'booking_create',
   // The post-visit review form (Task P4.11.02).
   reviewSubmit: 'review_submit',
+  // The certificate page's last-4 step-up (Task P4.5.03; follow-up of the review of PR #94).
+  certificatePhone: 'certificate_phone',
 } as const;
 export type TurnstileAction = (typeof TURNSTILE_ACTIONS)[keyof typeof TURNSTILE_ACTIONS];

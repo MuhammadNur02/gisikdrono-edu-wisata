@@ -543,6 +543,7 @@ export type Database = {
           cancelled_at: string | null
           cancelled_by: string | null
           certificate_phone_failures: number
+          certificate_phone_failures_in_window: number
           channel: Database["public"]["Enums"]["booking_channel"]
           checked_in_at: string | null
           completed_at: string | null
@@ -600,6 +601,7 @@ export type Database = {
           cancelled_at?: string | null
           cancelled_by?: string | null
           certificate_phone_failures?: number
+          certificate_phone_failures_in_window?: number
           channel?: Database["public"]["Enums"]["booking_channel"]
           checked_in_at?: string | null
           completed_at?: string | null
@@ -657,6 +659,7 @@ export type Database = {
           cancelled_at?: string | null
           cancelled_by?: string | null
           certificate_phone_failures?: number
+          certificate_phone_failures_in_window?: number
           channel?: Database["public"]["Enums"]["booking_channel"]
           checked_in_at?: string | null
           completed_at?: string | null

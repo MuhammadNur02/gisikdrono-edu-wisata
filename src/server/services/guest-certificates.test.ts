@@ -5,6 +5,7 @@ import type { DatabaseClient } from '@/db/rpc-result';
 import { isFirstRefusal, refundRateLimits, withinRateLimits } from '@/lib/rate-limit';
 import {
   certificateBookingOf,
+  participantCertificateIdsOf,
   standingCertificatesOf,
   type StandingCertificate,
 } from '@/server/services/guest-certificate-reads';
@@ -27,6 +28,7 @@ vi.mock('@/lib/rate-limit', () => ({
 }));
 vi.mock('@/server/services/guest-certificate-reads', () => ({
   certificateBookingOf: vi.fn(),
+  participantCertificateIdsOf: vi.fn(),
   standingCertificatesOf: vi.fn(),
 }));
 
@@ -68,6 +70,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(certificateBookingOf).mockResolvedValue(OPEN_BOOKING);
   vi.mocked(standingCertificatesOf).mockResolvedValue([standing({}), ANI, BUDI]);
+  vi.mocked(participantCertificateIdsOf).mockResolvedValue([ANI.id, BUDI.id]);
   vi.mocked(withinRateLimits).mockResolvedValue(true);
 });
 
@@ -134,7 +137,7 @@ describe('loadGuestCertificates (Task P4.5.03)', () => {
     ]);
   });
 
-  it('counts the slots over released certificates only', async () => {
+  it('lists released certificates only, each keeping the slot of its place in the issue order', async () => {
     vi.mocked(standingCertificatesOf).mockResolvedValue([
       standing({}),
       { ...ANI, released_at: null },
@@ -143,7 +146,18 @@ describe('loadGuestCertificates (Task P4.5.03)', () => {
     const view = await loadGuestCertificates(adminClient, request);
     expect(view.state === 'ready' && view.certificates.map((row) => row.slot)).toEqual([
       'rombongan',
-      'peserta-1',
+      'peserta-2',
+    ]);
+  });
+
+  it('never moves a slot onto another person when a certificate before it is revoked', async () => {
+    vi.mocked(standingCertificatesOf).mockResolvedValue([standing({}), BUDI]);
+    const view = await loadGuestCertificates(adminClient, { ...request, hasPhoneProof: true });
+    expect(
+      view.state === 'ready' && view.certificates.map((row) => [row.slot, row.recipient]),
+    ).toEqual([
+      ['rombongan', 'SD Uji'],
+      ['peserta-2', 'Budi'],
     ]);
   });
 
