@@ -15,6 +15,7 @@ import { grantsScope } from '@/lib/links/verify';
 import {
   displayParams,
   guestTemplateParams,
+  isStaleReminder,
   staffParamsSchema,
   type BookingFacts,
   type GuestTemplate,
@@ -211,10 +212,14 @@ async function composeGuest(
 ): Promise<Composed> {
   if (row.booking_id === null) return refusal('bad_params', 'The message names no booking');
   const booking = await loadBooking(adminClient, row.booking_id);
+  const facts = factsOf(booking);
+  if (isStaleReminder(row.template, facts, row.params)) {
+    return refusal('stale_day', 'The reminder names a day the booking no longer visits');
+  }
   const named = guestTemplateParams(
     row.template,
     greetingName(row.recipient_name),
-    factsOf(booking),
+    facts,
     row.params,
   );
   const params = templateParamsSchemas[row.template].safeParse(named);

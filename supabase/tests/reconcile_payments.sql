@@ -229,7 +229,7 @@ select is((select (details ->> 'legs_pax')::int || '/' || (details ->> 'capacity
   '12/10', 'a session holding more visitors than its capacity is an issue');
 select is((select count(*)::int from public.reconciliation_issues
            where booking_id = '00000000-0000-4000-8000-0000000e3002' and issue_type = 'paid_without_tickets'),
-  0, 'a paid booking without tickets that is under review already raises no ticket issue (L3)');
+  0, 'a paid booking without tickets waiting for resolve_booking_review, its seats gone, raises no ticket issue (L3)');
 select is((select severity || ':' || (notified_at is null) from public.security_alerts
            where fingerprint = 'reconciliation_digest:' || public.today_jkt()::text and acknowledged_at is null),
   'critical:true', 'critical issues raise the day''s high digest to critical, to be mailed again (L4)');

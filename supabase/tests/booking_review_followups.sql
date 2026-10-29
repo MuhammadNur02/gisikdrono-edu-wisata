@@ -7,7 +7,7 @@
 -- review but REVENUE_RULE_REFUSED get no reminder (M2, L6), which staff may send again to a checked-in combo (L1); a
 -- review move takes no session starting within the margin (L3).
 begin;
-select plan(27);
+select plan(31);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures =====
@@ -19,7 +19,9 @@ insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time
   ('00000000-0000-4000-8000-0000000b1102', 8, public.today_jkt() + 1, '07:29', '08:29', 'Tinjau besok RW 08', 20),
   ('00000000-0000-4000-8000-0000000b1103', 5, public.today_jkt() + 1, '07:31', '08:31', 'Tinjau besok RW 05', 20),
   ('00000000-0000-4000-8000-0000000b1104', 5, public.today_jkt() + 5, '07:37', '08:37', 'Tinjau nanti', 20),
-  ('00000000-0000-4000-8000-0000000b1105', 5, public.today_jkt() + 1, '07:41', '08:41', 'Tinjau besok hujan', 20);
+  ('00000000-0000-4000-8000-0000000b1105', 5, public.today_jkt() + 1, '07:41', '08:41', 'Tinjau besok hujan', 20),
+  ('00000000-0000-4000-8000-0000000b1108', 5, public.today_jkt() + 1, '07:47', '08:47', 'Tinjau pindahan', 20),
+  ('00000000-0000-4000-8000-0000000b1109', 5, public.today_jkt() + 1, '07:53', '08:53', 'Tinjau hujan lagi', 20);
 
 create function pg_temp.switch(p_key text, p_on boolean) returns void
   language sql
@@ -47,6 +49,7 @@ exception when others then
   return raised_hint;
 end;
 $$;
+grant execute on function pg_temp.hint_of(text) to authenticated;
 
 select set_config('app.in_rpc', '1', true);
 insert into public.bookings (id, booking_code, status, channel, package_id, package_snapshot, rw_ids, booker_type,
@@ -82,6 +85,12 @@ from (values
   ('210', 'GSK-RVW0WTHR', 'paid', '{5}', public.today_jkt() + 1, public.today_jkt() + 1, interval '5 days', false,
    null),
   ('211', 'GSK-RVW0CHBK', 'paid', '{5}', public.today_jkt() + 1, public.today_jkt() + 1, interval '5 days', true,
+   'CHARGEBACK'),
+  ('212', 'GSK-RVW0MVED', 'paid', '{5}', public.today_jkt() + 1, public.today_jkt() + 1, interval '5 days', false,
+   null),
+  ('213', 'GSK-RVW0RRSS', 'paid', '{5}', public.today_jkt() + 1, public.today_jkt() + 1, interval '1 hour', true,
+   'REVENUE_RULE_REFUSED'),
+  ('214', 'GSK-RVW0CBNS', 'paid', '{5}', public.today_jkt() + 3, public.today_jkt() + 3, interval '2 hours', true,
    'CHARGEBACK')
 ) as fixture(code, booking_code, status, rw_ids, visit, visit_end, paid_ago, review, review_reason);
 -- The review of each late settlement started when its booking event says, not at paid_at.
@@ -109,6 +118,14 @@ insert into public.booking_legs (booking_id, rw_id, visit_session_id, leg_order,
   ('00000000-0000-4000-8000-0000000b1210', 5, '00000000-0000-4000-8000-0000000b1105', 1, 2, 'reserved', now(), null,
    null),
   ('00000000-0000-4000-8000-0000000b1211', 5, '00000000-0000-4000-8000-0000000b1103', 1, 2, 'reserved', now(), null,
+   null),
+  ('00000000-0000-4000-8000-0000000b1212', 5, '00000000-0000-4000-8000-0000000b1109', 1, 2, 'reserved', now(), null,
+   null),
+  ('00000000-0000-4000-8000-0000000b1213', 5, '00000000-0000-4000-8000-0000000b1105', 1, 2, 'reserved', now(), null,
+   null),
+  ('00000000-0000-4000-8000-0000000b1214', 5, '00000000-0000-4000-8000-0000000b1104', 1, 2, 'released', now(), now(),
+   null),
+  ('00000000-0000-4000-8000-0000000b1204', 5, '00000000-0000-4000-8000-0000000b1104', 1, 2, 'reserved', now(), null,
    null);
 select set_config('app.in_rpc', '', true);
 
@@ -151,6 +168,10 @@ select is((select string_agg(f.booking_id::text, ' ' order by f.booking_id)
            where f.issue_type = 'paid_without_tickets'
              and f.booking_id in ('00000000-0000-4000-8000-0000000b1202', '00000000-0000-4000-8000-0000000b1209')),
   '00000000-0000-4000-8000-0000000b1209', 'the nightly reconciliation leaves out only the booking without seats too');
+select is(pg_temp.alerted('paid_without_tickets', '00000000-0000-4000-8000-0000000b1214')
+          + (select count(*)::int from internal.reconcile_invariant_findings() f
+             where f.issue_type = 'paid_without_tickets' and f.booking_id = '00000000-0000-4000-8000-0000000b1214'), 0,
+  'L-b: a seatless booking whose review a chargeback overwrote owes no ticket, so neither raises it');
 
 select internal.run_anomaly_scan();
 select is((select (count(*), max(a.occurrences))::text from public.security_alerts a
@@ -182,8 +203,15 @@ select ok(not has_function_privilege('service_role', 'internal.anomaly_unresolve
 -- The weather stops tomorrow's session of GSK-RVW0WTHR; its seat stays reserved while the guest's window is open.
 select pg_temp.act_as('admin_rw_05');
 select public.declare_weather_disruption('00000000-0000-4000-8000-0000000b1105', 'Hujan deras');
+select public.declare_weather_disruption('00000000-0000-4000-8000-0000000b1109', 'Hujan deras');
 reset role;
 select set_config('request.jwt.claims', '', true);
+-- The guest of GSK-RVW0MVED moves the stopped leg to another session, as reschedule_for_weather does; the notice stays
+-- open until its window ends.
+select set_config('app.in_rpc', '1', true);
+update public.booking_legs set visit_session_id = '00000000-0000-4000-8000-0000000b1108'
+where booking_id = '00000000-0000-4000-8000-0000000b1212';
+select set_config('app.in_rpc', '', true);
 -- Yesterday's run reminded the combo of today, its first day.
 select internal.enqueue_notification('00000000-0000-4000-8000-0000000b1205', 'visit_reminder_d1', 'email',
   jsonb_build_object('link_scope', 'view', 'session_date', public.today_jkt()), 'visit_date:' || public.today_jkt());
@@ -193,9 +221,12 @@ select is((select string_agg(b.booking_code, ' ' order by b.booking_code) from p
            join public.bookings b on b.id = n.booking_id
            where n.template = 'visit_reminder_d1' and n.channel = 'email' and b.booking_code like 'GSK-RVW0%'
              and n.params ->> 'session_date' = (public.today_jkt() + 1)::text),
-  'GSK-RVW0C0MB GSK-RVW0PAYD GSK-RVW0RVRF',
-  '3: the bookings with a seat held tomorrow are reminded, a combo checked in on its first day and a booking whose '
-  || 'revenue split waits for review included');
+  'GSK-RVW0C0MB GSK-RVW0MVED GSK-RVW0PAYD GSK-RVW0RVRF',
+  '3: the bookings with a seat held tomorrow are reminded, a combo checked in on its first day, a leg moved off a '
+  || 'stopped session while its notice is open (M-a) and a booking whose revenue split waits for review included');
+select is((select count(*)::int from public.notifications n
+           where n.booking_id = '00000000-0000-4000-8000-0000000b1213' and n.template = 'visit_reminder_d1'), 0,
+  'L-a: a booking given no weather rights is not reminded of a session the weather stopped either');
 select is((select count(*)::int from public.notifications n
            where n.booking_id = '00000000-0000-4000-8000-0000000b1206' and n.template = 'visit_reminder_d1'), 0,
   'a booking paid after its seats were gone, its leg released, is not reminded of a seat it does not have');
@@ -208,7 +239,7 @@ select is((select string_agg(n.channel::text, ' ' order by n.channel) from publi
   'whatsapp email', 'on both channels');
 select is((select count(*)::int from public.notifications n
            where n.booking_id = '00000000-0000-4000-8000-0000000b1210' and n.template = 'visit_reminder_d1'), 0,
-  'M2: a leg whose session the weather stopped is not reminded while its notice is open');
+  'M2: a leg in a session the weather stopped is not reminded');
 select is((select count(*)::int from public.notifications n
            where n.booking_id = '00000000-0000-4000-8000-0000000b1211' and n.template = 'visit_reminder_d1'), 0,
   'L6: nor is a booking under a chargeback review, its tickets suspended');
@@ -218,8 +249,23 @@ select ok(internal.message_fits_state('visit_reminder_d1', 'checked_in')
 select internal.enqueue_visit_reminders();
 select set_config('app.in_rpc', '', true), set_config('app.actor_role', '', true);
 select is((select count(*)::int from public.notifications n join public.bookings b on b.id = n.booking_id
-           where n.template = 'visit_reminder_d1' and b.booking_code like 'GSK-RVW0%'), 7,
+           where n.template = 'visit_reminder_d1' and b.booking_code like 'GSK-RVW0%'), 9,
   'and a second run the same day queues nothing more');
+
+-- ===== L-d: a reminder is sent again only for a day still held =====
+-- A reminder queued for GSK-RVW0SEAT before its leg was released.
+select internal.enqueue_notification('00000000-0000-4000-8000-0000000b1206', 'visit_reminder_d1', 'email',
+  jsonb_build_object('link_scope', 'view', 'session_date', public.today_jkt() + 1),
+  'visit_date:' || (public.today_jkt() + 1));
+select pg_temp.act_as('admin_rw_05');
+select is(pg_temp.hint_of($$select public.request_notification_resend('00000000-0000-4000-8000-0000000b1206',
+    'visit_reminder_d1', 'email')$$),
+  'STATE_INVALID', 'L-d: the reminder of a day the booking no longer holds is not sent again');
+select is(pg_temp.hint_of($$select public.request_notification_resend('00000000-0000-4000-8000-0000000b1207',
+    'visit_reminder_d1', 'email')$$),
+  null, 'while the reminder of a seat still held tomorrow is');
+reset role;
+select set_config('request.jwt.claims', '', true);
 
 -- ===== L3: a review move takes no session starting within the margin =====
 insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity)

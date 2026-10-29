@@ -114,9 +114,23 @@ describe('the D-1 reminder of one visit day', () => {
     });
   });
 
-  it('counts no released leg as a visit day, so its row speaks of the booking as a whole', async () => {
+  it('refuses a reminder of a day only a released leg visits, rather than speak of another day', async () => {
     const released = { ...RW13_NEXT_DAY, status: 'released' };
-    expect(await reminderParams([RW05_FIRST_DAY, released], '2026-11-13')).toEqual({
+    const composed = await composeMessage(
+      clientWith([RW05_FIRST_DAY, released]),
+      reminderRow('2026-11-13'),
+      NOW,
+    );
+    expect(composed).toMatchObject({
+      ok: false,
+      failure: { errorCode: 'stale_day', isPermanent: true },
+    });
+  });
+
+  it('speaks of the whole booking for a row queued before reminders carried their day', async () => {
+    const row = { ...reminderRow('2026-11-13'), params: { link_scope: 'view' } };
+    const composed = await composeMessage(clientWith([RW05_FIRST_DAY, RW13_NEXT_DAY]), row, NOW);
+    expect(composed.ok && composed.message.bodyParams).toEqual({
       name: 'Ani',
       date: 'Kamis, 12 November 2026',
       session: 'RW 05 Ecowastreme 09.05–10.05 WIB, RW 13 Kampung Budaya & Seni 13.00–14.30 WIB',

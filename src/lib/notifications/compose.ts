@@ -68,11 +68,24 @@ function named({ name, facts }: GuestParamsInput) {
   return { name, booking_code: facts.bookingCode };
 }
 
-// The day a D-1 reminder is about, with that day's sessions and gate. A row queued before reminders carried their day,
-// or naming a day the booking no longer visits, speaks of the booking as a whole.
+// The day a D-1 reminder is about, with that day's sessions and gate. A row queued before reminders carried their day
+// speaks of the booking as a whole; a row naming a day the booking no longer visits is refused first
+// (isStaleReminder).
 function reminderDay({ facts, queued }: GuestParamsInput): VisitDay {
   const day = facts.days.find((candidate) => candidate.date === queued?.session_date);
   return day ?? { date: facts.visitDate, session: facts.session, gate: facts.gate };
+}
+
+// Delta review of PR #109, L-c: a D-1 reminder whose day the booking no longer visits (its leg moved or released since
+// the row was queued) has nothing true to say, so the worker refuses it rather than speak of another day.
+export function isStaleReminder(
+  template: GuestTemplate,
+  facts: BookingFacts,
+  rowParams: unknown,
+): boolean {
+  if (template !== 'visit_reminder_d1') return false;
+  const day = rowParamsSchema.safeParse(rowParams).data?.session_date;
+  return day !== undefined && !facts.days.some((candidate) => candidate.date === day);
 }
 
 const GUEST_PARAMS: Record<GuestTemplate, (input: GuestParamsInput) => Record<string, unknown>> = {
