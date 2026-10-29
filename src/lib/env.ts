@@ -3,6 +3,7 @@ import 'server-only';
 import { createEnv } from '@t3-oss/env-nextjs';
 import { z } from 'zod';
 
+import { isPrelaunchFlag } from '@/config/launch';
 import {
   findLocalStubProblems,
   findMidtransKeyProblems,
@@ -46,10 +47,14 @@ const signingKeyRing = z
 
 type EnvValues = {
   VERCEL_ENV?: 'production' | 'preview' | 'development' | undefined;
+  // Read from src/lib/public-env.ts, which validated it first.
+  NEXT_PUBLIC_FLAG_PRELAUNCH?: 'on' | 'off' | undefined;
   MIDTRANS_IS_PRODUCTION: boolean;
-  MIDTRANS_SERVER_KEY: string;
+  MIDTRANS_SERVER_KEY?: string | undefined;
   MIDTRANS_SERVER_KEY_PREVIOUS?: string | undefined;
-  MIDTRANS_CLIENT_KEY: string;
+  MIDTRANS_CLIENT_KEY?: string | undefined;
+  MIDTRANS_MERCHANT_ID?: string | undefined;
+  MIDTRANS_WEBHOOK_PATH_TOKEN?: string | undefined;
   MIDTRANS_LOCAL_STUB_URL?: string | undefined;
   QR_SIGNING_KEYS: Record<string, string>;
   QR_SIGNING_ACTIVE_KID: string;
@@ -58,8 +63,16 @@ type EnvValues = {
   WHATSAPP_ACCESS_TOKEN?: string | undefined;
   WHATSAPP_PHONE_NUMBER_ID?: string | undefined;
   WHATSAPP_APP_SECRET?: string | undefined;
+  WHATSAPP_VERIFY_TOKEN?: string | undefined;
   TURNSTILE_SECRET_KEY: string;
 };
+
+// docs/Security.md §8.9: a production deployment built with NEXT_PUBLIC_FLAG_PRELAUNCH=on, which takes no booking and
+// no payment and sends no WhatsApp message. Only there may the Midtrans and WhatsApp credentials be missing; every
+// other deployment, a launched production above all, needs each of them exactly as before.
+function isPrelaunchProduction(values: EnvValues): boolean {
+  return values.VERCEL_ENV === 'production' && isPrelaunchFlag(values.NEXT_PUBLIC_FLAG_PRELAUNCH);
+}
 
 // CLAUDE.md §7.7: production never runs a sandbox "SB-" key, and MIDTRANS_IS_PRODUCTION follows the deployment.
 // A newer sandbox key looks exactly like a live one, so pnpm midtrans:check asks the Status API before keys are
@@ -100,17 +113,34 @@ function findKeyRingProblems(values: EnvValues): string[] {
   return problems;
 }
 
+function namesMissing(secrets: Record<string, string | undefined>): string[] {
+  return Object.entries(secrets)
+    .filter(([, value]) => value === undefined)
+    .map(([name]) => name);
+}
+
+// What payments and Meta's webhook handshake need on every deployment, pre-launch production aside.
+function findMissingPaymentSecrets(values: EnvValues): string[] {
+  if (isPrelaunchProduction(values)) return [];
+  const missing = namesMissing({
+    MIDTRANS_SERVER_KEY: values.MIDTRANS_SERVER_KEY,
+    MIDTRANS_CLIENT_KEY: values.MIDTRANS_CLIENT_KEY,
+    MIDTRANS_MERCHANT_ID: values.MIDTRANS_MERCHANT_ID,
+    MIDTRANS_WEBHOOK_PATH_TOKEN: values.MIDTRANS_WEBHOOK_PATH_TOKEN,
+    WHATSAPP_VERIFY_TOKEN: values.WHATSAPP_VERIFY_TOKEN,
+  });
+  return missing.map((name) => `${name} is required`);
+}
+
 // docs/Security.md §8.5: previews use a WhatsApp stub, so the real credentials are only demanded in production.
 function findMissingProductionSecrets(values: EnvValues): string[] {
-  if (values.VERCEL_ENV !== 'production') return [];
-  const whatsappSecrets = {
+  if (values.VERCEL_ENV !== 'production' || isPrelaunchProduction(values)) return [];
+  const missing = namesMissing({
     WHATSAPP_ACCESS_TOKEN: values.WHATSAPP_ACCESS_TOKEN,
     WHATSAPP_PHONE_NUMBER_ID: values.WHATSAPP_PHONE_NUMBER_ID,
     WHATSAPP_APP_SECRET: values.WHATSAPP_APP_SECRET,
-  };
-  return Object.entries(whatsappSecrets)
-    .filter(([, value]) => value === undefined)
-    .map(([name]) => `${name} is required in production`);
+  });
+  return missing.map((name) => `${name} is required in production`);
 }
 
 // src/lib/public-env.ts refuses the test site key on the same deployments.
@@ -128,6 +158,7 @@ export function findEnvProblems(values: EnvValues): string[] {
     ...findMidtransMismatches(values),
     ...findLocalStubProblems(values.MIDTRANS_LOCAL_STUB_URL, values.VERCEL_ENV),
     ...findKeyRingProblems(values),
+    ...findMissingPaymentSecrets(values),
     ...findMissingProductionSecrets(values),
     ...findTurnstileTestSecret(values),
   ];
@@ -153,18 +184,20 @@ export const serverEnv = createEnv({
   server: {
     VERCEL_ENV: z.enum(['production', 'preview', 'development']).optional(),
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
-    MIDTRANS_SERVER_KEY: z.string().min(1),
+    // Optional in the shape only: findMissingPaymentSecrets demands the Midtrans values and WHATSAPP_VERIFY_TOKEN on
+    // every deployment but a pre-launch production (docs/Security.md §8.9).
+    MIDTRANS_SERVER_KEY: z.string().min(1).optional(),
     MIDTRANS_SERVER_KEY_PREVIOUS: z.string().min(1).optional(),
-    MIDTRANS_CLIENT_KEY: z.string().min(1),
+    MIDTRANS_CLIENT_KEY: z.string().min(1).optional(),
     MIDTRANS_IS_PRODUCTION: z.stringbool(),
-    MIDTRANS_MERCHANT_ID: z.string().regex(MIDTRANS_MERCHANT_ID_PATTERN),
-    MIDTRANS_WEBHOOK_PATH_TOKEN: secret,
+    MIDTRANS_MERCHANT_ID: z.string().regex(MIDTRANS_MERCHANT_ID_PATTERN).optional(),
+    MIDTRANS_WEBHOOK_PATH_TOKEN: secret.optional(),
     MIDTRANS_LOCAL_STUB_URL: z.url().optional(),
     WHATSAPP_ACCESS_TOKEN: z.string().min(1).optional(),
     WHATSAPP_PHONE_NUMBER_ID: z.string().min(1).optional(),
     WHATSAPP_BUSINESS_ACCOUNT_ID: z.string().min(1).optional(),
     WHATSAPP_APP_SECRET: z.string().min(1).optional(),
-    WHATSAPP_VERIFY_TOKEN: secret,
+    WHATSAPP_VERIFY_TOKEN: secret.optional(),
     RESEND_API_KEY: z.string().min(1),
     RESEND_WEBHOOK_SECRET: z.string().min(1).optional(),
     EMAIL_FROM: z.string().min(1),
@@ -184,7 +217,11 @@ export const serverEnv = createEnv({
   emptyStringAsUndefined: true,
   createFinalSchema: (shape) =>
     z.object(shape).superRefine((values, ctx) => {
-      for (const problem of findEnvProblems(values)) {
+      const checked = {
+        ...values,
+        NEXT_PUBLIC_FLAG_PRELAUNCH: publicEnv.NEXT_PUBLIC_FLAG_PRELAUNCH,
+      };
+      for (const problem of findEnvProblems(checked)) {
         ctx.addIssue({ code: 'custom', message: problem });
       }
     }),

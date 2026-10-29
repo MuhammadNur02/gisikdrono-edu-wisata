@@ -5,6 +5,7 @@ import { after } from 'next/server';
 
 import { TURNSTILE_ACTIONS } from '@/config/auth';
 import { OTP_REQUEST_MIN_RESPONSE_MS, OTP_RESEND_COOLDOWN_SECONDS } from '@/config/guest';
+import { isPrelaunch } from '@/config/launch';
 import type { OtpCheck, OtpIssue } from '@/db/rpc-guest';
 import { copy } from '@/lib/copy/id';
 import { fail, mapError, ok } from '@/lib/errors';
@@ -73,6 +74,8 @@ export async function requestPhoneOtpAction(
   const startedAt = Date.now();
   const parsed = requestPhoneOtpSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
+  // A code only ever proves a phone for a booking, and a pre-launch build books nothing (docs/Security.md §8.9).
+  if (isPrelaunch()) return fail('STATE_INVALID', undefined, copy.booking.wizard.prelaunch);
   const clientIp = clientIpFrom(await headers());
   const answer = await requestCode(parsed.data, clientIp).catch((error: unknown) =>
     mapError(error),

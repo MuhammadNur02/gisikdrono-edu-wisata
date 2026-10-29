@@ -1,8 +1,9 @@
-import { ArrowRight, FileText, ShieldCheck } from 'lucide-react';
+import { ArrowRight, CalendarClock, FileText, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 
 import { AvailabilityPreview } from '@/components/packages/availability-preview';
 import { Button } from '@/components/ui/button';
+import { isPrelaunch } from '@/config/launch';
 import { PACKAGE_CATEGORY } from '@/config/status';
 import { packageDetailCopy as text } from '@/lib/copy/catalogue';
 import { copy } from '@/lib/copy/id';
@@ -65,6 +66,14 @@ export function PackageBookingCard({ pkg, rwNames }: PackageBookingCardProps) {
         <p className="text-caption text-muted-foreground">{factsLine(pkg, rwNames)}</p>
         {validity ? <p className="text-caption text-muted-foreground">{validity}</p> : null}
       </div>
+      {isPrelaunch() ? <BookingSoon /> : <BookingWays pkg={pkg} />}
+    </aside>
+  );
+}
+
+function BookingWays({ pkg }: { pkg: PackageDetail }) {
+  return (
+    <>
       <div className="border-t border-border pt-6">
         <AvailabilityPreview rws={pkg.rws} />
       </div>
@@ -86,6 +95,22 @@ export function PackageBookingCard({ pkg, rwNames }: PackageBookingCardProps) {
         <ShieldCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-rw05" />
         {text.panelNote}
       </p>
-    </aside>
+    </>
+  );
+}
+
+// Pre-launch (docs/Security.md §8.9): no seat count and no way into the wizard, only word that booking opens soon. The
+// button is disabled rather than a link, so nothing on the page leads to a closed form.
+function BookingSoon() {
+  return (
+    <div className="space-y-4 border-t border-border pt-6">
+      <Button size="xl" disabled className="w-full max-md:hidden">
+        {text.bookingSoon}
+      </Button>
+      <p className="flex gap-2.5 text-caption text-muted-foreground">
+        <CalendarClock aria-hidden className="mt-0.5 size-4 shrink-0 text-rw05" />
+        {text.prelaunchNote}
+      </p>
+    </div>
   );
 }

@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
+import { isPrelaunch } from '@/config/launch';
 import { svcRecordJobRun } from '@/db/rpc';
+import type { DatabaseClient } from '@/db/rpc-result';
 import { createLogger, requestIdFrom } from '@/lib/logger';
 // The service role is needed because this job runs without a signed-in user and moves payment and booking statuses,
 // which only internal.apply_payment_event may write. It is reached only by pg_cron behind CRON_SECRET, and it asks
@@ -8,6 +10,7 @@ import { createLogger, requestIdFrom } from '@/lib/logger';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { hasValidCronSecret } from '@/server/auth/cron-secret';
 import { pollPayments } from '@/server/services/payment-poll';
+import { PRELAUNCH_SKIP, recordPrelaunchSkip } from '@/server/services/prelaunch-jobs';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,6 +19,22 @@ export const maxDuration = 60;
 const JOB_NAME = 'payments-poll';
 const RUN_FAILED = 'run_failed';
 const ORDERS_FAILED = 'orders_not_checked';
+
+type JobLogger = ReturnType<typeof createLogger>;
+
+// docs/Security.md §8.9: no Midtrans to ask before launch; the heartbeat still moves.
+async function skippedForPrelaunch(
+  adminClient: DatabaseClient,
+  log: JobLogger,
+  runId: string,
+): Promise<Response> {
+  if (!(await recordPrelaunchSkip(adminClient, JOB_NAME))) {
+    log.error('cron_failed', { job: JOB_NAME, runId, heartbeat: 'not_recorded' });
+    return Response.json({ runId }, { status: 503 });
+  }
+  log.info('job_run', { job: JOB_NAME, runId, skipped: PRELAUNCH_SKIP });
+  return Response.json({ runId, skipped: PRELAUNCH_SKIP });
+}
 
 // Task P3.9.02: the pull fallback of the webhook (docs/Security.md §3.7, WH-13). A POST, like every job route
 // (internal.call_job): a run moves payments, so nothing that repeats GETs may start one.
@@ -27,6 +46,7 @@ export async function POST(request: Request): Promise<Response> {
   const log = createLogger(requestIdFrom(request.headers));
   const runId = randomUUID();
   const adminClient = createSupabaseAdminClient();
+  if (isPrelaunch()) return skippedForPrelaunch(adminClient, log, runId);
   try {
     const report = await pollPayments(adminClient);
     // An order Midtrans did not answer is asked again next run, but the run counts as failed, so an outage that

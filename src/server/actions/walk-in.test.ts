@@ -1,6 +1,8 @@
 import { revalidatePath, revalidateTag } from 'next/cache';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { isPrelaunch } from '@/config/launch';
+import { walkInCopy } from '@/lib/copy/walk-in';
 import { AppError, fail } from '@/lib/errors';
 import { getPublicSiteSettings } from '@/lib/queries/settings';
 import { requireRole, requireRwAccess, type StaffContext } from '@/server/auth/guards';
@@ -18,9 +20,12 @@ import {
 } from './walk-in';
 import { comboWizard } from '../../../tests/fixtures/booking-wizard';
 
-
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }));
 vi.mock('@/lib/queries/settings', () => ({ getPublicSiteSettings: vi.fn() }));
+vi.mock('@/config/launch', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  isPrelaunch: vi.fn(() => false),
+}));
 vi.mock('@/server/auth/guards', () => ({
   requireRole: vi.fn(),
   requireRwAccess: vi.fn(),
@@ -115,6 +120,16 @@ describe('the reads', () => {
 });
 
 describe('createAdminBookingAction', () => {
+  // docs/Security.md §8.9: the counter holds no seats and sends no pay link before launch.
+  it('books nothing in a pre-launch build', async () => {
+    vi.mocked(isPrelaunch).mockReturnValueOnce(true);
+    await expect(createAdminBookingAction(BOOKING)).resolves.toEqual({
+      ok: false,
+      error: { code: 'STATE_INVALID', message: walkInCopy.errors.prelaunch },
+    });
+    expect(createWalkInBooking).not.toHaveBeenCalled();
+  });
+
   it("books through the officer's session and answers the total for the cash step", async () => {
     vi.mocked(createWalkInBooking).mockResolvedValue({
       isNew: true,

@@ -18,6 +18,10 @@ export const bookingWizardCopy = {
   closedTitle: 'Pemesanan sedang ditutup',
   closed:
     'Pemesanan online sedang ditutup sementara. Coba lagi nanti, atau hubungi kelurahan lewat WhatsApp.',
+  // Pre-launch (docs/Security.md §8.9): the site is live, but booking and payment have not opened yet.
+  prelaunchTitle: 'Pemesanan segera dibuka',
+  prelaunch:
+    'Pemesanan dan pembayaran online untuk kunjungan edukasi akan segera dibuka. Sementara itu, silakan lihat paket dan kegiatan kami, atau hubungi kelurahan lewat WhatsApp.',
   unavailableChoice:
     'Pilihan Anda sudah tidak tersedia lagi: sesinya, paketnya, atau pesanan tambahannya berubah. Periksa lagi pilihan Anda, ya.',
   quoteNeedsWhatsApp:

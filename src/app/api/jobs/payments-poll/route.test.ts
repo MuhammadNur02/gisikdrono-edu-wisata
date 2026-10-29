@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { isPrelaunch } from '@/config/launch';
 import { svcRecordJobRun } from '@/db/rpc';
 import { pollPayments } from '@/server/services/payment-poll';
 
@@ -9,6 +10,10 @@ import { sandboxEnv } from '../../../../../tests/fixtures/env';
 vi.mock('@/lib/supabase/admin', () => ({ createSupabaseAdminClient: () => ({}) }));
 vi.mock('@/db/rpc', () => ({ svcRecordJobRun: vi.fn() }));
 vi.mock('@/server/services/payment-poll', () => ({ pollPayments: vi.fn() }));
+vi.mock('@/config/launch', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  isPrelaunch: vi.fn(() => false),
+}));
 
 const REPORT = {
   asked: 2,
@@ -30,6 +35,7 @@ function post(authorization?: string): Promise<Response> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(isPrelaunch).mockReturnValue(false);
   vi.mocked(pollPayments).mockResolvedValue(REPORT);
   vi.mocked(svcRecordJobRun).mockResolvedValue(undefined);
 });
@@ -69,5 +75,35 @@ describe('POST /api/jobs/payments-poll', () => {
       succeeded: false,
       errorCode: 'run_failed',
     });
+  });
+});
+
+// docs/Security.md §8.9: no Midtrans before launch, so the run is skipped, behind the same Bearer check, and its
+// heartbeat still moves so /api/health stays 200.
+describe('POST /api/jobs/payments-poll in a pre-launch build', () => {
+  beforeEach(() => {
+    vi.mocked(isPrelaunch).mockReturnValue(true);
+  });
+
+  it('still answers 401 without the cron secret, recording nothing', async () => {
+    expect((await post()).status).toBe(401);
+    expect(svcRecordJobRun).not.toHaveBeenCalled();
+  });
+
+  it('skips the run with 200 and records it as a success, asking Midtrans nothing', async () => {
+    const response = await post(`Bearer ${sandboxEnv.CRON_SECRET}`);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ skipped: 'prelaunch' });
+    expect(pollPayments).not.toHaveBeenCalled();
+    expect(svcRecordJobRun).toHaveBeenCalledWith(expect.anything(), {
+      job: 'payments-poll',
+      succeeded: true,
+    });
+  });
+
+  it('answers 503 when even the heartbeat cannot be written', async () => {
+    vi.mocked(svcRecordJobRun).mockRejectedValue(new Error('database down'));
+    expect((await post(`Bearer ${sandboxEnv.CRON_SECRET}`)).status).toBe(503);
+    expect(pollPayments).not.toHaveBeenCalled();
   });
 });

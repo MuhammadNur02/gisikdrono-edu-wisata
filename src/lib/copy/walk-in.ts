@@ -63,6 +63,9 @@ export const walkInCopy = {
       'Tulis jumlah orang yang hadir, paling sedikit 1 dan paling banyak dua kali jumlah peserta.',
   },
   errors: {
+    // Pre-launch (docs/Security.md §8.9): the counter books nothing until booking opens.
+    prelaunch:
+      'Pemesanan belum dibuka: situs masih dalam tahap pra-peluncuran, jadi belum ada pemesanan yang bisa dicatat.',
     stateInvalid:
       'Sesi ini tidak bisa dipesan sekarang: sudah selesai, penuh, ditutup, atau waktu pembayarannya terlalu sedikit. Pilih sesi lain.',
     cashRefused:

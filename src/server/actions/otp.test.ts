@@ -2,6 +2,7 @@ import { after } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OTP_REQUEST_MIN_RESPONSE_MS } from '@/config/guest';
+import { isPrelaunch } from '@/config/launch';
 import { copy } from '@/lib/copy/id';
 import { verifyTurnstile } from '@/lib/turnstile';
 import {
@@ -21,6 +22,10 @@ vi.mock('next/headers', () => ({
   headers: () => Promise.resolve(new Headers({ 'x-real-ip': '203.0.113.7' })),
 }));
 vi.mock('next/server', () => ({ after: vi.fn() }));
+vi.mock('@/config/launch', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  isPrelaunch: vi.fn(() => false),
+}));
 vi.mock('@/lib/turnstile', () => ({ verifyTurnstile: vi.fn() }));
 vi.mock('@/server/auth/guest-cookies', () => ({
   ensureOtpBrowserId: vi.fn(),
@@ -63,6 +68,18 @@ async function settled<T>(promise: Promise<T>): Promise<{ result: T; elapsedMs: 
 }
 
 describe('requestPhoneOtpAction', () => {
+  // docs/Security.md §8.9: a code proves a phone for a booking, and a pre-launch build books nothing.
+  it('issues no code in a pre-launch build', async () => {
+    vi.mocked(isPrelaunch).mockReturnValueOnce(true);
+    const { result } = await settled(requestPhoneOtpAction(REQUEST));
+    expect(result).toEqual({
+      ok: false,
+      error: { code: 'STATE_INVALID', message: copy.booking.wizard.prelaunch },
+    });
+    expect(verifyTurnstile).not.toHaveBeenCalled();
+    expect(issuePhoneOtp).not.toHaveBeenCalled();
+  });
+
   it('issues a WhatsApp code to this browser for the normalised number and sends it at once', async () => {
     vi.mocked(issuePhoneOtp).mockResolvedValue({ status: 'sent', otpId: OTP_ID, expiresAt: 'x' });
     const { result } = await settled(requestPhoneOtpAction(REQUEST));

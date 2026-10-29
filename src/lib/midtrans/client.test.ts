@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { isPrelaunch } from '@/config/launch';
 import {
   createSnapTransaction,
   expireTransaction,
@@ -9,14 +10,22 @@ import {
 } from '@/lib/midtrans/client';
 import type { SnapPayload } from '@/lib/midtrans/snap';
 
-const env = vi.hoisted(() => ({
-  serverEnv: {
+interface ClientEnv {
+  MIDTRANS_SERVER_KEY: string | undefined;
+  MIDTRANS_IS_PRODUCTION: boolean;
+  MIDTRANS_LOCAL_STUB_URL: string | undefined;
+}
+
+const env = vi.hoisted(() => {
+  const serverEnv: ClientEnv = {
     MIDTRANS_SERVER_KEY: 'SB-Mid-server-fixture',
     MIDTRANS_IS_PRODUCTION: false,
-    MIDTRANS_LOCAL_STUB_URL: undefined as string | undefined,
-  },
-}));
+    MIDTRANS_LOCAL_STUB_URL: undefined,
+  };
+  return { serverEnv };
+});
 vi.mock('@/lib/env', () => env);
+vi.mock('@/config/launch', () => ({ isPrelaunch: vi.fn(() => false) }));
 
 const PAYLOAD: SnapPayload = {
   transaction_details: { order_id: 'GSK-7F3K9Q2M-01', gross_amount: 30000 },
@@ -41,6 +50,44 @@ beforeEach(() => {
   fetchMock.mockReset();
   vi.stubGlobal('fetch', fetchMock);
   env.serverEnv.MIDTRANS_LOCAL_STUB_URL = undefined;
+  env.serverEnv.MIDTRANS_SERVER_KEY = 'SB-Mid-server-fixture';
+  vi.mocked(isPrelaunch).mockReturnValue(false);
+});
+
+// docs/Security.md §8.9: fail closed with a typed error before any request is built, never a call with "undefined:".
+describe('without a key, or in a pre-launch build', () => {
+  const calls = [
+    () => createSnapTransaction(PAYLOAD),
+    () => getTransactionStatus('GSK-7F3K9Q2M-01'),
+    () => expireTransaction('GSK-7F3K9Q2M-01'),
+  ];
+
+  it('refuses every call when the server key is not set', async () => {
+    env.serverEnv.MIDTRANS_SERVER_KEY = undefined;
+    for (const call of calls) {
+      await expect(call()).rejects.toMatchObject({
+        name: 'MidtransError',
+        reason: 'not_configured',
+      });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses every call in a pre-launch build even with a key set', async () => {
+    vi.mocked(isPrelaunch).mockReturnValue(true);
+    for (const call of calls) {
+      await expect(call()).rejects.toBeInstanceOf(MidtransError);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('leaves a refund open for later rather than asking', async () => {
+    vi.mocked(isPrelaunch).mockReturnValue(true);
+    await expect(
+      requestRefund({ orderId: 'GSK-7F3K9Q2M-01', refundKey: 'rf-1', amount: 1000, reason: 'uji' }),
+    ).resolves.toEqual({ outcome: 'unknown', statusCode: null });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 afterEach(() => {

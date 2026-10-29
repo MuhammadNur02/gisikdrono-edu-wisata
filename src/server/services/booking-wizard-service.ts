@@ -2,6 +2,7 @@ import 'server-only';
 
 import { addHours } from 'date-fns';
 
+import { isPrelaunch } from '@/config/launch';
 import { computeBookingQuote, type QuoteResult } from '@/lib/pricing/compute-booking-quote';
 import { bookingQuoteHash } from '@/lib/pricing/quote-hash';
 import { getPackageBySlug } from '@/lib/queries/packages';
@@ -24,8 +25,10 @@ export interface BookingWizard {
   // The add-ons of the RWs the package visits.
   addons: AddonProduct[];
   rules: { minLeadHours: number; maxAdvanceDays: number; maxPax: number };
-  // docs/PRD.md FR-BOOK-01: false while booking_enabled is off or the site is under maintenance.
+  // docs/PRD.md FR-BOOK-01: false while booking_enabled is off or the site is under maintenance, and always in a
+  // pre-launch build, whatever booking_enabled says (docs/Security.md §8.9).
   isOpen: boolean;
+  isPrelaunch: boolean;
 }
 
 export async function loadBookingWizard(packageSlug: string): Promise<BookingWizard | null> {
@@ -44,7 +47,8 @@ export async function loadBookingWizard(packageSlug: string): Promise<BookingWiz
       maxAdvanceDays: settings.maxAdvanceDays,
       maxPax: settings.maxPax,
     },
-    isOpen: settings.bookingEnabled && !settings.maintenanceMode,
+    isOpen: !isPrelaunch() && settings.bookingEnabled && !settings.maintenanceMode,
+    isPrelaunch: isPrelaunch(),
   };
 }
 
