@@ -218,6 +218,10 @@ select pg_temp.settle((select id from tie), pg_temp.now_jkt());
 select is(pg_temp.ledger((select id from tie), 'package'), array['kelurahan=500001', 'rw:5=500000'],
   'a package''s own 50/50 rule beats its RW''s default, and the kelurahan wins the tie over Rp 1.000.001');
 
+-- The combo carries a rule of its own in the shape of the combo default before 2026-10-29 (20261105160000), so the
+-- kelurahan's line still has a remainder to win.
+select pg_temp.rule('package', '00000000-0000-4000-8000-0000000f1003', null, '2026-01-01', null,
+  '[{"beneficiary": "kelurahan", "pct": 20}, {"beneficiary": "rw_treasury", "pct": 80}]');
 create temporary table three_legs on commit drop as
   select pg_temp.hold('00000000-0000-4000-8000-0000000f1003',
     array['00000000-0000-4000-8000-0000000f2003', '00000000-0000-4000-8000-0000000f2013',

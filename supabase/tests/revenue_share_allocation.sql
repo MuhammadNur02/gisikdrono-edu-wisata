@@ -85,8 +85,8 @@ select is((select sum(amount)::bigint from pg_temp.ledger((select id from regula
   'the settlement rows add up to the booking''s total, odd amounts included');
 select is((select array_agg(beneficiary_key || '=' || amount order by line_ref, beneficiary_key)
            from pg_temp.ledger((select id from regular)) where line_ref = 'package'),
-  array['kelurahan=133332', 'rw:5=533328'],
-  'the package line pays the kelurahan 20 % and RW 05 80 %, in whole rupiah');
+  array['rw:5=666660'],
+  'the package line pays RW 05 all of it and the kelurahan nothing (decision of 2026-10-29)');
 select is((select array_agg(beneficiary_key || '=' || amount order by beneficiary_key)
            from pg_temp.ledger((select id from regular)) where line_ref like 'addon:%'),
   array['rw:5=4500', 'vendor:00000000-0000-4000-8000-0000000d0051=40503'],
@@ -97,7 +97,7 @@ select is((select rule_version -> 'lines' is not null and rule_version ->> 'scop
 select is(internal.allocate_revenue_share((select id from regular),
             (select id from public.payments where booking_id = (select id from regular) and status = 'settled')) ->> 'result',
   'already_allocated', 'a second allocation writes nothing');
-select is((select count(*)::int from pg_temp.ledger((select id from regular))), 4, 'so the rows stay four');
+select is((select count(*)::int from pg_temp.ledger((select id from regular))), 3, 'so the rows stay three');
 
 -- ===== A combo of an odd amount: the tie goes to the earlier leg (decision of 2026-10-22, Q1) =====
 create temporary table combo on commit drop as
@@ -107,8 +107,8 @@ create temporary table combo on commit drop as
 select pg_temp.settle((select id from combo));
 select is((select array_agg(beneficiary_key || '=' || amount order by beneficiary_key)
            from pg_temp.ledger((select id from combo))),
-  array['kelurahan=200000', 'rw:13=400000', 'rw:5=400001'],
-  'Rp 1.000.001 pays the kelurahan 20 % and the two RWs 80 % between them, the spare rupiah to RW 05''s earlier leg');
+  array['rw:13=500000', 'rw:5=500001'],
+  'Rp 1.000.001 pays the two RWs half each, the spare rupiah to RW 05''s earlier leg');
 select is((select sum(amount)::bigint from pg_temp.ledger((select id from combo))), 1000001::bigint,
   'and adds up to the payment exactly');
 

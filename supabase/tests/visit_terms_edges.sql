@@ -7,6 +7,7 @@
 begin;
 select plan(202);
 \ir helpers/rls_personas.psql
+\ir helpers/kelurahan_share_defaults.psql
 \ir helpers/visit_terms.psql
 select set_config('app.qr_key_id', 'k1', true);
 

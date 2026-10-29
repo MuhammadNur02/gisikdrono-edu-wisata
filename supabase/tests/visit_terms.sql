@@ -7,6 +7,7 @@
 begin;
 select plan(48);
 \ir helpers/rls_personas.psql
+\ir helpers/kelurahan_share_defaults.psql
 select set_config('app.qr_key_id', 'k1', true);
 
 -- ===== Fixtures: an RW 05 package at Rp 30.000, a Rp 15.000 add-on, sessions on four days =====

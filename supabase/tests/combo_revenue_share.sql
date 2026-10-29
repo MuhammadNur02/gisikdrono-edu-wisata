@@ -1,6 +1,7 @@
 -- A combo pays any number of RWs (decision of 2026-10-21, Task P3.9.04, 20261022100000_combo_revenue_share_any_rws.sql):
--- its default rule pays the kelurahan 20 % and the RWs of the booking's legs 80 % in equal parts, written as an
--- rw_treasury line without an RW. The 0008 rule that named RW 05 and RW 08 is closed.
+-- its default rule pays the RWs of the booking's legs in equal parts, written as an rw_treasury line without an RW:
+-- 80 % beside the kelurahan's 20 % until the decision of 2026-10-29, 100 % since (20261105160000). The 0008 rule that
+-- named RW 05 and RW 08 is closed.
 begin;
 select plan(17);
 
@@ -13,15 +14,16 @@ select is(
    where r.scope = 'package_default' and r.rw_id is null and r.package_id is null and r.product_id is null
      and r.is_active and r.effective_from <= public.today_jkt()
      and (r.effective_to is null or r.effective_to >= public.today_jkt())),
-  'kelurahan=20.00 rw_treasury/legs=80.00',
-  'the one current combo default pays the kelurahan 20 % and the booking''s RWs 80 % between them'
+  'rw_treasury/legs=100.00',
+  'the one current combo default pays the booking''s RWs all of it between them, the kelurahan nothing'
 );
 select is(
   (select count(*)::int from public.revenue_share_rules r
    where r.scope = 'package_default' and r.rw_id is null and r.package_id is null and r.product_id is null
-     and r.is_active),
+     and r.is_active and r.effective_from <= public.today_jkt()
+     and (r.effective_to is null or r.effective_to >= public.today_jkt())),
   1,
-  'there is exactly one active combo default'
+  'there is exactly one combo default in force'
 );
 select is(
   (select string_agg(r.is_active::text, ',') from public.revenue_share_rules r
