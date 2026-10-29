@@ -9,7 +9,8 @@ vi.mock('@/server/services/document-service', () => ({ ticketWhatsAppDocument: v
 
 // internal.enqueue_visit_reminders queues one D-1 reminder per booking and visit day, carrying the day as
 // params.session_date (20261105130200); the worker words it with that day's legs only, and only legs still holding a
-// seat count as a visit day (review of PR #109, L2).
+// seat count as a visit day (review of PR #109, L2), outside a session the weather stopped (last review of PR #109,
+// item 4).
 
 const NOW = 1_790_000_000;
 
@@ -25,7 +26,20 @@ function leg(
     leg_order: order,
     status,
     rw_units: { name: rwName },
-    visit_sessions: { session_date: date, start_time: start, end_time: end },
+    visit_sessions: {
+      session_date: date,
+      start_time: start,
+      end_time: end,
+      weather_notices: null as { id: string } | null,
+    },
+  };
+}
+
+// A leg whose session the weather stopped (a weather_notices row); its seat stays reserved while the guest decides.
+function stoppedByWeather(stopped: ReturnType<typeof leg>): ReturnType<typeof leg> {
+  return {
+    ...stopped,
+    visit_sessions: { ...stopped.visit_sessions, weather_notices: { id: 'notice-1' } },
   };
 }
 
@@ -148,5 +162,34 @@ describe('the D-1 reminder of one visit day', () => {
       session: '09.05–10.05 WIB',
       gate: 'RW 05 Ecowastreme',
     });
+  });
+
+  it('names only the session the weather did not stop on a one-day combo, and its gate', async () => {
+    const rw05Stopped = stoppedByWeather(
+      leg(1, 'reserved', 'RW 05 Ecowastreme', '2026-11-13', '09:05:00', '10:05:00'),
+    );
+    const rw08 = leg(
+      2,
+      'reserved',
+      'RW 08 Kampung Seni Budaya',
+      '2026-11-13',
+      '13:00:00',
+      '14:30:00',
+    );
+    expect(await reminderParams([rw05Stopped, rw08], '2026-11-13')).toEqual({
+      name: 'Ani',
+      date: 'Jumat, 13 November 2026',
+      session: '13.00–14.30 WIB',
+      gate: 'RW 08 Kampung Seni Budaya',
+    });
+  });
+
+  it('refuses a reminder of a day whose only session the weather stopped', async () => {
+    const composed = await composeMessage(
+      clientWith([RW05_FIRST_DAY, stoppedByWeather(RW13_NEXT_DAY)]),
+      reminderRow('2026-11-13'),
+      NOW,
+    );
+    expect(composed).toMatchObject({ ok: false, failure: { errorCode: 'stale_day' } });
   });
 });

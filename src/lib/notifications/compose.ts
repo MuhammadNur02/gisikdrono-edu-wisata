@@ -28,7 +28,8 @@ export interface BookingFacts {
   session: string;
   // Where the group reports: the first leg's RW.
   gate: string;
-  // Each day of the visit in date order; a combo may visit its RWs on two days.
+  // Each day of the visit in date order, from the legs that hold a seat outside a session the weather stopped; a combo
+  // may visit its RWs on two days.
   days: readonly VisitDay[];
   pax: number;
   total: number;
@@ -76,8 +77,9 @@ function reminderDay({ facts, queued }: GuestParamsInput): VisitDay {
   return day ?? { date: facts.visitDate, session: facts.session, gate: facts.gate };
 }
 
-// Delta review of PR #109, L-c: a D-1 reminder whose day the booking no longer visits (its leg moved or released since
-// the row was queued) has nothing true to say, so the worker refuses it rather than speak of another day.
+// Delta review of PR #109, L-c: a D-1 reminder whose day the booking no longer visits (its leg moved or released, or its
+// session stopped by the weather, since the row was queued) has nothing true to say, so the worker refuses it rather
+// than speak of another day, and the outbox cancels the row (stale_day, 20261105140100).
 export function isStaleReminder(
   template: GuestTemplate,
   facts: BookingFacts,

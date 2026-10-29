@@ -75,7 +75,8 @@ const SEAT_HOLDING_LEG_STATUSES: ReadonlySet<string> = new Set(['reserved', 'che
 
 const BOOKING_COLUMNS = `booking_code, token_version, email_verified_at, package_snapshot, visit_date, pax_count,
   total_amount, expires_at, institution_name,
-  booking_legs(leg_order, status, rw_units(name), visit_sessions(session_date, start_time, end_time)),
+  booking_legs(leg_order, status, rw_units(name),
+    visit_sessions(session_date, start_time, end_time, weather_notices(id))),
   quotations(quotation_number, valid_until, issued_at), payments(refunded_amount)`;
 
 const linkScopeSchema = z.object({ link_scope: z.enum(GUEST_LINK_SCOPES) });
@@ -120,9 +121,16 @@ function sessionsOf(legs: readonly LoadedLeg[]): string {
   return legs.map((leg) => `${leg.rw_units.name} ${sessionOf(leg)}`).join(', ');
 }
 
-// The booking's visit days in date order, each with the sessions and the gate of its own legs.
+function isVisitedLeg(leg: LoadedLeg): boolean {
+  return SEAT_HOLDING_LEG_STATUSES.has(leg.status) && leg.visit_sessions.weather_notices === null;
+}
+
+// The booking's visit days in date order, each with the sessions and the gate of its own legs, as the D-1 reminder
+// names them. A leg in a session the weather stopped is no visit of that day (last review of PR #109, item 4): on a
+// one-day combo whose RW 05 session is stopped, the reminder names the RW 08 session and gate only, and a day left with
+// stopped legs only is a stale day, as internal.reminder_day_held reads it.
 function daysOf(allLegs: readonly LoadedLeg[]): VisitDay[] {
-  const legs = allLegs.filter((leg) => SEAT_HOLDING_LEG_STATUSES.has(leg.status));
+  const legs = allLegs.filter(isVisitedLeg);
   const dates = [...new Set(legs.map((leg) => leg.visit_sessions.session_date))].sort(
     (left, right) => left.localeCompare(right),
   );
@@ -213,6 +221,8 @@ async function composeGuest(
   if (row.booking_id === null) return refusal('bad_params', 'The message names no booking');
   const booking = await loadBooking(adminClient, row.booking_id);
   const facts = factsOf(booking);
+  // The booking changed, nothing failed: internal.fail_notification cancels a stale_day row rather than dead-letter it
+  // and raise notification_dead (20261105140100).
   if (isStaleReminder(row.template, facts, row.params)) {
     return refusal('stale_day', 'The reminder names a day the booking no longer visits');
   }

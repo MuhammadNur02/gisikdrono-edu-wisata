@@ -98,6 +98,8 @@ export const bookingStaffCopy = {
     quotaUnavailable: 'Kursi sesi yang dipilih sudah habis. Pilih sesi lain.',
     notSent:
       'Pesan tidak bisa dikirim sekarang: salurannya dimatikan, nomor belum terverifikasi, atau batas email sebelum pembayaran sudah tercapai.',
+    reminderDayUnknown:
+      'Pengingat H-1 terakhir pemesanan ini tidak mencatat tanggal kunjungannya, jadi tidak bisa dikirim ulang. Pengingat berikutnya dikirim otomatis sehari sebelum kunjungan.',
     qrKeyUnknown:
       'Kunci tanda tangan tiket belum terdaftar, jadi tiket tidak bisa dibuat. Hubungi pengelola sistem.',
     ledgerMissing:

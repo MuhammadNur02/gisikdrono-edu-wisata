@@ -23,6 +23,11 @@ const NOW = 1_790_000_000;
 const SITE = 'http://127.0.0.1:3000';
 const CODE = 'GSK-7F3K9Q2M';
 
+// A session the weather did not stop: no weather_notices row.
+function sessionOn(date: string, start: string, end: string) {
+  return { session_date: date, start_time: start, end_time: end, weather_notices: null };
+}
+
 const BOOKING = {
   booking_code: CODE,
   token_version: 3,
@@ -38,7 +43,7 @@ const BOOKING = {
       leg_order: 1,
       status: 'reserved',
       rw_units: { name: 'RW 05 Ecowastreme' },
-      visit_sessions: { session_date: '2026-11-12', start_time: '09:05:00', end_time: '10:05:00' },
+      visit_sessions: sessionOn('2026-11-12', '09:05:00', '10:05:00'),
     },
   ],
   quotations: [
@@ -56,7 +61,7 @@ const RW13_LEG = {
   leg_order: 2,
   status: 'reserved',
   rw_units: { name: 'RW 13 Kampung Budaya & Seni' },
-  visit_sessions: { session_date: '2026-11-12', start_time: '13:00:00', end_time: '14:30:00' },
+  visit_sessions: sessionOn('2026-11-12', '13:00:00', '14:30:00'),
 };
 
 function clientWith(booking: Partial<typeof BOOKING> = {}) {
