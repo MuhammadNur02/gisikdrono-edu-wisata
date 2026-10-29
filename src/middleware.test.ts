@@ -13,7 +13,7 @@ import { config } from '@/middleware';
 // Next.js exports it at runtime but its type declarations leave it out, so it is read through require and narrowed.
 
 const PATH_PARAM_SUFFIX = '/:path*';
-const SAMPLE_TOKEN = 'a1b2c3d4e5f6';
+const SAMPLE_PATH_SEGMENT = 'any-path-segment';
 
 type GetMiddlewareMatchers = (matcher: readonly string[], nextConfig: object) => unknown;
 
@@ -45,8 +45,8 @@ function samplePathsOf(source: string): string[] {
     base,
     `${base}/`,
     `${base}/expire-bookings`,
-    `${base}/midtrans/${SAMPLE_TOKEN}`,
-    `${base}/midtrans/${SAMPLE_TOKEN}/`,
+    `${base}/midtrans/${SAMPLE_PATH_SEGMENT}`,
+    `${base}/midtrans/${SAMPLE_PATH_SEGMENT}/`,
   ];
 }
 
