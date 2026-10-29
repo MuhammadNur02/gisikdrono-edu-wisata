@@ -5,7 +5,7 @@ Owner: Dev on call. Source of truth: `CLAUDE.md` §6.4 and §10.1, `docs/Task.md
 ## The order of a release
 
 1. **Migrate first.** `pnpm db:push --linked` applies the new migrations to the target project. Only CI runs it; nobody pushes production by hand (`CLAUDE.md` §12.1 no. 19). Production is migrated by `.github/workflows/release.yml` (Task P5.7.02; see "The production release job" below), staging by `.github/workflows/staging-db.yml` (`docs/runbooks/staging-setup.md`, part D). Both run by hand, from `main`, and as a dry run unless that box is unticked.
-2. **Then deploy.** The Vercel deployment builds after the database has moved: staging when its workflow moves the `staging` branch, production when the owner moves the `production` branch to the commit the release job migrated (`docs/runbooks/production-setup.md`, part 1 step 5.4). The public pages are prerendered from the database: the RW pages are built from `rw_units` (`generateStaticParams`), and the redirects of `src/config/redirects.ts` point at RW pages that must exist. A build against an older database bakes in the old slugs.
+2. **Then deploy.** The Vercel deployment builds after the database has moved: staging when its workflow moves the `staging` branch, production when the release job itself fast-forwards the `production` branch to the commit it has just migrated (`docs/runbooks/production-setup.md`, part 1 steps 3 and 4). Production builds only from the `production` branch, which only the release workflow moves, fast-forward, to a `main` commit it has just migrated; nobody pushes it by hand. The public pages are prerendered from the database: the RW pages are built from `rw_units` (`generateStaticParams`), and the redirects of `src/config/redirects.ts` point at RW pages that must exist. A build against an older database bakes in the old slugs.
 3. **Then check.** Open `/api/health` (200 on production) and the pages the change touched.
 
 A migration that stops is a release that stops: fix its cause, never edit an applied migration (`CLAUDE.md` §6.4).
@@ -130,7 +130,7 @@ A migration that stops is a release that stops: fix its cause, never edit an app
 4. **The Security Advisor, before the push.** `supabase db advisors --linked --type security --fail-on error` must show no error (DB-01). An error already there stops the run before anything moves (L1).
 5. **The migrations.** `supabase db push --linked --dry-run` lists them. With **dry_run** unticked, `supabase db push --linked --yes` applies them. The job never passes `--include-all` (it would apply a migration older than the last one applied) or `--include-seed`.
 6. **The Security Advisor, after the push.** The same check again, when the run applied anything.
-7. **Then deploy.** The Vercel production deployment follows the migration (step 2 of the order above). Record the run's link in the release notes.
+7. **Then deploy.** Only after a run that applied and passed both Advisor checks, the second job, **move the production branch (Vercel deploys it)**, waits for the environment's reviewers again, then pushes `production` to the run's own commit without force (`contents: write` in that job only). A push that would not be a fast-forward is refused and the job fails; the `production` ruleset lets only GitHub Actions update the branch (`docs/runbooks/production-setup.md`, part 1 step 3). Vercel builds the moved branch as production (step 2 of the order above). Record the run's link in the release notes.
 
 ### If a check fails after the push
 

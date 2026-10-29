@@ -9,7 +9,10 @@ name: Production release
 # steps that use it, and a step that connects takes libpq's variables in its own shell, never a URL with its password
 # in a process's arguments (fourth review, L1 and L2). The order of a release: check the project, run the pre-flight
 # and the Advisor, migrate, the Advisor again; the Vercel production deploy follows the migration (release checklist,
-# "Then deploy"). Never --include-all or --include-seed.
+# "Then deploy"). Never --include-all or --include-seed. The deploy is the job "deploy": once a run that applied has
+# passed every step of "migrate", it fast-forwards the production branch, which Vercel builds as production, to the
+# very commit it migrated, and no one moves that branch by hand (docs/runbooks/production-setup.md, security review of
+# PR #112, M-1).
 on:
   workflow_dispatch:
     inputs:
@@ -120,3 +123,26 @@ jobs:
           connection="$(node scripts/supabase-db-url.mjs --libpq --release <<< "$SUPABASE_DB_URL")"
           eval "$connection"
           supabase db advisors --linked --type security --level error --fail-on error
+
+  # docs/runbooks/production-setup.md, part 1 step 5.4: production builds only from the production branch, which only
+  # this job moves, fast-forward, to the main commit the job above has just migrated. It runs only after "migrate"
+  # applied and passed both Advisor checks, waits for the environment's reviewers again, and is the one job that may
+  # write to the repository. A plain push only fast-forwards: when production holds a commit this one does not contain,
+  # GitHub refuses the push and the job fails, so production never jumps back or sideways. The production ruleset lets
+  # only GitHub Actions update the branch (production-setup.md, step 5.2).
+  deploy:
+    name: move the production branch (Vercel deploys it)
+    needs: migrate
+    if: ${{ github.ref == 'refs/heads/main' && format('{0}', inputs.dry_run) == 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: production
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        # The credentials stay for the push below, the only step of this job; nothing else runs here.
+        with:
+          fetch-depth: 0
+      - name: Fast-forward production to the migrated commit
+        run: git push origin "${GITHUB_SHA}:refs/heads/production"

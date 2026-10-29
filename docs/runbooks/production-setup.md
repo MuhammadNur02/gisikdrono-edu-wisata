@@ -20,14 +20,15 @@ Throughout this guide `<domain>` means the kelurahan's domain without `https://`
 | Step | What you do | You need from before |
 |---|---|---|
 | 1 | Supabase production project and its settings | nothing |
-| 2 | GitHub environment `production`; migrate with `release.yml` | 1 |
-| 3 | No demo content | 2 |
-| 4 | First superadmin | 2, and 1.4 (Auth settings) |
-| 5 | Vercel production project and its variables | 1 |
-| 6 | Domain and DNS | 5 |
-| 7 | Scheduled jobs | 2, 6 |
-| 8 | Database switches and settings | 4 |
-| 9 | Verify | all |
+| 2 | Production secrets, the Vercel production project and its variables | 1 |
+| 3 | Protect the `production` branch | nothing |
+| 4 | Migrate with `release.yml`, close the database switches, then let the same run deploy | 1, 2, 3 |
+| 5 | No demo content | always |
+| 6 | First superadmin | 4 |
+| 7 | Domain and DNS | 4 |
+| 8 | Scheduled jobs | 4, 7 |
+| 9 | Settings, and what staff record | 6, 7 |
+| 10 | Verify | all |
 
 ### 1. The Supabase production project
 
@@ -57,14 +58,14 @@ As staging-setup.md D.1, with the production values. **Integrations** > **Vault*
 |---|---|
 | `environment` | `production` |
 | `jobs_base_url` | `<site>` (starts with `https://`, no slash at the end) |
-| `cron_secret` | the `CRON_SECRET` of step 5.1 |
-| `otp_pepper` | the `OTP_PEPPER` of step 5.1 |
+| `cron_secret` | the `CRON_SECRET` of step 2.1 |
+| `otp_pepper` | the `OTP_PEPPER` of step 2.1 |
 
-So generate the secrets file of step 5.1 first, then come back here. Check with `select name from vault.secrets order by name;` (names only). Never set `environment` to anything but `production` here.
+So generate the secrets file of step 2.1 first, then come back here. Check with `select name from vault.secrets order by name;` (names only). Never set `environment` to anything but `production` here.
 
 #### 1.3 Cloudflare Turnstile widget
 
-Production refuses Cloudflare's test keys, so it needs its own widget: https://dash.cloudflare.com > **Turnstile** > **Add widget**, name `gisikdrono-production`, hostnames `<domain>` and `www.<domain>`, mode **Managed**, pre-clearance **No**. Keep the page open for step 5.1. Do not reuse the staging widget.
+Production refuses Cloudflare's test keys, so it needs its own widget: https://dash.cloudflare.com > **Turnstile** > **Add widget**, name `gisikdrono-production`, hostnames `<domain>` and `www.<domain>`, mode **Managed**, pre-clearance **No**. Keep the page open for step 2.1. Do not reuse the staging widget.
 
 #### 1.4 Auth and API settings
 
@@ -85,65 +86,22 @@ Mirror `supabase/config.toml` by hand, as staging-setup.md D.6 does, with these 
 | | Time-box 12 hours / inactivity timeout 2 hours | not offered on Free; turn on at launch (part 2) |
 | Authentication > Sessions, or Project Settings > JWT Keys | Access token (JWT) expiry | 900 seconds |
 | Authentication > Multi-Factor | TOTP | enroll and verify **on**; Phone MFA off; maximum factors per user 1 |
-| Authentication > Auth Hooks | Customize Access Token (JWT) Claims | **on**, Postgres, schema `public`, function `custom_access_token_hook` (only after step 2 has created it) |
+| Authentication > Auth Hooks | Customize Access Token (JWT) Claims | **on**, Postgres, schema `public`, function `custom_access_token_hook` (only after step 4 has created it) |
 | | Password Verification Attempt, MFA Verification Attempt | **leave off** (`docs/Security.md` §5.5) |
 | Authentication > Rate Limits | Sign-ups and sign-ins | 10 per 5 minutes per IP |
 | | Token verifications | 30 per 5 minutes |
 | Authentication > Emails > Templates > Invite user | Subject and body | the subject of `[auth.email.template.invite]` in `supabase/config.toml` and the HTML of `supabase/templates/invite.html`, pasted as they are |
 | Authentication > Emails > Templates > Reset Password | Subject and body | the subject of `[auth.email.template.recovery]` and the HTML of `supabase/templates/recovery.html` |
-| Authentication > SMTP Settings | Custom SMTP | **on**: host `smtp.resend.com`, port `465`, user `resend`, password = the **production** `RESEND_API_KEY` of step 5.1, sender = the address of `EMAIL_FROM` on `mail.<domain>` (Task P0.1.16) |
+| Authentication > SMTP Settings | Custom SMTP | **on**: host `smtp.resend.com`, port `465`, user `resend`, password = the **production** `RESEND_API_KEY` of step 2.1, sender = the address of `EMAIL_FROM` on `mail.<domain>` (Task P0.1.16) |
 | Project Settings > Data API | Exposed schemas | `public` only (remove `graphql_public`) |
 | | Max rows | 100 |
 | Database > Settings | Enforce SSL on incoming connections | on |
 
-The Resend key for production is **its own key**, created in Resend (**API Keys** > **Create API key**, name `gisikdrono-production`, permission **Sending access**, domain `mail.<domain>`). Never reuse the staging placeholder or a staging key. After the SMTP settings are saved, send yourself a password reset from `<site>/forgot-password` once step 6 is done and check it arrives DKIM-signed.
+The Resend key for production is **its own key**, created in Resend (**API Keys** > **Create API key**, name `gisikdrono-production`, permission **Sending access**, domain `mail.<domain>`). Never reuse the staging placeholder or a staging key. After the SMTP settings are saved, send yourself a password reset from `<site>/forgot-password` once step 7 is done and check it arrives DKIM-signed.
 
-### 2. Migrate with `.github/workflows/release.yml`
+### 2. The Vercel production project and its variables
 
-Production's schema comes only from this workflow (`CLAUDE.md` §6.4, §12.1 no. 19). Read "The production release job" in `docs/runbooks/release-checklist.md` before the first run; in short:
-
-1. **One-time setup.** GitHub > **Settings** > **Environments** > **New environment** `production`:
-   - **Deployment branches and tags**: selected branches, `main` only.
-   - **Required reviewers**: you (and a second maintainer once there is one). **Prevent self-review** on as soon as a second reviewer exists; with one owner the run waits for your own approval.
-   - **Environment secrets**: `SUPABASE_ACCESS_TOKEN`, a personal access token of the institutional Supabase account (https://supabase.com/dashboard/account/tokens, name `github-production-release`, the shortest expiry, put the date in your calendar), and `SUPABASE_DB_URL`, the **session pooler** string of `gisikdrono-prod` (project > **Connect** > **Session pooler**, port 5432, user `postgres.<prod-ref>`, with the database password filled in, no `sslmode` or `sslmode=verify-full`). The direct `db.<prod-ref>.supabase.co` address is IPv6 only and cannot work from GitHub.
-2. **Dry run.** **Actions** > **Production release** > **Run workflow**, branch `main`. The only input is **dry_run**, ticked by default. Approve the run when GitHub asks. It checks that the URL belongs to a project named `gisikdrono-prod`, runs the read-only pre-flight (`scripts/release-preflight.sql`) and the Security Advisor (errors stop the run), then lists every migration from `0001_extensions.sql` to the newest under **Migrations that would run**. It changes nothing.
-3. **Apply.** Run it again with **dry_run** unticked and approve. It applies the migrations with `supabase db push --linked` (never `--include-all`, never `--include-seed`) and runs the Advisor again. Note the commit SHA of the run (top of the run page); step 5.4 deploys exactly that commit.
-4. If it fails before the push, nothing changed: fix the cause and run again. If the Advisor fails after the push, follow "If a check fails after the push" in the release checklist: do not deploy, fix forward with a new migration.
-
-Then turn on the **Customize Access Token** hook of 1.4, which needs the function the migrations created.
-
-### 3. No demo content on production
-
-- `release.yml` has no demo input and never writes seed data. The demo content of `scripts/seed-demo-content.sql` and the **seed_demo** box belong to the **Staging release** workflow and the staging project only; that file also refuses a database whose Vault `environment` is `production`.
-- Never run `pnpm db:seed`, `pnpm db:seed:staging-media`, `scripts/seed-dev.sql`, `supabase db reset --linked` or `supabase db push --include-seed` against production, and never paste any of those files into its SQL editor.
-- The real content (RW profiles, packages, products, photos, articles, the e-booklet) is entered by staff in the dashboard after step 4. The migrations bring only reference data: the RW units, `site_settings` and the default revenue rules.
-
-### 4. The first superadmin
-
-As staging-setup.md part E, on the production project, once step 2 has run and the access token hook of 1.4 is on:
-
-1. Supabase > **Authentication** > **Users** > **Add user** > **Create new user**: your institutional mailbox, a new Bitwarden-generated password of at least 20 characters (login item `gisikdrono production superadmin`), **Auto Confirm User** ticked.
-2. **SQL Editor**, role `postgres`, your address in place of the example:
-
-   ```sql
-   begin;
-   select set_config('app.privileged_rpc', 'on', true);
-   update public.profiles p
-   set full_name = 'Superadmin Kelurahan', role = 'superadmin', is_active = true
-   from auth.users u
-   where u.id = p.id and u.email = 'your.name@institution.example';
-   commit;
-
-   select email, role, is_active, mfa_required from public.profiles;
-   ```
-
-   One row: `superadmin`, `true`, `true`. The role also stamps `became_staff_at`, which the release pre-flight checks.
-3. After step 6, open `<site>/login` in a private window, sign in, enrol TOTP at **/mfa/enroll** and save the setup key in the Bitwarden item's **Authenticator key (TOTP)** field. Sign out and in again to see **/mfa/verify**.
-4. The RW admins come later by invite from **/dashboard/users** (Task P4.8), each enrolling their own TOTP.
-
-### 5. The Vercel production project and its variables
-
-#### 5.1 Generate the production secrets
+#### 2.1 Generate the production secrets
 
 The random values are **new for production**, drawn on your machine; never copy one from staging or from the staging secrets note. In PowerShell:
 
@@ -174,14 +132,14 @@ The script writes `%USERPROFILE%\gisikdrono-production-secrets.txt` outside the 
 
 **Left unset in pre-launch** (the file has no line for them, add none to Vercel): `MIDTRANS_SERVER_KEY`, `MIDTRANS_CLIENT_KEY`, `MIDTRANS_MERCHANT_ID`, `MIDTRANS_SERVER_KEY_PREVIOUS`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_APP_SECRET`, `RESEND_WEBHOOK_SECRET`, `PARTICIPANT_PII_KEYS`, `PARTICIPANT_PII_ACTIVE_KID`, `NEXT_PUBLIC_SENTRY_DSN`. `VERCEL_ENV` is set by Vercel; never add it. The CI-only names (`SUPABASE_DB_URL`, `SUPABASE_ACCESS_TOKEN`, `BACKUP_AGE_PUBLIC_KEY`, `R2_*`, `SENTRY_AUTH_TOKEN`) live in GitHub environments, never in Vercel.
 
-`QR_SIGNING_ACTIVE_KID` is `k1`, which the migrations seed in `site_settings` `qr.signing_kids`; step 8 checks it.
+`QR_SIGNING_ACTIVE_KID` is `k1`, which the migrations seed in `site_settings` `qr.signing_kids`; step 4 checks it.
 
-#### 5.2 The project
+#### 2.2 The project
 
 Production gets its own Vercel project under its own account, never the staging account's project (Task P0.1.03).
 
 1. Sign up at https://vercel.com with the **institutional email**, plan **Hobby** for now, MFA on (**Account Settings** > **Authentication**), recovery codes in Bitwarden. Hobby is for personal, non-commercial use: acceptable only while the site takes no payment; part 2 moves to a Pro team before booking opens.
-2. **Add New** > **Project** > import `MuhammadNur02/gisikdrono-edu-wisata` (give the Vercel GitHub app access to this repository only). Name `gisikdrono-production`, framework Next.js, root `./`. Add **no** variables on this screen. **Deploy**: this first build fails, which is expected (no variables yet).
+2. **Add New** > **Project** > import `MuhammadNur02/gisikdrono-edu-wisata` (give the Vercel GitHub app access to this repository only). Name `gisikdrono-production`, framework Next.js, root `./`. Add **no** variables on this screen. **Deploy**: this first build of `main` fails, which is expected (no variables yet) and serves nothing.
 3. **Settings** > **Build and Deployment**: **Node.js Version** `22.x`. **Ignored Build Step**: **Custom**, exactly:
 
    ```bash
@@ -189,11 +147,10 @@ Production gets its own Vercel project under its own account, never the staging 
    ```
 
    It builds only the branch `production` of this repository, never a pull request or a fork.
-4. **Settings** > **Environments** > **Production** > **Branch Tracking**: branch `production`. `vercel.json` lets Vercel deploy only the `staging` and `production` branches, so a merge to `main` deploys nothing by itself: production moves only when you move its branch after a migration (5.4), which keeps "migrate first, then deploy".
+4. **Settings** > **Environments** > **Production** > **Branch Tracking**: branch `production`. `vercel.json` lets Vercel deploy only the `staging` and `production` branches, so a merge to `main` deploys nothing by itself: production moves only when the release workflow moves its branch after a migration (step 4), which keeps "migrate first, then deploy".
 5. **Settings** > **Security** (or **Git**): **Git Fork Protection** on. **Settings** > **Deployment Protection**: Vercel Authentication on, **Standard Protection** (previews behind a login; the production domain stays public). No Deployment Protection Exception here.
-6. GitHub > **Settings** > **Rules** > **Rulesets** > **New branch ruleset** `production`, target branch `production`: **Restrict updates** with only you allowed to bypass, **Block force pushes**, **Restrict deletions**. Only the owner moves production.
 
-#### 5.3 Put the values into Vercel
+#### 2.3 Put the values into Vercel
 
 1. **Settings** > **Environment Variables** > **Add Environment Variable**. **Environments**: tick **Production** only; untick Preview and Development. **Sensitive** on.
 2. Paste the whole filled-in file into the first **Key** field; Vercel splits it into one row per variable and skips comments. Check: 21 variables, all scoped to **Production** only.
@@ -203,18 +160,76 @@ Production gets its own Vercel project under its own account, never the staging 
    Remove-Item "$env:USERPROFILE\gisikdrono-production-secrets.txt"
    ```
 
-#### 5.4 The first production deployment
+### 3. Protect the `production` branch
 
-After step 2 applied the migrations, move the `production` branch to the commit that run used (`<sha>`, from the run page):
+Production builds only from the `production` branch, which only the release workflow moves, fast-forward, to a `main` commit it has just migrated. Nobody pushes to it by hand, the owner included. A GitHub ruleset makes that the rule:
 
-```powershell
-git fetch origin
-git push origin <sha>:refs/heads/production
-```
+1. GitHub > the repository > **Settings** > **Rules** > **Rulesets** > **New ruleset** > **New branch ruleset**.
+2. **Ruleset Name**: `production`. **Enforcement status**: **Active**.
+3. **Bypass list** > **Add bypass**: choose **GitHub Actions** (it may be listed among the apps) and set it to **Always allow**. Add nobody else: not yourself, not the **Repository admin** role. If the list offers no GitHub Actions entry, stop and ask the Dev on call; never add a person instead.
+4. **Target branches** > **Add target** > **Include by pattern**: `production`.
+5. **Branch rules**: tick **Restrict creations**, **Restrict updates**, **Restrict deletions** and **Block force pushes**. Leave the other rules as they are.
+6. **Create**.
 
-Git refuses anything that is not a fast-forward, which is what you want. Vercel > **Deployments** shows a **Production** build of `production`; wait for **Ready**. A build that fails names the missing or malformed variable (`src/lib/env.ts`); fix it in Vercel and **Redeploy**. Every later release is the same: **Production release** run (dry run, then apply), then this push.
+From now on a direct push to `production` from any computer is refused, and only the job **move the production branch** of **Production release**, which runs as GitHub Actions, can create or move the branch. That job pushes without force, so a move that is not a fast-forward is refused too and the job fails. After the first release (step 4), **Rulesets** > `production` > **Insights** shows that one update, made by `github-actions`.
 
-### 6. The domain
+### 4. Migrate, close the switches, then deploy
+
+Production's schema comes only from `.github/workflows/release.yml` (`CLAUDE.md` §6.4, §12.1 no. 19), and the same run deploys: after the migration passed, its second job fast-forwards `production` to the commit it migrated, and Vercel builds that. Read "The production release job" in `docs/runbooks/release-checklist.md` before the first run; in short:
+
+1. **One-time setup.** GitHub > **Settings** > **Environments** > **New environment** `production`:
+   - **Deployment branches and tags**: selected branches, `main` only.
+   - **Required reviewers**: you (and a second maintainer once there is one). **Prevent self-review** on as soon as a second reviewer exists; with one owner the run waits for your own approval.
+   - **Environment secrets**: `SUPABASE_ACCESS_TOKEN`, a personal access token of the institutional Supabase account (https://supabase.com/dashboard/account/tokens, name `github-production-release`, the shortest expiry, put the date in your calendar), and `SUPABASE_DB_URL`, the **session pooler** string of `gisikdrono-prod` (project > **Connect** > **Session pooler**, port 5432, user `postgres.<prod-ref>`, with the database password filled in, no `sslmode` or `sslmode=verify-full`). The direct `db.<prod-ref>.supabase.co` address is IPv6 only and cannot work from GitHub.
+2. **Dry run.** **Actions** > **Production release** > **Run workflow**, branch `main`. The only input is **dry_run**, ticked by default. Approve the job **migrate the production database** when GitHub asks. It checks that the URL belongs to a project named `gisikdrono-prod`, runs the read-only pre-flight (`scripts/release-preflight.sql`) and the Security Advisor (errors stop the run), then lists every migration from `0001_extensions.sql` to the newest under **Migrations that would run**. It changes nothing and deploys nothing.
+3. **Apply.** Run it again with **dry_run** unticked and approve **migrate the production database**. It applies the migrations with `supabase db push --linked` (never `--include-all`, never `--include-seed`) and runs the Advisor again.
+4. **Before you approve the deploy, close the switches.** When **migrate** has finished, the second job, **move the production branch (Vercel deploys it)**, waits for your approval. Leave it waiting. The migrations leave `booking_enabled` **on** (`20261104080300_booking_open.sql`) and `whatsapp_enabled` on; the code keeps both closed in pre-launch anyway, but the switches are the second layer, so production must never serve with them on. There is no superadmin yet, and `booking_enabled` has no switch in the dashboard at all, so this first time it is SQL. Supabase > **SQL Editor**:
+
+   ```sql
+   update public.site_settings set value = to_jsonb(false)
+   where key in ('booking_enabled', 'whatsapp_enabled');
+
+   select key, value from public.site_settings
+   where key in ('booking_enabled', 'whatsapp_enabled', 'email_enabled', 'maintenance_mode', 'qr.signing_kids')
+   order by key;
+   ```
+
+   It must show `booking_enabled` `false`, `whatsapp_enabled` `false`, `email_enabled` `true`, `maintenance_mode` `false` and `qr.signing_kids` containing `"k1"`. The SQL editor runs as `postgres`, outside the app, so the change carries no staff member as its audit actor: use it for this initial setup only. Later, `whatsapp_enabled` and the other switches change in **/dashboard/settings** as the superadmin with a fresh TOTP, which records who changed what.
+5. **Deploy.** Approve **move the production branch**. It fast-forwards `production` to the commit the run migrated, and Vercel > **Deployments** shows a **Production** build of `production`; wait for **Ready**. A build that fails names the missing or malformed variable (`src/lib/env.ts`): fix it in Vercel and **Redeploy** that deployment. If the move itself fails, either `production` holds a commit that the run's commit does not contain, or the ruleset of step 3 lacks its GitHub Actions bypass: ask the Dev on call, and never push the branch by hand.
+6. If **migrate** fails before the push, nothing changed and nothing deploys: fix the cause and run again. If the Advisor fails after the push, the deploy job does not run; follow "If a check fails after the push" in the release checklist and fix forward with a new migration.
+
+Then turn on the **Customize Access Token** hook of 1.4, which needs the function the migrations created. Every later release is the same run: dry run, then apply, approve **migrate**, then approve **move the production branch**.
+
+### 5. No demo content on production
+
+- `release.yml` has no demo input and never writes seed data. The demo content of `scripts/seed-demo-content.sql` and the **seed_demo** box belong to the **Staging release** workflow and the staging project only; that file also refuses a database whose Vault `environment` is `production`.
+- Never run `pnpm db:seed`, `pnpm db:seed:staging-media`, `scripts/seed-dev.sql`, `supabase db reset --linked` or `supabase db push --include-seed` against production, and never paste any of those files into its SQL editor.
+- The real content (RW profiles, packages, products, photos, articles, the e-booklet) is entered by staff in the dashboard after step 6. The migrations bring only reference data: the RW units, `site_settings` and the default revenue rules.
+
+### 6. The first superadmin
+
+As staging-setup.md part E, on the production project, once step 4 has run and the access token hook of 1.4 is on:
+
+1. Supabase > **Authentication** > **Users** > **Add user** > **Create new user**: your institutional mailbox, a new Bitwarden-generated password of at least 20 characters (login item `gisikdrono production superadmin`), **Auto Confirm User** ticked.
+2. **SQL Editor**, role `postgres`, your address in place of the example:
+
+   ```sql
+   begin;
+   select set_config('app.privileged_rpc', 'on', true);
+   update public.profiles p
+   set full_name = 'Superadmin Kelurahan', role = 'superadmin', is_active = true
+   from auth.users u
+   where u.id = p.id and u.email = 'your.name@institution.example';
+   commit;
+
+   select email, role, is_active, mfa_required from public.profiles;
+   ```
+
+   One row: `superadmin`, `true`, `true`. The role also stamps `became_staff_at`, which the release pre-flight checks.
+3. After step 7, open `<site>/login` in a private window, sign in, enrol TOTP at **/mfa/enroll** and save the setup key in the Bitwarden item's **Authenticator key (TOTP)** field. Sign out and in again to see **/mfa/verify**.
+4. The RW admins come later by invite from **/dashboard/users** (Task P4.8), each enrolling their own TOTP.
+
+### 7. The domain
 
 1. Vercel > the project > **Settings** > **Domains** > **Add Domain**: `<domain>`. Accept the suggestion to add `www.<domain>` too, and choose which one redirects to the other (recommended: `www.<domain>` redirects to `<domain>`, matching `NEXT_PUBLIC_SITE_URL`). Both are on **Production**.
 2. Vercel then shows the DNS records to create. At your registrar's DNS page, create **exactly the records Vercel shows** for this project. At the time of writing they look like an `A` record for the apex (`@`) and a `CNAME` for `www` pointing at a `vercel-dns` host, but the values differ per project, so copy them from Vercel, not from here.
@@ -225,40 +240,29 @@ Git refuses anything that is not a fast-forward, which is what you want. Vercel 
 4. Cloudflare Turnstile: the widget of 1.3 lists both hostnames. Supabase URL Configuration (1.4) already names `<site>`.
 5. HSTS `preload` is **not** added now; that comes after a clean week on the final domain (Task P5.7.04).
 
-### 7. Scheduled jobs
+### 8. Scheduled jobs
 
 Nothing needs pausing. The migrations schedule every job with pg_cron, and each application job now has its route:
 
 - `payments-poll` and `reconcile-payments` check their `CRON_SECRET`, see the pre-launch flag, skip the run and record a success, so their heartbeat stays fresh and `/api/health` stays 200.
-- `process-notifications` delivers email and the security alerts; it sends no WhatsApp message (step 8 turns the channel off, and the worker claims nothing while it is on).
+- `process-notifications` delivers email and the security alerts; it sends no WhatsApp message (step 4 turned the channel off, and the worker claims nothing while it is on).
 - `anomaly-scan`, `purge-storage` and the database jobs run as usual.
 
-Do **not** pause the two Midtrans jobs the way staging-setup.md D.5 once did: a paused job stops its heartbeat and `/api/health` reports it stalled. After 15 minutes, check (step 9, check 11).
+Do **not** pause the two Midtrans jobs the way staging-setup.md D.5 once did: a paused job stops its heartbeat and `/api/health` reports it stalled. After 15 minutes, check (step 10, check 11).
 
-### 8. Database switches and settings
+### 9. Settings, and what staff record
 
-The migrations leave `booking_enabled` **on** (`20261104080300_booking_open.sql`) and `whatsapp_enabled` on. The code keeps both closed in pre-launch anyway; the database switches are the second layer, and `/api/health` answers 503 while either is still on. **SQL Editor**:
-
-```sql
-update public.site_settings set value = to_jsonb(false)
-where key in ('booking_enabled', 'whatsapp_enabled');
-
-select key, value from public.site_settings
-where key in ('booking_enabled', 'whatsapp_enabled', 'email_enabled', 'maintenance_mode', 'qr.signing_kids')
-order by key;
-```
-
-It must show `booking_enabled` `false`, `whatsapp_enabled` `false`, `email_enabled` `true`, `maintenance_mode` `false` and `qr.signing_kids` containing `"k1"`.
-
-Then, signed in as the superadmin, open **/dashboard/settings** and replace every value still holding its seeded placeholder (contact email and number, the kelurahan address, the signatory, the data protection officer, the expected payout account). Production's `/api/health` answers 503 while any is left. To list them in the SQL editor:
+Signed in as the superadmin (step 6), open **/dashboard/settings**, confirm with a fresh TOTP code when the form asks, and replace every value still holding its seeded placeholder: the contact email and number, the kelurahan address, the signatory, the data protection officer and the expected payout account. Production's `/api/health` answers 503 while any is left. To list them (read only) in the SQL editor:
 
 ```sql
 select * from internal.placeholder_site_settings();
 ```
 
-It must return no row.
+It must return no row. Leave **Kirim pesan WhatsApp** off until part 2.
 
-### 9. Verify
+**Record no booking until launch.** Staff manage content only: RW pages, packages, products, galleries, articles, booklets, schedules and reviews. Do not record a walk-in booking, take cash at the counter, mark a booking paid, or extend or reactivate a hold. The site refuses the walk-in counter in pre-launch, but the database functions behind these actions stay open to a signed-in officer (`docs/Security.md` §8.9), so the rule is yours to keep until Task P5.7.08 closes them too.
+
+### 10. Verify
 
 In PowerShell, set the address once:
 
@@ -277,7 +281,7 @@ $u = "https://<domain>"
 | 7 | Security headers | `curl.exe -sI "$u/"` | `strict-transport-security`, `x-content-type-options: nosniff`, `x-frame-options: DENY`, `referrer-policy`, `cross-origin-opener-policy: same-origin`, `permissions-policy`, and an **enforced** `content-security-policy` (not report-only); no `x-robots-tag: noindex` on public pages |
 | 8 | Private pages | `curl.exe -sI "$u/login"` | `cache-control: private, no-store` and a CSP with a `nonce-` |
 | 9 | Search engines | `curl.exe -s "$u/robots.txt"` | disallows `/dashboard`, `/api`, `/pesan`, `/reservasi`, `/login`, `/v`, and names the sitemap |
-| 10 | Staff login | `curl.exe -sI "$u/dashboard"`, then sign in as in step 4.3 | `307` to `/login?next=…`; sign-in asks for the TOTP code and lands on `/dashboard` |
+| 10 | Staff login | `curl.exe -sI "$u/dashboard"`, then sign in as in step 6.3 | `307` to `/login?next=…`; sign-in asks for the TOTP code and lands on `/dashboard` |
 | 11 | Scheduled jobs | SQL editor: `select job, last_success_at, last_failure_at, last_error_code from public.job_heartbeats order by job;` | after 15 minutes the five-minute and one-minute jobs show a recent `last_success_at`, `payments-poll` included; no `secret_missing` or `insecure_base_url` (those mean 1.2 is wrong) |
 | 12 | Email | `$u/forgot-password` with your own address | the reset email arrives from `mail.<domain>`, DKIM-signed |
 | 13 | Photos without the transformer | right-click an uploaded photo > **Copy image address** | contains `/storage/v1/object/public/public-media/`, never `/render/image/` |
@@ -301,7 +305,7 @@ What a pause means for pre-launch production:
 2. Never set `NEXT_PUBLIC_FLAG_PRELAUNCH` for Preview or Development, never scope a production variable to Preview, and never put a sandbox (`SB-`) key into production.
 3. Never turn `booking_enabled` or `whatsapp_enabled` on in pre-launch. The code keeps booking closed regardless, but the switches are the second layer and `/api/health` stays red while either is on.
 4. Never copy a secret between staging and production, in either direction; never paste a secret into a chat, an issue, a pull request or a message.
-5. Never migrate production by hand or deploy before the migration; never run `supabase config push` against production (it would push the local Auth settings).
+5. Never migrate production by hand, never push the `production` branch by hand, and never deploy before the migration; never run `supabase config push` against production (it would push the local Auth settings).
 6. Never write the domain's DNS values, `<prod-ref>`, a key or a screenshot with values into the repository.
 
 ---
@@ -331,9 +335,9 @@ Do these in order. Each step is a prerequisite of the next; do not open booking 
 ### 4. Remove the pre-launch flag
 
 1. In Vercel, **delete** `NEXT_PUBLIC_FLAG_PRELAUNCH`.
-2. Deploy: **Production release** (dry run, then apply, for any migration since the last release), then move `production` as in part 1 step 5.4. The build now refuses to start if any Midtrans or WhatsApp credential is missing, or if a key is a sandbox key; fix the variable and redeploy, never relax `src/lib/env.ts`.
+2. Deploy: **Production release**, dry run, then apply, approving both jobs as in part 1 step 4; its second job moves `production`. The build now refuses to start if any Midtrans or WhatsApp credential is missing, or if a key is a sandbox key; fix the variable and redeploy, never relax `src/lib/env.ts`.
 3. Check: the package pages show **Pesan Sekarang** again, `/api/webhooks/midtrans/<anything>` still answers 404 to a wrong token, and the jobs `payments-poll` and `reconcile-payments` report real runs in the log (`job_run` without `skipped`).
-4. Complete the Meta webhook verification of step 3.3, send a test message with `pnpm wa:send-test`, then turn WhatsApp on in **/dashboard/settings** (or `update public.site_settings set value = to_jsonb(true) where key = 'whatsapp_enabled';`).
+4. Complete the Meta webhook verification of step 3.3, send a test message with `pnpm wa:send-test`, then, as the superadmin, turn **Kirim pesan WhatsApp** on in **/dashboard/settings** and confirm with a fresh TOTP code.
 
 ### 5. The go-live checklist
 
@@ -345,10 +349,10 @@ Task P5.7.03, with booking still closed to the public: an RW admin makes a booki
 
 ### 7. Open booking
 
-Only now, as the superadmin with a fresh TOTP, open booking:
+Only now. `booking_enabled` has no switch in **/dashboard/settings** (the page shows it read only), so it is opened in the SQL editor, which runs as `postgres` and records no staff member as the change's actor. Before you run it, write the date, the time and who runs it into the release PR:
 
 ```sql
 update public.site_settings set value = to_jsonb(true) where key = 'booking_enabled';
 ```
 
-Open a package page, go through the wizard to the Snap page once, and leave the hold to lapse. Keep watching `/api/health`, `security_alerts` and `/dashboard/finance/reconciliation` for the first days.
+Then, as a visitor, open a package page, go through the wizard to the Snap page once and leave the hold to lapse. Keep watching `/api/health`, `security_alerts` and `/dashboard/finance/reconciliation` for the first days. To close booking again in a hurry, the superadmin switches on maintenance mode in **/dashboard/settings** (fresh TOTP), which the wizard also honours; then set `booking_enabled` back to `false` the same way as above, recorded in the same way.
