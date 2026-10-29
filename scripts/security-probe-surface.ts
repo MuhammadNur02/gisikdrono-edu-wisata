@@ -33,7 +33,7 @@ function headerChecks(probe: Probe): ProbeCheck[] {
     guarded(`headers of ${path}`, async () => {
       const response = await probe.request(path);
       const note = `status ${String(response.status)}, CSP ${cspModeOf(response.headers)}`;
-      return { problems: headerProblems(path, response.headers), note };
+      return { problems: headerProblems(path, response.headers, probe.isProduction), note };
     }),
   );
 }

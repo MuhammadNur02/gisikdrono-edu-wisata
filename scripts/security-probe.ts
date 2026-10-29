@@ -1,36 +1,52 @@
-import { argv, env } from 'node:process';
 import { parseArgs } from 'node:util';
 
 import { accessChecks } from './security-probe-access';
-import { createProbe, type ProbeResult } from './security-probe-client';
+import { createProbe, type Probe, type ProbeResult } from './security-probe-client';
+import { isNoIndex } from './security-probe-rules';
 import { surfaceChecks } from './security-probe-surface';
 
-// pnpm security:probe -- --url <base URL>   (or STAGING_URL=<base URL> pnpm security:probe)
-// Task P5.2.02, the part a visitor without a session can run (docs/security-tests.md §1): every refusal of the
+// pnpm security:probe -- --url "$STAGING_URL" [--production]
+// Task P5.2.02, the part a visitor without a session can run (docs/security-tests.md §2): every refusal of the
 // security smoke and every header of docs/Security.md §8.2, asked of a deployment over HTTPS. It reads no secret,
 // signs nobody in, creates no booking, OTP or message, and paces its ~80 requests (security-probe-client.ts).
-// The output names paths only, never the host, so it can be pasted into the repository as it is. The base URL is a
-// command-line value for this tool, not application configuration, hence node:process rather than src/lib/env.ts.
+// The output names paths only, never the host, so it can be pasted into the repository as it is. The base URL comes
+// from the command line only: it stays in the caller's own shell and is never read from the environment.
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 // process.argv starts with the node binary and this script; the options follow.
 const SCRIPT_ARGS_START = 2;
 
-function baseUrlFromArgs(): URL {
+interface ProbeOptions {
+  base: URL;
+  isProduction: boolean;
+}
+
+function optionsFromArgs(): ProbeOptions {
   const { values } = parseArgs({
     // pnpm passes a `--` through when the caller writes one.
-    args: argv.slice(SCRIPT_ARGS_START).filter((arg) => arg !== '--'),
-    options: { url: { type: 'string' } },
+    args: process.argv.slice(SCRIPT_ARGS_START).filter((arg) => arg !== '--'),
+    options: { url: { type: 'string' }, production: { type: 'boolean', default: false } },
   });
-  const raw = values.url ?? env['STAGING_URL'];
-  if (raw === undefined || !URL.canParse(raw)) {
-    throw new Error('pass --url <base URL> or set STAGING_URL');
+  if (values.url === undefined || !URL.canParse(values.url)) {
+    throw new Error('pass --url <base URL>');
   }
-  const url = new URL(raw);
+  const url = new URL(values.url);
   if (url.protocol !== 'https:' && !LOCAL_HOSTS.has(url.hostname)) {
     throw new Error('the base URL must be https (or a local development host)');
   }
-  return new URL(url.origin);
+  return { base: new URL(url.origin), isProduction: values.production };
+}
+
+// A preview deployment sends noindex on every response (next.config.ts); production does not on public pages. A
+// target without it is probed only when the caller says it is production, so its headers are judged as production's.
+async function assertPreviewUnlessProduction(probe: Probe): Promise<void> {
+  if (probe.isProduction) return;
+  const home = await probe.request('/');
+  if (!isNoIndex(home.headers)) {
+    throw new Error(
+      '/ carries no X-Robots-Tag: noindex, so this is not a preview; pass --production to probe it',
+    );
+  }
 }
 
 function print(line: string): void {
@@ -61,7 +77,9 @@ function report(results: readonly ProbeResult[]): number {
 }
 
 async function main(): Promise<void> {
-  const probe = createProbe(baseUrlFromArgs());
+  const { base, isProduction } = optionsFromArgs();
+  const probe = createProbe(base, isProduction);
+  await assertPreviewUnlessProduction(probe);
   const results: ProbeResult[] = [];
   for (const check of [...accessChecks(probe), ...surfaceChecks(probe)]) {
     results.push(await check());

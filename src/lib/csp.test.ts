@@ -210,7 +210,7 @@ describe('the headers of the routes the middleware skips', () => {
   });
 
   it('allow no source and no framing, enforced on every deployment', () => {
-    expect(MACHINE_ROUTE_CSP).toBe("default-src 'none'; frame-ancestors 'none'");
+    expect(MACHINE_ROUTE_CSP).toBe("default-src 'none'; object-src 'none'; frame-ancestors 'none'");
     expect(MACHINE_ROUTE_HEADERS).toEqual([
       { key: ENFORCED_CSP_HEADER, value: MACHINE_ROUTE_CSP },
       { key: 'Permissions-Policy', value: MACHINE_ROUTE_PERMISSIONS_POLICY },

@@ -23,11 +23,13 @@
 ## 2. Unauthenticated probe (`pnpm security:probe`)
 
 ```bash
-STAGING_URL=<staging base URL> pnpm security:probe
-# or: pnpm security:probe -- --url <staging base URL>
+# STAGING_URL is a variable of your own shell only; it is never committed or read by the script.
+pnpm security:probe -- --url "$STAGING_URL"
+# production, after go-live configuration (judges public pages as production's, without noindex):
+pnpm security:probe -- --url "$PRODUCTION_URL" --production
 ```
 
-`scripts/security-probe.ts` asks the deployment, over HTTPS and without any secret, everything a visitor without a session can try. It paces its ~80 requests (150 ms apart), follows no redirect, and prints paths only, never the host, so its output can be pasted below as it is. Exit code 1 when a check fails; a `WARN` (a state to review, such as a webhook secret not configured on that deployment) does not fail the run. The expected header values come from `tests/e2e/helpers/expected-headers.ts`, the same list the Playwright security specs use; the pure rules are unit-tested in `scripts/security-probe-rules.test.mjs`.
+`scripts/security-probe.ts` asks the deployment, over HTTPS and without any secret, everything a visitor without a session can try. It paces its ~80 requests (150 ms apart), follows no redirect, and prints paths only, never the host, so its output can be pasted below as it is. The base URL comes from `--url` only. Without `--production` the probe first checks that `/` carries `X-Robots-Tag: noindex`, which every preview response does (`next.config.ts`), and refuses to go on when it does not, so a production target is never judged by a preview's rules by mistake. Exit code 1 when a check fails; a `WARN` (a state to review, such as a webhook secret not configured on that deployment) does not fail the run. The expected header values come from `tests/e2e/helpers/expected-headers.ts`, the same list the Playwright security specs use; the pure rules are unit-tested in `scripts/security-probe-rules.test.mjs`.
 
 | Area | What it asserts |
 |---|---|
@@ -53,7 +55,7 @@ The pgTAP suites (`supabase/tests/rls_*.sql`, `rls_three_rws.sql`) and `pnpm tes
 1. Four staging test accounts, each with TOTP enrolled: `SA` (superadmin), `A05` (admin_rw RW 05), `A13` (admin_rw RW 13), `A08` (admin_rw RW 08). Use a separate browser profile (or a private window) per account so cookies never mix.
 2. Fixtures, one set per RW, created through the dashboard as that RW's admin (or by `SA`), and their ids noted in a local scratch file, never in the repository: a published package, a product, an article draft, a gallery item, a session, and a paid booking with a ticket (pay in the Midtrans sandbox, or `mark_booking_paid_manually` as `SA`). Note for each booking its `id` (from `/dashboard/bookings/[id]`), its `booking_code`, its ticket id and its invoice id.
 3. Guest links: for two bookings `B05` (RW 05) and `B13` (RW 13), keep one link of each scope (`pay`, `manage`, `view`, `review` once completed, `certificate` once certificates are issued) from the staging WhatsApp/email outbox (`notifications` rows, read as `SA` in Supabase Studio) or minted locally with `tests/e2e/helpers/guest-hub.ts` against the staging secret by the owner.
-4. A staff access token for the PostgREST/Storage steps: signed in at AAL2, read the `sb-<ref>-auth-token` cookie in DevTools (Application → Cookies), take its `access_token`, and keep it in a shell variable only (`export TOKEN_A05=...`). Delete the variables at the end. The anon key is `NEXT_PUBLIC_SUPABASE_ANON_KEY` of staging (public by design); `$SUPABASE_URL` is the staging project URL.
+4. A staff access token for the PostgREST/Storage steps: signed in at AAL2, read the `sb-<ref>-auth-token` cookie in DevTools (Application → Cookies), take its `access_token`, and keep it in a shell variable only, typed at a hidden prompt so it never lands in the shell history: `read -rs TOKEN_A05` (paste, Enter). Delete the variables at the end (`unset TOKEN_SA TOKEN_A05 TOKEN_A13 TOKEN_A08`). The anon key is `NEXT_PUBLIC_SUPABASE_ANON_KEY` of staging (public by design); `$SUPABASE_URL` is the staging project URL.
 
 ```bash
 # PostgREST RPC as a staff member (named arguments as in src/db/types.ts, Functions)
@@ -87,7 +89,7 @@ Run the whole table three times: as `A05` against RW 13 and RW 08 ids, as `A13` 
 
 ### 3.3 Staff RPCs and tables through PostgREST
 
-As each RW admin, with that admin's token, against foreign ids (same rotation as §3.2).
+As each RW admin, with that admin's token, against foreign ids (same rotation as §3.2). Every staff RPC of CLAUDE.md Appendix A.4 that takes an RW-scoped id is here, plus those the database has beyond it (R29). For every call that would write, the expected result also means: the row is unchanged and no `notifications` row was enqueued for that booking (count them as `SA` in Supabase Studio before and after the step). Rows marked **superadmin only** are refused for an admin_rw on their own RW's ids as well: try them with an own-RW id too.
 
 | # | Call | Expected | Result A05 | Result A13 | Result A08 |
 |---|---|---|---|---|---|
@@ -108,6 +110,19 @@ As each RW admin, with that admin's token, against foreign ids (same rotation as
 | R15 | `PATCH tour_packages?id=eq.<foreign>` `{"title": "x"}` (with `Prefer: return=representation`) | `[]` or `42501`; row unchanged | | | |
 | R16 | `PATCH profiles?id=eq.<own id>` `{"role": "superadmin"}` and `{"rw_id": <foreign>}` | `42501` | | | |
 | R17 | The same as R13 with a token taken at AAL1 (password step only, before TOTP) | `[]` everywhere, including as `SA` | | | |
+| R18 | `rpc/undo_check_in` `{"p_ticket_id": "<used ticket>", "p_reason": "uji"}`, **superadmin only** | admin_rw must be refused (foreign and own RW); ticket stays `used` | | | |
+| R19 | `rpc/reactivate_booking` `{"p_booking_id": "<foreign expired booking>"}` | refused; booking stays `expired`; no quota reserved; nothing enqueued | | | |
+| R20 | `rpc/record_refund` `{"p_booking_id": "<paid booking>", "p_amount": 1000, "p_reason": "uji", "p_reference": "uji"}`, **superadmin only** | admin_rw must be refused; no `payment_adjustments` row; nothing enqueued | | | |
+| R21 | `rpc/resolve_booking_review` `{"p_booking_id": "<booking in needs_review>", "p_resolution": "...", "p_reason": "uji"}`, **superadmin only** | admin_rw must be refused; booking and payment unchanged | | | |
+| R22 | `rpc/revoke_certificate` `{"p_certificate_id": "<certificate>", "p_reason": "uji"}`, **superadmin only** | admin_rw must be refused; certificate stays `issued` | | | |
+| R23 | `rpc/request_notification_resend` `{"p_booking_id": "<foreign>", "p_channel": "whatsapp", "p_template": "payment_received_ticket"}` | refused; **no** new `notifications` row; nothing sent | | | |
+| R24 | `rpc/settle_revenue_entries` (any beneficiary of a foreign RW, `p_from`/`p_to`, `p_expected_total`, `p_reference`, `p_proof_path`), **superadmin only** | admin_rw must be refused; no `payout_batches` row; ledger unchanged | | | |
+| R25 | `rpc/propose_adjustment` `{"p_booking_id": "<paid booking>", "p_type": "write_off", "p_amount": 1000, "p_reason": "uji", "p_evidence_path": "bookings/<id>/x.pdf"}`, **superadmin only** | admin_rw must be refused; no `payment_adjustments` row | | | |
+| R26 | `rpc/approve_adjustment` and `rpc/reject_adjustment` `{"p_id": "<a proposed adjustment>"}`, **superadmin only** | admin_rw must be refused; status stays `proposed` | | | |
+| R27 | `rpc/apply_adjustment` `{"p_id": "<an approved adjustment>"}`, **superadmin only** | admin_rw must be refused; status stays `approved`; ledger unchanged | | | |
+| R28 | `rpc/reset_staff_mfa` `{"p_user_id": "<another staff member>"}` (and their own id), **superadmin only** | admin_rw must be refused; the factor is untouched | | | |
+| R29 | The RW-scoped RPCs beyond Appendix A.4 (arguments in `src/db/types.ts`): `create_admin_booking`, `send_admin_booking_link`, `cancellation_preview`, `declare_weather_disruption`, `find_manual_ticket`, `scan_ticket`, `unlock_scanner_officer`, `save_package` / `save_package_legs` / `save_package_tiers`, `rpc_get_addon_notes`, `finance_booking`, `get_rw_treasury_account` / `set_rw_treasury_account`, `get_vendor_bank_account` / `set_vendor_bank_account`, `set_rw_unit_status`, each with a foreign RW, booking, package or vendor id | refused or empty; nothing written; nothing enqueued; no account number shown | | | |
+| R30 | Any `svc_*` function (for example `rpc/svc_enqueue_notification`, `rpc/svc_create_booking`) with a staff token | `42501` permission denied (service role only) | | | |
 
 ### 3.4 Storage prefixes
 
@@ -158,13 +173,15 @@ No staff session for these steps (a fresh private window).
 
 ## 4. Authenticated ZAP context (P5.5.01, product owner)
 
-The authenticated scan stays **passive** too: ZAP proxies a browser session of the superadmin and the baseline rules read what passes; no active scan rule runs against staging.
+The authenticated scan stays **passive** and **manual**: ZAP proxies a browser session and its passive rules read what passes. No active scan rule and **no spider** (neither the traditional nor the AJAX spider) runs against staging while signed in: a spider drives the pages like a user, so it fires Server Actions and can press *Simpan*, *Arsipkan*, *Batalkan*, deactivate a staff member (`set_staff_status`) and the like, which changes data. A spider of a signed-in session may only run against a local stack (`pnpm db:start` + `pnpm build && pnpm start` on `127.0.0.1`). The unauthenticated baseline of §5.3 is the one spider allowed on staging: it carries no session, so it reaches public pages and refusals only.
+
+> **Warning.** During the session, click no button that saves, archives, cancels, refunds, revokes, sends, approves or changes a staff member. Open pages, lists, detail views, filters and dialogs only, and close a dialog with *Batal* or Escape. If a page cannot be covered without a write, do that write only on a dedicated test record created for this session, and note it in §5.4.
 
 1. On the owner's machine: `docker pull ghcr.io/zaproxy/zaproxy:stable`.
 2. Start ZAP with its UI (or the desktop install) and its proxy on `127.0.0.1:8080`; in *Options → Scan rules / Active Scan* nothing is needed, as no active scan is started.
-3. Create a context `staging-dashboard` including `$STAGING_URL/dashboard.*` and `$STAGING_URL/api/.*`, excluding `.*/auth/signout.*`, `.*/api/webhooks/.*`, `.*/api/jobs/.*` and every Server Action POST (`Next-Action` header) so the spider can never press a button.
+3. Create a context `staging-dashboard` including `$STAGING_URL/dashboard.*` and `$STAGING_URL/api/.*`, excluding `.*/auth/signout.*`, `.*/api/webhooks/.*` and `.*/api/jobs/.*`. Under *Options → Passive Scan Rules* keep the defaults; start nothing from *Attack* or *Spider*.
 4. Set the context's *Session management* to *Cookie-based*. Sign in **manually** in a browser proxied through ZAP (password, then TOTP) as the staging test superadmin; ZAP keeps the `sb-*` cookies. Do not store the password or the TOTP secret in ZAP.
-5. Browse by hand, through the proxy, every dashboard page of `src/config/nav.ts` once (read-only: open lists and detail pages, do not save forms), then run the *AJAX spider* limited to the context for 5 minutes with *Max crawl depth* 3.
+5. Browse by hand, through the proxy, every dashboard page of `src/config/nav.ts` once, read-only as the warning above says: open each list, one detail page of each kind (booking, package, product, article), the filters and the *Tambah* / edit sheets without saving them. Do not start a spider.
 6. Repeat 4–5 as one RW admin (`A05`), so the admin_rw pages and their headers are covered.
 7. Export *Report → Generate report* (Traditional HTML and JSON) to a folder outside the repository. Before anything goes into this file, redact the host (replace it with `$STAGING_URL`) and drop request/response bodies.
 8. Add each alert to §5.4 with its triage. Sign out in the browser and delete the ZAP session file afterwards (it holds the session cookies).
@@ -244,7 +261,7 @@ PASS  the image optimiser proxies no outside address
 50 passed, 2 warned, 1 failed, 53 checks
 ```
 
-The one failure is finding F-01 (§5.4), fixed in the same PR; it passes once staging is redeployed from it. Of run 1's other failures, the WhatsApp and Resend 503s are F-02, now a `WARN`; the four left were the probe's own expectations, corrected before run 2: `/dashboard` itself carries no `?next=` by design (`pathWithNext`); a `.map` file under `/_next/static` answers 403 on Vercel, not 404 (no map is served either way, and no chunk names one); and `/api/uploads/{sign-pages,finalize}` validate the body before the session check, as every staff route does (CLAUDE.md §5.2), so the probe now sends a well-formed body and gets the 401.
+The one failure is finding F-01 (§5.4), fixed in the same PR; it passes once staging is redeployed from it. Of run 1's other failures, the WhatsApp and Resend 503s are F-02, now a `WARN`; the four left were the probe's own expectations, corrected before run 2: `/dashboard` itself carries no `?next=` by design (`pathWithNext`); a `.map` file under `/_next/static` answers 403 on Vercel, not 404 (no map is served either way, and no chunk names one); and `/api/uploads/{sign-pages,finalize}` validate the body before the session check, as every staff route handler does through `readStaffRequest` (`src/lib/utils/staff-request.ts`, CLAUDE.md §5.4), so the probe now sends a well-formed body and gets the 401.
 
 ### 5.3 ZAP baseline (unauthenticated, passive)
 
@@ -263,10 +280,10 @@ docker run --rm -v "$HOME/zap-out:/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:stable \
 
 | ID | Finding | Source | Severity | Decision | Rationale or fix |
 |---|---|---|---|---|---|
-| F-01 | `/api/health`, `/api/jobs/*` and `/api/webhooks/*` send no CSP and no Permissions-Policy: the middleware, which adds both, does not run on them (its matcher) | probe | Low | **Real issue, fixed** in this PR | `src/config/machine-routes.ts` + `next.config.ts` send `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` (enforced on every deployment: these routes answer JSON, text or nothing, so nothing can break) and the closed Permissions-Policy. Tests: `src/lib/csp.test.ts` (no drift from `permissionsPolicyFor`), `tests/e2e/security.spec.ts` (headers on the health check, a job and a webhook). Re-run `pnpm security:probe` after staging redeploys. |
-| F-02 | WhatsApp and Resend webhooks answer 503, not 403, to a bad or missing signature | probe | Info | **Accepted on staging**; go-live check | `WHATSAPP_APP_SECRET` and `RESEND_WEBHOOK_SECRET` are not set on staging, so the routes fail closed with 503 before reading a signature (CLAUDE.md §5.4: transient, the provider retries). Nothing is processed. Production must answer 403: run the probe against production after go-live config (docs/Security.md §13.1) and expect no `WARN`. |
+| F-01 | `/api/health`, `/api/jobs/*` and `/api/webhooks/*` send no CSP and no Permissions-Policy: the middleware, which adds both, does not run on them (its matcher) | probe | Low | **Real issue, fixed** in this PR | `src/config/machine-routes.ts` + `next.config.ts` send `Content-Security-Policy: default-src 'none'; object-src 'none'; frame-ancestors 'none'` (enforced on every deployment: these routes answer JSON, text or nothing, so nothing can break) and the closed Permissions-Policy. The middleware matcher now excludes exactly those paths and their sub-paths (`api/health(?:/|$)` and so on), so a look-alike such as `/api/healthz` still gets the middleware's headers. Tests: `src/lib/csp.test.ts` (no drift from `permissionsPolicyFor`), `src/middleware.test.ts` (the matcher skips every machine route and nothing else), `scripts/security-probe-rules.test.mjs` (the headers pass the probe's own rules), `tests/e2e/security.spec.ts` (headers on the health check, a job and a webhook). Re-run the probe after staging redeploys. |
+| F-02 | WhatsApp and Resend webhooks answer 503, not 403, to a bad or missing signature | probe | Info | **Accepted on staging**; go-live check | `WHATSAPP_APP_SECRET` and `RESEND_WEBHOOK_SECRET` are not set on staging, so the routes fail closed with 503 before reading a signature (CLAUDE.md §5.4: transient, the provider retries). Nothing is processed. Production must answer 403: run the probe with `--production` against production after go-live config (docs/Security.md §13.1) and expect no `WARN`. |
 | F-03 | The CSP is `Content-Security-Policy-Report-Only` on every page | probe | Info | **Accepted by design** | Staging is a Vercel preview, where `cspHeaderNameFor` (`src/lib/csp.ts`) reports instead of enforcing (docs/Security.md §8.2, Task P5.4.01). Production and CI enforce it; the e2e suite checks the enforced policy. |
-| F-04 | `/api/uploads/{sign,sign-pages,finalize}` answer 400 with field errors to an anonymous malformed body, before the session check | probe run 1 | Info | **Accepted** | The project's order is validate, then guard (CLAUDE.md §5.2). The field names are the public schema of an open-source repository; no data is read and nothing is written; a well-formed anonymous body gets 401. Changing the order touches auth, so it would be a separate decision. |
+| F-04 | `/api/uploads/{sign,sign-pages,finalize}` answer 400 with field errors to an anonymous malformed body, before the session check | probe run 1 | Info | **Accepted** | Staff route handlers open with `readStaffRequest` (`src/lib/utils/staff-request.ts`): same Origin, body cap and schema first, then the route's guard (CLAUDE.md §5.4). The field names are the public schema of an open-source repository; no data is read and nothing is written; a well-formed anonymous body gets 401. Changing the order touches auth, so it would be a separate decision. |
 | F-05 | `.map` requests under `/_next/static` answer 403 rather than 404 | probe run 1 | Info | **False positive** | Vercel refuses `.map` files; the build sets `productionBrowserSourceMaps: false` and no chunk carries `sourceMappingURL`. |
 | F-06 | `/dashboard` redirects to `/login` without `?next=` | probe run 1 | Info | **False positive** | `pathWithNext` drops `next` when it is the dashboard itself, where signing in leads anyway (`src/lib/utils/staff-paths.ts`). |
 
@@ -277,5 +294,5 @@ docker run --rm -v "$HOME/zap-out:/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:stable \
 | Run the unauthenticated ZAP baseline (§5.3) and triage its alerts in §5.4 | Dev or product owner | P5.7 |
 | Run §3 (manual IDOR / role) and fill the result columns; open an issue per `FAIL` | Product owner | P5.7 |
 | Run §4 (authenticated ZAP context) and add its alerts to §5.4 | Product owner | P5.7 |
-| Re-run `pnpm security:probe` after staging redeploys with F-01's fix; expect only the two `WARN`s of F-02 | Dev | merge of this PR |
-| Run the probe against production once its secrets are set; expect no `FAIL` and no `WARN` | Dev | P5.7 go-live |
+| Re-run `pnpm security:probe -- --url "$STAGING_URL"` after staging redeploys with F-01's fix; expect only the two `WARN`s of F-02 | Dev | merge of this PR |
+| Run `pnpm security:probe -- --url "$PRODUCTION_URL" --production` once production's secrets are set; expect no `FAIL` and no `WARN` | Dev | P5.7 go-live |

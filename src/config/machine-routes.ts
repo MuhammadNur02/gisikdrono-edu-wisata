@@ -7,7 +7,7 @@
 
 export const MACHINE_ROUTE_SOURCES = ['/api/webhooks/:path*', '/api/jobs/:path*', '/api/health'];
 
-export const MACHINE_ROUTE_CSP = "default-src 'none'; frame-ancestors 'none'";
+export const MACHINE_ROUTE_CSP = "default-src 'none'; object-src 'none'; frame-ancestors 'none'";
 
 // The same closed policy src/lib/csp.ts permissionsPolicyFor gives every page but the scanner (src/lib/csp.test.ts
 // holds the two together).

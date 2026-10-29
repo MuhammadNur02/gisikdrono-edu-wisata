@@ -199,7 +199,7 @@ test.describe('security headers (docs/Security.md §8.2)', () => {
     for (const response of responses) {
       const headers = response.headers();
       expect(headers['content-security-policy'], response.url()).toBe(
-        "default-src 'none'; frame-ancestors 'none'",
+        "default-src 'none'; object-src 'none'; frame-ancestors 'none'",
       );
       expect(headers['permissions-policy'], response.url()).toMatch(/^camera=\(\),/);
       expect(headers['x-frame-options'], response.url()).toBe('DENY');

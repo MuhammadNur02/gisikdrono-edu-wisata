@@ -69,9 +69,13 @@ function privacyProblems(headers: Headers): string[] {
   return problems;
 }
 
-// docs/Security.md §8.2 for one response. `isProduction` false: every response must carry noindex, as next.config.ts
-// adds it on a non-production deployment.
-export function headerProblems(path: string, headers: Headers, isProduction = false): string[] {
+export function isNoIndex(headers: Headers): boolean {
+  return /\bnoindex\b/.test(headers.get('x-robots-tag') ?? '');
+}
+
+// docs/Security.md §8.2 for one response. `isProduction` false (a preview, the default of the probe): every response
+// must carry noindex, as next.config.ts adds it on a non-production deployment.
+export function headerProblems(path: string, headers: Headers, isProduction: boolean): string[] {
   const problems = Object.entries(expectedHeadersFor(path))
     .filter(([name, value]) => headers.get(name) !== value)
     .map(
@@ -81,7 +85,7 @@ export function headerProblems(path: string, headers: Headers, isProduction = fa
     problems.push('permissions-policy does not start with camera=()');
   }
   const needsNoIndex = !isProduction || isNoStorePath(path);
-  if (needsNoIndex && !/\bnoindex\b/.test(headers.get('x-robots-tag') ?? '')) {
+  if (needsNoIndex && !isNoIndex(headers)) {
     problems.push('x-robots-tag carries no noindex');
   }
   if (isNoStorePath(path)) problems.push(...privacyProblems(headers));

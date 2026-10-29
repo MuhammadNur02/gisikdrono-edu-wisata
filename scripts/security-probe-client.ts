@@ -16,6 +16,8 @@ export interface ProbeResult extends ProbeOutcome {
 
 export interface Probe {
   origin: string;
+  // Set by --production: public pages then go without noindex (security-probe.ts checks the target first).
+  isProduction: boolean;
   request: (path: string, init?: RequestInit) => Promise<Response>;
 }
 
@@ -27,9 +29,10 @@ const BOOKING_CODE_LENGTH = 8;
 const HEX_TOKEN_LENGTH = 32;
 const HEX_RADIX = 16;
 
-export function createProbe(base: URL): Probe {
+export function createProbe(base: URL, isProduction: boolean): Probe {
   return {
     origin: base.origin,
+    isProduction,
     request: async (path, init = {}) => {
       await sleep(PACE_MS);
       return fetch(new URL(path, base), {
