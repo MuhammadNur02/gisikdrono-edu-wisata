@@ -53,3 +53,6 @@ export const RESENDABLE_TEMPLATES = [
 ] as const;
 // The review a booking paid after its hold lapsed and its session filled waits in (internal.settle_payment).
 export const NO_SEATS_REVIEW_REASON = 'PAID_AFTER_EXPIRY_NO_QUOTA';
+// What extend_booking_hold allows, for the hint staff read: at most 14 days from now (internal.latest_hold_deadline),
+// and a web hold ends this many hours before its first session (internal.hold_margin_before_session, 20261105130000).
+export const HOLD_EXTENSION_LIMITS = { maxDays: 14, webMarginHours: 1 } as const;
