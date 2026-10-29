@@ -12,6 +12,18 @@ A migration that stops is a release that stops: fix its cause, never edit an app
 
 ## Notes for particular changes
 
+### Follow-ups of the reviews of PR #106 and PR #107 (`20261105130000` to `20261105130200`; `20261105110100`)
+
+- **Postgres 16 or later on the target.** `internal.backup_auth_snapshot()` (`20261105110100`) asks for the SET membership of `backup_reader`, which Postgres has only from 16 on. Check it before the first production release and record the answer (docs/Security.md §13.1, go-live #28):
+
+  ```sql
+  select current_setting('server_version_num')::int >= 160000 as ok, version();
+  ```
+
+  On an older server the weekly backup fails at the snapshot, closed; upgrade the project before go-live.
+- **The D-1 reminder is queued once per visit day.** Its dedupe key now carries the day. Each 09:00 WIB run reminds of the next day only, so a reminder under the old key and one under the new key never name the same date, unless `enqueue_visit_reminders` is run by hand again on the release day after an earlier run that day; do not.
+- **A new high alert, `booking_review_unresolved`.** On its first scan it raises one alert for every paid booking that has waited more than 24 hours for `resolve_booking_review`. Resolve them on /dashboard/bookings; each alert closes by itself once its booking is resolved. `paid_without_tickets` no longer fires for those bookings.
+
 ### Task P3.9.03: the nightly reconciliation (`20261105090000_reconcile_payments.sql`)
 
 - **Resume `reconcile-payments` on staging in this release, not before.** It was paused in `docs/runbooks/staging-setup.md` D.5 because its route did not exist, which is why `/api/health` reports its heartbeat as stalled. After the deploy:
