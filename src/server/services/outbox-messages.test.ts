@@ -36,8 +36,9 @@ const BOOKING = {
   booking_legs: [
     {
       leg_order: 1,
+      status: 'reserved',
       rw_units: { name: 'RW 05 Ecowastreme' },
-      visit_sessions: { start_time: '09:05:00', end_time: '10:05:00' },
+      visit_sessions: { session_date: '2026-11-12', start_time: '09:05:00', end_time: '10:05:00' },
     },
   ],
   quotations: [
@@ -48,6 +49,14 @@ const BOOKING = {
     },
   ],
   payments: [{ refunded_amount: 100000 }, { refunded_amount: 50000 }],
+};
+
+// A combo's second leg, on the same day as the first.
+const RW13_LEG = {
+  leg_order: 2,
+  status: 'reserved',
+  rw_units: { name: 'RW 13 Kampung Budaya & Seni' },
+  visit_sessions: { session_date: '2026-11-12', start_time: '13:00:00', end_time: '14:30:00' },
 };
 
 function clientWith(booking: Partial<typeof BOOKING> = {}) {
@@ -199,16 +208,7 @@ describe('composeMessage for a guest', () => {
   it('names each leg of a combo in its session, and the first RW as the gate', async () => {
     const message = await messageFor(
       { template: 'visit_reminder_d1', params: { link_scope: 'view' } },
-      {
-        booking_legs: [
-          {
-            leg_order: 2,
-            rw_units: { name: 'RW 13 Kampung Budaya & Seni' },
-            visit_sessions: { start_time: '13:00:00', end_time: '14:30:00' },
-          },
-          ...BOOKING.booking_legs,
-        ],
-      },
+      { booking_legs: [RW13_LEG, ...BOOKING.booking_legs] },
     );
     expect(message.bodyParams).toEqual({
       name: 'Ani',

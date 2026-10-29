@@ -1,7 +1,8 @@
-import type {
-  REVIEW_RESOLUTIONS,
-  RESENDABLE_TEMPLATES,
-  STAFF_CANCEL_CATEGORIES,
+import {
+  HOLD_EXTENSION_LIMITS,
+  type REVIEW_RESOLUTIONS,
+  type RESENDABLE_TEMPLATES,
+  type STAFF_CANCEL_CATEGORIES,
 } from '@/config/bookings';
 
 // The staff steps of /dashboard/bookings/[id] (Task P4.3.08; docs/PRD.md §13.1 A28). Indonesian, as every surface
@@ -37,7 +38,7 @@ export const bookingStaffCopy = {
     open: 'Perpanjang batas bayar',
     title: 'Perpanjang batas pembayaran',
     field: 'Batas pembayaran baru (WIB)',
-    hint: 'Paling lama 14 hari dari sekarang dan sebelum sesi pertama dimulai; pemesanan dari web paling lambat 1 jam sebelumnya.',
+    hint: `Harus lebih lambat dari batas sekarang, dan paling lama ${String(HOLD_EXTENSION_LIMITS.maxDays)} hari dari sekarang. Pemesanan dari web: paling lambat ${String(HOLD_EXTENSION_LIMITS.webMarginHours)} jam sebelum sesi pertama dimulai. Pemesanan petugas untuk satu RW: sampai pukul 23.59 WIB pada hari kunjungan; paket gabungan: sebelum sesi pertama dimulai. Tidak bisa selama penanggung jawab masih membuka tautan pembayaran.`,
     submit: 'Perpanjang',
     done: 'Batas pembayaran diperpanjang.',
   },

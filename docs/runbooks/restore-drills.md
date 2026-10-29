@@ -44,7 +44,7 @@ It never goes into `gisikdrono-staging`, which holds no real visitor data. It ne
    - SELECT on every table and sequence of `public`, and on every later table postgres adds there;
    - execute on `internal.environment()` and `internal.backup_auth_snapshot()`.
 
-   Nothing else. It has no USAGE on `auth` and no grant on any `auth` table, so it never reads a session, a token or a factor. It holds no `pg_read_all_data`, which would also open `cron`, `vault` and `net`. The snapshot function runs as postgres, only for a session whose login role may act as `backup_reader` (SET membership, which `in role backup_reader` gives; 20261105110100). pgTAP `backup_reader.sql` proves that a session without it is refused, and that every table and sequence of `public` is readable to the role, so a new table cannot miss the dump.
+   Nothing else. It has no USAGE on `auth` and no grant on any `auth` table, so it never reads a session, a token or a factor. It holds no `pg_read_all_data`, which would also open `cron`, `vault` and `net`. The snapshot function runs as postgres, only for a session whose login role may act as `backup_reader` (SET membership, which `in role backup_reader` gives; 20261105110100). That option exists from Postgres 16 on, so production must run 16 or later (Security.md §13.1, go-live #28): `select current_setting('server_version_num')::int >= 160000;` answers true. pgTAP `backup_reader.sql` proves that a session without it is refused, and that every table and sequence of `public` is readable to the role, so a new table cannot miss the dump.
 
    Create the login role that belongs to it in psql, connected to `gisikdrono-prod` as `postgres`. Never use the SQL editor for this, since a password typed there reaches the server and its logs in plain text (delta review L6). `\password` sends only the SCRAM verifier that psql computes on the vault holder's machine; type the password from the vault when it asks:
 
@@ -146,6 +146,33 @@ The drill restores production data onto the vault holder's own machine and nowhe
 5. **Check.**
    - **Row counts.** Count `bookings`, `payments`, `tickets_qr`, `revenue_share_entries`, `audit_logs` and `profiles` on production (the SQL editor), and on the drill stack: they read the same.
    - **The chains.** `select internal.verify_ledger_chain(), internal.verify_audit_chain();` as `postgres`: both pass.
+   - **The sequences.** The data-only load writes identity values as they were (`COPY` takes them, `generated always` columns included), and the dump's `SEQUENCE SET` entries put each sequence of `public` back where production had it. The block below warns of any sequence of `public` or `auth` that stands behind the highest value of its column; it must print nothing, or the next insert into that table fails on its key. Fix a warned one with `select setval('<sequence>', <highest>);` and record it below.
+
+     ```sql
+     do $$
+     declare
+       col record;
+       highest bigint;
+       reached bigint;
+     begin
+       for col in
+         select c.table_schema, c.table_name, c.column_name,
+                pg_get_serial_sequence(format('%I.%I', c.table_schema, c.table_name), c.column_name) as seq
+         from information_schema.columns c
+         where c.table_schema in ('public', 'auth')
+           and pg_get_serial_sequence(format('%I.%I', c.table_schema, c.table_name), c.column_name) is not null
+       loop
+         execute format('select max(%I) from %I.%I', col.column_name, col.table_schema, col.table_name) into highest;
+         execute format('select case when is_called then last_value else last_value - 1 end from %s', col.seq)
+           into reached;
+         if highest > reached then
+           raise warning '%.%.%: sequence % stands at %, behind the highest value %',
+             col.table_schema, col.table_name, col.column_name, col.seq, reached, highest;
+         end if;
+       end loop;
+     end;
+     $$;
+     ```
    - **pgTAP.** `pnpm db:test`. Each suite rolls back its own rows. Record a failure that comes from production's data rather than the restore in the table below; never fix it in the drill.
    - **Playwright.** `pnpm e2e` against the same stack. The suites create their own accounts and rows, so a pass means the app runs on production's data. No message leaves the machine: local runs deliver to Mailpit or nowhere.
 6. **Note the times.**
@@ -192,7 +219,8 @@ Use this when Supabase's own daily backups (or PITR) cannot help: the project or
    - Then, in psql as `postgres` with the triggers still off, load the snapshot. A newer Auth server may have added or dropped columns since the backup, so each table writes only the columns both sides have (follow-up of the review of PR #98):
      - a column of the new project that the backup does not name keeps the new project's default, never a null;
      - a column the backup names that the new project lacks is left out, and the block names it in a notice;
-     - a generated column, or an identity column Postgres always fills, is left to Postgres.
+     - an identity or serial column keeps the backup's value, since rows elsewhere may point at it: the insert says `overriding system value`, so a `generated always` identity column takes it too, and afterwards every sequence behind such a column is moved past the highest value loaded, so the next row Auth writes does not collide (follow-up of the review of PR #107). The five tables key their rows by uuid today, so this matters only once a newer Auth adds such a column;
+     - a generated (computed) column is left to Postgres.
 
    ```sql
    \set snapshot `cat auth-snapshot.json`
@@ -204,12 +232,12 @@ Use this when Supabase's own daily backups (or PITR) cannot help: the project or
      t text;
      columns text;
      left_out text;
+     serial record;
    begin
      foreach t in array array['users', 'identities', 'sso_providers', 'sso_domains', 'saml_providers'] loop
        select string_agg(quote_ident(c.column_name), ', ' order by c.ordinal_position) into columns
        from information_schema.columns c
-       where c.table_schema = 'auth' and c.table_name = t
-         and c.is_generated = 'NEVER' and c.identity_generation is distinct from 'ALWAYS'
+       where c.table_schema = 'auth' and c.table_name = t and c.is_generated = 'NEVER'
          and exists (select 1 from jsonb_array_elements(snapshot -> t) r where r ? c.column_name);
        select string_agg(distinct k, ', ') into left_out
        from jsonb_array_elements(snapshot -> t) r cross join lateral jsonb_object_keys(r) k
@@ -219,9 +247,19 @@ Use this when Supabase's own daily backups (or PITR) cannot help: the project or
          raise notice 'auth.%: the backup''s columns % are not in this project and were left out', t, left_out;
        end if;
        if columns is not null then
-         execute format('insert into auth.%I (%s) select %s from jsonb_populate_recordset(null::auth.%I, $1 -> %L)',
+         execute format('insert into auth.%I (%s) overriding system value '
+                        'select %s from jsonb_populate_recordset(null::auth.%I, $1 -> %L)',
                         t, columns, columns, t, t) using snapshot;
        end if;
+       for serial in
+         select c.column_name, pg_get_serial_sequence(format('auth.%I', t), c.column_name) as seq
+         from information_schema.columns c
+         where c.table_schema = 'auth' and c.table_name = t
+           and pg_get_serial_sequence(format('auth.%I', t), c.column_name) is not null
+       loop
+         execute format('select setval(%L, coalesce((select max(%I) from auth.%I), 0) + 1, false)',
+                        serial.seq, serial.column_name, t);
+       end loop;
      end loop;
    end;
    $$;

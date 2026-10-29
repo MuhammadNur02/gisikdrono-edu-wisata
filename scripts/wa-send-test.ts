@@ -112,6 +112,7 @@ const SAMPLE_FACTS = {
   visitDate: isoDate(DAYS_AHEAD),
   session: '09.00–10.00 WIB',
   gate: 'RW 05 Ecowastreme',
+  days: [{ date: isoDate(DAYS_AHEAD), session: '09.00–10.00 WIB', gate: 'RW 05 Ecowastreme' }],
   pax: SAMPLE_PAX,
   total: SAMPLE_TOTAL,
   deadline: new Date(Date.now() + HOUR_MS).toISOString(),

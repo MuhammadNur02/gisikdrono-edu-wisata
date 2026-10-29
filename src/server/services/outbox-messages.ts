@@ -15,9 +15,11 @@ import { grantsScope } from '@/lib/links/verify';
 import {
   displayParams,
   guestTemplateParams,
+  isStaleReminder,
   staffParamsSchema,
   type BookingFacts,
   type GuestTemplate,
+  type VisitDay,
 } from '@/lib/notifications/compose';
 import { sendFailure, type SendFailure } from '@/lib/notifications/send-result';
 import { templateParamsSchemas, type NotificationTemplate } from '@/lib/notifications/templates';
@@ -67,9 +69,13 @@ const LINKED_TEMPLATES: ReadonlySet<NotificationTemplate> = new Set([
   'booking_link',
 ]);
 
+// The legs that still hold a seat: a released leg (a booking paid after its seats were gone, a weather refund) or one
+// never reserved is no visit day of the booking (review of PR #109, L2).
+const SEAT_HOLDING_LEG_STATUSES: ReadonlySet<string> = new Set(['reserved', 'checked_in']);
+
 const BOOKING_COLUMNS = `booking_code, token_version, email_verified_at, package_snapshot, visit_date, pax_count,
   total_amount, expires_at, institution_name,
-  booking_legs(leg_order, rw_units(name), visit_sessions(start_time, end_time)),
+  booking_legs(leg_order, status, rw_units(name), visit_sessions(session_date, start_time, end_time)),
   quotations(quotation_number, valid_until, issued_at), payments(refunded_amount)`;
 
 const linkScopeSchema = z.object({ link_scope: z.enum(GUEST_LINK_SCOPES) });
@@ -114,6 +120,18 @@ function sessionsOf(legs: readonly LoadedLeg[]): string {
   return legs.map((leg) => `${leg.rw_units.name} ${sessionOf(leg)}`).join(', ');
 }
 
+// The booking's visit days in date order, each with the sessions and the gate of its own legs.
+function daysOf(allLegs: readonly LoadedLeg[]): VisitDay[] {
+  const legs = allLegs.filter((leg) => SEAT_HOLDING_LEG_STATUSES.has(leg.status));
+  const dates = [...new Set(legs.map((leg) => leg.visit_sessions.session_date))].sort(
+    (left, right) => left.localeCompare(right),
+  );
+  return dates.map((date) => {
+    const legsOfDay = legs.filter((leg) => leg.visit_sessions.session_date === date);
+    return { date, session: sessionsOf(legsOfDay), gate: legsOfDay[0]?.rw_units.name ?? '' };
+  });
+}
+
 function factsOf(booking: LoadedBooking): BookingFacts {
   const legs = [...booking.booking_legs].sort((left, right) => left.leg_order - right.leg_order);
   const quotation = [...booking.quotations].sort((a, b) =>
@@ -125,6 +143,7 @@ function factsOf(booking: LoadedBooking): BookingFacts {
     visitDate: booking.visit_date,
     session: sessionsOf(legs),
     gate: legs[0]?.rw_units.name ?? '',
+    days: daysOf(legs),
     pax: booking.pax_count,
     total: booking.total_amount,
     deadline: booking.expires_at,
@@ -193,10 +212,14 @@ async function composeGuest(
 ): Promise<Composed> {
   if (row.booking_id === null) return refusal('bad_params', 'The message names no booking');
   const booking = await loadBooking(adminClient, row.booking_id);
+  const facts = factsOf(booking);
+  if (isStaleReminder(row.template, facts, row.params)) {
+    return refusal('stale_day', 'The reminder names a day the booking no longer visits');
+  }
   const named = guestTemplateParams(
     row.template,
     greetingName(row.recipient_name),
-    factsOf(booking),
+    facts,
     row.params,
   );
   const params = templateParamsSchemas[row.template].safeParse(named);
