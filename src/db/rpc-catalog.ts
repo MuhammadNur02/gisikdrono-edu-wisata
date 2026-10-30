@@ -47,3 +47,29 @@ export async function savePackage(client: DatabaseClient, save: PackageSave): Pr
   );
   return z.uuid().parse(id);
 }
+
+// public.save_product_variants (20261105170200, decision of 2026-10-30): a product's variants in the order given,
+// replacing the ones it has, in one transaction. Security invoker too, so only the superadmin at AAL2 gets through.
+export interface SavedVariant {
+  label: string;
+  // One of the product's own imagePaths, or null.
+  imagePath: string | null;
+  isAvailable: boolean;
+}
+
+export async function saveProductVariants(
+  client: DatabaseClient,
+  productId: string,
+  variants: readonly SavedVariant[],
+): Promise<void> {
+  await resultOf(
+    client.rpc('save_product_variants', {
+      p_product_id: productId,
+      p_variants: variants.map((variant) => ({
+        label: variant.label,
+        image_path: variant.imagePath,
+        is_available: variant.isAvailable,
+      })),
+    }),
+  );
+}

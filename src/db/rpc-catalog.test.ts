@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 
-import { savePackage } from '@/db/rpc-catalog';
+import { savePackage, saveProductVariants } from '@/db/rpc-catalog';
 
 import { clientAnswering } from '../../tests/fixtures/postgrest-client';
 
@@ -47,5 +47,32 @@ describe('savePackage', () => {
     await expect(
       savePackage(client, { packageId: null, fields: {}, legRwIds: null, tiers: [] }),
     ).rejects.toBeInstanceOf(ZodError);
+  });
+});
+
+describe('saveProductVariants', () => {
+  it('sends the variants in order, snake_case, for the product', async () => {
+    const { client, requests } = clientAnswering(204, null);
+    await saveProductVariants(client, PACKAGE_ID, [
+      { label: 'Motif Kawung', imagePath: 'rw-05/products/x/a.webp', isAvailable: true },
+      { label: 'Motif Parang', imagePath: null, isAvailable: false },
+    ]);
+    expect(requests[0]).toEqual({
+      url: 'http://supabase.test/rest/v1/rpc/save_product_variants',
+      body: {
+        p_product_id: PACKAGE_ID,
+        p_variants: [
+          { label: 'Motif Kawung', image_path: 'rw-05/products/x/a.webp', is_available: true },
+          { label: 'Motif Parang', image_path: null, is_available: false },
+        ],
+      },
+    });
+  });
+
+  it('passes a refusal on', async () => {
+    const { client } = clientAnswering(403, { code: '42501', message: 'denied' });
+    await expect(saveProductVariants(client, PACKAGE_ID, [])).rejects.toMatchObject({
+      code: '42501',
+    });
   });
 });

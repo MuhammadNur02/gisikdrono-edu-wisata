@@ -1,5 +1,5 @@
--- Reference data of 0008_seed, 20261022080000, 20261023090000 and 20261105160000 to 20261105160200 (docs/PRD.md
--- §8.6, assumption A4, Tasks P1.8.01, P2.10.03, P3.5.04) and the development seed guard
+-- Reference data of 0008_seed, 20261022080000, 20261023090000, 20261105160000 to 20261105160200 and 20261105170000
+-- (docs/PRD.md §8.6, assumption A4, Tasks P1.8.01, P2.10.03, P3.5.04) and the development seed guard
 -- (Task P1.8.02, security review of PR #5). Vault secrets are written and removed inside the suite's own transaction.
 begin;
 select plan(21);
@@ -17,7 +17,8 @@ select is(
         'booking.hold_minutes_individual:false', 'booking.max_advance_days:true',
         'booking.max_pax:true', 'booking.min_lead_hours:true', 'booking.quotation_valid_days:false',
         'booking.weather_reschedule_max:true', 'booking.weather_window_hours:true',
-        'booking_enabled:true', 'certificate.template_version:false', 'checkin.grace_after_minutes:false',
+        'booking_enabled:true', 'catalogue.show_product_prices:true', 'certificate.template_version:false',
+        'checkin.grace_after_minutes:false',
         'checkin.grace_before_minutes:false', 'contact.email:true', 'contact.kopdes_address:true',
         'contact.kopdes_whatsapp_number:true', 'contact.whatsapp_number:true',
         'email_enabled:false', 'finance.expected_payout_account_masked:false', 'kelurahan.address:true',
