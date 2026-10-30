@@ -20,6 +20,7 @@ const SEEDED_ROWS = [
   { key: 'privacy.dpo_email', value: 'privasi@example.invalid' },
   { key: 'contact.kopdes_whatsapp_number', value: '+620000000000' },
   { key: 'contact.kopdes_address', value: '[Alamat Koperasi Merah Putih]' },
+  { key: 'catalogue.show_product_prices', value: false },
 ];
 
 describe('isPlaceholderSetting', () => {
@@ -48,6 +49,7 @@ describe('parsePublicSettings', () => {
         'Kelurahan Gisikdrono, Kecamatan Semarang Barat, Kota Semarang, Jawa Tengah',
       kopdesWhatsappNumber: null,
       kopdesAddress: null,
+      showProductPrices: false,
       seoDefaultDescription: 'Edu Wisata Kelurahan Gisikdrono, Semarang Barat.',
       dpoName: null,
       dpoEmail: null,

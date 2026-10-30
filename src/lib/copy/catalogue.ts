@@ -131,8 +131,19 @@ export const productDetailCopy = {
   // WCAG 2.5.3: the accessible name starts with the visible label.
   orderButtonLabel: (product: string) => `Pesan via WhatsApp: ${product} (Koperasi Merah Putih)`,
   orderUnavailable: 'Sedang tidak tersedia.',
-  orderMessage: (product: string, rw: string) =>
-    `Halo Koperasi Merah Putih, saya ingin memesan ${product} (${rw}). Jumlah: `,
+  // The variant line comes before the quantity, which the visitor types last (decision of 2026-10-30).
+  orderMessage: (product: string, rw: string, variant: string | null) =>
+    `Halo Koperasi Merah Putih, saya ingin memesan ${product} (${rw}). ` +
+    (variant === null ? '' : `Varian: ${variant}. `) +
+    'Jumlah: ',
+  // What the message says while the visitor has not picked a variant of a product that has them.
+  variantUnchosen: '(pilih)',
+  variantsLegend: 'Pilih varian',
+  variantUnavailable: 'Habis',
+  variantChooseHint: 'Pilih salah satu varian, atau tulis pilihan Anda di pesan WhatsApp.',
+  variantChosen: (label: string) => `Varian dipilih: ${label}`,
+  // Read out when a variant's photo takes the main photo's place.
+  variantPhoto: (product: string, label: string) => `${product}, varian ${label}`,
   pickup: (address: string | null) =>
     address === null
       ? 'Ambil di Koperasi Merah Putih'

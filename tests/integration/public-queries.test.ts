@@ -32,6 +32,10 @@ const DRAFT_PHOTO_ID = '00000000-0000-4000-9000-0000000005a2';
 const VIDEO_ID = '00000000-0000-4000-9000-0000000005a3';
 const VIDEO_WITHOUT_ID = '00000000-0000-4000-9000-0000000005a4';
 const PUBLISHED_BOOKLET_ID = '00000000-0000-4000-9000-0000000005b1';
+const VARIANT_IDS = [
+  '00000000-0000-4000-9000-0000000005c1',
+  '00000000-0000-4000-9000-0000000005c2',
+] as const;
 const DRAFT_BOOKLET_ID = '00000000-0000-4000-9000-0000000005b2';
 const BOOKLET_PAGES = `rw-08/booklets/${PUBLISHED_BOOKLET_ID}/pages`;
 const YOUTUBE_ID = 'aqz-KE-bpKQ';
@@ -141,10 +145,59 @@ describe('public queries as a visitor', () => {
     expect(products.length).toBeGreaterThanOrEqual(2);
     expect(compost).toMatchObject({
       rw: { id: 5, label: 'RW 05', accentKey: 'leaf' },
-      price: 15000,
+      variants: [],
+      variantCount: 0,
     });
     expect(compost).not.toHaveProperty('vendor');
     expect(JSON.stringify(products)).not.toContain('Bank Sampah Lestari');
+  });
+
+  // Decision of 2026-10-30: catalogue.show_product_prices is off, so no amount leaves the read; once it is on, a
+  // product shows its own price, or none yet.
+  it('sends no product price while the switch is off, and the price once it is on', async () => {
+    const hidden = await getProductBySlug('pupuk-kompos-1kg');
+    expect(hidden?.price).toEqual({ status: 'hidden' });
+    expect(JSON.stringify(await listProducts())).not.toContain('15000');
+
+    await runSql(
+      `update public.site_settings set value = 'true' where key = 'catalogue.show_product_prices'`,
+    );
+    try {
+      expect((await getProductBySlug('pupuk-kompos-1kg'))?.price).toEqual({
+        status: 'set',
+        amount: 15000,
+      });
+    } finally {
+      await runSql(
+        `update public.site_settings set value = 'false' where key = 'catalogue.show_product_prices'`,
+      );
+    }
+  });
+
+  // Decision of 2026-10-30: a published product's variants are public, in their order, an unavailable one marked.
+  it('reads the variants of a product in order', async () => {
+    await runSql(`insert into public.product_variants (id, product_id, label, sort_order, is_available)
+      select v.id, p.id, v.label, v.sort_order, v.is_available
+      from public.products_umkm p,
+        (values ('${VARIANT_IDS[0]}'::uuid, 'Kantong Kecil', 1::smallint, false),
+                ('${VARIANT_IDS[1]}'::uuid, 'Kantong Besar', 0::smallint, true)) as v(id, label, sort_order, is_available)
+      where p.slug = 'pupuk-kompos-1kg'`);
+    try {
+      const compost = await getProductBySlug('pupuk-kompos-1kg');
+      expect(compost?.variants).toEqual([
+        { id: VARIANT_IDS[1], label: 'Kantong Besar', image: null, isAvailable: true },
+        { id: VARIANT_IDS[0], label: 'Kantong Kecil', image: null, isAvailable: false },
+      ]);
+      expect(
+        (await listProducts()).find((product) => product.slug === 'pupuk-kompos-1kg'),
+      ).toMatchObject({
+        variantCount: 2,
+      });
+    } finally {
+      await runSql(
+        `delete from public.product_variants where id in ('${VARIANT_IDS.join("', '")}')`,
+      );
+    }
   });
 
   it('reads articles with a reading time', async () => {
