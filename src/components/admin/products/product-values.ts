@@ -5,6 +5,16 @@ import type { VendorAdmin } from '@/types/vendor';
 
 // What the product and vendor forms start from (Task P4.3.06): a stored row as its fields hold it, or a blank one.
 
+type VariantKey = 'label' | 'imagePath' | 'isAvailable';
+
+// The form path of one field of one variant, as react-hook-form names it.
+export function variantPath<Key extends VariantKey>(
+  index: number,
+  key: Key,
+): `variants.${number}.${Key}` {
+  return ['variants', String(index), key].join('.') as `variants.${number}.${Key}`;
+}
+
 export function blankProduct(vendorId: string): ProductInput {
   return {
     vendorId,
@@ -12,7 +22,8 @@ export function blankProduct(vendorId: string): ProductInput {
     slug: '',
     category: 'other',
     descriptionMd: '',
-    price: 0,
+    // Decision of 2026-10-30: a new product starts without a price ("belum ditentukan"), never at Rp 0.
+    price: null,
     unitLabel: PRODUCT_DEFAULT_UNIT,
     minOrderQty: 1,
     maxOrderQty: null,
@@ -23,6 +34,7 @@ export function blankProduct(vendorId: string): ProductInput {
     imagePaths: [],
     status: 'draft',
     sortOrder: 0,
+    variants: [],
   };
 }
 
@@ -49,6 +61,7 @@ export function productValues(product: ProductAdmin): ProductInput {
     imagePaths: product.imagePaths,
     status: productStatusOf(product.status),
     sortOrder: product.sortOrder,
+    variants: product.variants.map((variant) => ({ ...variant })),
   };
 }
 

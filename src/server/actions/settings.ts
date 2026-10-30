@@ -24,11 +24,15 @@ export async function updateSiteSettingsAction(input: unknown): Promise<ActionRe
   try {
     const changed = await updateSiteSettings(guard.ctx, parsed.data);
     revalidateTag(TAGS.settings);
+    // The product reads cache under settings too (catalogue.show_product_prices); named here so the price switch
+    // reaches every product page even if a read forgets its settings tag.
+    revalidateTag(TAGS.allProducts);
     return ok(changed);
   } catch (error) {
     // The keys are written one row each, so a failure part-way may follow keys that did save; the public reads
     // refresh either way (review of PR #40).
     revalidateTag(TAGS.settings);
+    revalidateTag(TAGS.allProducts);
     return mapError(error);
   }
 }

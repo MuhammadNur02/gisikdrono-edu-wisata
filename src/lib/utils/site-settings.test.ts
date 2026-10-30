@@ -31,6 +31,7 @@ const ROWS = [
   { key: 'kelurahan.address', value: 'Kelurahan Gisikdrono, Semarang Barat' },
   { key: 'contact.kopdes_whatsapp_number', value: '+620000000000' },
   { key: 'contact.kopdes_address', value: '[Alamat Koperasi Merah Putih]' },
+  { key: 'catalogue.show_product_prices', value: false },
   { key: 'kelurahan.signatory_name', value: '[Nama Lurah Gisikdrono]' },
   { key: 'kelurahan.signatory_title', value: 'Lurah Gisikdrono' },
   { key: 'certificate.template_version', value: 1 },

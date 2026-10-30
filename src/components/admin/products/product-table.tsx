@@ -114,7 +114,9 @@ function stateColumns(
       accessorFn: (product) => product.price,
       header: ({ column }) => <ColumnHeader column={column} title={text.columns.price} />,
       cell: ({ row }) =>
-        text.columns.perUnit(formatIDR(row.original.price), row.original.unitLabel),
+        row.original.price === null
+          ? text.columns.priceUnset
+          : text.columns.perUnit(formatIDR(row.original.price), row.original.unitLabel),
       meta: { label: text.columns.price, align: 'right' },
     },
     {

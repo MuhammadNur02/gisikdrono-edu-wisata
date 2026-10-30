@@ -64,6 +64,7 @@ const FORM = {
   imagePaths: [],
   status: 'draft',
   sortOrder: 0,
+  variants: [],
 };
 const VENDOR_FORM = {
   name: 'PKK RW 05',
@@ -109,6 +110,7 @@ function stored(rwId: number): ProductAdmin {
     leadTimeDays: 2,
     imagePaths: [],
     sortOrder: 0,
+    variants: [],
   };
 }
 
@@ -187,6 +189,40 @@ describe('product and vendor actions', () => {
     expect(await createVendorAction({ ...VENDOR_FORM, bankAccountNumber: '1' })).toMatchObject({
       error: { code: 'VALIDATION' },
     });
+  });
+
+  // Decision of 2026-10-30: a product may wait for its price, and carries its variants.
+  it('saves a product without a price, with its variants', async () => {
+    const variants = [
+      { label: 'Motif Kawung', imagePath: null, isAvailable: true },
+      { label: 'Motif Parang', imagePath: null, isAvailable: false },
+    ];
+    expect(await createProductAction({ ...FORM, price: null, variants })).toMatchObject({
+      ok: true,
+    });
+    expect(createProduct).toHaveBeenCalledWith(
+      SUPERADMIN,
+      5,
+      expect.objectContaining({ price: null, variants }),
+    );
+  });
+
+  it('refuses a price of 0 and a variant named twice, under their fields', async () => {
+    const twice = [
+      { label: 'Biru', imagePath: null, isAvailable: true },
+      { label: 'biru', imagePath: null, isAvailable: true },
+    ];
+    const result = await createProductAction({ ...FORM, price: 0, variants: twice });
+    expect(result).toMatchObject({
+      error: {
+        code: 'VALIDATION',
+        fieldErrors: {
+          price: [expect.any(String)],
+          variants: [productsCopy.variants.duplicate],
+        },
+      },
+    });
+    expect(createProduct).not.toHaveBeenCalled();
   });
 
   it('archives by status', async () => {

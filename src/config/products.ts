@@ -19,6 +19,9 @@ export const PRODUCT_LIMITS = {
   // products_umkm.lead_time_days is a smallint; a made-to-order product takes days, not years.
   leadTimeDaysMax: 90,
   images: 6,
+  // product_variants (20261105170200): the label CHECK and the per-product cap of product_variants_guard.
+  variantLabel: 60,
+  variants: 20,
 } as const;
 
 export const VENDOR_LIMITS = {

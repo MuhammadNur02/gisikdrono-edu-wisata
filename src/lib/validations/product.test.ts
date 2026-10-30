@@ -26,7 +26,10 @@ const PRODUCT = {
   imagePaths: [],
   status: 'draft',
   sortOrder: 0,
+  variants: [],
 };
+
+const PHOTO = 'rw-05/products/0192f3a4-5b6c-7d8e-9f01-23456789abcd/biru.webp';
 
 const VENDOR = {
   name: 'PKK RW 05',
@@ -68,6 +71,68 @@ describe('createProductSchema', () => {
     expect(
       updateProductSchema.safeParse({ ...PRODUCT, id: ROW_ID, isAddonEligible: true }).success,
     ).toBe(false);
+  });
+
+  // Decision of 2026-10-30: the owner may not know a price yet.
+  it('takes a product without a price, never one of 0 rupiah', () => {
+    expect(createProductSchema.parse({ ...PRODUCT, price: null }).price).toBeNull();
+    expect(createProductSchema.safeParse({ ...PRODUCT, price: 0 }).success).toBe(false);
+  });
+
+  it('takes variants with a trimmed label and a photo of the product', () => {
+    const parsed = createProductSchema.parse({
+      ...PRODUCT,
+      imagePaths: [PHOTO],
+      variants: [
+        { label: '  Motif Biru ', imagePath: PHOTO, isAvailable: true },
+        { label: 'Motif Merah', imagePath: null, isAvailable: false },
+      ],
+    });
+    expect(parsed.variants).toEqual([
+      { label: 'Motif Biru', imagePath: PHOTO, isAvailable: true },
+      { label: 'Motif Merah', imagePath: null, isAvailable: false },
+    ]);
+  });
+
+  it('puts a repeated label, a photo the product lacks and a stray key under the variant', () => {
+    const result = createProductSchema.safeParse({
+      ...PRODUCT,
+      variants: [
+        { label: 'Biru', imagePath: null, isAvailable: true },
+        { label: 'BIRU', imagePath: PHOTO, isAvailable: true },
+      ],
+    });
+    expect(result.error?.issues.map((issue) => issue.path)).toEqual([
+      ['variants', 1, 'label'],
+      ['variants', 1, 'imagePath'],
+    ]);
+    expect(
+      createProductSchema.safeParse({
+        ...PRODUCT,
+        variants: [{ label: 'Biru', imagePath: null, isAvailable: true, price: 1 }],
+      }).success,
+    ).toBe(false);
+    expect(
+      createProductSchema.safeParse({
+        ...PRODUCT,
+        variants: [{ label: ' ', imagePath: null, isAvailable: true }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('takes at most 20 variants', () => {
+    const variants = (count: number) =>
+      Array.from({ length: count }, (_, index) => ({
+        label: `Warna ${String(index + 1)}`,
+        imagePath: null,
+        isAvailable: true,
+      }));
+    expect(createProductSchema.safeParse({ ...PRODUCT, variants: variants(20) }).success).toBe(
+      true,
+    );
+    expect(createProductSchema.safeParse({ ...PRODUCT, variants: variants(21) }).success).toBe(
+      false,
+    );
   });
 
   it('needs the row id to update', () => {

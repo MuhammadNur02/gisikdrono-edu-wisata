@@ -23,6 +23,7 @@ const SETTINGS: SiteSettingsInput = {
   kelurahanAddress: 'Jl. Gisikdrono, Semarang Barat',
   kopdesWhatsappNumber: '+6281298765432',
   kopdesAddress: 'Jl. Gisikdrono, Semarang Barat',
+  showProductPrices: false,
   dpoName: 'Siti Aminah',
   dpoEmail: 'privasi@gisikdrono.go.id',
   signatoryName: 'Budi Santoso',
