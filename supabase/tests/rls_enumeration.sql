@@ -76,7 +76,8 @@ select is(
 -- 20261101130200 and 20261104190200 to 20261104190500 (release_refund_key_mismatch, payout_preview,
 -- rpc_reveal_finance_evidence); import_midtrans_statement of 20261104210200; refund_key_blocked_adjustments of
 -- 20261105120300, which reads; onboarding_state of 20261103131200, booleans about the caller's own onboarding only;
--- save_product_variants of 20261105170200 and save_product of 20261105170400, security invoker like save_package.
+-- save_product_variants of 20261105170200 and save_product of 20261105170400, security invoker like save_package;
+-- is_admin_kopdes and manages_umkm of 20261105180100, the RLS helpers of the Kopdes admin (docs/PRD.md §13.1 A30).
 select is(
   array(
     select n.nspname || '.' || p.proname from pg_proc p
@@ -90,9 +91,9 @@ select is(
         'public.cancel_superadmin_promotion', 'public.cancellation_preview', 'public.create_admin_booking',
         'public.declare_weather_disruption', 'public.extend_booking_hold', 'public.finance_booking', 'public.finance_overview',
         'public.find_manual_ticket', 'public.fresh_totp', 'public.generate_visit_sessions',
-        'public.get_rw_treasury_account', 'public.get_vendor_bank_account', 'public.import_midtrans_statement', 'public.invite_superadmin', 'public.is_admin_rw', 'public.is_staff', 'public.is_superadmin',
-        'public.issue_certificates', 'public.issue_mfa_reenrolment_code', 'public.mark_booking_paid_manually',
-        'public.mark_refund_request_failed',
+        'public.get_rw_treasury_account', 'public.get_vendor_bank_account', 'public.import_midtrans_statement', 'public.invite_superadmin', 'public.is_admin_kopdes', 'public.is_admin_rw', 'public.is_staff', 'public.is_superadmin',
+        'public.issue_certificates', 'public.issue_mfa_reenrolment_code', 'public.manages_umkm',
+        'public.mark_booking_paid_manually', 'public.mark_refund_request_failed',
         'public.onboarding_state',
         'public.owns_any_rw', 'public.owns_rw', 'public.payout_preview',
         'public.propose_adjustment', 'public.reactivate_booking', 'public.record_refund',
@@ -108,7 +109,7 @@ select is(
         'public.scan_ticket', 'public.send_admin_booking_link', 'public.set_rw_treasury_account', 'public.set_rw_unit_status', 'public.set_staff_role', 'public.set_staff_status',
         'public.set_vendor_bank_account', 'public.settle_revenue_entries', 'public.today_jkt',
         'public.undo_check_in', 'public.unlock_scanner_officer', 'public.verify_audit_chain', 'public.visit_stats'],
-  'authenticated can execute the ten RLS helpers and the staff RPCs, nothing else'
+  'authenticated can execute the twelve RLS helpers and the staff RPCs, nothing else'
 );
 select is(
   array(
@@ -135,7 +136,7 @@ select is(
     select p.proname::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and not p.proname like 'svc\_%' and p.prorettype <> 'trigger'::regtype
       and p.proname not in ('app_role', 'app_rw_id', 'is_superadmin', 'is_admin_rw', 'is_staff', 'owns_rw',
-                            'owns_any_rw', 'aal2', 'fresh_totp', 'today_jkt')
+                            'owns_any_rw', 'aal2', 'fresh_totp', 'today_jkt', 'is_admin_kopdes', 'manages_umkm')
       and has_function_privilege('service_role', p.oid, 'execute')
     order by 1
   ),

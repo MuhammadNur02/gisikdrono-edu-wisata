@@ -20,7 +20,7 @@ select is(
     select tablename || '.' || policyname from pg_policies
     where schemaname = 'public'
       and (coalesce(qual, '') || ' ' || coalesce(with_check, ''))
-          ~ '(?<!SELECT )((public\.)?(app_role|app_rw_id|is_superadmin|is_admin_rw|is_staff|owns_rw|owns_any_rw|aal2|fresh_totp|today_jkt)|auth\.uid)\('
+          ~ '(?<!SELECT )((public\.)?(app_role|app_rw_id|is_superadmin|is_admin_rw|is_admin_kopdes|manages_umkm|is_staff|owns_rw|owns_any_rw|aal2|fresh_totp|today_jkt)|auth\.uid)\('
     order by 1
   ),
   array[]::text[],
