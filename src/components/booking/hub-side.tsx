@@ -26,8 +26,9 @@ function sessionLines(view: StatusHubView): string[] {
   );
 }
 
+// Only a booking made while add-ons were on sale holds any (decision of 2026-10-29: UMKM products are ordered from the
+// Koperasi Merah Putih now), so the row shows only then.
 function addonLine(view: StatusHubView): string {
-  if (view.addons.length === 0) return text.details.noAddons;
   return view.addons.map((addon) => `${addon.name} × ${String(addon.qty)}`).join(', ');
 }
 
@@ -51,7 +52,7 @@ export function HubDetails({ view }: { view: StatusHubView }) {
         <Row label={text.details.pax}>{text.details.paxCount(booking.paxCount)}</Row>
         {view.institutionName && <Row label={text.details.group}>{view.institutionName}</Row>}
         {view.picShortName && <Row label={text.details.pic}>{view.picShortName}</Row>}
-        <Row label={text.details.addons}>{addonLine(view)}</Row>
+        {view.addons.length > 0 && <Row label={text.details.addons}>{addonLine(view)}</Row>}
         <Row label={text.details.total}>
           <span className="text-h4 font-display font-extrabold tabular-nums">
             {formatIDR(booking.totalAmount)}
@@ -63,7 +64,14 @@ export function HubDetails({ view }: { view: StatusHubView }) {
 }
 
 // docs/PRD.md §13.1 A16–A17, go-live check #27: the terms in force, read from site_settings.
-export function HubTerms({ terms }: { terms: StatusHubView['terms'] }) {
+// The add-on term only for a booking that holds add-ons (decision of 2026-10-29: none is sold any more).
+export function HubTerms({
+  terms,
+  hasAddons,
+}: {
+  terms: StatusHubView['terms'];
+  hasAddons: boolean;
+}) {
   return (
     <section aria-labelledby="hub-terms" className={CARD}>
       <h2 id="hub-terms" className="text-h4 font-bold">
@@ -73,7 +81,7 @@ export function HubTerms({ terms }: { terms: StatusHubView['terms'] }) {
         {terms.refundSchedule.map((step) => (
           <li key={step.minDays}>{text.terms.refundLine(step.minDays, step.pct)}</li>
         ))}
-        <li>{text.terms.addons}</li>
+        {hasAddons && <li>{text.terms.addons}</li>}
         <li>{text.terms.weather(terms.weatherMax, terms.weatherHours)}</li>
       </ul>
     </section>

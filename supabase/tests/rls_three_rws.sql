@@ -3,7 +3,7 @@
 -- bookings, which no public policy shows, so every row an admin sees came through the staff policies; RW 13's
 -- uploads live under rw-13/ like every RW's.
 begin;
-select plan(31);
+select plan(32);
 \ir helpers/rls_personas.psql
 
 -- One row of each kind per RW, every key ending in the RW's number so a list of them reads as the RWs it holds.
@@ -44,13 +44,28 @@ select pg_temp.fixture_id('000003c3', rw), 'GSK-T3RW' || lpad(rw::text, 4, '0'),
   'tiga-' || rw || '@example.test', 4, public.today_jkt(), public.today_jkt(), 100000, 100000, 'v1', now()
 from unnest(array[5, 8, 13]::smallint[]) as rw;
 
+-- anon reads no vendor at all since 20261105160300 and has its own check below, so for anon the vendor part is
+-- left out; plpgsql plans the query only when it runs, so anon never touches the table here.
+create function pg_temp.visible_vendor_rws() returns text
+  language plpgsql
+as $$
+begin
+  if not has_any_column_privilege('public.umkm_vendors', 'select') then
+    return null;
+  end if;
+  return 'vendor ' || (select string_agg(rw_id::text, ',' order by rw_id) from public.umkm_vendors
+                       where slug like 'tiga-vendor-%');
+end;
+$$;
+grant execute on function pg_temp.visible_vendor_rws() to anon, authenticated;
+
 -- The RWs whose fixture rows the current role sees, table by table; anon may not read bookings at all.
 create function pg_temp.visible_content_rws() returns text
   language sql
 as $$
   select concat_ws(' | ',
     'paket ' || (select string_agg(rw_id::text, ',' order by rw_id) from public.tour_packages where slug like 'tiga-paket-%'),
-    'vendor ' || (select string_agg(rw_id::text, ',' order by rw_id) from public.umkm_vendors where slug like 'tiga-vendor-%'),
+    pg_temp.visible_vendor_rws(),
     'produk ' || (select string_agg(rw_id::text, ',' order by rw_id) from public.products_umkm where slug like 'tiga-produk-%'),
     'artikel ' || (select string_agg(rw_id::text, ',' order by rw_id) from public.articles where slug like 'tiga-artikel-%'),
     'titik ' || (select string_agg(rw_id::text, ',' order by rw_id, slug) from public.activity_points where slug like 'tiga-titik-%'),
@@ -156,7 +171,8 @@ grant execute on function pg_temp.rename_every_fixture(text) to authenticated;
 
 -- ===== anon and the superadmin =====
 select pg_temp.act_as('anon');
-select is(pg_temp.visible_content_rws(), '', 'anon sees no draft or inactive vendor of any RW');
+select is(pg_temp.visible_content_rws(), '', 'anon sees no draft content of any RW');
+select throws_ok($$select rw_id from public.umkm_vendors$$, '42501', null, 'and no vendor of any RW at all');
 reset role;
 select pg_temp.act_as('superadmin_aal2');
 select is(pg_temp.visible_rws(),

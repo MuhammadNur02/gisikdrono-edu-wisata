@@ -1,4 +1,4 @@
-import { CalendarCheck, CalendarClock, DoorOpen, Gauge, ShoppingBag } from 'lucide-react';
+import { CalendarCheck, CalendarClock, DoorOpen, Gauge } from 'lucide-react';
 import Link from 'next/link';
 
 import { CheckInsCard } from '@/components/admin/charts/checkins-card';
@@ -48,7 +48,7 @@ function KpiGrid({ overview, readCheckIns }: RwOverviewProps) {
   return (
     <section
       aria-label={text.kpiLabel}
-      className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"
     >
       <QuotaCard quota={overview.quota} />
       <KpiCard
@@ -68,18 +68,6 @@ function KpiGrid({ overview, readCheckIns }: RwOverviewProps) {
         icon={DoorOpen}
         value={<LiveCheckIns initial={overview.checkInsToday} read={readCheckIns} />}
         hint={text.rw.checkInsTodayHint}
-      />
-      <KpiCard
-        label={text.rw.productsSold}
-        icon={ShoppingBag}
-        value={
-          overview.productsSold === null ? (
-            <KpiUnavailable />
-          ) : (
-            <CountUp value={overview.productsSold} onMount />
-          )
-        }
-        hint={text.rw.productsSoldHint}
       />
     </section>
   );

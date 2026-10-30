@@ -23,7 +23,6 @@ function addon(productId: string, unitPrice: number, quantity: number): AddonQuo
   return {
     kind: 'addon',
     productId,
-    vendorId: 'cccccccc-0000-4000-8000-000000000001',
     rwId: 5,
     name: 'Produk Uji',
     unitLabel: 'buah',

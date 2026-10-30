@@ -2,13 +2,15 @@
 
 import { AlertTriangle, Check } from 'lucide-react';
 
-import { BOOKING_STEPS, type BookingStep } from '@/config/site';
+import type { BookingStep } from '@/config/site';
 import { copy } from '@/lib/copy/id';
 import { cn } from '@/lib/utils/cn';
 
 const text = copy.booking.wizard;
 
 export interface BookingStepperProps {
+  // The package's steps in order: four, or three when it offers no add-on (wizardStepsOf).
+  steps: readonly BookingStep[];
   current: BookingStep;
   // The furthest step the visitor may open: every step before it passed its check.
   reachable: BookingStep;
@@ -20,8 +22,8 @@ export interface BookingStepperProps {
 type StepState = 'completed' | 'current' | 'upcoming' | 'error';
 
 function stateOf(step: BookingStep, props: BookingStepperProps): StepState {
-  const index = BOOKING_STEPS.indexOf(step);
-  const currentIndex = BOOKING_STEPS.indexOf(props.current);
+  const index = props.steps.indexOf(step);
+  const currentIndex = props.steps.indexOf(props.current);
   if (step === props.current) return 'current';
   if (props.invalid.includes(step) && index < currentIndex) return 'error';
   return index < currentIndex ? 'completed' : 'upcoming';
@@ -87,9 +89,9 @@ function StepLine({ isDone }: { isDone: boolean }) {
 
 function StepItem({ step, props }: { step: BookingStep; props: BookingStepperProps }) {
   const state = stateOf(step, props);
-  const index = BOOKING_STEPS.indexOf(step);
-  const isReachable = index <= BOOKING_STEPS.indexOf(props.reachable);
-  const isLast = index === BOOKING_STEPS.length - 1;
+  const index = props.steps.indexOf(step);
+  const isReachable = index <= props.steps.indexOf(props.reachable);
+  const isLast = index === props.steps.length - 1;
   const label = (
     <>
       <StepMarker number={index + 1} state={state} />
@@ -127,17 +129,23 @@ const BAR_CLASS: Record<StepState, string> = {
   error: 'bg-destructive',
 };
 
-// DESIGN-SPEC §2.10 mobile: "Langkah 1 dari 4" in brick, the step's name on the right, four 4 px bars below.
+// One 4 px bar per step under the compact count.
+const BAR_COLUMNS: Record<number, string> = { 3: 'grid-cols-3', 4: 'grid-cols-4' };
+
+// DESIGN-SPEC §2.10 mobile: "Langkah 1 dari 4" in brick, the step's name on the right, a 4 px bar per step below.
 function CompactProgress(props: BookingStepperProps) {
-  const number = BOOKING_STEPS.indexOf(props.current) + 1;
+  const number = props.steps.indexOf(props.current) + 1;
   return (
     <div className="space-y-2.5 md:hidden">
       <p className="flex items-baseline justify-between gap-4 text-label-sm font-semibold">
-        <span className="text-primary-ink">{text.stepOf(number, BOOKING_STEPS.length)}</span>
+        <span className="text-primary-ink">{text.stepOf(number, props.steps.length)}</span>
         <span className="text-ink-2">{text.steps[props.current]}</span>
       </p>
-      <span aria-hidden className="grid grid-cols-4 gap-1.5">
-        {BOOKING_STEPS.map((step) => (
+      <span
+        aria-hidden
+        className={cn('grid gap-1.5', BAR_COLUMNS[props.steps.length] ?? 'grid-cols-4')}
+      >
+        {props.steps.map((step) => (
           <span
             key={step}
             className={cn(
@@ -151,14 +159,14 @@ function CompactProgress(props: BookingStepperProps) {
   );
 }
 
-// DESIGN-SPEC §2.10 Wizard Progress: four steps joined by lines from md; below md, the compact count over four bars.
+// DESIGN-SPEC §2.10 Wizard Progress: the steps joined by lines from md; below md, the compact count over a bar each.
 // The visitor may open any step before the furthest one that passed, never one after it.
 export function BookingStepper(props: BookingStepperProps) {
   return (
     <nav aria-label={text.stepsLabel}>
       <CompactProgress {...props} />
       <ol className="hidden max-w-180 items-center md:flex">
-        {BOOKING_STEPS.map((step) => (
+        {props.steps.map((step) => (
           <StepItem key={step} step={step} props={props} />
         ))}
       </ol>

@@ -63,6 +63,7 @@ export function wizardPackageOf(wizard: BookingWizard): WizardPackage {
     rws: tourPackage.rws,
     minPax: tourPackage.minPax,
     maxPax: Math.min(tourPackage.maxPax, wizard.rules.maxPax),
+    offersAddons: wizard.addons.length > 0,
   };
 }
 
@@ -120,7 +121,6 @@ export function quoteWizardBooking(wizard: BookingWizard, request: QuoteRequest)
     tiers: tourPackage.priceTiers,
     products: wizard.addons.map((product) => ({
       id: product.id,
-      vendorId: product.vendorId,
       rwId: product.rw.id,
       name: product.name,
       unitLabel: product.unitLabel,

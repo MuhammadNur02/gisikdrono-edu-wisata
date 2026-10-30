@@ -303,7 +303,7 @@ Do **not** pause the two Midtrans jobs the way staging-setup.md D.5 once did: a 
 
 ### 9. Settings, and what staff record
 
-Signed in as the superadmin (step 6), open **/dashboard/settings**, confirm with a fresh TOTP code when the form asks, and replace every value still holding its seeded placeholder: the contact email and number, the kelurahan address, the signatory, the data protection officer and the expected payout account. Production's `/api/health` answers 503 while any is left. To list them (read only) in the SQL editor:
+Signed in as the superadmin (step 6), open **/dashboard/settings**, confirm with a fresh TOTP code when the form asks, and replace every value still holding its seeded placeholder: the contact email and number, the kelurahan address, the signatory, the data protection officer, the expected payout account, and the Koperasi Merah Putih's UMKM order number and pickup address (`contact.kopdes_whatsapp_number`, `contact.kopdes_address`, `docs/PRD.md` §13.1 A29; until they are set the product pages show no order button). Production's `/api/health` answers 503 while any is left. To list them (read only) in the SQL editor:
 
 ```sql
 select * from internal.placeholder_site_settings();

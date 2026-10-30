@@ -6,6 +6,7 @@
 -- * the fulfilment guard: no API session sets `cancelled` or takes a line out of it.
 begin;
 select plan(33);
+\ir helpers/addons_on.psql
 \ir helpers/rls_personas.psql
 select set_config('app.qr_key_id', 'k1', true);
 

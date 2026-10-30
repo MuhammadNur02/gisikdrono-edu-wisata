@@ -166,13 +166,31 @@ function isStepComplete(step: BookingStep, draft: BookingDraft, wizardPackage: W
   return false;
 }
 
+// The steps of the wizard for a package, in order. The Tambahan step is there only when the package's RWs offer an
+// add-on: since the decision of 2026-10-29 UMKM products are ordered from the Koperasi Merah Putih, and no product is
+// an add-on, so the wizard has three steps.
+export function wizardStepsOf(wizardPackage: WizardPackage): readonly BookingStep[] {
+  return wizardPackage.offersAddons
+    ? BOOKING_STEPS
+    : BOOKING_STEPS.filter((step) => step !== 'tambahan');
+}
+
 // StyleGuide §5.14: the visitor may go back at any time, but not skip ahead past a step whose check fails, by the
 // stepper or by the address. The last step is where the booking is sent, so it is never "complete".
 export function firstIncompleteStep(
   draft: BookingDraft,
   wizardPackage: WizardPackage,
 ): BookingStep {
-  return BOOKING_STEPS.find((step) => !isStepComplete(step, draft, wizardPackage)) ?? 'ringkasan';
+  return (
+    wizardStepsOf(wizardPackage).find((step) => !isStepComplete(step, draft, wizardPackage)) ??
+    'ringkasan'
+  );
+}
+
+// A draft kept from a time when the package offered add-ons may still hold some; with none on sale they are dropped,
+// so the quote and the booking never send a line the server would refuse.
+export function draftForPackage(draft: BookingDraft, wizardPackage: WizardPackage): BookingDraft {
+  return wizardPackage.offersAddons || draft.addons.length === 0 ? draft : { ...draft, addons: [] };
 }
 
 export function stepIndex(step: BookingStep): number {

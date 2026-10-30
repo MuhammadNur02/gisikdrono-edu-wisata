@@ -1,0 +1,4 @@
+-- Add-ons are switched off at the row since the decision of 2026-10-29 (20261105160500_umkm_addons_enforced.sql). The
+-- add-on path itself stays, for the bookings that hold add-ons, so the suites that test it (the quote, the booking,
+-- the quotation, the ledger and the visit terms) lift the check inside their own transaction, which rolls it back.
+alter table public.products_umkm drop constraint products_umkm_addons_switched_off;

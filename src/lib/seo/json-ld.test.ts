@@ -118,17 +118,13 @@ describe('products and offers', () => {
     });
   });
 
-  it('names the UMKM as brand only when there is one', () => {
+  it('names no seller of a product: no brand, seller or manufacturer (decision of 2026-10-29)', () => {
     const offer = { priceIdr: 15000, path: '/produk/kompos', isAvailable: true };
-    const product = productJsonLd({
-      name: 'Kompos',
-      path: '/produk/kompos',
-      brandName: 'UMKM Contoh',
-      offer,
-    });
-    expect(product.brand).toEqual({ '@type': 'Brand', name: 'UMKM Contoh' });
+    const product = productJsonLd({ name: 'Kompos', path: '/produk/kompos', offer });
+    expect(product).not.toHaveProperty('brand');
+    expect(product).not.toHaveProperty('manufacturer');
     expect(product.offers).toMatchObject({ availability: 'https://schema.org/InStock' });
-    expect(productJsonLd({ name: 'Paket', path: '/paket-wisata/x', offer }).brand).toBeUndefined();
+    expect(product.offers).not.toHaveProperty('seller');
   });
 
   it('gives a "mulai dari" price as the low end of an AggregateOffer, never as one exact price', () => {

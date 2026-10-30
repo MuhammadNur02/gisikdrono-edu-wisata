@@ -73,6 +73,14 @@ export const settingsCopy = {
     contactWhatsappNumber: { label: 'Nomor WhatsApp kontak publik' },
     contactEmail: { label: 'Email kontak publik' },
     kelurahanAddress: { label: 'Alamat kantor kelurahan' },
+    kopdesWhatsappNumber: {
+      label: 'Nomor WhatsApp Koperasi Merah Putih',
+      description: 'Pesanan produk UMKM dari halaman produk masuk ke nomor ini. Format +62.',
+    },
+    kopdesAddress: {
+      label: 'Alamat Koperasi Merah Putih',
+      description: 'Tempat pengunjung mengambil dan membayar produk UMKM.',
+    },
     dpoName: { label: 'Nama Pejabat Pelindungan Data' },
     dpoEmail: { label: 'Email Pejabat Pelindungan Data' },
     signatoryName: { label: 'Nama penanda tangan dokumen' },

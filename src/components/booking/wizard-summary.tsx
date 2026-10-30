@@ -58,7 +58,11 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function SummaryRows({ draft, legs }: Pick<WizardSummaryProps, 'draft' | 'legs'>) {
+function SummaryRows({
+  draft,
+  legs,
+  offersAddons,
+}: Pick<WizardSummaryProps, 'draft' | 'legs'> & { offersAddons: boolean }) {
   const sessions = chosenSessions(draft, legs);
   return (
     <dl className="border-t border-border">
@@ -75,14 +79,25 @@ function SummaryRows({ draft, legs }: Pick<WizardSummaryProps, 'draft' | 'legs'>
           : text.notChosen}
       </Row>
       <Row label={text.pax}>{paxText(draft.pax)}</Row>
-      <Row label={text.addons}>
-        {draft.addons.length > 0 ? text.addonCount(draft.addons.length) : text.noAddons}
-      </Row>
+      {offersAddons ? (
+        <Row label={text.addons}>
+          {draft.addons.length > 0 ? text.addonCount(draft.addons.length) : text.noAddons}
+        </Row>
+      ) : null}
     </dl>
   );
 }
 
-function EstimateRow({ preview, isFinal }: { preview: QuotePreviewState; isFinal: boolean }) {
+// The server prices the order from the Tambahan step on, or only on the summary when the package offers no add-on.
+function EstimateRow({
+  preview,
+  isFinal,
+  offersAddons,
+}: {
+  preview: QuotePreviewState;
+  isFinal: boolean;
+  offersAddons: boolean;
+}) {
   const total = quotedTotal(preview);
   return (
     <div className="space-y-2">
@@ -92,7 +107,7 @@ function EstimateRow({ preview, isFinal }: { preview: QuotePreviewState; isFinal
         </span>
         {total === null ? (
           <span className="text-right text-body-sm text-muted-foreground">
-            {text.estimateLater}
+            {offersAddons ? text.estimateLater : text.estimateAtSummary}
           </span>
         ) : (
           <span className="text-h2 font-display font-extrabold tabular-nums">
@@ -123,8 +138,16 @@ export function WizardSummaryPanel(props: WizardSummaryProps) {
       className="sticky top-24 space-y-4.5 rounded-2xl border border-border bg-card p-6"
     >
       {props.packageCard}
-      <SummaryRows draft={props.draft} legs={props.legs} />
-      <EstimateRow preview={props.preview} isFinal={props.isFinal} />
+      <SummaryRows
+        draft={props.draft}
+        legs={props.legs}
+        offersAddons={props.wizardPackage.offersAddons}
+      />
+      <EstimateRow
+        preview={props.preview}
+        isFinal={props.isFinal}
+        offersAddons={props.wizardPackage.offersAddons}
+      />
       <TrustNote />
     </section>
   );
@@ -160,8 +183,12 @@ export function WizardSummaryBar(props: WizardSummaryProps) {
         <span className="sr-only">{text.label}</span>
       </summary>
       <div className="mx-auto max-w-300 space-y-4 px-5 pb-5 md:px-10">
-        <SummaryRows draft={draft} legs={legs} />
-        <EstimateRow preview={preview} isFinal={props.isFinal} />
+        <SummaryRows draft={draft} legs={legs} offersAddons={wizardPackage.offersAddons} />
+        <EstimateRow
+          preview={preview}
+          isFinal={props.isFinal}
+          offersAddons={wizardPackage.offersAddons}
+        />
         <TrustNote />
       </div>
     </details>

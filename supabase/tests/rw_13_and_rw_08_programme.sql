@@ -20,13 +20,12 @@ select is(
      select string_agg(l.beneficiary || coalesce('/' || l.rw_id, '') || '=' || l.pct, ' ' order by l.beneficiary) as split
      from public.revenue_share_rule_lines l where l.rule_id = r.id
    ) as lines
-   where r.rw_id = 13 and r.package_id is null and r.product_id is null and r.is_active),
-  'package_default: kelurahan=20.00 rw_treasury/13=80.00 | addon_default: rw_treasury/13=10.00 umkm_vendor=90.00',
-  'RW 13 has the default splits of assumption A4, paying its own treasury'
+   where r.rw_id = 13 and r.package_id is null and r.product_id is null and r.is_active
+     and r.effective_from <= public.today_jkt() and (r.effective_to is null or r.effective_to >= public.today_jkt())),
+  'package_default: rw_treasury/13=100.00 | addon_default: rw_treasury/13=10.00 umkm_vendor=90.00',
+  'RW 13 has the default splits of assumption A4 as revised on 2026-10-29, paying its own treasury'
 );
-select ok(
-  (select bool_and(r.effective_from <= public.today_jkt() and r.effective_to is null)
-   from public.revenue_share_rules r where r.rw_id = 13 and r.scope in ('package_default', 'addon_default')),
+select ok(internal.has_current_default_rules(13::smallint),
   'both rules hold today, as set_rw_unit_status asks of an RW before it goes online'
 );
 select is(internal.media_owner(13::smallint), 'rw-13', 'RW 13''s files live under rw-13/');
@@ -47,15 +46,17 @@ select ok(
 );
 select is(
   (select count(*)::int from public.revenue_share_rules r
-   where r.rw_id = 8 and r.scope in ('package_default', 'addon_default') and r.is_active),
+   where r.rw_id = 8 and r.scope in ('package_default', 'addon_default') and r.is_active
+     and r.effective_from <= public.today_jkt() and (r.effective_to is null or r.effective_to >= public.today_jkt())),
   2,
   'RW 08 keeps its default rules, so it may take packages later'
 );
 select is(
   (select string_agg(l.beneficiary || coalesce('/' || l.rw_id, '') || '=' || l.pct, ' ' order by l.beneficiary)
    from public.revenue_share_rules r join public.revenue_share_rule_lines l on l.rule_id = r.id
-   where r.rw_id = 8 and r.scope = 'package_default'),
-  'kelurahan=20.00 rw_treasury/8=80.00',
+   where r.rw_id = 8 and r.scope = 'package_default' and r.is_active
+     and r.effective_from <= public.today_jkt() and (r.effective_to is null or r.effective_to >= public.today_jkt())),
+  'rw_treasury/8=100.00',
   'and they still pay RW 08''s own treasury'
 );
 

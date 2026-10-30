@@ -1,4 +1,4 @@
-import { ArrowRight, CalendarDays, PackagePlus, QrCode, UserRoundCheck } from 'lucide-react';
+import { ArrowRight, CalendarDays, QrCode, UserRoundCheck } from 'lucide-react';
 import Link from 'next/link';
 
 import { Container } from '@/components/layout/container';
@@ -89,7 +89,7 @@ export function InstitutionBanner() {
   );
 }
 
-const STEP_ICONS = [CalendarDays, UserRoundCheck, PackagePlus, QrCode] as const;
+const STEP_ICONS = [CalendarDays, UserRoundCheck, QrCode] as const;
 const STEPS_TITLE_ID = `${STEPS_SECTION_ID}-judul`;
 const STEP_NUMBER_DIGITS = 2;
 
@@ -126,8 +126,9 @@ function StepItem({ step, index }: { step: { title: string; body: string }; inde
   );
 }
 
-// "Cara memesan" (DESIGN-SPEC §3.4): four columns under a 2 px rule, the first in brick; each rule draws itself from
-// the left as the row comes into view, then the text rises.
+// "Cara memesan" (DESIGN-SPEC §3.4): three columns under a 2 px rule (the add-on step left with the decision of
+// 2026-10-29), the first in brick; each rule draws itself from the left as the row comes into view, then the text
+// rises.
 export function BookingSteps() {
   return (
     <SectionShell id={STEPS_SECTION_ID} labelledBy={STEPS_TITLE_ID} tone="muted">
@@ -138,7 +139,7 @@ export function BookingSteps() {
           title={text.stepsTitle}
           size="compact"
         />
-        <ol className="grid gap-8 reveal-stagger md:grid-cols-2 md:gap-6 lg:grid-cols-4">
+        <ol className="grid gap-8 reveal-stagger md:grid-cols-3 md:gap-6">
           {text.steps.map((step, index) => (
             <StepItem key={step.title} step={step} index={index} />
           ))}

@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildOrderChatUrl,
   buildWhatsAppChatUrl,
   buildWhatsAppShareUrl,
   hasStickyMobileCta,
   isWhatsAppFabHidden,
   pageTopicFromTitle,
+  whatsAppDigitsOf,
 } from './whatsapp';
 
 describe('buildWhatsAppChatUrl', () => {
@@ -15,6 +17,48 @@ describe('buildWhatsAppChatUrl', () => {
     ).toBe(
       'https://wa.me/6281234567890?text=Halo%2C%20saya%20ingin%20bertanya%20tentang%20Paket%20%26%20harga',
     );
+  });
+});
+
+describe('whatsAppDigitsOf', () => {
+  it('reads an Indonesian number however it is written', () => {
+    expect(whatsAppDigitsOf('+6281234567890')).toBe('6281234567890');
+    expect(whatsAppDigitsOf('+62 812-3456-7890')).toBe('6281234567890');
+    expect(whatsAppDigitsOf('0812 3456 7890')).toBe('6281234567890');
+    expect(whatsAppDigitsOf('62 812 3456 7890')).toBe('6281234567890');
+  });
+
+  it('refuses what is no Indonesian WhatsApp number', () => {
+    expect(whatsAppDigitsOf(null)).toBeNull();
+    expect(whatsAppDigitsOf('')).toBeNull();
+    expect(whatsAppDigitsOf('+62 812')).toBeNull();
+    expect(whatsAppDigitsOf('+62812345678901234')).toBeNull();
+    expect(whatsAppDigitsOf('+31612345678')).toBeNull();
+    expect(whatsAppDigitsOf('nomor menyusul')).toBeNull();
+  });
+});
+
+describe('buildOrderChatUrl', () => {
+  it('opens the number with the whole message encoded', () => {
+    expect(
+      buildOrderChatUrl(
+        '+62 812-3456-7890',
+        'Halo Koperasi Merah Putih, saya ingin memesan Kompos & Bibit (RW 05). Jumlah: ',
+      ),
+    ).toBe(
+      'https://wa.me/6281234567890?text=Halo%20Koperasi%20Merah%20Putih%2C%20saya%20ingin%20memesan%20Kompos%20%26%20Bibit%20(RW%2005).%20Jumlah%3A%20',
+    );
+  });
+
+  it('keeps line breaks, question marks and hashes inside the text', () => {
+    expect(buildOrderChatUrl('081234567890', 'Baris 1\nApa ada? #2')).toBe(
+      'https://wa.me/6281234567890?text=Baris%201%0AApa%20ada%3F%20%232',
+    );
+  });
+
+  it('gives no link while the Kopdes has no usable number, so the button is left out', () => {
+    expect(buildOrderChatUrl(null, 'Halo')).toBeNull();
+    expect(buildOrderChatUrl('+62', 'Halo')).toBeNull();
   });
 });
 

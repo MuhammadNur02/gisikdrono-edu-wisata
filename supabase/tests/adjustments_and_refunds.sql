@@ -16,6 +16,7 @@
 begin;
 select plan(131);
 \ir helpers/rls_personas.psql
+\ir helpers/kelurahan_share_defaults.psql
 
 -- ===== Fixtures: RW 05 and combo packages and two superadmins old enough to approve =====
 insert into public.tour_packages (id, rw_id, category, slug, name, pricing_basis, price_per_pax, status) values

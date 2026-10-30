@@ -21,14 +21,15 @@ import { copy } from '@/lib/copy/id';
 import { publicMediaUrl } from '@/lib/images/public-media';
 import { getProductBySlug, listProducts } from '@/lib/queries/products';
 import { listRwUnits } from '@/lib/queries/rw-units';
-import { getVendorBySlug } from '@/lib/queries/vendors';
+import { getPublicSiteSettings } from '@/lib/queries/settings';
 import { breadcrumbListJsonLd, productJsonLd } from '@/lib/seo/json-ld';
 import { buildPageMetadata } from '@/lib/seo/metadata';
 import { breadcrumbTrail } from '@/lib/utils/breadcrumbs';
 import { productPath, PUBLIC_PATHS } from '@/lib/utils/paths';
-import type { ProductDetail, ProductSummary } from '@/types/product';
+import { buildOrderChatUrl } from '@/lib/utils/whatsapp';
+import type { ProductDetail, ProductOrder, ProductSummary } from '@/types/product';
 import type { RwUnitSummary } from '@/types/rw-unit';
-import type { VendorProfile } from '@/types/vendor';
+import type { PublicSiteSettings } from '@/types/settings';
 
 export const revalidate = 3600;
 
@@ -48,11 +49,7 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
   const { slug } = await params;
   const product = await getProductBySlug(slug);
   if (!product) return {};
-  return buildPageMetadata({
-    title: product.name,
-    description: product.vendor ? `${product.name} dari ${product.vendor.name}` : undefined,
-    path: productPath(product.slug),
-  });
+  return buildPageMetadata({ title: product.name, path: productPath(product.slug) });
 }
 
 function productLd(product: ProductDetail) {
@@ -61,7 +58,6 @@ function productLd(product: ProductDetail) {
     description: product.descriptionMd ?? undefined,
     path: productPath(product.slug),
     imageUrls: product.images.map((image) => publicMediaUrl(image.path)),
-    brandName: product.vendor?.name,
     offer: {
       priceIdr: product.price,
       path: productPath(product.slug),
@@ -70,7 +66,8 @@ function productLd(product: ProductDetail) {
   });
 }
 
-// The title block: the trail, the RW, the category and the add-on tag, the name (the page's LCP) and its maker.
+// The title block: the trail, the RW and the category, and the name (the page's LCP). No maker: since the decision of
+// 2026-10-29 the public site names no seller.
 function TitleBlock({ product, rw }: { product: ProductDetail; rw: RwUnitSummary | undefined }) {
   const trail = breadcrumbTrail([{ name: 'Produk UMKM', path: PUBLIC_PATHS.products }], {
     name: product.name,
@@ -82,18 +79,10 @@ function TitleBlock({ product, rw }: { product: ProductDetail; rw: RwUnitSummary
       <div className="flex flex-wrap items-center gap-2">
         <RwTag rw={rw ?? product.rw} detail={rw?.shortName} />
         <Badge variant="tag">{PRODUCT_CATEGORY[product.category].label}</Badge>
-        {product.isAddonEligible ? (
-          <Badge variant="tag">{copy.catalogue.addonEligible}</Badge>
-        ) : null}
       </div>
       <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-200 space-y-3">
           <h1 className="text-display text-balance">{product.name}</h1>
-          {product.vendor ? (
-            <p className="text-body-lg text-ink-2 md:text-xl">
-              {copy.catalogue.vendorTitle} {product.vendor.name}
-            </p>
-          ) : null}
         </div>
         <div className="max-lg:-ml-5">
           <ShareButton title={product.name} />
@@ -153,22 +142,16 @@ function ProductMain({ product }: { product: ProductDetail }) {
   );
 }
 
-// The vendor's public face only: name and description (docs/PRD.md FR-PUB-13, never contact or bank).
-function VendorCard({ vendor }: { vendor: VendorProfile }) {
-  return (
-    <section
-      aria-labelledby="pembuat-judul"
-      className="space-y-2 rounded-2xl border border-border p-5 md:p-6"
-    >
-      <p className="text-meta-caps text-muted-foreground">{copy.catalogue.vendorTitle}</p>
-      <h2 id="pembuat-judul" className="font-display text-xl font-bold">
-        {vendor.name}
-      </h2>
-      {vendor.descriptionMd ? (
-        <TextBlock text={vendor.descriptionMd} className="text-body text-ink-2" />
-      ) : null}
-    </section>
-  );
+// docs/PRD.md FR-PUB-13a: the order goes to the Koperasi Merah Putih's WhatsApp with the product and its RW written
+// in; a number or address still holding its seeded placeholder reads as none.
+function orderOf(product: ProductDetail, settings: PublicSiteSettings): ProductOrder {
+  return {
+    chatUrl: buildOrderChatUrl(
+      settings.kopdesWhatsappNumber,
+      text.orderMessage(product.name, product.rw.label),
+    ),
+    pickupAddress: settings.kopdesAddress,
+  };
 }
 
 function OtherProducts({ products }: { products: readonly ProductSummary[] }) {
@@ -195,13 +178,13 @@ function OtherProducts({ products }: { products: readonly ProductSummary[] }) {
 // docs/PRD.md FR-PUB-13, Task P2.4.06; the product page in the catalogue's dress (DESIGN-SPEC §3.5–§3.6).
 export default async function ProductPage({ params }: ProductPageProps) {
   const { slug } = await params;
-  const [product, rws, products] = await Promise.all([
+  const [product, rws, products, settings] = await Promise.all([
     getProductBySlug(slug),
     listRwUnits(),
     listProducts(),
+    getPublicSiteSettings(),
   ]);
   if (!product) notFound();
-  const vendor = product.vendor ? await getVendorBySlug(product.vendor.slug) : null;
   const rw = rws.find((unit) => unit.id === product.rw.id);
   const others = products.filter(
     (other) => other.id !== product.id && other.rw.id === product.rw.id,
@@ -212,9 +195,8 @@ export default async function ProductPage({ params }: ProductPageProps) {
         <TitleBlock product={product} rw={rw} />
         <Container className="flex flex-col gap-10 pb-16 md:pb-24 lg:flex-row lg:items-start lg:gap-16">
           <ProductMain product={product} />
-          <div className="space-y-6 lg:sticky lg:top-24 lg:w-105 lg:shrink-0">
-            <ProductAside product={product} />
-            {vendor ? <VendorCard vendor={vendor} /> : null}
+          <div className="lg:sticky lg:top-24 lg:w-105 lg:shrink-0">
+            <ProductAside product={product} order={orderOf(product, settings)} />
           </div>
         </Container>
       </div>

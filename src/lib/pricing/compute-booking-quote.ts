@@ -22,7 +22,6 @@ export interface QuotedPackage {
 
 export interface QuotedProduct {
   id: string;
-  vendorId: string;
   rwId: RwId;
   name: string;
   unitLabel: string;
@@ -121,7 +120,6 @@ function quoteAddon(
   return {
     kind: 'addon',
     productId,
-    vendorId: product.vendorId,
     rwId: product.rwId,
     name: product.name,
     unitLabel: product.unitLabel,

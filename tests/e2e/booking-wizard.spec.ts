@@ -2,7 +2,6 @@ import { expect, test } from '@playwright/test';
 import { z } from 'zod';
 
 import {
-  addOneAddon,
   bookingOf,
   chooseSchedule,
   createSessions,
@@ -45,7 +44,8 @@ test.afterAll(async () => {
   await removeSessions(sessions.label, projectIndex);
 });
 
-test('books a hold through all four steps and lands on its pay page with its manage link', async ({
+// Since the decision of 2026-10-29 no product is an add-on, so the wizard has three steps: no Tambahan.
+test('books a hold through all three steps and lands on its pay page with its manage link', async ({
   page,
   context,
 }, testInfo) => {
@@ -54,7 +54,6 @@ test('books a hold through all four steps and lands on its pay page with its man
   await chooseSchedule(page, sessions, sessions.booked.time);
   await fillBooker(page, phone);
   if (!isDesktop) await expectNoSideScroll(page);
-  await addOneAddon(page);
   await readySummary(page);
   if (!isDesktop) await expectNoSideScroll(page);
   await page.getByRole('button', { name: 'Konfirmasi & Bayar' }).click();
@@ -79,7 +78,6 @@ test('tells a session that filled meanwhile as full, and offers another', async 
   const phone = phoneOf(isDesktop ? 0 : 1, 2);
   await chooseSchedule(page, sessions, sessions.filled.time);
   await fillBooker(page, phone);
-  await page.getByRole('button', { name: 'Lanjut' }).click();
   await readySummary(page);
   await runSql(`select set_config('app.in_rpc', '1', true);
     update public.visit_sessions set reserved_pax = capacity where id = '${sessions.filled.id}'`);
@@ -107,7 +105,6 @@ test('sends the link of a hold the visitor already has again, and lets the draft
     await forgetOtpMessages(phone);
     await chooseSchedule(page, sessions, sessions.booked.time);
     await fillBooker(page, phone);
-    await page.getByRole('button', { name: 'Lanjut' }).click();
     await readySummary(page);
     await page.getByRole('button', { name: 'Konfirmasi & Bayar' }).click();
     if (attempt === 'hold') await expect(page).toHaveURL(/\/bayar$/, STEP);
@@ -138,7 +135,6 @@ test('issues a quotation for a school without holding a seat', async ({ page }, 
   await page.getByLabel(/Nama penanggung jawab/).fill('Ani Uji E2E');
   await page.getByLabel(/Email penanggung jawab/).fill(`sekolah${RUN}@contoh.test`);
   await proveWhatsApp(page, phone);
-  await page.getByRole('button', { name: 'Lanjut' }).click();
   await page.getByRole('button', { name: 'Lanjut' }).click();
   await readySummary(page);
   // The other tests of this project hold seats on the same session, so the check is that this one adds none.
@@ -217,11 +213,6 @@ test('can be completed with the keyboard alone', async ({ page }, testInfo) => {
   await page.getByRole('button', { name: 'Lanjut' }).focus();
   await page.keyboard.press('Enter');
 
-  await expect(page.getByRole('heading', { name: 'Pesanan tambahan (tidak wajib)' })).toBeVisible(
-    STEP,
-  );
-  await page.getByRole('button', { name: 'Lanjut' }).focus();
-  await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: 'Ringkasan pesanan' })).toBeVisible(STEP);
   await expect(
     page.getByRole('region', { name: 'Rincian biaya' }).getByText('Total', { exact: true }),

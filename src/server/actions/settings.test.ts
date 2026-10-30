@@ -36,6 +36,8 @@ const SETTINGS = {
   contactWhatsappNumber: '+6281234567890',
   contactEmail: 'kontak@gisikdrono.go.id',
   kelurahanAddress: 'Jl. Gisikdrono, Semarang Barat',
+  kopdesWhatsappNumber: '+6281298765432',
+  kopdesAddress: 'Jl. Gisikdrono, Semarang Barat',
   dpoName: 'Siti Aminah',
   dpoEmail: 'privasi@gisikdrono.go.id',
   signatoryName: 'Budi Santoso',

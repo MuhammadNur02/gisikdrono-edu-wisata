@@ -43,7 +43,7 @@ export function productValues(product: ProductAdmin): ProductInput {
     minOrderQty: product.minOrderQty,
     maxOrderQty: product.maxOrderQty,
     leadTimeDays: product.leadTimeDays,
-    isAddonEligible: product.isAddonEligible,
+    isAddonEligible: false,
     isAvailable: product.isAvailable,
     isFeatured: product.isFeatured,
     imagePaths: product.imagePaths,

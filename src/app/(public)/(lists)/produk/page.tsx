@@ -6,13 +6,12 @@ import { PageHeader } from '@/components/layout/page-header';
 import { CatalogueState } from '@/components/marketing/catalogue-state';
 import { WhatsAppLinkButton } from '@/components/marketing/whatsapp-link-button';
 import { ProductCatalogue } from '@/components/products/product-catalogue';
-import { NoCartNote, VendorSection } from '@/components/products/product-list-sections';
+import { NoCartNote } from '@/components/products/product-list-sections';
 import { JsonLd } from '@/components/seo/json-ld';
 import { productsPageCopy as text } from '@/lib/copy/catalogue';
 import { copy } from '@/lib/copy/id';
 import { listProducts } from '@/lib/queries/products';
 import { listRwUnits } from '@/lib/queries/rw-units';
-import { listVendors } from '@/lib/queries/vendors';
 import { itemListJsonLd } from '@/lib/seo/json-ld';
 import { buildPageMetadata } from '@/lib/seo/metadata';
 import { productPath, PUBLIC_PATHS } from '@/lib/utils/paths';
@@ -21,7 +20,7 @@ export const revalidate = 3600;
 
 const TITLE = 'Produk UMKM';
 const DESCRIPTION =
-  'Produk usaha warga kampung-kampung edukasi Gisikdrono. Produk yang bisa jadi tambahan dipesan bersama paket kunjungan.';
+  'Produk usaha warga kampung-kampung edukasi Gisikdrono, dipesan lewat WhatsApp Koperasi Merah Putih lalu diambil dan dibayar di koperasi.';
 
 export const metadata: Metadata = buildPageMetadata({
   title: TITLE,
@@ -51,13 +50,10 @@ function NoProductsYet() {
 }
 
 // docs/PRD.md FR-PUB-13, Task P2.4.06, DESIGN-SPEC §3.6: prerendered with every published product, filtered and searched
-// in the browser, the full list without script; then the vendors behind them.
+// in the browser, the full list without script. No vendor section: since the decision of 2026-10-29 the public site
+// names no seller.
 export default async function ProductsPage() {
-  const [products, rws, vendors] = await Promise.all([
-    listProducts(),
-    listRwUnits(),
-    listVendors(),
-  ]);
+  const [products, rws] = await Promise.all([listProducts(), listRwUnits()]);
   const hasProducts = products.length > 0;
   return (
     <>
@@ -73,7 +69,6 @@ export default async function ProductsPage() {
       {hasProducts ? (
         <>
           <ProductCatalogue products={products} rws={rws} />
-          <VendorSection vendors={vendors} products={products} rws={rws} />
           <JsonLd
             data={itemListJsonLd(
               products.map((product) => ({ name: product.name, path: productPath(product.slug) })),

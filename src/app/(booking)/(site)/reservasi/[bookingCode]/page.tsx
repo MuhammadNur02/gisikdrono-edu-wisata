@@ -92,7 +92,7 @@ function SideColumn({
     <aside className="flex flex-col gap-6 lg:w-95 lg:shrink-0">
       <HubDetails view={view} />
       <DocumentLinks view={view} />
-      <HubTerms terms={view.terms} />
+      <HubTerms terms={view.terms} hasAddons={view.addons.length > 0} />
       <HubHelp bookingCode={code} whatsappNumber={whatsappNumber} />
       {canManage && (
         <div className="space-y-3 px-1">

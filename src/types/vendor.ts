@@ -1,23 +1,8 @@
 import type { RwId } from '@/config/rw';
-import type { PublicImage } from '@/types/media';
-
-// The public face of a UMKM vendor. Owner name, phone and bank details are granted to no anonymous reader.
-export interface VendorProfile {
-  id: string;
-  slug: string;
-  name: string;
-  rwId: RwId;
-  descriptionMd: string | null;
-  logo: PublicImage | null;
-}
-
-export interface VendorReference {
-  slug: string;
-  name: string;
-}
 
 // A vendor as staff see it in the vendors sheet (Task P4.3.06): the owner's name and phone are staff-only; the bank
-// columns are granted to no API role and are not part of it.
+// columns are granted to no API role and are not part of it. There is no public vendor type: since the decision of
+// 2026-10-29 the public site names no seller (docs/Security.md DATA-14).
 export interface VendorAdmin {
   id: string;
   rwId: RwId;

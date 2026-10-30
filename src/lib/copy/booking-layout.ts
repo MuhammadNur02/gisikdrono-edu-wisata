@@ -28,9 +28,11 @@ export const bookingLayoutCopy = {
       addonCount: (count: number) => `${String(count)} produk`,
       estimate: 'Perkiraan total',
       estimateLater: 'Dihitung di langkah Tambahan',
+      // A package without add-ons on sale (decision of 2026-10-29) is priced on the summary step.
+      estimateAtSummary: 'Dihitung di langkah Ringkasan',
       note: 'Total pasti dihitung sistem di langkah Ringkasan.',
       total: 'Total',
-      totalNote: 'Dihitung oleh sistem. Sudah termasuk produk tambahan.',
+      totalNote: 'Dihitung oleh sistem.',
       trust:
         'Kuota sesi belum dipegang sampai Anda menekan Konfirmasi & Bayar di langkah Ringkasan.',
     },

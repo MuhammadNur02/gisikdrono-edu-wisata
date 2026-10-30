@@ -230,7 +230,7 @@ describe('loadRwOverview', () => {
       if (call.p_from === '2026-10-25') {
         return [bucket('2026-10-01', { bookings: 2 }), bucket('2026-11-01', { bookings: 3 })];
       }
-      return [bucket('2026-10-01', { sold: 7 })];
+      return [];
     };
     const overview = await loadRwOverview(5, NOW);
     expect(overview.upcomingBookings).toBe(5);
@@ -249,7 +249,6 @@ describe('loadRwOverview', () => {
     expect(overview.checkIns).toHaveLength(30);
     expect(overview.checkIns?.find((point) => point.day === '2026-10-20')?.value).toBe(25);
     expect(overview.checkIns?.at(-1)).toEqual({ day: '2026-10-24', value: 0 });
-    expect(overview.productsSold).toBe(7);
   });
 
   it('shows no chart or visit counts when visit_stats fails, and still today at the gate', async () => {
@@ -257,7 +256,6 @@ describe('loadRwOverview', () => {
     const overview = await loadRwOverview(5, NOW);
     expect(overview.checkIns).toBeNull();
     expect(overview.upcomingBookings).toBeNull();
-    expect(overview.productsSold).toBeNull();
     expect(overview.checkInsToday).toBe(0);
     expect(overview.todaySessions).toEqual([]);
     expectLoggedFailure('check_ins');

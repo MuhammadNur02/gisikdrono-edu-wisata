@@ -28,7 +28,6 @@ export async function holdThroughWizard(
 ): Promise<string> {
   await chooseSchedule(page, sessions, sessions.booked.time);
   await fillBooker(page, phone);
-  await page.getByRole('button', { name: 'Lanjut' }).click();
   await readySummary(page);
   // Every spec and both projects hold from 127.0.0.1, so the per-IP and per-browser hold limits (booking_create:ip,
   // booking:ip+ua) count the whole suite's holds; a reset in one spec's beforeAll cannot keep them under for the others.
@@ -40,7 +39,9 @@ export async function holdThroughWizard(
   } catch (error) {
     // The summary's own alert says why the hold was refused (a limit, the quota), which the URL alone does not.
     const alerts = await page.getByRole('alert').allInnerTexts();
-    throw new Error(`the hold did not reach /bayar: ${alerts.join(' | ') || 'no alert'}`, { cause: error });
+    throw new Error(`the hold did not reach /bayar: ${alerts.join(' | ') || 'no alert'}`, {
+      cause: error,
+    });
   }
   return BOOKING_URL.exec(page.url())?.[1] ?? '';
 }

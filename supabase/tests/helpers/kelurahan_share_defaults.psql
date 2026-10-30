@@ -1,0 +1,25 @@
+-- The default package rules as they stood before the decision of 2026-10-29 (20261105160000): the kelurahan 20 % and
+-- the RW 80 %, a combo's 80 % to the RWs of its legs in equal parts. The suites that test how a kelurahan share is
+-- kept, given back or borne (the visit terms, the adjustments and refunds) put them back inside their own transaction,
+-- so those mechanics still have a kelurahan line to work on; a per-package rule may still pay the kelurahan. The
+-- defaults in force are tested in ticket_revenue_to_rw.sql.
+do $$
+declare
+  in_force record;
+  stand_in uuid;
+begin
+  for in_force in
+    select r.id, r.rw_id from public.revenue_share_rules r
+    where r.scope = 'package_default' and r.package_id is null and r.product_id is null and r.is_active
+      and r.effective_from <= public.today_jkt() and (r.effective_to is null or r.effective_to >= public.today_jkt())
+  loop
+    update public.revenue_share_rules set is_active = false where id = in_force.id;
+    insert into public.revenue_share_rules (scope, rw_id, name, effective_from)
+    values ('package_default', in_force.rw_id, 'Uji: bawaan sebelum 2026-10-29', public.today_jkt())
+    returning id into stand_in;
+    insert into public.revenue_share_rule_lines (rule_id, beneficiary, rw_id, pct) values
+      (stand_in, 'kelurahan', null, 20.00),
+      (stand_in, 'rw_treasury', in_force.rw_id, 80.00);
+  end loop;
+end;
+$$;

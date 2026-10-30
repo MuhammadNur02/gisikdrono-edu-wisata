@@ -8,6 +8,7 @@ import {
   bookingToSend,
   busyDates,
   dayAvailability,
+  draftForPackage,
   emptyDraft,
   firstIncompleteStep,
   isBookingStep,
@@ -17,6 +18,7 @@ import {
   sessionsOn,
   shownContactOf,
   unbookableDatesBetween,
+  wizardStepsOf,
   type BookingDraft,
 } from './booking-wizard';
 
@@ -30,7 +32,9 @@ const COMBO: WizardPackage = {
   ],
   minPax: 1,
   maxPax: 200,
+  offersAddons: true,
 };
+const NO_ADDONS: WizardPackage = { ...COMBO, offersAddons: false };
 // The form key the wizard drew once for its draft.
 const WIZARD_MOUNT = '7d444840-9dc0-11d1-b245-5ffdce74fad2';
 const SESSION_RW05 = '0192f3a4-5b6c-7d8e-9f01-000000000005';
@@ -142,6 +146,35 @@ describe('firstIncompleteStep', () => {
       { productId: SESSION_RW05, qty: 2 },
     ];
     expect(firstIncompleteStep({ ...COMPLETE, addons: twice }, COMBO)).toBe('tambahan');
+  });
+
+  it('skips tambahan for a package without add-ons on sale (decision of 2026-10-29)', () => {
+    const twice = [
+      { productId: SESSION_RW05, qty: 1 },
+      { productId: SESSION_RW05, qty: 2 },
+    ];
+    expect(firstIncompleteStep({ ...COMPLETE, addons: twice }, NO_ADDONS)).toBe('ringkasan');
+    expect(firstIncompleteStep({ ...COMPLETE, contact: null }, NO_ADDONS)).toBe('data');
+  });
+});
+
+describe('wizardStepsOf', () => {
+  it('has the four steps while the package offers add-ons, and three without', () => {
+    expect(wizardStepsOf(COMBO)).toEqual(['jadwal', 'data', 'tambahan', 'ringkasan']);
+    expect(wizardStepsOf(NO_ADDONS)).toEqual(['jadwal', 'data', 'ringkasan']);
+  });
+});
+
+describe('draftForPackage', () => {
+  const kept = { ...COMPLETE, addons: [{ productId: SESSION_RW05, qty: 2 }] };
+
+  it('keeps the add-ons of a package that offers them', () => {
+    expect(draftForPackage(kept, COMBO)).toBe(kept);
+  });
+
+  it('drops the add-ons of a kept draft once none is on sale, and leaves the rest', () => {
+    expect(draftForPackage(kept, NO_ADDONS)).toEqual({ ...kept, addons: [] });
+    expect(draftForPackage(COMPLETE, NO_ADDONS)).toBe(COMPLETE);
   });
 });
 

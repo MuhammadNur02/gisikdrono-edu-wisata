@@ -41,7 +41,7 @@ values ('${ARTS_VENDOR_BEFORE}', 8, 'kriya-sanggar-kampung', 'Kriya Sanggar Kamp
 insert into public.products_umkm (rw_id, vendor_id, slug, name, category, description_md, price, unit_label,
   is_addon_eligible, status, is_featured)
 values (8, '${ARTS_VENDOR_BEFORE}', 'gantungan-kunci-batik', 'Gantungan Kunci Batik', 'souvenir',
-        'Gantungan kunci kain batik buatan anak sanggar.', 20000, 'buah', true, 'published', true);
+        'Gantungan kunci kain batik buatan anak sanggar.', 20000, 'buah', false, 'published', true);
 insert into public.tour_packages (id, rw_id, category, slug, name, tagline, duration_minutes, price_per_pax, status,
   is_featured)
 values ('${ARTS_PACKAGE_BEFORE}', 8, 'student', 'paket-eduwisata-seni-budaya', 'Eduwisata Seni Budaya',

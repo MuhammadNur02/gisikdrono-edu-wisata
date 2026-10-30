@@ -41,9 +41,6 @@ export function HeroProductCard({ product }: HeroProductCardProps) {
         />
       )}
       <div className="min-w-0 space-y-1">
-        {product.vendor ? (
-          <p className="truncate text-overline text-muted-foreground">{product.vendor.name}</p>
-        ) : null}
         <Link
           href={productPath(product.slug)}
           className="line-clamp-2 text-body-sm font-medium underline-offset-4 hover:underline"

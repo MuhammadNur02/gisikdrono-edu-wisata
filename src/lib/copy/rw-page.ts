@@ -58,7 +58,7 @@ export const rwPageCopy = {
   packages: {
     eyebrow: (label: string) => `Paket ${label}`,
     title: (shortName: string) => `Paket yang singgah di ${shortName}`,
-    description: 'Harga per orang. Total, termasuk produk tambahan, dihitung sistem saat memesan.',
+    description: 'Harga per orang. Totalnya dihitung sistem saat memesan.',
     helpTitle: 'Rombongan besar atau butuh jadwal khusus?',
     helpBody:
       'Sekolah, kampus, instansi, dan perusahaan bisa meminta surat penawaran resmi dari langkah Ringkasan, tanpa langsung mengunci kuota.',
@@ -67,7 +67,8 @@ export const rwPageCopy = {
   products: {
     eyebrow: (heading: string, label: string) => `${heading} ${label}`,
     fallbackTitle: 'Buatan tangan warga kampung',
-    description: 'Bisa dipesan sebagai tambahan kunjungan.',
+    description:
+      'Dipesan lewat WhatsApp Koperasi Merah Putih, lalu diambil dan dibayar di koperasi.',
     all: (label: string) => `Semua produk ${label}`,
   },
   gallery: {

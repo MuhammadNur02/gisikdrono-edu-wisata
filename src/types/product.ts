@@ -2,7 +2,6 @@ import type { RwId } from '@/config/rw';
 import type { EnumValue } from '@/db/enums';
 import type { PublicImage } from '@/types/media';
 import type { RwBadge } from '@/types/rw-unit';
-import type { VendorReference } from '@/types/vendor';
 
 export interface ProductSummary {
   id: string;
@@ -14,19 +13,14 @@ export interface ProductSummary {
   price: number;
   unitLabel: string;
   isAvailable: boolean;
-  isAddonEligible: boolean;
   isFeatured: boolean;
-  // NULL when the vendor has been deactivated, which hides it from the public.
-  vendor: VendorReference | null;
   cover: PublicImage | null;
 }
 
-// A product the booking wizard offers as an add-on (docs/PRD.md FR-BOOK-04): on sale as one, from a vendor the public
-// still sees, ordered within the quantities its vendor takes.
+// A product the booking wizard offers as an add-on (docs/PRD.md FR-BOOK-04, switched off by the decision of 2026-10-29):
+// on sale as one, ordered within the quantities its vendor takes. Nothing of its vendor is public information.
 export interface AddonProduct {
   id: string;
-  vendorId: string;
-  vendorName: string;
   rw: RwBadge;
   name: string;
   unitLabel: string;
@@ -36,6 +30,13 @@ export interface AddonProduct {
   maxOrderQty: number | null;
   leadTimeDays: number;
   cover: PublicImage | null;
+}
+
+// How the product page orders a product (decision of 2026-10-29): the wa.me link to the Koperasi Merah Putih, null while
+// it has no number set, and its address for the pickup, null while it is the seeded placeholder.
+export interface ProductOrder {
+  chatUrl: string | null;
+  pickupAddress: string | null;
 }
 
 export interface ProductDetail extends ProductSummary {

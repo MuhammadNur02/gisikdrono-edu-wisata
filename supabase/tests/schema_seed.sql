@@ -1,5 +1,5 @@
--- Reference data of 0008_seed, 20261022080000 and 20261023090000 (docs/PRD.md §8.6, assumption A4, Tasks P1.8.01,
--- P2.10.03, P3.5.04) and the development seed guard
+-- Reference data of 0008_seed, 20261022080000, 20261023090000 and 20261105160000 to 20261105160200 (docs/PRD.md
+-- §8.6, assumption A4, Tasks P1.8.01, P2.10.03, P3.5.04) and the development seed guard
 -- (Task P1.8.02, security review of PR #5). Vault secrets are written and removed inside the suite's own transaction.
 begin;
 select plan(21);
@@ -18,7 +18,8 @@ select is(
         'booking.max_pax:true', 'booking.min_lead_hours:true', 'booking.quotation_valid_days:false',
         'booking.weather_reschedule_max:true', 'booking.weather_window_hours:true',
         'booking_enabled:true', 'certificate.template_version:false', 'checkin.grace_after_minutes:false',
-        'checkin.grace_before_minutes:false', 'contact.email:true', 'contact.whatsapp_number:true',
+        'checkin.grace_before_minutes:false', 'contact.email:true', 'contact.kopdes_address:true',
+        'contact.kopdes_whatsapp_number:true', 'contact.whatsapp_number:true',
         'email_enabled:false', 'finance.expected_payout_account_masked:false', 'kelurahan.address:true',
         'kelurahan.signatory_name:false', 'kelurahan.signatory_title:false', 'maintenance_mode:true',
         'midtrans.fee_qris_permille:false', 'midtrans.fee_va_idr:false',
@@ -42,7 +43,7 @@ select is(
   'booking is open now the pay page and the status hub exist (20261104080300), with the normal rate-limit profile and no maintenance notice'
 );
 
--- ===== Revenue-share defaults (A4) =====
+-- ===== Revenue-share defaults (A4, revised on 2026-10-29: ticket revenue to the RWs, 20261105160000) =====
 select is(
   (select string_agg(r.scope || '/' || coalesce(r.rw_id::text, 'combo') || ': ' || lines.split, ' | '
                      order by r.scope, r.rw_id nulls last)
@@ -52,24 +53,27 @@ select is(
        as split
      from public.revenue_share_rule_lines l where l.rule_id = r.id
    ) as lines
-   where r.package_id is null and r.product_id is null and r.is_active),
-  'package_default/5: kelurahan=20.00 rw_treasury/5=80.00 | package_default/8: kelurahan=20.00 rw_treasury/8=80.00 | '
-  || 'package_default/13: kelurahan=20.00 rw_treasury/13=80.00 | '
-  || 'package_default/combo: kelurahan=20.00 rw_treasury=80.00 | '
+   where r.package_id is null and r.product_id is null and r.is_active
+     and r.effective_from <= public.today_jkt() and (r.effective_to is null or r.effective_to >= public.today_jkt())),
+  'package_default/5: rw_treasury/5=100.00 | package_default/8: rw_treasury/8=100.00 | '
+  || 'package_default/13: rw_treasury/13=100.00 | '
+  || 'package_default/combo: rw_treasury=100.00 | '
   || 'addon_default/5: rw_treasury/5=10.00 umkm_vendor=90.00 | addon_default/8: rw_treasury/8=10.00 umkm_vendor=90.00 | '
   || 'addon_default/13: rw_treasury/13=10.00 umkm_vendor=90.00',
-  'the default splits of assumption A4: the add-on share to the product''s own vendor, a combo''s RW share to the booking''s RWs equally'
+  'the default splits of assumption A4: a package wholly to its RW, a combo''s to the booking''s RWs equally, the add-on share to the product''s own vendor'
 );
 
 -- ===== Placeholders =====
 select is(
   array(select internal.placeholder_site_settings()),
-  array['contact.email', 'contact.whatsapp_number', 'finance.expected_payout_account_masked', 'kelurahan.signatory_name',
-        'privacy.dpo_email', 'privacy.dpo_name'],
+  array['contact.email', 'contact.kopdes_address', 'contact.kopdes_whatsapp_number', 'contact.whatsapp_number',
+        'finance.expected_payout_account_masked', 'kelurahan.signatory_name', 'privacy.dpo_email', 'privacy.dpo_name'],
   'the values the kelurahan still has to give are flagged as placeholders'
 );
 update public.site_settings set value = '"kelurahan.gisikdrono@semarangkota.go.id"' where key = 'contact.email';
 update public.site_settings set value = '"+6281234567890"' where key = 'contact.whatsapp_number';
+update public.site_settings set value = '"+6281298765432"' where key = 'contact.kopdes_whatsapp_number';
+update public.site_settings set value = '"Jl. Contoh No. 1, Gisikdrono"' where key = 'contact.kopdes_address';
 update public.site_settings set value = '"BRI ****4321"' where key = 'finance.expected_payout_account_masked';
 update public.site_settings set value = '"Budi Santoso, S.Sos."' where key = 'kelurahan.signatory_name';
 update public.site_settings set value = '"Siti Rahma"' where key = 'privacy.dpo_name';
@@ -130,8 +134,8 @@ select throws_ok($$select internal.require_local_database()$$, '42501',
   'and refuses it too');
 select ok(
   (select count(*) from public.revenue_share_rules r where r.package_id is null and r.product_id is null
-     and r.name like 'Bawaan %') = 8,
-  'the seeds wrote each default rule once, the closed combo rule of 0008 included'
+     and r.name like 'Bawaan %') = 12,
+  'the seeds wrote each default rule once, the closed combo rule of 0008 and the package versions of 20261105160000 included'
 );
 
 select * from finish();

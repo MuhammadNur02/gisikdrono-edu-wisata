@@ -8,7 +8,7 @@ export const homeCopy = {
     eyebrow: 'Selamat datang',
     title: 'Belajar langsung dari warga yang merawat kampungnya',
     lead: 'Di Gisikdrono, sampah dipilah lalu ditabung, kebun TOGA diolah menjadi minuman herbal, dan tradisi Jawa dirawat lewat tari, gamelan, wayang, serta dolanan anak. Semuanya digerakkan warga sendiri, dan pintu kampung terbuka bagi rombongan yang ingin belajar.',
-    body: 'Sekolah, kampus, instansi, perusahaan, maupun keluarga dapat memesan sesi kunjungan berjadwal, menambahkan produk UMKM, membayar lewat QRIS atau Virtual Account, lalu menerima tiket QR di WhatsApp dan email.',
+    body: 'Sekolah, kampus, instansi, perusahaan, maupun keluarga dapat memesan sesi kunjungan berjadwal, membayar lewat QRIS atau Virtual Account, lalu menerima tiket QR di WhatsApp dan email. Produk UMKM warga dipesan terpisah lewat Koperasi Merah Putih.',
     secondaryCta: 'Lihat Paket',
   },
   kampung: {
@@ -83,16 +83,16 @@ export const homeCopy = {
     eyebrow: 'Produk UMKM',
     title: 'Oleh-oleh dari tangan warga',
     description:
-      'Pesan bersama kunjungan, lalu ambil pada hari kunjungan. Tidak ada keranjang belanja terpisah.',
+      'Pesan lewat WhatsApp Koperasi Merah Putih, lalu ambil dan bayar di koperasi. Tidak ada keranjang belanja.',
     all: 'Semua produk UMKM',
-    panelTitle: 'Pesan sebagai tambahan',
+    panelTitle: 'Pesan lewat Koperasi Merah Putih',
     panelSteps: [
-      'Pilih paket dan sesi kunjungan',
-      'Di langkah Tambahan, pilih produk dan jumlahnya',
-      'Ambil pesananmu saat hari kunjungan',
+      'Buka halaman produk yang kamu mau',
+      'Tekan Pesan via WhatsApp, lalu kirim pesannya ke Koperasi Merah Putih',
+      'Ambil dan bayar pesananmu di Koperasi Merah Putih',
     ],
     panelShort:
-      'Pilih produk dan jumlahnya di langkah Tambahan saat memesan kunjungan, lalu ambil pada hari kunjungan.',
+      'Pesan lewat WhatsApp Koperasi Merah Putih dari halaman produk, lalu ambil dan bayar di koperasi.',
   },
   articles: {
     eyebrow: 'Artikel',

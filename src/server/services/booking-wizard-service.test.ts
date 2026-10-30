@@ -57,8 +57,6 @@ const COMBO: PackageDetail = {
 function addon(id: string, rw: RwBadge, price: number): AddonProduct {
   return {
     id,
-    vendorId: `${id.slice(0, -2)}ff`,
-    vendorName: 'PKK RW',
     rw,
     name: `Produk ${id.slice(-2)}`,
     unitLabel: 'kantong',
@@ -84,6 +82,8 @@ const SETTINGS: PublicSiteSettings = {
   contactWhatsappNumber: null,
   contactEmail: null,
   kelurahanAddress: null,
+  kopdesWhatsappNumber: null,
+  kopdesAddress: null,
   seoDefaultDescription: '',
   dpoName: null,
   dpoEmail: null,
@@ -162,7 +162,15 @@ describe('wizardPackageOf', () => {
       rws: [RW05, RW13],
       minPax: 1,
       maxPax: 150,
+      offersAddons: true,
     });
+  });
+
+  it('says whether the package has an add-on on sale, which decides the Tambahan step', async () => {
+    vi.mocked(listAddonProducts).mockResolvedValue([]);
+    const wizard = await loadBookingWizard('paket-kombinasi');
+    if (!wizard) throw new Error('the wizard should load');
+    expect(wizardPackageOf(wizard).offersAddons).toBe(false);
   });
 });
 

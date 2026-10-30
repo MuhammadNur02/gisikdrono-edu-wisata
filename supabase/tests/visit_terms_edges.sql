@@ -6,7 +6,9 @@
 -- moves with the ticket sent again after each, and the same cancellation or move asked twice.
 begin;
 select plan(202);
+\ir helpers/addons_on.psql
 \ir helpers/rls_personas.psql
+\ir helpers/kelurahan_share_defaults.psql
 \ir helpers/visit_terms.psql
 select set_config('app.qr_key_id', 'k1', true);
 
@@ -966,8 +968,8 @@ select is(pg_temp.ledger_sum((select id from two_vendors)), 50000::bigint, 'exac
 
 -- D-L4 of the final delta review of PR #90: a Rp 60.000 combo on a 5/70/10/15 rule (kelurahan, RW 05, RW 13, a vendor)
 -- holds Rp 3.000, Rp 42.000, Rp 6.000 and Rp 9.000. The leg's Rp 30.000 takes RW 13's Rp 6.000, the kelurahan's
--- Rp 3.000 and the vendor's Rp 9.000; the Rp 12.000 still short the kelurahan bears (A24). On a rule without a
--- kelurahan line nobody may bear it, and the leg's refund is refused.
+-- Rp 3.000 and the vendor's Rp 9.000; the Rp 12.000 still short RW 13 bears itself (A24 as revised by A29 decision 6,
+-- 20261105160400), never the kelurahan. On a rule without a kelurahan line RW 13 bears all it does not hold.
 insert into public.tour_packages (id, category, slug, name, pricing_basis, price_per_pax, status) values
   ('00000000-0000-4000-8000-0000000e1009', 'combo', 'uji-tepi-kombo-celah-vendor', 'Kombo Uji Celah Vendor', 'per_pax',
    30000, 'draft'),
@@ -997,14 +999,15 @@ select set_config('app.actor_role', 'cron', true);
 select internal.take_audit_turn();
 select is((internal.reverse_leg_share((select id from vendor_gap),
              (select l.id from public.booking_legs l where l.booking_id = (select id from vendor_gap) and l.rw_id = 13),
-             'uji-celah-vendor') ->> 'kelurahan_shortfall')::bigint, 12000::bigint,
-  'D-L4: with the vendor''s share used up, the kelurahan bears the Rp 12.000 still short');
+             'uji-celah-vendor') ->> 'rw_shortfall')::bigint, 12000::bigint,
+  'D-L4: with the vendor''s share used up, RW 13 bears the Rp 12.000 still short');
 select is(pg_temp.balances((select id from vendor_gap)),
-  array['kelurahan=-12000', 'rw:13=0', 'rw:5=42000', 'vendor:00000000-0000-4000-8000-0000000e1051=0'],
-  'RW 13, the kelurahan and the vendor give all they hold; RW 05 keeps its share');
-select is(pg_temp.hint_of($$select internal.reverse_leg_share((select id from no_kelurahan),
+  array['kelurahan=0', 'rw:13=-12000', 'rw:5=42000', 'vendor:00000000-0000-4000-8000-0000000e1051=0'],
+  'the kelurahan and the vendor give all they hold, RW 13 goes below zero; RW 05 keeps its share');
+select is((internal.reverse_leg_share((select id from no_kelurahan),
   (select l.id from public.booking_legs l where l.booking_id = (select id from no_kelurahan) and l.rw_id = 13),
-  'uji-tanpa-kelurahan')$$), 'STATE_INVALID', 'with no kelurahan line to bear the rest, the leg''s refund is refused');
+  'uji-tanpa-kelurahan') ->> 'rw_shortfall')::bigint, 21000::bigint,
+  'with no kelurahan line, RW 13 gives its Rp 9.000 and bears the Rp 21.000 still short');
 select set_config('app.actor_role', '', true);
 select set_config('app.in_rpc', '', true);
 
@@ -1340,17 +1343,17 @@ select is(pg_temp.approve_and_apply((select id from short_manual)), 'applied',
 select is((select r.kind || ':' || r.status || ':' || r.amount || ':' || r.fee_amount || ':' || r.kelurahan_shortfall
                   || ':' || (r.booking_leg_id is not null)
            from public.refund_requests r where r.booking_id = (select id from short_combo)),
-  'weather:recorded:29580:420:18000:true',
-  'as the leg''s weather refund request, the Rp 18.000 the kelurahan bore recorded on it');
-select is(pg_temp.balances((select id from short_combo)), array['kelurahan=-18000', 'rw:13=0', 'rw:5=48000'],
-  'M-B: RW 13 and the kelurahan give back what they hold, the kelurahan bears the rest, RW 05 keeps its share');
+  'weather:recorded:29580:420:0:true',
+  'as the leg''s weather refund request, with nothing borne by the kelurahan');
+select is(pg_temp.balances((select id from short_combo)), array['kelurahan=0', 'rw:13=-18000', 'rw:5=48000'],
+  'M-B as revised: the kelurahan gives back what it holds, RW 13 bears the rest below zero, RW 05 keeps its share');
 select is((select pg_temp.ledger_sum(b.id) = b.total_amount - p.refunded_amount - internal.weather_refund_fees(b.id)
            from public.bookings b join public.payments p on p.booking_id = b.id where b.id = (select id from short_combo)),
   true, 'so the ledger, Rp 30.000, balances with the refund and its fee');
 select is((select severity::text || ':' || (details ->> 'shortfall') from public.security_alerts
-           where fingerprint = 'weather_shortfall_kelurahan:'
+           where fingerprint = 'weather_shortfall_rw:'
                                || (pg_temp.request_of((select id from short_combo))).refund_key), 'medium:18000',
-  'with the medium weather_shortfall_kelurahan alert');
+  'with the medium weather_shortfall_rw alert');
 select is((select count(*)::int from public.security_alerts
            where fingerprint = 'refund_ledger_unbalanced:' || (pg_temp.request_of((select id from short_combo))).refund_key),
   0, 'and no unbalanced ledger');
@@ -1369,12 +1372,12 @@ select throws_ok($$select public.resolve_weather_link((select id from short_link
   'Transfer bank oleh kelurahan')$$, '22023', null, 'refunded_manually is not an outcome resolve takes');
 reset role;
 
--- D-M1: after the shortfall the kelurahan's row is below zero; a later ordinary refund draws only from the parties that
+-- D-M1: after the shortfall RW 13's row is below zero; a later ordinary refund draws only from the parties that
 -- still hold a positive share, RW 05 here, and the ledger still balances.
 select is(pg_temp.approve_and_apply(pg_temp.propose_refund((select id from short_combo), 1000, 'short-after')),
-  'applied', 'D-M1: an ordinary Rp 1.000 manual refund after the kelurahan bore a shortfall applies');
-select is(pg_temp.balances((select id from short_combo)), array['kelurahan=-18000', 'rw:13=0', 'rw:5=47000'],
-  'drawn from RW 05 alone, the kelurahan below zero giving nothing more');
+  'applied', 'D-M1: an ordinary Rp 1.000 manual refund after RW 13 bore a shortfall applies');
+select is(pg_temp.balances((select id from short_combo)), array['kelurahan=0', 'rw:13=-18000', 'rw:5=47000'],
+  'drawn from RW 05 alone, RW 13 below zero giving nothing more');
 select is((select pg_temp.ledger_sum(b.id) = b.total_amount - p.refunded_amount - internal.weather_refund_fees(b.id)
            from public.bookings b join public.payments p on p.booking_id = b.id where b.id = (select id from short_combo)),
   true, 'and the ledger still balances with both refunds');
