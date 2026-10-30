@@ -3,8 +3,8 @@ import 'server-only';
 import { PRODUCT_DEFAULT_SORT, PRODUCT_SORT_COLUMNS } from '@/config/products';
 import type { RwId } from '@/config/rw';
 import { DB_ENUMS } from '@/db/enums';
-import { saveProductVariants } from '@/db/rpc-catalog';
-import type { Tables } from '@/db/types';
+import { saveProduct } from '@/db/rpc-catalog';
+import type { Json, Tables } from '@/db/types';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import {
   allowedValues,
@@ -25,8 +25,8 @@ import type { ProductAdmin, ProductListItem, ProductVariantAdmin } from '@/types
 // UMKM products through the session client (Task P4.3.06, docs/PRD.md FR-ADMIN-06, REC-13): products_umkm_staff_read
 // shows staff their own RW's products, products_umkm_vendor_rw_guard keeps a product in its vendor's RW, and the
 // media trigger keeps its photos in its own folder. Prices are integer rupiah as typed (CLAUDE.md §7.1), or none yet
-// (decision of 2026-10-30). Its variants are saved after the product row through save_product_variants, so a photo the
-// row just took off has already left its variants (products_umkm_variant_photos) and one it just added may be picked.
+// (decision of 2026-10-30). save_product writes the row and then its variants in one transaction, so a photo the row
+// just took off has already left its variants (products_umkm_variant_photos) and one it just added may be picked.
 
 const LIST_COLUMNS =
   'id, rw_id, vendor_id, slug, name, category, price, unit_label, status, is_addon_eligible, is_available, is_featured, updated_at, umkm_vendors(name)';
@@ -158,17 +158,19 @@ function columnsOf(values: ProductValues) {
   };
 }
 
-export async function createProduct(
-  ctx: StaffContext,
-  rwId: RwId,
-  values: ProductValues,
-): Promise<ProductAdmin> {
-  const row = { rw_id: rwId, created_by: ctx.userId, ...columnsOf(values) };
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.from('products_umkm').insert(row).select('id').single();
-  if (error) throw slugConflictOr(error);
-  await saveProductVariants(supabase, data.id, values.variants);
-  return rowOrNotFound(await readProductForStaff(data.id));
+// save_product writes the row and replaces its variants in one transaction (review of PR #115, L1).
+async function save(productId: string | null, fields: Record<string, Json>, values: ProductValues) {
+  try {
+    const supabase = await createSupabaseServerClient();
+    return await saveProduct(supabase, { productId, fields, variants: values.variants });
+  } catch (error) {
+    throw error instanceof Error ? slugConflictOr(error) : error;
+  }
+}
+
+export async function createProduct(rwId: RwId, values: ProductValues): Promise<ProductAdmin> {
+  const id = await save(null, { rw_id: rwId, ...columnsOf(values) }, values);
+  return rowOrNotFound(await readProductForStaff(id));
 }
 
 // The product's folder keeps only the photos it shows (docs/Security.md R34).
@@ -177,13 +179,7 @@ export async function updateProduct(
   current: ProductAdmin,
   values: UpdateProductValues,
 ): Promise<CleanedUp<ProductAdmin>> {
-  const supabase = await createSupabaseServerClient();
-  const { error } = await supabase
-    .from('products_umkm')
-    .update(columnsOf(values))
-    .eq('id', values.id);
-  if (error) throw slugConflictOr(error);
-  await saveProductVariants(supabase, values.id, values.variants);
+  await save(values.id, columnsOf(values), values);
   const saved = rowOrNotFound(await readProductForStaff(values.id));
   const target = { rwId: current.rwId, purpose: 'product' as const, entityId: saved.id };
   const filesRemoved = await removeFilesOrLog('product_files', saved.id, () =>

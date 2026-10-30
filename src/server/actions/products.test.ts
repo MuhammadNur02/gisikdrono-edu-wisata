@@ -156,7 +156,7 @@ describe('product and vendor actions', () => {
     cookie.value = '8';
     vi.mocked(readVendorForStaff).mockResolvedValue(vendorOf(8));
     expect(await createProductAction(FORM)).toMatchObject({ ok: true });
-    expect(createProduct).toHaveBeenCalledWith(SUPERADMIN, 8, expect.anything());
+    expect(createProduct).toHaveBeenCalledWith(8, expect.anything());
     await createVendorAction(VENDOR_FORM);
     expect(createVendor).toHaveBeenCalledWith(SUPERADMIN, 8, expect.anything());
     expect(revalidateTag).toHaveBeenCalledWith('products:all');
@@ -201,7 +201,6 @@ describe('product and vendor actions', () => {
       ok: true,
     });
     expect(createProduct).toHaveBeenCalledWith(
-      SUPERADMIN,
       5,
       expect.objectContaining({ price: null, variants }),
     );

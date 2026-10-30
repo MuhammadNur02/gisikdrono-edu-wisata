@@ -21,10 +21,11 @@ import type { ActionFailure, ActionResult } from '@/types/action-result';
 import type { ProductAdmin } from '@/types/product';
 
 // /dashboard/products (Task P4.3.06, docs/PRD.md FR-ADMIN-06, REC-13). Entry is the superadmin's (decision of the
-// user, 2026-10-24): an RW admin reads their own RW's products and changes none. Only this guard says so for now: the
-// products_umkm and umkm_vendors write policies of 0005 still let an RW admin write their own RW's rows, and narrowing
-// them to is_superadmin() is a migration (Task P4.3.11). A new product belongs to the RW the RwSwitcher points at,
-// never to one a form names, and its vendor has to be of that RW, which products_umkm_vendor_rw_guard checks again.
+// user, 2026-10-24): an RW admin reads their own RW's products and changes none. This guard says so first, and the
+// database again: the products_umkm, umkm_vendors and product_variants write policies ask for is_superadmin()
+// (20261028080100, 20261105170200), and save_product refuses anyone else (20261105170400). A new product belongs to
+// the RW the RwSwitcher points at, never to one a form names, and its vendor has to be of that RW, which
+// products_umkm_vendor_rw_guard checks again.
 
 const text = productsCopy;
 
@@ -53,7 +54,7 @@ export async function createProductAction(input: unknown): Promise<ActionResult<
   try {
     const refused = await refusedVendor(parsed.data.vendorId, target.rwId);
     if (refused) return refused;
-    const created = await createProduct(guard.ctx, target.rwId, parsed.data);
+    const created = await createProduct(target.rwId, parsed.data);
     revalidateTag(TAGS.allProducts);
     return ok(created);
   } catch (error) {

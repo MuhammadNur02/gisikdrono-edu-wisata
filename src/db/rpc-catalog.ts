@@ -48,8 +48,9 @@ export async function savePackage(client: DatabaseClient, save: PackageSave): Pr
   return z.uuid().parse(id);
 }
 
-// public.save_product_variants (20261105170200, decision of 2026-10-30): a product's variants in the order given,
-// replacing the ones it has, in one transaction. Security invoker too, so only the superadmin at AAL2 gets through.
+// public.save_product (20261105170400, review of PR #115, L1): a product and its variants in one transaction, the
+// variants in the order given, replacing the ones it has (save_product_variants). Security invoker too, so only the
+// superadmin at AAL2 gets through.
 export interface SavedVariant {
   label: string;
   // One of the product's own imagePaths, or null.
@@ -57,19 +58,29 @@ export interface SavedVariant {
   isAvailable: boolean;
 }
 
-export async function saveProductVariants(
-  client: DatabaseClient,
-  productId: string,
-  variants: readonly SavedVariant[],
-): Promise<void> {
-  await resultOf(
-    client.rpc('save_product_variants', {
-      p_product_id: productId,
-      p_variants: variants.map((variant) => ({
-        label: variant.label,
-        image_path: variant.imagePath,
-        is_available: variant.isAvailable,
-      })),
+export interface ProductSave {
+  // null for a new product.
+  productId: string | null;
+  // Every column save_product takes, snake_case; rw_id on a new product only.
+  fields: Record<string, Json>;
+  variants: readonly SavedVariant[];
+}
+
+function variantJson(variant: SavedVariant): Json {
+  return {
+    label: variant.label,
+    image_path: variant.imagePath,
+    is_available: variant.isAvailable,
+  };
+}
+
+export async function saveProduct(client: DatabaseClient, save: ProductSave): Promise<string> {
+  const id = await resultOf(
+    client.rpc('save_product', {
+      p_product_id: save.productId ?? undefined,
+      p_product: save.fields,
+      p_variants: save.variants.map(variantJson),
     }),
   );
+  return z.uuid().parse(id);
 }
