@@ -23,7 +23,8 @@ function ChipContent({ variant, isChosen }: { variant: ProductVariant; isChosen:
       {isChosen ? <Check aria-hidden className="size-4" /> : null}
       {variant.image ? (
         <PhotoFrame
-          image={variant.image}
+          // The chip's own label names the variant, so its photo is decorative here.
+          image={{ ...variant.image, alt: '' }}
           sizes={THUMB_SIZES}
           aspectClassName="aspect-square"
           className={cn('size-8 shrink-0 rounded-full', isOff && 'opacity-60')}

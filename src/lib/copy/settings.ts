@@ -85,7 +85,7 @@ export const settingsCopy = {
     showProductPrices: {
       label: 'Tampilkan harga produk UMKM',
       description:
-        'Selama dimatikan, harga produk tidak tampil di situs. Produk yang belum punya harga tampil sebagai "Harga belum ditentukan". Harga paket wisata tidak terpengaruh.',
+        'Selama dimatikan, harga produk tidak tampil di situs. Bila dinyalakan, produk yang belum punya harga tampil sebagai "Harga belum ditentukan". Harga paket wisata tidak terpengaruh.',
     },
     dpoName: { label: 'Nama Pejabat Pelindungan Data' },
     dpoEmail: { label: 'Email Pejabat Pelindungan Data' },
