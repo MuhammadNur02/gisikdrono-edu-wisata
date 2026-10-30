@@ -2265,6 +2265,7 @@ export type Database = {
           min_order_qty: number
           name: string
           price: number | null
+          public_price: number | null
           rw_id: number
           slug: string
           sort_order: number
@@ -2288,6 +2289,7 @@ export type Database = {
           min_order_qty?: number
           name: string
           price?: number | null
+          public_price?: number | null
           rw_id: number
           slug: string
           sort_order?: number
@@ -2311,6 +2313,7 @@ export type Database = {
           min_order_qty?: number
           name?: string
           price?: number | null
+          public_price?: number | null
           rw_id?: number
           slug?: string
           sort_order?: number
@@ -4984,6 +4987,10 @@ export type Database = {
       save_package_tiers: {
         Args: { p_package_id: string; p_tiers: Json }
         Returns: undefined
+      }
+      save_product: {
+        Args: { p_product: Json; p_product_id?: string; p_variants?: Json }
+        Returns: string
       }
       save_product_variants: {
         Args: { p_product_id: string; p_variants: Json }

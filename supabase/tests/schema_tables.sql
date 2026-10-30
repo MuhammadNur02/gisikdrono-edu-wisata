@@ -321,7 +321,7 @@ select columns_are('public', 'umkm_vendors', array[
 select columns_are('public', 'products_umkm', array[
   'id', 'rw_id', 'vendor_id', 'slug', 'name', 'category', 'description_md', 'price', 'unit_label',
   'min_order_qty', 'max_order_qty', 'lead_time_days', 'is_addon_eligible', 'is_available',
-  'is_featured', 'image_paths', 'status', 'sort_order', 'created_by', 'created_at', 'updated_at'
+  'is_featured', 'image_paths', 'status', 'sort_order', 'created_by', 'created_at', 'updated_at', 'public_price'
 ]);
 select has_index('public', 'tour_packages', 'tour_packages_public_idx', 'tour_packages has its public listing index');
 select has_index('public', 'products_umkm', 'products_umkm_public_idx', 'products_umkm has its public listing index');

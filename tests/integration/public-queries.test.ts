@@ -174,6 +174,26 @@ describe('public queries as a visitor', () => {
     }
   });
 
+  // Review of PR #115, H1: the anon key itself cannot read a product's price through PostgREST, only the public price,
+  // which is empty while the switch is off.
+  it('refuses the anon key the price column, and leaves the public price empty while the switch is off', async () => {
+    const anon = createClient(localStack().apiUrl, localStack().anonKey, {
+      auth: { persistSession: false },
+    });
+    const priced = await anon
+      .from('products_umkm')
+      .select('slug, price')
+      .eq('slug', 'pupuk-kompos-1kg');
+    expect(priced.data).toBeNull();
+    expect(priced.error?.code).toBe('42501');
+
+    const shown = await anon
+      .from('products_umkm')
+      .select('slug, public_price')
+      .eq('slug', 'pupuk-kompos-1kg');
+    expect(shown.data).toEqual([{ slug: 'pupuk-kompos-1kg', public_price: null }]);
+  });
+
   // Decision of 2026-10-30: a published product's variants are public, in their order, an unavailable one marked.
   it('reads the variants of a product in order', async () => {
     await runSql(`insert into public.product_variants (id, product_id, label, sort_order, is_available)
@@ -188,10 +208,11 @@ describe('public queries as a visitor', () => {
         { id: VARIANT_IDS[1], label: 'Kantong Besar', image: null, isAvailable: true },
         { id: VARIANT_IDS[0], label: 'Kantong Kecil', image: null, isAvailable: false },
       ]);
+      // Only the variant on sale is a choice on the card (review of PR #115, L7).
       expect(
         (await listProducts()).find((product) => product.slug === 'pupuk-kompos-1kg'),
       ).toMatchObject({
-        variantCount: 2,
+        variantCount: 1,
       });
     } finally {
       await runSql(

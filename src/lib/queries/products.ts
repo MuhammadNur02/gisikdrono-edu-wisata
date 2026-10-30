@@ -14,15 +14,16 @@ import type { RwBadge } from '@/types/rw-unit';
 
 // Decision of 2026-10-29 (20261105160300, 20261105160600): who makes a product is no public information, so no read
 // here names a vendor: anon holds nothing of umkm_vendors, nor products_umkm.vendor_id. Decision of 2026-10-30
-// (catalogue.show_product_prices): while the switch is off, productPriceOf turns every price into `hidden` here,
+// (catalogue.show_product_prices): anon cannot read products_umkm.price at all, only public_price, which the database
+// keeps NULL while the switch is off (20261105170300, review of PR #115, H1); productPriceOf then reads `hidden`
 // before the result is cached, so no amount reaches a page, its RSC payload, the JSON-LD or the OG image. The reads
 // cache under the settings tag too, so turning the switch shows or hides the prices at once.
 const SUMMARY_COLUMNS =
-  'id, slug, name, category, rw_id, price, unit_label, is_available, is_featured, image_paths, product_variants(id)';
+  'id, slug, name, category, rw_id, public_price, unit_label, is_available, is_featured, image_paths, product_variants(id, is_available)';
 const DETAIL_COLUMNS = `${SUMMARY_COLUMNS}, description_md, min_order_qty, max_order_qty, lead_time_days, variants:product_variants(id, label, image_path, sort_order, is_available)`;
 
 const ADDON_COLUMNS =
-  'id, rw_id, name, unit_label, price, min_order_qty, max_order_qty, lead_time_days, image_paths';
+  'id, rw_id, name, unit_label, public_price, min_order_qty, max_order_qty, lead_time_days, image_paths';
 
 const PRODUCT_TAGS = [TAGS.allProducts, TAGS.rwUnits, TAGS.settings];
 
@@ -33,12 +34,12 @@ type ProductRow = Pick<
   | 'name'
   | 'category'
   | 'rw_id'
-  | 'price'
+  | 'public_price'
   | 'unit_label'
   | 'is_available'
   | 'is_featured'
   | 'image_paths'
-> & { product_variants: { id: string }[] };
+> & { product_variants: { id: string; is_available: boolean }[] };
 
 type VariantRow = Pick<
   Tables<'product_variants'>,
@@ -63,12 +64,13 @@ function toProductSummary(row: ProductRow, catalogue: PublicCatalogue): ProductS
     name: row.name,
     category: row.category,
     rw: rwBadgeFor(row.rw_id, catalogue.units),
-    price: productPriceOf(row.price, catalogue.showsPrices),
+    price: productPriceOf(row.public_price, catalogue.showsPrices),
     unitLabel: row.unit_label,
     isAvailable: row.is_available,
     isFeatured: row.is_featured,
     cover: toPublicImages(row.image_paths, row.name)[0] ?? null,
-    variantCount: row.product_variants.length,
+    // What a visitor can pick: a variant that is not on sale is shown on the product page, but is no choice.
+    variantCount: row.product_variants.filter((variant) => variant.is_available).length,
   };
 }
 
@@ -78,7 +80,7 @@ type AddonRow = Pick<
   | 'rw_id'
   | 'name'
   | 'unit_label'
-  | 'price'
+  | 'public_price'
   | 'min_order_qty'
   | 'max_order_qty'
   | 'lead_time_days'
@@ -88,17 +90,18 @@ type AddonRow = Pick<
 // The public no longer sees the vendor, so a product whose vendor stopped selling is offered like any other and
 // internal.booking_quote refuses it, as it always did (independent review of PR #26, L5). Since the decision of
 // 2026-10-29 no product is an add-on, so the list is empty until add-ons return. A product without a price is never
-// one (products_umkm_addon_has_price); were one read anyway, it is left out, so the quote finds it unavailable rather
-// than free.
+// one (products_umkm_addon_has_price), and anon reads only public_price, so while the price switch is off no add-on
+// is offered either (review of PR #115, L4); one without a public price is left out, so the quote finds it
+// unavailable rather than free. internal.booking_quote prices from products_umkm.price as the server's own.
 function toAddonProduct(row: AddonRow, units: readonly RwBadge[]): AddonProduct[] {
-  if (row.price === null) return [];
+  if (row.public_price === null) return [];
   return [
     {
       id: row.id,
       rw: rwBadgeFor(row.rw_id, units),
       name: row.name,
       unitLabel: row.unit_label,
-      price: row.price,
+      price: row.public_price,
       minOrderQty: row.min_order_qty,
       maxOrderQty: row.max_order_qty,
       leadTimeDays: row.lead_time_days,
@@ -157,7 +160,6 @@ export const listProducts = cachedPublicRead(
 );
 
 // docs/PRD.md FR-BOOK-04: every product on sale as an add-on, of any RW; the wizard keeps those of its package's RWs.
-// The booking quote prices from these rows, so the price switch of the public pages never masks them.
 export const listAddonProducts = cachedPublicRead(
   async (): Promise<AddonProduct[]> => {
     const [result, units] = await Promise.all([
@@ -166,7 +168,7 @@ export const listAddonProducts = cachedPublicRead(
         .select(ADDON_COLUMNS)
         .eq('is_addon_eligible', true)
         .eq('is_available', true)
-        .not('price', 'is', null)
+        .not('public_price', 'is', null)
         .order('sort_order')
         .order('name'),
       listRwUnits(),
@@ -174,7 +176,7 @@ export const listAddonProducts = cachedPublicRead(
     return rowsOf(result, 'products_umkm').flatMap((row) => toAddonProduct(row, units));
   },
   ['products', 'addons'],
-  [TAGS.allProducts, TAGS.rwUnits],
+  PRODUCT_TAGS,
 );
 
 export const getProductBySlug = cachedPublicRead(
