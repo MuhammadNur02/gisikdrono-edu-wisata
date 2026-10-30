@@ -22,6 +22,7 @@ export const EDITABLE_SETTING_KEYS = {
   kelurahanAddress: 'kelurahan.address',
   kopdesWhatsappNumber: 'contact.kopdes_whatsapp_number',
   kopdesAddress: 'contact.kopdes_address',
+  showProductPrices: 'catalogue.show_product_prices',
   signatoryName: 'kelurahan.signatory_name',
   signatoryTitle: 'kelurahan.signatory_title',
   certificateTemplateVersion: 'certificate.template_version',

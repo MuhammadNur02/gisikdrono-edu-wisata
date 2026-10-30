@@ -2208,6 +2208,47 @@ export type Database = {
           },
         ]
       }
+      product_variants: {
+        Row: {
+          created_at: string
+          id: string
+          image_path: string | null
+          is_available: boolean
+          label: string
+          product_id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          image_path?: string | null
+          is_available?: boolean
+          label: string
+          product_id: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          image_path?: string | null
+          is_available?: boolean
+          label?: string
+          product_id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_variants_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products_umkm"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       products_umkm: {
         Row: {
           category: Database["public"]["Enums"]["product_category"]
@@ -2223,7 +2264,8 @@ export type Database = {
           max_order_qty: number | null
           min_order_qty: number
           name: string
-          price: number
+          price: number | null
+          public_price: number | null
           rw_id: number
           slug: string
           sort_order: number
@@ -2246,7 +2288,8 @@ export type Database = {
           max_order_qty?: number | null
           min_order_qty?: number
           name: string
-          price: number
+          price?: number | null
+          public_price?: number | null
           rw_id: number
           slug: string
           sort_order?: number
@@ -2269,7 +2312,8 @@ export type Database = {
           max_order_qty?: number | null
           min_order_qty?: number
           name?: string
-          price?: number
+          price?: number | null
+          public_price?: number | null
           rw_id?: number
           slug?: string
           sort_order?: number
@@ -4942,6 +4986,14 @@ export type Database = {
       }
       save_package_tiers: {
         Args: { p_package_id: string; p_tiers: Json }
+        Returns: undefined
+      }
+      save_product: {
+        Args: { p_product: Json; p_product_id?: string; p_variants?: Json }
+        Returns: string
+      }
+      save_product_variants: {
+        Args: { p_product_id: string; p_variants: Json }
         Returns: undefined
       }
       save_revenue_rule: {

@@ -47,11 +47,12 @@ function product(slug: string, category: ProductSummary['category'], rwId: numbe
     name: slug,
     category,
     rw: rw(rwId),
-    price: 15000,
+    price: { status: 'hidden' },
     unitLabel: 'pcs',
     isAvailable: true,
     isFeatured: false,
     cover: null,
+    variantCount: 0,
   } satisfies ProductSummary;
 }
 

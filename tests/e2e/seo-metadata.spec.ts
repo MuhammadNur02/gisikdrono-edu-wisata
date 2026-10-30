@@ -15,6 +15,9 @@ const SCHEMA_CONTEXT = 'https://schema.org';
 const OWN_OG_IMAGE_PREFIXES = ['/paket-wisata/', '/produk/', '/artikel/'];
 // The package pnpm db:seed publishes (scripts/seed-demo-content.sql).
 const SEEDED_PACKAGE_PATH = '/paket-wisata/paket-eduwisata-ecowastreme';
+// A product pnpm db:seed publishes at Rp15.000 a bag.
+const SEEDED_PRODUCT_PATH = '/produk/pupuk-kompos-1kg';
+const SEEDED_PRODUCT_PRICE = /15[. ]?000/;
 // A `[fill me in]` text is a placeholder the site never shows (src/lib/queries/settings.ts, 0008_seed.sql).
 const PLACEHOLDER_TEXT = /^\[.*\]$/;
 // The entities React escapes in an attribute value.
@@ -116,6 +119,18 @@ test('the home page describes itself with the kelurahan description', async ({ r
   const description = firstMatch(html, /<meta name="description" content="([^"]*)"/);
   if (isWritten) expect(description).toBe(seeded);
   else expect(description).toBeUndefined();
+});
+
+// Decision of 2026-10-30: catalogue.show_product_prices is seeded off, so the product page carries no UMKM price
+// anywhere a visitor or a crawler could read it: not in the text, the RSC payload of the page, nor the JSON-LD.
+test('a product page sends no price while product prices are off', async ({ request }) => {
+  const html = await (await request.get(SEEDED_PRODUCT_PATH)).text();
+  expect(html).not.toMatch(SEEDED_PRODUCT_PRICE);
+  const product = jsonLdBlocks(html).find(
+    (block) => z.object({ '@type': z.literal('Product') }).safeParse(block).success,
+  );
+  expect(product).toBeDefined();
+  expect(product).not.toHaveProperty('offers');
 });
 
 // Preview, staging and the CI build are not production (VERCEL_ENV), so nothing may be indexed there.

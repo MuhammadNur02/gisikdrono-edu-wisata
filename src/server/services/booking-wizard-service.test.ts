@@ -84,6 +84,7 @@ const SETTINGS: PublicSiteSettings = {
   kelurahanAddress: null,
   kopdesWhatsappNumber: null,
   kopdesAddress: null,
+  showProductPrices: false,
   seoDefaultDescription: '',
   dpoName: null,
   dpoEmail: null,

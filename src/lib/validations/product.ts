@@ -15,7 +15,9 @@ import {
 // /dashboard/products and its vendors sheet (Task P4.3.06, docs/PRD.md FR-ADMIN-06): one schema for each form and its
 // Server Actions. The RW is never part of a form (it is the one the superadmin's RwSwitcher points at, and a vendor's
 // products share its RW, products_umkm_vendor_rw_guard); money is integer rupiah (CLAUDE.md §7.1). The vendor's bank
-// columns are granted to no API role and stay out of these schemas until their superadmin RPCs exist.
+// columns are granted to no API role and stay out of these schemas until their superadmin RPCs exist. Decision of
+// 2026-10-30: a price may be left empty ("belum ditentukan", products_umkm.price NULL) but is never 0, and a product's
+// variants travel with it, each photo one of the product's own.
 
 const messages = productsCopy;
 const PHONE_PATTERN = /^\+62[0-9]{8,13}$/;
@@ -25,13 +27,22 @@ export const PRODUCT_STATUSES = ['draft', 'published', 'archived'] as const;
 
 const quantitySchema = z.int().min(1).max(PRODUCT_LIMITS.orderQtyMax);
 
+// product_variants: the label as the CHECK takes it (trimmed, 60 characters), the photo a published path.
+export const productVariantSchema = z
+  .object({
+    label: contentText(PRODUCT_LIMITS.variantLabel),
+    imagePath: imagePathSchema,
+    isAvailable: z.boolean(),
+  })
+  .strict();
+
 const productFields = {
   vendorId: rowIdSchema,
   name: contentText(PRODUCT_LIMITS.name),
   slug: slugSchema,
   category: z.enum(DB_ENUMS.product_category),
   descriptionMd: optionalContentText(PRODUCT_LIMITS.descriptionMd),
-  price: z.int().min(0).max(PRODUCT_LIMITS.priceMax),
+  price: z.int().min(1).max(PRODUCT_LIMITS.priceMax).nullable(),
   unitLabel: contentText(PRODUCT_LIMITS.unitLabel),
   minOrderQty: quantitySchema,
   maxOrderQty: quantitySchema.nullable(),
@@ -44,6 +55,9 @@ const productFields = {
   imagePaths: z.array(imagePathSchema.unwrap()).max(PRODUCT_LIMITS.images),
   status: z.enum(PRODUCT_STATUSES),
   sortOrder: sortOrderSchema,
+  variants: z
+    .array(productVariantSchema)
+    .max(PRODUCT_LIMITS.variants, messages.variants.max(PRODUCT_LIMITS.variants)),
 };
 
 // products_umkm: max_order_qty >= min_order_qty.
@@ -53,15 +67,46 @@ function orderRange(product: { minOrderQty: number; maxOrderQty: number | null }
 
 const orderRangeIssue = { path: ['maxOrderQty'], message: messages.validation.maxBelowMin };
 
+interface VariantsOfProduct {
+  imagePaths: readonly string[];
+  variants: readonly { label: string; imagePath: string | null }[];
+}
+
+// product_variants_label_key and product_variants_guard, said beside the field: a label once per product whatever
+// its case, and a photo of the product's own.
+function checkVariants(product: VariantsOfProduct, context: z.RefinementCtx): void {
+  const seen = new Set<string>();
+  product.variants.forEach((variant, index) => {
+    const key = variant.label.toLocaleLowerCase('id-ID');
+    if (seen.has(key)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['variants', index, 'label'],
+        message: messages.variants.duplicate,
+      });
+    }
+    seen.add(key);
+    if (variant.imagePath !== null && !product.imagePaths.includes(variant.imagePath)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['variants', index, 'imagePath'],
+        message: messages.variants.notOwnPhoto,
+      });
+    }
+  });
+}
+
 export const createProductSchema = z
   .object(productFields)
   .strict()
-  .refine(orderRange, orderRangeIssue);
+  .refine(orderRange, orderRangeIssue)
+  .superRefine(checkVariants);
 
 export const updateProductSchema = z
   .object({ id: rowIdSchema, ...productFields })
   .strict()
-  .refine(orderRange, orderRangeIssue);
+  .refine(orderRange, orderRangeIssue)
+  .superRefine(checkVariants);
 
 export type ProductInput = z.input<typeof createProductSchema>;
 export type ProductValues = z.output<typeof createProductSchema>;

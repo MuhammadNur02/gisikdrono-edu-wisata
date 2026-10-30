@@ -29,6 +29,7 @@ export const productsCopy = {
     status: 'Status',
     updatedAt: 'Diubah',
     perUnit: (price: string, unit: string) => `${price} / ${unit}`,
+    priceUnset: 'Belum ditentukan',
     addon: 'Bisa jadi tambahan',
     unavailable: 'Sedang kosong',
   },
@@ -47,6 +48,7 @@ export const productsCopy = {
     basics: 'Identitas produk',
     order: 'Harga dan pemesanan',
     photos: 'Foto',
+    variants: 'Varian',
     publish: 'Penayangan',
   },
   fields: {
@@ -55,7 +57,10 @@ export const productsCopy = {
     slug: 'Alamat halaman (slug)',
     category: 'Kategori',
     descriptionMd: 'Deskripsi',
-    price: 'Harga',
+    price: 'Harga (opsional)',
+    // Decision of 2026-10-30: the owner may not know a price yet, and the site can hide all product prices.
+    priceHint:
+      'Kosongkan bila harga belum ditentukan. Harga hanya tampil di situs bila diaktifkan di Pengaturan.',
     unitLabel: 'Satuan',
     unitLabelHint: 'Misalnya pcs, kg, paket, atau porsi.',
     minOrderQty: 'Pesan minimal',
@@ -77,6 +82,28 @@ export const productsCopy = {
   },
   validation: {
     maxBelowMin: 'Pesan maksimal harus sama atau lebih besar dari pesan minimal.',
+  },
+  // product_variants (decision of 2026-10-30): a motif or colour of the product, each with its own photo.
+  variants: {
+    hint: 'Misalnya motif atau warna. Pengunjung memilih salah satu, dan pilihannya ikut tertulis di pesan WhatsApp.',
+    empty: 'Belum ada varian. Produk tanpa varian dipesan apa adanya.',
+    add: 'Tambah varian',
+    label: (index: number) => `Nama varian ${String(index)}`,
+    photo: (index: number) => `Foto varian ${String(index)}`,
+    noPhoto: 'Tanpa foto',
+    // The product's photos by position, the first one its cover.
+    photoOption: (position: number) =>
+      position === 1 ? 'Foto 1 (sampul)' : `Foto ${String(position)}`,
+    photoHint: 'Pilih dari foto produk di atas. Unggah fotonya dulu di bagian Foto.',
+    photosAfterSave: 'Foto varian bisa dipilih setelah produk disimpan dan fotonya diunggah.',
+    isAvailable: 'Tersedia',
+    remove: (label: string) => `Hapus varian ${label}`,
+    moveUp: (label: string) => `Naikkan varian ${label}`,
+    moveDown: (label: string) => `Turunkan varian ${label}`,
+    untitled: (index: number) => `ke-${String(index)}`,
+    max: (max: number) => `Paling banyak ${String(max)} varian.`,
+    duplicate: 'Nama varian ini sudah dipakai di produk ini.',
+    notOwnPhoto: 'Pilih salah satu foto produk ini.',
   },
   vendors: {
     open: 'Kelola UMKM',

@@ -7,8 +7,42 @@ import {
   hasStickyMobileCta,
   isWhatsAppFabHidden,
   pageTopicFromTitle,
+  productOrderMessage,
   whatsAppDigitsOf,
 } from './whatsapp';
+
+describe('productOrderMessage', () => {
+  const vest = { productName: 'Vest Perca', rwLabel: 'RW 05' };
+
+  it('names the product and its RW, with no variant line for a product without variants', () => {
+    expect(productOrderMessage({ ...vest, hasVariants: false, chosenVariant: null })).toBe(
+      'Halo Koperasi Merah Putih, saya ingin memesan Vest Perca (RW 05). Jumlah: ',
+    );
+  });
+
+  it('names the variant the visitor picked before the quantity', () => {
+    expect(productOrderMessage({ ...vest, hasVariants: true, chosenVariant: 'Motif Kawung' })).toBe(
+      'Halo Koperasi Merah Putih, saya ingin memesan Vest Perca (RW 05). Varian: Motif Kawung. Jumlah: ',
+    );
+  });
+
+  it('asks for a variant while none is picked', () => {
+    expect(productOrderMessage({ ...vest, hasVariants: true, chosenVariant: null })).toBe(
+      'Halo Koperasi Merah Putih, saya ingin memesan Vest Perca (RW 05). Varian: (pilih). Jumlah: ',
+    );
+  });
+
+  it('travels in the wa.me link whole, ampersands and all', () => {
+    const message = productOrderMessage({
+      ...vest,
+      hasVariants: true,
+      chosenVariant: 'Biru & Putih',
+    });
+    expect(buildOrderChatUrl('+6281234567890', message)).toBe(
+      'https://wa.me/6281234567890?text=Halo%20Koperasi%20Merah%20Putih%2C%20saya%20ingin%20memesan%20Vest%20Perca%20(RW%2005).%20Varian%3A%20Biru%20%26%20Putih.%20Jumlah%3A%20',
+    );
+  });
+});
 
 describe('buildWhatsAppChatUrl', () => {
   it('drops the plus sign and encodes the greeting', () => {

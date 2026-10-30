@@ -174,6 +174,15 @@ export function ContactSettings(props: SettingsGroupProps) {
   );
 }
 
+// Decision of 2026-10-30: the UMKM product prices stay off the public site until the owner knows them.
+export function CatalogueSettings({ control }: SettingsGroupProps) {
+  return (
+    <FormSection title={text.groups.catalogue}>
+      <CheckboxField control={control} name="showProductPrices" {...fields.showProductPrices} />
+    </FormSection>
+  );
+}
+
 export function DocumentSettings(props: SettingsGroupProps) {
   return (
     <FormSection title={text.groups.documents}>

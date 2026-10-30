@@ -15,6 +15,7 @@ import {
   ProductPublishing,
   type VendorOption,
 } from '@/components/admin/products/product-fields';
+import { ProductVariants } from '@/components/admin/products/product-variants-field';
 import { FormAlert } from '@/components/forms/form-alert';
 import { PostForm } from '@/components/forms/post-form';
 import { Form } from '@/components/ui/form';
@@ -44,6 +45,7 @@ const FIELDS = [
   'imagePaths',
   'status',
   'sortOrder',
+  'variants',
 ] as const;
 
 type ProductAction = (values: unknown) => Promise<ActionResult<ProductAdmin>>;
@@ -96,6 +98,7 @@ export function ProductForm({ initial, action, stored, vendors, readOnly }: Prod
             ) : (
               <FormAlert tone="info">{text.photos.hint}</FormAlert>
             )}
+            <ProductVariants control={form.control} />
             <ProductPublishing control={form.control} />
           </fieldset>
           {readOnly ? null : <SaveButton isSubmitting={form.formState.isSubmitting} />}

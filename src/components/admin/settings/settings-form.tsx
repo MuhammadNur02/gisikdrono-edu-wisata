@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 
 import {
   BookingSettings,
+  CatalogueSettings,
   ChannelSettings,
   CheckinSettings,
   ContactSettings,
@@ -69,6 +70,7 @@ function SettingsGroups({ form, settings }: { form: SettingsForm; settings: Site
       <CheckinSettings {...group} />
       <FinanceSettings {...group} />
       <ContactSettings {...group} />
+      <CatalogueSettings {...group} />
       <DocumentSettings {...group} />
     </>
   );

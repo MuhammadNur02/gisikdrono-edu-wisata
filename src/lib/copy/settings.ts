@@ -40,6 +40,7 @@ export const settingsCopy = {
     checkin: 'Check-in',
     finance: 'Harga dan data pribadi',
     contact: 'Kontak publik dan privasi',
+    catalogue: 'Katalog produk UMKM',
     documents: 'Dokumen dan SEO',
   },
   fields: {
@@ -80,6 +81,11 @@ export const settingsCopy = {
     kopdesAddress: {
       label: 'Alamat Koperasi Merah Putih',
       description: 'Tempat pengunjung mengambil dan membayar produk UMKM.',
+    },
+    showProductPrices: {
+      label: 'Tampilkan harga produk UMKM',
+      description:
+        'Selama dimatikan, harga produk tidak tampil di situs. Bila dinyalakan, produk yang belum punya harga tampil sebagai "Harga belum ditentukan". Harga paket wisata tidak terpengaruh.',
     },
     dpoName: { label: 'Nama Pejabat Pelindungan Data' },
     dpoEmail: { label: 'Email Pejabat Pelindungan Data' },

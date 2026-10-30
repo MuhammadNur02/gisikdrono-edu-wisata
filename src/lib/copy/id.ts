@@ -89,6 +89,10 @@ export const copy = {
     leadTime: (days: number) => `Pesan paling lambat ${String(days)} hari sebelum diambil`,
     orderRange: (min: number, max: number | null, unit: string) =>
       max === null ? `Minimal ${String(min)} ${unit}` : `${String(min)}–${String(max)} ${unit}`,
+    // A product shown with catalogue.show_product_prices on but no price of its own yet (decision of 2026-10-30).
+    priceUnset: 'Harga belum ditentukan',
+    // A product card's variants (decision of 2026-10-30): the motifs or colours offered on the product page.
+    variantCount: (count: number) => `${String(count)} pilihan`,
   },
   // /galeri and the RW gallery sections (docs/StyleGuide.md §5.11).
   gallery: {

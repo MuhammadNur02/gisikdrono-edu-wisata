@@ -3,12 +3,12 @@ import Link from 'next/link';
 import { RwTag } from '@/components/layout/rw-tag';
 import { PhotoFrame } from '@/components/marketing/photo';
 import { PhotoPlaceholder } from '@/components/marketing/photo-placeholder';
+import { ProductPriceText } from '@/components/products/product-price';
 import { Badge } from '@/components/ui/badge';
 import { IMAGE_SIZES } from '@/config/images';
 import { PRODUCT_CATEGORY } from '@/config/status';
 import { copy } from '@/lib/copy/id';
 import { cn } from '@/lib/utils/cn';
-import { formatIDR } from '@/lib/utils/currency';
 import { productPath } from '@/lib/utils/paths';
 import type { ProductSummary } from '@/types/product';
 
@@ -47,9 +47,10 @@ function ProductCover({ product }: ProductCardProps) {
 }
 
 // Card/Product of DESIGN-SPEC §2.5 (docs/StyleGuide.md §5.9): the square photo, or the RW-tinted placeholder with
-// `Foto menyusul`, with the RW badge on the surface; the name and the price with its unit. No cart, and no seller:
-// the product page orders it from the Koperasi Merah Putih (decisions of 2026-10-29). The name link stretches over
-// the card, so the whole card opens the product.
+// `Foto menyusul`, with the RW badge on the surface; the name, the price with its unit while the site shows prices
+// (decision of 2026-10-30), and `3 pilihan` when the product has variants. No cart, and no seller: the product page
+// orders it from the Koperasi Merah Putih (decisions of 2026-10-29). The name link stretches over the card, so the
+// whole card opens the product.
 export function ProductCard({ product }: ProductCardProps) {
   return (
     <article className="group relative flex h-full w-full hover-rise flex-col">
@@ -64,12 +65,12 @@ export function ProductCard({ product }: ProductCardProps) {
             {product.name}
           </Link>
         </h3>
-        <p className="text-body-sm text-muted-foreground">
-          <span className="font-display text-lg font-bold text-foreground tabular-nums">
-            {formatIDR(product.price)}
-          </span>{' '}
-          / {product.unitLabel}
-        </p>
+        <ProductPriceText price={product.price} unitLabel={product.unitLabel} look="card" />
+        {product.variantCount > 0 ? (
+          <p className="text-body-sm text-muted-foreground">
+            {copy.catalogue.variantCount(product.variantCount)}
+          </p>
+        ) : null}
         {product.isAvailable ? null : (
           <Badge variant="neutral" size="sm" className="mt-1">
             {copy.catalogue.unavailable}

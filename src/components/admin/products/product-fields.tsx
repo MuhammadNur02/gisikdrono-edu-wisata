@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { useController, useWatch, type Control } from 'react-hook-form';
+import { useController, useFormContext, useWatch, type Control } from 'react-hook-form';
 
 import {
   CheckboxField,
@@ -13,6 +13,7 @@ import {
 import { FormSection } from '@/components/admin/cms/form-section';
 import { MoneyField } from '@/components/admin/cms/money-field';
 import { PhotoListField } from '@/components/admin/cms/photo-list-field';
+import { variantPath } from '@/components/admin/products/product-values';
 import { FormField } from '@/components/forms/form-field';
 import { SlugInput } from '@/components/forms/slug-input';
 import { PRODUCT_LIMITS, PRODUCT_PATHS } from '@/config/products';
@@ -112,7 +113,12 @@ export function ProductOrdering({ control }: { control: ProductControl }) {
   return (
     <FormSection title={text.sections.order}>
       <div className="grid gap-4 sm:grid-cols-2">
-        <MoneyField control={control} name="price" label={fields.price} required />
+        <MoneyField
+          control={control}
+          name="price"
+          label={fields.price}
+          description={fields.priceHint}
+        />
         <TextField
           control={control}
           name="unitLabel"
@@ -158,6 +164,19 @@ export function ProductPublishing({ control }: { control: ProductControl }) {
   );
 }
 
+// A photo taken off the product is taken off its variants too, as products_umkm_variant_photos does at the row, so the
+// form never holds a variant photo the product no longer has.
+function useVariantPhotosIn() {
+  const { getValues, setValue } = useFormContext<ProductInput>();
+  return (paths: readonly string[]) => {
+    getValues('variants').forEach((variant, index) => {
+      if (variant.imagePath !== null && !paths.includes(variant.imagePath)) {
+        setValue(variantPath(index, 'imagePath'), null);
+      }
+    });
+  };
+}
+
 // products_umkm.image_paths (docs/Security.md R34): the first photo is the cover; the folder is the product's own.
 export function ProductPhotos({
   control,
@@ -170,6 +189,7 @@ export function ProductPhotos({
 }) {
   const { field } = useController({ control, name: 'imagePaths' });
   const name = useWatch({ control, name: 'name' });
+  const keepVariantPhotos = useVariantPhotosIn();
   const upload = useMemo(
     () => createImageUpload({ rwId, purpose: 'product', entityId: productId }),
     [rwId, productId],
@@ -179,7 +199,10 @@ export function ProductPhotos({
       <p className="text-body-sm text-muted-foreground">{text.photos.hint}</p>
       <PhotoListField
         paths={field.value}
-        onChange={field.onChange}
+        onChange={(paths) => {
+          field.onChange(paths);
+          keepVariantPhotos(paths);
+        }}
         upload={upload}
         alt={name}
         max={PRODUCT_LIMITS.images}

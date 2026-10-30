@@ -1,4 +1,5 @@
 import { STICKY_MOBILE_CTA_PARENTS, WHATSAPP_FAB_HIDDEN_PREFIXES } from '@/config/routes';
+import { productDetailCopy } from '@/lib/copy/catalogue';
 import { isPathUnder } from '@/lib/utils/paths';
 
 const WHATSAPP_CHAT_BASE_URL = 'https://wa.me/';
@@ -29,6 +30,24 @@ export function whatsAppDigitsOf(phone: string | null): string | null {
 export function buildOrderChatUrl(phone: string | null, message: string): string | null {
   const digits = whatsAppDigitsOf(phone);
   return digits === null ? null : buildWhatsAppChatUrl(digits, message);
+}
+
+export interface ProductOrderChoice {
+  productName: string;
+  rwLabel: string;
+  // Whether the product page offers variants at all; a product without them gets no variant line.
+  hasVariants: boolean;
+  // The variant the visitor picked, null while none is.
+  chosenVariant: string | null;
+}
+
+// The message of a product's order (decision of 2026-10-30): the product, its RW and, for a product with variants,
+// `Varian: <label>`, or `Varian: (pilih)` while the visitor has not picked one, so the Kopdes knows to ask.
+export function productOrderMessage(choice: ProductOrderChoice): string {
+  const variant = choice.hasVariants
+    ? (choice.chosenVariant ?? productDetailCopy.variantUnchosen)
+    : null;
+  return productDetailCopy.orderMessage(choice.productName, choice.rwLabel, variant);
 }
 
 // A message the visitor sends to a contact of their own choosing, such as the treasurer: wa.me with no number opens

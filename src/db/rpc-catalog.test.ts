@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 
-import { savePackage } from '@/db/rpc-catalog';
+import { savePackage, saveProduct } from '@/db/rpc-catalog';
 
 import { clientAnswering } from '../../tests/fixtures/postgrest-client';
 
@@ -47,5 +47,43 @@ describe('savePackage', () => {
     await expect(
       savePackage(client, { packageId: null, fields: {}, legRwIds: null, tiers: [] }),
     ).rejects.toBeInstanceOf(ZodError);
+  });
+});
+
+describe('saveProduct', () => {
+  it('sends the fields and the variants in order, snake_case, and reads the product id', async () => {
+    const { client, requests } = clientAnswering(200, PACKAGE_ID);
+    await expect(
+      saveProduct(client, {
+        productId: PACKAGE_ID,
+        fields: { name: 'Vest Perca', price: null },
+        variants: [
+          { label: 'Motif Kawung', imagePath: 'rw-05/products/x/a.webp', isAvailable: true },
+          { label: 'Motif Parang', imagePath: null, isAvailable: false },
+        ],
+      }),
+    ).resolves.toBe(PACKAGE_ID);
+    expect(requests[0]).toEqual({
+      url: 'http://supabase.test/rest/v1/rpc/save_product',
+      body: {
+        p_product_id: PACKAGE_ID,
+        p_product: { name: 'Vest Perca', price: null },
+        p_variants: [
+          { label: 'Motif Kawung', image_path: 'rw-05/products/x/a.webp', is_available: true },
+          { label: 'Motif Parang', image_path: null, is_available: false },
+        ],
+      },
+    });
+  });
+
+  it('leaves out the id of a new product, and passes a refusal on', async () => {
+    const created = clientAnswering(200, PACKAGE_ID);
+    await saveProduct(created.client, { productId: null, fields: {}, variants: [] });
+    expect(created.requests[0]?.body).toEqual({ p_product: {}, p_variants: [] });
+
+    const refused = clientAnswering(403, { code: '42501', message: 'denied' });
+    await expect(
+      saveProduct(refused.client, { productId: null, fields: {}, variants: [] }),
+    ).rejects.toMatchObject({ code: '42501' });
   });
 });

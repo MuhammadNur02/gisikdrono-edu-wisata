@@ -2,9 +2,9 @@ import Link from 'next/link';
 
 import { PhotoFrame } from '@/components/marketing/photo';
 import { PhotoPlaceholder } from '@/components/marketing/photo-placeholder';
+import { ProductPriceText } from '@/components/products/product-price';
 import { Card } from '@/components/ui/card';
 import { PRODUCT_CATEGORY } from '@/config/status';
-import { formatIDR } from '@/lib/utils/currency';
 import { productPath } from '@/lib/utils/paths';
 import type { ProductSummary } from '@/types/product';
 
@@ -47,9 +47,12 @@ export function HeroProductCard({ product }: HeroProductCardProps) {
         >
           {product.name}
         </Link>
-        <p className="text-body-sm tabular-nums">
-          {formatIDR(product.price)} /{product.unitLabel}
-        </p>
+        <ProductPriceText
+          price={product.price}
+          unitLabel={product.unitLabel}
+          look="compact"
+          className="text-foreground"
+        />
       </div>
     </Card>
   );

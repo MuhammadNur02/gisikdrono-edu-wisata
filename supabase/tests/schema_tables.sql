@@ -321,7 +321,7 @@ select columns_are('public', 'umkm_vendors', array[
 select columns_are('public', 'products_umkm', array[
   'id', 'rw_id', 'vendor_id', 'slug', 'name', 'category', 'description_md', 'price', 'unit_label',
   'min_order_qty', 'max_order_qty', 'lead_time_days', 'is_addon_eligible', 'is_available',
-  'is_featured', 'image_paths', 'status', 'sort_order', 'created_by', 'created_at', 'updated_at'
+  'is_featured', 'image_paths', 'status', 'sort_order', 'created_by', 'created_at', 'updated_at', 'public_price'
 ]);
 select has_index('public', 'tour_packages', 'tour_packages_public_idx', 'tour_packages has its public listing index');
 select has_index('public', 'products_umkm', 'products_umkm_public_idx', 'products_umkm has its public listing index');
@@ -1253,8 +1253,8 @@ select throws_ok(
 
 select tables_are(
   'public',
-  array['rw_units', 'profiles', 'staff_invites', 'site_settings', 'session_templates', 'visit_sessions', 'tour_packages', 'tour_package_legs', 'tour_package_price_tiers', 'umkm_vendors', 'products_umkm', 'package_price_history', 'bookings', 'booking_legs', 'booking_addons', 'booking_participants', 'booking_events', 'guest_otps', 'payments', 'payment_events', 'webhook_rejections', 'payment_adjustments', 'reconciliation_runs', 'reconciliation_issues', 'reconciliation_turns', 'quotations', 'invoices', 'document_sequences', 'certificates', 'tickets_qr', 'ticket_scans', 'galleries', 'articles', 'booklets', 'hero_banners', 'activity_points', 'performance_schedules', 'reviews', 'revenue_share_rules', 'revenue_share_rule_lines', 'revenue_share_entries', 'payout_batches', 'notifications', 'security_events', 'security_alerts', 'exports', 'dsr_requests', 'audit_logs', 'login_attempts', 'rate_limit_buckets', 'job_heartbeats', 'booklet_page_claims', 'weather_notices', 'weather_notice_bookings', 'refund_requests', 'finance_proofs'],
-  'public holds exactly the 55 tables of the CLAUDE.md A.1 registry, job_heartbeats of 0007, booklet_page_claims of 20261019080000 and the visit terms'' weather_notices, weather_notice_bookings and refund_requests of 20261104080100 and finance_proofs of 20261104190300 included'
+  array['rw_units', 'profiles', 'staff_invites', 'site_settings', 'session_templates', 'visit_sessions', 'tour_packages', 'tour_package_legs', 'tour_package_price_tiers', 'umkm_vendors', 'products_umkm', 'product_variants', 'package_price_history', 'bookings', 'booking_legs', 'booking_addons', 'booking_participants', 'booking_events', 'guest_otps', 'payments', 'payment_events', 'webhook_rejections', 'payment_adjustments', 'reconciliation_runs', 'reconciliation_issues', 'reconciliation_turns', 'quotations', 'invoices', 'document_sequences', 'certificates', 'tickets_qr', 'ticket_scans', 'galleries', 'articles', 'booklets', 'hero_banners', 'activity_points', 'performance_schedules', 'reviews', 'revenue_share_rules', 'revenue_share_rule_lines', 'revenue_share_entries', 'payout_batches', 'notifications', 'security_events', 'security_alerts', 'exports', 'dsr_requests', 'audit_logs', 'login_attempts', 'rate_limit_buckets', 'job_heartbeats', 'booklet_page_claims', 'weather_notices', 'weather_notice_bookings', 'refund_requests', 'finance_proofs'],
+  'public holds exactly the 55 tables of the CLAUDE.md A.1 registry, job_heartbeats of 0007, booklet_page_claims of 20261019080000 and the visit terms'' weather_notices, weather_notice_bookings and refund_requests of 20261104080100, finance_proofs of 20261104190300 and product_variants of 20261105170200 included'
 );
 
 -- docs/PRD.md §8.1: money and operational rows are never deleted through a parent. Only these
@@ -1270,7 +1270,7 @@ select is(
   array[
     'certificates.participant_id:n', 'dsr_requests.otp_id:n', 'galleries.booking_id:n',
     'hero_banners.product_id:n', 'package_price_history.tier_id:n', 'performance_schedules.package_id:n',
-    'refund_requests.last_checked_event_id:n', 'revenue_share_rule_lines.rule_id:c', 'revenue_share_rules.package_id:c', 'revenue_share_rules.product_id:c',
+    'product_variants.product_id:c', 'refund_requests.last_checked_event_id:n', 'revenue_share_rule_lines.rule_id:c', 'revenue_share_rules.package_id:c', 'revenue_share_rules.product_id:c',
     'tour_package_legs.package_id:c', 'tour_package_price_tiers.package_id:c', 'visit_sessions.template_id:n'
   ],
   'only the PRD catalogue, rule and media links and a refund request''s last look (pruned with its event) cascade or set null; every other reference refuses deletes'
