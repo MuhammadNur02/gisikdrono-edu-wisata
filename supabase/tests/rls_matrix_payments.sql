@@ -3,7 +3,7 @@
 -- (docs/PRD.md §8.5.2, docs/Security.md STAFF-01, STAFF-02, Task P1.4.04, P1.4.05, P1.9.02). Every check runs
 -- as an API role.
 begin;
-select plan(33);
+select plan(35);
 \ir helpers/rls_personas.psql
 
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax, status) values
@@ -200,6 +200,28 @@ select throws_ok($$update public.reconciliation_issues set resolved_at = now(),
   resolved_by = '00000000-0000-4000-8000-00000000f005', resolution = 'resolved', resolution_note = 'Sudah dicek'
   where id = '00000000-0000-4000-8000-0000ab000003'$$, '42501', 'new row violates row-level security policy for table "reconciliation_issues"',
   'never in someone else''s');
+
+-- ===== admin_kopdes =====
+-- docs/PRD.md §13.1 A30: ticket money is the RWs' and the kelurahan's; the Kopdes admin sees none of it.
+reset role;
+select pg_temp.act_as('admin_kopdes');
+select is(
+  pg_temp.rows_seen($$select 1 from public.payments where pg_temp.is_fixture_booking(booking_id)$$)
+  + pg_temp.rows_seen($$select 1 from public.payment_events where event_hash = 'rls-event-1'$$)
+  + pg_temp.rows_seen($$select 1 from public.webhook_rejections where order_id = 'GSK-P5000001-01'$$)
+  + pg_temp.rows_seen($$select 1 from public.payment_adjustments where reason = 'Selisih pembulatan uji'$$)
+  + pg_temp.rows_seen($$select 1 from public.reconciliation_runs where id = '00000000-0000-4000-8000-0000ab000001'$$)
+  + pg_temp.rows_seen($$select 1 from public.reconciliation_issues where id = '00000000-0000-4000-8000-0000ab000002'$$)
+  + pg_temp.rows_seen($$select 1 from public.quotations where pg_temp.is_fixture_booking(booking_id)$$)
+  + pg_temp.rows_seen($$select 1 from public.invoices where pg_temp.is_fixture_booking(booking_id)$$)
+  + pg_temp.rows_seen($$select 1 from public.document_sequences$$)
+  + pg_temp.rows_seen($$select 1 from public.v_booking_admin where booking_code = 'GSK-PC000001'$$),
+  0,
+  'the Kopdes admin sees no payment, event, rejection, adjustment, reconciliation, document or counter'
+);
+select ok(pg_temp.write_refused($$update public.reconciliation_issues set resolved_at = now(),
+  resolved_by = '00000000-0000-4000-8000-00000000f0c0' where id = '00000000-0000-4000-8000-0000ab000002'$$),
+  'and resolves no reconciliation issue');
 
 select * from finish();
 rollback;

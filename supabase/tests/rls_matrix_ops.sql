@@ -2,7 +2,7 @@
 -- login_attempts, rate_limit_buckets (docs/PRD.md §8.5.2, docs/Security.md AUD-02, Task P1.4.04, P1.4.05, P1.9.02).
 -- Every check runs as an API role.
 begin;
-select plan(30);
+select plan(33);
 \ir helpers/rls_personas.psql
 
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax) values
@@ -149,6 +149,28 @@ select is(
 select is(pg_temp.row_count($$update public.dsr_requests set status = 'in_progress', handled_at = now(),
   handled_by = '00000000-0000-4000-8000-00000000f001' where id = '00000000-0000-4000-8000-0000af000002'$$), 1,
   'and takes on a data-subject request');
+
+-- ===== admin_kopdes =====
+-- docs/PRD.md §13.1 A30: the outbox, the security log, the exports and the audit trail are the kelurahan's.
+reset role;
+select pg_temp.act_as('admin_kopdes');
+select is(
+  pg_temp.rows_seen($$select 1 from public.notifications where dedupe_key like 'rls:%'$$)
+  + pg_temp.rows_seen($$select 1 from public.security_events where fingerprint = 'rls:event:1'$$)
+  + pg_temp.rows_seen($$select 1 from public.security_alerts where id = '00000000-0000-4000-8000-0000af000001'$$)
+  + pg_temp.rows_seen($$select 1 from public.audit_logs where pg_temp.is_fixture_audit(entity_id)$$)
+  + pg_temp.rows_seen($$select 1 from public.exports where watermark like 'Diekspor oleh % RLS%'$$)
+  + pg_temp.rows_seen($$select 1 from public.dsr_requests where id = '00000000-0000-4000-8000-0000af000002'$$)
+  + pg_temp.rows_seen($$select 1 from public.login_attempts where user_id = '00000000-0000-4000-8000-00000000f005'$$)
+  + pg_temp.rows_seen($$select 1 from public.rate_limit_buckets where key = 'rls:test'$$),
+  0,
+  'the Kopdes admin sees no outbox row, security event or alert, audit row, export, request, sign-in or bucket'
+);
+select ok(pg_temp.write_refused($$update public.security_alerts set acknowledged_by = '00000000-0000-4000-8000-00000000f0c0',
+  acknowledged_at = now() where id = '00000000-0000-4000-8000-0000af000001'$$), 'and acknowledges no alert');
+select ok(pg_temp.write_refused($$update public.dsr_requests set status = 'in_progress', handled_at = now(),
+  handled_by = '00000000-0000-4000-8000-00000000f0c0' where id = '00000000-0000-4000-8000-0000af000002'$$),
+  'nor handles a privacy request');
 
 select * from finish();
 rollback;

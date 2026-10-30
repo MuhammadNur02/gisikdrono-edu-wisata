@@ -1,7 +1,7 @@
 -- RLS matrix for the configuration tables: rw_units, profiles, staff_invites, site_settings (docs/PRD.md §8.5.2,
 -- Task P1.4.01, P1.4.05, P1.4.06, P1.9.02). Every check runs as an API role with GoTrue-shaped claims.
 begin;
-select plan(68);
+select plan(82);
 \ir helpers/rls_personas.psql
 
 update public.rw_units set treasury_account_number = '1230005' where id = 5;
@@ -124,8 +124,8 @@ select throws_ok($$insert into public.rw_units (id, code, slug, name, short_name
 -- ===== superadmin at AAL2 =====
 reset role;
 select pg_temp.act_as('superadmin_aal2');
-select is((select count(*)::int from public.profiles where email::text like 'rls-%'), 7,
-  'the superadmin sees every profile, the onboarding persona of 20261103131000 included');
+select is((select count(*)::int from public.profiles where email::text like 'rls-%'), 8,
+  'the superadmin sees every profile, the onboarding persona of 20261103131000 and the Kopdes admin included');
 select is((select count(*)::int from public.site_settings where key in ('seo.default_description', 'rls.private')), 2,
   'every setting');
 select lives_ok($$insert into public.staff_invites (email, role, rw_id, invite_code_hash, expires_at, created_by)
@@ -217,6 +217,46 @@ select is(
   'Undangan superadmin diterima',
   'which the alert reports as completed'
 );
+
+-- ===== admin_kopdes =====
+-- docs/PRD.md §13.1 A30 (20261105180400, 20261105180500): the RWs to file sellers under, its own profile, and of the
+-- settings the three catalogue keys alone.
+reset role;
+select pg_temp.act_as('admin_kopdes');
+select is((select count(*)::int from public.rw_units where id in (5, 8, 9)), 3,
+  'the Kopdes admin sees every RW, an offline one included, to file a seller under');
+select throws_ok($$select treasury_account_number from public.rw_units$$, '42501', null, 'but no treasury account');
+select ok(pg_temp.write_refused($$update public.rw_units set tagline = 'Kopdes' where id = 5$$), 'and edits no RW page');
+select is((select string_agg(email::text, ',') from public.profiles where email::text like 'rls-%'),
+  'rls-kopdes@example.test', 'its own profile and nobody else''s');
+select is(pg_temp.row_count($$update public.profiles set full_name = 'Kopdes Baru'
+  where id = '00000000-0000-4000-8000-00000000f0c0'$$), 1, 'whose name it changes');
+select is(pg_temp.row_count($$update public.profiles set full_name = 'Diubah'
+  where id = '00000000-0000-4000-8000-00000000f005'$$), 0, 'but no colleague''s');
+select throws_ok($$update public.profiles set role = 'superadmin' where id = '00000000-0000-4000-8000-00000000f0c0'$$,
+  '42501', null, 'and never its own role');
+select is(pg_temp.rows_seen($$select 1 from public.staff_invites where email::text like 'calon%'$$), 0, 'no invite');
+select ok(pg_temp.write_refused($$insert into public.staff_invites (email, role, rw_id, invite_code_hash, expires_at,
+  created_by) values ('kopdes-calon@example.test', 'admin_kopdes', null, 'hash-rls-k', now() + interval '72 hours',
+  '00000000-0000-4000-8000-00000000f0c0')$$), 'and invites nobody');
+select is(
+  (select string_agg(key, ',' order by key) from public.site_settings
+   where key in ('seo.default_description', 'rls.private', 'contact.whatsapp_number', 'catalogue.show_product_prices',
+                 'contact.kopdes_whatsapp_number', 'contact.kopdes_address')),
+  'catalogue.show_product_prices,contact.kopdes_address,contact.kopdes_whatsapp_number',
+  'of the settings, it reads the three catalogue keys alone'
+);
+select is(pg_temp.row_count($$update public.site_settings set value = 'true',
+  updated_by = '00000000-0000-4000-8000-00000000f0c0' where key = 'catalogue.show_product_prices'$$), 1,
+  'turns the price switch, signed with its own id');
+select is(pg_temp.row_count($$update public.site_settings set value = '"Lain"',
+  updated_by = '00000000-0000-4000-8000-00000000f0c0' where key = 'seo.default_description'$$), 0, 'but no other key');
+select throws_ok($$update public.site_settings set value = '"+6281234567890"',
+  updated_by = '00000000-0000-4000-8000-00000000f001' where key = 'contact.kopdes_whatsapp_number'$$, '42501', null,
+  'and signs with nobody else''s id');
+select throws_ok($$update public.site_settings set is_public = false,
+  updated_by = '00000000-0000-4000-8000-00000000f0c0' where key = 'contact.kopdes_address'$$, '42501', null,
+  'and changes a value only, never whether the number is public');
 
 select * from finish();
 rollback;
