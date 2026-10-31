@@ -2,16 +2,21 @@
 -- RL, BOOK-14; CLAUDE.md §7.1):
 --
 --   request_notification_resend  A payment_reminder the booking never had on that channel goes out as a first one, with
---                                the poll job's own parameters, when the booking still waits for its payment: unpaid,
---                                not under review, its deadline ahead and, for an officer's hold, its pay link already
---                                sent (PAY_LINK_NOT_SENT otherwise), the job's own rules. Any other message the booking
---                                never had is refused with its own hint, NEVER_SENT, instead of STATE_INVALID.
---                                Everything else is unchanged: the 10 a day, the outbox's rules (NOT_SENT), the audit,
---                                which now says whether it was a first send.
---   payments_housekeeping        The automatic reminder close to the deadline still goes out after a staff reminder
---                                sent days before. It is skipped only when the job already queued its own, or when a
---                                reminder was queued inside the job's window (the 6 hours before the reminder is due),
---                                which then counts as the automatic one. Everything else is unchanged.
+--                                the poll job's own parameters, to a booking the job would remind, only earlier: an
+--                                institution's web hold (school, university, government, company) or an officer's
+--                                hold, unpaid, not under review, before its deadline and, for an officer's hold, before
+--                                its first session starts (STATE_INVALID otherwise) and once its pay link was sent
+--                                (PAY_LINK_NOT_SENT otherwise). Any other message the booking never had is refused with
+--                                its own hint, NEVER_SENT, instead of STATE_INVALID. Everything else is unchanged: the
+--                                10 a day, the outbox's rules (NOT_SENT), the audit, which now says whether it was a
+--                                first send.
+--   payments_housekeeping        The reminder is decided per channel. Inside the job's window (the 6 hours before the
+--                                reminder is due) a channel gets the job's reminder unless it already has the job's own,
+--                                or a reminder queued from 12 hours before the window opened (recent_reminder_span) that
+--                                did not fail and was not cancelled. So a staff reminder sent earlier still leaves the
+--                                automatic one, one sent shortly before or inside the window stands for it on its own
+--                                channel only, and a staff reminder that never went out stands for nothing. reminded
+--                                counts the holds that got a reminder queued. Everything else is unchanged.
 
 
 -- ===== request_notification_resend =====
@@ -30,14 +35,17 @@ declare
     'payment_reminder', 'payment_received_ticket', 'booking_expired', 'booking_cancelled', 'visit_reminder_d1',
     'checked_in_thanks', 'certificate_ready', 'review_invite', 'refund_processed', 'booking_link',
     'weather_disruption'];
-  -- The poll job's parameters and its link_sent statuses (internal.payments_housekeeping, 20261105100200).
+  -- The poll job's parameters, its link_sent statuses and the web booker types it reminds
+  -- (internal.payments_housekeeping below).
   first_reminder_params constant jsonb := '{"link_scope": "pay"}';
   link_sent constant public.notification_status[] := array['sent', 'delivered', 'read'];
+  reminded_booker_types constant public.booker_type[] := array['school', 'university', 'government', 'company'];
   booking public.bookings := internal.require_booking_staff(p_booking_id);
   previous_settings jsonb;
   last_params jsonb;
   sent_before integer;
   is_first_send boolean;
+  remind_by timestamptz;
   queued uuid;
 begin
   if p_template is null or not (p_template = any (guest_templates)) or p_channel is null then
@@ -57,11 +65,22 @@ begin
     raise exception 'booking % never had this message', booking.booking_code
       using errcode = 'P0001', hint = 'NEVER_SENT';
   end if;
-  -- A first reminder goes only to a booking the poll job would remind, so it never points the PIC at a link they do
-  -- not have (delta review of PR #91, L-C).
+  -- A first reminder goes only to a booking the poll job would remind, only earlier: an institution's web hold or an
+  -- officer's hold, unpaid, not under review, before its deadline and, for an officer's hold, before its first session
+  -- starts; never pointing the PIC at a link they do not have (delta review of PR #91, L-C).
+  if is_first_send then
+    remind_by := case when booking.channel = 'admin'
+                      then least(booking.expires_at,
+                                 (select min((s.session_date + s.start_time) at time zone 'Asia/Jakarta')
+                                  from public.booking_legs l join public.visit_sessions s on s.id = l.visit_session_id
+                                  where l.booking_id = booking.id))
+                      else booking.expires_at end;
+  end if;
   if is_first_send and (booking.status <> 'pending_payment' or booking.needs_review
-                        or booking.expires_at is null or booking.expires_at <= now()) then
-    raise exception 'booking % is not waiting for its payment', booking.booking_code
+                        or remind_by is null or remind_by <= now()
+                        or (booking.channel <> 'admin'
+                            and not coalesce(booking.booker_type = any (reminded_booker_types), false))) then
+    raise exception 'booking % is not waiting for a payment reminder', booking.booking_code
       using errcode = 'P0001', hint = 'STATE_INVALID';
   end if;
   if is_first_send and booking.channel = 'admin'
@@ -110,9 +129,9 @@ grant execute on function
 
 -- ===== payments_housekeeping =====
 
--- Replaces the 20261105100200 version: a hold is reminded unless the job queued its own reminder (the one without a
--- dedupe scope, internal.enqueue_notification's `booking:<id>:payment_reminder:<channel>`) or a reminder was queued
--- inside the window. Everything else is unchanged.
+-- Replaces the 20261105100200 version: each channel of a hold is reminded unless it has the job's own reminder (the
+-- one without a dedupe scope, internal.enqueue_notification's `booking:<id>:payment_reminder:<channel>`) or a recent
+-- one that did not fail. Everything else is unchanged.
 create or replace function internal.payments_housekeeping() returns jsonb
   language plpgsql security definer
   set search_path = ''
@@ -123,9 +142,12 @@ declare
   without_link_after constant interval := interval '3 hours';
   without_link_grace constant interval := interval '30 minutes';
   link_sent constant public.notification_status[] := array['sent', 'delivered', 'read'];
+  reminded_booker_types constant public.booker_type[] := array['school', 'university', 'government', 'company'];
+  recent_reminder_span constant interval := interval '12 hours';
   previous_settings jsonb;
   orphan record;
   hold record;
+  last_reminded uuid;
   suspended integer := 0;
   reminded integer := 0;
 begin
@@ -146,32 +168,40 @@ begin
     set last_seen_at = now(), occurrences = public.security_alerts.occurrences + 1, notified_at = null;
   end loop;
 
+  -- One row per hold and channel still owed its reminder: each channel is decided on its own, so a staff reminder on
+  -- one channel leaves the other's (the email of an unconfirmed address carries only a view link, GUEST-07).
   for hold in
-    select b.id from public.bookings b
+    select b.id, reach.channel from public.bookings b
     cross join lateral (select min((s.session_date + s.start_time) at time zone 'Asia/Jakarta') as first_start
                         from public.booking_legs l join public.visit_sessions s on s.id = l.visit_session_id
                         where l.booking_id = b.id) as legs
     cross join lateral (select case when b.channel = 'admin' then least(b.expires_at, legs.first_start)
                                     else b.expires_at end as remind_by) as due
+    cross join unnest(array['whatsapp', 'email']::public.notification_channel[]) as reach(channel)
     where b.status = 'pending_payment' and not b.needs_review
-      and (b.channel = 'admin' or b.booker_type in ('school', 'university', 'government', 'company'))
+      and (b.channel = 'admin' or b.booker_type = any (reminded_booker_types))
       and b.expires_at > now() and due.remind_by > now() and due.remind_by <= now() + reminder_ahead
-      -- A staff reminder sent days before still leaves the PIC a reminder close to the deadline; one queued inside the
-      -- window is that reminder, so the PIC is not reminded twice within a few hours.
+      -- The job's own reminder on this channel, whatever became of it, or a reminder queued on it from
+      -- recent_reminder_span before the window opened and not failed or cancelled, so the PIC is not reminded twice
+      -- within a few hours; a staff reminder sent earlier, or one that never went out, still leaves the job's.
       and not exists (select 1 from public.notifications n
-                      where n.booking_id = b.id and n.template = 'payment_reminder'
-                        and (n.dedupe_key = format('booking:%s:payment_reminder:%s', b.id, n.channel)
-                             or n.created_at >= due.remind_by - reminder_ahead))
+                      where n.booking_id = b.id and n.template = 'payment_reminder' and n.channel = reach.channel
+                        and (n.dedupe_key = format('booking:%s:payment_reminder:%s', b.id, reach.channel)
+                             or (n.status not in ('failed', 'cancelled')
+                                 and n.created_at >= due.remind_by - reminder_ahead - recent_reminder_span)))
       -- Delta review of PR #91, L-C: an officer's hold is reminded only after its pay link went out.
       and (b.channel <> 'admin'
            or exists (select 1 from public.notifications n
                       where n.booking_id = b.id and n.template = 'booking_created'
                         and n.status = any (link_sent)))
-    order by due.remind_by
+    order by due.remind_by, b.id, reach.channel
   loop
-    perform internal.enqueue_notification(hold.id, 'payment_reminder', 'whatsapp', '{"link_scope": "pay"}');
-    perform internal.enqueue_notification(hold.id, 'payment_reminder', 'email', '{"link_scope": "pay"}');
-    reminded := reminded + 1;
+    -- reminded counts the holds that got a reminder queued; the outbox queues nothing on a channel it cannot reach.
+    if internal.enqueue_notification(hold.id, 'payment_reminder', hold.channel, '{"link_scope": "pay"}') is not null
+       and hold.id is distinct from last_reminded then
+      reminded := reminded + 1;
+      last_reminded := hold.id;
+    end if;
   end loop;
   insert into public.security_alerts (rule, severity, fingerprint, title, details)
   select 'admin_hold_unpaid_long', 'medium', 'admin_hold_unpaid_long:' || b.id,
