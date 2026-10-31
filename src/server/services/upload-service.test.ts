@@ -222,7 +222,7 @@ describe('L8 and L9: who may upload is read from the profile', () => {
   ])('refuses %s', async (_case, changes) => {
     admin().addStaff(OFFICER_05, changes);
 
-    await expect(checkUploadAccess(OFFICER_05, 5, { step: 'sign' })).resolves.toBe(false);
+    await expect(checkUploadAccess(OFFICER_05, 5, { step: 'sign' }, null)).resolves.toBe(false);
     expect(eventsOfType('upload_rejected')).toEqual([
       expect.objectContaining({
         details: expect.objectContaining({ reason: 'forbidden' }) as unknown,
@@ -233,18 +233,18 @@ describe('L8 and L9: who may upload is read from the profile', () => {
   it('refuses a staff member with no profile at all', async () => {
     admin().profiles.clear();
 
-    await expect(checkUploadAccess(OFFICER_05, 5, { step: 'sign' })).resolves.toBe(false);
+    await expect(checkUploadAccess(OFFICER_05, 5, { step: 'sign' }, null)).resolves.toBe(false);
     expect(eventsOfType('upload_rejected')[0]).toMatchObject({ details: { why: 'profile' } });
   });
 
   it('lets the officer in while the profile matches the token', async () => {
-    await expect(checkUploadAccess(OFFICER_05, 5, { step: 'sign' })).resolves.toBe(true);
+    await expect(checkUploadAccess(OFFICER_05, 5, { step: 'sign' }, null)).resolves.toBe(true);
     expect(admin().securityEvents).toEqual([]);
   });
 
   it('records ten refusals an hour, then one rate_limited row for the rest', async () => {
     for (let attempt = 0; attempt < 25; attempt += 1) {
-      await checkUploadAccess(OFFICER_05, 8, { step: 'sign' });
+      await checkUploadAccess(OFFICER_05, 8, { step: 'sign' }, null);
     }
 
     expect(eventsOfType('upload_rejected')).toHaveLength(10);
@@ -269,13 +269,13 @@ describe('L2: an upload names an RW of rw_units', () => {
 
   it('lets the superadmin upload for an RW that exists, or for the kelurahan', async () => {
     admin().addStaff(SUPERADMIN);
-    await expect(checkUploadAccess(SUPERADMIN, 8, { step: 'sign' })).resolves.toBe(true);
-    await expect(checkUploadAccess(SUPERADMIN, null, { step: 'sign' })).resolves.toBe(true);
+    await expect(checkUploadAccess(SUPERADMIN, 8, { step: 'sign' }, null)).resolves.toBe(true);
+    await expect(checkUploadAccess(SUPERADMIN, null, { step: 'sign' }, null)).resolves.toBe(true);
   });
 
   it('refuses an RW number no row of rw_units has, and records why', async () => {
     admin().addStaff(SUPERADMIN);
-    await expect(checkUploadAccess(SUPERADMIN, 42, { step: 'sign' })).resolves.toBe(false);
+    await expect(checkUploadAccess(SUPERADMIN, 42, { step: 'sign' }, null)).resolves.toBe(false);
     expect(eventsOfType('upload_rejected')[0]).toMatchObject({ details: { why: 'rw' } });
   });
 });

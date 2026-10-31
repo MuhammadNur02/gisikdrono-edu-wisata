@@ -26,6 +26,9 @@ const HTTP_STATUS_BY_CODE = {
 
 const HTTP_OK = 200;
 const UNIQUE_VIOLATION = '23505';
+// no_data_found: what a staff RPC raises for a row that does not exist or is not the caller's to see (save_product,
+// save_product_variants and the booking RPCs), which the person reads as NOT_FOUND (review of PR #115, L6).
+const NO_DATA_FOUND = 'P0002';
 const RAISED_EXCEPTION = 'P0001';
 const INSUFFICIENT_PRIVILEGE = '42501';
 
@@ -107,6 +110,7 @@ export function privilegeHintOf(error: unknown): string | undefined {
 
 function codeForPostgresError(error: PostgresError): ActionErrorCode | undefined {
   if (error.code === UNIQUE_VIOLATION) return 'CONFLICT';
+  if (error.code === NO_DATA_FOUND) return 'NOT_FOUND';
   if (error.code === RAISED_EXCEPTION && error.hint) return CODE_BY_POSTGRES_HINT[error.hint];
   return undefined;
 }

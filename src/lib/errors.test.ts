@@ -56,6 +56,12 @@ describe('mapError', () => {
     );
   });
 
+  it('maps a row an RPC could not find (P0002) to NOT_FOUND, as save_product raises it', async () => {
+    expect((await mapError({ code: 'P0002', message: 'product does not exist' })).error.code).toBe(
+      'NOT_FOUND',
+    );
+  });
+
   it.each([
     ['QUOTA_UNAVAILABLE', 'QUOTA_EXCEEDED'],
     ['STATE_INVALID', 'STATE_INVALID'],

@@ -8,8 +8,8 @@ import { fail, mapError, ok, okUnlessFilesLeft } from '@/lib/errors';
 import { TAGS } from '@/lib/queries/tags';
 import { rowRefSchema } from '@/lib/validations/content';
 import { createProductSchema, updateProductSchema } from '@/lib/validations/product';
-import { requireRwContentOwner } from '@/server/auth/content-owner';
-import { requireAal2, type GuardResult } from '@/server/auth/guards';
+import { requireUmkmRw } from '@/server/auth/content-owner';
+import { requireUmkmManager, type GuardResult } from '@/server/auth/guards';
 import {
   archiveProduct,
   createProduct,
@@ -20,19 +20,18 @@ import { readVendorForStaff } from '@/server/services/vendor-service';
 import type { ActionFailure, ActionResult } from '@/types/action-result';
 import type { ProductAdmin } from '@/types/product';
 
-// /dashboard/products (Task P4.3.06, docs/PRD.md FR-ADMIN-06, REC-13). Entry is the superadmin's (decision of the
-// user, 2026-10-24): an RW admin reads their own RW's products and changes none. This guard says so first, and the
-// database again: the products_umkm, umkm_vendors and product_variants write policies ask for is_superadmin()
-// (20261028080100, 20261105170200), and save_product refuses anyone else (20261105170400). A new product belongs to
-// the RW the RwSwitcher points at, never to one a form names, and its vendor has to be of that RW, which
-// products_umkm_vendor_rw_guard checks again.
+// /dashboard/products (Task P4.3.06, docs/PRD.md FR-ADMIN-06, REC-13). Entry is the UMKM managers': the superadmin
+// (decision of the user, 2026-10-24) and the Kopdes admin (docs/PRD.md §13.1 A30); an RW admin reads their own RW's
+// products and changes none. This guard says so first, and the database again: the products_umkm, umkm_vendors and
+// product_variants write policies ask for manages_umkm() (20261105180200), and save_product refuses anyone else. A new
+// product belongs to the RW the manager's RW choice points at, never to one a form names, and its vendor has to be of
+// that RW, which products_umkm_vendor_rw_guard checks again.
 
 const text = productsCopy;
 
-async function requireSuperadmin(): Promise<GuardResult> {
-  const guard = await requireAal2();
-  if (!guard.ok) return guard;
-  return guard.ctx.role === 'superadmin'
+async function requireManager(): Promise<GuardResult> {
+  const guard = await requireUmkmManager();
+  return guard.ok || guard.error.code !== 'FORBIDDEN'
     ? guard
     : fail('FORBIDDEN', undefined, text.entryOnlySuper);
 }
@@ -46,9 +45,9 @@ async function refusedVendor(vendorId: string, rwId: RwId): Promise<ActionFailur
 export async function createProductAction(input: unknown): Promise<ActionResult<ProductAdmin>> {
   const parsed = createProductSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
-  const guard = await requireSuperadmin();
+  const guard = await requireManager();
   if (!guard.ok) return guard;
-  const target = await requireRwContentOwner(guard.ctx);
+  const target = await requireUmkmRw(guard.ctx);
   if (!target.ok) return target;
 
   try {
@@ -65,7 +64,7 @@ export async function createProductAction(input: unknown): Promise<ActionResult<
 export async function updateProductAction(input: unknown): Promise<ActionResult<ProductAdmin>> {
   const parsed = updateProductSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
-  const guard = await requireSuperadmin();
+  const guard = await requireManager();
   if (!guard.ok) return guard;
 
   try {
@@ -85,7 +84,7 @@ export async function updateProductAction(input: unknown): Promise<ActionResult<
 export async function archiveProductAction(input: unknown): Promise<ActionResult<null>> {
   const parsed = rowRefSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
-  const guard = await requireSuperadmin();
+  const guard = await requireManager();
   if (!guard.ok) return guard;
 
   try {

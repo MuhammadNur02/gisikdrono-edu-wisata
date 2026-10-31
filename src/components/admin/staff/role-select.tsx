@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { staffCopy } from '@/lib/copy/staff';
-import { STAFF_ROLES, type AssignableRole } from '@/lib/validations/staff';
+import { isAssignableRole, STAFF_ROLES, type AssignableRole } from '@/lib/validations/staff';
 
 // The role and RW pickers of the invite sheet and the role dialog (Task P4.8.03). FormControl sits around the
 // trigger, not the Select root, which renders no element, so the label and the error reach what the officer operates.
@@ -27,10 +27,6 @@ type TriggerProps = Pick<ControllerRenderProps<FieldValues, string>, 'ref' | 'on
 export interface RwOption {
   id: number;
   name: string;
-}
-
-function isAssignableRole(value: string): value is AssignableRole {
-  return STAFF_ROLES.some((role) => role === value);
 }
 
 function RoleSelect({
@@ -106,16 +102,16 @@ interface FieldBase<TValues extends FieldValues, TOutput> {
   label: string;
 }
 
-// The role of a form, as a labelled field. Choosing superadmin clears the RW (onSuperadmin), which only an RW admin
-// has.
+// The role of a form, as a labelled field. Choosing any role but RW admin clears the RW (onRoleWithoutRw), which only
+// an RW admin has: the superadmin and the Kopdes admin work for the whole kelurahan.
 export function RoleField<TValues extends FieldValues, TOutput>({
   control,
   name,
   label,
-  onSuperadmin,
+  onRoleWithoutRw,
 }: FieldBase<TValues, TOutput> & {
   name: FieldPathByValue<TValues, AssignableRole>;
-  onSuperadmin: () => void;
+  onRoleWithoutRw: () => void;
 }) {
   return (
     <FormField
@@ -132,7 +128,7 @@ export function RoleField<TValues extends FieldValues, TOutput>({
             trigger={field}
             onChange={(next) => {
               field.onChange(next);
-              if (next === 'superadmin') onSuperadmin();
+              if (next !== 'admin_rw') onRoleWithoutRw();
             }}
           />
         );

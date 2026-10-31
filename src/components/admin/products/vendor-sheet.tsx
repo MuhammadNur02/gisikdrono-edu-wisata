@@ -20,14 +20,16 @@ export interface VendorSheetProps {
   // `RW 05 Ecowastreme`, or null under Semua, where the sheet asks for an RW first.
   rwName: string | null;
   vendors: readonly VendorAdmin[];
-  // Only the superadmin registers and edits vendors (decision of 2026-10-24) and their bank accounts (P4.3.06); an RW
-  // admin reads their own vendors.
+  // Only the UMKM managers, the superadmin (decision of 2026-10-24) and the Kopdes admin (docs/PRD.md §13.1 A30),
+  // register and edit vendors and their bank accounts (P4.3.06); an RW admin reads their own vendors.
   actions: { create: VendorAction; update: VendorAction; bank: BankAccountActions } | null;
+  // Open as the page loads (the menu's Penjual UMKM).
+  defaultOpen?: boolean;
 }
 
-export function VendorSheet(props: VendorSheetProps) {
-  const [open, setOpen] = useState(false);
-  const [hasOpened, setHasOpened] = useState(false);
+export function VendorSheet({ defaultOpen = false, ...props }: VendorSheetProps) {
+  const [open, setOpen] = useState(defaultOpen);
+  const [hasOpened, setHasOpened] = useState(defaultOpen);
   return (
     <>
       <Button

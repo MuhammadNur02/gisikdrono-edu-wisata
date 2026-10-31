@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
-import { CodeConfirmForm } from '@/components/admin/staff/change-forms';
+import { CodeConfirmForm } from '@/components/admin/staff/code-confirm-form';
 import { ResponsiveDialog } from '@/components/ui/responsive-dialog';
 import { securityCopy } from '@/lib/copy/security';
 import { withStepUp } from '@/lib/utils/step-up';

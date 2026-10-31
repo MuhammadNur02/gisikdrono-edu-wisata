@@ -3,7 +3,7 @@
 -- with the admin_rw window of a week back to a month ahead (decision of 2026-10-16). Every check runs as an
 -- API role.
 begin;
-select plan(42);
+select plan(45);
 \ir helpers/rls_personas.psql
 
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax, status) values
@@ -235,6 +235,27 @@ select is(
   3,
   'and reads every timeline'
 );
+
+-- ===== admin_kopdes =====
+-- docs/PRD.md §13.1 A30: the Koperasi Merah Putih's admin runs UMKM only, so no booking reaches it, nor its legs,
+-- add-ons (UMKM goods included), participants, events, OTPs or the staff views of them.
+reset role;
+select pg_temp.act_as('admin_kopdes');
+select is(
+  pg_temp.rows_seen($$select 1 from public.bookings where pg_temp.is_fixture_booking(id)$$)
+  + pg_temp.rows_seen($$select 1 from public.booking_legs where pg_temp.is_fixture_booking(booking_id)$$)
+  + pg_temp.rows_seen($$select 1 from public.booking_addons where pg_temp.is_fixture_booking(booking_id)$$)
+  + pg_temp.rows_seen($$select 1 from public.booking_participants where pg_temp.is_fixture_booking(booking_id)$$)
+  + pg_temp.rows_seen($$select 1 from public.booking_events where pg_temp.is_fixture_booking(booking_id)$$)
+  + pg_temp.rows_seen($$select 1 from public.guest_otps$$)
+  + pg_temp.rows_seen($$select 1 from public.v_bookings_staff where booking_code in ('GSK-W5000001', 'GSK-WC000001')$$),
+  0,
+  'the Kopdes admin sees no booking, leg, add-on, participant, event, OTP or staff booking view row'
+);
+select ok(pg_temp.write_refused($$update public.bookings set admin_notes = 'Kopdes' where pg_temp.is_fixture_booking(id)$$),
+  'and writes no booking note');
+select ok(pg_temp.write_refused($$update public.booking_addons set fulfillment_status = 'prepared'
+  where pg_temp.is_fixture_booking(booking_id)$$), 'nor fulfils an add-on, not even a UMKM one');
 
 select * from finish();
 rollback;

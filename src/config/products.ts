@@ -9,6 +9,12 @@ export const PRODUCT_PATHS = {
   publicPrefix: '/produk/',
 } as const;
 
+// docs/PRD.md §13.1 A30: the menu's Penjual UMKM opens /dashboard/products with its vendors sheet already open
+// (`?penjual=buka`), so the Kopdes admin finds its sellers in one step; the sheet stays where it was for everyone.
+export const VENDORS_OPEN_PARAM = 'penjual';
+export const VENDORS_OPEN_VALUE = 'buka';
+export const VENDORS_PATH = `${PRODUCT_PATHS.list}?${VENDORS_OPEN_PARAM}=${VENDORS_OPEN_VALUE}`;
+
 export const PRODUCT_LIMITS = {
   name: 120,
   descriptionMd: 4000,

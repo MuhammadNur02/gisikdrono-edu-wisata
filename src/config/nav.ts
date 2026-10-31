@@ -20,6 +20,7 @@ import {
   Settings,
   ShieldAlert,
   ShoppingBag,
+  Store,
   SlidersHorizontal,
   UserCheck,
   Users,
@@ -51,8 +52,14 @@ export interface DashboardNavGroup {
   items: readonly DashboardNavItem[];
 }
 
+// The edu-wisata staff: the superadmin and the RW admins. The Koperasi Merah Putih's admin_kopdes sees the overview,
+// the UMKM catalogue and its catalogue settings only (docs/PRD.md §13.1 A30).
 const BOTH_ROLES = ['superadmin', 'admin_rw'] as const;
 const SUPERADMIN_ONLY = ['superadmin'] as const;
+const KOPDES_ONLY = ['admin_kopdes'] as const;
+// ALL_STAFF_ROLES of src/config/staff.ts, spelled out here like the groups above: this file reaches client bundles
+// (error-notice.tsx reads the home link), which the staff config should not.
+const ALL_ROLES = ['superadmin', 'admin_rw', 'admin_kopdes'] as const;
 
 // Every staff route of CLAUDE.md Appendix A.3 a role may open; requireRole() and RLS guard each of them as well,
 // so a hidden item is never the only lock. The overview group is called Ringkasan on screen (Indonesian copy only,
@@ -60,7 +67,7 @@ const SUPERADMIN_ONLY = ['superadmin'] as const;
 export const DASHBOARD_NAV_GROUPS: readonly DashboardNavGroup[] = [
   {
     title: 'Ringkasan',
-    items: [{ label: 'Dasbor', href: '/dashboard', icon: LayoutDashboard, roles: BOTH_ROLES }],
+    items: [{ label: 'Dasbor', href: '/dashboard', icon: LayoutDashboard, roles: ALL_ROLES }],
   },
   {
     title: 'Operasional',
@@ -105,7 +112,26 @@ export const DASHBOARD_NAV_GROUPS: readonly DashboardNavGroup[] = [
     title: 'Katalog',
     items: [
       { label: 'Paket Wisata', href: '/dashboard/packages', icon: Package, roles: BOTH_ROLES },
-      { label: 'Produk UMKM', href: '/dashboard/products', icon: ShoppingBag, roles: BOTH_ROLES },
+      {
+        label: 'Produk UMKM',
+        href: '/dashboard/products',
+        icon: ShoppingBag,
+        roles: ALL_ROLES,
+      },
+      // The products page with its vendors sheet open (VENDORS_PATH of src/config/products.ts); the superadmin and an RW admin open the sheet from that page.
+      {
+        label: 'Penjual UMKM',
+        href: '/dashboard/products?penjual=buka',
+        icon: Store,
+        roles: KOPDES_ONLY,
+      },
+      // The superadmin's Pengaturan holds every key; the Kopdes admin's page of it the catalogue keys alone.
+      {
+        label: 'Pengaturan Katalog',
+        href: '/dashboard/settings',
+        icon: SlidersHorizontal,
+        roles: KOPDES_ONLY,
+      },
     ],
   },
   {

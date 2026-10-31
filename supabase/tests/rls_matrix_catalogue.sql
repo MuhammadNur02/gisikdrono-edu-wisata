@@ -1,7 +1,7 @@
 -- RLS matrix for the catalogue: tour_packages, tour_package_legs, tour_package_price_tiers, package_price_history,
 -- umkm_vendors, products_umkm (docs/PRD.md §8.5.2, Task P1.4.02, P1.4.03, P1.9.02). Every check runs as an API role.
 begin;
-select plan(43);
+select plan(55);
 \ir helpers/rls_personas.psql
 
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax, status) values
@@ -174,6 +174,53 @@ select is(pg_temp.row_count($$delete from public.tour_packages where id = '00000
   'and deletes a package');
 select throws_ok($$select bank_name from public.umkm_vendors$$, '42501', null,
   'but reads no bank account through the API either');
+
+-- ===== admin_kopdes =====
+-- docs/PRD.md §13.1 A30: the Koperasi Merah Putih's admin manages the UMKM catalogue of every RW (20261105180200), and
+-- nothing of the ticket catalogue.
+reset role;
+select pg_temp.act_as('admin_kopdes');
+select is((select string_agg(slug, ',' order by slug) from public.umkm_vendors where slug in ('v5', 'v5i', 'v8')),
+  'v5,v5i,v8', 'the Kopdes admin sees the vendors of every RW, inactive ones included');
+select is((select string_agg(slug, ',' order by slug) from public.products_umkm where slug in ('pr5', 'pr5d', 'pr8')),
+  'pr5,pr5d,pr8', 'and every RW''s products, drafts included');
+select throws_ok($$select bank_name from public.umkm_vendors$$, '42501', null,
+  'but no bank column directly: those go through the bank RPCs');
+select is(
+  pg_temp.rows_seen($$select 1 from public.tour_packages where pg_temp.is_fixture_package(id)$$)
+  + pg_temp.rows_seen($$select 1 from public.tour_package_legs where pg_temp.is_fixture_package(package_id)$$)
+  + pg_temp.rows_seen($$select 1 from public.tour_package_price_tiers where pg_temp.is_fixture_package(package_id)$$)
+  + pg_temp.rows_seen($$select 1 from public.package_price_history where pg_temp.is_fixture_package(package_id)$$),
+  0,
+  'no package, leg, tier or price history'
+);
+select lives_ok($$insert into public.umkm_vendors (rw_id, slug, name, created_by)
+  values (8, 'v8-kopdes', 'Vendor Kopdes', '00000000-0000-4000-8000-00000000f0c0')$$,
+  'registers a vendor for any RW, signed with its own id');
+select throws_ok($$insert into public.umkm_vendors (rw_id, slug, name, created_by)
+  values (8, 'v8-lain', 'Vendor Lain', '00000000-0000-4000-8000-00000000f001')$$, '42501', null,
+  'never in someone else''s name');
+select is(pg_temp.row_count($$update public.umkm_vendors set phone = '+6281200000999' where slug = 'v8'$$), 1,
+  'edits a vendor''s contact');
+select is(pg_temp.row_count($$update public.products_umkm set name = 'Kompos Kopdes' where slug = 'pr5'$$), 1,
+  'and a product of any RW');
+select ok(pg_temp.write_refused($$update public.tour_packages set name = 'Kopdes' where pg_temp.is_fixture_package(id)$$),
+  'but no package');
+select ok(pg_temp.write_refused($$insert into public.tour_packages (rw_id, category, slug, name, price_per_pax,
+  created_by, updated_by) values (5, 'regular', 'p5-kopdes', 'Paket Kopdes', 25000,
+  '00000000-0000-4000-8000-00000000f0c0', '00000000-0000-4000-8000-00000000f0c0')$$), 'and creates none');
+
+-- ===== admin_kopdes without AAL2 =====
+reset role;
+select pg_temp.act_as('admin_kopdes_aal1');
+select is(
+  (select count(*)::int from public.umkm_vendors where slug in ('v5', 'v5i', 'v8'))
+  + (select count(*)::int from public.products_umkm where slug in ('pr5', 'pr5d', 'pr8')),
+  0,
+  'without AAL2 the Kopdes admin reads no vendor and no product'
+);
+select throws_ok($$insert into public.umkm_vendors (rw_id, slug, name, created_by)
+  values (5, 'v5-aal1', 'Vendor AAL1', '00000000-0000-4000-8000-00000000f0c0')$$, '42501', null, 'and writes none');
 
 select * from finish();
 rollback;

@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { ProfileForm } from '@/components/admin/profile/profile-form';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { Card, CardContent } from '@/components/ui/card';
+import { ALL_STAFF_ROLES } from '@/config/staff';
 import { copy } from '@/lib/copy/id';
 import { staffCopy } from '@/lib/copy/staff';
 import { staffRoleLabel } from '@/lib/utils/staff-labels';
@@ -18,7 +19,7 @@ export const metadata: Metadata = { title: text.title };
 // superadmin hands over after an MFA reset (P4.8.05, docs/Security.md R24), so the page says how instead of offering
 // a self-service replacement; the avatar waits for its own upload purpose (Task.md P4.8.03 note).
 export default async function ProfilePage() {
-  const ctx = await requireDashboardStaff();
+  const ctx = await requireDashboardStaff(ALL_STAFF_ROLES);
   if (!ctx) return null;
   const profile = await readOwnProfile(ctx.userId);
 
@@ -30,7 +31,7 @@ export default async function ProfilePage() {
           <CardContent className="space-y-6">
             <div className="space-y-1">
               <p className="text-body-sm font-medium">{text.role}</p>
-              <p className="text-body-sm">{staffRoleLabel(ctx.rwId)}</p>
+              <p className="text-body-sm">{staffRoleLabel(ctx.role, ctx.rwId)}</p>
             </div>
             <ProfileForm profile={profile} action={updateProfileAction} />
           </CardContent>

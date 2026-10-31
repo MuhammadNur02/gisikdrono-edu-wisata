@@ -9,7 +9,8 @@ select enums_are(
   'public has exactly the enums of PRD §8.3'
 );
 
-select enum_has_labels('public', 'app_role', array['superadmin', 'admin_rw', 'none']);
+-- admin_kopdes of 20261105180000 (docs/PRD.md §13.1 A30), placed before none.
+select enum_has_labels('public', 'app_role', array['superadmin', 'admin_rw', 'admin_kopdes', 'none']);
 select enum_has_labels('public', 'content_status', array['draft', 'pending_review', 'published', 'archived']);
 select enum_has_labels('public', 'session_status', array['open', 'closed', 'cancelled']);
 select enum_has_labels('public', 'package_category', array['regular', 'student', 'institutional', 'combo']);

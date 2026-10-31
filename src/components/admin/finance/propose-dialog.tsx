@@ -2,12 +2,12 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { FilePlus2, Search } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, type ComponentProps } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
-import { ProposeForm } from '@/components/admin/finance/propose-form';
 import { FormAlert } from '@/components/forms/form-alert';
 import { FormField } from '@/components/forms/form-field';
 import { PostForm } from '@/components/forms/post-form';
@@ -23,6 +23,12 @@ import { bookingLookupSchema } from '@/lib/validations/finance';
 import type { ActionResult } from '@/types/action-result';
 import type { FinanceBooking } from '@/types/finance';
 
+// The proposal form, with its select, evidence upload and money field, loads when a booking is found, so the
+// adjustments page ships only the lookup (admin first-load budget, review of PR #117).
+const ProposeForm = dynamic(() =>
+  import('@/components/admin/finance/propose-form').then((module) => module.ProposeForm),
+);
+
 const text = adjustmentsCopy;
 
 export interface ProposeDialogProps {
@@ -31,11 +37,28 @@ export interface ProposeDialogProps {
   stepUpAction: (values: unknown) => Promise<ActionResult<null>>;
 }
 
-function BookingLookup({ findAction, onFound }: Pick<ProposeDialogProps, 'findAction'> & {
+function BookingCodeInput(props: ComponentProps<typeof Input>) {
+  return (
+    <Input {...props} autoCapitalize="characters" placeholder="GSK-XXXXXXXX" className="h-11" />
+  );
+}
+
+function BookingLookup({
+  findAction,
+  onFound,
+}: Pick<ProposeDialogProps, 'findAction'> & {
   onFound: (booking: FinanceBooking) => void;
 }) {
-  const form = useForm({ resolver: zodResolver(bookingLookupSchema), defaultValues: { bookingCode: '' } });
-  const { submit, failure } = useActionForm({ form, action: findAction, fields: ['bookingCode'], onSuccess: onFound });
+  const form = useForm({
+    resolver: zodResolver(bookingLookupSchema),
+    defaultValues: { bookingCode: '' },
+  });
+  const { submit, failure } = useActionForm({
+    form,
+    action: findAction,
+    fields: ['bookingCode'],
+    onSuccess: onFound,
+  });
   return (
     <Form {...form}>
       <PostForm onSubmit={submit}>
@@ -45,7 +68,7 @@ function BookingLookup({ findAction, onFound }: Pick<ProposeDialogProps, 'findAc
           name="bookingCode"
           label={text.lookup.code}
           required
-          render={(field) => <Input {...field} autoCapitalize="characters" placeholder="GSK-XXXXXXXX" className="h-11" />}
+          render={(field) => <BookingCodeInput {...field} />}
         />
         <Button type="submit" className="min-h-11 w-full" loading={form.formState.isSubmitting}>
           <Search aria-hidden />
@@ -53,6 +76,35 @@ function BookingLookup({ findAction, onFound }: Pick<ProposeDialogProps, 'findAc
         </Button>
       </PostForm>
     </Form>
+  );
+}
+
+function ProposeButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button type="button" className="min-h-11" onClick={onClick}>
+      <FilePlus2 aria-hidden />
+      {text.propose}
+    </Button>
+  );
+}
+
+// The booking the lookup found, and the proposal for it.
+function FoundBooking({
+  booking,
+  submit,
+  onDone,
+}: {
+  booking: FinanceBooking;
+  submit: (values: unknown) => Promise<ActionResult<unknown>>;
+  onDone: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <p className="text-body-sm font-medium">
+        {text.lookup.summary(booking.bookingCode, formatIDR(booking.totalAmount))}
+      </p>
+      <ProposeForm booking={booking} submit={submit} onDone={onDone} />
+    </div>
   );
 }
 
@@ -68,25 +120,31 @@ export function ProposeDialog({ findAction, proposeAction, stepUpAction }: Propo
   };
   return (
     <>
-      <Button type="button" className="min-h-11" onClick={() => { open(true); }}>
-        <FilePlus2 aria-hidden />
-        {text.propose}
-      </Button>
-      <ResponsiveDialog open={isOpen} onOpenChange={open} title={text.propose} description={text.description} size="form">
-        {isOpen && booking === null ? <BookingLookup findAction={findAction} onFound={setBooking} /> : null}
+      <ProposeButton
+        onClick={() => {
+          open(true);
+        }}
+      />
+      <ResponsiveDialog
+        open={isOpen}
+        onOpenChange={open}
+        title={text.propose}
+        description={text.description}
+        size="form"
+      >
+        {isOpen && booking === null ? (
+          <BookingLookup findAction={findAction} onFound={setBooking} />
+        ) : null}
         {isOpen && booking !== null ? (
-          <div className="space-y-4">
-            <p className="text-body-sm font-medium">{text.lookup.summary(booking.bookingCode, formatIDR(booking.totalAmount))}</p>
-            <ProposeForm
-              booking={booking}
-              submit={withStepUp(stepUpAction, proposeAction)}
-              onDone={() => {
-                toast.success(text.proposed);
-                open(false);
-                router.refresh();
-              }}
-            />
-          </div>
+          <FoundBooking
+            booking={booking}
+            submit={withStepUp(stepUpAction, proposeAction)}
+            onDone={() => {
+              toast.success(text.proposed);
+              open(false);
+              router.refresh();
+            }}
+          />
         ) : null}
       </ResponsiveDialog>
     </>

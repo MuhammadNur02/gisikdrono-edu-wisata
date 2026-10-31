@@ -67,11 +67,11 @@ rules:
   - id: server-action-without-guard
     message: >-
       A 'use server' file must call a guard (requireUser, requireOnboardingUser, requireRole, requireRwAccess,
-      requireAal2, requireFreshTotp, requireGuestToken or verifyTurnstile) before doing anything
+      requireAal2, requireFreshTotp, requireUmkmManager, requireGuestToken or verifyTurnstile) before doing anything
       (CLAUDE.md §5.2).
     severity: ERROR
     languages: [typescript, javascript]
-    pattern-regex: (?s)\A(?!.*\b(?:requireUser|requireOnboardingUser|requireRole|requireRwAccess|requireAal2|requireFreshTotp|requireGuestToken|verifyTurnstile)\b).*?['"]use server['"]
+    pattern-regex: (?s)\A(?!.*\b(?:requireUser|requireOnboardingUser|requireRole|requireRwAccess|requireAal2|requireFreshTotp|requireUmkmManager|requireGuestToken|verifyTurnstile)\b).*?['"]use server['"]
 
   - id: spread-into-insert-or-update
     message: >-

@@ -42,6 +42,23 @@ describe('inviteStaffSchema', () => {
     ).toEqual(['rwId']);
   });
 
+  // docs/PRD.md §13.1 A30: the Koperasi Merah Putih's admin works for the whole kelurahan.
+  it('takes a Kopdes admin without an RW and refuses one with an RW', () => {
+    expect(
+      inviteStaffSchema.safeParse({ email: 'kopdes@b.id', role: 'admin_kopdes', rwId: null })
+        .success,
+    ).toBe(true);
+    const withRw = inviteStaffSchema.safeParse({
+      email: 'kopdes@b.id',
+      role: 'admin_kopdes',
+      rwId: 5,
+    });
+    expect(issuePaths(withRw)).toEqual(['rwId']);
+    expect(
+      setStaffRoleSchema.safeParse({ userId: USER_ID, role: 'admin_kopdes', rwId: null }).success,
+    ).toBe(true);
+  });
+
   it("never invites to the role 'none', and refuses an unknown field", () => {
     expect(inviteStaffSchema.safeParse({ email: 'a@b.id', role: 'none', rwId: null }).success).toBe(
       false,

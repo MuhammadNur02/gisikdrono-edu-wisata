@@ -20,7 +20,12 @@ import { removeFilesOrLog } from '@/server/services/content-files';
 import { keepRowPhotos } from '@/server/services/upload-service';
 import type { CleanedUp } from '@/types/cms';
 import type { ListResult } from '@/types/data-table';
-import type { ProductAdmin, ProductListItem, ProductVariantAdmin } from '@/types/product';
+import type {
+  ProductAdmin,
+  ProductListItem,
+  ProductVariantAdmin,
+  UmkmCatalogueCounts,
+} from '@/types/product';
 
 // UMKM products through the session client (Task P4.3.06, docs/PRD.md FR-ADMIN-06, REC-13): products_umkm_staff_read
 // shows staff their own RW's products, products_umkm_vendor_rw_guard keeps a product in its vendor's RW, and the
@@ -199,4 +204,32 @@ export async function archiveProduct(id: string): Promise<void> {
     .maybeSingle();
   if (error) throw error;
   rowOrNotFound(data);
+}
+
+// docs/PRD.md §13.1 A30: the Kopdes admin's overview, counted under RLS, which shows it every RW's UMKM rows and
+// nothing else; no booking or revenue figure reaches it.
+export async function countUmkmCatalogue(): Promise<UmkmCatalogueCounts> {
+  const supabase = await createSupabaseServerClient();
+  const [published, drafts, vendors] = await Promise.all([
+    supabase
+      .from('products_umkm')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'published'),
+    supabase
+      .from('products_umkm')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'draft'),
+    supabase
+      .from('umkm_vendors')
+      .select('id', { count: 'exact', head: true })
+      .eq('is_active', true),
+  ]);
+  for (const counted of [published, drafts, vendors]) {
+    if (counted.error) throw counted.error;
+  }
+  return {
+    publishedProducts: published.count ?? 0,
+    draftProducts: drafts.count ?? 0,
+    activeVendors: vendors.count ?? 0,
+  };
 }

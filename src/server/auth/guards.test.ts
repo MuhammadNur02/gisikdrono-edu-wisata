@@ -7,6 +7,7 @@ import {
   requireFreshTotp,
   requireRole,
   requireRwAccess,
+  requireUmkmManager,
   requireGuestToken,
   requireUser,
   type StaffContext,
@@ -180,21 +181,46 @@ describe('hasUploadAccess', () => {
     claimsVersion: 1,
   };
   const superadmin: StaffContext = { ...officer05, role: 'superadmin', rwId: null };
+  // docs/PRD.md §13.1 A30: the Kopdes admin publishes product photos of any RW, and nothing else.
+  const kopdes: StaffContext = { ...officer05, role: 'admin_kopdes', rwId: null };
 
   it('lets an RW officer upload for their own RW only, and never for the kelurahan', () => {
-    expect(hasUploadAccess(officer05, 5)).toBe(true);
-    expect(hasUploadAccess(officer05, 8)).toBe(false);
-    expect(hasUploadAccess(officer05, null)).toBe(false);
+    expect(hasUploadAccess(officer05, 5, 'gallery')).toBe(true);
+    expect(hasUploadAccess(officer05, 8, 'gallery')).toBe(false);
+    expect(hasUploadAccess(officer05, null, null)).toBe(false);
   });
 
   it('lets the superadmin upload for every RW and the kelurahan', () => {
-    expect(hasUploadAccess(superadmin, 8)).toBe(true);
-    expect(hasUploadAccess(superadmin, null)).toBe(true);
+    expect(hasUploadAccess(superadmin, 8, 'product')).toBe(true);
+    expect(hasUploadAccess(superadmin, null, 'hero')).toBe(true);
   });
 
   it('stops a session that has not passed TOTP, because the service role skips the AAL2 policy', () => {
-    expect(hasUploadAccess({ ...officer05, isAal2: false }, 5)).toBe(false);
-    expect(hasUploadAccess({ ...superadmin, isAal2: false }, null)).toBe(false);
+    expect(hasUploadAccess({ ...officer05, isAal2: false }, 5, null)).toBe(false);
+    expect(hasUploadAccess({ ...superadmin, isAal2: false }, null, null)).toBe(false);
+    expect(hasUploadAccess({ ...kopdes, isAal2: false }, 5, 'product')).toBe(false);
+  });
+
+  it('lets the Kopdes admin publish a product photo for any RW', () => {
+    expect(hasUploadAccess(kopdes, 5, 'product')).toBe(true);
+    expect(hasUploadAccess(kopdes, 13, 'product')).toBe(true);
+    expect(hasUploadAccess(kopdes, 8, null)).toBe(true);
+  });
+
+  it('but no gallery, hero, article, booklet, package or activity point file, and nothing for the kelurahan', () => {
+    for (const purpose of [
+      'gallery',
+      'hero',
+      'article',
+      'booklet',
+      'booklet-page',
+      'package',
+      'activity-point',
+    ] as const) {
+      expect(hasUploadAccess(kopdes, 5, purpose)).toBe(false);
+    }
+    expect(hasUploadAccess(kopdes, null, 'product')).toBe(false);
+    expect(hasUploadAccess(kopdes, null, null)).toBe(false);
   });
 });
 
@@ -202,6 +228,32 @@ describe('requireAal2', () => {
   it('stops a session that has not passed TOTP yet', async () => {
     signInAs({ app_role: 'superadmin', aal: 'aal1' });
     expect(await requireAal2()).toMatchObject({ error: { code: 'FORBIDDEN' } });
+  });
+
+  // docs/PRD.md §13.1 A30: an action that names no roles is the edu-wisata staff's, so it stays closed to the Kopdes
+  // admin, the database refusing it there again.
+  it('means the edu-wisata staff when it names no roles, and keeps the Kopdes admin out', async () => {
+    signInAs({ app_role: 'admin_rw', app_rw_id: 5 });
+    expect((await requireAal2()).ok).toBe(true);
+    signInAs({ app_role: 'admin_kopdes' });
+    expect(await requireAal2()).toMatchObject({ error: { code: 'FORBIDDEN' } });
+    expect((await requireAal2(['admin_kopdes'])).ok).toBe(true);
+  });
+});
+
+describe('requireUmkmManager', () => {
+  it('lets the superadmin and the Kopdes admin in at AAL2, and nobody else', async () => {
+    signInAs({ app_role: 'superadmin' });
+    expect((await requireUmkmManager()).ok).toBe(true);
+    signInAs({ app_role: 'admin_kopdes' });
+    expect(await requireUmkmManager()).toMatchObject({
+      ok: true,
+      ctx: { role: 'admin_kopdes', rwId: null },
+    });
+    signInAs({ app_role: 'admin_kopdes', aal: 'aal1' });
+    expect(await requireUmkmManager()).toMatchObject({ error: { code: 'FORBIDDEN' } });
+    signInAs({ app_role: 'admin_rw', app_rw_id: 5 });
+    expect(await requireUmkmManager()).toMatchObject({ error: { code: 'FORBIDDEN' } });
   });
 });
 
@@ -215,6 +267,12 @@ describe('requireFreshTotp', () => {
       ],
     });
     expect((await requireFreshTotp(300)).ok).toBe(true);
+  });
+
+  it('keeps the Kopdes admin out unless the action names its role', async () => {
+    signInAs({ app_role: 'admin_kopdes', amr: [{ method: 'totp', timestamp: nowSeconds - 60 }] });
+    expect(await requireFreshTotp(300)).toMatchObject({ error: { code: 'FORBIDDEN' } });
+    expect((await requireFreshTotp(300, ['superadmin', 'admin_kopdes'])).ok).toBe(true);
   });
 
   it('rejects a TOTP check older than the window, or none at all', async () => {

@@ -1,5 +1,26 @@
 // /dashboard/users and the staff RPCs it calls (Task P4.8.02, P4.8.03, docs/Security.md §5.1, §5.3, §5.6).
 
+import type { AppRole } from '@/db/enums';
+
+type StaffRole = Exclude<AppRole, 'none'>;
+
+// docs/PRD.md §13.1 A30: who works on which side of the dashboard. The edu-wisata side (bookings, sessions, tickets, RW
+// content, finance, users) belongs to the kelurahan and the RWs; the Koperasi Merah Putih's admin_kopdes runs UMKM only,
+// beside the superadmin, as manages_umkm() says in the database.
+export const EDU_WISATA_ROLES = ['superadmin', 'admin_rw'] as const satisfies readonly StaffRole[];
+export const UMKM_MANAGER_ROLES = [
+  'superadmin',
+  'admin_kopdes',
+] as const satisfies readonly StaffRole[];
+// Everything every staff member does for themselves: the dashboard shell, their profile, the TOTP re-check.
+export const ALL_STAFF_ROLES = [
+  'superadmin',
+  'admin_rw',
+  'admin_kopdes',
+] as const satisfies readonly StaffRole[];
+// What /dashboard/products reads: an RW admin their own RW's products and vendors, read-only (decision of 2026-10-24).
+export const UMKM_READER_ROLES = ALL_STAFF_ROLES;
+
 export const USERS_PATH = '/dashboard/users';
 export const AUDIT_LOGS_PATH = '/dashboard/audit-logs';
 export const SECURITY_ALERTS_PATH = '/dashboard/security-alerts';

@@ -8,10 +8,11 @@ import { BackLink } from '@/components/admin/shell/back-link';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { FormAlert } from '@/components/forms/form-alert';
 import { PRODUCT_PATHS } from '@/config/products';
+import { ALL_STAFF_ROLES } from '@/config/staff';
 import { copy } from '@/lib/copy/id';
 import { productsCopy } from '@/lib/copy/products';
 import { createProductAction } from '@/server/actions/products';
-import { ownerOfNewContent, readRwScope } from '@/server/auth/content-owner';
+import { isUmkmManager, readRwScope, umkmRwFor } from '@/server/auth/content-owner';
 import { requireDashboardStaff } from '@/server/auth/session';
 import { listVendorsForStaff } from '@/server/services/vendor-service';
 
@@ -37,13 +38,14 @@ function NoticePage({ message }: { message: string }) {
   );
 }
 
-// Task P4.3.06, docs/PRD.md FR-ADMIN-06. Only the superadmin registers products (decision of 2026-10-24), for the RW
-// the RwSwitcher points at and one of its vendors. Photos come after the first save, once the product has an id.
+// Task P4.3.06, docs/PRD.md FR-ADMIN-06. Only the UMKM managers register products, the superadmin (decision of
+// 2026-10-24) and the Kopdes admin (§13.1 A30), for the RW their RW choice points at and one of its vendors. Photos
+// come after the first save, once the product has an id.
 export default async function NewProductPage() {
-  const ctx = await requireDashboardStaff();
+  const ctx = await requireDashboardStaff(ALL_STAFF_ROLES);
   if (!ctx) return null;
-  if (ctx.role !== 'superadmin') notFound();
-  const rwId = ownerOfNewContent(ctx, await readRwScope()) ?? null;
+  if (!isUmkmManager(ctx)) notFound();
+  const rwId = umkmRwFor(ctx, await readRwScope());
   if (rwId === null) return <NoticePage message={copy.cms.chooseRw} />;
   const vendors = await listVendorsForStaff(rwId);
   const [firstVendor] = vendors;

@@ -36,7 +36,16 @@ describe('requireDashboardStaff', () => {
     vi.mocked(requireRole).mockResolvedValue({ ok: true, ctx: OFFICER });
 
     expect(await requireDashboardStaff()).toEqual(OFFICER);
-    expect(requireRole).toHaveBeenCalledWith('superadmin', 'admin_rw');
+    expect(requireRole).toHaveBeenCalledWith('superadmin', 'admin_rw', 'admin_kopdes');
+  });
+
+  // docs/PRD.md §13.1 A30: a page that names no roles is the edu-wisata staff's; the Kopdes admin goes to the overview.
+  it('sends the Kopdes admin from an edu-wisata page to the overview, and lets it into one that names it', async () => {
+    const kopdes: StaffContext = { ...OFFICER, role: 'admin_kopdes', rwId: null };
+    vi.mocked(requireRole).mockResolvedValue({ ok: true, ctx: kopdes });
+
+    await expect(requireDashboardStaff()).rejects.toMatchObject({ to: '/dashboard' });
+    expect(await requireDashboardStaff(['superadmin', 'admin_kopdes'])).toEqual(kopdes);
   });
 
   it('sends a signed-out visitor to sign in and an AAL1 session to the TOTP step', async () => {

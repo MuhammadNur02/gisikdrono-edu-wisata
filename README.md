@@ -62,7 +62,7 @@ A hold's pay page, `/reservasi/<code>/bayar`, asks Midtrans for a Snap page with
 
 ### Local development accounts
 
-`pnpm db:seed` (`scripts/seed-dev.ts` with `scripts/seed-dev.sql`) creates four staff accounts with a verified TOTP factor. They exist only on your local database and in CI: the script takes its address from `supabase status` and refuses anything but `127.0.0.1`, and its SQL refuses any database whose Vault secret `environment` says anything but `local`, so these known credentials never reach an online project. The Supabase CLI's own seed is switched off, so `supabase db reset` writes no account anywhere. The credentials are not in `.env.example` on purpose.
+`pnpm db:seed` (`scripts/seed-dev.ts` with `scripts/seed-dev.sql`) creates five staff accounts with a verified TOTP factor. They exist only on your local database and in CI: the script takes its address from `supabase status` and refuses anything but `127.0.0.1`, and its SQL refuses any database whose Vault secret `environment` says anything but `local`, so these known credentials never reach an online project. The Supabase CLI's own seed is switched off, so `supabase db reset` writes no account anywhere. The credentials are not in `.env.example` on purpose.
 
 | Email | Role |
 |---|---|
@@ -70,9 +70,10 @@ A hold's pay page, `/reservasi/<code>/bayar`, asks Midtrans for a Snap page with
 | `admin-rw05@dev.gisikdrono.test` | admin_rw, RW 05 |
 | `admin-rw13@dev.gisikdrono.test` | admin_rw, RW 13 (the arts programme's account until 2026-10-21 was `admin-rw08`) |
 | `admin-rw08@dev.gisikdrono.test` | admin_rw, RW 08 |
+| `admin-kopdes@dev.gisikdrono.test` | admin_kopdes (Koperasi Merah Putih, UMKM only, no RW) |
 
-- Password (all four): `DEV-ONLY-local-Password-1!`
-- TOTP secret (all four): `DEVONLYLOCALTOTPGISIKDRONOSECRET`. Add it once to an authenticator app, or run `pnpm db:seed` again, which prints the accounts with the code of this moment.
+- Password (all five): `DEV-ONLY-local-Password-1!`
+- TOTP secret (all five): `DEVONLYLOCALTOTPGISIKDRONOSECRET`. Add it once to an authenticator app, or run `pnpm db:seed` again, which prints the accounts with the code of this moment.
 
 ## Status
 

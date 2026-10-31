@@ -52,7 +52,8 @@ beforeEach(() => {
 describe('setRwScopeAction', () => {
   it('keeps the superadmin’s choice in an httpOnly cookie under /dashboard', async () => {
     expect(await setRwScopeAction({ scope: 8 })).toEqual({ ok: true, data: null });
-    expect(requireRole).toHaveBeenCalledWith('superadmin');
+    // The superadmin's RwSwitcher, and the Kopdes admin's RW choice on its UMKM page (docs/PRD.md §13.1 A30).
+    expect(requireRole).toHaveBeenCalledWith('superadmin', 'admin_kopdes');
     expect(cookieJar.set).toHaveBeenCalledWith(
       'rw_scope',
       '8',
@@ -123,7 +124,7 @@ describe('updateProfileAction', () => {
       ok: true,
       data: { fullName: 'Superadmin Baru', email: 'super@dev.gisikdrono.test', phone: null },
     });
-    expect(requireRole).toHaveBeenCalledWith('superadmin', 'admin_rw');
+    expect(requireRole).toHaveBeenCalledWith('superadmin', 'admin_rw', 'admin_kopdes');
   });
 
   it('refuses an AAL1 session and a name with a link', async () => {
