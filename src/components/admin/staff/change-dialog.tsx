@@ -3,11 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
-import {
-  CodeConfirmForm,
-  RoleChangeForm,
-  StatusChangeForm,
-} from '@/components/admin/staff/change-forms';
+import { RoleChangeForm, StatusChangeForm } from '@/components/admin/staff/change-forms';
+import { CodeConfirmForm } from '@/components/admin/staff/code-confirm-form';
 import type { RwOption } from '@/components/admin/staff/role-select';
 import { ResponsiveDialog } from '@/components/ui/responsive-dialog';
 import { staffCopy } from '@/lib/copy/staff';
