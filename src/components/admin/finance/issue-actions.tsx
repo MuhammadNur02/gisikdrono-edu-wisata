@@ -6,7 +6,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 
 import { ResolveForm } from '@/components/admin/finance/resolve-form';
-import { CodeConfirmForm } from '@/components/admin/staff/change-forms';
+import { CodeConfirmForm } from '@/components/admin/staff/code-confirm-form';
 import { Button } from '@/components/ui/button';
 import { ResponsiveDialog } from '@/components/ui/responsive-dialog';
 import { reconciliationCopy } from '@/lib/copy/finance-adjustments';

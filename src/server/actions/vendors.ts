@@ -6,21 +6,20 @@ import { productsCopy } from '@/lib/copy/products';
 import { fail, mapError, ok } from '@/lib/errors';
 import { TAGS } from '@/lib/queries/tags';
 import { createVendorSchema, updateVendorSchema } from '@/lib/validations/product';
-import { requireRwContentOwner } from '@/server/auth/content-owner';
-import { requireAal2, type GuardResult } from '@/server/auth/guards';
+import { requireUmkmRw } from '@/server/auth/content-owner';
+import { requireUmkmManager, type GuardResult } from '@/server/auth/guards';
 import { createVendor, updateVendor } from '@/server/services/vendor-service';
 import type { ActionResult } from '@/types/action-result';
 import type { VendorAdmin } from '@/types/vendor';
 
-// The vendors sheet of /dashboard/products (Task P4.3.06, docs/PRD.md FR-ADMIN-06). Entry is the superadmin's
-// (decision of the user, 2026-10-24), which only this guard enforces until the RLS narrowing of Task P4.3.11; a new
-// vendor belongs to the RW the RwSwitcher points at. The bank and consent columns wait for their superadmin RPCs
-// (P4.3.06, a migration) and are part of no form here.
+// The vendors sheet of /dashboard/products (Task P4.3.06, docs/PRD.md FR-ADMIN-06). Entry is the UMKM managers': the
+// superadmin (decision of the user, 2026-10-24) and the Kopdes admin (docs/PRD.md §13.1 A30), as the umkm_vendors write
+// policies ask again (manages_umkm(), 20261105180200); a new vendor belongs to the RW the manager's RW choice points at.
+// The bank columns move through their own RPCs (src/server/actions/bank-accounts.ts) and are part of no form here.
 
-async function requireSuperadmin(): Promise<GuardResult> {
-  const guard = await requireAal2();
-  if (!guard.ok) return guard;
-  return guard.ctx.role === 'superadmin'
+async function requireManager(): Promise<GuardResult> {
+  const guard = await requireUmkmManager();
+  return guard.ok || guard.error.code !== 'FORBIDDEN'
     ? guard
     : fail('FORBIDDEN', undefined, productsCopy.entryOnlySuper);
 }
@@ -28,9 +27,9 @@ async function requireSuperadmin(): Promise<GuardResult> {
 export async function createVendorAction(input: unknown): Promise<ActionResult<VendorAdmin>> {
   const parsed = createVendorSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
-  const guard = await requireSuperadmin();
+  const guard = await requireManager();
   if (!guard.ok) return guard;
-  const target = await requireRwContentOwner(guard.ctx);
+  const target = await requireUmkmRw(guard.ctx);
   if (!target.ok) return target;
 
   try {
@@ -45,7 +44,7 @@ export async function createVendorAction(input: unknown): Promise<ActionResult<V
 export async function updateVendorAction(input: unknown): Promise<ActionResult<VendorAdmin>> {
   const parsed = updateVendorSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
-  const guard = await requireSuperadmin();
+  const guard = await requireManager();
   if (!guard.ok) return guard;
 
   try {

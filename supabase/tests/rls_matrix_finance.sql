@@ -2,7 +2,7 @@
 -- recap views (docs/PRD.md §8.5.2, docs/Security.md STAFF-01, STAFF-02, Task P1.4.03, P1.4.05, P1.9.02). Every check
 -- runs as an API role.
 begin;
-select plan(28);
+select plan(30);
 \ir helpers/rls_personas.psql
 
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax) values
@@ -192,6 +192,26 @@ select throws_ok($$update public.payout_batches set reference = 'diubah' where r
 select lives_ok($$insert into public.revenue_share_rules (scope, product_id, name, created_by)
   values ('product', '00000000-0000-4000-8000-00000000e501', 'Kompos RW 05', '00000000-0000-4000-8000-00000000f001')$$,
   'and writes a rule');
+
+-- ===== admin_kopdes =====
+-- docs/PRD.md §13.1 A30: the Kopdes admin sees the sellers it manages, but not one ledger row, rule, payout or recap,
+-- their vendor rows included: those policies ask for the RW admin or the superadmin, never for umkm_vendors alone.
+reset role;
+select pg_temp.act_as('admin_kopdes');
+select is(
+  pg_temp.rows_seen($$select 1 from public.revenue_share_rules where pg_temp.is_fixture_rule(id)$$)
+  + pg_temp.rows_seen($$select 1 from public.revenue_share_rule_lines where pg_temp.is_fixture_rule(rule_id)$$)
+  + pg_temp.rows_seen($$select 1 from public.revenue_share_entries where pg_temp.is_fixture_booking(booking_id)$$)
+  + pg_temp.rows_seen($$select 1 from public.payout_batches where reference = 'rls-payout'$$)
+  + pg_temp.rows_seen($$select 1 from public.v_revenue_recap_by_booking where pg_temp.is_fixture_booking(booking_id)$$)
+  + pg_temp.rows_seen($$select 1 from public.v_revenue_recap_by_party$$)
+  + pg_temp.rows_seen($$select 1 from public.v_revenue_recap_daily$$)
+  + pg_temp.rows_seen($$select 1 from public.v_finance_daily$$),
+  0,
+  'the Kopdes admin sees no revenue-share rule, line, ledger row, payout or recap, a vendor''s included'
+);
+select ok(pg_temp.write_refused($$update public.payout_batches set reference = 'kopdes' where reference = 'rls-payout'$$),
+  'and changes no payout');
 
 select * from finish();
 rollback;

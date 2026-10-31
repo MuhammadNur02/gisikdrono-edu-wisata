@@ -60,7 +60,7 @@ export function InviteForm({ rwUnits, ...handlers }: InviteFormProps) {
           control={form.control}
           name="role"
           label={text.role}
-          onSuperadmin={() => {
+          onRoleWithoutRw={() => {
             form.setValue('rwId', null);
           }}
         />

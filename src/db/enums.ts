@@ -1,7 +1,7 @@
 // Mirrors the Postgres enums of supabase/migrations/0002_enums.sql and the migrations after it, which stay the
 // source of truth (CLAUDE.md §6.3). enums.test.ts fails as soon as this file and the generated types disagree.
 export const DB_ENUMS = {
-  app_role: ['superadmin', 'admin_rw', 'none'],
+  app_role: ['superadmin', 'admin_rw', 'admin_kopdes', 'none'],
   content_status: ['draft', 'pending_review', 'published', 'archived'],
   session_status: ['open', 'closed', 'cancelled'],
   package_category: ['regular', 'student', 'institutional', 'combo'],

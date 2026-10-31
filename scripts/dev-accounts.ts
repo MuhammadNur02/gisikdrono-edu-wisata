@@ -12,6 +12,8 @@ export const DEV_ACCOUNTS = [
   { email: 'admin-rw05@dev.gisikdrono.test', role: 'admin_rw', rwId: 5 },
   { email: 'admin-rw13@dev.gisikdrono.test', role: 'admin_rw', rwId: 13 },
   { email: 'admin-rw08@dev.gisikdrono.test', role: 'admin_rw', rwId: 8 },
+  // The Koperasi Merah Putih's UMKM admin (docs/PRD.md §13.1 A30), for no RW.
+  { email: 'admin-kopdes@dev.gisikdrono.test', role: 'admin_kopdes', rwId: null },
 ] as const;
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';

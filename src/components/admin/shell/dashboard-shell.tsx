@@ -37,16 +37,30 @@ export interface DashboardShellProps {
   idleLock: ReactNode;
   // The superadmin's scans may override a wrong day or a closed window (docs/PRD.md FR-SCAN-09).
   canOverrideScans: boolean;
+  // Whether the scan buttons show at all: the gate is the edu-wisata staff's, never the Kopdes admin's (docs/PRD.md
+  // §13.1 A30), whose scan the database would refuse anyway.
+  canScan: boolean;
   children: ReactNode;
 }
 
 type ShellColumnProps = Omit<DashboardShellProps, 'sidebarOpen' | 'nav' | 'footer' | 'idleLock'>;
 
 // Everything right of the sidebar: the topbar, the RwSwitcher row below md, the page and the QuickScannerBar.
-function ShellColumn({ rwSwitcher, canOverrideScans, children, ...topbar }: ShellColumnProps) {
+function ShellColumn({
+  rwSwitcher,
+  canOverrideScans,
+  canScan,
+  children,
+  ...topbar
+}: ShellColumnProps) {
   return (
     <div className="flex min-h-svh min-w-0 flex-1 flex-col">
-      <Topbar {...topbar} rwSwitcher={rwSwitcher} canOverrideScans={canOverrideScans} />
+      <Topbar
+        {...topbar}
+        rwSwitcher={rwSwitcher}
+        canOverrideScans={canOverrideScans}
+        canScan={canScan}
+      />
       {rwSwitcher ? <div className="overflow-x-auto px-4 pt-3 md:hidden">{rwSwitcher}</div> : null}
       <main
         id={MAIN_CONTENT_ID}
@@ -54,7 +68,7 @@ function ShellColumn({ rwSwitcher, canOverrideScans, children, ...topbar }: Shel
       >
         {children}
       </main>
-      <QuickScannerBar canOverrideScans={canOverrideScans} />
+      {canScan ? <QuickScannerBar canOverrideScans={canOverrideScans} /> : null}
       <ScannerBoundary />
     </div>
   );

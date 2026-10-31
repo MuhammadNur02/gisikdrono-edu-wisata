@@ -7,9 +7,11 @@ import { BackLink } from '@/components/admin/shell/back-link';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { ContentStatusBadge } from '@/components/admin/status/status-badge';
 import { PRODUCT_PATHS } from '@/config/products';
+import { ALL_STAFF_ROLES } from '@/config/staff';
 import { productsCopy } from '@/lib/copy/products';
 import { rowIdSchema } from '@/lib/validations/content';
 import { updateProductAction } from '@/server/actions/products';
+import { isUmkmManager } from '@/server/auth/content-owner';
 import { requireDashboardStaff } from '@/server/auth/session';
 import { readProductForStaff } from '@/server/services/product-service';
 import { listVendorsForStaff } from '@/server/services/vendor-service';
@@ -23,9 +25,10 @@ interface EditProductPageProps {
 }
 
 // Task P4.3.06, docs/PRD.md FR-ADMIN-06. RLS shows an RW admin their own RW's products only, so another RW's product
-// answers 404, like one that does not exist; their own opens read-only (decision of 2026-10-24).
+// answers 404, like one that does not exist; their own opens read-only (decision of 2026-10-24). The UMKM managers, the
+// superadmin and the Kopdes admin (docs/PRD.md §13.1 A30), edit any RW's.
 export default async function EditProductPage({ params }: EditProductPageProps) {
-  const ctx = await requireDashboardStaff();
+  const ctx = await requireDashboardStaff(ALL_STAFF_ROLES);
   if (!ctx) return null;
   const id = rowIdSchema.safeParse((await params).id);
   const product = id.success ? await readProductForStaff(id.data) : null;
@@ -44,7 +47,7 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
         action={updateProductAction}
         stored={{ id: product.id, rwId: product.rwId }}
         vendors={vendors.map((vendor) => ({ value: vendor.id, label: vendor.name }))}
-        readOnly={ctx.role !== 'superadmin'}
+        readOnly={!isUmkmManager(ctx)}
       />
     </>
   );

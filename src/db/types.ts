@@ -4808,6 +4808,7 @@ export type Database = {
         Args: { p_email: string; p_invite_code_hash: string }
         Returns: Json
       }
+      is_admin_kopdes: { Args: never; Returns: boolean }
       is_admin_rw: { Args: never; Returns: boolean }
       is_staff: { Args: never; Returns: boolean }
       is_superadmin: { Args: never; Returns: boolean }
@@ -4819,6 +4820,7 @@ export type Database = {
         Args: { p_code_hash: string; p_user_id: string }
         Returns: string
       }
+      manages_umkm: { Args: never; Returns: boolean }
       mark_booking_paid_manually: {
         Args: {
           p_amount: number
@@ -4989,7 +4991,7 @@ export type Database = {
         Returns: undefined
       }
       save_product: {
-        Args: { p_product: Json; p_product_id?: string; p_variants?: Json }
+        Args: { p_product: Json; p_product_id?: string; p_variants: Json }
         Returns: string
       }
       save_product_variants: {
@@ -5541,7 +5543,7 @@ export type Database = {
         | "reclassify_share"
         | "pax_correction"
       alert_severity: "info" | "medium" | "high" | "critical"
-      app_role: "superadmin" | "admin_rw" | "none"
+      app_role: "superadmin" | "admin_rw" | "admin_kopdes" | "none"
       article_category: "news" | "education" | "announcement"
       booker_type:
         | "individual"
@@ -5827,7 +5829,7 @@ export const Constants = {
         "pax_correction",
       ],
       alert_severity: ["info", "medium", "high", "critical"],
-      app_role: ["superadmin", "admin_rw", "none"],
+      app_role: ["superadmin", "admin_rw", "admin_kopdes", "none"],
       article_category: ["news", "education", "announcement"],
       booker_type: [
         "individual",

@@ -4,11 +4,13 @@ import { cookies, headers } from 'next/headers';
 import { z } from 'zod';
 
 import type { GuestLinkScope } from '@/config/guest';
+import { EDU_WISATA_ROLES, UMKM_MANAGER_ROLES } from '@/config/staff';
 import { DB_ENUMS } from '@/db/enums';
 import type { AppRole } from '@/db/enums';
 import { fail } from '@/lib/errors';
 import { guestLinkCookieName } from '@/lib/links/token';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import type { UploadPurpose } from '@/lib/uploads/paths';
 import { clientIpFrom } from '@/lib/utils/client-ip';
 import { isBookingCode } from '@/lib/utils/codes';
 import { nowInSeconds } from '@/server/auth/guest-cookies';
@@ -114,7 +116,7 @@ export async function requireOnboardingUser(): Promise<OnboardingGuardResult> {
   return readOnboardingContext(await createSupabaseServerClient());
 }
 
-// requireRole('superadmin') for the kelurahan's own work; the dashboard shell lets either staff role in.
+// requireRole('superadmin') for the kelurahan's own work; the dashboard shell lets every staff role in.
 export async function requireRole(...roles: [StaffRole, ...StaffRole[]]): Promise<GuardResult> {
   const guard = await requireUser();
   if (!guard.ok) return guard;
@@ -127,24 +129,50 @@ export async function requireRwAccess(rwId: number): Promise<GuardResult> {
   return canAccessRw(guard.ctx, rwId) ? guard : fail('FORBIDDEN');
 }
 
+// What the Kopdes admin publishes: product photos, of any RW, and nothing else (docs/PRD.md §13.1 A30).
+const KOPDES_UPLOAD_PURPOSES: readonly UploadPurpose[] = ['product'];
+
 // api/uploads/{sign,finalize} write with the service role, which skips the AAL2 policy every table carries,
 // so uploads ask for AAL2 here (docs/Security.md §5.3, §8.4). Kelurahan-level files (rw_id NULL) are the
-// superadmin's; an RW's files are its own officer's too. The routes call this after requireUser() so a
-// refusal can be recorded against the staff member who tried.
-export function hasUploadAccess(ctx: StaffContext, rwId: number | null): boolean {
+// superadmin's; an RW's files are its own officer's too. The Kopdes admin uploads into an RW's folder for a product
+// only. The purpose is null at the sign step, which knows none yet: a signed URL only reaches the quarantine, and
+// finalize, which publishes, names one. The routes call this after requireUser() so a refusal can be recorded
+// against the staff member who tried.
+export function hasUploadAccess(
+  ctx: StaffContext,
+  rwId: number | null,
+  purpose: UploadPurpose | null,
+): boolean {
   if (!ctx.isAal2) return false;
+  if (ctx.role === 'admin_kopdes') {
+    return rwId !== null && (purpose === null || KOPDES_UPLOAD_PURPOSES.includes(purpose));
+  }
   return rwId === null ? ctx.role === 'superadmin' : canAccessRw(ctx, rwId);
 }
 
-export async function requireAal2(): Promise<GuardResult> {
+// AAL2 and one of the roles named. Without any it means the edu-wisata staff (EDU_WISATA_ROLES), so an action that names no
+// roles keeps the Kopdes admin out (docs/PRD.md §13.1 A30); the database refuses it there again.
+export async function requireAal2(
+  roles: readonly StaffRole[] = EDU_WISATA_ROLES,
+): Promise<GuardResult> {
   const guard = await requireUser();
   if (!guard.ok) return guard;
+  if (!roles.some((role) => role === guard.ctx.role)) return fail('FORBIDDEN');
   return guard.ctx.isAal2 ? guard : fail('FORBIDDEN');
 }
 
+// The UMKM catalogue's writes (vendors, products, variants, sellers' bank accounts): the superadmin or the Kopdes
+// admin, at AAL2, as manages_umkm() in the database.
+export async function requireUmkmManager(): Promise<GuardResult> {
+  return requireAal2(UMKM_MANAGER_ROLES);
+}
+
 // docs/Security.md §5.3: critical actions need a TOTP check from the last few minutes.
-export async function requireFreshTotp(maxAgeSeconds: number): Promise<GuardResult> {
-  const guard = await requireAal2();
+export async function requireFreshTotp(
+  maxAgeSeconds: number,
+  roles: readonly StaffRole[] = EDU_WISATA_ROLES,
+): Promise<GuardResult> {
+  const guard = await requireAal2(roles);
   if (!guard.ok) return guard;
   const nowSeconds = Math.floor(Date.now() / MS_PER_SECOND);
   return hasFreshTotp(guard.ctx, maxAgeSeconds, nowSeconds) ? guard : fail('FORBIDDEN');

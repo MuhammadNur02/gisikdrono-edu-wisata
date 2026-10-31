@@ -1,5 +1,5 @@
-import type { EditableSettingName } from '@/config/site-settings';
-import type { SiteSettingsValues } from '@/lib/validations/settings';
+import type { CatalogueSettingName, EditableSettingName } from '@/config/site-settings';
+import type { CatalogueSettingsValues, SiteSettingsValues } from '@/lib/validations/settings';
 
 // The site_settings keys docs/PRD.md §8.6 marks public. A contact value still holding its seeded placeholder
 // reads as null, so the site never shows a sample address or number.
@@ -29,4 +29,10 @@ export interface SiteSettingsAdmin {
   values: SiteSettingsValues;
   bookingEnabled: boolean;
   placeholders: EditableSettingName[];
+}
+
+// Pengaturan Katalog, the Kopdes admin's settings page (docs/PRD.md §13.1 A30): the catalogue keys alone.
+export interface CatalogueSettingsAdmin {
+  values: CatalogueSettingsValues;
+  placeholders: CatalogueSettingName[];
 }

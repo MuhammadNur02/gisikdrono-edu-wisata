@@ -15,7 +15,7 @@ export const maxDuration = 60;
 type Log = ReturnType<typeof createLogger>;
 
 async function signPagesFor(ctx: StaffContext, input: SignBookletPagesInput, log: Log) {
-  if (!(await checkUploadAccess(ctx, input.rwId, { step: 'sign-pages' }))) {
+  if (!(await checkUploadAccess(ctx, input.rwId, { step: 'sign-pages' }, 'booklet-page'))) {
     log.warn('upload_rejected', { step: 'sign-pages', reason: 'forbidden', actorId: ctx.userId });
     return fail('FORBIDDEN');
   }

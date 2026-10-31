@@ -3,7 +3,7 @@
 -- sets storage.allow_delete_query before it deletes a row, so the delete checks set it too and test the policies,
 -- not Supabase's own guard.
 begin;
-select plan(24);
+select plan(27);
 \ir helpers/rls_personas.psql
 
 insert into storage.objects (bucket_id, name) values
@@ -115,6 +115,20 @@ select throws_ok($$insert into storage.objects (bucket_id, name) values ('public
 select is(pg_temp.fixture_count(), 0, 'and lists nothing in any bucket');
 select is(pg_temp.row_count($$update storage.buckets set allowed_mime_types = null where id = 'public-media'$$), 0,
   'nor widens what a bucket accepts');
+
+-- ===== admin_kopdes =====
+-- docs/PRD.md §13.1 A30: the Kopdes admin's product photos go through api/uploads/{sign,finalize} like everyone's, and
+-- finalize publishes a Kopdes upload as a product photo only (hasUploadAccess, src/server/auth/guards.test.ts); through
+-- the API it writes and lists nothing, not even under a product folder.
+reset role;
+select pg_temp.act_as('admin_kopdes');
+select throws_ok($$insert into storage.objects (bucket_id, name)
+  values ('public-media', 'rw-05/products/00000000-0000-4000-8000-0000000c0a04/kopdes.webp')$$, '42501', null,
+  'the Kopdes admin writes nothing into public-media, not even a product photo');
+select throws_ok($$insert into storage.objects (bucket_id, name)
+  values ('uploads-quarantine', 'rw-08/00000000-0000-4000-8000-0000000c0a05')$$, '42501', null,
+  'nor into the quarantine but through a signed URL');
+select is(pg_temp.fixture_count(), 0, 'and lists nothing in any bucket');
 
 reset role;
 select is(pg_temp.fixture_count(), 5, 'every fixture is still in place');

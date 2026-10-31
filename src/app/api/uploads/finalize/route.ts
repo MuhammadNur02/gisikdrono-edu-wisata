@@ -29,7 +29,7 @@ async function finalizeFor(
   log: Log,
 ) {
   const details = { step: 'finalize', owner: upload.owner };
-  if (!(await checkUploadAccess(ctx, upload.rwId, details))) {
+  if (!(await checkUploadAccess(ctx, upload.rwId, details, target.purpose))) {
     log.warn('upload_rejected', { ...details, reason: 'forbidden', actorId: ctx.userId });
     return fail('FORBIDDEN');
   }

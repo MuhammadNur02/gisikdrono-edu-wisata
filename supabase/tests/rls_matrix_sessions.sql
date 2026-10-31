@@ -1,7 +1,7 @@
 -- RLS matrix for the session tables: session_templates, visit_sessions and v_session_availability
 -- (docs/PRD.md §8.5.2, Task P1.4.02, P1.4.03, P1.4.06, P1.9.02). Every check runs as an API role.
 begin;
-select plan(25);
+select plan(27);
 \ir helpers/rls_personas.psql
 
 insert into public.session_templates (id, rw_id, weekday, label, start_time, end_time, capacity) values
@@ -123,6 +123,21 @@ select is(
   3,
   'and see every template'
 );
+
+-- ===== admin_kopdes =====
+-- docs/PRD.md §13.1 A30: sessions and their templates are the RWs'.
+reset role;
+select pg_temp.act_as('admin_kopdes');
+select is(
+  pg_temp.rows_seen($$select 1 from public.visit_sessions where pg_temp.is_fixture_session(id)$$)
+  + pg_temp.rows_seen($$select 1 from public.session_templates
+                        where id in ('00000000-0000-4000-8000-00000000a510', '00000000-0000-4000-8000-00000000a810')$$),
+  0,
+  'the Kopdes admin sees no session and no template'
+);
+select ok(pg_temp.write_refused($$insert into public.visit_sessions (rw_id, session_date, start_time, end_time, label,
+  capacity, created_by) values (5, public.today_jkt() + 3, '09:00', '11:00', 'Kopdes', 20,
+  '00000000-0000-4000-8000-00000000f0c0')$$), 'and opens none');
 
 select * from finish();
 rollback;

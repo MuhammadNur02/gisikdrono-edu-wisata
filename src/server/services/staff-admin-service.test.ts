@@ -126,6 +126,19 @@ describe('createStaffInvite', () => {
     expect(JSON.stringify(db.inserted)).not.toContain('ABCDEFGHJKMNPQRSTVWX');
   });
 
+  // docs/PRD.md §13.1 A30: the Koperasi Merah Putih's admin is invited like an RW admin, for no RW.
+  it('stores a Kopdes admin invite without an RW', async () => {
+    await createStaffInvite(
+      SUPERADMIN,
+      { email: 'kopdes@b.id', role: 'admin_kopdes', rwId: null },
+      REQUEST_ID,
+    );
+    expect(db.inserted).toEqual([
+      expect.objectContaining({ email: 'kopdes@b.id', role: 'admin_kopdes', rw_id: null }),
+    ]);
+    expect(inviteSuperadmin).not.toHaveBeenCalled();
+  });
+
   // Task P4.8.01: the invite email goes out once the invite exists, and the superadmin learns whether it did.
   it('sends the invite email for the stored invite and says whether it went', async () => {
     vi.mocked(sendStaffInviteEmail).mockResolvedValueOnce(false);

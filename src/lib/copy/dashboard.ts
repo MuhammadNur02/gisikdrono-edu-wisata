@@ -10,6 +10,7 @@ export const dashboardCopy = {
   roles: {
     superadmin: 'Superadmin Kelurahan',
     adminRw: (rw: string) => `Admin ${rw}`,
+    adminKopdes: 'Admin Kopdes',
   },
   rwSwitcher: {
     label: 'Tampilkan data',

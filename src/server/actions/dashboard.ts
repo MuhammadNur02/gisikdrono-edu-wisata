@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 
 import { AUTH_COOKIE_OPTIONS, DASHBOARD_PATH } from '@/config/auth';
 import { RW_SCOPE_ALL, RW_SCOPE_COOKIE, RW_SCOPE_MAX_AGE_SECONDS } from '@/config/dashboard';
+import { UMKM_MANAGER_ROLES } from '@/config/staff';
 import { fail, mapError, ok } from '@/lib/errors';
 import { rwScopeSchema } from '@/lib/validations/dashboard';
 import { readRwScope } from '@/server/auth/content-owner';
@@ -37,13 +38,14 @@ async function checkInScope(ctx: StaffContext): Promise<number | null | undefine
   return scope === RW_SCOPE_ALL ? null : scope;
 }
 
-// docs/StyleGuide.md §6.1: the superadmin's RwSwitcher. It only remembers a filter for lists and KPIs; what a query
-// may return is still decided by RLS and the guards, so an RW officer neither sees the switcher nor gains anything
-// from writing the cookie by hand.
+// docs/StyleGuide.md §6.1: the superadmin's RwSwitcher, and the Kopdes admin's RW choice on its UMKM page (docs/PRD.md
+// §13.1 A30). It only remembers a filter for lists and KPIs and the RW new UMKM rows are filed under; what a query may
+// return is still decided by RLS and the guards, so an RW officer neither sees the switcher nor gains anything from
+// writing the cookie by hand.
 export async function setRwScopeAction(input: unknown): Promise<ActionResult<null>> {
   const parsed = rwScopeSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
-  const guard = await requireRole('superadmin');
+  const guard = await requireRole(...UMKM_MANAGER_ROLES);
   if (!guard.ok) return guard;
   if (!guard.ctx.isAal2) return fail('FORBIDDEN');
 

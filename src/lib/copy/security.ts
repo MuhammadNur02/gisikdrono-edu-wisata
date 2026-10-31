@@ -53,6 +53,7 @@ export const securityCopy = {
     actorRoles: {
       superadmin: 'Superadmin',
       admin_rw: 'Admin RW',
+      admin_kopdes: 'Admin Kopdes',
       service: 'Sistem',
       cron: 'Jadwal otomatis',
       visitor: 'Pengunjung',

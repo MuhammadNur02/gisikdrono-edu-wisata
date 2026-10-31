@@ -2,7 +2,7 @@
 -- Task P1.4.04, P1.9.02). Today's gate list and certificates always fall inside the admin_rw booking window
 -- (decision of 2026-10-16). Every check runs as an API role.
 begin;
-select plan(22);
+select plan(24);
 \ir helpers/rls_personas.psql
 
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax, status) values
@@ -158,6 +158,22 @@ select throws_ok($$select recipient_name from public.certificates$$, '42501', nu
   'but no participant''s name through the API either');
 select throws_ok($$select verify_code from public.certificates$$, '42501', null,
   'nor a verify code: the server prints the verification URL on the PDF');
+
+-- ===== admin_kopdes =====
+-- docs/PRD.md §13.1 A30: the gate is the RWs'; the Kopdes admin sees no ticket, scan or certificate.
+reset role;
+select pg_temp.act_as('admin_kopdes');
+select is(
+  pg_temp.rows_seen($$select 1 from public.tickets_qr where pg_temp.is_fixture_booking(booking_id)$$)
+  + pg_temp.rows_seen($$select 1 from public.ticket_scans
+                        where scanned_by in ('00000000-0000-4000-8000-00000000f005', '00000000-0000-4000-8000-00000000f008')$$)
+  + pg_temp.rows_seen($$select 1 from public.certificates where pg_temp.is_fixture_booking(booking_id)$$)
+  + pg_temp.rows_seen($$select 1 from public.v_attendance_today where pg_temp.is_fixture_booking(booking_id)$$),
+  0,
+  'the Kopdes admin sees no ticket, scan, certificate or attendance row'
+);
+select throws_ok($$update public.tickets_qr set status = 'used' where ticket_code = 'GSK-T5000001-05'$$, '42501', null,
+  'and checks nobody in by hand');
 
 select * from finish();
 rollback;

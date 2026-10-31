@@ -7,7 +7,7 @@
 type StoredFile = { bytes: Buffer; createdAt: string; contentType?: string };
 
 export type FakeProfile = {
-  role: 'superadmin' | 'admin_rw' | 'none';
+  role: 'superadmin' | 'admin_rw' | 'admin_kopdes' | 'none';
   rw_id: number | null;
   is_active: boolean;
   claims_version: number | null;

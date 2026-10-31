@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 
 import { RW_SCOPE_ALL, RW_SCOPE_COOKIE, type RwScope } from '@/config/dashboard';
 import type { RwId } from '@/config/rw';
+import { UMKM_MANAGER_ROLES } from '@/config/staff';
 import { copy } from '@/lib/copy/id';
 import { fail } from '@/lib/errors';
 import { effectiveRwFor, parseRwScope } from '@/lib/utils/rw-scope';
@@ -95,4 +96,26 @@ export function scheduleRwFor(
   if (scope !== RW_SCOPE_ALL && scheduleRwIds.includes(scope)) return scope;
   const [onlyRw, ...others] = scheduleRwIds;
   return others.length === 0 ? onlyRw : undefined;
+}
+
+// docs/PRD.md §13.1 A30: who manages the UMKM catalogue, as manages_umkm() says in the database.
+export function isUmkmManager(ctx: Pick<StaffContext, 'role'>): boolean {
+  return UMKM_MANAGER_ROLES.some((role) => role === ctx.role);
+}
+
+// The RW whose vendors and products a page lists for writing and files new ones under: a UMKM manager's RW choice
+// (null under Semua, where it picks one first), an RW admin's own RW, which they read only (decision of 2026-10-24).
+export function umkmRwFor(ctx: StaffContext, scope: RwScope): RwId | null {
+  if (isUmkmManager(ctx)) return scope === RW_SCOPE_ALL ? null : scope;
+  return ctx.role === 'admin_rw' ? ctx.rwId : null;
+}
+
+// The RW a UMKM manager's new vendor or product belongs to. It never comes from a form: the RW choice, which only
+// names an RW of rw_units (readRwScope), and products_umkm_vendor_rw_guard checks the vendor's RW again.
+export async function requireUmkmRw(
+  ctx: StaffContext,
+): Promise<{ ok: true; rwId: RwId } | ActionFailure> {
+  if (!isUmkmManager(ctx)) return fail('FORBIDDEN');
+  const rwId = umkmRwFor(ctx, await readRwScope());
+  return rwId === null ? fail('STATE_INVALID', undefined, copy.cms.chooseRw) : { ok: true, rwId };
 }

@@ -16,6 +16,8 @@ export interface TopbarProps {
   userMenu: ReactNode;
   // The superadmin may override a wrong day or a closed session window from the ScannerModal too (FR-SCAN-09).
   canOverrideScans: boolean;
+  // No scan button for the Kopdes admin (docs/PRD.md §13.1 A30).
+  canScan: boolean;
 }
 
 // docs/StyleGuide.md §6.1 (Task P4.1.01): sidebar trigger and breadcrumb on the left; the RwSwitcher, `Scan Tiket`,
@@ -28,6 +30,7 @@ export function Topbar({
   commandMenu,
   userMenu,
   canOverrideScans,
+  canScan,
 }: TopbarProps) {
   return (
     <header className="sticky top-0 z-40 flex h-16 items-center gap-2 border-b border-border bg-background/80 px-3 backdrop-blur md:gap-3 md:px-6">
@@ -38,12 +41,14 @@ export function Topbar({
       <div className="min-w-0 flex-1 sm:hidden">{rwSwitcher ? null : context}</div>
       <div className="flex shrink-0 items-center gap-1 md:gap-2">
         <div className="hidden md:block">{rwSwitcher}</div>
-        <ScannerModalButton
-          label={copy.dashboard.topbar.scanTicket}
-          canOverride={canOverrideScans}
-          size="sm"
-          className="hidden md:inline-flex"
-        />
+        {canScan ? (
+          <ScannerModalButton
+            label={copy.dashboard.topbar.scanTicket}
+            canOverride={canOverrideScans}
+            size="sm"
+            className="hidden md:inline-flex"
+          />
+        ) : null}
         {commandMenu}
         {userMenu}
       </div>

@@ -1,7 +1,9 @@
 -- Review of PR #115 (20261105170300, 20261105170400): H1, the price anon may read is products_umkm.public_price, which
 -- the triggers keep equal to price while catalogue.show_product_prices is on and NULL while it is off, and anon holds
 -- no right on price itself; L1 to L3, save_product writes a product and its variants in one transaction, and
--- save_product_variants refuses anyone but the superadmin at AAL2 even with an empty list.
+-- save_product_variants refuses anyone who does not manage UMKM at AAL2 even with an empty list. Since 20261105180700
+-- save_product takes its variants without a default (p_product, p_variants, p_product_id); the Kopdes admin's side is
+-- in rls_admin_kopdes.sql.
 begin;
 select plan(23);
 \ir helpers/rls_personas.psql
@@ -82,7 +84,6 @@ select lives_ok($$select public.save_product(
     'name', 'Vest Perca', 'category', 'recycled_craft', 'description_md', null, 'price', null, 'unit_label', 'pcs',
     'min_order_qty', 1, 'max_order_qty', null, 'lead_time_days', 0, 'is_addon_eligible', false, 'is_available', true,
     'is_featured', false, 'image_paths', '[]'::jsonb, 'status', 'draft', 'sort_order', 0),
-  null,
   '[{"label": "Biru", "image_path": null, "is_available": true},
     {"label": "Merah", "image_path": null, "is_available": false}]')$$,
   'the superadmin at AAL2 saves a new product without a price, with its variants');
@@ -99,7 +100,6 @@ select throws_ok($$select public.save_product(
     'name', 'Gagal', 'category', 'other', 'description_md', null, 'price', 5000, 'unit_label', 'pcs',
     'min_order_qty', 1, 'max_order_qty', null, 'lead_time_days', 0, 'is_addon_eligible', false, 'is_available', true,
     'is_featured', false, 'image_paths', '[]'::jsonb, 'status', 'draft', 'sort_order', 0),
-  null,
   '[{"label": "Biru", "image_path": null, "is_available": true},
     {"label": "biru", "image_path": null, "is_available": true}]')$$,
   '23505', null, 'a variant list the table refuses refuses the whole save');
@@ -107,15 +107,15 @@ reset role;
 select is((select count(*)::int from public.products_umkm where slug = 'uji-simpan-gagal'), 0,
   'so no product is left behind without its variants (review of PR #115, L1)');
 select pg_temp.act_as('superadmin_aal2');
-select throws_ok($$select public.save_product('{"name": "Kurang"}', null, '[]')$$, '22023', null,
+select throws_ok($$select public.save_product('{"name": "Kurang"}', '[]')$$, '22023', null,
   'a product is saved with all of its fields and nothing else');
 select lives_ok($$select public.save_product(
   jsonb_build_object('vendor_id', '00000000-0000-4000-8000-0000000a8051', 'slug', 'uji-simpan-vest',
     'name', 'Vest Perca Baru', 'category', 'recycled_craft', 'description_md', null, 'price', 85000,
     'unit_label', 'pcs', 'min_order_qty', 1, 'max_order_qty', null, 'lead_time_days', 0, 'is_addon_eligible', false,
     'is_available', true, 'is_featured', false, 'image_paths', '[]'::jsonb, 'status', 'draft', 'sort_order', 0),
-  (select id from public.products_umkm where slug = 'uji-simpan-vest'),
-  '[{"label": "Hijau", "image_path": null, "is_available": true}]')$$,
+  '[{"label": "Hijau", "image_path": null, "is_available": true}]',
+  (select id from public.products_umkm where slug = 'uji-simpan-vest'))$$,
   'and an existing one is updated with its variants replaced');
 reset role;
 select is(
@@ -129,7 +129,7 @@ select throws_ok($$select public.save_product(
   jsonb_build_object('rw_id', 5, 'vendor_id', '00000000-0000-4000-8000-0000000a8051', 'slug', 'uji-simpan-admin',
     'name', 'Admin', 'category', 'other', 'description_md', null, 'price', null, 'unit_label', 'pcs',
     'min_order_qty', 1, 'max_order_qty', null, 'lead_time_days', 0, 'is_addon_eligible', false, 'is_available', true,
-    'is_featured', false, 'image_paths', '[]'::jsonb, 'status', 'draft', 'sort_order', 0), null, '[]')$$,
+    'is_featured', false, 'image_paths', '[]'::jsonb, 'status', 'draft', 'sort_order', 0), '[]')$$,
   '42501', null, 'admin_rw 05 saves no product, even of RW 05');
 select throws_ok($$select public.save_product_variants('00000000-0000-4000-8000-0000000a8a05', '[]')$$, '42501', null,
   'nor an empty variant list, which is refused rather than a silent success (L3)');

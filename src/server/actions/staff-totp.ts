@@ -2,6 +2,7 @@
 
 import { headers } from 'next/headers';
 
+import { ALL_STAFF_ROLES } from '@/config/staff';
 import { copy } from '@/lib/copy/id';
 import { fail, mapError, ok } from '@/lib/errors';
 import { createLogger, requestIdFrom } from '@/lib/logger';
@@ -15,11 +16,11 @@ import type { ActionResult } from '@/types/action-result';
 // idle lock's `Lanjutkan` and the step-up dialog before a critical action both run the same TOTP check, which also
 // refreshes the `amr` timestamp public.fresh_totp() reads. The account is already signed in, so there is no captcha;
 // the per-account limit and Auth's own limits stand in front of a walk-up guessing codes. A wrong code is logged by
-// the staff member's id only.
+// the staff member's id only. Every staff role, the Kopdes admin's included (docs/PRD.md §13.1 A30).
 export async function verifyStaffTotpAction(input: unknown): Promise<ActionResult<null>> {
   const parsed = stepUpSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
-  const guard = await requireAal2();
+  const guard = await requireAal2(ALL_STAFF_ROLES);
   if (!guard.ok) return guard;
 
   try {

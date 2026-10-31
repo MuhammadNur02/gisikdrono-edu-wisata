@@ -73,7 +73,14 @@ async function assertNoStaffAccount(email: string): Promise<void> {
   if (data) throw new AppError('CONFLICT', staffCopy.invite.exists);
 }
 
-async function insertRwAdminInvite(ctx: StaffContext, input: InviteStaffValues, hash: string) {
+// An RW admin's or the Kopdes admin's invite (docs/PRD.md §13.1 A30), a plain insert under RLS; a superadmin's goes
+// through invite_superadmin instead.
+async function insertStaffInvite(
+  ctx: StaffContext,
+  role: 'admin_rw' | 'admin_kopdes',
+  input: InviteStaffValues,
+  hash: string,
+) {
   const supabase = await createSupabaseServerClient();
   const expiresAt = new Date(Date.now() + INVITE_EXPIRY_SECONDS * MS_PER_SECOND).toISOString();
   // Only the id comes back: the hash is written once and read by no API role (0005).
@@ -81,8 +88,8 @@ async function insertRwAdminInvite(ctx: StaffContext, input: InviteStaffValues, 
     .from('staff_invites')
     .insert({
       email: input.email,
-      role: 'admin_rw',
-      rw_id: input.rwId,
+      role,
+      rw_id: role === 'admin_rw' ? input.rwId : null,
       invite_code_hash: hash,
       expires_at: expiresAt,
       created_by: ctx.userId,
@@ -109,7 +116,7 @@ async function storeInvite(
       acceptableAfter: invite.completesAfter,
     };
   }
-  const invite = await insertRwAdminInvite(ctx, input, hash);
+  const invite = await insertStaffInvite(ctx, input.role, input, hash);
   return { ...invite, acceptableAfter: null };
 }
 

@@ -12,10 +12,16 @@ export const staffCopy = {
   validation: {
     rwRequired: 'Pilih RW untuk admin RW.',
     rwNotAllowed: 'Superadmin Kelurahan tidak terikat pada satu RW.',
+    rwNotAllowedKopdes: 'Admin Kopdes mengelola UMKM semua RW, jadi tidak terikat pada satu RW.',
   },
   facets: { status: 'Status', rw: 'RW' },
   statuses: { active: 'Aktif', inactive: 'Nonaktif', awaitingOnboarding: 'Menunggu orientasi' },
-  roles: { superadmin: 'Superadmin Kelurahan', admin_rw: 'Admin RW', none: 'Belum ada peran' },
+  roles: {
+    superadmin: 'Superadmin Kelurahan',
+    admin_rw: 'Admin RW',
+    admin_kopdes: 'Admin Kopdes (Koperasi Merah Putih)',
+    none: 'Belum ada peran',
+  },
   columns: {
     name: 'Nama',
     role: 'Peran',
