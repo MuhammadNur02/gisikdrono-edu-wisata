@@ -2,6 +2,7 @@ import 'server-only';
 
 import { addDays } from 'date-fns';
 
+import { RESENDABLE_TEMPLATES } from '@/config/bookings';
 import { rwLabel } from '@/config/rw';
 import {
   cancelBookingAsStaff,
@@ -29,7 +30,7 @@ import type {
 import { asStaffRpcStep } from '@/server/services/booking-admin-service';
 import { settleCancellation } from '@/server/services/payment-service';
 import type { BookingDetail } from '@/types/booking-admin';
-import type { ReviewLeg } from '@/types/booking-staff';
+import type { MessageHistoryEntry, ReviewLeg } from '@/types/booking-staff';
 
 // The staff steps of /dashboard/bookings/[id] (Task P4.3.08; docs/PRD.md §13.1 A28) through the staff member's own
 // session client: each RPC checks the role, the RW, AAL2 and, where it asks, the fresh TOTP again. A cancellation or a
@@ -46,6 +47,10 @@ const REFUSAL_MESSAGES: Readonly<
   NOT_SENT: { code: 'STATE_INVALID', message: text.notSent },
   // A resent D-1 reminder whose last row was queued before reminders carried their day (20261105140200).
   REMINDER_DAY_UNKNOWN: { code: 'STATE_INVALID', message: text.reminderDayUnknown },
+  // A message other than a first payment reminder that the booking never had on that channel, and a first reminder of
+  // an officer's hold whose pay link has not gone out (20261105175000).
+  NEVER_SENT: { code: 'STATE_INVALID', message: text.neverSent },
+  PAY_LINK_NOT_SENT: { code: 'STATE_INVALID', message: text.payLinkNotSent },
   QR_KEY_UNKNOWN: { code: 'STATE_INVALID', message: text.qrKeyUnknown },
   PAYMENT_OPEN: { code: 'STATE_INVALID', message: text.holdOpenPayment },
   LEDGER_MISSING: { code: 'STATE_INVALID', message: text.ledgerMissing },
@@ -129,4 +134,22 @@ export async function listReviewLegs(
         })),
     })),
   );
+}
+
+// The PIC's messages of a booking the staff member sees, for the "Kirim pesan" sheet: the notifications RLS shows of
+// a booking in scope, by the columns granted to staff (0005: never the recipient or the parameters).
+export async function listMessageHistory(bookingId: string): Promise<MessageHistoryEntry[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('template, channel, status, created_at')
+    .eq('booking_id', bookingId)
+    .in('template', RESENDABLE_TEMPLATES);
+  if (error) throw error;
+  return data.map((message) => ({
+    template: message.template,
+    channel: message.channel,
+    status: message.status,
+    createdAt: message.created_at,
+  }));
 }

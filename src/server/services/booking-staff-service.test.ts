@@ -56,4 +56,17 @@ describe('resendMessage', () => {
       userMessage: bookingStaffCopy.errors.stateInvalid,
     });
   });
+
+  // 20261105175000: a message the booking never had, and a first reminder before an officer's pay link went out.
+  it.each([
+    ['NEVER_SENT', bookingStaffCopy.errors.neverSent],
+    ['PAY_LINK_NOT_SENT', bookingStaffCopy.errors.payLinkNotSent],
+    ['NOT_SENT', bookingStaffCopy.errors.notSent],
+  ])('explains the %s refusal in its own words', async (hint, userMessage) => {
+    vi.mocked(requestNotificationResend).mockRejectedValueOnce(raised(hint));
+    await expect(resendMessage({ ...RESEND, template: 'payment_reminder' })).rejects.toMatchObject({
+      code: 'STATE_INVALID',
+      userMessage,
+    });
+  });
 });

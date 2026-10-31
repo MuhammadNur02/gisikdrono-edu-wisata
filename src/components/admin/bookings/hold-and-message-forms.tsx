@@ -2,21 +2,24 @@
 
 import { TZDate } from '@date-fns/tz';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { MessageSquareOff } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 
 import { OptionSelect } from '@/components/admin/finance/option-select';
+import { EmptyState } from '@/components/admin/shell/empty-state';
 import { FormAlert } from '@/components/forms/form-alert';
 import { FormField } from '@/components/forms/form-field';
 import { PostForm } from '@/components/forms/post-form';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { RESENDABLE_TEMPLATES } from '@/config/bookings';
 import { APP_TZ } from '@/config/site';
 import { useActionForm } from '@/hooks/use-action-form';
 import { bookingStaffCopy } from '@/lib/copy/booking-staff';
+import { formatDateTimeShort } from '@/lib/utils/dates';
 import { resendMessageSchema } from '@/lib/validations/booking-staff';
 import type { ActionResult } from '@/types/action-result';
+import type { ResendOption } from '@/types/booking-staff';
 
 const text = bookingStaffCopy;
 
@@ -80,19 +83,45 @@ export function ExtendHoldForm({ bookingId, action, onDone }: StepFormProps) {
   );
 }
 
-const TEMPLATE_OPTIONS = RESENDABLE_TEMPLATES.map((template) => ({
-  value: template,
-  label: text.resend.templates[template],
-}));
-const CHANNEL_OPTIONS = (['whatsapp', 'email'] as const).map((channel) => ({
-  value: channel,
-  label: text.resend.channels[channel],
-}));
+interface ResendMessageFormProps extends StepFormProps {
+  options: readonly ResendOption[];
+}
 
-function useResendForm({ bookingId, action, onDone }: StepFormProps) {
+type ResendChoice = Pick<ResendOption, 'template'> & {
+  channel: ResendOption['channels'][number]['channel'];
+};
+
+function channelLabel(option: ResendOption['channels'][number]): string {
+  const name = text.resend.channels[option.channel];
+  return option.lastQueuedAt === null
+    ? text.resend.firstSend(name)
+    : text.resend.lastQueued(name, formatDateTimeShort(option.lastQueuedAt));
+}
+
+function channelsOf(options: readonly ResendOption[], template: string) {
+  return options.find((option) => option.template === template)?.channels ?? [];
+}
+
+function templateChoicesOf(options: readonly ResendOption[]) {
+  return options.map((option) => ({
+    value: option.template,
+    label: text.resend.templates[option.template],
+  }));
+}
+
+function channelChoicesOf(channels: readonly ResendOption['channels'][number][]) {
+  return channels.map((option) => ({ value: option.channel, label: channelLabel(option) }));
+}
+
+function useResendForm({
+  bookingId,
+  action,
+  onDone,
+  first,
+}: StepFormProps & { first: ResendChoice }) {
   const form = useForm({
     resolver: zodResolver(resendMessageSchema),
-    defaultValues: { bookingId, template: 'booking_created' as const, channel: 'email' as const },
+    defaultValues: { bookingId, ...first },
   });
   const { submit, failure } = useActionForm({
     form,
@@ -109,19 +138,25 @@ function PickerField(props: {
   form: ResendForm;
   name: 'template' | 'channel';
   label: string;
+  description?: string;
   options: readonly { value: string; label: string }[];
+  onPicked?: (value: string) => void;
 }) {
   return (
     <FormField
       control={props.form.control}
       name={props.name}
       label={props.label}
+      description={props.description}
       required
       wrapsOwnControl
       render={(field) => (
         <OptionSelect
           value={field.value}
-          onChange={field.onChange}
+          onChange={(value) => {
+            field.onChange(value);
+            props.onPicked?.(value);
+          }}
           options={props.options}
           placeholder={props.label}
           trigger={field}
@@ -131,8 +166,18 @@ function PickerField(props: {
   );
 }
 
-export function ResendMessageForm(props: StepFormProps) {
-  const { form, submit, failure } = useResendForm(props);
+function ResendPicker({
+  options,
+  first,
+  ...props
+}: ResendMessageFormProps & { first: ResendChoice }) {
+  const { form, submit, failure } = useResendForm({ ...props, first });
+  const channels = channelsOf(options, form.watch('template'));
+  // Another message may go on other channels: the first it may go on is picked for it.
+  const pickTemplate = (template: string) => {
+    const firstChannel = channelsOf(options, template)[0];
+    if (firstChannel) form.setValue('channel', firstChannel.channel);
+  };
   return (
     <Form {...form}>
       <PostForm onSubmit={submit}>
@@ -141,18 +186,41 @@ export function ResendMessageForm(props: StepFormProps) {
           form={form}
           name="template"
           label={text.resend.template}
-          options={TEMPLATE_OPTIONS}
+          options={templateChoicesOf(options)}
+          onPicked={pickTemplate}
         />
         <PickerField
           form={form}
           name="channel"
           label={text.resend.channel}
-          options={CHANNEL_OPTIONS}
+          description={text.resend.channelHint}
+          options={channelChoicesOf(channels)}
         />
         <Button type="submit" className="min-h-11 w-full" loading={form.formState.isSubmitting}>
           {text.resend.submit}
         </Button>
       </PostForm>
     </Form>
+  );
+}
+
+// Only the messages request_notification_resend would send now (resendOptionsFor); with none, why not.
+export function ResendMessageForm(props: ResendMessageFormProps) {
+  const firstOption = props.options[0];
+  const firstChannel = firstOption?.channels[0];
+  if (!firstOption || !firstChannel) {
+    return (
+      <EmptyState
+        icon={MessageSquareOff}
+        title={text.resend.emptyTitle}
+        description={text.resend.emptyHint}
+      />
+    );
+  }
+  return (
+    <ResendPicker
+      {...props}
+      first={{ template: firstOption.template, channel: firstChannel.channel }}
+    />
   );
 }
