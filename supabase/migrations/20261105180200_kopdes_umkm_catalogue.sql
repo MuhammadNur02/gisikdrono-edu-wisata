@@ -8,6 +8,13 @@
 -- columns stay granted to no API role and move only through the bank RPCs (20261105180300).
 -- save_product_variants, security invoker, refused anyone but the superadmin before it read anything (20261105170400);
 -- it now refuses anyone who does not manage UMKM, and save_product, which calls it, follows.
+--
+-- No hard delete for the Kopdes admin (review of PR #117, L1): deleting a product cascades into its product-scoped
+-- revenue_share_rules and their lines, and RLS does not apply to a cascade, so the superadmin-only, fresh-TOTP delete
+-- policies of those tables would never run. umkm_vendors_super_delete and products_umkm_super_delete stay the
+-- superadmin's as they were (0005); the Kopdes admin archives a product through its status and takes a seller off
+-- through is_active. product_variants keeps its delete for the UMKM managers: save_product_variants replaces a
+-- product's variants by deleting them, and nothing references a variant.
 
 
 -- ===== umkm_vendors =====
@@ -15,7 +22,6 @@
 drop policy umkm_vendors_staff_read on public.umkm_vendors;
 drop policy umkm_vendors_super_insert on public.umkm_vendors;
 drop policy umkm_vendors_super_update on public.umkm_vendors;
-drop policy umkm_vendors_super_delete on public.umkm_vendors;
 
 create policy umkm_vendors_staff_read on public.umkm_vendors for select to authenticated
   using ((select public.owns_rw(rw_id)) or (select public.is_admin_kopdes()));
@@ -23,8 +29,6 @@ create policy umkm_vendors_manager_insert on public.umkm_vendors for insert to a
   with check ((select public.manages_umkm()) and created_by = (select auth.uid()));
 create policy umkm_vendors_manager_update on public.umkm_vendors for update to authenticated
   using ((select public.manages_umkm())) with check ((select public.manages_umkm()));
-create policy umkm_vendors_manager_delete on public.umkm_vendors for delete to authenticated
-  using ((select public.manages_umkm()));
 
 
 -- ===== products_umkm =====
@@ -32,7 +36,6 @@ create policy umkm_vendors_manager_delete on public.umkm_vendors for delete to a
 drop policy products_umkm_staff_read on public.products_umkm;
 drop policy products_umkm_super_insert on public.products_umkm;
 drop policy products_umkm_super_update on public.products_umkm;
-drop policy products_umkm_super_delete on public.products_umkm;
 
 create policy products_umkm_staff_read on public.products_umkm for select to authenticated
   using ((select public.owns_rw(rw_id)) or (select public.is_admin_kopdes()));
@@ -40,8 +43,6 @@ create policy products_umkm_manager_insert on public.products_umkm for insert to
   with check ((select public.manages_umkm()) and created_by = (select auth.uid()));
 create policy products_umkm_manager_update on public.products_umkm for update to authenticated
   using ((select public.manages_umkm())) with check ((select public.manages_umkm()));
-create policy products_umkm_manager_delete on public.products_umkm for delete to authenticated
-  using ((select public.manages_umkm()));
 
 
 -- ===== product_variants =====

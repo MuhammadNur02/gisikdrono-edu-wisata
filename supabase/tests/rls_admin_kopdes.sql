@@ -6,7 +6,7 @@
 -- the review of PR #115: the price switch's lock (20261105180600) and save_product's required variants
 -- (20261105180700).
 begin;
-select plan(54);
+select plan(68);
 \ir helpers/rls_personas.psql
 
 insert into public.umkm_vendors (id, rw_id, slug, name, is_active) values
@@ -207,6 +207,109 @@ select throws_ok($$select public.reset_staff_mfa('00000000-0000-4000-8000-000000
   'no authenticator reset');
 select throws_ok($$select public.invite_superadmin('kopdes-super@example.test', 'hash-kopdes-super')$$, '42501', null,
   'and no superadmin invited');
+reset role;
+
+
+-- ===== Archive, never delete (review of PR #117, L1) =====
+
+-- A product's deletion cascades into its product-scoped revenue_share_rules and their lines, where RLS does not run, so
+-- the Kopdes admin deletes no product and no vendor: it archives a product and takes a seller off with is_active.
+insert into public.products_umkm (id, rw_id, vendor_id, slug, name, category, price, status) values
+  ('00000000-0000-4000-8000-0000000c1e14', 13, '00000000-0000-4000-8000-0000000c1d13', 'uji-kopdes-hapus',
+   'Produk Hapus', 'souvenir', 20000, 'draft');
+insert into public.revenue_share_rules (id, scope, product_id, name, is_active) values
+  ('00000000-0000-4000-8000-0000000c1a14', 'product', '00000000-0000-4000-8000-0000000c1e14', 'Aturan Produk Hapus', false);
+select pg_temp.act_as('admin_kopdes');
+select ok(pg_temp.write_refused($$delete from public.products_umkm where id = '00000000-0000-4000-8000-0000000c1e14'$$),
+  'the Kopdes admin deletes no product');
+select ok(pg_temp.write_refused($$delete from public.umkm_vendors where id = '00000000-0000-4000-8000-0000000c1d13'$$),
+  'nor a vendor');
+select is(pg_temp.row_count($$update public.products_umkm set status = 'archived'
+  where id = '00000000-0000-4000-8000-0000000c1e14'$$), 1, 'it archives the product instead');
+select is(pg_temp.row_count($$update public.umkm_vendors set is_active = false
+  where id = '00000000-0000-4000-8000-0000000c1d13'$$), 1, 'and takes a seller off with is_active');
+reset role;
+select is((select count(*)::int from public.revenue_share_rules where id = '00000000-0000-4000-8000-0000000c1a14'), 1,
+  'so the product''s revenue-share rule is still there');
+select pg_temp.act_as('superadmin_aal2');
+select is(pg_temp.row_count($$delete from public.products_umkm where id = '00000000-0000-4000-8000-0000000c1e14'$$), 1,
+  'the superadmin still deletes a product, as before this role');
+reset role;
+select is((select count(*)::int from public.revenue_share_rules where id = '00000000-0000-4000-8000-0000000c1a14'), 0,
+  'and its product rule goes with it, as it did before');
+
+
+-- ===== Every RPC the role may not call (review of PR #117, L2) =====
+
+-- Catalogue-driven: every function of public that authenticated may execute, called as the Kopdes admin at AAL2 with
+-- a NULL for each argument, so a function added later is covered without anyone listing it. Each must refuse with
+-- 42501. The allow-list is what the Kopdes admin legitimately calls: the RLS helpers (which answer, they never write),
+-- onboarding_state (booleans about the caller's own onboarding), and the UMKM RPCs save_product,
+-- save_product_variants, get_vendor_bank_account and set_vendor_bank_account, which the role passes and which then
+-- refuse NULL input with 22023 or P0002 without revealing anything. rpc_log_ui_event is not on it: only the gate
+-- scanner logs UI events, and the Kopdes admin has no scanner.
+create function pg_temp.kopdes_rpc_outcomes() returns table (fn text, outcome text)
+  language plpgsql
+as $$
+declare
+  f record;
+begin
+  for f in
+    select p.proname::text as name,
+           (select string_agg('null::' || format_type(a.t, null), ', ' order by a.ord)
+            from unnest(p.proargtypes::oid[]) with ordinality as a(t, ord)) as args
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.prokind = 'f' and has_function_privilege('authenticated', p.oid, 'execute')
+      and p.proname not in ('aal2', 'app_role', 'app_rw_id', 'fresh_totp', 'is_admin_kopdes', 'is_admin_rw', 'is_staff',
+                            'is_superadmin', 'manages_umkm', 'owns_any_rw', 'owns_rw', 'today_jkt', 'onboarding_state',
+                            'save_product', 'save_product_variants', 'get_vendor_bank_account',
+                            'set_vendor_bank_account')
+  loop
+    begin
+      execute format('select public.%I(%s)', f.name, coalesce(f.args, ''));
+      fn := f.name;
+      outcome := 'success';
+    exception when others then
+      fn := f.name;
+      outcome := sqlstate;
+    end;
+    return next;
+  end loop;
+end;
+$$;
+grant execute on function pg_temp.kopdes_rpc_outcomes() to authenticated;
+select pg_temp.act_as('admin_kopdes');
+select cmp_ok((select count(*)::int from pg_temp.kopdes_rpc_outcomes()), '>=', 55,
+  'the loop calls every staff RPC outside the allow-list');
+select is(
+  array(select fn || ':' || outcome from pg_temp.kopdes_rpc_outcomes() where outcome <> '42501' order by 1),
+  array[]::text[],
+  'and every one refuses the Kopdes admin with 42501, none answering success or another error first'
+);
+select is(
+  (select string_agg(fn, ',' order by fn) from pg_temp.kopdes_rpc_outcomes()
+   where outcome = '42501' and fn in ('rpc_log_ui_event', 'save_package_legs', 'save_package_tiers', 'verify_audit_chain')),
+  'rpc_log_ui_event,save_package_legs,save_package_tiers,verify_audit_chain',
+  'among them rpc_log_ui_event, the package helpers (20261105180800) and verify_audit_chain'
+);
+reset role;
+
+
+-- ===== Settings it may not add, remove or rename =====
+
+select pg_temp.act_as('admin_kopdes');
+select throws_ok($$insert into public.site_settings (key, value, updated_by)
+  values ('catalogue.kopdes_extra', 'true', '00000000-0000-4000-8000-00000000f0c0')$$, '42501', null,
+  'the Kopdes admin adds no setting');
+select throws_ok($$insert into public.site_settings (key, value, updated_by)
+  values ('catalogue.show_product_prices', 'true', '00000000-0000-4000-8000-00000000f0c0')
+  on conflict (key) do update set value = excluded.value, updated_by = excluded.updated_by$$, '42501', null,
+  'nor upserts one of its own keys');
+select ok(pg_temp.write_refused($$delete from public.site_settings where key = 'contact.kopdes_address'$$),
+  'deletes none');
+select throws_ok($$update public.site_settings set key = 'catalogue.renamed',
+  updated_by = '00000000-0000-4000-8000-00000000f0c0' where key = 'catalogue.show_product_prices'$$, '42501', null,
+  'and renames none');
 reset role;
 
 

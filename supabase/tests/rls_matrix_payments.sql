@@ -3,7 +3,7 @@
 -- (docs/PRD.md §8.5.2, docs/Security.md STAFF-01, STAFF-02, Task P1.4.04, P1.4.05, P1.9.02). Every check runs
 -- as an API role.
 begin;
-select plan(35);
+select plan(37);
 \ir helpers/rls_personas.psql
 
 insert into public.tour_packages (id, rw_id, category, slug, name, price_per_pax, status) values
@@ -203,6 +203,18 @@ select throws_ok($$update public.reconciliation_issues set resolved_at = now(),
 
 -- ===== admin_kopdes =====
 -- docs/PRD.md §13.1 A30: ticket money is the RWs' and the kelurahan's; the Kopdes admin sees none of it.
+reset role;
+-- An open refund request, so v_refund_requests_open has a row to hide (review of PR #117, L2).
+insert into public.refund_requests (booking_id, payment_id, kind, method, refund_key, amount, package_refund) values
+  ('00000000-0000-4000-8000-0000b5000001', '00000000-0000-4000-8000-0000aa000501', 'cancellation', 'qris',
+   'GSK-P5000001-01-R01', 50000, 50000);
+select pg_temp.act_as('superadmin_aal2');
+select is((select count(*)::int from public.v_refund_requests_open where booking_code = 'GSK-P5000001'), 1,
+  'the superadmin sees the open refund request');
+reset role;
+select pg_temp.act_as('admin_kopdes');
+select is(pg_temp.rows_seen($$select 1 from public.v_refund_requests_open$$), 0,
+  'the Kopdes admin sees no refund request, the open one included');
 reset role;
 select pg_temp.act_as('admin_kopdes');
 select is(
