@@ -23,6 +23,7 @@ import { StatusBadge } from '@/components/admin/status/status-badge';
 import { Button } from '@/components/ui/button';
 import { BOOKINGS_DASHBOARD_PATH } from '@/config/bookings';
 import { bookingsAdminCopy } from '@/lib/copy/bookings-admin';
+import { resendOptionsFor } from '@/lib/utils/booking-resend-options';
 import { staffStepsFor, type StaffSteps } from '@/lib/utils/booking-staff-steps';
 import { cashBookingOf, hasOpenPayLink, isCashReceivable } from '@/lib/utils/walk-in-cash';
 import {
@@ -49,9 +50,9 @@ import {
   listBookingAddons,
   listBookingTimeline,
 } from '@/server/services/booking-admin-service';
-import { listReviewLegs } from '@/server/services/booking-staff-service';
+import { listMessageHistory, listReviewLegs } from '@/server/services/booking-staff-service';
 import type { BookingAddonLine, BookingDetail, BookingTimelineEvent } from '@/types/booking-admin';
-import type { ReviewLeg } from '@/types/booking-staff';
+import type { ResendOption, ReviewLeg } from '@/types/booking-staff';
 
 const text = bookingsAdminCopy.detail;
 const idSchema = z.uuid();
@@ -134,19 +135,20 @@ function SideColumn({
   booking,
   timeline,
   steps,
-  reviewLegs,
+  choices,
 }: {
   booking: BookingDetail;
   timeline: BookingTimelineEvent[];
   steps: StaffSteps;
-  reviewLegs: ReviewLeg[];
+  choices: StaffChoices;
 }) {
   return (
     <div className="flex flex-col gap-6">
       <StaffActions
         booking={{ id: booking.id, code: booking.bookingCode, isPaid: booking.status === 'paid' }}
         can={steps}
-        reviewLegs={reviewLegs}
+        reviewLegs={choices.reviewLegs}
+        resendOptions={choices.resendOptions}
         actions={STAFF_STEP_ACTIONS}
       />
       <ContactPanel
@@ -178,6 +180,20 @@ async function loadBooking(bookingId: string) {
   return booking === null ? null : { booking, addons, timeline };
 }
 
+interface StaffChoices {
+  reviewLegs: ReviewLeg[];
+  resendOptions: ResendOption[];
+}
+
+// What the staff sheets offer: a review's sessions to move to, and the messages that may go to the PIC now.
+async function loadStaffChoices(booking: BookingDetail, steps: StaffSteps): Promise<StaffChoices> {
+  const [reviewLegs, messageHistory] = await Promise.all([
+    steps.resolveReview ? listReviewLegs(booking) : [],
+    steps.resend ? listMessageHistory(booking.id) : [],
+  ]);
+  return { reviewLegs, resendOptions: resendOptionsFor(booking, messageHistory, new Date()) };
+}
+
 // Task P4.3.02, docs/PRD.md FR-ADMIN-05: one booking through v_booking_admin. RLS answers the scope: a booking outside
 // an RW admin's RW or window, or an id that names nothing, is the same 404 (docs/Security.md AZ-12).
 export default async function BookingDetailPage({ params }: BookingPageProps) {
@@ -193,7 +209,7 @@ export default async function BookingDetailPage({ params }: BookingPageProps) {
     { isSuperadmin: ctx.role === 'superadmin', isAal2: ctx.isAal2 },
     new Date(),
   );
-  const reviewLegs = steps.resolveReview ? await listReviewLegs(booking) : [];
+  const choices = await loadStaffChoices(booking, steps);
 
   return (
     <div className="flex flex-col gap-6">
@@ -216,7 +232,7 @@ export default async function BookingDetailPage({ params }: BookingPageProps) {
             new Date(),
           )}
         />
-        <SideColumn booking={booking} timeline={timeline} steps={steps} reviewLegs={reviewLegs} />
+        <SideColumn booking={booking} timeline={timeline} steps={steps} choices={choices} />
       </div>
     </div>
   );

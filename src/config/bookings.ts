@@ -1,3 +1,5 @@
+import type { EnumValue } from '@/db/enums';
+
 // /dashboard/bookings (Task P4.3.02, docs/PRD.md FR-ADMIN-05; docs/StyleGuide.md §6.10).
 
 // docs/PRD.md §13.1 A23 addendum (delta review of PR #91, L-2c): `?category=admin_unpaid` on /dashboard/bookings
@@ -51,6 +53,40 @@ export const RESENDABLE_TEMPLATES = [
   'certificate_ready',
   'refund_processed',
 ] as const;
+// The booking states each of those messages still fits: internal.message_fits_state (20261105130400) for these
+// templates. It mirrors SQL and changes only with it; the RPC decides again. Both this table and
+// PAY_LINK_SENT_STATUSES are pinned to SQL: src/config/bookings.test.ts holds the literal that
+// supabase/tests/staff_payment_reminder.sql checks message_fits_state and the functions' sources against.
+export const RESEND_TEMPLATE_STATES: Readonly<
+  Record<(typeof RESENDABLE_TEMPLATES)[number], readonly EnumValue<'booking_status'>[]>
+> = {
+  booking_created: ['pending_payment'],
+  payment_reminder: ['pending_payment'],
+  payment_received_ticket: ['paid', 'checked_in'],
+  booking_cancelled: ['cancelled', 'refunded'],
+  visit_reminder_d1: ['paid', 'checked_in'],
+  certificate_ready: ['checked_in', 'completed'],
+  refund_processed: ['cancelled', 'refunded'],
+};
+export const RESEND_CHANNELS = ['whatsapp', 'email'] as const;
+// When a pay link counts as gone to the PIC, so an officer's hold may be reminded: the poll job's link_sent
+// (internal.payments_housekeeping), which request_notification_resend reads too (20261105175000).
+export const PAY_LINK_SENT_STATUSES: readonly EnumValue<'notification_status'>[] = [
+  'sent',
+  'delivered',
+  'read',
+];
+// The web bookers whose hold the poll job reminds, and so staff may remind first (its reminded_booker_types); an
+// officer's hold is reminded whoever booked. Pinned to SQL by supabase/tests/staff_payment_reminder.sql.
+export const REMINDED_BOOKER_TYPES: readonly EnumValue<'booker_type'>[] = [
+  'school',
+  'university',
+  'government',
+  'company',
+];
+// The one review that keeps a booking's tickets, and so its D-1 reminder (internal.reminder_day_held). Pinned to SQL by
+// supabase/tests/staff_payment_reminder.sql.
+export const REMINDER_KEEPING_REVIEW_REASON = 'REVENUE_RULE_REFUSED';
 // The review a booking paid after its hold lapsed and its session filled waits in (internal.settle_payment).
 export const NO_SEATS_REVIEW_REASON = 'PAID_AFTER_EXPIRY_NO_QUOTA';
 // What public.extend_booking_hold allows, for the hint staff read. These mirror SQL and change only with it: maxDays

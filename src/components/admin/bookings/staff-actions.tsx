@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { bookingStaffCopy } from '@/lib/copy/booking-staff';
 import type { ActionResult } from '@/types/action-result';
-import type { ReviewLeg } from '@/types/booking-staff';
+import type { ResendOption, ReviewLeg } from '@/types/booking-staff';
 
 const text = bookingStaffCopy;
 
@@ -49,6 +49,8 @@ export interface StaffActionsProps {
     resolveReview: boolean;
   };
   reviewLegs: ReviewLeg[];
+  // The messages the "Kirim pesan" sheet offers (resendOptionsFor).
+  resendOptions: ResendOption[];
   actions: {
     cancel: StepAction;
     preview: PreviewAction;
@@ -211,7 +213,14 @@ function MoneySheets({
   );
 }
 
-function HoldSheets({ booking, actions, step, setStep, done }: StaffActionsProps & StaffStep) {
+function HoldSheets({
+  booking,
+  resendOptions,
+  actions,
+  step,
+  setStep,
+  done,
+}: StaffActionsProps & StaffStep) {
   const close = () => {
     setStep(null);
   };
@@ -229,6 +238,7 @@ function HoldSheets({ booking, actions, step, setStep, done }: StaffActionsProps
       <StepSheet open={step === 'resend'} title={text.resend.title} onClose={close}>
         <ResendMessageForm
           bookingId={booking.id}
+          options={resendOptions}
           action={actions.resend}
           onDone={() => {
             done(text.resend.done);

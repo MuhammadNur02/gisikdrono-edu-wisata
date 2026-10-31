@@ -50,11 +50,18 @@ export const bookingStaffCopy = {
     done: 'Pemesanan aktif lagi dan tautan pembayaran dikirim.',
   },
   resend: {
-    open: 'Kirim ulang pesan',
-    title: 'Kirim ulang pesan ke penanggung jawab',
+    open: 'Kirim pesan',
+    title: 'Kirim pesan ke penanggung jawab',
     template: 'Pesan',
     channel: 'Saluran',
+    channelHint:
+      'Hanya saluran yang bisa menjangkau penanggung jawab yang ditampilkan: WhatsApp perlu nomor yang sudah terverifikasi.',
     channels: { whatsapp: 'WhatsApp', email: 'Email' },
+    lastQueued: (channel: string, when: string) => `${channel} (terakhir ${when})`,
+    firstSend: (channel: string) => `${channel} (belum pernah dikirim)`,
+    emptyTitle: 'Belum ada pesan yang bisa dikirim',
+    emptyHint:
+      'Pesan hanya bisa dikirim ulang bila sudah pernah dikirim dan masih sesuai dengan status pemesanannya. Pengingat pembayaran bisa dikirim pertama kali untuk pemesanan rombongan (sekolah, kampus, instansi, perusahaan) atau pemesanan petugas yang menunggu pembayaran, sebelum batas bayarnya lewat; untuk pemesanan petugas, setelah tautan pembayaran terkirim dan sebelum sesi pertamanya dimulai.',
     templates: {
       booking_created: 'Tautan pembayaran',
       payment_reminder: 'Pengingat pembayaran',
@@ -64,7 +71,7 @@ export const bookingStaffCopy = {
       certificate_ready: 'Sertifikat',
       refund_processed: 'Pengembalian dana',
     } satisfies Record<ResendTemplate, string>,
-    submit: 'Kirim ulang',
+    submit: 'Kirim',
     done: 'Pesan masuk antrean pengiriman.',
   },
   review: {
@@ -97,7 +104,10 @@ export const bookingStaffCopy = {
     priceChanged: 'Jumlah pengembalian dana berubah. Periksa lagi angkanya, lalu kirim ulang.',
     quotaUnavailable: 'Kursi sesi yang dipilih sudah habis. Pilih sesi lain.',
     notSent:
-      'Pesan tidak bisa dikirim sekarang: salurannya dimatikan, nomor belum terverifikasi, atau batas email sebelum pembayaran sudah tercapai.',
+      'Pesan tidak bisa dikirim sekarang: salurannya sedang dimatikan, nomor WhatsApp penanggung jawab belum terverifikasi, atau batas email harian sebelum pembayaran sudah tercapai. Coba saluran lain, atau coba lagi besok.',
+    neverSent: 'Pesan ini belum pernah dikirim untuk pemesanan ini, jadi belum bisa dikirim ulang.',
+    payLinkNotSent:
+      'Tautan pembayaran belum terkirim ke penanggung jawab. Kirim dulu pesan "Tautan pembayaran", lalu kirim pengingatnya setelah pesan itu terkirim.',
     reminderDayUnknown:
       'Pengingat H-1 terakhir pemesanan ini tidak mencatat tanggal kunjungannya, jadi tidak bisa dikirim ulang. Pengingat berikutnya dikirim otomatis sehari sebelum kunjungan.',
     qrKeyUnknown:
