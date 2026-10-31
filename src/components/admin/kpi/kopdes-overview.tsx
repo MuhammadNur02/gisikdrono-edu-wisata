@@ -7,9 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SETTINGS_PATH } from '@/config/dashboard';
 import { PRODUCT_PATHS, VENDORS_PATH } from '@/config/products';
 import { copy } from '@/lib/copy/id';
+import { kopdesOverviewCopy } from '@/lib/copy/kopdes';
 import type { UmkmCatalogueCounts } from '@/types/product';
 
-const text = copy.dashboard.overview.kopdes;
+const text = kopdesOverviewCopy;
 
 // The Kopdes admin's three pages, one step away.
 function Shortcuts() {

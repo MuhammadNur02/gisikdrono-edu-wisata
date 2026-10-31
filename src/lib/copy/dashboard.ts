@@ -73,21 +73,6 @@ export const dashboardCopy = {
       ratingHint: (count: number) =>
         count === 0 ? 'Belum ada ulasan terbit.' : `Dari ${String(count)} ulasan terbit.`,
     },
-    // docs/PRD.md §13.1 A30: the Koperasi Merah Putih's overview, UMKM only.
-    kopdes: {
-      welcome:
-        'Koperasi Merah Putih mengelola produk UMKM semua RW: mendaftarkan penjual dan produknya, foto, varian, dan harga, serta nomor dan alamat pemesanan.',
-      published: 'Produk tampil di situs',
-      publishedHint: 'Produk berstatus terbit, semua RW.',
-      drafts: 'Produk draf',
-      draftsHint: 'Belum tampil di situs.',
-      vendors: 'Penjual aktif',
-      vendorsHint: 'Penjual tidak pernah tampil di situs.',
-      shortcuts: 'Pintasan',
-      products: 'Kelola produk UMKM',
-      vendorsLink: 'Kelola penjual UMKM',
-      settings: 'Pengaturan katalog',
-    },
     rw: {
       quota: 'Kuota hari ini terpakai',
       quotaHint: (reserved: number, capacity: number) =>
