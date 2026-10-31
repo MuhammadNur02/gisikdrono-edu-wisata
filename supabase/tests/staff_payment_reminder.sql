@@ -1,10 +1,10 @@
 -- 20261105175000_staff_payment_reminder.sql: staff send a first payment reminder to a booking the poll job would
 -- remind (an institution's web hold or an officer's hold before its first session, the latter only once its pay link
 -- went out), a message the booking never had is refused as NEVER_SENT, and the poll job decides each channel on its
--- own: a recent reminder that did not fail stands for the job's on its channel only, from 12 hours before the job's
--- window opens.
+-- own: a recent reminder stands for the job's on its channel only, from 12 hours before the job's
+-- window opens; a row cancelled or dead-lettered stands for nothing, a failed one waiting for its retry still does.
 begin;
-select plan(41);
+select plan(45);
 \ir helpers/rls_personas.psql
 
 -- The hint a statement is refused with, or null when it runs.
@@ -65,7 +65,9 @@ from (values
   ('113', 'GSK-SPR0PR13', 'pending_payment', 'web', now() + interval '2 days', null, 'individual', true, '{5}'),
   ('114', 'GSK-SPR0ST14', 'pending_payment', 'admin', now() + interval '1 day', null, 'school', true, '{5}'),
   ('115', 'GSK-SPR0CB15', 'pending_payment', 'web', now() + interval '2 days', null, 'school', true, '{5,13}'),
-  ('116', 'GSK-SPR0EX16', 'pending_payment', 'web', now() + interval '1 hour', null, 'school', true, '{5}')
+  ('116', 'GSK-SPR0EX16', 'pending_payment', 'web', now() + interval '1 hour', null, 'school', true, '{5}'),
+  ('117', 'GSK-SPR0RT17', 'pending_payment', 'web', now() + interval '3 hours', null, 'school', true, '{5}'),
+  ('118', 'GSK-SPR0CA18', 'pending_payment', 'web', now() + interval '3 hours', null, 'school', true, '{5}')
 ) as fixture(code, booking_code, status, channel, expires_at, review_reason, booker_type, phone_verified, rw_ids);
 -- GSK-SPR0ST14 is an officer's hold whose session started yesterday, its pay link sent.
 insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time, label, capacity) values
@@ -73,20 +75,28 @@ insert into public.visit_sessions (id, rw_id, session_date, start_time, end_time
 insert into public.booking_legs (booking_id, rw_id, visit_session_id, leg_order, pax_count, status, quota_reserved_at)
 values ('00000000-0000-4000-8000-0000000d5114', 5, '00000000-0000-4000-8000-0000000d5201', 1, 1, 'reserved', now());
 -- The messages the bookings had before: the officer's pay link of GSK-SPR0AD05 is queued, not yet sent; the staff
--- reminders on email of GSK-SPR0DA08 (a day ago), GSK-SPR0FD09 (an hour ago, failed), GSK-SPR0E13A and GSK-SPR0E11B
--- (13 and 11 hours before the job's window opened, 3 hours ago) and GSK-SPR0EX16 (15 hours ago).
+-- reminders on email of GSK-SPR0DA08 (a day ago), GSK-SPR0FD09 (an hour ago, dead-lettered), GSK-SPR0RT17 (an hour
+-- ago, failed and waiting for its retry), GSK-SPR0E13A and GSK-SPR0E11B (13 and 11 hours before the job's window
+-- opened, 3 hours ago) and GSK-SPR0EX16 (15 hours ago); GSK-SPR0CA18's address had its three emails before payment
+-- today.
 insert into public.notifications (booking_id, channel, template, recipient, params, dedupe_key, status, sent_at,
-  created_at)
+  dead_at, next_attempt_at, created_at)
 select ('00000000-0000-4000-8000-0000000d5' || code)::uuid, 'email', template::public.notification_template,
   'staf-pengingat-' || code || '@example.test', '{"link_scope": "pay"}',
   'booking:00000000-0000-4000-8000-0000000d5' || code || ':' || template || ':email'
   || case when template = 'payment_reminder' then ':' || md5('first_by_staff') else '' end,
-  status::public.notification_status, case when status = 'sent' then queued_at end, queued_at
+  replace(status, 'dead', 'failed')::public.notification_status, case when status = 'sent' then queued_at end,
+  case when status = 'dead' then queued_at end, case when status = 'failed' then now() + interval '10 minutes'
+  else queued_at end, queued_at
 from (values
   ('105', 'booking_created', 'queued', now()),
   ('114', 'booking_created', 'sent', now() - interval '2 hours'),
   ('108', 'payment_reminder', 'sent', now() - interval '1 day'),
-  ('109', 'payment_reminder', 'failed', now() - interval '1 hour'),
+  ('109', 'payment_reminder', 'dead', now() - interval '1 hour'),
+  ('117', 'payment_reminder', 'failed', now() - interval '1 hour'),
+  ('118', 'booking_created', 'sent', now() - interval '3 hours'),
+  ('118', 'quotation_ready', 'sent', now() - interval '3 hours'),
+  ('118', 'booking_link', 'sent', now() - interval '3 hours'),
   ('110', 'payment_reminder', 'sent', now() - interval '16 hours'),
   ('111', 'payment_reminder', 'sent', now() - interval '14 hours'),
   ('116', 'payment_reminder', 'sent', now() - interval '15 hours')
@@ -129,6 +139,9 @@ select is((select count(*)::int from pg_proc p
              and p.prosrc like '%array[''sent'', ''delivered'', ''read'']%'
              and p.prosrc like '%array[''school'', ''university'', ''government'', ''company'']%'), 2,
   'the RPC and the job read the pay link statuses and the reminded booker types the dashboard mirrors');
+select ok((select p.prosrc like '%b.review_reason = ''REVENUE_RULE_REFUSED''%' from pg_proc p
+           where p.oid = 'internal.reminder_day_held(uuid, date)'::regprocedure),
+  'reminder_day_held keeps the D-1 reminder under the review REMINDER_KEEPING_REVIEW_REASON names');
 
 
 -- ===== A first payment reminder =====
@@ -268,7 +281,13 @@ select is(format('%s %s', pg_temp.reminders('00000000-0000-4000-8000-0000000d510
   'a staff reminder sent the day before leaves the automatic one on both channels');
 select is(format('%s %s', pg_temp.reminders('00000000-0000-4000-8000-0000000d5109', 'email'),
                  pg_temp.reminders('00000000-0000-4000-8000-0000000d5109', 'whatsapp')), '2 1',
-  'M1: a staff reminder that failed stands for nothing: the job sends on its channel too');
+  'M1: a staff reminder given up on (dead-lettered) stands for nothing: the job sends on its channel too');
+select is(format('%s %s', pg_temp.reminders('00000000-0000-4000-8000-0000000d5117', 'email'),
+                 pg_temp.reminders('00000000-0000-4000-8000-0000000d5117', 'whatsapp')), '1 1',
+  'while one that failed and waits for its retry still stands for the job''s on its channel');
+select is(format('%s %s', pg_temp.reminders('00000000-0000-4000-8000-0000000d5118', 'email'),
+                 pg_temp.reminders('00000000-0000-4000-8000-0000000d5118', 'whatsapp')), '0 1',
+  'an address past its three emails before payment gets no email reminder, the WhatsApp one still goes');
 select is(format('%s %s', pg_temp.reminders('00000000-0000-4000-8000-0000000d5110', 'email'),
                  pg_temp.reminders('00000000-0000-4000-8000-0000000d5110', 'whatsapp')), '2 1',
   'M2: a staff reminder 13 hours before the window opened leaves the job''s on its channel');
@@ -280,6 +299,10 @@ select is(format('%s %s', pg_temp.reminders('00000000-0000-4000-8000-0000000d511
   'a staff email 15 hours ago stands for a deadline an hour away');
 select is((internal.payments_housekeeping() ->> 'reminded')::int, 0,
   'a second run reminds nothing again, and counts no hold it queued nothing for');
+select is((select count(*)::int from public.security_events e
+           where e.event_type = 'rate_limited' and e.entity_id = '00000000-0000-4000-8000-0000000d5118'
+             and e.details ->> 'limit' = 'email_before_payment'), 1,
+  'and the capped email is not tried again on the next run, so it leaves one rate_limited event, not one a run');
 select set_config('app.in_rpc', '', true), set_config('app.actor_role', '', true);
 select is(pg_temp.reminders('00000000-0000-4000-8000-0000000d5101', 'email')
           + pg_temp.reminders('00000000-0000-4000-8000-0000000d5101', 'whatsapp'), 3,

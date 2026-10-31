@@ -13,10 +13,13 @@
 --   payments_housekeeping        The reminder is decided per channel. Inside the job's window (the 6 hours before the
 --                                reminder is due) a channel gets the job's reminder unless it already has the job's own,
 --                                or a reminder queued from 12 hours before the window opened (recent_reminder_span) that
---                                did not fail and was not cancelled. So a staff reminder sent earlier still leaves the
---                                automatic one, one sent shortly before or inside the window stands for it on its own
---                                channel only, and a staff reminder that never went out stands for nothing. reminded
---                                counts the holds that got a reminder queued. Everything else is unchanged.
+--                                was not cancelled or dead-lettered (a `failed` row without dead_at still waits for its
+--                                retry, so it still stands). So a staff reminder sent earlier still leaves the automatic
+--                                one, one sent shortly before or inside the window stands for it on its own channel
+--                                only, and a staff reminder given up on stands for nothing. An email the pre-payment
+--                                email cap held back inside the window is not tried again on every run (its
+--                                `rate_limited` event marks it). reminded counts the holds that got a reminder queued.
+--                                Everything else is unchanged.
 
 
 -- ===== request_notification_resend =====
@@ -131,7 +134,8 @@ grant execute on function
 
 -- Replaces the 20261105100200 version: each channel of a hold is reminded unless it has the job's own reminder (the
 -- one without a dedupe scope, internal.enqueue_notification's `booking:<id>:payment_reminder:<channel>`) or a recent
--- one that did not fail. Everything else is unchanged.
+-- one neither cancelled nor dead-lettered, and an email the cap held back in the window is not tried again.
+-- Everything else is unchanged.
 create or replace function internal.payments_housekeeping() returns jsonb
   language plpgsql security definer
   set search_path = ''
@@ -182,13 +186,22 @@ begin
       and (b.channel = 'admin' or b.booker_type = any (reminded_booker_types))
       and b.expires_at > now() and due.remind_by > now() and due.remind_by <= now() + reminder_ahead
       -- The job's own reminder on this channel, whatever became of it, or a reminder queued on it from
-      -- recent_reminder_span before the window opened and not failed or cancelled, so the PIC is not reminded twice
-      -- within a few hours; a staff reminder sent earlier, or one that never went out, still leaves the job's.
+      -- recent_reminder_span before the window opened and neither cancelled nor dead-lettered, so the PIC is not
+      -- reminded twice within a few hours. A `failed` row without dead_at waits for its retry (fail_notification), so it
+      -- still stands; a staff reminder sent earlier, or one given up on, leaves the job's.
       and not exists (select 1 from public.notifications n
                       where n.booking_id = b.id and n.template = 'payment_reminder' and n.channel = reach.channel
                         and (n.dedupe_key = format('booking:%s:payment_reminder:%s', b.id, reach.channel)
-                             or (n.status not in ('failed', 'cancelled')
+                             or (n.status <> 'cancelled' and n.dead_at is null
                                  and n.created_at >= due.remind_by - reminder_ahead - recent_reminder_span)))
+      -- An email internal.enqueue_notification held back under the pre-payment email cap inside the window left its
+      -- rate_limited event; it is not tried again on every run, each try writing another event.
+      and (reach.channel <> 'email'
+           or not exists (select 1 from public.security_events e
+                          where e.event_type = 'rate_limited' and e.occurred_at >= due.remind_by - reminder_ahead
+                            and e.entity_type = 'bookings' and e.entity_id = b.id::text
+                            and e.details ->> 'limit' = 'email_before_payment'
+                            and e.details ->> 'template' = 'payment_reminder'))
       -- Delta review of PR #91, L-C: an officer's hold is reminded only after its pay link went out.
       and (b.channel <> 'admin'
            or exists (select 1 from public.notifications n
