@@ -2,7 +2,7 @@ import { revalidateTag } from 'next/cache';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { productsCopy } from '@/lib/copy/products';
-import { requireAal2, type StaffContext } from '@/server/auth/guards';
+import { requireUmkmManager, type StaffContext } from '@/server/auth/guards';
 import {
   archiveProduct,
   createProduct,
@@ -26,7 +26,7 @@ vi.mock('next/headers', () => ({
     Promise.resolve({ get: () => (cookie.value ? { value: cookie.value } : undefined) }),
 }));
 vi.mock('next/cache', () => ({ revalidateTag: vi.fn() }));
-vi.mock('@/server/auth/guards', () => ({ requireAal2: vi.fn() }));
+vi.mock('@/server/auth/guards', () => ({ requireUmkmManager: vi.fn() }));
 vi.mock('@/server/services/product-service', () => ({
   archiveProduct: vi.fn(),
   createProduct: vi.fn(),
@@ -46,6 +46,7 @@ vi.mock('@/lib/logger', () => ({
 const BASE = { userId: 'user-1', isAal2: true, totpVerifiedAt: null, claimsVersion: 1 };
 const ADMIN_05: StaffContext = { ...BASE, role: 'admin_rw', rwId: 5 };
 const SUPERADMIN: StaffContext = { ...BASE, role: 'superadmin', rwId: null };
+const KOPDES: StaffContext = { ...BASE, role: 'admin_kopdes', rwId: null };
 const ROW_ID = '0192f3a4-5b6c-7d8e-9f01-23456789abcd';
 const FORM = {
   vendorId: ROW_ID,
@@ -116,7 +117,7 @@ function stored(rwId: number): ProductAdmin {
 
 beforeEach(() => {
   cookie.value = '5';
-  vi.mocked(requireAal2).mockReset().mockResolvedValue({ ok: true, ctx: SUPERADMIN });
+  vi.mocked(requireUmkmManager).mockReset().mockResolvedValue({ ok: true, ctx: SUPERADMIN });
   vi.mocked(createProduct).mockReset().mockResolvedValue(stored(5));
   vi.mocked(updateProduct)
     .mockReset()
@@ -130,9 +131,13 @@ beforeEach(() => {
 });
 
 describe('product and vendor actions', () => {
-  // Decision of the user, 2026-10-24: entry is the superadmin's, an RW admin reads only.
-  it('refuses every write to an RW admin, even for their own RW', async () => {
-    vi.mocked(requireAal2).mockResolvedValue({ ok: true, ctx: ADMIN_05 });
+  // Decision of the user, 2026-10-24: entry is the UMKM managers', an RW admin reads only; requireUmkmManager refuses
+  // them (guards.test.ts), and every action answers with the products' own sentence.
+  it('refuses every write to whoever is not a UMKM manager, an RW admin among them', async () => {
+    vi.mocked(requireUmkmManager).mockResolvedValue({
+      ok: false,
+      error: { code: 'FORBIDDEN', message: 'Akses ditolak' },
+    });
     const results = [
       await createProductAction(FORM),
       await updateProductAction({ ...FORM, id: ROW_ID }),
@@ -160,6 +165,26 @@ describe('product and vendor actions', () => {
     await createVendorAction(VENDOR_FORM);
     expect(createVendor).toHaveBeenCalledWith(SUPERADMIN, 8, expect.anything());
     expect(revalidateTag).toHaveBeenCalledWith('products:all');
+  });
+
+  // docs/PRD.md §13.1 A30: the Koperasi Merah Putih's admin files them as the superadmin does.
+  it('lets the Kopdes admin file a product and a vendor under its RW choice', async () => {
+    vi.mocked(requireUmkmManager).mockResolvedValue({ ok: true, ctx: KOPDES });
+    cookie.value = '13';
+    vi.mocked(readVendorForStaff).mockResolvedValue(vendorOf(13));
+    expect(await createProductAction(FORM)).toMatchObject({ ok: true });
+    expect(createProduct).toHaveBeenCalledWith(13, expect.anything());
+    await createVendorAction(VENDOR_FORM);
+    expect(createVendor).toHaveBeenCalledWith(KOPDES, 13, expect.anything());
+    expect(await archiveProductAction({ id: ROW_ID })).toEqual({ ok: true, data: null });
+  });
+
+  it('refuses the RW choice of an account that is no UMKM manager, should a guard ever let one through', async () => {
+    vi.mocked(requireUmkmManager).mockResolvedValue({ ok: true, ctx: ADMIN_05 });
+    expect(await createProductAction(FORM)).toMatchObject({ error: { code: 'FORBIDDEN' } });
+    expect(await createVendorAction(VENDOR_FORM)).toMatchObject({ error: { code: 'FORBIDDEN' } });
+    expect(createProduct).not.toHaveBeenCalled();
+    expect(createVendor).not.toHaveBeenCalled();
   });
 
   it('asks for an RW under Semua', async () => {

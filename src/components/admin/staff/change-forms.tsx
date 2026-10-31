@@ -13,7 +13,11 @@ import { Form } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
 import { useActionForm } from '@/hooks/use-action-form';
 import { staffCopy } from '@/lib/copy/staff';
-import { setStaffRoleFormSchema, setStaffStatusFormSchema } from '@/lib/validations/staff';
+import {
+  isAssignableRole,
+  setStaffRoleFormSchema,
+  setStaffStatusFormSchema,
+} from '@/lib/validations/staff';
 import { stepUpSchema } from '@/lib/validations/step-up';
 import type { ActionResult } from '@/types/action-result';
 import type { StaffMember, StaffRoleChange, StaffStatusChange } from '@/types/staff';
@@ -58,7 +62,7 @@ function useRoleForm(
     resolver: zodResolver(setStaffRoleFormSchema),
     defaultValues: {
       userId: member.id,
-      role: member.role === 'superadmin' ? ('superadmin' as const) : ('admin_rw' as const),
+      role: isAssignableRole(member.role) ? member.role : ('admin_rw' as const),
       rwId: member.rwId,
       code: '',
     },
@@ -83,7 +87,7 @@ export function RoleChangeForm({
           control={form.control}
           name="role"
           label={text.field}
-          onSuperadmin={() => {
+          onRoleWithoutRw={() => {
             form.setValue('rwId', null);
           }}
         />

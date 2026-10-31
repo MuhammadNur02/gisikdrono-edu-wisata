@@ -109,3 +109,24 @@ describe('the bank account actions', () => {
     expect(revalidatePath).toHaveBeenCalledWith('/dashboard/settings');
   });
 });
+
+// docs/PRD.md §13.1 A30: the Kopdes runs the UMKM finance, so its admin keeps the sellers' accounts, never an RW's.
+describe('the bank account actions for the Kopdes admin', () => {
+  const VENDOR_TARGET = { kind: 'vendor', vendorId: '0192f3a4-5b6c-7d8e-9f01-23456789abcd' };
+
+  it('ask the UMKM managers for a seller and the superadmin alone for an RW treasury', async () => {
+    vi.mocked(getMaskedBankAccount).mockResolvedValue({
+      bankName: 'BRI',
+      accountHolder: 'Bu Sari',
+      accountMasked: '••••7890',
+    });
+    await loadBankAccountAction({ target: VENDOR_TARGET });
+    expect(requireRole).toHaveBeenLastCalledWith('superadmin', 'admin_kopdes');
+    await setBankAccountAction({ ...ACCOUNT, target: VENDOR_TARGET });
+    expect(requireFreshTotp).toHaveBeenLastCalledWith(300, ['superadmin', 'admin_kopdes']);
+    await loadBankAccountAction({ target: RW_TARGET });
+    expect(requireRole).toHaveBeenLastCalledWith('superadmin');
+    await setBankAccountAction(ACCOUNT);
+    expect(requireFreshTotp).toHaveBeenLastCalledWith(300, ['superadmin']);
+  });
+});

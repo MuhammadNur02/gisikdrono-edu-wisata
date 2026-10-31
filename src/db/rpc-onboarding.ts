@@ -12,7 +12,7 @@ const claimedSchema = z.object({ claimed: z.boolean() }).strict();
 const acceptedSchema = z
   .object({
     accepted: z.boolean(),
-    role: z.enum(['superadmin', 'admin_rw']).optional(),
+    role: z.enum(['superadmin', 'admin_rw', 'admin_kopdes']).optional(),
     rw_id: z.number().int().nullable().optional(),
   })
   .strict();

@@ -3,7 +3,7 @@
 export const productsCopy = {
   title: 'Produk UMKM',
   description:
-    'Produk warga yang tampil di situs dan dipesan pengunjung lewat WhatsApp Koperasi Merah Putih. Produk dan UMKM didaftarkan oleh superadmin.',
+    'Produk warga yang tampil di situs dan dipesan pengunjung lewat WhatsApp Koperasi Merah Putih. Produk dan UMKM didaftarkan oleh Koperasi Merah Putih dan superadmin.',
   noun: 'produk UMKM',
   add: 'Tambah produk',
   newTitle: 'Produk baru',
@@ -13,8 +13,11 @@ export const productsCopy = {
   empty: 'Belum ada produk UMKM.',
   emptyHint: 'Daftarkan UMKM-nya dulu, lalu tambahkan produk pertamanya.',
   readOnly:
-    'Produk dan UMKM didaftarkan dan diubah oleh superadmin. Anda bisa melihat data RW Anda.',
-  entryOnlySuper: 'Hanya superadmin yang mendaftarkan atau mengubah produk dan UMKM.',
+    'Produk dan UMKM didaftarkan dan diubah oleh Koperasi Merah Putih dan superadmin. Anda bisa melihat data RW Anda.',
+  entryOnlySuper:
+    'Hanya Koperasi Merah Putih dan superadmin yang mendaftarkan atau mengubah produk dan UMKM.',
+  // The Kopdes admin's RW choice on this page (docs/PRD.md §13.1 A30): it has no RwSwitcher in the shell.
+  rwChoice: 'RW produk dan UMKM',
   vendorWrongRw: 'Pilih UMKM dari RW yang sama dengan produknya.',
   noVendors: 'Belum ada UMKM di RW ini. Daftarkan UMKM-nya dulu lewat tombol Kelola UMKM.',
   savedThenPhotos:
@@ -109,8 +112,8 @@ export const productsCopy = {
     open: 'Kelola UMKM',
     title: 'UMKM',
     description: (rw: string) =>
-      `Pelaku UMKM ${rw}. Rekening bank diatur terpisah oleh superadmin.`,
-    chooseRw: 'Pilih salah satu RW di pengalih RW untuk melihat UMKM-nya.',
+      `Pelaku UMKM ${rw}. Rekening bank diatur terpisah, dengan kode autentikator.`,
+    chooseRw: 'Pilih salah satu RW di pilihan RW untuk melihat UMKM-nya.',
     empty: 'Belum ada UMKM di RW ini.',
     add: 'Tambah UMKM',
     addTitle: 'UMKM baru',

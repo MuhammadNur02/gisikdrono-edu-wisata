@@ -13,11 +13,16 @@ import { rwIdSchema } from '@/lib/validations/rw-unit';
 
 const messages = copy.cms.validation;
 
-// The two roles a person is invited to or given; 'none' is what deactivation leaves, never something chosen.
-export const STAFF_ROLES = ['superadmin', 'admin_rw'] as const;
+// The roles a person is invited to or given, the Koperasi Merah Putih's admin_kopdes among them (docs/PRD.md §13.1
+// A30); 'none' is what deactivation leaves, never something chosen.
+export const STAFF_ROLES = ['superadmin', 'admin_rw', 'admin_kopdes'] as const;
 export type AssignableRole = (typeof STAFF_ROLES)[number];
 
-// profiles_role_rw_ok and staff_invites_role_rw_ok: an RW admin has exactly one RW, a superadmin none.
+export function isAssignableRole(value: string): value is AssignableRole {
+  return STAFF_ROLES.some((role) => role === value);
+}
+
+// profiles_role_rw_ok and staff_invites_role_rw_ok: an RW admin has exactly one RW, a superadmin and a Kopdes admin none.
 function requireRwForRwAdmin(
   value: { role: AssignableRole; rwId: number | null },
   context: z.RefinementCtx,
@@ -25,11 +30,14 @@ function requireRwForRwAdmin(
   if (value.role === 'admin_rw' && value.rwId === null) {
     context.addIssue({ code: 'custom', path: ['rwId'], message: staffCopy.validation.rwRequired });
   }
-  if (value.role === 'superadmin' && value.rwId !== null) {
+  if (value.role !== 'admin_rw' && value.rwId !== null) {
     context.addIssue({
       code: 'custom',
       path: ['rwId'],
-      message: staffCopy.validation.rwNotAllowed,
+      message:
+        value.role === 'admin_kopdes'
+          ? staffCopy.validation.rwNotAllowedKopdes
+          : staffCopy.validation.rwNotAllowed,
     });
   }
 }

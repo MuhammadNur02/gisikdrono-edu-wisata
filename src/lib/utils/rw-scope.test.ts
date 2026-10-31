@@ -18,6 +18,12 @@ describe('effectiveRwFor', () => {
     expect(effectiveRwFor(superadmin, null, KNOWN_RWS)).toBeNull();
   });
 
+  it('lets the Kopdes admin filter its UMKM lists by an RW of rw_units, as the superadmin does', () => {
+    const kopdes = { role: 'admin_kopdes' as const, rwId: null };
+    expect(effectiveRwFor(kopdes, 13, KNOWN_RWS)).toBe(13);
+    expect(effectiveRwFor(kopdes, 99, KNOWN_RWS)).toBeNull();
+  });
+
   it('gives an account without a role nothing', () => {
     expect(effectiveRwFor({ role: 'none', rwId: null }, 5, KNOWN_RWS)).toBeNull();
   });

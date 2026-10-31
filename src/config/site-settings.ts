@@ -33,6 +33,15 @@ export const EDITABLE_SETTING_KEYS = {
 
 export type EditableSettingName = keyof typeof EDITABLE_SETTING_KEYS;
 
+// docs/PRD.md §13.1 A30: the keys the Kopdes admin edits as well, and no other (site_settings_kopdes_update,
+// 20261105180500); the superadmin keeps every key.
+export const CATALOGUE_SETTING_NAMES = [
+  'kopdesWhatsappNumber',
+  'kopdesAddress',
+  'showProductPrices',
+] as const satisfies readonly EditableSettingName[];
+export type CatalogueSettingName = (typeof CATALOGUE_SETTING_NAMES)[number];
+
 // Shown, never switched, from the form until the guest pages of Task P3.12 exist: the migration of P3.12.01 opens
 // booking again (20261023090000_booking_closed_until_guest_pages.sql).
 export const BOOKING_ENABLED_KEY = 'booking_enabled';

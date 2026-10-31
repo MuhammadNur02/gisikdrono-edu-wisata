@@ -2,13 +2,16 @@ import { revalidateTag } from 'next/cache';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { requireFreshTotp, type StaffContext } from '@/server/auth/guards';
-import { updateSiteSettings } from '@/server/services/settings-service';
+import { updateCatalogueSettings, updateSiteSettings } from '@/server/services/settings-service';
 
-import { updateSiteSettingsAction } from './settings';
+import { updateCatalogueSettingsAction, updateSiteSettingsAction } from './settings';
 
 vi.mock('next/cache', () => ({ revalidateTag: vi.fn() }));
 vi.mock('@/server/auth/guards', () => ({ requireFreshTotp: vi.fn() }));
-vi.mock('@/server/services/settings-service', () => ({ updateSiteSettings: vi.fn() }));
+vi.mock('@/server/services/settings-service', () => ({
+  updateSiteSettings: vi.fn(),
+  updateCatalogueSettings: vi.fn(),
+}));
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
   requestIdFrom: () => 'request-1',
@@ -17,6 +20,7 @@ vi.mock('@/lib/logger', () => ({
 const BASE = { userId: 'user-1', isAal2: true, totpVerifiedAt: 1, claimsVersion: 1 };
 const SUPERADMIN: StaffContext = { ...BASE, role: 'superadmin', rwId: null };
 const ADMIN_05: StaffContext = { ...BASE, role: 'admin_rw', rwId: 5 };
+const KOPDES: StaffContext = { ...BASE, role: 'admin_kopdes', rwId: null };
 const SETTINGS = {
   whatsappEnabled: true,
   emailEnabled: true,
@@ -50,6 +54,7 @@ const SETTINGS = {
 beforeEach(() => {
   vi.mocked(requireFreshTotp).mockReset().mockResolvedValue({ ok: true, ctx: SUPERADMIN });
   vi.mocked(updateSiteSettings).mockReset().mockResolvedValue(2);
+  vi.mocked(updateCatalogueSettings).mockReset().mockResolvedValue(1);
   vi.mocked(revalidateTag).mockReset();
 });
 
@@ -89,5 +94,47 @@ describe('a save that fails part-way', () => {
     const result = await updateSiteSettingsAction(SETTINGS);
     expect(result).toMatchObject({ ok: false, error: { code: 'INTERNAL' } });
     expect(revalidateTag).toHaveBeenCalledWith('settings');
+  });
+});
+
+// docs/PRD.md §13.1 A30: Pengaturan Katalog, the Kopdes admin's three keys.
+describe('updateCatalogueSettingsAction', () => {
+  const CATALOGUE = {
+    kopdesWhatsappNumber: '+6281298765432',
+    kopdesAddress: 'Jl. Koperasi 1, Gisikdrono',
+    showProductPrices: true,
+  };
+
+  it('saves the catalogue keys for a UMKM manager with a fresh TOTP code', async () => {
+    vi.mocked(requireFreshTotp).mockResolvedValueOnce({ ok: true, ctx: KOPDES });
+    expect(await updateCatalogueSettingsAction(CATALOGUE)).toEqual({ ok: true, data: 1 });
+    expect(requireFreshTotp).toHaveBeenCalledWith(300, ['superadmin', 'admin_kopdes']);
+    expect(updateCatalogueSettings).toHaveBeenCalledWith(KOPDES, CATALOGUE);
+    expect(revalidateTag).toHaveBeenCalledWith('settings');
+  });
+
+  it('takes no other key, so a Kopdes admin cannot ride one along', async () => {
+    const result = await updateCatalogueSettingsAction({ ...CATALOGUE, maintenanceMode: true });
+    expect(result).toMatchObject({ ok: false, error: { code: 'VALIDATION' } });
+    expect(requireFreshTotp).not.toHaveBeenCalled();
+  });
+
+  it('refuses whoever the guard refuses, an RW admin among them', async () => {
+    vi.mocked(requireFreshTotp).mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'FORBIDDEN', message: 'no' },
+    });
+    expect((await updateCatalogueSettingsAction(CATALOGUE)).ok).toBe(false);
+    expect(updateCatalogueSettings).not.toHaveBeenCalled();
+  });
+});
+
+describe('updateSiteSettingsAction for the Kopdes admin', () => {
+  it('refuses the whole form, which is the superadmin alone', async () => {
+    vi.mocked(requireFreshTotp).mockResolvedValueOnce({ ok: true, ctx: KOPDES });
+    expect(await updateSiteSettingsAction(SETTINGS)).toMatchObject({
+      error: { code: 'FORBIDDEN' },
+    });
+    expect(updateSiteSettings).not.toHaveBeenCalled();
   });
 });

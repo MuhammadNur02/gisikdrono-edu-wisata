@@ -42,6 +42,25 @@ describe('dashboardNavFor', () => {
     );
     expect(labels(dashboardNavFor('admin_rw', null))).not.toContain('Jadwal Pertunjukan');
   });
+
+  // docs/PRD.md §13.1 A30: the Koperasi Merah Putih's admin runs UMKM only.
+  it('gives the Kopdes admin the overview and the UMKM catalogue, nothing of the edu-wisata side', () => {
+    const kopdes = dashboardNavFor('admin_kopdes', null);
+    expect(titles(kopdes)).toEqual(['Ringkasan', 'Katalog']);
+    expect(kopdes.flatMap((group) => group.items.map((item) => [item.label, item.href]))).toEqual([
+      ['Dasbor', '/dashboard'],
+      ['Produk UMKM', '/dashboard/products'],
+      ['Penjual UMKM', '/dashboard/products?penjual=buka'],
+      ['Pengaturan Katalog', '/dashboard/settings'],
+    ]);
+  });
+
+  it('keeps the Kopdes items out of the menus of the other roles', () => {
+    for (const role of ['superadmin', 'admin_rw'] as const) {
+      expect(labels(dashboardNavFor(role, null))).not.toContain('Penjual UMKM');
+      expect(labels(dashboardNavFor(role, null))).not.toContain('Pengaturan Katalog');
+    }
+  });
 });
 
 describe('nestedHrefs', () => {

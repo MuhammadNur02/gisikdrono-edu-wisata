@@ -14,6 +14,7 @@ import { NoAccessNotice } from '@/components/auth/no-access-notice';
 import { ThemeProvider } from '@/components/providers/theme-provider';
 import { RW_SCOPE_ALL, SIDEBAR_STATE_COOKIE } from '@/config/dashboard';
 import type { DashboardNavGroup } from '@/config/nav';
+import { ALL_STAFF_ROLES } from '@/config/staff';
 import { copy } from '@/lib/copy/id';
 import { requestNonce } from '@/lib/request-nonce';
 import { dashboardNavFor } from '@/lib/utils/dashboard-nav';
@@ -72,12 +73,12 @@ async function loadShell(ctx: DashboardStaff) {
 // requireDashboardStaff() has sent a signed-out visitor to /login and an AAL1 session to the TOTP step already.
 export default async function DashboardLayout({ children }: Readonly<{ children: ReactNode }>) {
   const nonce = await requestNonce();
-  const ctx = await requireDashboardStaff();
+  const ctx = await requireDashboardStaff(ALL_STAFF_ROLES);
   if (!ctx) return <NoAccess nonce={nonce} />;
 
   const { profile, rwUnits, sidebarOpen, scope, groups } = await loadShell(ctx);
   const menuItems = flattenNav(groups);
-  const roleLabel = staffRoleLabel(ctx.rwId);
+  const roleLabel = staffRoleLabel(ctx.role, ctx.rwId);
   return (
     <ThemeProvider scope="admin" nonce={nonce}>
       <DashboardShell
@@ -95,6 +96,7 @@ export default async function DashboardLayout({ children }: Readonly<{ children:
         userMenu={<UserMenu fullName={profile.fullName} roleLabel={roleLabel} />}
         idleLock={<IdleLock action={verifyStaffTotpAction} />}
         canOverrideScans={ctx.role === 'superadmin'}
+        canScan={ctx.role !== 'admin_kopdes'}
       >
         {children}
       </DashboardShell>

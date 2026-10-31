@@ -100,3 +100,10 @@ export interface ProductAdmin extends ProductListItem {
   sortOrder: number;
   variants: ProductVariantAdmin[];
 }
+
+// The Kopdes admin's overview (docs/PRD.md §13.1 A30): the UMKM catalogue of every RW, in counts.
+export interface UmkmCatalogueCounts {
+  publishedProducts: number;
+  draftProducts: number;
+  activeVendors: number;
+}

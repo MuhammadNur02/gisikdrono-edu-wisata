@@ -354,9 +354,9 @@ describe('upload pipeline on the local stack', { timeout: SLOW_TEST_MS }, () => 
   });
 
   it('reads the profile itself: a token from before the last profile change is refused', async () => {
-    await expect(checkUploadAccess(officer, 5, { step: 'sign' })).resolves.toBe(true);
+    await expect(checkUploadAccess(officer, 5, { step: 'sign' }, null)).resolves.toBe(true);
     const staleToken = { ...officer, claimsVersion: (officer.claimsVersion ?? 0) - 1 };
 
-    await expect(checkUploadAccess(staleToken, 5, { step: 'sign' })).resolves.toBe(false);
+    await expect(checkUploadAccess(staleToken, 5, { step: 'sign' }, null)).resolves.toBe(false);
   });
 });

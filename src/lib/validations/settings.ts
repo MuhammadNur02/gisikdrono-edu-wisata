@@ -30,6 +30,13 @@ const emailSchema = z
   .max(LIMITS.email, messages.email)
   .pipe(z.email(messages.email));
 
+// docs/PRD.md §13.1 A30: the three keys the Kopdes admin edits too, the same fields in both forms.
+const catalogueSettingFields = {
+  kopdesWhatsappNumber: z.string().trim().regex(PHONE_PATTERN, messages.phone),
+  kopdesAddress: contentText(LIMITS.address),
+  showProductPrices: z.boolean(),
+};
+
 export const siteSettingsSchema = z
   .object({
     whatsappEnabled: z.boolean(),
@@ -54,9 +61,7 @@ export const siteSettingsSchema = z
     contactWhatsappNumber: z.string().trim().regex(PHONE_PATTERN, messages.phone),
     contactEmail: emailSchema,
     kelurahanAddress: contentText(LIMITS.address),
-    kopdesWhatsappNumber: z.string().trim().regex(PHONE_PATTERN, messages.phone),
-    kopdesAddress: contentText(LIMITS.address),
-    showProductPrices: z.boolean(),
+    ...catalogueSettingFields,
     dpoName: contentText(LIMITS.shortText),
     dpoEmail: emailSchema,
     signatoryName: contentText(LIMITS.shortText),
@@ -78,3 +83,10 @@ export const siteSettingsSchema = z
 
 export type SiteSettingsInput = z.input<typeof siteSettingsSchema>;
 export type SiteSettingsValues = z.output<typeof siteSettingsSchema>;
+
+// /dashboard/settings for the Kopdes admin (Pengaturan Katalog): the catalogue keys alone, which the superadmin edits in
+// the whole form above. Shared by its form and updateCatalogueSettingsAction; .strict(), so no other key rides along.
+export const catalogueSettingsSchema = z.object(catalogueSettingFields).strict();
+
+export type CatalogueSettingsInput = z.input<typeof catalogueSettingsSchema>;
+export type CatalogueSettingsValues = z.output<typeof catalogueSettingsSchema>;

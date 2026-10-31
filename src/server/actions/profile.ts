@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import { DASHBOARD_PATH } from '@/config/auth';
+import { ALL_STAFF_ROLES } from '@/config/staff';
 import { fail, mapError, ok } from '@/lib/errors';
 import { updateProfileSchema } from '@/lib/validations/dashboard';
 import { requireRole } from '@/server/auth/guards';
@@ -14,7 +15,7 @@ import type { StaffProfile } from '@/types/staff';
 export async function updateProfileAction(input: unknown): Promise<ActionResult<StaffProfile>> {
   const parsed = updateProfileSchema.safeParse(input);
   if (!parsed.success) return mapError(parsed.error);
-  const guard = await requireRole('superadmin', 'admin_rw');
+  const guard = await requireRole(...ALL_STAFF_ROLES);
   if (!guard.ok) return guard;
   if (!guard.ctx.isAal2) return fail('FORBIDDEN');
 

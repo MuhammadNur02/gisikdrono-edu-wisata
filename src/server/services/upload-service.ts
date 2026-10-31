@@ -27,6 +27,7 @@ import {
   quarantinePathFor,
   type MediaTarget,
   type QuarantineUpload,
+  type UploadPurpose,
 } from '@/lib/uploads/paths';
 import { countPublishedPages, type PdfSanitizing } from '@/lib/uploads/pdf-scan';
 import { withScanSlot } from '@/lib/uploads/scan-slots';
@@ -42,6 +43,7 @@ import {
   type RowPhotos,
   type PublishedBooklet,
 } from '@/server/services/media-library';
+import { currentStaff, isUploadOwner } from '@/server/services/upload-access';
 import {
   refusalEvent,
   sanitizedEvent,
@@ -78,42 +80,20 @@ const MS_PER_SECOND = 1000;
 // Nothing arrived, or the path holds an empty tombstone already: nothing for finalize to retire.
 const NOTHING_TO_RETIRE: ReadonlySet<UploadProblem> = new Set(['missing', 'already_used']);
 
-// The profile as it is now (security review of PR #14, L9): RLS, which would hold a deactivated officer or one
-// moved to another RW to the profile, does not apply to the service role, so the profile is read here.
-async function currentStaff(adminClient: DatabaseClient, ctx: StaffContext) {
-  const { data, error } = await adminClient
-    .from('profiles')
-    .select('role, rw_id, is_active, claims_version')
-    .eq('id', ctx.userId)
-    .maybeSingle();
-  if (error) throw error;
-  if (!data?.is_active || data.claims_version !== ctx.claimsVersion) return null;
-  return { ...ctx, role: data.role, rwId: data.rw_id };
-}
-
 // A refused officer is recorded as upload_rejected, ten an hour at most; beyond that one rate_limited row stands
-// for the rest (docs/Security.md UPL-04; security review of PR #14, L8).
-// The RWs are rows of rw_units, so an RW number is only an upload owner if its row exists; otherwise public-media
-// would collect files under a folder nobody owns (independent review of Task P2.10.02, L2).
-async function isUploadOwner(adminClient: DatabaseClient, rwId: number | null): Promise<boolean> {
-  if (rwId === null) return true;
-  const { data, error } = await adminClient
-    .from('rw_units')
-    .select('id')
-    .eq('id', rwId)
-    .maybeSingle();
-  if (error) throw error;
-  return data !== null;
-}
+// for the rest (docs/Security.md UPL-04; security review of PR #14, L8). The profile and the RW are read as they are
+// now (upload-access.ts).
 
+// The purpose is what finalize will publish, or null at the sign step, which knows none yet (hasUploadAccess).
 export async function checkUploadAccess(
   ctx: StaffContext,
   rwId: number | null,
   details: Record<string, string>,
+  purpose: UploadPurpose | null,
 ): Promise<boolean> {
   const adminClient = createSupabaseAdminClient();
   const current = await currentStaff(adminClient, ctx);
-  const mayUpload = current !== null && hasUploadAccess(current, rwId);
+  const mayUpload = current !== null && hasUploadAccess(current, rwId, purpose);
   if (mayUpload && (await isUploadOwner(adminClient, rwId))) return true;
   if (await withinUploadLimit(adminClient, ctx, 'upload_forbidden', rwId)) {
     const why = current === null ? 'profile' : mayUpload ? 'rw' : ctx.isAal2 ? 'scope' : 'aal1';
@@ -306,11 +286,16 @@ export async function finalizeUpload(
   return outcome;
 }
 
-// The CMS's own uses of public-media (Task P2.9.06), for an officer the profile still lets act for this owner.
-async function mediaClientFor(ctx: StaffContext, rwId: RwId | null): Promise<DatabaseClient> {
+// The CMS's own uses of public-media (Task P2.9.06), for an officer the profile still lets act for this owner and
+// this kind of file (the Kopdes admin's are product photos only, hasUploadAccess).
+async function mediaClientFor(
+  ctx: StaffContext,
+  rwId: RwId | null,
+  purpose: UploadPurpose,
+): Promise<DatabaseClient> {
   const adminClient = createSupabaseAdminClient();
   const current = await currentStaff(adminClient, ctx);
-  if (!current || !hasUploadAccess(current, rwId)) throw new AppError('FORBIDDEN');
+  if (!current || !hasUploadAccess(current, rwId, purpose)) throw new AppError('FORBIDDEN');
   return adminClient;
 }
 
@@ -321,7 +306,7 @@ export async function removeGalleryFiles(
   rwId: RwId | null,
   paths: (string | null)[],
 ): Promise<string[]> {
-  return removeUnusedGalleryFiles(await mediaClientFor(ctx, rwId), rwId, paths);
+  return removeUnusedGalleryFiles(await mediaClientFor(ctx, rwId, 'gallery'), rwId, paths);
 }
 
 // The page count and size a booklet row keeps, as Storage holds them rather than as the form reported them.
@@ -330,7 +315,7 @@ export async function readPublishedBookletFiles(
   rwId: RwId | null,
   bookletId: string,
 ): Promise<PublishedBooklet | null> {
-  return readPublishedBooklet(await mediaClientFor(ctx, rwId), rwId, bookletId);
+  return readPublishedBooklet(await mediaClientFor(ctx, rwId, 'booklet'), rwId, bookletId);
 }
 
 // A booklet the superadmin removed takes its PDF and pages out of public-media, where their addresses would otherwise
@@ -340,7 +325,7 @@ export async function removeBookletFiles(
   rwId: RwId | null,
   bookletId: string,
 ): Promise<number> {
-  return removeBookletFolder(await mediaClientFor(ctx, rwId), rwId, bookletId);
+  return removeBookletFolder(await mediaClientFor(ctx, rwId, 'booklet'), rwId, bookletId);
 }
 
 // An article's or activity point's folder keeps only what the row shows now, and nothing once it is removed. No
@@ -350,7 +335,7 @@ export async function keepRowPhotos(
   target: RowPhotos,
   keep: string[],
 ): Promise<number> {
-  return keepOnlyRowPhotos(await mediaClientFor(ctx, target.rwId), target, keep);
+  return keepOnlyRowPhotos(await mediaClientFor(ctx, target.rwId, target.purpose), target, keep);
 }
 
 export async function removeRowPhotos(ctx: StaffContext, target: RowPhotos): Promise<number> {
@@ -362,5 +347,5 @@ export async function removeUnusedHeroPhotos(
   ctx: StaffContext,
   paths: (string | null)[],
 ): Promise<string[]> {
-  return removeUnusedHeroFiles(await mediaClientFor(ctx, null), paths);
+  return removeUnusedHeroFiles(await mediaClientFor(ctx, null, 'hero'), paths);
 }

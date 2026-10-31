@@ -18,14 +18,16 @@ export interface RwScopedStaff {
 }
 
 // The RW a list is filtered by, with the `?rw=` of the URL tied to who asks (review of PR #31, item 1): an RW admin
-// always gets their own RW, whatever the URL says; the superadmin gets the RW they named only when rw_units has it
-// (the same check readRwScope makes), and every RW otherwise. RLS narrows the same reads again.
+// always gets their own RW, whatever the URL says; the superadmin, and the Kopdes admin on its UMKM pages (docs/PRD.md
+// §13.1 A30), get the RW they named only when rw_units has it (the same check readRwScope makes), and every RW
+// otherwise. RLS narrows the same reads again.
 export function effectiveRwFor(
   ctx: RwScopedStaff,
   requested: RwId | null,
   knownRwIds: readonly RwId[],
 ): RwId | null {
   if (ctx.role === 'admin_rw') return ctx.rwId;
-  if (ctx.role !== 'superadmin' || requested === null) return null;
+  const seesEveryRw = ctx.role === 'superadmin' || ctx.role === 'admin_kopdes';
+  if (!seesEveryRw || requested === null) return null;
   return knownRwIds.includes(requested) ? requested : null;
 }

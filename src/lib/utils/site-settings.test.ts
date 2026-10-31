@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
+import { CATALOGUE_SETTING_NAMES } from '@/config/site-settings';
 import {
   bookingEnabledOf,
   changedSettings,
+  changedSettingsAmong,
   formFieldsOf,
   placeholderFields,
+  placeholderFieldsAmong,
 } from '@/lib/utils/site-settings';
-import { siteSettingsSchema, type SiteSettingsValues } from '@/lib/validations/settings';
+import {
+  catalogueSettingsSchema,
+  siteSettingsSchema,
+  type SiteSettingsValues,
+} from '@/lib/validations/settings';
 
 // The rows 0008_seed.sql writes, with the later migrations' privacy keys and booking closed (20261023090000).
 const ROWS = [
@@ -86,5 +93,34 @@ describe('placeholderFields', () => {
       'dpoEmail',
       'signatoryName',
     ]);
+  });
+});
+
+// docs/PRD.md §13.1 A30: the Kopdes admin's form holds the three catalogue keys alone.
+describe('the catalogue settings of the Kopdes admin', () => {
+  it('reads only its three fields, which catalogueSettingsSchema accepts', () => {
+    const fields = formFieldsOf(ROWS, CATALOGUE_SETTING_NAMES);
+    expect(Object.keys(fields)).toEqual([...CATALOGUE_SETTING_NAMES]);
+    expect(catalogueSettingsSchema.parse(fields)).toMatchObject({ showProductPrices: false });
+  });
+
+  it('writes only the catalogue keys that changed, and finds their placeholders', () => {
+    const current = catalogueSettingsSchema.parse(formFieldsOf(ROWS, CATALOGUE_SETTING_NAMES));
+    const next = { ...current, showProductPrices: true };
+    expect(changedSettingsAmong(CATALOGUE_SETTING_NAMES, current, next)).toEqual([
+      { key: 'catalogue.show_product_prices', value: true },
+    ]);
+    const isPlaceholder = (value: string) => /^\+620+$|^\[.*\]$/.test(value);
+    expect(placeholderFieldsAmong(CATALOGUE_SETTING_NAMES, current, isPlaceholder)).toEqual([
+      'kopdesWhatsappNumber',
+      'kopdesAddress',
+    ]);
+  });
+
+  it('refuses any other key', () => {
+    const fields = formFieldsOf(ROWS, CATALOGUE_SETTING_NAMES);
+    expect(catalogueSettingsSchema.safeParse({ ...fields, maintenanceMode: true }).success).toBe(
+      false,
+    );
   });
 });

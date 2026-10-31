@@ -1,9 +1,11 @@
 import { rwLabel, type RwId } from '@/config/rw';
+import type { AppRole } from '@/db/enums';
 import { copy } from '@/lib/copy/id';
 
-// `Superadmin Kelurahan` or `Admin RW 05`. rwId is the staff member's own RW, null for the superadmin, who works for the
-// whole kelurahan (profiles_role_rw_ok: only admin_rw has an RW).
-export function staffRoleLabel(rwId: RwId | null): string {
+// `Superadmin Kelurahan`, `Admin RW 05` or `Admin Kopdes`. rwId is the staff member's own RW: only an RW admin has one
+// (profiles_role_rw_ok); the superadmin works for the whole kelurahan and the Kopdes admin for its UMKM.
+export function staffRoleLabel(role: Exclude<AppRole, 'none'>, rwId: RwId | null): string {
   const roles = copy.dashboard.roles;
-  return rwId === null ? roles.superadmin : roles.adminRw(rwLabel(rwId));
+  if (role === 'admin_kopdes') return roles.adminKopdes;
+  return role === 'admin_rw' && rwId !== null ? roles.adminRw(rwLabel(rwId)) : roles.superadmin;
 }

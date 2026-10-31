@@ -8,6 +8,13 @@ export const settingsCopy = {
   description:
     'Aturan pemesanan, kanal pesan, check-in, data, kontak publik, dan tanda tangan dokumen. Setiap penyimpanan meminta kode autentikator.',
   onlySuper: 'Hanya superadmin yang mengubah pengaturan situs.',
+  // docs/PRD.md §13.1 A30: the Kopdes admin's page, the catalogue keys alone.
+  catalogue: {
+    title: 'Pengaturan Katalog',
+    description:
+      'Nomor WhatsApp dan alamat Koperasi Merah Putih untuk pesanan produk UMKM, dan apakah harga produk tampil di situs. Setiap penyimpanan meminta kode autentikator.',
+    save: 'Simpan pengaturan katalog',
+  },
   save: 'Simpan pengaturan',
   saved: (count: number) =>
     count === 0 ? 'Tidak ada yang berubah.' : `${String(count)} pengaturan tersimpan.`,
