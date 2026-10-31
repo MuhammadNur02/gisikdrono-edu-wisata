@@ -5,6 +5,7 @@ import { DB_ENUMS } from '@/db/enums';
 import {
   PAY_LINK_SENT_STATUSES,
   REMINDED_BOOKER_TYPES,
+  REMINDER_KEEPING_REVIEW_REASON,
   RESEND_TEMPLATE_STATES,
   RESENDABLE_TEMPLATES,
 } from './bookings';
@@ -37,5 +38,9 @@ describe('the resend lists mirrored from SQL', () => {
 
   it('remind the web bookers the job reminds', () => {
     expect(REMINDED_BOOKER_TYPES).toEqual(['school', 'university', 'government', 'company']);
+  });
+
+  it('keep the D-1 reminder under the one review reminder_day_held lets it stand', () => {
+    expect(REMINDER_KEEPING_REVIEW_REASON).toBe('REVENUE_RULE_REFUSED');
   });
 });

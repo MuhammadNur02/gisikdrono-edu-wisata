@@ -84,7 +84,8 @@ export const REMINDED_BOOKER_TYPES: readonly EnumValue<'booker_type'>[] = [
   'government',
   'company',
 ];
-// The one review that keeps a booking's tickets, and so its D-1 reminder (internal.reminder_day_held).
+// The one review that keeps a booking's tickets, and so its D-1 reminder (internal.reminder_day_held). Pinned to SQL by
+// supabase/tests/staff_payment_reminder.sql.
 export const REMINDER_KEEPING_REVIEW_REASON = 'REVENUE_RULE_REFUSED';
 // The review a booking paid after its hold lapsed and its session filled waits in (internal.settle_payment).
 export const NO_SEATS_REVIEW_REASON = 'PAID_AFTER_EXPIRY_NO_QUOTA';
