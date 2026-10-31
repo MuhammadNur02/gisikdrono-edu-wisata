@@ -1,4 +1,4 @@
--- The Koperasi Merah Putih's staff role, admin_kopdes (docs/PRD.md §13.1 A30, docs/Security.md AZ-17; migrations
+-- The Koperasi Merah Putih's staff role, admin_kopdes (docs/PRD.md §13.1 A30, docs/Security.md AZ-16; migrations
 -- 20261105180000 to 20261105180500). The matrix suites (rls_matrix_*.sql, rls_storage.sql) test it table by table
 -- against their own fixtures; this suite holds what belongs to the role itself: the claims the access-token hook gives
 -- it, the RW it never has, how the superadmin makes one, the helpers, a sweep over every table and view, the UMKM

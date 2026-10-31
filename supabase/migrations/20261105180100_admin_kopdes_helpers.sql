@@ -1,4 +1,4 @@
--- docs/PRD.md §13.1 A30, docs/Security.md AZ-17: what the new admin_kopdes role is to the database.
+-- docs/PRD.md §13.1 A30, docs/Security.md AZ-16: what the new admin_kopdes role is to the database.
 --
 -- The existing helpers stay exactly as they are, and that is the point: is_staff() is still the superadmin or an RW
 -- admin, owns_rw() and owns_any_rw() still answer for the superadmin and the RW's own admin, and app_rw_id() is still

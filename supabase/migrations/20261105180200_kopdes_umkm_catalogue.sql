@@ -1,4 +1,4 @@
--- docs/PRD.md §13.1 A30, FR-ADMIN-09, docs/Security.md AZ-17: the Kopdes admin manages the UMKM catalogue of every RW,
+-- docs/PRD.md §13.1 A30, FR-ADMIN-09, docs/Security.md AZ-16: the Kopdes admin manages the UMKM catalogue of every RW,
 -- as the superadmin does: umkm_vendors, products_umkm and product_variants. Nothing else of the catalogue (packages,
 -- legs, tiers, price history) changes, and an RW admin keeps reading their own RW's vendors and products only.
 --

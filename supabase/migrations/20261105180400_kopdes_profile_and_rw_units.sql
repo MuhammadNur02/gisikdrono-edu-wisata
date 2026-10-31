@@ -1,4 +1,4 @@
--- docs/PRD.md §13.1 A30, docs/Security.md AZ-17: what every staff member reads to work in the dashboard, now for the
+-- docs/PRD.md §13.1 A30, docs/Security.md AZ-16: what every staff member reads to work in the dashboard, now for the
 -- Kopdes admin too, and nothing more.
 --
 --   rw_units   the RWs, offline ones included, so the Kopdes admin files a vendor or product under the right one; the

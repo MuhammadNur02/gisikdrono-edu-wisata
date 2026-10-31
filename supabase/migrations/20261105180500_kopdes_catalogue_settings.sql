@@ -1,4 +1,4 @@
--- docs/PRD.md §13.1 A30, §8.6, docs/Security.md AZ-17: the Kopdes admin edits the three catalogue settings that are its
+-- docs/PRD.md §13.1 A30, §8.6, docs/Security.md AZ-16: the Kopdes admin edits the three catalogue settings that are its
 -- own business and no other key: catalogue.show_product_prices (A29 decision 7), contact.kopdes_whatsapp_number and
 -- contact.kopdes_address (A29 decision 3). The superadmin keeps every key.
 --

@@ -1,4 +1,4 @@
--- docs/PRD.md §13.1 A30, docs/Security.md AZ-17, DATA-14: the Kopdes runs the UMKM finance, so its admin keeps the
+-- docs/PRD.md §13.1 A30, docs/Security.md AZ-16, DATA-14: the Kopdes runs the UMKM finance, so its admin keeps the
 -- sellers' payout accounts beside the superadmin. The columns themselves stay granted to no API role (20261104120000):
 -- they move only through set_vendor_bank_account and are read masked, or whole with a reason and an audit row, through
 -- get_vendor_bank_account, at AAL2 and, for a change or a reveal, with a TOTP code from the last five minutes. Each
