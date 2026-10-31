@@ -127,4 +127,39 @@ describe('resendOptionsFor', () => {
       resendOptionsFor({ ...webHold, isPhoneVerified: false, emailMasked: null }, [], NOW),
     ).toEqual([]);
   });
+
+  it('offers no first reminder to a web hold of an individual, whom the poll job never reminds', () => {
+    expect(resendOptionsFor({ ...webHold, bookerType: 'individual' }, [], NOW)).toEqual([]);
+    expect(resendOptionsFor({ ...webHold, bookerType: null }, [], NOW)).toEqual([]);
+  });
+
+  it("offers an officer's hold no first reminder once its first session started", () => {
+    const afterStart = new Date('2026-10-30T06:00:00Z');
+    expect(resendOptionsFor(officerBookingDetail, [PAY_LINK_SENT], afterStart)).toEqual([
+      {
+        template: 'booking_created',
+        channels: [{ channel: 'email', lastQueuedAt: PAY_LINK_SENT.createdAt }],
+      },
+    ]);
+  });
+
+  it('offers a D-1 reminder again only while a seat is held from today on, outside a suspending review', () => {
+    const reminded: MessageHistoryEntry = {
+      template: 'visit_reminder_d1',
+      channel: 'email',
+      status: 'sent',
+      createdAt: '2026-10-29T02:00:00.000Z',
+    };
+    const paid = { ...webHold, status: 'paid' as const };
+    const templates = (booking: typeof paid) =>
+      resendOptionsFor(booking, [reminded], NOW).map((option) => option.template);
+    expect(templates(paid)).toEqual(['visit_reminder_d1']);
+    expect(templates({ ...paid, needsReview: true, reviewReason: 'CHARGEBACK' })).toEqual([]);
+    expect(templates({ ...paid, needsReview: true, reviewReason: 'REVENUE_RULE_REFUSED' })).toEqual(
+      ['visit_reminder_d1'],
+    );
+    const released = paid.legs.map((leg) => ({ ...leg, status: 'released' as const }));
+    expect(templates({ ...paid, legs: released })).toEqual([]);
+    expect(resendOptionsFor(paid, [reminded], new Date('2026-10-31T01:00:00Z'))).toEqual([]);
+  });
 });

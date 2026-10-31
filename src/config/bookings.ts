@@ -54,7 +54,9 @@ export const RESENDABLE_TEMPLATES = [
   'refund_processed',
 ] as const;
 // The booking states each of those messages still fits: internal.message_fits_state (20261105130400) for these
-// templates. It mirrors SQL and changes only with it; the RPC decides again.
+// templates. It mirrors SQL and changes only with it; the RPC decides again. Both this table and
+// PAY_LINK_SENT_STATUSES are pinned to SQL: src/config/bookings.test.ts holds the literal that
+// supabase/tests/staff_payment_reminder.sql checks message_fits_state and the functions' sources against.
 export const RESEND_TEMPLATE_STATES: Readonly<
   Record<(typeof RESENDABLE_TEMPLATES)[number], readonly EnumValue<'booking_status'>[]>
 > = {
@@ -74,6 +76,16 @@ export const PAY_LINK_SENT_STATUSES: readonly EnumValue<'notification_status'>[]
   'delivered',
   'read',
 ];
+// The web bookers whose hold the poll job reminds, and so staff may remind first (its reminded_booker_types); an
+// officer's hold is reminded whoever booked. Pinned to SQL by supabase/tests/staff_payment_reminder.sql.
+export const REMINDED_BOOKER_TYPES: readonly EnumValue<'booker_type'>[] = [
+  'school',
+  'university',
+  'government',
+  'company',
+];
+// The one review that keeps a booking's tickets, and so its D-1 reminder (internal.reminder_day_held).
+export const REMINDER_KEEPING_REVIEW_REASON = 'REVENUE_RULE_REFUSED';
 // The review a booking paid after its hold lapsed and its session filled waits in (internal.settle_payment).
 export const NO_SEATS_REVIEW_REASON = 'PAID_AFTER_EXPIRY_NO_QUOTA';
 // What public.extend_booking_hold allows, for the hint staff read. These mirror SQL and change only with it: maxDays

@@ -204,7 +204,8 @@ function ResendPicker({
   );
 }
 
-// Only the messages request_notification_resend would send now (resendOptionsFor); with none, why not.
+// The messages that may go now as far as the page can tell (resendOptionsFor); with none, why not. The RPC has the
+// final word.
 export function ResendMessageForm(props: ResendMessageFormProps) {
   const firstOption = props.options[0];
   const firstChannel = firstOption?.channels[0];

@@ -61,7 +61,7 @@ export const bookingStaffCopy = {
     firstSend: (channel: string) => `${channel} (belum pernah dikirim)`,
     emptyTitle: 'Belum ada pesan yang bisa dikirim',
     emptyHint:
-      'Pesan hanya bisa dikirim ulang bila sudah pernah dikirim dan masih sesuai dengan status pemesanannya. Pengingat pembayaran bisa dikirim pertama kali selama pemesanan menunggu pembayaran dan batas bayarnya belum lewat; untuk pemesanan petugas, setelah tautan pembayaran terkirim.',
+      'Pesan hanya bisa dikirim ulang bila sudah pernah dikirim dan masih sesuai dengan status pemesanannya. Pengingat pembayaran bisa dikirim pertama kali untuk pemesanan rombongan (sekolah, kampus, instansi, perusahaan) atau pemesanan petugas yang menunggu pembayaran, sebelum batas bayarnya lewat; untuk pemesanan petugas, setelah tautan pembayaran terkirim dan sebelum sesi pertamanya dimulai.',
     templates: {
       booking_created: 'Tautan pembayaran',
       payment_reminder: 'Pengingat pembayaran',
