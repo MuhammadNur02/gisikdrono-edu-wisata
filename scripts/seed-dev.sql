@@ -36,7 +36,8 @@ from (values
   ('0de00000-0000-4000-8000-000000000001', 'superadmin@dev.gisikdrono.test'),
   ('0de00000-0000-4000-8000-000000000005', 'admin-rw05@dev.gisikdrono.test'),
   ('0de00000-0000-4000-8000-000000000013', 'admin-rw13@dev.gisikdrono.test'),
-  ('0de00000-0000-4000-8000-000000000008', 'admin-rw08@dev.gisikdrono.test')
+  ('0de00000-0000-4000-8000-000000000008', 'admin-rw08@dev.gisikdrono.test'),
+  ('0de00000-0000-4000-8000-0000000000cd', 'admin-kopdes@dev.gisikdrono.test')
 ) as account(id, email)
 on conflict do nothing;
 
@@ -51,7 +52,8 @@ insert into public.profiles (id, email, full_name, role, rw_id, claims_version) 
   ('0de00000-0000-4000-8000-000000000001', 'superadmin@dev.gisikdrono.test', 'Superadmin Dev', 'superadmin', null, 1),
   ('0de00000-0000-4000-8000-000000000005', 'admin-rw05@dev.gisikdrono.test', 'Admin RW 05 Dev', 'admin_rw', 5, 1),
   ('0de00000-0000-4000-8000-000000000013', 'admin-rw13@dev.gisikdrono.test', 'Admin RW 13 Dev', 'admin_rw', 13, 1),
-  ('0de00000-0000-4000-8000-000000000008', 'admin-rw08@dev.gisikdrono.test', 'Admin RW 08 Dev', 'admin_rw', 8, 1)
+  ('0de00000-0000-4000-8000-000000000008', 'admin-rw08@dev.gisikdrono.test', 'Admin RW 08 Dev', 'admin_rw', 8, 1),
+  ('0de00000-0000-4000-8000-0000000000cd', 'admin-kopdes@dev.gisikdrono.test', 'Admin Kopdes Dev', 'admin_kopdes', null, 1)
 on conflict (id) do nothing;
 
 -- After the profiles: a factor of an account without a role is verified only under a claimed invite
