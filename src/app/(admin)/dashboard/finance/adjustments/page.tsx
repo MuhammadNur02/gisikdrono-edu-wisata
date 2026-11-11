@@ -3,8 +3,10 @@ import type { Metadata } from 'next';
 import { AdjustmentActions } from '@/components/admin/finance/adjustment-actions';
 import { AdjustmentsTable } from '@/components/admin/finance/adjustments-table';
 import { EvidenceLink } from '@/components/admin/finance/evidence-link';
+import { HeldWeatherLinksCard } from '@/components/admin/finance/held-weather-links';
 import { ProposeDialog } from '@/components/admin/finance/propose-dialog';
 import { ReleaseDialog } from '@/components/admin/finance/release-dialog';
+import { ResolveWeatherLinkDialog } from '@/components/admin/finance/resolve-weather-link-dialog';
 import { FilterBar, type FilterField } from '@/components/admin/security/filter-bar';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { FormAlert } from '@/components/forms/form-alert';
@@ -21,12 +23,15 @@ import {
   proposeAdjustmentAction,
   rejectAdjustmentAction,
   releaseKeyMismatchAction,
+  resolveWeatherLinkAction,
 } from '@/server/actions/finance-adjustments';
 import { viewFinanceEvidenceAction } from '@/server/actions/finance-evidence';
 import { verifyStaffTotpAction } from '@/server/actions/staff-totp';
 import { requireDashboardStaff } from '@/server/auth/session';
 import { listAdjustments } from '@/server/services/adjustment-reads';
+import { listHeldWeatherLinks } from '@/server/services/weather-link-service';
 import type { Adjustment } from '@/types/finance';
+import type { HeldWeatherLinkRow } from '@/types/weather-links';
 
 const text = adjustmentsCopy;
 
@@ -82,6 +87,17 @@ function RowActions({ adjustment, nowIso }: { adjustment: Adjustment; nowIso: st
   );
 }
 
+// Task P4.7.06: a held weather link's "Tutup tanpa refund".
+function resolveDialogFor(link: HeldWeatherLinkRow) {
+  return (
+    <ResolveWeatherLinkDialog
+      linkId={link.id}
+      resolveAction={resolveWeatherLinkAction}
+      stepUpAction={verifyStaffTotpAction}
+    />
+  );
+}
+
 // Task P4.7.04 (docs/PRD.md FR-ADMIN-21; docs/Security.md §3.8, REC-09, REC-16): the dual-controlled adjustments,
 // proposed with evidence, approved by another superadmin (or, alone, after 24 hours), and applied once; an approval
 // that can no longer apply is withdrawn. The superadmin's alone, at AAL2, each step behind the authenticator code.
@@ -97,7 +113,10 @@ export default async function AdjustmentsPage({ searchParams }: { searchParams: 
     );
   }
   const filter = parseAdjustmentFilter(await searchParams);
-  const adjustments = await listAdjustments(filter);
+  const [adjustments, heldLinks] = await Promise.all([
+    listAdjustments(filter),
+    listHeldWeatherLinks(),
+  ]);
   const nowIso = new Date().toISOString();
   const propose = (
     <ProposeDialog
@@ -110,6 +129,7 @@ export default async function AdjustmentsPage({ searchParams }: { searchParams: 
     <>
       <DashboardPageHeader title={text.title} description={text.description} action={propose} />
       <div className="flex flex-col gap-6">
+        <HeldWeatherLinksCard links={heldLinks} actionFor={resolveDialogFor} />
         <FilterBar fields={filterFields(filter)} resetHref={ADJUSTMENTS_PATH} />
         {adjustments.hasMore ? <FormAlert tone="info">{text.more}</FormAlert> : null}
         <AdjustmentsTable

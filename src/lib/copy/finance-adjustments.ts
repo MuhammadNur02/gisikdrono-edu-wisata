@@ -92,6 +92,34 @@ export const adjustmentsCopy = {
     done: 'Blokir dilepas. Jumlah yang dicatat Midtrans di bawah kunci ini dihitung sudah tercatat, dan selisihnya dibuka sebagai temuan di Rekonsiliasi.',
     blocked: 'Diblokir: Midtrans mencatat jumlah lain',
   },
+  // Task P4.7.06: the weather links the sweep holds for the superadmin.
+  weatherLinks: {
+    title: 'Tautan cuaca yang ditahan',
+    description:
+      'Refund cuaca untuk kunjungan ini tidak bisa diproses otomatis. Usulkan refund manual yang menyebut tautannya (Usulkan penyesuaian, jenis Refund manual), atau tutup tanpa refund bila rombongan memang tidak berhak.',
+    columns: {
+      booking: 'Pemesanan',
+      rw: 'RW',
+      window: 'Batas pilihan',
+      heldAt: 'Ditahan sejak',
+      reason: 'Sebab',
+      action: 'Tindakan',
+    },
+    reasons: {
+      fee_unset: 'Biaya Midtrans belum diatur',
+      shares_short: 'Bagian RW dan kelurahan tidak cukup',
+      payment_refunded: 'Pembayaran sudah direfund',
+    },
+    button: 'Tutup tanpa refund',
+    dialogTitle: 'Tutup tautan cuaca tanpa refund',
+    dialogDescription:
+      'Tautan ini ditutup tanpa refund, sehingga pemesanannya bisa diselesaikan. Tindakan ini tidak bisa dibatalkan dan dicatat di log audit.',
+    reasonLabel: 'Alasan',
+    reasonHint: '10 sampai 300 karakter. Alasan disimpan di log audit.',
+    submit: 'Tutup tanpa refund',
+    done: 'Tautan cuaca ditutup tanpa refund.',
+    more: 'Hanya 100 tautan tertua yang ditampilkan.',
+  },
   // Review of PR #80, L-5.
   filters: {
     status: 'Status',
@@ -143,6 +171,8 @@ export const adjustmentsCopy = {
       'Atur biaya Midtrans; pengembalian dana cuaca berjalan otomatis. Jangan transfer manual.',
     WEATHER_LINK_STATE_APPLY:
       'Tautan cuaca penyesuaian ini tidak lagi menunggu refund manual, jadi penyesuaian ini tidak bisa diterapkan. Tarik penyesuaian ini (Tolak dengan alasan), lalu ajukan yang baru bila refund masih perlu.',
+    WEATHER_LINK_STATE_RESOLVE:
+      'Tautan cuaca ini tidak lagi ditahan: sudah ditutup, punya permintaan refund cuaca, atau sedang menunggu refund manual yang belum selesai. Muat ulang halaman.',
     WEATHER_LINK_STATE:
       'Tautan cuaca itu tidak lagi menunggu refund manual: sudah ditutup, bukan milik pembayaran lunas pemesanan ini, atau bagiannya kini bisa dikembalikan otomatis. Muat ulang halaman, lalu pilih tautan yang masih ditahan atau kosongkan pilihan refund cuaca.',
   },

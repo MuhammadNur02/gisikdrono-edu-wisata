@@ -13,6 +13,7 @@ import {
   rejectAdjustmentSchema,
   releaseKeyMismatchSchema,
 } from '@/lib/validations/finance';
+import { resolveWeatherLinkSchema } from '@/lib/validations/weather-links';
 import { requireFinanceStepUp } from '@/server/auth/finance-guards';
 import { requireAal2, requireRole } from '@/server/auth/guards';
 import {
@@ -23,6 +24,7 @@ import {
   releaseKeyMismatch,
 } from '@/server/services/adjustment-service';
 import { findFinanceBooking } from '@/server/services/finance-service';
+import { resolveHeldWeatherLink } from '@/server/services/weather-link-service';
 import type { ActionResult } from '@/types/action-result';
 import type { AdjustmentReply, AppliedAdjustment, FinanceBooking } from '@/types/finance';
 
@@ -142,6 +144,24 @@ export async function releaseKeyMismatchAction(input: unknown): Promise<ActionRe
 
   try {
     await releaseKeyMismatch(parsed.data);
+    revalidateAdjustments();
+    return ok(null);
+  } catch (error) {
+    return mapError(error);
+  }
+}
+
+// Task P4.7.06: a weather link the sweep holds, closed without a refund, with a reason and the authenticator code.
+export async function resolveWeatherLinkAction(input: unknown): Promise<ActionResult<null>> {
+  const parsed = resolveWeatherLinkSchema.safeParse(input);
+  if (!parsed.success) return mapError(parsed.error);
+  const superadmin = await requireRole('superadmin');
+  if (!superadmin.ok) return superadmin;
+  const guard = await requireFinanceStepUp();
+  if (!guard.ok) return guard;
+
+  try {
+    await resolveHeldWeatherLink(parsed.data);
     revalidateAdjustments();
     return ok(null);
   } catch (error) {

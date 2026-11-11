@@ -117,3 +117,18 @@ export async function refundKeyBlockedAdjustments(
   );
   return new Set(z.array(z.uuid()).parse(reply));
 }
+
+// A weather link the sweep holds, closed without a refund (20261104181000, Task P4.7.06): the superadmin at AAL2 with
+// a fresh code and a reason of 10 to 300 characters; a refund by hand closes such a link instead when it is applied.
+export async function resolveWeatherLink(
+  client: DatabaseClient,
+  resolution: { linkId: string; reason: string },
+): Promise<void> {
+  await resultOf(
+    client.rpc('resolve_weather_link', {
+      p_link_id: resolution.linkId,
+      p_outcome: 'no_refund',
+      p_reason: resolution.reason,
+    }),
+  );
+}
