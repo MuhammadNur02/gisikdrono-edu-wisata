@@ -2,8 +2,9 @@ import { MAX_CONCURRENT_PDF_SCANS } from '@/config/uploads';
 
 // How many booklet scans one server process runs at once (security review of PR #14, F2). A scan can hold a
 // hundred megabytes and seconds of CPU, and a staff member could otherwise start as many as their requests allow;
-// past the limit a scan is turned away at once, before it reads anything, rather than queued. Isolating each scan in
-// a worker thread (Task P2.9.09) replaces this count with real limits on memory and time.
+// past the limit a scan is turned away at once, before it reads anything, rather than queued. Each scan also runs in
+// a worker thread with its own heap limit and deadline (./pdf-scan-isolated.ts, Task P2.9.09); this count bounds how
+// many such threads one process holds.
 
 let runningScans = 0;
 
