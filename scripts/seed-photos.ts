@@ -151,7 +151,9 @@ export async function seedHeroBanner(
     target,
     folder,
     banner.file,
-    `kelurahan/hero/${banner.id}-${banner.file}.webp`,
+    // The database takes lowercase path segments only (20261021090100_content_media_paths.sql), and the photos keep
+    // their camera names, such as IMG_7571.
+    `kelurahan/hero/${banner.id}-${banner.file.toLowerCase()}.webp`,
   );
   await target.runSql(`insert into public.hero_banners (id, title, subtitle, cta_label, cta_href, image_path,
       sort_order)
