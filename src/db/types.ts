@@ -5332,6 +5332,12 @@ export type Database = {
         Args: { p_id: string; p_last_seen_at: string }
         Returns: undefined
       }
+      svc_orphan_public_media: {
+        Args: { p_limit: number }
+        Returns: {
+          path: string
+        }[]
+      }
       svc_payments_housekeeping: { Args: never; Returns: Json }
       svc_payments_to_poll: {
         Args: { p_limit: number }

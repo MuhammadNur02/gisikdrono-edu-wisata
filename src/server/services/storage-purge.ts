@@ -2,8 +2,8 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { QUARANTINE_BUCKET } from '@/config/uploads';
-import { svcForgetPurgedFiles, svcPurgeableFiles } from '@/db/rpc';
+import { PUBLIC_MEDIA_BUCKET, QUARANTINE_BUCKET } from '@/config/uploads';
+import { svcForgetPurgedFiles, svcOrphanPublicMedia, svcPurgeableFiles } from '@/db/rpc';
 import type { PurgeableFile } from '@/db/rpc';
 import type { Database } from '@/db/types';
 import { isMediaOwner } from '@/lib/uploads/paths';
@@ -29,9 +29,10 @@ export async function purgeMarkedFiles(
 ): Promise<PurgeReport> {
   const marked = await removeMarkedFiles(adminClient);
   const quarantine = await removeStaleQuarantineUploads(adminClient, now);
+  const orphans = await removeOrphanPublicMedia(adminClient);
   return {
-    processed: marked.processed + quarantine.processed,
-    failed: marked.failed + quarantine.failed,
+    processed: marked.processed + quarantine.processed + orphans.processed,
+    failed: marked.failed + quarantine.failed + orphans.failed,
   };
 }
 
@@ -101,4 +102,15 @@ async function removeStaleQuarantineUploads(
     else report.processed += stalePaths.length;
   }
   return report;
+}
+
+// Published files no row has shown for a day: a form closed without saving, a booklet whose pages broke off, or a
+// removal that failed (Task P2.9.11, docs/Security.md R34). The database decides which (internal.orphan_public_media);
+// a file it lists is gone from every row, so deleting it changes nothing anyone sees. A failed delete is listed again
+// next hour.
+async function removeOrphanPublicMedia(adminClient: DatabaseClient): Promise<PurgeReport> {
+  const paths = await svcOrphanPublicMedia(adminClient, PURGE_BATCH_SIZE);
+  if (paths.length === 0) return { processed: 0, failed: 0 };
+  const { error } = await adminClient.storage.from(PUBLIC_MEDIA_BUCKET).remove(paths);
+  return error ? { processed: 0, failed: paths.length } : { processed: paths.length, failed: 0 };
 }

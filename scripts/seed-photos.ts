@@ -97,6 +97,12 @@ export async function idOfSlug(
   return rows[0]?.id ?? null;
 }
 
+async function pointHasPhoto(target: MediaTarget, pointId: string): Promise<boolean> {
+  const rows = await target.runSql(`select 1 from public.activity_points
+    where id = ${sqlText(pointId)} and image_path is not null`);
+  return rows.length > 0;
+}
+
 // Running the seed again uploads the same file over itself and keeps the row as it is.
 export async function seedGalleryPhoto(
   target: MediaTarget,
@@ -124,7 +130,8 @@ export async function linkRwHero(
 }
 
 // An activity point keeps a copy of its photo in its own folder, as the CMS and the database require
-// (supabase/migrations/20261021090100_content_media_paths.sql). A photo someone already set is kept.
+// (supabase/migrations/20261021090100_content_media_paths.sql). A photo someone already set is kept, and nothing is
+// uploaded for it: a copy no row shows would only be removed again by the hourly purge (Task P2.9.11).
 export async function linkPointPhoto(
   target: MediaTarget,
   folder: string,
@@ -132,7 +139,7 @@ export async function linkPointPhoto(
   photo: { id: string; file: string; rwId: number },
 ): Promise<void> {
   const pointId = await idOfSlug(target, 'activity_points', slug);
-  if (!pointId) return;
+  if (!pointId || (await pointHasPhoto(target, pointId))) return;
   const path = activityPointPath(photo.rwId, pointId, photo.id);
   await uploadPhoto(target, folder, photo.file, path);
   await target.runSql(`update public.activity_points set image_path = ${sqlText(path)}

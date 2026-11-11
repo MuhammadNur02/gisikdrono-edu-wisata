@@ -4,7 +4,8 @@ import { svcRecordJobRun } from '@/db/rpc';
 import { createLogger, requestIdFrom } from '@/lib/logger';
 // The service role is needed because this job runs without a signed-in user and deletes files RLS
 // does not let anyone delete. It is reached only by pg_cron behind CRON_SECRET, and it touches only
-// the files the retention runs marked (CLAUDE.md §6.1).
+// the files the retention runs marked, quarantine uploads older than a day, and the public-media files
+// the database lists as shown by no row for a day (CLAUDE.md §6.1).
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { hasValidCronSecret } from '@/server/auth/cron-secret';
 import { purgeMarkedFiles } from '@/server/services/storage-purge';
