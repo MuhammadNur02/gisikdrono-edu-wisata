@@ -89,7 +89,14 @@ const happyReplies: Record<string, Reply> = {
     rootBody: quarantineRoot,
   },
   'DELETE /storage/v1/object/uploads-quarantine': { status: 200, body: [] },
+  'POST /rest/v1/rpc/svc_orphan_public_media': { status: 200, body: [] },
+  'DELETE /storage/v1/object/public-media': { status: 200, body: [] },
 };
+
+const orphanFiles = [
+  { path: 'rw-05/gallery/0192f3a4-5b6c-7d8e-9f01-0000000cd701.webp' },
+  { path: 'rw-05/gallery/0192f3a4-5b6c-7d8e-9f01-0000000cd701-thumb.webp' },
+];
 
 function bodiesOf(requests: RecordedRequest[], method: string, path: string): unknown[] {
   return requests
@@ -140,6 +147,35 @@ describe('purgeMarkedFiles', () => {
 
     await expect(purgeMarkedFiles(client, NOW)).resolves.toEqual({ processed: 0, failed: 0 });
     expect(requests.filter((request) => request.method === 'DELETE')).toEqual([]);
+  });
+
+  it('removes the published files no row has shown for a day (Task P2.9.11)', async () => {
+    const { client, requests } = clientWith({
+      ...happyReplies,
+      'POST /rest/v1/rpc/svc_purgeable_files': { status: 200, body: [] },
+      'POST /storage/v1/object/list/uploads-quarantine': { status: 200, body: [] },
+      'POST /rest/v1/rpc/svc_orphan_public_media': { status: 200, body: orphanFiles },
+    });
+
+    await expect(purgeMarkedFiles(client, NOW)).resolves.toEqual({ processed: 2, failed: 0 });
+    expect(bodiesOf(requests, 'POST', '/rest/v1/rpc/svc_orphan_public_media')).toEqual([
+      { p_limit: 200 },
+    ]);
+    expect(bodiesOf(requests, 'DELETE', '/storage/v1/object/public-media')).toEqual([
+      { prefixes: orphanFiles.map((file) => file.path) },
+    ]);
+  });
+
+  it('counts the unused files Storage would not delete as failed, so the run raises an alert', async () => {
+    const { client } = clientWith({
+      ...happyReplies,
+      'POST /rest/v1/rpc/svc_purgeable_files': { status: 200, body: [] },
+      'POST /storage/v1/object/list/uploads-quarantine': { status: 200, body: [] },
+      'POST /rest/v1/rpc/svc_orphan_public_media': { status: 200, body: orphanFiles },
+      'DELETE /storage/v1/object/public-media': { status: 500, body: { message: 'down' } },
+    });
+
+    await expect(purgeMarkedFiles(client, NOW)).resolves.toEqual({ processed: 0, failed: 2 });
   });
 
   it('fails the run when the quarantine cannot be listed', async () => {

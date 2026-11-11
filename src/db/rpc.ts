@@ -267,6 +267,15 @@ export function svcPurgeableFiles(
   return resultOf(adminClient.rpc('svc_purgeable_files', { p_limit: limit }));
 }
 
+// The public-media files finalize published that no row has shown for a day, oldest first (Task P2.9.11).
+export async function svcOrphanPublicMedia(
+  adminClient: DatabaseClient,
+  limit: number,
+): Promise<string[]> {
+  const rows = await resultOf(adminClient.rpc('svc_orphan_public_media', { p_limit: limit }));
+  return rows.map((row) => row.path);
+}
+
 // Clears the paths of files that are gone; returns how many marked rows let go of one.
 export function svcForgetPurgedFiles(
   adminClient: DatabaseClient,
