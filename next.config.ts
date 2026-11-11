@@ -66,6 +66,15 @@ interface WebpackRules {
   module: { rules: unknown[] };
 }
 
+interface WebpackOutput {
+  output: Record<string, unknown>;
+}
+
+function hasOutput(config: unknown): config is WebpackOutput {
+  if (typeof config !== 'object' || config === null || !('output' in config)) return false;
+  return typeof config.output === 'object' && config.output !== null;
+}
+
 function hasModuleRules(config: unknown): config is WebpackRules {
   if (typeof config !== 'object' || config === null || !('module' in config)) return false;
   const { module } = config;
@@ -76,10 +85,16 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
   // No file in src imports a static image (photos come from public-media), so the .svg import is SVGR's alone.
-  webpack: (config: unknown) => {
+  webpack: (config: unknown, context: { isServer: boolean; nextRuntime?: string }) => {
     if (!hasModuleRules(config)) throw new Error('webpack config without module rules');
     config.module.rules.push({ test: SVG_FILE, issuer: SCRIPT_FILE, use: [svgrLoader] });
     config.module.rules.push({ test: GEOJSON_FILE, type: 'json' });
+    // The booklet scan's worker thread (src/lib/uploads/pdf-scan-isolated.ts, Task P2.9.09) is a chunk of the server
+    // build. Webpack names it with the public path, which is /_next/ for the browser and so a file that does not
+    // exist on the server; relative to the server's own chunks folder it is found.
+    if (context.isServer && context.nextRuntime === 'nodejs' && hasOutput(config)) {
+      config.output.workerPublicPath = './';
+    }
     return config;
   },
   turbopack: {
