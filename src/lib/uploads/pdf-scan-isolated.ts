@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { Worker } from 'node:worker_threads';
+import { Worker } from 'worker_threads';
 
 import { MAX_PDF_SCAN_SECONDS, PDF_SCAN_WORKER_HEAP_MB } from '@/config/uploads';
 import type { PdfScanResult, PublishedPageCount } from '@/lib/uploads/pdf-scan';
@@ -21,14 +21,15 @@ type ScanOptions = {
   execArgv?: string[];
 };
 
-// A Next.js build compiles the worker into a JavaScript chunk of its own. Run from the sources, as Vitest does, it is
-// the TypeScript file with `@/` imports, which tsx (a development dependency) loads for it.
+// A Next.js build compiles the worker into a JavaScript chunk of its own, which webpack does only for a Worker
+// imported from 'worker_threads' (not 'node:worker_threads') with its `new URL(...)` written inside the call. Run from
+// the sources, as Vitest does, this module and the worker are TypeScript files with `@/` imports, which tsx (a
+// development dependency) loads for the thread.
 const TYPESCRIPT_SOURCE_ARGV = ['--import', 'tsx'];
+const isTypeScriptSource = import.meta.url.endsWith('.ts');
 
 function runInWorker(job: ScanJob, options: ScanOptions): Promise<unknown> {
-  const workerUrl = new URL('./pdf-scan-worker.ts', import.meta.url);
-  const isTypeScriptSource = workerUrl.pathname.endsWith('.ts');
-  const worker = new Worker(workerUrl, {
+  const worker = new Worker(new URL('./pdf-scan-worker.ts', import.meta.url), {
     resourceLimits: { maxOldGenerationSizeMb: PDF_SCAN_WORKER_HEAP_MB },
     execArgv: options.execArgv ?? (isTypeScriptSource ? TYPESCRIPT_SOURCE_ARGV : []),
   });
