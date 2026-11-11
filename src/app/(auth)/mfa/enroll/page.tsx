@@ -11,6 +11,7 @@ import { pathWithNext, singleSearchValue, staffNextPath } from '@/lib/utils/staf
 import { confirmMfaEnrolmentAction, startMfaEnrolmentAction } from '@/server/actions/mfa';
 import { readStaffSession } from '@/server/auth/guards';
 import { readOnboardingStateOfSession } from '@/server/services/auth-service';
+import { reenrolmentStateOf } from '@/server/services/staff-service';
 
 const text = copy.auth.mfa;
 
@@ -27,7 +28,9 @@ export default async function MfaEnrollPage({ searchParams }: MfaEnrollPageProps
   const session = await readStaffSession();
   if (!session) redirect(pathWithNext(LOGIN_PATH, next));
   // O4 of the onboarding review: an account still being onboarded goes on there, where its invite code comes first.
-  if (session.ctx.role === 'none') {
+  // Task P4.8.05: an account whose authenticator was reset has no role until its new one is verified.
+  const reenrolment = session.ctx.role === 'none' ? await reenrolmentStateOf(session.ctx.userId) : 'none';
+  if (session.ctx.role === 'none' && reenrolment === 'none') {
     if ((await readOnboardingStateOfSession()).isInviteOpen) redirect(ONBOARDING_PATH);
     return <NoAccessNotice />;
   }
@@ -36,11 +39,15 @@ export default async function MfaEnrollPage({ searchParams }: MfaEnrollPageProps
   }
 
   return (
-    <AuthCard title={text.enrollTitle} description={text.enrollDescription}>
+    <AuthCard
+      title={text.enrollTitle}
+      description={reenrolment === 'none' ? text.enrollDescription : text.reenrolDescription}
+    >
       <MfaEnrolForm
         startAction={startMfaEnrolmentAction}
         confirmAction={confirmMfaEnrolmentAction}
         next={next}
+        needsReenrolmentCode={reenrolment === 'needs_code'}
       />
       <SignOutButton variant="ghost" />
     </AuthCard>

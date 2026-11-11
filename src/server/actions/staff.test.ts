@@ -5,17 +5,23 @@ import { staffCopy } from '@/lib/copy/staff';
 import { fail } from '@/lib/errors';
 import { requireFreshTotp, requireRole, type StaffContext } from '@/server/auth/guards';
 import {
+  cancelStaffMfaResetRequest,
   cancelStaffPromotion,
   changeStaffRole,
   changeStaffStatus,
   createStaffInvite,
+  issueReenrolmentCode,
+  resetStaffMfaFactors,
   revokeStaffInvite,
 } from '@/server/services/staff-admin-service';
 import { withinInviteLimit } from '@/server/services/staff-service';
 
 import {
+  cancelStaffMfaResetAction,
   cancelSuperadminPromotionAction,
   inviteStaffAction,
+  issueReenrolmentCodeAction,
+  resetStaffMfaAction,
   revokeStaffInviteAction,
   setStaffRoleAction,
   setStaffStatusAction,
@@ -25,6 +31,9 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
 vi.mock('@/server/auth/guards', () => ({ requireRole: vi.fn(), requireFreshTotp: vi.fn() }));
 vi.mock('@/server/services/staff-admin-service', () => ({
+  cancelStaffMfaResetRequest: vi.fn(),
+  issueReenrolmentCode: vi.fn(),
+  resetStaffMfaFactors: vi.fn(),
   cancelStaffPromotion: vi.fn(),
   changeStaffRole: vi.fn(),
   changeStaffStatus: vi.fn(),
@@ -49,6 +58,9 @@ const SUPERADMIN: StaffContext = {
   claimsVersion: 1,
 };
 const SERVICES = [
+  cancelStaffMfaResetRequest,
+  issueReenrolmentCode,
+  resetStaffMfaFactors,
   cancelStaffPromotion,
   changeStaffRole,
   changeStaffStatus,
@@ -187,5 +199,48 @@ describe('inviteStaffAction limit', () => {
     ).resolves.toMatchObject({ ok: false, error: { code: 'RATE_LIMITED' } });
     expect(withinInviteLimit).toHaveBeenCalledWith(SELF_ID);
     expect(createStaffInvite).not.toHaveBeenCalled();
+  });
+});
+
+describe('the MFA reset steps (Task P4.8.05)', () => {
+  it("asks for a reset and later completes it, never on the superadmin's own row", async () => {
+    vi.mocked(resetStaffMfaFactors).mockResolvedValue({
+      stage: 'requested',
+      completesAfter: '2026-11-12T10:00:00Z',
+    });
+
+    expect(await resetStaffMfaAction({ userId: OTHER_ID })).toEqual({
+      ok: true,
+      data: { stage: 'requested', completesAfter: '2026-11-12T10:00:00Z' },
+    });
+    expect(await resetStaffMfaAction({ userId: SELF_ID })).toMatchObject({
+      error: { code: 'FORBIDDEN', message: staffCopy.ownRow },
+    });
+    expect(resetStaffMfaFactors).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels a reset waiting for its second step', async () => {
+    vi.mocked(cancelStaffMfaResetRequest).mockResolvedValue(undefined);
+
+    expect(await cancelStaffMfaResetAction({ userId: OTHER_ID })).toEqual({ ok: true, data: null });
+    expect(cancelStaffMfaResetRequest).toHaveBeenCalledWith(OTHER_ID);
+  });
+
+  it('hands the re-enrolment code back once, behind a fresh code', async () => {
+    vi.mocked(issueReenrolmentCode).mockResolvedValue({
+      code: 'ABCDEFGHJKMNPQRSTVWX',
+      expiresAt: '2026-11-12T10:00:00Z',
+    });
+
+    expect(await issueReenrolmentCodeAction({ userId: OTHER_ID })).toEqual({
+      ok: true,
+      data: { code: 'ABCDEFGHJKMNPQRSTVWX', expiresAt: '2026-11-12T10:00:00Z' },
+    });
+
+    vi.mocked(requireFreshTotp).mockResolvedValue(fail('FORBIDDEN'));
+    expect(await issueReenrolmentCodeAction({ userId: OTHER_ID })).toMatchObject({
+      error: { code: 'FORBIDDEN', message: staffCopy.notFresh },
+    });
+    expect(issueReenrolmentCode).toHaveBeenCalledTimes(1);
   });
 });

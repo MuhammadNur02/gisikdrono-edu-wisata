@@ -1,7 +1,18 @@
 'use client';
 
 import type { ColumnDef } from '@tanstack/react-table';
-import { Ban, History, Power, ShieldCheck, ShieldOff, UserCog, Users, XCircle } from 'lucide-react';
+import {
+  Ban,
+  History,
+  KeyRound,
+  Power,
+  RotateCcw,
+  ShieldCheck,
+  ShieldOff,
+  UserCog,
+  Users,
+  XCircle,
+} from 'lucide-react';
 import { useMemo } from 'react';
 
 import { ColumnHeader } from '@/components/admin/data-table/column-header';
@@ -27,6 +38,8 @@ export interface StaffTableProps {
   onRequest: (request: StaffChangeRequest) => void;
 }
 
+type MemberChangeKind = Exclude<StaffChangeRequest['kind'], 'revokeInvite'>;
+
 function roleOf(member: StaffMember): string {
   if (member.role === 'admin_rw' && member.rwId !== null)
     return `${text.roles.admin_rw} ${rwLabel(member.rwId)}`;
@@ -36,6 +49,26 @@ function roleOf(member: StaffMember): string {
 // The per-user audit trail is the audit log filtered to this profile.
 function auditTrailHref(member: StaffMember): string {
   return `${AUDIT_LOGS_PATH}?entity=profiles&entityId=${member.id}`;
+}
+
+// Task P4.8.05: a reset waiting for its second step can be completed or cancelled; a reset account without a factor
+// (active, onboarded) needs its re-enrolment code; any other active account with a factor can be reset.
+function mfaActionsOf(
+  member: StaffMember,
+  ask: (kind: 'mfaReset' | 'cancelMfaReset' | 'reenrolmentCode') => () => void,
+): RowActionItem[] {
+  const actions = text.actions;
+  if (member.mfaResetRequestedAt !== null) {
+    return [
+      { label: actions.completeMfaReset, icon: RotateCcw, destructive: true, onSelect: ask('mfaReset') },
+      { label: actions.cancelMfaReset, icon: XCircle, onSelect: ask('cancelMfaReset') },
+    ];
+  }
+  if (!member.isActive) return [];
+  if (!member.hasVerifiedTotp) {
+    return [{ label: actions.reenrolmentCode, icon: KeyRound, onSelect: ask('reenrolmentCode') }];
+  }
+  return [{ label: actions.resetMfa, icon: RotateCcw, onSelect: ask('mfaReset') }];
 }
 
 function actionsOf(member: StaffMember, onRequest: StaffTableProps['onRequest']): RowActionItem[] {
@@ -59,7 +92,7 @@ function actionsOf(member: StaffMember, onRequest: StaffTableProps['onRequest'])
     }
     return items;
   }
-  const ask = (kind: 'role' | 'status' | 'cancelPromotion') => () => {
+  const ask = (kind: MemberChangeKind) => () => {
     onRequest({ kind, member });
   };
   // M1 of the PR #43 review: no role for an account without a verified factor (changeStaffRole refuses it too).
@@ -72,6 +105,7 @@ function actionsOf(member: StaffMember, onRequest: StaffTableProps['onRequest'])
       onSelect: ask('cancelPromotion'),
     });
   }
+  items.push(...mfaActionsOf(member, ask));
   items.push({
     label: member.isActive ? text.actions.deactivate : text.actions.reactivate,
     icon: Power,

@@ -22,3 +22,9 @@ export function drawInviteCode(): string {
 export function inviteCodeHash(code: string): string {
   return pepperedHash('gsk-staff-invite-v1', normalizeStaffCode(code));
 }
+
+// The re-enrolment code after an MFA reset (Task P4.8.05, docs/Security.md R24) is drawn the same way and kept the
+// same way, under a label of its own, so it is never an invite code's hash.
+export function reenrolmentCodeHash(code: string): string {
+  return pepperedHash('gsk-mfa-reenrol-v1', normalizeStaffCode(code));
+}

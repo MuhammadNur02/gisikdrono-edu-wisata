@@ -7,13 +7,15 @@ import { useForm } from 'react-hook-form';
 import { TotpCodeField } from '@/components/auth/totp-code-field';
 import { TotpQrCode } from '@/components/auth/totp-qr-code';
 import { FormAlert } from '@/components/forms/form-alert';
+import { FormField } from '@/components/forms/form-field';
 import { PostForm } from '@/components/forms/post-form';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
 import { useActionForm } from '@/hooks/use-action-form';
 import { useReplaceNavigation } from '@/hooks/use-replace-navigation';
 import { copy } from '@/lib/copy/id';
-import { confirmMfaEnrolmentSchema } from '@/lib/validations/mfa';
+import { confirmMfaEnrolmentSchema, startMfaEnrolmentSchema } from '@/lib/validations/mfa';
 import type { ActionResult } from '@/types/action-result';
 import type { NextStep, TotpEnrolment } from '@/types/auth';
 
@@ -23,9 +25,11 @@ const SECRET_GROUP = /.{1,4}/g;
 
 export interface MfaEnrolFormProps {
   // startMfaEnrolmentAction and confirmMfaEnrolmentAction, handed in by the page.
-  startAction: () => Promise<ActionResult<TotpEnrolment>>;
+  startAction: (values: unknown) => Promise<ActionResult<TotpEnrolment>>;
   confirmAction: (values: unknown) => Promise<ActionResult<NextStep>>;
   next?: string | undefined;
+  // Task P4.8.05: after an MFA reset, the superadmin's one-time code comes before the QR code.
+  needsReenrolmentCode?: boolean;
 }
 
 interface EnrolmentStartProps {
@@ -40,7 +44,7 @@ function EnrolmentStart({ action, notice, onStarted }: EnrolmentStartProps) {
   const [isStarting, startTransition] = useTransition();
   const start = () => {
     startTransition(async () => {
-      const result = await action();
+      const result = await action({});
       if (result.ok) onStarted(result.data);
       else setFailure(result.error.message);
     });
@@ -53,6 +57,41 @@ function EnrolmentStart({ action, notice, onStarted }: EnrolmentStartProps) {
         {text.enrollStart}
       </Button>
     </div>
+  );
+}
+
+// The re-enrolment code first (docs/Security.md R24); the server uses it up in the same call that makes the QR code.
+function ReenrolmentStart({ action, notice, onStarted }: EnrolmentStartProps) {
+  const form = useForm({
+    resolver: zodResolver(startMfaEnrolmentSchema),
+    defaultValues: { reenrolmentCode: '' },
+  });
+  const { submit, failure } = useActionForm({
+    form,
+    action,
+    fields: ['reenrolmentCode'],
+    onSuccess: onStarted,
+  });
+  const message = failure ?? notice;
+  return (
+    <Form {...form}>
+      <PostForm onSubmit={submit}>
+        {message ? <FormAlert tone="danger">{message}</FormAlert> : null}
+        <FormField
+          control={form.control}
+          name="reenrolmentCode"
+          label={text.reenrolCode}
+          description={text.reenrolCodeHint}
+          required
+          render={(field) => (
+            <Input {...field} autoComplete="off" autoCapitalize="characters" spellCheck={false} />
+          )}
+        />
+        <Button type="submit" size="lg" className="w-full" loading={form.formState.isSubmitting}>
+          {text.enrollStart}
+        </Button>
+      </PostForm>
+    </Form>
   );
 }
 
@@ -123,16 +162,25 @@ function EnrolmentConfirm({ enrolment, action, next, onExpired }: EnrolmentConfi
 }
 
 // Task P2.8.02: the account's first factor, QR code and first code in one flow.
-export function MfaEnrolForm({ startAction, confirmAction, next }: MfaEnrolFormProps) {
+export function MfaEnrolForm({
+  startAction,
+  confirmAction,
+  next,
+  needsReenrolmentCode = false,
+}: MfaEnrolFormProps) {
   const [enrolment, setEnrolment] = useState<TotpEnrolment | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // A used code opens ten minutes to verify in, so a QR code made again after an expired one needs no new code.
+  const [isCodeUsed, setIsCodeUsed] = useState(false);
   if (!enrolment) {
+    const Start = needsReenrolmentCode && !isCodeUsed ? ReenrolmentStart : EnrolmentStart;
     return (
-      <EnrolmentStart
+      <Start
         action={startAction}
         notice={notice}
         onStarted={(started) => {
           setNotice(null);
+          setIsCodeUsed(true);
           setEnrolment(started);
         }}
       />

@@ -86,3 +86,20 @@ export async function readOnboardingState(client: DatabaseClient): Promise<Onboa
     isFactorVerified: state?.factor_verified ?? false,
   };
 }
+
+// Task P4.8.05: one try of a re-enrolment code, for the signed-in account only (svc_consume_mfa_reenrolment_code,
+// 20261029080400). A right code is used up and opens ten minutes to verify a new factor in; every call counts toward
+// the five tries an hour, so the code is used in one call, never checked first.
+export async function consumeMfaReenrolmentCode(
+  adminClient: DatabaseClient,
+  attempt: { userId: string; codeHash: string },
+): Promise<boolean> {
+  return z.boolean().parse(
+    await resultOf(
+      adminClient.rpc('svc_consume_mfa_reenrolment_code', {
+        p_user_id: attempt.userId,
+        p_code_hash: attempt.codeHash,
+      }),
+    ),
+  );
+}

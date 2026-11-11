@@ -3,14 +3,15 @@ import 'server-only';
 import { INVITE_EXPIRY_SECONDS } from '@/config/staff';
 import {
   cancelSuperadminPromotion,
+  resetStaffMfa,
   setStaffRole,
   setStaffStatus,
   type StaffChangeStage,
 } from '@/db/rpc';
-import { inviteSuperadmin } from '@/db/rpc-staff';
+import { cancelStaffMfaReset, inviteSuperadmin, issueMfaReenrolmentCode } from '@/db/rpc-staff';
 import { staffCopy } from '@/lib/copy/staff';
 import { AppError, raisedHintOf } from '@/lib/errors';
-import { drawInviteCode, inviteCodeHash } from '@/lib/staff-codes';
+import { drawInviteCode, inviteCodeHash, reenrolmentCodeHash } from '@/lib/staff-codes';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import type {
   InviteStaffValues,
@@ -24,7 +25,12 @@ import {
   sendStaffInviteEmail,
   setStaffAuthBan,
 } from '@/server/services/staff-service';
-import type { IssuedInvite, StaffRoleChange, StaffStatusChange } from '@/types/staff';
+import type {
+  IssuedInvite,
+  IssuedReenrolmentCode,
+  StaffRoleChange,
+  StaffStatusChange,
+} from '@/types/staff';
 
 // The superadmin's changes on /dashboard/users (Task P4.8.02). Every write goes through the superadmin's session
 // client: the staff RPCs of 0004 and 0005 check the fresh TOTP, refuse the caller's own row and keep the last active
@@ -187,4 +193,44 @@ export async function changeStaffStatus(
 export async function cancelStaffPromotion(userId: string): Promise<void> {
   const supabase = await createSupabaseServerClient();
   await asStaffChange(() => cancelSuperadminPromotion(supabase, userId));
+}
+
+// The step an MFA change refuses as STATE_INVALID, said for that change rather than with the role change's words.
+async function withStateMessage<T>(message: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof AppError && error.code === 'STATE_INVALID') {
+      throw new AppError('STATE_INVALID', message);
+    }
+    throw error;
+  }
+}
+
+// Task P4.8.05 (docs/Security.md §5.2, R24): an MFA reset is asked for, then completed by the same call 24 hours
+// later, which removes the factors and every session; reset_staff_mfa decides which step this is.
+export async function resetStaffMfaFactors(userId: string): Promise<StaffRoleChange> {
+  const supabase = await createSupabaseServerClient();
+  const stage = await withStateMessage(staffCopy.mfaReset.notYet, () =>
+    asStaffChange(() => resetStaffMfa(supabase, userId)),
+  );
+  return roleChangeOf(stage);
+}
+
+export async function cancelStaffMfaResetRequest(userId: string): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  await asStaffChange(() => cancelStaffMfaReset(supabase, userId));
+}
+
+// The code exists in plain only in this answer, for the superadmin to read out once (as an invite code is); the
+// database keeps its keyed hash for 24 hours, and a new one replaces it.
+export async function issueReenrolmentCode(userId: string): Promise<IssuedReenrolmentCode> {
+  const code = drawInviteCode();
+  const supabase = await createSupabaseServerClient();
+  const expiresAt = await withStateMessage(staffCopy.reenrolment.notReset, () =>
+    asStaffChange(() =>
+      issueMfaReenrolmentCode(supabase, { userId, codeHash: reenrolmentCodeHash(code) }),
+    ),
+  );
+  return { code, expiresAt };
 }
