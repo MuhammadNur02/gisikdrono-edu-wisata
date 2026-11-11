@@ -105,7 +105,7 @@ function refusalMessage(hint: FinanceRefusalHint, error: unknown): string {
 const WEATHER_LINK_REFUSAL = /^weather link /;
 
 // Which finance write failed, where the same refusal asks for another next step.
-export type FinanceWriteStage = 'write' | 'apply';
+export type FinanceWriteStage = 'write' | 'apply' | 'resolve';
 
 function isWeatherLinkRefusal(hint: string | undefined, error: unknown): boolean {
   return hint === 'STATE_INVALID' && WEATHER_LINK_REFUSAL.test(raisedMessageOf(error));
@@ -117,10 +117,11 @@ export function financeRefusal(error: unknown, stage: FinanceWriteStage = 'write
   if (hint && isRefusalHint(hint))
     return new AppError(REFUSALS[hint].code, refusalMessage(hint, error));
   if (isWeatherLinkRefusal(hint, error)) {
-    const message =
-      stage === 'apply'
-        ? adjustmentsCopy.errors.WEATHER_LINK_STATE_APPLY
-        : adjustmentsCopy.errors.WEATHER_LINK_STATE;
+    const message = {
+      write: adjustmentsCopy.errors.WEATHER_LINK_STATE,
+      apply: adjustmentsCopy.errors.WEATHER_LINK_STATE_APPLY,
+      resolve: adjustmentsCopy.errors.WEATHER_LINK_STATE_RESOLVE,
+    }[stage];
     return new AppError('STATE_INVALID', message);
   }
   const code = databaseErrorCode(error);
