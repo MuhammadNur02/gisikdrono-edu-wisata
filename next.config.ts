@@ -138,6 +138,11 @@ const nextConfig: NextConfig = {
     // A package or product published after the build draws its share image at request time, reading the TTF
     // files from disk (src/lib/seo/og-image.tsx).
     '/**/opengraph-image*': ['./public/fonts/*.ttf'],
+    // The booklet scan's worker thread (Task P2.9.09) is a server chunk the routes reach only through new Worker(new
+    // URL(...)), which the file trace does not follow, and it loads sibling chunks (pdf-lib) at run time; the routes
+    // that scan a PDF take the server chunks along: finalize and sign-pages, and the finance pages' proofs.
+    '/api/uploads/**/*': ['./.next/server/chunks/*.js'],
+    '/dashboard/finance/**/*': ['./.next/server/chunks/*.js'],
   },
   // permanent answers 308, which keeps the method; the query string travels along.
   redirects: () => Promise.resolve(MOVED_PATHS.map((moved) => ({ ...moved, permanent: true }))),
