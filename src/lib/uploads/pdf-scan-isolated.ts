@@ -22,16 +22,13 @@ type ScanOptions = {
 };
 
 // A Next.js build compiles the worker into a JavaScript chunk of its own, which webpack does only for a Worker
-// imported from 'worker_threads' (not 'node:worker_threads') with its `new URL(...)` written inside the call. Run from
-// the sources, as Vitest does, this module and the worker are TypeScript files with `@/` imports, which tsx (a
-// development dependency) loads for the thread.
-const TYPESCRIPT_SOURCE_ARGV = ['--import', 'tsx'];
-const isTypeScriptSource = import.meta.url.endsWith('.ts');
-
+// imported from 'worker_threads' (not 'node:worker_threads') with its `new URL(...)` written inside the call. The
+// thread inherits the server process's Node options; under Vitest those load tsx (vitest.config.ts), so the worker's
+// TypeScript sources and `@/` imports resolve there too.
 function runInWorker(job: ScanJob, options: ScanOptions): Promise<unknown> {
   const worker = new Worker(new URL('./pdf-scan-worker.ts', import.meta.url), {
     resourceLimits: { maxOldGenerationSizeMb: PDF_SCAN_WORKER_HEAP_MB },
-    execArgv: options.execArgv ?? (isTypeScriptSource ? TYPESCRIPT_SOURCE_ARGV : []),
+    ...(options.execArgv ? { execArgv: options.execArgv } : {}),
   });
   return new Promise<unknown>((resolve) => {
     const settle = (answer: unknown) => {
@@ -39,9 +36,12 @@ function runInWorker(job: ScanJob, options: ScanOptions): Promise<unknown> {
       resolve(answer);
       void worker.terminate();
     };
-    const timer = setTimeout(() => {
-      settle(null);
-    }, options.timeoutMs ?? MAX_PDF_SCAN_SECONDS * MS_PER_SECOND);
+    const timer = setTimeout(
+      () => {
+        settle(null);
+      },
+      options.timeoutMs ?? MAX_PDF_SCAN_SECONDS * MS_PER_SECOND,
+    );
     worker.once('message', settle);
     worker.once('error', () => {
       settle(null);
