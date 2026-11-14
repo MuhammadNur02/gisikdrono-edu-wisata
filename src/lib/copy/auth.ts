@@ -93,6 +93,13 @@ export const authCopy = {
     enrollExpired: 'Kode QR ini sudah tidak berlaku. Tampilkan kode QR baru, lalu coba lagi.',
     enrollDuplicate:
       'Akun ini sudah memasang aplikasi autentikator dari kode QR lain. Pakai kode dari aplikasi itu.',
+    // Task P4.8.05: a new authenticator after an MFA reset needs the superadmin's one-time code.
+    reenrolDescription:
+      'Autentikator akun Anda sudah direset. Masukkan kode daftar ulang yang dibacakan superadmin, lalu pasang aplikasi autentikator di ponsel Anda.',
+    reenrolCode: 'Kode daftar ulang',
+    reenrolCodeHint: '20 huruf dan angka dari superadmin. Tanda hubung dan spasi boleh ditulis atau tidak.',
+    reenrolCodeWrong:
+      'Kode daftar ulang salah atau sudah tidak berlaku. Minta kode baru ke superadmin bila perlu.',
     signOut: 'Keluar',
   },
   // /auth/continue (L2 of the review of PR #77): an email link opens this page first, and its button uses the link.

@@ -5,6 +5,12 @@ import { toast } from 'sonner';
 
 import { RoleChangeForm, StatusChangeForm } from '@/components/admin/staff/change-forms';
 import { CodeConfirmForm } from '@/components/admin/staff/code-confirm-form';
+import {
+  CancelMfaResetBody,
+  MfaResetBody,
+  ReenrolmentCodeBody,
+  type MfaResetActions,
+} from '@/components/admin/staff/mfa-reset-forms';
 import type { RwOption } from '@/components/admin/staff/role-select';
 import { ResponsiveDialog } from '@/components/ui/responsive-dialog';
 import { staffCopy } from '@/lib/copy/staff';
@@ -20,16 +26,17 @@ import type {
 
 type FormAction<TData> = (values: unknown) => Promise<ActionResult<TData>>;
 
-export interface StaffChangeActions {
-  stepUpAction: FormAction<null>;
+export interface StaffChangeActions extends MfaResetActions {
   setRoleAction: FormAction<StaffRoleChange>;
   setStatusAction: FormAction<StaffStatusChange>;
   cancelPromotionAction: FormAction<null>;
   revokeInviteAction: FormAction<null>;
 }
 
+type MfaKind = 'mfaReset' | 'cancelMfaReset' | 'reenrolmentCode';
+
 export type StaffChangeRequest =
-  | { kind: 'role' | 'status' | 'cancelPromotion'; member: StaffMember }
+  | { kind: 'role' | 'status' | 'cancelPromotion' | MfaKind; member: StaffMember }
   | { kind: 'revokeInvite'; invite: StaffInviteSummary };
 
 export interface StaffChangeDialogProps {
@@ -37,6 +44,19 @@ export interface StaffChangeDialogProps {
   rwUnits: readonly RwOption[];
   actions: StaffChangeActions;
   onClose: () => void;
+}
+
+function mfaResetHeading(
+  kind: 'mfaReset' | 'cancelMfaReset',
+  member: StaffMember,
+): { title: string; description: string } {
+  const text = staffCopy.mfaReset;
+  if (kind === 'cancelMfaReset') {
+    return { title: text.cancelTitle(member.fullName), description: text.cancelDescription };
+  }
+  return member.mfaResetRequestedAt
+    ? { title: text.completeTitle(member.fullName), description: text.completeDescription }
+    : { title: text.title(member.fullName), description: text.description };
 }
 
 function headingOf(request: StaffChangeRequest): { title: string; description: string } {
@@ -53,6 +73,13 @@ function headingOf(request: StaffChangeRequest): { title: string; description: s
   }
   if (request.kind === 'cancelPromotion') {
     const text = staffCopy.promotion;
+    return { title: text.title(member.fullName), description: text.description };
+  }
+  if (request.kind === 'mfaReset' || request.kind === 'cancelMfaReset') {
+    return mfaResetHeading(request.kind, member);
+  }
+  if (request.kind === 'reenrolmentCode') {
+    const text = staffCopy.reenrolment;
     return { title: text.title(member.fullName), description: text.description };
   }
   const text = staffCopy.status;
@@ -130,6 +157,27 @@ function MemberChangeBody({
   );
 }
 
+function MfaBody({
+  kind,
+  member,
+  actions,
+  finish,
+}: {
+  kind: MfaKind;
+  member: StaffMember;
+  actions: StaffChangeActions;
+  finish: BodyProps['finish'];
+}) {
+  const Body = { mfaReset: MfaResetBody, cancelMfaReset: CancelMfaResetBody, reenrolmentCode: ReenrolmentCodeBody }[
+    kind
+  ];
+  return <Body member={member} actions={actions} finish={finish} />;
+}
+
+function isMfaKind(kind: StaffChangeRequest['kind']): kind is MfaKind {
+  return kind === 'mfaReset' || kind === 'cancelMfaReset' || kind === 'reenrolmentCode';
+}
+
 function ChangeBody({ request, ...props }: BodyProps) {
   const codeOnly = codeOnlyChangeOf(request, props.actions);
   if (codeOnly) {
@@ -144,6 +192,16 @@ function ChangeBody({ request, ...props }: BodyProps) {
     );
   }
   if (request.kind === 'revokeInvite' || request.kind === 'cancelPromotion') return null;
+  if (isMfaKind(request.kind)) {
+    return (
+      <MfaBody
+        kind={request.kind}
+        member={request.member}
+        actions={props.actions}
+        finish={props.finish}
+      />
+    );
+  }
   return <MemberChangeBody {...props} member={request.member} kind={request.kind} />;
 }
 

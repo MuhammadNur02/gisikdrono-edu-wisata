@@ -8,8 +8,11 @@ import { staffCopy } from '@/lib/copy/staff';
 import { rwFacet } from '@/lib/utils/facets';
 import { loadListQuery } from '@/lib/utils/list-query';
 import {
+  cancelStaffMfaResetAction,
   cancelSuperadminPromotionAction,
   inviteStaffAction,
+  issueReenrolmentCodeAction,
+  resetStaffMfaAction,
   revokeStaffInviteAction,
   setStaffRoleAction,
   setStaffStatusAction,
@@ -42,6 +45,9 @@ const STAFF_CHANGE_ACTIONS = {
   setStatusAction: setStaffStatusAction,
   cancelPromotionAction: cancelSuperadminPromotionAction,
   revokeInviteAction: revokeStaffInviteAction,
+  resetMfaAction: resetStaffMfaAction,
+  cancelMfaResetAction: cancelStaffMfaResetAction,
+  issueReenrolmentCodeAction,
 };
 
 function SuperadminOnly() {

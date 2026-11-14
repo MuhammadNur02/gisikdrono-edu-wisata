@@ -41,3 +41,26 @@ export async function inviteSuperadmin(
     lapsesAfter: result.lapses_after,
   };
 }
+
+// The superadmin cancels an MFA reset that waits for its second step (cancel_staff_mfa_reset, fresh TOTP).
+export async function cancelStaffMfaReset(client: DatabaseClient, userId: string): Promise<void> {
+  await resultOf(client.rpc('cancel_staff_mfa_reset', { p_user_id: userId }));
+}
+
+// After a completed reset, the one-time code the staff member enrols a new authenticator with (Task P4.8.05): its
+// keyed hash only, kept 24 hours; answers when it expires.
+export async function issueMfaReenrolmentCode(
+  client: DatabaseClient,
+  issue: { userId: string; codeHash: string },
+): Promise<string> {
+  return z
+    .string()
+    .parse(
+      await resultOf(
+        client.rpc('issue_mfa_reenrolment_code', {
+          p_user_id: issue.userId,
+          p_code_hash: issue.codeHash,
+        }),
+      ),
+    );
+}

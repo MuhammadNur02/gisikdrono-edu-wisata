@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { copy } from '@/lib/copy/id';
+import { fail } from '@/lib/errors';
 import { verifyTurnstile } from '@/lib/turnstile';
-import { requireUser, type StaffContext } from '@/server/auth/guards';
+import { readStaffSession, requireUser, type StaffContext } from '@/server/auth/guards';
 import {
   confirmTotpEnrolment,
   startTotpEnrolment,
   verifyTotp,
 } from '@/server/services/auth-service';
+import { reenrolmentStateOf, spendReenrolmentCode } from '@/server/services/staff-service';
 
 import { confirmMfaEnrolmentAction, startMfaEnrolmentAction, verifyMfaAction } from './mfa';
 
@@ -17,7 +19,11 @@ vi.mock('@/lib/logger', () => ({
   requestIdFrom: () => 'request-1',
 }));
 vi.mock('@/lib/turnstile', () => ({ verifyTurnstile: vi.fn() }));
-vi.mock('@/server/auth/guards', () => ({ requireUser: vi.fn() }));
+vi.mock('@/server/auth/guards', () => ({ requireUser: vi.fn(), readStaffSession: vi.fn() }));
+vi.mock('@/server/services/staff-service', () => ({
+  reenrolmentStateOf: vi.fn(),
+  spendReenrolmentCode: vi.fn(),
+}));
 vi.mock('@/server/services/auth-service', () => ({
   confirmTotpEnrolment: vi.fn(),
   startTotpEnrolment: vi.fn(),
@@ -155,6 +161,77 @@ describe('confirmMfaEnrolmentAction', () => {
         message:
           'Akun ini sudah memasang aplikasi autentikator dari kode QR lain. Pakai kode dari aplikasi itu.',
       },
+    });
+  });
+});
+
+// Task P4.8.05: an account whose authenticator was reset has no role, and enrols a new one with the superadmin's code.
+describe('enrolment after an MFA reset', () => {
+  const RESET_ACCOUNT: StaffContext = { ...OFFICER_AAL1, role: 'none', rwId: null };
+  const CODE = 'ABCDE-FGHJK-MNPQR-STVWX';
+  const ENROLMENT = {
+    factorId: FACTOR_ID,
+    secret: 'JBSWY3DPEHPK3PXP',
+    uri: 'otpauth://totp/Edu%20Wisata%20Gisikdrono:a%40b.test?secret=JBSWY3DPEHPK3PXP',
+  };
+
+  beforeEach(() => {
+    vi.mocked(requireUser).mockResolvedValue(fail('FORBIDDEN'));
+    vi.mocked(readStaffSession).mockResolvedValue({
+      ctx: RESET_ACCOUNT,
+      hasVerifiedTotp: false,
+      authMethods: ['password'],
+    });
+    vi.mocked(reenrolmentStateOf).mockReset().mockResolvedValue('needs_code');
+    vi.mocked(spendReenrolmentCode).mockReset().mockResolvedValue(true);
+    vi.mocked(startTotpEnrolment).mockResolvedValue(ENROLMENT);
+  });
+
+  it('uses the code once, in the same call that makes the QR code', async () => {
+    const result = await startMfaEnrolmentAction({ reenrolmentCode: CODE });
+
+    expect(result).toMatchObject({ ok: true, data: { factorId: FACTOR_ID } });
+    expect(spendReenrolmentCode).toHaveBeenCalledTimes(1);
+    expect(spendReenrolmentCode).toHaveBeenCalledWith(
+      'user-1',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+    );
+  });
+
+  it('makes no QR code without the code, or with a wrong one', async () => {
+    const refused = {
+      error: {
+        code: 'VALIDATION',
+        fieldErrors: { reenrolmentCode: [copy.auth.mfa.reenrolCodeWrong] },
+      },
+    };
+
+    expect(await startMfaEnrolmentAction({})).toMatchObject(refused);
+    vi.mocked(spendReenrolmentCode).mockResolvedValueOnce(false);
+    expect(await startMfaEnrolmentAction({ reenrolmentCode: CODE })).toMatchObject(refused);
+    expect(startTotpEnrolment).not.toHaveBeenCalled();
+  });
+
+  it('needs no second code while the ten minutes a used code opened last', async () => {
+    vi.mocked(reenrolmentStateOf).mockResolvedValue('window_open');
+
+    expect(await startMfaEnrolmentAction({})).toMatchObject({ ok: true });
+    expect(spendReenrolmentCode).not.toHaveBeenCalled();
+  });
+
+  it('lets the reset account confirm its new factor', async () => {
+    expect(await confirmMfaEnrolmentAction({ factorId: FACTOR_ID, code: '123456' })).toEqual({
+      ok: true,
+      data: { redirectTo: '/dashboard' },
+    });
+  });
+
+  it('keeps out an account without a role that is not waiting for re-enrolment', async () => {
+    vi.mocked(reenrolmentStateOf).mockResolvedValue('none');
+
+    expect(await startMfaEnrolmentAction({})).toMatchObject({ error: { code: 'FORBIDDEN' } });
+    expect(await confirmMfaEnrolmentAction({ factorId: FACTOR_ID, code: '123456' })).toMatchObject({
+      error: { code: 'FORBIDDEN' },
     });
   });
 });

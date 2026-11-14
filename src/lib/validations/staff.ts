@@ -90,4 +90,7 @@ export type SetStaffStatusValues = z.output<typeof setStaffStatusSchema>;
 
 export const cancelPromotionSchema = z.object(staffTarget).strict();
 
+// Task P4.8.05: an MFA reset (requested, then completed 24 hours later), its cancellation, and the re-enrolment code.
+export const staffMfaTargetSchema = z.object(staffTarget).strict();
+
 export const revokeInviteSchema = z.object({ inviteId: z.uuid() }).strict();
