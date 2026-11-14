@@ -29,7 +29,7 @@ import { isDashboardLocked } from '@/lib/utils/idle-lock';
 
 // Seven days, in seconds.
 const SIDEBAR_COOKIE_MAX_AGE = 604_800;
-const SIDEBAR_WIDTH = '16.5rem';
+const SIDEBAR_WIDTH = '15.5rem';
 const SIDEBAR_WIDTH_MOBILE = '18rem';
 const SIDEBAR_WIDTH_ICON = '4.5rem';
 const SIDEBAR_KEYBOARD_SHORTCUT = 'b';

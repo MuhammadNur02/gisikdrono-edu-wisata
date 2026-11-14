@@ -3,13 +3,11 @@ import { cookies } from 'next/headers';
 import type { ReactNode } from 'react';
 
 import { CommandMenu } from '@/components/admin/shell/command-menu';
-import { ContextChip } from '@/components/admin/shell/context-chip';
 import { DashboardNav } from '@/components/admin/shell/dashboard-nav';
 import { DashboardShell } from '@/components/admin/shell/dashboard-shell';
 import { IdleLock } from '@/components/admin/shell/idle-lock';
 import { RwSwitcher } from '@/components/admin/shell/rw-switcher';
 import { UserCard } from '@/components/admin/shell/user-card';
-import { UserMenu } from '@/components/admin/shell/user-menu';
 import { NoAccessNotice } from '@/components/auth/no-access-notice';
 import { ThemeProvider } from '@/components/providers/theme-provider';
 import { RW_SCOPE_ALL, SIDEBAR_STATE_COOKIE } from '@/config/dashboard';
@@ -79,13 +77,16 @@ export default async function DashboardLayout({ children }: Readonly<{ children:
   const { profile, rwUnits, sidebarOpen, scope, groups } = await loadShell(ctx);
   const menuItems = flattenNav(groups);
   const roleLabel = staffRoleLabel(ctx.role, ctx.rwId);
+  const ownRwBadge = ctx.rwId === null ? null : rwBadgeFor(ctx.rwId, rwUnits);
   return (
     <ThemeProvider scope="admin" nonce={nonce}>
       <DashboardShell
         sidebarOpen={sidebarOpen}
+        scopeLabel={copy.dashboard.brandScope(
+          ownRwBadge?.label ?? copy.dashboard.kelurahan.toLowerCase(),
+        )}
         nav={<DashboardNav groups={groups} />}
         footer={<UserCard fullName={profile.fullName} roleLabel={roleLabel} />}
-        context={<ContextChip rw={ctx.rwId === null ? null : rwBadgeFor(ctx.rwId, rwUnits)} />}
         breadcrumbItems={menuItems}
         rwSwitcher={
           ctx.role === 'superadmin' ? (
@@ -93,7 +94,6 @@ export default async function DashboardLayout({ children }: Readonly<{ children:
           ) : null
         }
         commandMenu={<CommandMenu items={menuItems} />}
-        userMenu={<UserMenu fullName={profile.fullName} roleLabel={roleLabel} />}
         idleLock={<IdleLock action={verifyStaffTotpAction} />}
         canOverrideScans={ctx.role === 'superadmin'}
         canScan={ctx.role !== 'admin_kopdes'}

@@ -19,8 +19,9 @@ export interface NavMenuButtonProps {
   children: ReactNode;
 }
 
-// docs/StyleGuide.md §6.1: hover and active states in CSS only, the current item with a 3 px bar on its left and a
-// tooltip on the icon rail. The one piece of client state is which item is current.
+// docs/StyleGuide.md §6.1 (Dasbor Gelap): hover and active states in CSS only, the current item on the raised fill in
+// full ink with its icon in the accent, and a tooltip on the icon rail. The one piece of client state is which item is
+// current. 44 px tall below md, where the sidebar is a sheet under a finger; 32 px from md up.
 export function NavMenuButton({ href, label, exact, nested, children }: NavMenuButtonProps) {
   const pathname = usePathname();
   const { setOpenMobile } = useSidebar();
@@ -32,7 +33,7 @@ export function NavMenuButton({ href, label, exact, nested, children }: NavMenuB
       asChild
       isActive={isCurrent}
       tooltip={label}
-      className="data-[active=true]:before:absolute data-[active=true]:before:inset-y-2 data-[active=true]:before:left-0 data-[active=true]:before:w-0.75 data-[active=true]:before:rounded-full data-[active=true]:before:bg-sidebar-primary group-data-[collapsible=icon]:data-[active=true]:before:hidden"
+      className="h-auto min-h-11 gap-2.5 px-2.5 text-caption font-medium text-sidebar-foreground data-[active=true]:font-medium data-[active=true]:text-foreground md:min-h-8 [&>svg]:text-muted-foreground data-[active=true]:[&>svg]:text-sidebar-primary"
     >
       <Link
         href={href}

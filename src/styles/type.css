@@ -227,6 +227,13 @@
   font-size: 0.8125rem;
   line-height: 1.4;
 }
+/* The dashboard's uppercase micro labels (sidebar group names, the Ctrl K key), never lower-case text (§3.2). */
+@utility text-micro {
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 /* The wordmark's two lines (DESIGN-SPEC §1.6): EDU WISATA over Gisikdrono. */
 @utility text-wordmark-eyebrow {
   font-family: var(--font-sans);

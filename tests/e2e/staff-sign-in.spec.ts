@@ -145,6 +145,10 @@ test('the superadmin sees every group and the RwSwitcher, and signing out ends t
   await signInToDashboard(page, SUPERADMIN);
   const sidebar = page.getByRole('navigation', { name: 'Menu dasbor' });
 
+  // Operasional starts open; the other groups fold under their headings until opened (Dasbor Gelap).
+  for (const group of ['Moderasi', 'Keuangan', 'Administrasi']) {
+    await sidebar.getByRole('button', { name: group }).click();
+  }
   for (const item of ['Reservasi', 'Ulasan', 'Rekonsiliasi', 'Pengguna', 'Peringatan Keamanan']) {
     await expect(sidebar.getByRole('link', { name: item })).toBeVisible();
   }
@@ -199,6 +203,8 @@ test('an RW officer sees only their own groups and never the RwSwitcher', async 
   }
   const nav = page.getByRole('navigation', { name: 'Menu dasbor' }).filter({ visible: true });
   await expect(nav.getByRole('link', { name: 'Reservasi' })).toBeVisible();
+  // Keuangan folds under its heading until opened (Dasbor Gelap).
+  await nav.getByRole('button', { name: 'Keuangan' }).click();
   // docs/PRD.md §13.1 A26: their own RW's recap, read only, and no other finance page.
   await expect(nav.getByRole('link', { name: 'Rekap', exact: true })).toBeVisible();
   const hiddenLinks = [
