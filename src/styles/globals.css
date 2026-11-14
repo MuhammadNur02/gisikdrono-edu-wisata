@@ -148,32 +148,36 @@
   }
 }
 
+/* The dashboard's dark set, the only place .dark applies (the public, booking and auth groups are always light, §2.6):
+   the neutral "Dasbor Gelap" of the pen.dev design of 2026-11 (dash-* variables), its alpha lines and soft fills flattened
+   onto the card so every pair has one hex value to check; muted-foreground is lighter than the design's #78736b, which
+   is 4.0:1 on a card, to keep small text at AA. */
 .dark {
-  --background: #14110d;
-  --foreground: #f4ecdf;
-  --card: #1e1a15;
-  --card-foreground: #f4ecdf;
-  --popover: #1e1a15;
-  --popover-foreground: #f4ecdf;
-  --muted: #0f0d0a;
-  --muted-foreground: #a59680;
-  --accent: #0f0d0a;
-  --accent-foreground: #f4ecdf;
-  --ink-2: #cfc2ae;
-  --border: #3a3229;
-  --border-strong: #54493c;
-  --input: #7a6b57;
+  --background: #09090a;
+  --foreground: #f4f1eb;
+  --card: #111113;
+  --card-foreground: #f4f1eb;
+  --popover: #18181b;
+  --popover-foreground: #f4f1eb;
+  --muted: #18181b;
+  --muted-foreground: #8a857c;
+  --accent: #1f1f23;
+  --accent-foreground: #f4f1eb;
+  --ink-2: #b3aea5;
+  --border: #1f1f22;
+  --border-strong: #2e2e31;
+  --input: #67625b;
   --ring: #f49d76;
   --primary: #f0875a;
   --primary-foreground: #1a0e08;
   --primary-hover: #f49d76;
   --primary-pressed: #e06e40;
-  --primary-tint: #3a1e12;
+  --primary-tint: #2c1f1c;
   --primary-ink: #f49d76;
-  --secondary: #f4ecdf;
-  --secondary-foreground: #14110d;
+  --secondary: #f4f1eb;
+  --secondary-foreground: #09090a;
   --secondary-hover: #ffffff;
-  --secondary-pressed: #cfc2ae;
+  --secondary-pressed: #b3aea5;
   --destructive: #f28b7e;
   --destructive-foreground: #1a0e08;
   --gold: #e9b85a;
@@ -186,26 +190,26 @@
   --brand-ice: #1e1a15;
   --success: #5cc98a;
   --success-foreground: #0b1f13;
-  --success-soft: #12291b;
+  --success-soft: #19241f;
   --success-soft-foreground: #5cc98a;
   --warning: #f2be5c;
   --warning-foreground: #1f1405;
-  --warning-soft: #2e220c;
+  --warning-soft: #28231a;
   --warning-soft-foreground: #f2be5c;
   --info: #8db4f2;
   --info-foreground: #0c1628;
-  --info-soft: #14213a;
+  --info-soft: #1e222a;
   --info-soft-foreground: #8db4f2;
-  --danger-soft: #331512;
+  --danger-soft: #281d1e;
   --danger-soft-foreground: #f28b7e;
-  --neutral: #a59680;
-  --neutral-foreground: #14110d;
-  --neutral-soft: #2a241d;
-  --neutral-soft-foreground: #cfc2ae;
+  --neutral: #8a857c;
+  --neutral-foreground: #09090a;
+  --neutral-soft: #1f1f23;
+  --neutral-soft-foreground: #b3aea5;
   --rw05: #6cc08e;
   --rw05-strong: #8fd3aa;
   --rw05-tint: #15291e;
-  --rw13: #e39e68;
+  --rw13: #e3a468;
   --rw13-strong: #f0b88a;
   --rw13-tint: #2e1d12;
   --rw13-hi: #e2b05a;
@@ -218,20 +222,20 @@
   --rw-spare-violet: #d9a6cf;
   --rw-spare-violet-strong: #e8c3e0;
   --rw-spare-violet-tint: #2c1729;
-  --on-accent: #14110d;
-  --sidebar-background: #1e1a15;
-  --sidebar-foreground: #cfc2ae;
+  --on-accent: #09090a;
+  --sidebar-background: #050506;
+  --sidebar-foreground: #b3aea5;
   --sidebar-primary: #f0875a;
   --sidebar-primary-foreground: #1a0e08;
-  --sidebar-accent: #2a241d;
-  --sidebar-accent-foreground: #f4ecdf;
-  --sidebar-border: #3a3229;
+  --sidebar-accent: #141415;
+  --sidebar-accent-foreground: #f4f1eb;
+  --sidebar-border: #171718;
   --sidebar-ring: #f49d76;
   --chart-1: #f0875a;
   --chart-2: #6cc08e;
   --chart-3: #9caaf0;
   --chart-4: #e9b85a;
-  --chart-5: #e39e68;
+  --chart-5: #e3a468;
 }
 
 /* Aliases that follow the blocks above in either theme. The rw_accent palette keys of rw_units (leaf, terracotta,

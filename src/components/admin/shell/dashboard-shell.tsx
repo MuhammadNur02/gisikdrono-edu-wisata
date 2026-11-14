@@ -25,14 +25,15 @@ function SkipLink() {
 export interface DashboardShellProps {
   // Whether the sidebar opens expanded, as the sidebar_state cookie last left it.
   sidebarOpen: boolean;
+  // What the dashboard covers, under the sidebar's name (`Dasbor kelurahan`, `Dasbor RW 05`).
+  scopeLabel: string;
   nav: ReactNode;
   footer: ReactNode;
-  context: ReactNode;
   breadcrumbItems: readonly BreadcrumbItem[];
   // The superadmin's RwSwitcher, or null for an RW officer, who never sees one (docs/StyleGuide.md §6.1).
   rwSwitcher: ReactNode;
+  // The `Lompat ke menu…` bar of the sidebar.
   commandMenu: ReactNode;
-  userMenu: ReactNode;
   // The idle lock overlay, mounted last so it sits above everything.
   idleLock: ReactNode;
   // The superadmin's scans may override a wrong day or a closed window (docs/PRD.md FR-SCAN-09).
@@ -43,7 +44,10 @@ export interface DashboardShellProps {
   children: ReactNode;
 }
 
-type ShellColumnProps = Omit<DashboardShellProps, 'sidebarOpen' | 'nav' | 'footer' | 'idleLock'>;
+type ShellColumnProps = Omit<
+  DashboardShellProps,
+  'sidebarOpen' | 'scopeLabel' | 'nav' | 'footer' | 'commandMenu' | 'idleLock'
+>;
 
 // Everything right of the sidebar: the topbar, the RwSwitcher row below md, the page and the QuickScannerBar.
 function ShellColumn({
@@ -74,20 +78,22 @@ function ShellColumn({
   );
 }
 
-// The frame around every dashboard page (docs/StyleGuide.md §6.1): the shadcn Sidebar (a sheet below md), the topbar,
+// The frame around every dashboard page (docs/StyleGuide.md §6.1, Dasbor Gelap): the shadcn Sidebar (a sheet below md), the topbar,
 // the page frame and, below md, the QuickScannerBar. The superadmin's RwSwitcher sits in the topbar from md up and on
 // its own row below it, where the topbar has no room for it.
 export function DashboardShell({
   sidebarOpen,
+  scopeLabel,
   nav,
   footer,
+  commandMenu,
   idleLock,
   ...column
 }: DashboardShellProps) {
   return (
     <SidebarProvider id={DASHBOARD_SHELL_ID} defaultOpen={sidebarOpen} className="bg-background">
       <SkipLink />
-      <AppSidebar context={column.context} nav={nav} footer={footer} />
+      <AppSidebar scopeLabel={scopeLabel} jump={commandMenu} nav={nav} footer={footer} />
       <ShellColumn {...column} />
       {idleLock}
     </SidebarProvider>

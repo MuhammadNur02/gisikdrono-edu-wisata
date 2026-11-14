@@ -6,6 +6,8 @@ export const dashboardCopy = {
   toggleSidebar: 'Buka atau tutup bilah sisi',
   menuDescription: 'Semua halaman dasbor yang bisa Anda buka.',
   homeLink: 'Edu Wisata Gisikdrono, ke dasbor',
+  brandName: 'Gisikdrono',
+  brandScope: (scope: string) => `Dasbor ${scope}`,
   kelurahan: 'Kelurahan',
   roles: {
     superadmin: 'Superadmin Kelurahan',
@@ -17,20 +19,20 @@ export const dashboardCopy = {
     all: 'Semua',
   },
   topbar: {
-    scanTicket: 'Scan Tiket',
+    scanTicket: 'Scan tiket',
+    search: 'Cari reservasi',
+    searchPlaceholder: 'Cari kode GSK-…, institusi, atau tiket',
     breadcrumb: 'Lokasi halaman',
     // Path segments that are not a menu item: /new, /edit.
     segments: { new: 'Baru', edit: 'Ubah' },
   },
   userMenu: {
-    label: 'Menu akun',
     profile: 'Profil',
-    theme: 'Tampilan',
-    themes: { light: 'Terang', dark: 'Gelap', system: 'Ikuti sistem' },
   },
   commandMenu: {
     open: 'Cari menu',
-    shortcut: 'Ctrl+K',
+    jump: 'Lompat ke menu…',
+    shortcut: 'Ctrl K',
     quickActions: 'Tindakan cepat',
     openScanner: 'Buka scanner',
     todaySessions: 'Sesi hari ini',

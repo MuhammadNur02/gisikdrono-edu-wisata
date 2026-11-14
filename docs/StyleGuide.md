@@ -268,31 +268,31 @@ These are the three custom-property blocks of `globals.css`, verbatim. `@theme i
 }
 
 .dark {
-  --background: #14110d;
-  --foreground: #f4ecdf;
-  --card: #1e1a15;
-  --card-foreground: #f4ecdf;
-  --popover: #1e1a15;
-  --popover-foreground: #f4ecdf;
-  --muted: #0f0d0a;
-  --muted-foreground: #a59680;
-  --accent: #2a241d;
-  --accent-foreground: #f4ecdf;
-  --ink-2: #cfc2ae;
-  --border: #3a3229;
-  --border-strong: #54493c;
-  --input: #7a6b57;
+  --background: #09090a;
+  --foreground: #f4f1eb;
+  --card: #111113;
+  --card-foreground: #f4f1eb;
+  --popover: #18181b;
+  --popover-foreground: #f4f1eb;
+  --muted: #18181b;
+  --muted-foreground: #8a857c;
+  --accent: #1f1f23;
+  --accent-foreground: #f4f1eb;
+  --ink-2: #b3aea5;
+  --border: #1f1f22;
+  --border-strong: #2e2e31;
+  --input: #67625b;
   --ring: #f49d76;
   --primary: #f0875a;
   --primary-foreground: #1a0e08;
   --primary-hover: #f49d76;
   --primary-pressed: #e06e40;
-  --primary-tint: #3a1e12;
+  --primary-tint: #2c1f1c;
   --primary-ink: #f49d76;
-  --secondary: #f4ecdf;
-  --secondary-foreground: #14110d;
+  --secondary: #f4f1eb;
+  --secondary-foreground: #09090a;
   --secondary-hover: #ffffff;
-  --secondary-pressed: #cfc2ae;
+  --secondary-pressed: #b3aea5;
   --destructive: #f28b7e;
   --destructive-foreground: #1a0e08;
   --gold: #e9b85a;
@@ -305,26 +305,26 @@ These are the three custom-property blocks of `globals.css`, verbatim. `@theme i
   --brand-ice: #1e1a15;
   --success: #5cc98a;
   --success-foreground: #0b1f13;
-  --success-soft: #12291b;
+  --success-soft: #19241f;
   --success-soft-foreground: #5cc98a;
   --warning: #f2be5c;
   --warning-foreground: #1f1405;
-  --warning-soft: #2e220c;
+  --warning-soft: #28231a;
   --warning-soft-foreground: #f2be5c;
   --info: #8db4f2;
   --info-foreground: #0c1628;
-  --info-soft: #14213a;
+  --info-soft: #1e222a;
   --info-soft-foreground: #8db4f2;
-  --danger-soft: #331512;
+  --danger-soft: #281d1e;
   --danger-soft-foreground: #f28b7e;
-  --neutral: #a59680;
-  --neutral-foreground: #14110d;
-  --neutral-soft: #2a241d;
-  --neutral-soft-foreground: #cfc2ae;
+  --neutral: #8a857c;
+  --neutral-foreground: #09090a;
+  --neutral-soft: #1f1f23;
+  --neutral-soft-foreground: #b3aea5;
   --rw05: #6cc08e;
   --rw05-strong: #8fd3aa;
   --rw05-tint: #15291e;
-  --rw13: #e39e68;
+  --rw13: #e3a468;
   --rw13-strong: #f0b88a;
   --rw13-tint: #2e1d12;
   --rw13-hi: #e2b05a;
@@ -337,20 +337,20 @@ These are the three custom-property blocks of `globals.css`, verbatim. `@theme i
   --rw-spare-violet: #d9a6cf;
   --rw-spare-violet-strong: #e8c3e0;
   --rw-spare-violet-tint: #2c1729;
-  --on-accent: #14110d;
-  --sidebar-background: #1e1a15;
-  --sidebar-foreground: #cfc2ae;
+  --on-accent: #09090a;
+  --sidebar-background: #050506;
+  --sidebar-foreground: #b3aea5;
   --sidebar-primary: #f0875a;
   --sidebar-primary-foreground: #1a0e08;
-  --sidebar-accent: #2a241d;
-  --sidebar-accent-foreground: #f4ecdf;
-  --sidebar-border: #3a3229;
+  --sidebar-accent: #141415;
+  --sidebar-accent-foreground: #f4f1eb;
+  --sidebar-border: #171718;
   --sidebar-ring: #f49d76;
   --chart-1: #f0875a;
   --chart-2: #6cc08e;
   --chart-3: #9caaf0;
   --chart-4: #e9b85a;
-  --chart-5: #e39e68;
+  --chart-5: #e3a468;
 }
 
 /* Aliases that follow the blocks above in either theme. The rw_accent palette keys of rw_units (leaf, terracotta,
@@ -442,11 +442,11 @@ The pairs below are those DESIGN-SPEC §1.2 checked; `src/styles/globals.test.ts
 | on-forest-2 / forest-night | 7.86 | | rw05-hi / forest-night | 7.07 |
 | border-input / paper (UI, 3:1) | 3.62 | | gold-ink / paper | 5.18 |
 
-`--primary` on the paper is 4.41:1, so the brick is never text: links and eyebrows are `primary-ink`. Text on a photo always sits on one of the photo grades of §8.2, which keep the local background darker than #6E6B68 (≥ 5.3:1 for white). In dark mode ink on paper is 16.05:1, ink-3 6.52:1 and the primary's foreground on the primary 7.49:1; the test covers every dark pair too.
+`--primary` on the paper is 4.41:1, so the brick is never text: links and eyebrows are `primary-ink`. Text on a photo always sits on one of the photo grades of §8.2, which keep the local background darker than #6E6B68 (≥ 5.3:1 for white). In dark mode (the dashboard's neutral set of 2026-11-15) ink on the background is 17.66:1, ink-3 5.43:1 on the background and 5.14:1 on a card, the primary's foreground on the primary 7.49:1 and an input's edge 3.12:1 on a card; the test covers every dark pair too.
 
 ### 2.6 Theme behaviour
 
-`next-themes` with `attribute="class"`, provided once by `src/components/providers/theme-provider.tsx`; the `<html>` element carries `suppressHydrationWarning`. The `(public)`, `(booking)` and `(auth)` route groups render with `forcedTheme="light"` (open decision D3), so a staff member's dark preference never leaks into the public site through the shared `localStorage` key. The `(admin)` group uses `defaultTheme="system"`, `enableSystem` and `storageKey="gsk-admin-theme"`; the toggle lives only in the sidebar footer. Dark mode never uses drop shadows: cards get `dark:border-white/5` as a highlight instead. The dark bands (night, forest) stay dark in both themes and only deepen a little.
+`next-themes` with `attribute="class"`, provided once by `src/components/providers/theme-provider.tsx`; the `<html>` element carries `suppressHydrationWarning`. The `(public)`, `(booking)` and `(auth)` route groups render with `forcedTheme="light"` (open decision D3), so a staff member's dark preference never leaks into the public site through the shared `localStorage` key. The `(admin)` group is always dark (`forcedTheme="dark"`, the "Dasbor Gelap" of the pen.dev design, owner's decision of 2026-11-15): the `.dark` set is the dashboard's neutral one (`dash-*` of the design: background #09090A, card #111113, raised #1F1F23, sunken sidebar #050506, ink #F4F1EB / #B3AEA5, the brick-orange accent #F0875A), with the design's alpha lines and soft fills flattened onto the card and ink-3 raised from #78736B to #8A857C for AA. There is no theme toggle. Dark mode never uses drop shadows: cards get `dark:border-white/5` as a highlight instead. The dark bands (night, forest) stay dark in both themes and only deepen a little.
 
 ### 2.7 RW accent colours
 
@@ -531,6 +531,7 @@ Every step is an `@utility` in `src/styles/globals.css` and is registered with `
 | `text-body` | 16 / 1.6 | same | 400 | default copy |
 | `text-body-sm` | 14 / 1.55 | same | 400 / 500 | UI, tables, helper text |
 | `text-caption` | 13 / 1.4 | same | caller's (500 in the design) | captions, dates, meta; never below 12 px (11 only for uppercase micro labels) |
+| `text-micro` | 11 / 1.2, tracking 0.08em, uppercase | same | 600 | the dashboard's uppercase micro labels only: sidebar group names and the `Ctrl K` key (Dasbor Gelap, 2026-11-15) |
 | `text-overline` | 12 / 1 / +0.08em, uppercase | same | 600 | dashboard labels; public sections use `text-eyebrow` |
 
 The weights of the label and caption steps are left to the caller, so a `font-*` class never fights the size. A new size is a token change in `globals.css` (and `TYPE_SCALE_STEPS`), never an inline `text-[13px]`. Prices, countdowns, seats and figures are `tabular-nums` (built into `text-figure` and `text-price`).
@@ -813,9 +814,9 @@ DESIGN-SPEC §2.8: the night band with the light kawung at 6 %, under a `night` 
 
 | Part | Specification |
 |---|---|
-| `AppSidebar` | shadcn `Sidebar` (sidebar-07 pattern): 264 px expanded, 72 px icon rail collapsed (tooltips on rail), state persisted in cookie `sidebar_state`, toggle `Ctrl+B`; below `md` becomes a `Sheet` from the left. Header: logo + RW context chip (the officer's `RW 05`, `RW 08` and so on in the RW's accent, or `Kelurahan`). Footer: user card (avatar, name, `app_role` badge), theme toggle, `Keluar`. Nav items CSS-only hover/active (`bg-sidebar-accent text-sidebar-accent-foreground`), active item has a 3 px `bg-sidebar-primary` left bar. |
-| `Topbar` | `h-16 sticky top-0 z-40` with backdrop blur; left: sidebar trigger + breadcrumb (`Dashboard / Reservasi / GSK-7F3K9Q2M`); right: `RwSwitcher`, `Scan Tiket` button (`default sm`, `ScanLine`; opens `ScannerModal`, whose header offers `Buka scanner penuh` → `/dashboard/scanner?return=<path>`, see 6.6), notification bell (badge count of `security_alerts` unread for superadmin, `needs_review` bookings for admin_rw), avatar menu (`Profil`, `Keluar`). |
-| `RwSwitcher` | superadmin only; segmented control `Semua · RW 05 · RW 13 · RW 08 · …`, one segment for every RW in `rw_units` (offline ones included, so an RW can be prepared before it goes online), persisted in cookie `rw_scope`, applied as a filter on every list query and KPI; admin_rw never sees it (their scope is fixed by `app_rw_id`). |
+| `AppSidebar` | shadcn `Sidebar` (sidebar-07 pattern) on the sunken surface: 248 px expanded, 72 px icon rail collapsed (tooltips on rail), state persisted in cookie `sidebar_state`, toggle `Ctrl+B` and the button beside the brand; below `md` becomes a `Sheet` from the left. Header: the 28 px accent mark, `Gisikdrono` and its scope (`Dasbor kelurahan` / `Dasbor RW 05`), then the `Lompat ke menu… CTRL K` bar that opens the `CommandMenu`. Groups fold under an uppercase `text-micro` heading with a chevron (`NavGroupSection`): `Operasional` and `Katalog` start open, a group holding the current page stays open, and on the icon rail every item shows; `Dasbor` stands alone above them. Items `text-caption`, 32 px from `md` (44 px in the sheet), hover and current on `bg-sidebar-accent`, the current item in full ink with its icon in the accent. Footer: the user card (initials, name, role with a green dot, a link to `Profil`) and an icon `Keluar` that posts the plain sign-out form (Dasbor Gelap, 2026-11-15). |
+| `Topbar` | `h-15 sticky top-0 z-40` on the page background with a bottom line; left: the menu button below `md` + breadcrumb (`Dasbor / Reservasi / GSK-7F3K9Q2M`, the last crumb only below `sm`); right: the booking search from `lg` (`Cari kode GSK-…, institusi, atau tiket`, a plain GET form to `/dashboard/bookings?q=`, edu-wisata staff only), `RwSwitcher`, `Scan tiket` button (`default sm`, `ScanLine`; opens `ScannerModal`, whose header offers `Buka scanner penuh` → `/dashboard/scanner?return=<path>`, see 6.6). The notification bell (badge count of `security_alerts` unread for superadmin, `needs_review` bookings for admin_rw) follows with the sidebar counts. |
+| `RwSwitcher` | superadmin only; segmented control `Semua · RW 05 · RW 13 · RW 08 · …` on the card surface, each RW with a 6 px dot in its accent, the chosen one on `bg-accent`, one segment for every RW in `rw_units` (offline ones included, so an RW can be prepared before it goes online), persisted in cookie `rw_scope`, applied as a filter on every list query and KPI; admin_rw never sees it (their scope is fixed by `app_rw_id`). |
 | `CommandMenu` | `cmdk` palette on `Ctrl+K` / `⌘K`: navigation items for the current role, `Cari reservasi GSK-…`, quick actions (`Buka scanner`, `Sesi hari ini`). Results grouped by nav group; `shadow-modal rounded-2xl`. |
 | Page frame | `PageHeader` (title `text-h1` in display font, description, right-aligned primary action), content `max-w-(--breakpoint-2xl) p-4 md:p-6 lg:p-8 space-y-6`. |
 

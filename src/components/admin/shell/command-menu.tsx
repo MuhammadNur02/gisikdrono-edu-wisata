@@ -5,7 +5,6 @@ import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
 
 import type { CommandPaletteItem } from '@/components/admin/shell/command-palette';
-import { Button } from '@/components/ui/button';
 import { copy } from '@/lib/copy/id';
 import { isDashboardLocked } from '@/lib/utils/idle-lock';
 
@@ -22,7 +21,30 @@ export interface CommandMenuProps {
   items: readonly CommandPaletteItem[];
 }
 
-// docs/StyleGuide.md §6.1: the search button of the topbar and the Ctrl+K / ⌘K shortcut that open the palette.
+// The bar itself; on the icon rail only the magnifier stays.
+function JumpBar({ onOpen }: { onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label={text.open}
+      aria-keyshortcuts="Control+K Meta+K"
+      title={`${text.open} (${text.shortcut})`}
+      onClick={onOpen}
+      className="flex min-h-11 w-full items-center gap-2 rounded-md border border-sidebar-border bg-card px-2.5 text-caption text-muted-foreground transition-colors outline-none group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0 hover:text-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring md:min-h-9"
+    >
+      <Search aria-hidden className="size-3.5 shrink-0" />
+      <span className="flex-1 truncate text-left group-data-[collapsible=icon]:hidden">
+        {text.jump}
+      </span>
+      <kbd className="rounded-sm border border-border-strong px-1.5 text-micro font-semibold group-data-[collapsible=icon]:hidden">
+        {text.shortcut}
+      </kbd>
+    </button>
+  );
+}
+
+// docs/StyleGuide.md §6.1: the `Lompat ke menu…` bar at the top of the sidebar and the Ctrl+K / ⌘K shortcut that open
+// the palette.
 export function CommandMenu({ items }: CommandMenuProps) {
   const [open, setOpen] = useState(false);
   const [hasOpened, setHasOpened] = useState(false);
@@ -48,17 +70,7 @@ export function CommandMenu({ items }: CommandMenuProps) {
 
   return (
     <>
-      <Button
-        type="button"
-        variant="outline"
-        size="icon"
-        aria-label={text.open}
-        aria-keyshortcuts="Control+K Meta+K"
-        title={`${text.open} (${text.shortcut})`}
-        onClick={show}
-      >
-        <Search aria-hidden />
-      </Button>
+      <JumpBar onOpen={show} />
       {hasOpened ? <CommandPalette open={open} onOpenChange={setOpen} items={items} /> : null}
     </>
   );

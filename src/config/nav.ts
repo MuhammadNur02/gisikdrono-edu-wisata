@@ -50,6 +50,11 @@ export interface DashboardNavItem {
 export interface DashboardNavGroup {
   title: string;
   items: readonly DashboardNavItem[];
+  // The overview: its one item stands alone, without a group heading to fold it under.
+  isPlain?: boolean;
+  // Unfolded when the dashboard opens, as the daily work is (Dasbor Gelap); every other group unfolds when it holds the
+  // current page or the officer opens it.
+  startsOpen?: boolean;
 }
 
 // The edu-wisata staff: the superadmin and the RW admins. The Koperasi Merah Putih's admin_kopdes sees the overview,
@@ -67,10 +72,12 @@ const ALL_ROLES = ['superadmin', 'admin_rw', 'admin_kopdes'] as const;
 export const DASHBOARD_NAV_GROUPS: readonly DashboardNavGroup[] = [
   {
     title: 'Ringkasan',
+    isPlain: true,
     items: [{ label: 'Dasbor', href: '/dashboard', icon: LayoutDashboard, roles: ALL_ROLES }],
   },
   {
     title: 'Operasional',
+    startsOpen: true,
     items: [
       { label: 'Reservasi', href: '/dashboard/bookings', icon: ClipboardList, roles: BOTH_ROLES },
       {
@@ -81,35 +88,12 @@ export const DASHBOARD_NAV_GROUPS: readonly DashboardNavGroup[] = [
       },
       { label: 'Scanner', href: '/dashboard/scanner', icon: ScanLine, roles: BOTH_ROLES },
       { label: 'Kehadiran', href: '/dashboard/attendance', icon: UserCheck, roles: BOTH_ROLES },
-      // An RW admin exports their own RW's attendance; the superadmin every kind (Task P4.6.03).
-      { label: 'Ekspor', href: '/dashboard/exports', icon: Download, roles: BOTH_ROLES },
       { label: 'Sertifikat', href: '/dashboard/certificates', icon: Award, roles: BOTH_ROLES },
     ],
   },
   {
-    title: 'Konten',
-    items: [
-      { label: 'Halaman RW', href: '/dashboard/pages', icon: FileText, roles: BOTH_ROLES },
-      { label: 'Artikel', href: '/dashboard/articles', icon: Newspaper, roles: BOTH_ROLES },
-      { label: 'Galeri', href: '/dashboard/galleries', icon: Images, roles: BOTH_ROLES },
-      { label: 'E-Booklet', href: '/dashboard/booklets', icon: BookOpen, roles: BOTH_ROLES },
-      {
-        label: 'Jadwal Pertunjukan',
-        href: '/dashboard/schedules',
-        icon: CalendarDays,
-        roles: BOTH_ROLES,
-        forScheduleRws: true,
-      },
-      {
-        label: 'Titik Aktivitas',
-        href: '/dashboard/activity-points',
-        icon: MapPin,
-        roles: BOTH_ROLES,
-      },
-    ],
-  },
-  {
     title: 'Katalog',
+    startsOpen: true,
     items: [
       { label: 'Paket Wisata', href: '/dashboard/packages', icon: Package, roles: BOTH_ROLES },
       {
@@ -131,6 +115,28 @@ export const DASHBOARD_NAV_GROUPS: readonly DashboardNavGroup[] = [
         href: '/dashboard/settings',
         icon: SlidersHorizontal,
         roles: KOPDES_ONLY,
+      },
+    ],
+  },
+  {
+    title: 'Konten',
+    items: [
+      { label: 'Halaman RW', href: '/dashboard/pages', icon: FileText, roles: BOTH_ROLES },
+      { label: 'Artikel', href: '/dashboard/articles', icon: Newspaper, roles: BOTH_ROLES },
+      { label: 'Galeri', href: '/dashboard/galleries', icon: Images, roles: BOTH_ROLES },
+      { label: 'E-Booklet', href: '/dashboard/booklets', icon: BookOpen, roles: BOTH_ROLES },
+      {
+        label: 'Jadwal Pertunjukan',
+        href: '/dashboard/schedules',
+        icon: CalendarDays,
+        roles: BOTH_ROLES,
+        forScheduleRws: true,
+      },
+      {
+        label: 'Titik Aktivitas',
+        href: '/dashboard/activity-points',
+        icon: MapPin,
+        roles: BOTH_ROLES,
       },
     ],
   },
@@ -163,6 +169,8 @@ export const DASHBOARD_NAV_GROUPS: readonly DashboardNavGroup[] = [
         icon: SlidersHorizontal,
         roles: SUPERADMIN_ONLY,
       },
+      // An RW admin exports their own RW's attendance; the superadmin every kind (Task P4.6.03).
+      { label: 'Ekspor', href: '/dashboard/exports', icon: Download, roles: BOTH_ROLES },
     ],
   },
   {

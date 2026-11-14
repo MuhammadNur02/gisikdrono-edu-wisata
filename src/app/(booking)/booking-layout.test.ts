@@ -18,6 +18,6 @@ describe('the booking layout', () => {
     const html = renderToStaticMarkup(await BookingLayout({ children: null }));
     const backdrop = /<div class="([^"]*min-h-dvh[^"]*)"/.exec(html)?.[1] ?? '';
     expect(backdrop.split(' ')).toContain('bg-background');
-    expect(darkBlock).toMatch(/--background:\s*#14110d;/);
+    expect(darkBlock).toMatch(/--background:\s*#09090a;/);
   });
 });

@@ -43,7 +43,7 @@ function crumbsFor(pathname: string, items: readonly BreadcrumbItem[]): Crumb[] 
 function CrumbLabel({ crumb, isLast }: { crumb: Crumb; isLast: boolean }) {
   if (isLast) {
     return (
-      <span aria-current="page" className="truncate font-medium text-foreground">
+      <span aria-current="page" className="truncate font-semibold text-foreground">
         {crumb.label}
       </span>
     );
@@ -63,7 +63,7 @@ export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
   const home: Crumb = { href: DASHBOARD_PATH, label: text.home.title };
   return (
     <nav aria-label={text.topbar.breadcrumb} className="min-w-0">
-      <ol className="flex min-w-0 items-center gap-1 text-body-sm text-muted-foreground">
+      <ol className="flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground">
         <li className="shrink-0">
           <CrumbLabel crumb={home} isLast={crumbs.length === 0} />
         </li>
