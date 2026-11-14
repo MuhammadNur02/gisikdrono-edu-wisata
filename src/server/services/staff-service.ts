@@ -3,7 +3,12 @@ import 'server-only';
 import type { User } from '@supabase/supabase-js';
 
 import { AUTH_USERS_PAGE_SIZE, STAFF_BAN_DURATION, STAFF_UNBAN_DURATION } from '@/config/staff';
-import { acceptStaffInvite, claimStaffInvite, unusedAccountOfInvite } from '@/db/rpc-onboarding';
+import {
+  acceptStaffInvite,
+  claimStaffInvite,
+  consumeMfaReenrolmentCode,
+  unusedAccountOfInvite,
+} from '@/db/rpc-onboarding';
 import type { OnboardingSession } from '@/db/rpc-onboarding';
 import { createLogger } from '@/lib/logger';
 import { withinRateLimits } from '@/lib/rate-limit';
@@ -229,4 +234,27 @@ export async function releaseRevokedInviteAccount(
     authErrorCode: error.code ?? null,
   });
   return false;
+}
+
+export type ReenrolmentState = 'none' | 'needs_code' | 'window_open';
+
+// Task P4.8.05: whether the signed-in account waits for a new authenticator after an MFA reset, and whether its code
+// already opened the ten minutes to verify one in. While it waits its token carries no role and its session stays at
+// AAL1, where no API role may read profiles, so the server reads the flags for the id Supabase Auth verified
+// (readStaffSession). An inactive account never re-enrols.
+export async function reenrolmentStateOf(userId: string): Promise<ReenrolmentState> {
+  const { data, error } = await createSupabaseAdminClient()
+    .from('profiles')
+    .select('reenrolment_required, reenrolment_window_until, is_active')
+    .eq('id', userId)
+    .maybeSingle();
+  if (error) throw error;
+  if (data?.reenrolment_required !== true || !data.is_active) return 'none';
+  const windowUntil = data.reenrolment_window_until;
+  return windowUntil !== null && Date.parse(windowUntil) > Date.now() ? 'window_open' : 'needs_code';
+}
+
+// One try of the code the superadmin read out, for the signed-in account's own row only.
+export function spendReenrolmentCode(userId: string, codeHash: string): Promise<boolean> {
+  return consumeMfaReenrolmentCode(createSupabaseAdminClient(), { userId, codeHash });
 }

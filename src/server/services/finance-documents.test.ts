@@ -18,7 +18,7 @@ vi.mock('@/lib/uploads/paths', () => ({
   parseQuarantinePath: vi.fn(),
   quarantinePathFor: vi.fn(() => 'kelurahan/upload-1'),
 }));
-vi.mock('@/lib/uploads/pdf-scan', () => ({ scanBookletPdf: vi.fn() }));
+vi.mock('@/lib/uploads/pdf-scan-isolated', () => ({ scanBookletPdfIsolated: vi.fn() }));
 vi.mock('@/lib/uploads/scan-slots', () => ({ withScanSlot: vi.fn() }));
 vi.mock('@/server/services/upload-storage', () => ({
   downloadObject: vi.fn(),

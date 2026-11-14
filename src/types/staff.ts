@@ -50,6 +50,12 @@ export interface IssuedInvite {
 }
 
 // What set_staff_role answers: applied at once, or, for a promotion to superadmin, requested and due later.
+// What issueReenrolmentCodeAction hands back once after an MFA reset (Task P4.8.05). Nothing stores it.
+export interface IssuedReenrolmentCode {
+  code: string;
+  expiresAt: string;
+}
+
 export type StaffRoleChange = { stage: 'applied' } | { stage: 'requested'; completesAfter: string };
 
 // set_staff_status changed the profile; banning or unbanning the Auth user is a second call that may fail on its own.

@@ -7,7 +7,7 @@ import type { Database } from '@/db/types';
 import { AppError } from '@/lib/errors';
 import { reencodeImage, thumbnailOf } from '@/lib/images/re-encode';
 import { thumbnailPathFor } from '@/lib/uploads/paths';
-import { scanBookletPdf } from '@/lib/uploads/pdf-scan';
+import { scanBookletPdfIsolated } from '@/lib/uploads/pdf-scan-isolated';
 import { withScanSlot } from '@/lib/uploads/scan-slots';
 import type { UploadOutcome } from '@/server/services/upload-service';
 import { publicObjectExists, writePublicMedia } from '@/server/services/upload-storage';
@@ -59,7 +59,7 @@ export async function publishPdf(
   bytes: Buffer,
   path: string,
 ): Promise<UploadOutcome<FinalizedUpload>> {
-  const slot = await withScanSlot(() => scanBookletPdf(bytes));
+  const slot = await withScanSlot(() => scanBookletPdfIsolated(bytes));
   if (!slot.ok) throw new AppError('RATE_LIMITED');
   const scan = slot.value;
   if (!scan.ok) return { ok: false, problem: scan.problem, detail: scan.detail ?? null };

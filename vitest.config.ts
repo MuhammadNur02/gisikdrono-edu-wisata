@@ -21,6 +21,9 @@ export default defineConfig({
   },
   test: {
     env: sandboxEnv,
+    // The booklet scan runs in a worker thread (src/lib/uploads/pdf-scan-isolated.ts), which inherits these options:
+    // outside a Next.js build its sources are TypeScript with `@/` imports, and tsx loads them.
+    execArgv: ['--import', 'tsx'],
     projects: [
       {
         extends: true,

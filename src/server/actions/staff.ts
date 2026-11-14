@@ -13,18 +13,27 @@ import {
   revokeInviteSchema,
   setStaffRoleSchema,
   setStaffStatusSchema,
+  staffMfaTargetSchema,
 } from '@/lib/validations/staff';
 import { requireFreshTotp, requireRole, type GuardResult } from '@/server/auth/guards';
 import {
+  cancelStaffMfaResetRequest,
   cancelStaffPromotion,
   changeStaffRole,
   changeStaffStatus,
   createStaffInvite,
+  issueReenrolmentCode,
+  resetStaffMfaFactors,
   revokeStaffInvite,
 } from '@/server/services/staff-admin-service';
 import { withinInviteLimit } from '@/server/services/staff-service';
 import type { ActionResult } from '@/types/action-result';
-import type { IssuedInvite, StaffRoleChange, StaffStatusChange } from '@/types/staff';
+import type {
+  IssuedInvite,
+  IssuedReenrolmentCode,
+  StaffRoleChange,
+  StaffStatusChange,
+} from '@/types/staff';
 
 // /dashboard/users (Task P4.8.02, docs/Security.md §5.1, §5.3, §5.6). Every change is the superadmin's, at AAL2, with
 // a TOTP code verified in the last five minutes through verifyStaffTotpAction, and never on their own row. The staff
@@ -121,6 +130,57 @@ export async function cancelSuperadminPromotionAction(input: unknown): Promise<A
     await cancelStaffPromotion(parsed.data.userId);
     revalidatePath(USERS_PATH);
     return ok(null);
+  } catch (error) {
+    return mapError(error);
+  }
+}
+
+// Task P4.8.05 (docs/Security.md §5.2, R24): the first call asks for the reset, the same call 24 hours later completes
+// it; then the staff member enrols a new authenticator only with the code issueReenrolmentCodeAction shows once.
+export async function resetStaffMfaAction(input: unknown): Promise<ActionResult<StaffRoleChange>> {
+  const parsed = staffMfaTargetSchema.safeParse(input);
+  if (!parsed.success) return mapError(parsed.error);
+  const guard = await requireStaffChange();
+  if (!guard.ok) return guard;
+  const ownRow = refuseOwnRow(guard, parsed.data.userId);
+  if (ownRow) return ownRow;
+
+  try {
+    const change = await resetStaffMfaFactors(parsed.data.userId);
+    revalidatePath(USERS_PATH);
+    return ok(change);
+  } catch (error) {
+    return mapError(error);
+  }
+}
+
+export async function cancelStaffMfaResetAction(input: unknown): Promise<ActionResult<null>> {
+  const parsed = staffMfaTargetSchema.safeParse(input);
+  if (!parsed.success) return mapError(parsed.error);
+  const guard = await requireStaffChange();
+  if (!guard.ok) return guard;
+
+  try {
+    await cancelStaffMfaResetRequest(parsed.data.userId);
+    revalidatePath(USERS_PATH);
+    return ok(null);
+  } catch (error) {
+    return mapError(error);
+  }
+}
+
+export async function issueReenrolmentCodeAction(
+  input: unknown,
+): Promise<ActionResult<IssuedReenrolmentCode>> {
+  const parsed = staffMfaTargetSchema.safeParse(input);
+  if (!parsed.success) return mapError(parsed.error);
+  const guard = await requireStaffChange();
+  if (!guard.ok) return guard;
+  const ownRow = refuseOwnRow(guard, parsed.data.userId);
+  if (ownRow) return ownRow;
+
+  try {
+    return ok(await issueReenrolmentCode(parsed.data.userId));
   } catch (error) {
     return mapError(error);
   }

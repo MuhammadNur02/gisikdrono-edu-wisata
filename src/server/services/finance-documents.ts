@@ -8,7 +8,7 @@ import { AppError } from '@/lib/errors';
 import { reencodeImage } from '@/lib/images/re-encode';
 import { checkUploadedFile } from '@/lib/uploads/inspect';
 import { parseQuarantinePath, quarantinePathFor } from '@/lib/uploads/paths';
-import { scanBookletPdf } from '@/lib/uploads/pdf-scan';
+import { scanBookletPdfIsolated } from '@/lib/uploads/pdf-scan-isolated';
 import { withScanSlot } from '@/lib/uploads/scan-slots';
 import {
   downloadObject,
@@ -74,7 +74,7 @@ type DocumentBody =
 // What the file becomes: a sanitised PDF, or a WebP without its metadata.
 async function documentBody(bytes: Buffer, kind: UploadKind): Promise<DocumentBody> {
   if (kind === 'pdf') {
-    const slot = await withScanSlot(() => scanBookletPdf(bytes));
+    const slot = await withScanSlot(() => scanBookletPdfIsolated(bytes));
     if (!slot.ok) throw new AppError('RATE_LIMITED');
     return slot.value.ok
       ? { body: slot.value.pdf, extension: 'pdf', contentType: PDF_TYPE }
