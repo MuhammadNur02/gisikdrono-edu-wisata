@@ -78,6 +78,10 @@ export const MAX_BOOKLET_PAGES = 100;
 export const MAX_PDF_INFLATED_BYTES = 64 * 1024 * 1024;
 export const MAX_PDF_PARSED_OBJECTS = 2_000_000;
 export const MAX_PDF_SCAN_SECONDS = 20;
+// The heap of the worker thread one scan runs in (Task P2.9.09). The limits above keep a scan near 150 MB of parsed
+// objects plus 64 MB inflated; 384 MB leaves room for the copy pdf-lib writes, and two scans at once (below) stay well
+// inside the 2 GB of a Vercel function, so the runtime stops a scan before it can starve the server process.
+export const PDF_SCAN_WORKER_HEAP_MB = 384;
 // pdf-lib keeps every reference it creates for as long as the process lives, so object numbers are bounded too: a
 // 100-page booklet uses a few thousand, and 200,000 keeps the pool under about 30 MB per generation number. 65,535 is
 // the largest generation number the format allows (security review of PR #14, follow-up of N3; R21).

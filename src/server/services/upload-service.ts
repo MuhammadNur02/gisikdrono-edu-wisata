@@ -29,7 +29,8 @@ import {
   type QuarantineUpload,
   type UploadPurpose,
 } from '@/lib/uploads/paths';
-import { countPublishedPages, type PdfSanitizing } from '@/lib/uploads/pdf-scan';
+import { type PdfSanitizing } from '@/lib/uploads/pdf-scan';
+import { countPublishedPagesIsolated } from '@/lib/uploads/pdf-scan-isolated';
 import { withScanSlot } from '@/lib/uploads/scan-slots';
 import { createUuidV7 } from '@/lib/utils/uuid-v7';
 import type { SignBookletPagesInput, SignUploadInput } from '@/lib/validations/upload';
@@ -135,7 +136,7 @@ export async function signUpload(
 async function publishedPageCount(adminClient: DatabaseClient, input: SignBookletPagesInput) {
   const path = bookletPdfPath(input.rwId, input.bookletId);
   const pdf = await downloadObject(adminClient, PUBLIC_MEDIA_BUCKET, path);
-  return pdf && countPublishedPages(new Uint8Array(pdf));
+  return pdf && countPublishedPagesIsolated(new Uint8Array(pdf));
 }
 
 async function signPages(
