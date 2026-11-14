@@ -12,6 +12,7 @@ import {
 import type {
   CancelBookingValues,
   ExtendHoldValues,
+  RescheduleBookingValues,
   ResendMessageValues,
   ResolveReviewValues,
 } from '@/lib/validations/booking-staff';
@@ -114,4 +115,27 @@ export async function resolveBookingReview(
     return null;
   }
   return toCancellationOutcome(reply);
+}
+
+const rescheduledReplySchema = z.looseObject({
+  result: z.literal('rescheduled'),
+  visit_date: z.iso.date(),
+  moves_left: z.int().nonnegative(),
+});
+
+// An officer's reschedule (20261114080000): the leg of the new session's RW moves there.
+export async function rescheduleBooking(
+  client: DatabaseClient,
+  move: RescheduleBookingValues,
+): Promise<{ visitDate: string; movesLeft: number }> {
+  const reply = rescheduledReplySchema.parse(
+    await resultOf(
+      client.rpc('reschedule_booking', {
+        p_booking_id: move.bookingId,
+        p_session_id: move.sessionId,
+        p_reason: move.reason,
+      }),
+    ),
+  );
+  return { visitDate: reply.visit_date, movesLeft: reply.moves_left };
 }

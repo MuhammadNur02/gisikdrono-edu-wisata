@@ -138,6 +138,7 @@ export const bookingsAdminCopy = {
       weather_refund: 'Dibatalkan karena cuaca, pengembalian dana diminta',
       weather_refund_leg: 'Kunjungan satu RW dibatalkan karena cuaca, pengembalian dana diminta',
       weather_reschedule: 'Jadwal dipindah karena cuaca',
+      staff_reschedule: 'Jadwal diganti petugas',
     },
   },
   contact: {

@@ -133,6 +133,7 @@ export const bookingHubCopy = {
     refunded: 'Dana dikembalikan',
     noShow: 'Tidak hadir',
     rescheduled: 'Jadwal dipindah karena cuaca',
+    rescheduledByStaff: 'Jadwal diganti petugas',
     done: 'selesai',
     current: 'saat ini',
   },

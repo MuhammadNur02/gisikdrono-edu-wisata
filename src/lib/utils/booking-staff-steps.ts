@@ -1,4 +1,5 @@
-import { NO_SEATS_REVIEW_REASON } from '@/config/bookings';
+import { NO_SEATS_REVIEW_REASON, STAFF_RESCHEDULE } from '@/config/bookings';
+import { toVisitDate } from '@/lib/utils/dates';
 import type { BookingDetail } from '@/types/booking-admin';
 
 // Which staff steps /dashboard/bookings/[id] offers (Task P4.3.08; docs/PRD.md §13.1 A28). Only whether a button
@@ -10,6 +11,7 @@ export interface StaffSteps {
   reactivate: boolean;
   resend: boolean;
   resolveReview: boolean;
+  reschedule: boolean;
 }
 
 type StepBooking = Pick<
@@ -33,6 +35,7 @@ const NO_STEPS: StaffSteps = {
   reactivate: false,
   resend: false,
   resolveReview: false,
+  reschedule: false,
 };
 
 function canExtend(booking: StepBooking, now: Date): boolean {
@@ -71,10 +74,22 @@ function canResolveReview(booking: StepBooking, isSuperadmin: boolean): boolean 
   );
 }
 
+// 20261114080000: a paid leg that still holds its seats and visits after today, while the booking has moves left.
+function canReschedule(booking: StepBooking, staffMoves: number, now: Date): boolean {
+  const today = toVisitDate(now);
+  return (
+    (booking.status === 'paid' || booking.status === 'checked_in') &&
+    !booking.needsReview &&
+    staffMoves < STAFF_RESCHEDULE.maxMoves &&
+    booking.legs.some((leg) => leg.status === 'reserved' && leg.sessionDate > today)
+  );
+}
+
 export function staffStepsFor(
   booking: StepBooking,
   staff: { isSuperadmin: boolean; isAal2: boolean },
   now: Date,
+  staffMoves = 0,
 ): StaffSteps {
   if (!staff.isAal2 || booking.isAnonymised) return NO_STEPS;
   return {
@@ -83,5 +98,6 @@ export function staffStepsFor(
     reactivate: canReactivate(booking),
     resend: booking.status !== 'quoted',
     resolveReview: canResolveReview(booking, staff.isSuperadmin),
+    reschedule: canReschedule(booking, staffMoves, now),
   };
 }

@@ -9,6 +9,13 @@ export interface SessionChoice {
   label: string;
 }
 
+// One leg an officer may move (20261114080000): its RW, its day now, and the open sessions with room for it.
+export interface RescheduleLeg {
+  rwId: number;
+  label: string;
+  sessions: SessionChoice[];
+}
+
 // One leg of a booking under review and the open sessions of its RW it may move to.
 export interface ReviewLeg {
   rwLabel: string;

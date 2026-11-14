@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import {
   CANCEL_REASON_LIMITS,
+  RESCHEDULE_REASON_LIMITS,
   RESENDABLE_TEMPLATES,
   REVIEW_REASON_LIMITS,
   REVIEW_RESOLUTIONS,
@@ -91,3 +92,14 @@ export const resolveReviewFormSchema = z
     { path: ['sessionIds'], message: text.sessions },
   );
 export type ResolveReviewValues = z.output<typeof resolveReviewSchema>;
+
+// An officer's reschedule (20261114080000): the new session names the leg, by its RW. On the form the leg picks which
+// sessions show, and the session picker starts empty.
+export const rescheduleBookingSchema = z
+  .object({ bookingId, sessionId: z.uuid(), reason: reasonField(RESCHEDULE_REASON_LIMITS) })
+  .strict();
+export const rescheduleBookingFormSchema = rescheduleBookingSchema.extend({
+  legRwId: z.string(),
+  sessionId: z.string().refine((value) => z.uuid().safeParse(value).success, text.session),
+});
+export type RescheduleBookingValues = z.output<typeof rescheduleBookingSchema>;

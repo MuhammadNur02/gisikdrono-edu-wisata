@@ -5,9 +5,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fail } from '@/lib/errors';
 import { requireRole, requireRwAccess, type StaffContext } from '@/server/auth/guards';
 import { getBookingDetail } from '@/server/services/booking-admin-service';
-import { cancelBookingByStaff, resolveReview } from '@/server/services/booking-staff-service';
+import {
+  cancelBookingByStaff,
+  rescheduleByStaff,
+  resolveReview,
+} from '@/server/services/booking-staff-service';
 
-import { cancelBookingAction, resolveBookingReviewAction } from './booking-staff';
+import {
+  cancelBookingAction,
+  rescheduleBookingAction,
+  resolveBookingReviewAction,
+} from './booking-staff';
 import { officerBookingDetail } from '../../../tests/fixtures/booking-detail';
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
@@ -20,6 +28,7 @@ vi.mock('@/server/services/booking-staff-service', () => ({
   extendHold: vi.fn(),
   previewStaffCancellation: vi.fn(),
   reactivate: vi.fn(),
+  rescheduleByStaff: vi.fn(),
   resendMessage: vi.fn(),
   resolveReview: vi.fn(),
 }));
@@ -95,5 +104,32 @@ describe('resolveBookingReviewAction', () => {
     expect(resolveReview).not.toHaveBeenCalled();
     await expect(resolveBookingReviewAction(REVIEW)).resolves.toEqual({ ok: true, data: null });
     expect(resolveReview).toHaveBeenCalledWith(REVIEW);
+  });
+});
+
+// 20261114080000: an officer of the booking's RW moves it; the database checks the rest.
+describe('rescheduleBookingAction', () => {
+  const MOVE = {
+    bookingId: officerBookingDetail.id,
+    sessionId: '0192f3a4-5b6c-7d8e-9f01-0000000000e1',
+    reason: 'Sekolah minta pindah hari',
+  };
+
+  it("moves a booking of the officer's RW and sends the ticket again", async () => {
+    await expect(rescheduleBookingAction(MOVE)).resolves.toEqual({ ok: true, data: null });
+    expect(requireRwAccess).toHaveBeenCalledWith(5);
+    expect(rescheduleByStaff).toHaveBeenCalledWith(MOVE);
+    expect(after).toHaveBeenCalledOnce();
+  });
+
+  it('refuses a short reason and another RW before the database', async () => {
+    await expect(rescheduleBookingAction({ ...MOVE, reason: 'pindah' })).resolves.toMatchObject({
+      error: { code: 'VALIDATION' },
+    });
+    vi.mocked(requireRwAccess).mockResolvedValueOnce(fail('FORBIDDEN'));
+    await expect(rescheduleBookingAction(MOVE)).resolves.toMatchObject({
+      error: { code: 'FORBIDDEN' },
+    });
+    expect(rescheduleByStaff).not.toHaveBeenCalled();
   });
 });

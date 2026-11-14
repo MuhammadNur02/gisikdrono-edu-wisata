@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { bookingStaffCopy } from '@/lib/copy/booking-staff';
 import type { ActionResult } from '@/types/action-result';
-import type { ResendOption, ReviewLeg } from '@/types/booking-staff';
+import type { RescheduleLeg, ResendOption, ReviewLeg } from '@/types/booking-staff';
 
 const text = bookingStaffCopy;
 
@@ -23,6 +23,11 @@ const CancelBookingForm = dynamic(() =>
 const ResolveReviewForm = dynamic(() =>
   import('@/components/admin/bookings/resolve-review-form').then(
     (module) => module.ResolveReviewForm,
+  ),
+);
+const RescheduleSheet = dynamic(() =>
+  import('@/components/admin/bookings/reschedule-booking-form').then(
+    (module) => module.RescheduleSheet,
   ),
 );
 const ExtendHoldForm = dynamic(() =>
@@ -47,8 +52,11 @@ export interface StaffActionsProps {
     reactivate: boolean;
     resend: boolean;
     resolveReview: boolean;
+    reschedule: boolean;
   };
   reviewLegs: ReviewLeg[];
+  // The legs an officer may move now, and the moves the booking has left (20261114080000).
+  reschedule: { legs: RescheduleLeg[]; movesLeft: number };
   // The messages the "Kirim pesan" sheet offers (resendOptionsFor).
   resendOptions: ResendOption[];
   actions: {
@@ -58,11 +66,12 @@ export interface StaffActionsProps {
     reactivate: StepAction;
     resend: StepAction;
     resolveReview: StepAction;
+    reschedule: StepAction;
     stepUp: StepAction;
   };
 }
 
-type Step = 'cancel' | 'extend' | 'resend' | 'review';
+type Step = 'cancel' | 'extend' | 'resend' | 'review' | 'reschedule';
 
 function useStaffStep() {
   const router = useRouter();
@@ -143,6 +152,7 @@ const SHEET_STEPS: readonly {
   isDestructive?: boolean;
 }[] = [
   { step: 'review', flag: 'resolveReview', label: text.review.open },
+  { step: 'reschedule', flag: 'reschedule', label: text.reschedule.open },
   { step: 'extend', flag: 'extend', label: text.extend.open },
   { step: 'resend', flag: 'resend', label: text.resend.open },
   { step: 'cancel', flag: 'cancel', label: text.cancel.open, isDestructive: true },
@@ -261,6 +271,20 @@ export function StaffActions(props: StaffActionsProps) {
       <StepButtons {...props} setStep={staffStep.setStep} />
       <MoneySheets {...props} {...staffStep} />
       <HoldSheets {...props} {...staffStep} />
+      <RescheduleSheet
+        open={staffStep.step === 'reschedule'}
+        bookingCode={props.booking.code}
+        bookingId={props.booking.id}
+        legs={props.reschedule.legs}
+        movesLeft={props.reschedule.movesLeft}
+        action={props.actions.reschedule}
+        onClose={() => {
+          staffStep.setStep(null);
+        }}
+        onDone={() => {
+          staffStep.done(text.reschedule.done);
+        }}
+      />
     </Card>
   );
 }
