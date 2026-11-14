@@ -24,6 +24,7 @@ describe('staffStepsFor', () => {
       reactivate: false,
       resend: true,
       resolveReview: false,
+      reschedule: false,
     });
   });
 
@@ -80,5 +81,21 @@ describe('staffStepsFor', () => {
     ).not.toContain(true);
     const anonymised = { ...officerBookingDetail, isAnonymised: true };
     expect(Object.values(staffStepsFor(anonymised, SUPERADMIN, NOW))).not.toContain(true);
+  });
+
+  // 20261114080000: NOW is 2026-10-30 12.00 WIB, the fixture's visit day.
+  it('reschedules a paid leg until the day before its visit, twice at most', () => {
+    const legs = officerBookingDetail.legs.map((leg) => ({ ...leg, sessionDate: '2026-11-02' }));
+    const paid = { ...officerBookingDetail, status: 'paid' as const, legs };
+    expect(staffStepsFor(paid, OFFICER, NOW).reschedule).toBe(true);
+    expect(staffStepsFor(paid, OFFICER, NOW, 1).reschedule).toBe(true);
+    expect(staffStepsFor(paid, OFFICER, NOW, 2).reschedule).toBe(false);
+    expect(
+      staffStepsFor({ ...paid, legs: officerBookingDetail.legs }, OFFICER, NOW).reschedule,
+    ).toBe(false);
+    expect(staffStepsFor({ ...paid, needsReview: true }, SUPERADMIN, NOW).reschedule).toBe(false);
+    expect(staffStepsFor({ ...paid, status: 'pending_payment' }, OFFICER, NOW).reschedule).toBe(
+      false,
+    );
   });
 });

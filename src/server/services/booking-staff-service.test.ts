@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { requestNotificationResend } from '@/db/rpc-booking-staff';
+import { requestNotificationResend, rescheduleBooking } from '@/db/rpc-booking-staff';
 import { bookingStaffCopy } from '@/lib/copy/booking-staff';
+import { listAvailableSessions } from '@/lib/queries/sessions';
+import { getPublicSiteSettings } from '@/lib/queries/settings';
+import type { PublicSiteSettings } from '@/types/settings';
 
-import { resendMessage } from './booking-staff-service';
+import { listRescheduleLegs, rescheduleByStaff, resendMessage } from './booking-staff-service';
+import { officerBookingDetail } from '../../../tests/fixtures/booking-detail';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/server', () => ({ createSupabaseServerClient: vi.fn(() => ({})) }));
@@ -20,6 +24,7 @@ vi.mock('@/db/rpc-booking-staff', () => ({
   extendBookingHold: vi.fn(),
   reactivateBooking: vi.fn(),
   requestNotificationResend: vi.fn(),
+  rescheduleBooking: vi.fn(),
   resolveBookingReview: vi.fn(),
 }));
 
@@ -68,5 +73,77 @@ describe('resendMessage', () => {
       code: 'STATE_INVALID',
       userMessage,
     });
+  });
+});
+
+// 20261114080000: an officer's reschedule.
+const NOW = new Date('2026-10-28T02:00:00Z');
+const SESSION = { rwId: 5 as const, endTime: '15:00', label: null, capacity: 40 };
+
+function sessionOn(id: string, sessionDate: string, startTime: string, remaining: number) {
+  return { ...SESSION, id, sessionDate, startTime, remaining };
+}
+
+describe('listRescheduleLegs', () => {
+  beforeEach(() => {
+    vi.mocked(getPublicSiteSettings).mockResolvedValue({
+      maxAdvanceDays: 90,
+    } as PublicSiteSettings);
+    vi.mocked(listAvailableSessions).mockResolvedValue([
+      sessionOn('0192f3a4-5b6c-7d8e-9f01-0000000000a1', '2026-10-28', '09:30', 20),
+      sessionOn('0192f3a4-5b6c-7d8e-9f01-0000000000a2', '2026-10-28', '10:30', 20),
+      sessionOn('0192f3a4-5b6c-7d8e-9f01-0000000000a3', '2026-10-30', '13:00', 20),
+      sessionOn('0192f3a4-5b6c-7d8e-9f01-0000000000a4', '2026-11-02', '08:00', 2),
+      sessionOn('0192f3a4-5b6c-7d8e-9f01-0000000000a5', '2026-11-03', '08:00', 10),
+    ]);
+  });
+
+  it('offers sessions an hour away or later, with room, other than the one the leg is in', async () => {
+    const paid = { ...officerBookingDetail, status: 'paid' as const };
+    const [leg] = await listRescheduleLegs(paid, NOW);
+    // 09.00 WIB now: 09.30 is too close, 13.00 on the 30th is the leg's own, 4 visitors do not fit in 2 seats.
+    expect(leg?.sessions.map((session) => session.value)).toEqual([
+      '0192f3a4-5b6c-7d8e-9f01-0000000000a2',
+      '0192f3a4-5b6c-7d8e-9f01-0000000000a5',
+    ]);
+    expect(leg?.label).toContain('RW 05');
+  });
+
+  it('leaves out a leg that visits today or no longer holds its seats', async () => {
+    const today = {
+      ...officerBookingDetail,
+      legs: officerBookingDetail.legs.map((leg) => ({ ...leg, sessionDate: '2026-10-28' })),
+    };
+    expect(await listRescheduleLegs(today, NOW)).toEqual([]);
+    const released = {
+      ...officerBookingDetail,
+      legs: officerBookingDetail.legs.map((leg) => ({ ...leg, status: 'released' as const })),
+    };
+    expect(await listRescheduleLegs(released, NOW)).toEqual([]);
+  });
+});
+
+describe('rescheduleByStaff', () => {
+  const MOVE = {
+    bookingId: '0192f3a4-5b6c-7d8e-9f01-23456789abcd',
+    sessionId: '0192f3a4-5b6c-7d8e-9f01-0000000000a5',
+    reason: 'Sekolah minta pindah hari',
+  };
+
+  it.each([
+    ['RESCHEDULE_TOO_LATE', bookingStaffCopy.errors.rescheduleTooLate],
+    ['RESCHEDULE_LIMIT', bookingStaffCopy.errors.rescheduleLimit],
+    ['WEATHER_LINK_OPEN', bookingStaffCopy.errors.weatherLinkOpen],
+  ])('explains the %s refusal in its own words', async (hint, userMessage) => {
+    vi.mocked(rescheduleBooking).mockRejectedValueOnce(raised(hint));
+    await expect(rescheduleByStaff(MOVE)).rejects.toMatchObject({
+      code: 'STATE_INVALID',
+      userMessage,
+    });
+  });
+
+  it('says the session filled up when its seats are gone', async () => {
+    vi.mocked(rescheduleBooking).mockRejectedValueOnce(raised('QUOTA_UNAVAILABLE'));
+    await expect(rescheduleByStaff(MOVE)).rejects.toMatchObject({ code: 'QUOTA_EXCEEDED' });
   });
 });

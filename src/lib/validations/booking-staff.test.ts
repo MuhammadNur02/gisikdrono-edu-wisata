@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   cancelBookingSchema,
   extendHoldSchema,
+  rescheduleBookingFormSchema,
+  rescheduleBookingSchema,
   resendMessageSchema,
   resolveReviewFormSchema,
   resolveReviewSchema,
@@ -73,5 +75,22 @@ describe('the staff step schemas', () => {
     };
     expect(resolveReviewFormSchema.safeParse(form).success).toBe(true);
     expect(resolveReviewFormSchema.safeParse({ ...form, resolution: 'move' }).success).toBe(false);
+  });
+
+  // 20261114080000: an officer's reschedule names one session and why.
+  it('take a reschedule with its session and reason, nothing more', () => {
+    const move = {
+      bookingId: BOOKING_ID,
+      sessionId: SESSION_ID,
+      reason: 'Sekolah minta pindah hari',
+    };
+    expect(rescheduleBookingSchema.safeParse(move).success).toBe(true);
+    expect(rescheduleBookingSchema.safeParse({ ...move, reason: 'pindah' }).success).toBe(false);
+    expect(rescheduleBookingSchema.safeParse({ ...move, sessionId: 'sesi' }).success).toBe(false);
+    expect(rescheduleBookingSchema.safeParse({ ...move, legRwId: '5' }).success).toBe(false);
+    expect(rescheduleBookingFormSchema.safeParse({ ...move, legRwId: '5' }).success).toBe(true);
+    expect(
+      rescheduleBookingFormSchema.safeParse({ ...move, legRwId: '5', sessionId: '' }).success,
+    ).toBe(false);
   });
 });

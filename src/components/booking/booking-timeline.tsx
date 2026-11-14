@@ -1,6 +1,7 @@
 import { Check, X } from 'lucide-react';
 
 import { WEATHER_RESCHEDULE_REASON } from '@/config/booking';
+import { STAFF_RESCHEDULE } from '@/config/bookings';
 import { bookingHubCopy } from '@/lib/copy/booking-hub';
 import { cn } from '@/lib/utils/cn';
 import { formatDateLong, formatDateTimeShort, formatTimeRange } from '@/lib/utils/dates';
@@ -46,9 +47,16 @@ function stateOf(isDone: boolean, isCurrent: boolean): StepState {
   return isCurrent ? 'current' : 'next';
 }
 
+const MOVE_NOTES: Readonly<Record<string, string>> = {
+  [WEATHER_RESCHEDULE_REASON]: text.rescheduled,
+  [STAFF_RESCHEDULE.reason]: text.rescheduledByStaff,
+};
+
+// The latest move names why the visit day is not the one the PIC booked.
 function visitStepHint(view: StatusHubView): string {
-  const wasMoved = view.events.some((event) => event.reason === WEATHER_RESCHEDULE_REASON);
-  return wasMoved ? `${visitHint(view)} · ${text.rescheduled}` : visitHint(view);
+  const lastMove = view.events.findLast((event) => MOVE_NOTES[event.reason ?? ''] !== undefined);
+  const note = lastMove ? MOVE_NOTES[lastMove.reason ?? ''] : undefined;
+  return note ? `${visitHint(view)} · ${note}` : visitHint(view);
 }
 
 // Made, quoted, waiting for the money, paid: the steps every booking passes or stops at.

@@ -4895,6 +4895,10 @@ export type Database = {
         }
         Returns: string
       }
+      reschedule_booking: {
+        Args: { p_booking_id: string; p_reason: string; p_session_id: string }
+        Returns: Json
+      }
       reset_staff_mfa: { Args: { p_user_id: string }; Returns: Json }
       resolve_booking_review: {
         Args: {

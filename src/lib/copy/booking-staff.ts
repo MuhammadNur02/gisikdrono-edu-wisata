@@ -1,5 +1,6 @@
 import {
   HOLD_EXTENSION_LIMITS,
+  STAFF_RESCHEDULE,
   type REVIEW_RESOLUTIONS,
   type RESENDABLE_TEMPLATES,
   type STAFF_CANCEL_CATEGORIES,
@@ -91,10 +92,26 @@ export const bookingStaffCopy = {
     submit: 'Selesaikan',
     done: 'Tinjauan diselesaikan.',
   },
+  reschedule: {
+    open: 'Ganti jadwal',
+    title: (code: string) => `Ganti jadwal ${code}`,
+    description: `Pindahkan rombongan ke sesi lain di RW yang sama, tanpa biaya, paling lambat sehari sebelum jadwal lama. Satu pemesanan bisa diganti jadwalnya paling banyak ${String(STAFF_RESCHEDULE.maxMoves)} kali. Tiket lama tidak berlaku lagi; penanggung jawab menerima tiket baru lewat WhatsApp dan email.`,
+    movesLeft: (left: number) => `Sisa ganti jadwal: ${String(left)} kali.`,
+    leg: 'Kunjungan yang dipindah',
+    legOption: (rw: string, when: string) => `${rw}, sekarang ${when}`,
+    session: 'Sesi baru',
+    sessionPlaceholder: 'Pilih sesi',
+    noSessions: 'Tidak ada sesi terbuka lain dengan kursi cukup untuk RW ini.',
+    reason: 'Catatan alasan',
+    reasonHint: 'Misalnya: sekolah meminta pindah karena ada ujian.',
+    submit: 'Ganti jadwal',
+    done: 'Jadwal diganti dan tiket baru dikirim ke penanggung jawab.',
+  },
   close: 'Tutup',
   validation: {
     reason: (min: number) => `Tulis alasan paling sedikit ${String(min)} karakter.`,
     sessions: 'Pilih satu sesi baru untuk setiap RW.',
+    session: 'Pilih sesi baru.',
     category: 'Pilih alasan pembatalan.',
     expiresAt: 'Pilih tanggal dan jam batas pembayaran.',
   },
@@ -116,5 +133,10 @@ export const bookingStaffCopy = {
       'Pembayaran pemesanan ini belum masuk pembagian hasil, jadi tinjauannya belum bisa diselesaikan. Periksa aturan bagi hasil paketnya, lalu coba lagi.',
     holdOpenPayment:
       'Penanggung jawab sedang membuka tautan pembayaran. Perpanjang setelah tautan itu kedaluwarsa.',
+    rescheduleTooLate:
+      'Jadwal hanya bisa diganti paling lambat sehari sebelum hari kunjungan. Untuk hari ini, hubungi Superadmin.',
+    rescheduleLimit: `Jadwal pemesanan ini sudah diganti ${String(STAFF_RESCHEDULE.maxMoves)} kali, jadi tidak bisa diganti lagi.`,
+    weatherLinkOpen:
+      'Sesi ini sedang dinyatakan terganggu cuaca. Penanggung jawab memilih sendiri jadwal pengganti atau pengembalian dana lewat tautan reservasinya.',
   },
 } as const;

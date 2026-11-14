@@ -1,8 +1,8 @@
 import 'server-only';
 
-import { addDays } from 'date-fns';
+import { addDays, addHours } from 'date-fns';
 
-import { RESENDABLE_TEMPLATES } from '@/config/bookings';
+import { HOLD_EXTENSION_LIMITS, RESENDABLE_TEMPLATES } from '@/config/bookings';
 import { rwLabel } from '@/config/rw';
 import {
   cancelBookingAsStaff,
@@ -10,6 +10,7 @@ import {
   extendBookingHold,
   reactivateBooking,
   requestNotificationResend,
+  rescheduleBooking,
   resolveBookingReview,
 } from '@/db/rpc-booking-staff';
 import type { RefundQuote } from '@/db/rpc-terms';
@@ -20,17 +21,29 @@ import { AppError, raisedHintOf } from '@/lib/errors';
 import { listAvailableSessions } from '@/lib/queries/sessions';
 import { getPublicSiteSettings } from '@/lib/queries/settings';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { formatDateShort, formatTimeRange, sessionStartsAt, toVisitDate } from '@/lib/utils/dates';
+import {
+  formatDateShort,
+  formatSessionStart,
+  formatTimeRange,
+  sessionStartsAt,
+  toVisitDate,
+} from '@/lib/utils/dates';
 import type {
   CancelBookingValues,
   ExtendHoldValues,
+  RescheduleBookingValues,
   ResendMessageValues,
   ResolveReviewValues,
 } from '@/lib/validations/booking-staff';
 import { asStaffRpcStep } from '@/server/services/booking-admin-service';
 import { settleCancellation } from '@/server/services/payment-service';
-import type { BookingDetail } from '@/types/booking-admin';
-import type { MessageHistoryEntry, ReviewLeg } from '@/types/booking-staff';
+import type { BookingDetail, BookingLegSummary } from '@/types/booking-admin';
+import type {
+  MessageHistoryEntry,
+  RescheduleLeg,
+  ReviewLeg,
+  SessionChoice,
+} from '@/types/booking-staff';
 
 // The staff steps of /dashboard/bookings/[id] (Task P4.3.08; docs/PRD.md §13.1 A28) through the staff member's own
 // session client: each RPC checks the role, the RW, AAL2 and, where it asks, the fresh TOTP again. A cancellation or a
@@ -54,6 +67,9 @@ const REFUSAL_MESSAGES: Readonly<
   QR_KEY_UNKNOWN: { code: 'STATE_INVALID', message: text.qrKeyUnknown },
   PAYMENT_OPEN: { code: 'STATE_INVALID', message: text.holdOpenPayment },
   LEDGER_MISSING: { code: 'STATE_INVALID', message: text.ledgerMissing },
+  RESCHEDULE_TOO_LATE: { code: 'STATE_INVALID', message: text.rescheduleTooLate },
+  RESCHEDULE_LIMIT: { code: 'STATE_INVALID', message: text.rescheduleLimit },
+  WEATHER_LINK_OPEN: { code: 'STATE_INVALID', message: text.weatherLinkOpen },
 };
 
 // The refusals these RPCs raise with a hint, each with the sentence the page shows.
@@ -106,34 +122,77 @@ export async function resolveReview(values: ResolveReviewValues): Promise<void> 
   if (outcome) await settleCancellation(outcome);
 }
 
-// A28: the open sessions each leg of a booking under review may move to, from today to booking.max_advance_days
-// ahead, read as the public calendar reads them (no personal data); resolve_booking_review checks them again.
+// The open sessions of an RW with room for a leg, from today to booking.max_advance_days ahead, read as the public
+// calendar reads them (no personal data), starting after `earliest`; a move leaves out the session the leg is in. The
+// RPC checks the choice again.
+async function sessionChoicesFor(
+  leg: BookingLegSummary,
+  now: Date,
+  earliest: Date,
+  isMove: boolean,
+): Promise<SessionChoice[]> {
+  const { maxAdvanceDays } = await getPublicSiteSettings();
+  const sessions = await listAvailableSessions({
+    rwId: leg.rwId,
+    from: toVisitDate(now),
+    to: toVisitDate(addDays(now, maxAdvanceDays)),
+  });
+  return sessions
+    .filter(
+      (session) =>
+        session.remaining >= leg.pax &&
+        sessionStartsAt(session.sessionDate, session.startTime) > earliest &&
+        !(isMove && session.sessionDate === leg.sessionDate && session.startTime === leg.startTime),
+    )
+    .map((session) => ({
+      value: session.id,
+      label: walkInCopy.sessionOption(
+        formatDateShort(session.sessionDate),
+        formatTimeRange(session.startTime, session.endTime),
+        session.remaining,
+      ),
+    }));
+}
+
+// A28: the sessions each leg of a booking under review may move to; resolve_booking_review checks them again.
 export async function listReviewLegs(
   booking: BookingDetail,
   now: Date = new Date(),
 ): Promise<ReviewLeg[]> {
-  const { maxAdvanceDays } = await getPublicSiteSettings();
-  const from = toVisitDate(now);
-  const to = toVisitDate(addDays(now, maxAdvanceDays));
   return Promise.all(
     booking.legs.map(async (leg) => ({
       rwLabel: rwLabel(leg.rwId),
-      sessions: (await listAvailableSessions({ rwId: leg.rwId, from, to }))
-        .filter(
-          (session) =>
-            session.remaining >= leg.pax &&
-            sessionStartsAt(session.sessionDate, session.startTime) > now,
-        )
-        .map((session) => ({
-          value: session.id,
-          label: walkInCopy.sessionOption(
-            formatDateShort(session.sessionDate),
-            formatTimeRange(session.startTime, session.endTime),
-            session.remaining,
-          ),
-        })),
+      sessions: await sessionChoicesFor(leg, now, now, false),
     })),
   );
+}
+
+// 20261114080000: the legs that still hold their seats and visit after today, each with the sessions it may move to,
+// starting at least internal.hold_margin_before_session() from now.
+export async function listRescheduleLegs(
+  booking: BookingDetail,
+  now: Date = new Date(),
+): Promise<RescheduleLeg[]> {
+  const earliest = addHours(now, HOLD_EXTENSION_LIMITS.webMarginHours);
+  const today = toVisitDate(now);
+  const movable = booking.legs.filter(
+    (leg) => leg.status === 'reserved' && leg.sessionDate > today,
+  );
+  return Promise.all(
+    movable.map(async (leg) => ({
+      rwId: leg.rwId,
+      label: bookingStaffCopy.reschedule.legOption(
+        rwLabel(leg.rwId),
+        `${formatDateShort(leg.sessionDate)}, ${formatSessionStart(leg.startTime)}`,
+      ),
+      sessions: await sessionChoicesFor(leg, now, earliest, true),
+    })),
+  );
+}
+
+export async function rescheduleByStaff(values: RescheduleBookingValues): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  await asBookingStep(() => rescheduleBooking(supabase, values));
 }
 
 // The PIC's messages of a booking the staff member sees, for the "Kirim pesan" sheet: the notifications RLS shows of

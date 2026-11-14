@@ -21,7 +21,7 @@ import { StaffActions } from '@/components/admin/bookings/staff-actions';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { StatusBadge } from '@/components/admin/status/status-badge';
 import { Button } from '@/components/ui/button';
-import { BOOKINGS_DASHBOARD_PATH } from '@/config/bookings';
+import { BOOKINGS_DASHBOARD_PATH, STAFF_RESCHEDULE } from '@/config/bookings';
 import { bookingsAdminCopy } from '@/lib/copy/bookings-admin';
 import { resendOptionsFor } from '@/lib/utils/booking-resend-options';
 import { staffStepsFor, type StaffSteps } from '@/lib/utils/booking-staff-steps';
@@ -39,6 +39,7 @@ import {
   extendBookingHoldAction,
   previewCancellationAction,
   reactivateBookingAction,
+  rescheduleBookingAction,
   resendMessageAction,
   resolveBookingReviewAction,
 } from '@/server/actions/booking-staff';
@@ -50,9 +51,13 @@ import {
   listBookingAddons,
   listBookingTimeline,
 } from '@/server/services/booking-admin-service';
-import { listMessageHistory, listReviewLegs } from '@/server/services/booking-staff-service';
+import {
+  listMessageHistory,
+  listRescheduleLegs,
+  listReviewLegs,
+} from '@/server/services/booking-staff-service';
 import type { BookingAddonLine, BookingDetail, BookingTimelineEvent } from '@/types/booking-admin';
-import type { ResendOption, ReviewLeg } from '@/types/booking-staff';
+import type { RescheduleLeg, ResendOption, ReviewLeg } from '@/types/booking-staff';
 
 const text = bookingsAdminCopy.detail;
 const idSchema = z.uuid();
@@ -128,6 +133,7 @@ const STAFF_STEP_ACTIONS = {
   reactivate: reactivateBookingAction,
   resend: resendMessageAction,
   resolveReview: resolveBookingReviewAction,
+  reschedule: rescheduleBookingAction,
   stepUp: verifyStaffTotpAction,
 };
 
@@ -148,6 +154,7 @@ function SideColumn({
         booking={{ id: booking.id, code: booking.bookingCode, isPaid: booking.status === 'paid' }}
         can={steps}
         reviewLegs={choices.reviewLegs}
+        reschedule={choices.reschedule}
         resendOptions={choices.resendOptions}
         actions={STAFF_STEP_ACTIONS}
       />
@@ -183,15 +190,43 @@ async function loadBooking(bookingId: string) {
 interface StaffChoices {
   reviewLegs: ReviewLeg[];
   resendOptions: ResendOption[];
+  reschedule: { legs: RescheduleLeg[]; movesLeft: number };
 }
 
-// What the staff sheets offer: a review's sessions to move to, and the messages that may go to the PIC now.
-async function loadStaffChoices(booking: BookingDetail, steps: StaffSteps): Promise<StaffChoices> {
-  const [reviewLegs, messageHistory] = await Promise.all([
+// What the staff sheets offer: a review's sessions to move to, the legs a reschedule may move and where, and the
+// messages that may go to the PIC now.
+async function loadStaffChoices(
+  booking: BookingDetail,
+  steps: StaffSteps,
+  staffMoves: number,
+): Promise<StaffChoices> {
+  const [reviewLegs, rescheduleLegs, messageHistory] = await Promise.all([
     steps.resolveReview ? listReviewLegs(booking) : [],
+    steps.reschedule ? listRescheduleLegs(booking) : [],
     steps.resend ? listMessageHistory(booking.id) : [],
   ]);
-  return { reviewLegs, resendOptions: resendOptionsFor(booking, messageHistory, new Date()) };
+  return {
+    reviewLegs,
+    resendOptions: resendOptionsFor(booking, messageHistory, new Date()),
+    reschedule: { legs: rescheduleLegs, movesLeft: STAFF_RESCHEDULE.maxMoves - staffMoves },
+  };
+}
+
+// The steps the booking offers this staff member now, and what their sheets choose from. The moves an officer made
+// are counted from the timeline, as public.reschedule_booking counts them.
+async function loadStaffView(
+  booking: BookingDetail,
+  timeline: BookingTimelineEvent[],
+  staff: { role: string; isAal2: boolean },
+): Promise<{ steps: StaffSteps; choices: StaffChoices }> {
+  const staffMoves = timeline.filter((event) => event.reason === STAFF_RESCHEDULE.reason).length;
+  const steps = staffStepsFor(
+    booking,
+    { isSuperadmin: staff.role === 'superadmin', isAal2: staff.isAal2 },
+    new Date(),
+    staffMoves,
+  );
+  return { steps, choices: await loadStaffChoices(booking, steps, staffMoves) };
 }
 
 // Task P4.3.02, docs/PRD.md FR-ADMIN-05: one booking through v_booking_admin. RLS answers the scope: a booking outside
@@ -204,12 +239,7 @@ export default async function BookingDetailPage({ params }: BookingPageProps) {
   const loaded = await loadBooking(parsedId.data);
   if (loaded === null) notFound();
   const { booking, addons, timeline } = loaded;
-  const steps = staffStepsFor(
-    booking,
-    { isSuperadmin: ctx.role === 'superadmin', isAal2: ctx.isAal2 },
-    new Date(),
-  );
-  const choices = await loadStaffChoices(booking, steps);
+  const { steps, choices } = await loadStaffView(booking, timeline, ctx);
 
   return (
     <div className="flex flex-col gap-6">

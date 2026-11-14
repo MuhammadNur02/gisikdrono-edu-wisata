@@ -11,6 +11,7 @@ import {
   cancelBookingSchema,
   cancelPreviewSchema,
   extendHoldSchema,
+  rescheduleBookingSchema,
   resendMessageSchema,
   resolveReviewSchema,
 } from '@/lib/validations/booking-staff';
@@ -21,6 +22,7 @@ import {
   extendHold,
   previewStaffCancellation,
   reactivate,
+  rescheduleByStaff,
   resendMessage,
   resolveReview,
 } from '@/server/services/booking-staff-service';
@@ -137,6 +139,23 @@ export async function resolveBookingReviewAction(input: unknown): Promise<Action
 
   try {
     await resolveReview(parsed.data);
+    after(kickNotificationWorker);
+    refreshBooking(parsed.data.bookingId);
+    return ok(null);
+  } catch (error) {
+    return mapError(error);
+  }
+}
+
+// 20261114080000: staff in scope move one leg of a paid booking; the ticket message goes out again.
+export async function rescheduleBookingAction(input: unknown): Promise<ActionResult<null>> {
+  const parsed = rescheduleBookingSchema.safeParse(input);
+  if (!parsed.success) return mapError(parsed.error);
+  const guard = await requireBookingStaff(parsed.data.bookingId);
+  if (!guard.ok) return guard;
+
+  try {
+    await rescheduleByStaff(parsed.data);
     after(kickNotificationWorker);
     refreshBooking(parsed.data.bookingId);
     return ok(null);

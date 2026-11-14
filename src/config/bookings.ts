@@ -94,3 +94,8 @@ export const NO_SEATS_REVIEW_REASON = 'PAID_AFTER_EXPIRY_NO_QUOTA';
 // internal.hold_margin_before_session() (both 20261105130000), which internal.hold_deadline and
 // internal.move_released_legs (20261105130500) read too.
 export const HOLD_EXTENSION_LIMITS = { maxDays: 14, webMarginHours: 1 } as const;
+// An officer's reschedule (20261114080000, decision of 2026-11-14). These mirror SQL and change only with it: maxMoves
+// is internal.staff_reschedule_max(), reason is internal.staff_reschedule_reason(), and the reason's length is
+// public.reschedule_booking's check.
+export const STAFF_RESCHEDULE = { maxMoves: 2, reason: 'staff_reschedule' } as const;
+export const RESCHEDULE_REASON_LIMITS = { min: 10, max: 300 } as const;
