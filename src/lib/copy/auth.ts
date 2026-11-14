@@ -97,7 +97,8 @@ export const authCopy = {
     reenrolDescription:
       'Autentikator akun Anda sudah direset. Masukkan kode daftar ulang yang dibacakan superadmin, lalu pasang aplikasi autentikator di ponsel Anda.',
     reenrolCode: 'Kode daftar ulang',
-    reenrolCodeHint: '20 huruf dan angka dari superadmin. Tanda hubung dan spasi boleh ditulis atau tidak.',
+    reenrolCodeHint:
+      '20 huruf dan angka dari superadmin. Tanda hubung dan spasi boleh ditulis atau tidak.',
     reenrolCodeWrong:
       'Kode daftar ulang salah atau sudah tidak berlaku. Minta kode baru ke superadmin bila perlu.',
     signOut: 'Keluar',
@@ -122,11 +123,13 @@ export const authCopy = {
     claimSubmit: 'Lanjut',
     claimFailed:
       'Kode undangan ini tidak bisa dipakai. Periksa lagi kodenya. Setelah lima kali salah, tunggu satu jam. Bila undangan sudah lewat masanya, minta undangan baru ke Superadmin Kelurahan.',
+    claimNotYetOpen: (opensAt: string) =>
+      `Undangan superadmin ini baru bisa dipakai mulai ${opensAt}. Kembali ke halaman ini setelah jam itu dan tulis kodenya lagi.`,
     factorReady:
       'Aplikasi autentikator akun ini sudah terpasang. Tulis kode yang sedang tampil di aplikasi itu.',
     completeSubmit: 'Selesaikan pendaftaran',
     completeFailed:
-      'Pendaftaran belum bisa diselesaikan. Mulai lagi dari kode undangan. Undangan superadmin baru bisa diselesaikan 24 jam setelah dibuat.',
+      'Pendaftaran belum bisa diselesaikan. Mulai lagi dari kode undangan. Undangan superadmin baru bisa diselesaikan 1 jam setelah dibuat.',
     noInviteTitle: 'Tidak ada undangan untuk akun ini',
     noInvite:
       'Undangan untuk email ini tidak ada, sudah dipakai, sudah dicabut, atau lewat masanya. Minta undangan baru ke Superadmin Kelurahan.',

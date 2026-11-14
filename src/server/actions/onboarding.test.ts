@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { copy } from '@/lib/copy/id';
+import { formatDateTimeShort } from '@/lib/utils/dates';
 import { requireOnboardingUser, type OnboardingContext } from '@/server/auth/guards';
 import {
   startOnboardingCompletion,
@@ -59,7 +60,9 @@ const steps = {
 
 beforeEach(() => {
   vi.mocked(requireOnboardingUser).mockReset().mockResolvedValue({ ok: true, ctx: MAILBOX });
-  vi.mocked(claimInviteForSession).mockReset().mockResolvedValue(true);
+  vi.mocked(claimInviteForSession)
+    .mockReset()
+    .mockResolvedValue({ isClaimed: true, opensAt: null });
   vi.mocked(acceptInviteForSession).mockReset().mockResolvedValue(true);
   vi.mocked(startTotpEnrolment)
     .mockReset()
@@ -89,11 +92,25 @@ describe('claimInviteAction', () => {
   });
 
   it('shows no QR code when the code is refused, with one answer for every reason', async () => {
-    vi.mocked(claimInviteForSession).mockResolvedValue(false);
+    vi.mocked(claimInviteForSession).mockResolvedValue({ isClaimed: false, opensAt: null });
 
     expect(await claimInviteAction({ inviteCode: INVITE_CODE })).toEqual({
       ok: false,
       error: { code: 'FORBIDDEN', message: copy.auth.onboarding.claimFailed },
+    });
+    expect(startTotpEnrolment).not.toHaveBeenCalled();
+  });
+
+  it('says when a superadmin invite opens, before any QR code', async () => {
+    const opensAt = '2026-11-15T09:00:00Z';
+    vi.mocked(claimInviteForSession).mockResolvedValue({ isClaimed: false, opensAt });
+
+    expect(await claimInviteAction({ inviteCode: INVITE_CODE })).toEqual({
+      ok: false,
+      error: {
+        code: 'FORBIDDEN',
+        message: copy.auth.onboarding.claimNotYetOpen(formatDateTimeShort(opensAt)),
+      },
     });
     expect(startTotpEnrolment).not.toHaveBeenCalled();
   });

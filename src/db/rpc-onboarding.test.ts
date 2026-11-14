@@ -19,7 +19,10 @@ const ACCOUNT_ID = '0192f3a4-5b6c-7d8e-9f01-0000000000c3';
 describe('claimStaffInvite and acceptStaffInvite', () => {
   it('send the verified ids and the hash, never a code', async () => {
     const { client, requests } = clientAnswering(200, { claimed: true });
-    expect(await claimStaffInvite(client, SESSION, 'f'.repeat(64))).toBe(true);
+    expect(await claimStaffInvite(client, SESSION, 'f'.repeat(64))).toEqual({
+      isClaimed: true,
+      opensAt: null,
+    });
     expect(requests[0]).toEqual({
       url: 'http://supabase.test/rest/v1/rpc/svc_claim_staff_invite',
       body: {
@@ -41,6 +44,17 @@ describe('claimStaffInvite and acceptStaffInvite', () => {
         'h',
       ),
     ).toBe(true);
+  });
+
+  it('read when a superadmin invite opens', async () => {
+    const opensAt = '2026-11-15T09:00:00+00:00';
+    expect(
+      await claimStaffInvite(
+        clientAnswering(200, { claimed: false, opens_at: opensAt }).client,
+        SESSION,
+        'h',
+      ),
+    ).toEqual({ isClaimed: false, opensAt });
   });
 
   it('refuse a reply of another shape', async () => {
