@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 
+import { ChainCheck } from '@/components/admin/finance/chain-check';
 import { AuditLogList } from '@/components/admin/security/audit-log-list';
 import { FilterBar, type FilterField } from '@/components/admin/security/filter-bar';
 import { PageLinks } from '@/components/admin/security/page-links';
@@ -8,6 +9,7 @@ import { FormAlert } from '@/components/forms/form-alert';
 import { AUDIT_LOGS_PATH, AUDITED_ENTITY_TYPES } from '@/config/staff';
 import { securityCopy } from '@/lib/copy/security';
 import { parseAuditFilter, type AuditFilter } from '@/lib/validations/security';
+import { checkChainsAction } from '@/server/actions/finance-reconciliation';
 import { requireDashboardStaff } from '@/server/auth/session';
 import { listAuditActors, listAuditLogs } from '@/server/services/security-service';
 import type { AuditActorOption } from '@/types/security';
@@ -61,7 +63,8 @@ function SuperadminOnly() {
 }
 
 // Task P4.10.02 (AUD-02): the superadmin reads audit_logs at AAL2 (audit_logs_super_read and the AAL2 policy), newest
-// first, filtered by table, record, actor and dates in Asia/Jakarta.
+// first, filtered by table, record, actor and dates in Asia/Jakarta, and checks the audit and ledger hash chains on
+// request through verify_audit_chain, as the reconciliation page does.
 export default async function AuditLogsPage({ searchParams }: { searchParams: SearchParams }) {
   const ctx = await requireDashboardStaff();
   if (!ctx) return null;
@@ -73,6 +76,7 @@ export default async function AuditLogsPage({ searchParams }: { searchParams: Se
     <>
       <DashboardPageHeader title={text.title} description={text.description} />
       <div className="space-y-4">
+        <ChainCheck checkAction={checkChainsAction} />
         <FilterBar fields={filterFields(filter, actors)} resetHref={AUDIT_LOGS_PATH} />
         <AuditLogList entries={logs.rows} names={names} />
         <PageLinks
