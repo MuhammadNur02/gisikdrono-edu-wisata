@@ -6,7 +6,7 @@
 -- claims_version; a revoked or lapsed invite takes its Auth user with it; an inviter who loses their standing loses
 -- their open invites; the invited address cannot change; onboarding_state() answers booleans about the caller only.
 begin;
-select plan(55);
+select plan(57);
 \ir helpers/rls_personas.psql
 
 -- ===== Fixtures =====
@@ -168,13 +168,30 @@ update auth.sessions set aal = 'aal2' where id = '00000000-0000-4000-8000-000000
 select is(pg_temp.accept('00000000-0000-4000-8000-0000000c0002', '00000000-0000-4000-8000-0000000c05b1', repeat('2', 64)),
   false, 'but not accepted');
 
--- A superadmin invite accepted early reads the same refusal, never an error.
+-- A superadmin invite opens an hour after it was made (20261115080000): the code step says when, and claims nothing.
+select is(
+  (select r::text from public.svc_claim_staff_invite('00000000-0000-4000-8000-0000000c0005',
+     '00000000-0000-4000-8000-0000000c05e1', repeat('5', 64)) r),
+  jsonb_build_object('claimed', false, 'opens_at',
+    (select i.created_at + interval '1 hour' from public.staff_invites i
+     where i.id = '00000000-0000-4000-8000-0000000c0b05'))::text,
+  'a superadmin invite within its first hour answers with the hour it opens');
+select is((select i.claimed_at from public.staff_invites i where i.id = '00000000-0000-4000-8000-0000000c0b05'), null,
+  'and is not claimed');
+alter table public.staff_invites disable trigger staff_invites_guard;
+update public.staff_invites set created_at = now() - interval '61 minutes', expires_at = now() + interval '70 hours'
+  where id = '00000000-0000-4000-8000-0000000c0b05';
+alter table public.staff_invites enable trigger staff_invites_guard;
 select is(pg_temp.claim('00000000-0000-4000-8000-0000000c0005', '00000000-0000-4000-8000-0000000c05e1', repeat('5', 64)),
-  true, 'a superadmin invite is claimed at once');
+  true, 'an hour later it is claimed');
 select pg_temp.factor('00000000-0000-4000-8000-0000000c0f51', '00000000-0000-4000-8000-0000000c0005', 'totp', 'verified');
 update auth.sessions set aal = 'aal2' where id = '00000000-0000-4000-8000-0000000c05e1';
+-- A claim held from before the hour (as one made under the earlier rule could be) is still refused at acceptance.
+alter table public.staff_invites disable trigger staff_invites_guard;
+update public.staff_invites set created_at = now() - interval '59 minutes' where id = '00000000-0000-4000-8000-0000000c0b05';
+alter table public.staff_invites enable trigger staff_invites_guard;
 select is(pg_temp.accept('00000000-0000-4000-8000-0000000c0005', '00000000-0000-4000-8000-0000000c05e1', repeat('5', 64)),
-  false, 'and its acceptance within 24 hours is the generic refusal');
+  false, 'and its acceptance within the hour is the generic refusal');
 select ok(not has_function_privilege('authenticated', 'public.svc_claim_staff_invite(uuid, uuid, text)', 'execute')
           and not has_function_privilege('authenticated', 'public.svc_accept_staff_invite(uuid, uuid, text)', 'execute')
           and has_function_privilege('service_role', 'public.svc_accept_staff_invite(uuid, uuid, text)', 'execute'),

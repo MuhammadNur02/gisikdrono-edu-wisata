@@ -7,6 +7,7 @@ import { copy } from '@/lib/copy/id';
 import { fail, mapError, ok } from '@/lib/errors';
 import { createLogger, requestIdFrom } from '@/lib/logger';
 import { inviteCodeHash } from '@/lib/staff-codes';
+import { formatDateTimeShort } from '@/lib/utils/dates';
 import { qrSvgPath } from '@/lib/utils/qr-path';
 import { claimInviteSchema, completeOnboardingSchema } from '@/lib/validations/onboarding';
 import { requireOnboardingUser, type OnboardingContext } from '@/server/auth/guards';
@@ -62,7 +63,10 @@ export async function claimInviteAction(
   const session = { userId: guard.ctx.userId, sessionId: guard.ctx.sessionId };
 
   try {
-    if (!(await claimInviteForSession(session, inviteCodeHash(parsed.data.inviteCode)))) {
+    const claim = await claimInviteForSession(session, inviteCodeHash(parsed.data.inviteCode));
+    // A superadmin invite opens an hour after it was made: say when, before any QR code or password.
+    if (claim.opensAt) return refused(text.claimNotYetOpen(formatDateTimeShort(claim.opensAt)));
+    if (!claim.isClaimed) {
       createLogger(requestIdFrom(await headers())).warn('login_failed', {
         userId: session.userId,
         step: 'invite_claim',

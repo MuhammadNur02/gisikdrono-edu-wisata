@@ -137,11 +137,11 @@ select throws_ok($$insert into public.staff_invites (email, role, rw_id, invite_
 select throws_ok($$insert into public.staff_invites (email, role, rw_id, invite_code_hash, expires_at, created_by)
   values ('calon-empat@example.test', 'admin_rw', 8, 'hash-rls-4', now() + interval '73 hours',
           '00000000-0000-4000-8000-00000000f001')$$, '23514', null, 'for 72 hours at most');
--- A superadmin invite waits 24 hours like a promotion (review L9, decision of 2026-10-17).
+-- A superadmin invite opens an hour after the request (review L9; one hour since 20261115080000).
 select throws_ok($$insert into public.staff_invites (email, role, rw_id, invite_code_hash, expires_at, created_by)
   values ('super-langsung@example.test', 'superadmin', null, 'hash-rls-s0', now() + interval '72 hours',
           '00000000-0000-4000-8000-00000000f001')$$, '42501',
-  'a superadmin is invited only through invite_superadmin, which waits 24 hours',
+  'a superadmin is invited only through invite_superadmin',
   'even with a fresh code, a superadmin is never invited by a plain insert');
 select is((select public.invite_superadmin('super-baru@example.test', 'hash-rls-s1') ->> 'stage'), 'requested',
   'only through invite_superadmin, which records the request');
@@ -203,14 +203,14 @@ select throws_ok($$update public.staff_invites set role = 'superadmin', rw_id = 
   '42501', 'an invite never changes whom it invites, as what, or who made it',
   'and an RW admin invite never becomes a superadmin invite');
 select throws_ok($$update public.staff_invites set accepted_at = now() where email = 'super-dua@example.test'$$, 'P0001', null,
-  'a superadmin invite cannot be accepted within 24 hours of the request');
--- A day later, as the onboarding service will accept it.
+  'a superadmin invite cannot be accepted within an hour of the request');
+-- An hour later, as the onboarding service will accept it.
 alter table public.staff_invites disable trigger staff_invites_guard;
-update public.staff_invites set created_at = now() - interval '25 hours', expires_at = now() + interval '47 hours'
+update public.staff_invites set created_at = now() - interval '61 minutes', expires_at = now() + interval '70 hours'
 where email = 'super-dua@example.test';
 alter table public.staff_invites enable trigger staff_invites_guard;
 select lives_ok($$update public.staff_invites set accepted_at = now(), accepted_user_id = '00000000-0000-4000-8000-00000000f000'
-  where email = 'super-dua@example.test'$$, 'but can a day later');
+  where email = 'super-dua@example.test'$$, 'but can an hour later');
 select is(
   (select a.title from public.security_alerts a join public.staff_invites i on a.details ->> 'invite_id' = i.id::text
    where a.rule = 'superadmin_invite' and i.email = 'super-dua@example.test'),

@@ -9,7 +9,7 @@ import {
   consumeMfaReenrolmentCode,
   unusedAccountOfInvite,
 } from '@/db/rpc-onboarding';
-import type { OnboardingSession } from '@/db/rpc-onboarding';
+import type { InviteClaim, OnboardingSession } from '@/db/rpc-onboarding';
 import { createLogger } from '@/lib/logger';
 import { withinRateLimits } from '@/lib/rate-limit';
 // The service role is needed for four things the session cannot do: the limiter is an internal function no API role
@@ -205,7 +205,7 @@ export async function sendStaffInviteEmail(
 export function claimInviteForSession(
   session: OnboardingSession,
   inviteCodeHash: string,
-): Promise<boolean> {
+): Promise<InviteClaim> {
   return claimStaffInvite(createSupabaseAdminClient(), session, inviteCodeHash);
 }
 
@@ -251,7 +251,9 @@ export async function reenrolmentStateOf(userId: string): Promise<ReenrolmentSta
   if (error) throw error;
   if (data?.reenrolment_required !== true || !data.is_active) return 'none';
   const windowUntil = data.reenrolment_window_until;
-  return windowUntil !== null && Date.parse(windowUntil) > Date.now() ? 'window_open' : 'needs_code';
+  return windowUntil !== null && Date.parse(windowUntil) > Date.now()
+    ? 'window_open'
+    : 'needs_code';
 }
 
 // One try of the code the superadmin read out, for the signed-in account's own row only.

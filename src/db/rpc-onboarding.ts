@@ -8,7 +8,7 @@ import { resultOf, type DatabaseClient } from '@/db/rpc-result';
 // src/server/services/staff-service.ts with the ids of the verified session; onboarding_state() on the session
 // client of the account being onboarded.
 
-const claimedSchema = z.object({ claimed: z.boolean() }).strict();
+const claimedSchema = z.object({ claimed: z.boolean(), opens_at: z.string().optional() }).strict();
 const acceptedSchema = z
   .object({
     accepted: z.boolean(),
@@ -29,18 +29,25 @@ export interface OnboardingSession {
   sessionId: string;
 }
 
+// opensAt is set only for the account's own superadmin invite that has not opened yet (20261115080000).
+export interface InviteClaim {
+  isClaimed: boolean;
+  opensAt: string | null;
+}
+
 export interface OnboardingState {
   isInviteOpen: boolean;
   isClaimHeld: boolean;
   isFactorVerified: boolean;
 }
 
-// True once the code bound its invite to this session; every refusal reads false (docs/Security.md §5.1).
+// Claimed once the code bound its invite to this session; every refusal reads the same (docs/Security.md §5.1), except
+// a superadmin invite that opens later, which the code itself proves.
 export async function claimStaffInvite(
   adminClient: DatabaseClient,
   session: OnboardingSession,
   inviteCodeHash: string,
-): Promise<boolean> {
+): Promise<InviteClaim> {
   const reply = await resultOf(
     adminClient.rpc('svc_claim_staff_invite', {
       p_user_id: session.userId,
@@ -48,7 +55,8 @@ export async function claimStaffInvite(
       p_invite_code_hash: inviteCodeHash,
     }),
   );
-  return claimedSchema.parse(reply).claimed;
+  const claim = claimedSchema.parse(reply);
+  return { isClaimed: claim.claimed, opensAt: claim.opens_at ?? null };
 }
 
 // True once the invite's role is the account's; the database has ended every session of the account by then.
