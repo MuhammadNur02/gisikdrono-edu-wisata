@@ -60,6 +60,26 @@ function formatSessionTime(time: string): string {
   return `${match[1] ?? ''}.${match[2] ?? ''}`;
 }
 
+// A session's clock time alone, where WIB is said once for the page: '08.00'.
+export function formatSessionClock(time: string): string {
+  return formatSessionTime(time);
+}
+
+// The Semarang clock of an instant without the zone: '14.20'.
+export function formatClock(instant: string): string {
+  return format(inJakarta(instant), 'HH.mm');
+}
+
+// The Semarang hour of an instant, 0 to 23, for a greeting.
+export function jakartaHour(instant: string): number {
+  return inJakarta(instant).getHours();
+}
+
+// A day's short name on a calendar grid: 'Min', 'Sen'.
+export function formatWeekdayShort(visitDate: string): string {
+  return format(inJakarta(visitDate), 'EEE', { locale: indonesian });
+}
+
 // A session's start alone: '08.00 WIB'.
 export function formatSessionStart(time: string): string {
   return `${formatSessionTime(time)} WIB`;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  cumulativeOf,
   averageOf,
   dayAfter,
   dayBefore,
@@ -147,5 +148,22 @@ describe('visitDateAfter', () => {
   it('counts Semarang calendar days across a month', () => {
     expect(visitDateAfter('2026-10-24', 30)).toBe('2026-11-23');
     expect(visitDateAfter('2026-10-24', 0)).toBe('2026-10-24');
+  });
+});
+
+describe('cumulativeOf', () => {
+  it('adds each day to every day before it', () => {
+    expect(
+      cumulativeOf([
+        { day: '2026-11-01', value: 100 },
+        { day: '2026-11-02', value: 0 },
+        { day: '2026-11-03', value: 250 },
+      ]),
+    ).toEqual([
+      { day: '2026-11-01', value: 100 },
+      { day: '2026-11-02', value: 100 },
+      { day: '2026-11-03', value: 350 },
+    ]);
+    expect(cumulativeOf([])).toEqual([]);
   });
 });

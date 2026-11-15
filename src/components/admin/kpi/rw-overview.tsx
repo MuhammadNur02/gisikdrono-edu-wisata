@@ -1,27 +1,25 @@
-import { CalendarCheck, CalendarClock, DoorOpen, Gauge } from 'lucide-react';
-import Link from 'next/link';
-
 import { CheckInsCard } from '@/components/admin/charts/checkins-card';
-import { KpiCard, KpiUnavailable } from '@/components/admin/kpi/kpi-card';
+import { LazySparkline } from '@/components/admin/charts/lazy-charts';
+import { KpiCard, KpiLedger, KpiUnavailable } from '@/components/admin/kpi/kpi-card';
 import { LiveCheckIns } from '@/components/admin/kpi/live-check-ins';
-import { EmptyState } from '@/components/admin/shell/empty-state';
-import { StatusBadge } from '@/components/admin/status/status-badge';
+import { ActionPanel } from '@/components/admin/overview/action-panel';
+import { OccupancyPanel } from '@/components/admin/overview/occupancy-panel';
+import { TodayPanel, type TodayClock } from '@/components/admin/overview/today-panel';
 import { CountUp } from '@/components/marketing/count-up';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
-import { SESSIONS_PATH } from '@/config/dashboard';
 import { copy } from '@/lib/copy/id';
-import { formatTimeRange } from '@/lib/utils/dates';
-import { quotaUsagePercent } from '@/lib/utils/kpi';
+import { hasAnyValue, sumOf } from '@/lib/utils/kpi';
 import type { ActionResult } from '@/types/action-result';
-import type { RwOverview as Overview, TodaySession } from '@/types/dashboard-stats';
+import type { OverviewToday, RwOverview as Overview } from '@/types/dashboard-stats';
+import type { RwBadge } from '@/types/rw-unit';
 
 const text = copy.dashboard.overview;
 const EMPTY_FIGURE = '—';
 
 export interface RwOverviewProps {
   overview: Overview;
+  today: OverviewToday;
+  rws: readonly RwBadge[];
+  clock: TodayClock;
   readCheckIns: () => Promise<ActionResult<number | null>>;
 }
 
@@ -37,23 +35,32 @@ function QuotaCard({ quota }: { quota: Overview['quota'] }) {
   return (
     <KpiCard
       label={text.rw.quota}
-      icon={Gauge}
       value={figure}
       hint={quota ? text.rw.quotaHint(quota.reservedPax, quota.capacity) : text.unavailableHint}
     />
   );
 }
 
-function KpiGrid({ overview, readCheckIns }: RwOverviewProps) {
+// The last 30 days' check-ins in one figure, with their sparkline.
+function MonthCheckInsCard({ series }: { series: Overview['checkIns'] }) {
   return (
-    <section
-      aria-label={text.kpiLabel}
-      className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"
-    >
+    <KpiCard
+      label={text.checkinsChart.title}
+      value={
+        series ? <CountUp value={sumOf(series, (day) => day.value)} onMount /> : <KpiUnavailable />
+      }
+      hint={series ? text.checkinsChart.description : text.unavailableHint}
+      chart={series && hasAnyValue(series) ? <LazySparkline series={series} /> : null}
+    />
+  );
+}
+
+function KpiGrid({ overview, readCheckIns }: Pick<RwOverviewProps, 'overview' | 'readCheckIns'>) {
+  return (
+    <KpiLedger label={text.kpiLabel} columns="four">
       <QuotaCard quota={overview.quota} />
       <KpiCard
         label={text.rw.upcoming}
-        icon={CalendarCheck}
         value={
           overview.upcomingBookings === null ? (
             <KpiUnavailable />
@@ -65,86 +72,31 @@ function KpiGrid({ overview, readCheckIns }: RwOverviewProps) {
       />
       <KpiCard
         label={text.rw.checkInsToday}
-        icon={DoorOpen}
         value={<LiveCheckIns initial={overview.checkInsToday} read={readCheckIns} />}
         hint={text.rw.checkInsTodayHint}
       />
-    </section>
+      <MonthCheckInsCard series={overview.checkIns} />
+    </KpiLedger>
   );
 }
 
-function SessionRow({ session }: { session: TodaySession }) {
-  const percent = quotaUsagePercent(session.reservedPax, session.capacity) ?? 0;
-  const seats = text.sessions.seats(session.reservedPax, session.capacity);
+// Task P4.2.03, Dasbor Gelap: an RW officer's overview, always their own RW (the services are given ctx.rwId, never a
+// URL value). The same panels as the superadmin's, with the check-ins chart where the money would be.
+export function RwOverview({ overview, today, rws, clock, readCheckIns }: RwOverviewProps) {
   return (
-    <li className="flex flex-col gap-2 py-3">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="text-body-sm font-medium tabular-nums">
-          {formatTimeRange(session.startTime, session.endTime)}
-        </span>
-        {session.label ? <span className="text-body-sm">{session.label}</span> : null}
-        <StatusBadge kind="session_status" value={session.status} className="ms-auto" />
-      </div>
-      <Progress value={percent} aria-label={seats} />
-      <p className="text-caption text-muted-foreground tabular-nums">
-        {`${seats} · ${text.sessions.checkedIn(session.checkedInPax)}`}
-      </p>
-    </li>
-  );
-}
-
-function SessionList({ sessions }: { sessions: TodaySession[] | null }) {
-  if (sessions === null) {
-    return (
-      <EmptyState
-        icon={CalendarClock}
-        title={text.unavailable}
-        description={text.unavailableHint}
-      />
-    );
-  }
-  if (sessions.length === 0) {
-    return (
-      <EmptyState
-        icon={CalendarClock}
-        title={text.sessions.none}
-        description={text.sessions.noneDescription}
-      />
-    );
-  }
-  return (
-    <ul className="flex flex-col divide-y">
-      {sessions.map((session) => (
-        <SessionRow key={session.id} session={session} />
-      ))}
-    </ul>
-  );
-}
-
-function TodaySessions({ sessions }: { sessions: TodaySession[] | null }) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
-        <CardTitle className="text-h4">{text.sessions.title}</CardTitle>
-        <Button asChild variant="outline" size="sm">
-          <Link href={SESSIONS_PATH}>{text.sessions.manage}</Link>
-        </Button>
-      </CardHeader>
-      <CardContent>
-        <SessionList sessions={sessions} />
-      </CardContent>
-    </Card>
-  );
-}
-
-// Task P4.2.03: an RW officer's overview, always their own RW (the service is given ctx.rwId, never a URL value).
-export function RwOverview({ overview, readCheckIns }: RwOverviewProps) {
-  return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       <KpiGrid overview={overview} readCheckIns={readCheckIns} />
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <TodaySessions sessions={overview.todaySessions} />
-        <CheckInsCard series={overview.checkIns} />
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <TodayPanel sessions={today.sessions} rws={rws} clock={clock} />
+        </div>
+        <ActionPanel actions={today.actions} piiRevealsToday={null} />
+      </div>
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <CheckInsCard series={overview.checkIns} />
+        </div>
+        <OccupancyPanel rows={today.occupancy} rws={rws} />
       </div>
     </div>
   );

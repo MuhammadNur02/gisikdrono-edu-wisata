@@ -257,7 +257,7 @@ describe('loadRwOverview', () => {
     expect(overview.checkIns).toBeNull();
     expect(overview.upcomingBookings).toBeNull();
     expect(overview.checkInsToday).toBe(0);
-    expect(overview.todaySessions).toEqual([]);
+    expect(overview.quota).toEqual({ reservedPax: 0, capacity: 0, percent: null });
     expectLoggedFailure('check_ins');
   });
 });

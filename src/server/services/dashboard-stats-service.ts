@@ -1,8 +1,6 @@
 import 'server-only';
 
 import type { RwId } from '@/config/rw';
-import { postgresCodeOf } from '@/lib/errors';
-import { createLogger } from '@/lib/logger';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { todayInJakarta } from '@/lib/utils/dates';
 import {
@@ -19,6 +17,8 @@ import {
   type DateRange,
 } from '@/lib/utils/kpi';
 import { collectAllRows, rowPageOf } from '@/lib/utils/paged-rows';
+import { listTodaySessions } from '@/server/services/dashboard-today-service';
+import { figureOf } from '@/server/services/kpi-figures';
 import {
   countPaidBookings,
   countUpcomingVisits,
@@ -28,7 +28,6 @@ import {
 } from '@/server/services/visit-stats-service';
 import type {
   MonthlyFigure,
-  OpenSecurityAlerts,
   RatingFigure,
   RwOverview,
   SuperadminOverview,
@@ -46,7 +45,6 @@ import type {
 type ServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
 
 const CHART_DAYS = 30;
-const ALERT_STRIP_LIMIT = 5;
 
 interface Period {
   ranges: { current: DateRange; previous: DateRange };
@@ -60,19 +58,6 @@ function periodOf(now: Date): Period {
   const days = lastDays(CHART_DAYS, now);
   const firstDay = days[0] ?? ranges.current.from;
   return { ranges, days, since: firstDay < ranges.previous.from ? firstDay : ranges.previous.from };
-}
-
-// A KPI that failed to load becomes null, logged by name and by the PostgREST or SQLSTATE code when there is one, so
-// one bad read never takes the overview down.
-function figureOf<T>(result: PromiseSettledResult<T | null>, kpi: string): T | null {
-  if (result.status === 'fulfilled') return result.value;
-  const reason: unknown = result.reason;
-  createLogger(crypto.randomUUID()).error('internal_error', {
-    kpi,
-    errorName: reason instanceof Error ? reason.name : typeof reason,
-    code: postgresCodeOf(reason),
-  });
-  return null;
 }
 
 // "Reservasi lunas": the paid bookings that visit in the month so far, against the same days of last month.
@@ -108,25 +93,6 @@ async function readRating(supabase: ServerClient, rw: RwId | null): Promise<Rati
   return { average: averageOf(ratings), count: ratings.length };
 }
 
-async function listOpenAlerts(supabase: ServerClient): Promise<OpenSecurityAlerts | null> {
-  const { data, error, count } = await supabase
-    .from('security_alerts')
-    .select('id, title, severity, occurrences, last_seen_at', { count: 'exact' })
-    .is('acknowledged_at', null)
-    .order('last_seen_at', { ascending: false })
-    .limit(ALERT_STRIP_LIMIT);
-  if (error) throw error;
-  if (count === null) return null;
-  const alerts = data.map((row) => ({
-    id: row.id,
-    title: row.title,
-    severity: row.severity,
-    occurrences: row.occurrences,
-    lastSeenAt: row.last_seen_at,
-  }));
-  return { alerts, total: count };
-}
-
 // docs/Security.md DATA-04: every reveal of a contact is a security_events row; the overview counts today's.
 async function countPiiRevealsToday(supabase: ServerClient, today: string) {
   const { count, error } = await supabase
@@ -145,15 +111,13 @@ export async function loadSuperadminOverview(
   const supabase = await createSupabaseServerClient();
   const period = periodOf(now);
   const today = todayInJakarta(now);
-  const [revenue, paidBookings, visits, rating, openAlerts, piiRevealsToday] =
-    await Promise.allSettled([
-      readRevenueDays(rw, period.since, today, supabase),
-      readPaidBookings(rw, period, supabase),
-      readVisitDays(rw, period.since, today, supabase),
-      readRating(supabase, rw),
-      listOpenAlerts(supabase),
-      countPiiRevealsToday(supabase, today),
-    ]);
+  const [revenue, paidBookings, visits, rating, piiRevealsToday] = await Promise.allSettled([
+    readRevenueDays(rw, period.since, today, supabase),
+    readPaidBookings(rw, period, supabase),
+    readVisitDays(rw, period.since, today, supabase),
+    readRating(supabase, rw),
+    countPiiRevealsToday(supabase, today),
+  ]);
   const visitDays = figureOf(visits, 'visit_stats');
   return {
     revenue: monthlyFigure(figureOf(revenue, 'revenue'), period),
@@ -163,39 +127,8 @@ export async function loadSuperadminOverview(
       period,
     ),
     rating: figureOf(rating, 'rating'),
-    openAlerts: figureOf(openAlerts, 'open_alerts'),
     piiRevealsToday: figureOf(piiRevealsToday, 'pii_reveals_today'),
   };
-}
-
-const SESSION_COLUMNS =
-  'id, label, start_time, end_time, capacity, reserved_pax, checked_in_pax, status';
-
-async function listTodaySessions(supabase: ServerClient, rw: RwId, today: string) {
-  const result = await collectAllRows(async (from, to) =>
-    rowPageOf(
-      await supabase
-        .from('visit_sessions')
-        .select(SESSION_COLUMNS, { count: 'exact' })
-        .eq('rw_id', rw)
-        .eq('session_date', today)
-        .neq('status', 'cancelled')
-        .order('start_time')
-        .order('id')
-        .range(from, to),
-    ),
-  );
-  if (!result.complete) return null;
-  return result.rows.map((row): TodaySession => ({
-    id: row.id,
-    label: row.label,
-    startTime: row.start_time,
-    endTime: row.end_time,
-    capacity: row.capacity,
-    reservedPax: row.reserved_pax,
-    checkedInPax: row.checked_in_pax,
-    status: row.status,
-  }));
 }
 
 // Today's gate count from v_attendance_today, the figure the overview re-reads every 15 s (Task P4.2.02); null when
@@ -236,6 +169,5 @@ export async function loadRwOverview(rw: RwId, now: Date = new Date()): Promise<
     upcomingBookings: figureOf(upcoming, 'upcoming_bookings'),
     checkInsToday: figureOf(checkInsToday, 'check_ins_today'),
     checkIns: checkInRows === null ? null : fillDailySeries(days, checkInRows),
-    todaySessions,
   };
 }

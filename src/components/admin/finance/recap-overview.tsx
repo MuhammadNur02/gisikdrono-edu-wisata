@@ -1,8 +1,6 @@
-import { Banknote, CreditCard, Undo2, Wallet } from 'lucide-react';
-
 import { ChartCard } from '@/components/admin/charts/chart-card';
 import { LazyRevenueArea } from '@/components/admin/charts/lazy-charts';
-import { KpiCard } from '@/components/admin/kpi/kpi-card';
+import { KpiCard, KpiLedger } from '@/components/admin/kpi/kpi-card';
 import { FormAlert } from '@/components/forms/form-alert';
 import { financeCopy } from '@/lib/copy/finance';
 import { formatIDR } from '@/lib/utils/currency';
@@ -22,30 +20,20 @@ const text = financeCopy.recap;
 export function RecapKpis({ overview }: { overview: FinanceOverview }) {
   const { totals } = overview;
   return (
-    <section
-      aria-label={text.title}
-      className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
-    >
+    <KpiLedger label={text.title} columns="four">
       <KpiCard
         label={text.gross}
-        icon={Wallet}
         value={formatIDR(totals.grossSettled)}
         hint={text.grossHint(totals.paymentsCount)}
       />
-      <KpiCard
-        label={text.refunds}
-        icon={Undo2}
-        value={formatIDR(totals.refunds)}
-        hint={text.refundsHint}
-      />
-      <KpiCard label={text.net} icon={Banknote} value={formatIDR(totals.net)} hint={text.netHint} />
+      <KpiCard label={text.refunds} value={formatIDR(totals.refunds)} hint={text.refundsHint} />
+      <KpiCard label={text.net} value={formatIDR(totals.net)} hint={text.netHint} />
       <KpiCard
         label={text.methods}
-        icon={CreditCard}
         value={String(totals.paymentsCount)}
         hint={text.methodsHint(totals.qrisCount, totals.vaCount)}
       />
-    </section>
+    </KpiLedger>
   );
 }
 

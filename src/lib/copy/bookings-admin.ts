@@ -17,6 +17,7 @@ export const bookingsAdminCopy = {
       rw: 'RW',
       view: 'Tampilan',
       adminUnpaid: 'Booking petugas belum dibayar',
+      underReview: 'Perlu ditinjau',
     },
     columns: {
       booking: 'Reservasi',

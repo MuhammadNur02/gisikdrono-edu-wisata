@@ -5,7 +5,7 @@ import { BookingTable } from '@/components/admin/bookings/booking-table';
 import { WalkInSheet } from '@/components/admin/bookings/walk-in-sheet';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { FormAlert } from '@/components/forms/form-alert';
-import { ADMIN_UNPAID_VIEW, BOOKINGS_DASHBOARD_PATH } from '@/config/bookings';
+import { ADMIN_UNPAID_VIEW, BOOKINGS_DASHBOARD_PATH, UNDER_REVIEW_VIEW } from '@/config/bookings';
 import { BOOKING_STATUS } from '@/config/status';
 import { DB_ENUMS } from '@/db/enums';
 import { bookingsAdminCopy } from '@/lib/copy/bookings-admin';
@@ -57,7 +57,10 @@ const STATUS_FACET: ListFacet = {
 const VIEW_FACET: ListFacet = {
   param: 'category',
   title: text.facets.view,
-  options: [{ value: ADMIN_UNPAID_VIEW, label: text.facets.adminUnpaid }],
+  options: [
+    { value: ADMIN_UNPAID_VIEW, label: text.facets.adminUnpaid },
+    { value: UNDER_REVIEW_VIEW, label: text.facets.underReview },
+  ],
 };
 
 // Task P4.3.10: "Pemesanan di loket" is the page's primary action, for an officer at AAL2.
