@@ -42,7 +42,7 @@ export function ColumnHeader<TData, TValue>({
         column.toggleSorting();
       }}
       className={cn(
-        '-ml-2 inline-flex h-9 items-center gap-1.5 rounded-lg px-2 text-left font-medium transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring',
+        '-ml-2 inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-left transition-colors outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring',
         className,
       )}
     >

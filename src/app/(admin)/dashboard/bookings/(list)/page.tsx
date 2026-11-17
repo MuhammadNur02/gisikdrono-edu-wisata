@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
 import { BookingTable } from '@/components/admin/bookings/booking-table';
+import { BookingViews } from '@/components/admin/bookings/booking-views';
 import { WalkInSheet } from '@/components/admin/bookings/walk-in-sheet';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { FormAlert } from '@/components/forms/form-alert';
@@ -10,7 +11,8 @@ import { BOOKING_STATUS } from '@/config/status';
 import { DB_ENUMS } from '@/db/enums';
 import { bookingsAdminCopy } from '@/lib/copy/bookings-admin';
 import { getPublicSiteSettings } from '@/lib/queries/settings';
-import { firstPageAddress, visitDateFilterOf } from '@/lib/utils/booking-list';
+import { activeBookingView, firstPageAddress, visitDateFilterOf } from '@/lib/utils/booking-list';
+import { todayInJakarta } from '@/lib/utils/dates';
 import { listFacets, rwFacet } from '@/lib/utils/facets';
 import { loadListQuery } from '@/lib/utils/list-query';
 import { verifyStaffTotpAction } from '@/server/actions/staff-totp';
@@ -23,6 +25,7 @@ import { recordWalkInCashAction, sendWalkInPayLinkAction } from '@/server/action
 import { effectiveRw } from '@/server/auth/content-owner';
 import { requireDashboardStaff } from '@/server/auth/session';
 import { listBookingsForStaff } from '@/server/services/booking-admin-service';
+import { countBookingViews } from '@/server/services/booking-views-service';
 import { listRwUnitsForStaff } from '@/server/services/rw-unit-service';
 import { listWalkInPackages } from '@/server/services/walk-in-service';
 import type { ListFacet } from '@/types/data-table';
@@ -62,6 +65,14 @@ const VIEW_FACET: ListFacet = {
     { value: UNDER_REVIEW_VIEW, label: text.facets.underReview },
   ],
 };
+
+function bookingFacets(isSuperadmin: boolean, rwUnits: Parameters<typeof rwFacet>[1]) {
+  return listFacets(isSuperadmin, {
+    status: STATUS_FACET,
+    others: [VIEW_FACET],
+    rw: rwFacet(text.facets.rw, rwUnits),
+  });
+}
 
 // Task P4.3.10: "Pemesanan di loket" is the page's primary action, for an officer at AAL2.
 function BookingsHeader(props: {
@@ -104,16 +115,16 @@ export default async function BookingsPage({ searchParams }: { searchParams: Sea
   ]);
   if (!isSuperadmin && rw === null) return null;
   const visitDate = visitDateFilterOf(query.date);
-  const result = await listBookingsForStaff(query, rw, visitDate);
+  const today = todayInJakarta();
+  const [result, viewCounts] = await Promise.all([
+    listBookingsForStaff(query, rw, visitDate),
+    countBookingViews(rw, today),
+  ]);
   // A page past the end (rows that went away, a hand-typed ?page=) goes back to the first page of the same filters
   // instead of reading as a list that is empty from the start (review of PR #76, F-76-3).
   if (result.rows.length === 0 && query.page > 1)
     redirect(firstPageAddress(BOOKINGS_DASHBOARD_PATH, await searchParams));
-  const facets = listFacets(isSuperadmin, {
-    status: STATUS_FACET,
-    others: [VIEW_FACET],
-    rw: rwFacet(text.facets.rw, rwUnits),
-  });
+  const facets = bookingFacets(isSuperadmin, rwUnits);
 
   return (
     <>
@@ -124,7 +135,13 @@ export default async function BookingsPage({ searchParams }: { searchParams: Sea
         maxPax={settings.maxPax}
       />
       {isSuperadmin ? null : <FormAlert tone="info">{text.windowNotice}</FormAlert>}
-      <BookingTable rows={result.rows} total={result.total} facets={facets} visitDate={visitDate} />
+      <BookingViews
+        active={activeBookingView({ ...query, date: visitDate }, today)}
+        counts={viewCounts}
+        today={today}
+        rw={isSuperadmin ? rw : null}
+      />
+      <BookingTable {...result} rws={rwUnits} facets={facets} visitDate={visitDate} />
     </>
   );
 }

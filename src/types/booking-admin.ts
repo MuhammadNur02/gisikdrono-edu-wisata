@@ -118,3 +118,10 @@ export interface ParticipantEntry {
   groupLabel: string | null;
   roleLabel: string | null;
 }
+
+// The view tabs above the bookings list (Dasbor Gelap): every booking, those held for review, today's visits, and three
+// statuses. A count is null when it could not be read.
+export type BookingViewKey =
+  'all' | 'under_review' | 'today' | 'pending_payment' | 'paid' | 'completed';
+
+export type BookingViewCounts = Record<BookingViewKey, number | null>;
