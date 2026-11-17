@@ -248,7 +248,8 @@ test('an account without a factor enrols one from the QR code and lands on the d
   await page.getByLabel('Kode autentikator').fill(totpCode(secret));
   await page.getByRole('button', { name: 'Aktifkan' }).click();
   await expect(page).toHaveURL('/dashboard', AUTH_STEP);
-  await expect(page.getByText('Anda masuk sebagai Admin RW 05.')).toBeVisible();
+  // The sidebar names the officer's scope under the brand (Dasbor Gelap).
+  await expect(page.getByText('Dasbor RW 05', { exact: true })).toBeVisible();
 });
 
 test('a signed-in account without a staff role is told it has no access', async ({

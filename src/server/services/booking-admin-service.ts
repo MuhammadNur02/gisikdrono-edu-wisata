@@ -2,6 +2,7 @@ import 'server-only';
 
 import {
   ADMIN_UNPAID_VIEW,
+  UNDER_REVIEW_VIEW,
   BOOKING_CODE_SEARCH_PREFIX,
   BOOKING_DEFAULT_SORT,
   BOOKING_EVENT_ACTORS,
@@ -87,6 +88,7 @@ export async function listBookingsForStaff(
   if (statuses.length > 0) request = request.in('status', statuses);
   if (query.category === ADMIN_UNPAID_VIEW)
     request = request.eq('channel', 'admin').eq('status', 'pending_payment');
+  if (query.category === UNDER_REVIEW_VIEW) request = request.eq('needs_review', true);
   if (visitDate !== null)
     request = request.lte('visit_date', visitDate).gte('visit_date_end', visitDate);
   if (order !== null) request = request.order(order.column, { ascending: order.ascending });

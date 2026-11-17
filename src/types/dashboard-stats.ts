@@ -17,31 +17,17 @@ export interface RatingFigure {
   count: number;
 }
 
-export interface OpenSecurityAlert {
-  id: string;
-  title: string;
-  severity: EnumValue<'alert_severity'>;
-  occurrences: number;
-  lastSeenAt: string;
-}
-
-// The newest open alerts and how many are open in all.
-export interface OpenSecurityAlerts {
-  alerts: OpenSecurityAlert[];
-  total: number;
-}
-
 export interface SuperadminOverview {
   revenue: MonthlyFigure | null;
   paidBookings: { value: number; trend: Trend } | null;
   checkedInVisitors: MonthlyFigure | null;
   rating: RatingFigure | null;
-  openAlerts: OpenSecurityAlerts | null;
   piiRevealsToday: number | null;
 }
 
 export interface TodaySession {
   id: string;
+  rwId: number;
   label: string | null;
   startTime: string;
   endTime: string;
@@ -56,5 +42,33 @@ export interface RwOverview {
   upcomingBookings: number | null;
   checkInsToday: number | null;
   checkIns: DailyValue[] | null;
-  todaySessions: TodaySession[] | null;
+}
+
+// One RW's day in the next seven (Dasbor Gelap's occupancy grid): seats sold, holds awaiting payment included, over the
+// capacity of its open sessions. percent is null on a day without a session; isFull when every session is full.
+export interface OccupancyCell {
+  day: string;
+  percent: number | null;
+  isFull: boolean;
+}
+
+export interface OccupancyRow {
+  rwId: number;
+  cells: OccupancyCell[];
+}
+
+// What waits on a staff member, most urgent first: bookings held for review, open security alerts, reviews to
+// moderate. detail names the newest one where that helps (a booking code, an alert's title).
+export type NeedsActionKind = 'booking_review' | 'security_alerts' | 'pending_reviews';
+
+export interface NeedsActionItem {
+  kind: NeedsActionKind;
+  count: number;
+  detail: string | null;
+}
+
+export interface OverviewToday {
+  sessions: TodaySession[] | null;
+  occupancy: OccupancyRow[] | null;
+  actions: NeedsActionItem[] | null;
 }

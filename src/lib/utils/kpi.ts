@@ -105,6 +105,15 @@ export function hasAnyValue(series: readonly DailyValue[]): boolean {
   return series.some((point) => point.value !== 0);
 }
 
+// The running total of a daily series: each day holds itself and every day before it.
+export function cumulativeOf(series: readonly DailyValue[]): DailyValue[] {
+  let total = 0;
+  return series.map((point) => {
+    total += point.value;
+    return { ...point, value: total };
+  });
+}
+
 function midnightInJakarta(visitDate: string): TZDate {
   const [year = Number.NaN, month = Number.NaN, day = Number.NaN] = visitDate
     .split('-')

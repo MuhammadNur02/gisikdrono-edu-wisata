@@ -17,6 +17,7 @@ export const SESSIONS_PATH = '/dashboard/sessions';
 // The settings page: the superadmin's every key, the Kopdes admin's catalogue keys (docs/PRD.md §13.1 A30).
 export const SETTINGS_PATH = '/dashboard/settings';
 export const BOOKINGS_PATH = '/dashboard/bookings';
+export const EXPORTS_PATH = '/dashboard/exports';
 
 // Task P4.2.02: how often the overview re-reads today's check-in count through a read-only Server Action.
 export const CHECKINS_REFRESH_MS = 15_000;

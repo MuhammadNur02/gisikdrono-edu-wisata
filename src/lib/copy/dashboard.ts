@@ -50,7 +50,6 @@ export const dashboardCopy = {
   },
   home: {
     title: 'Dasbor',
-    signedInAs: (role: string) => `Anda masuk sebagai ${role}.`,
   },
   // docs/StyleGuide.md §6.3, Task P4.2.03.
   overview: {
@@ -87,11 +86,8 @@ export const dashboardCopy = {
       checkInsTodayHint: 'Diperbarui tiap 15 detik.',
     },
     revenueChart: {
-      title: 'Pendapatan 30 hari terakhir',
-      description: 'Jumlah bersih per hari dari buku besar bagi hasil.',
       empty: 'Belum ada pendapatan tercatat',
       emptyDescription: 'Angka muncul setelah pembayaran pertama lunas dan dibagi di buku besar.',
-      series: 'Pendapatan',
     },
     checkinsChart: {
       title: 'Check-in 30 hari terakhir',
@@ -102,23 +98,68 @@ export const dashboardCopy = {
     },
     // A text version of each chart for screen readers.
     chartSummary: (title: string, total: string) => `${title}: total ${total}.`,
-    security: {
-      title: 'Peringatan keamanan terbuka',
-      none: 'Tidak ada peringatan terbuka.',
-      more: (count: number) => `dan ${String(count)} lainnya`,
-      occurrences: (count: number) => `${String(count)}×`,
-      viewAll: 'Lihat semua peringatan',
-      piiReveals: 'Kontak dibuka hari ini',
-      piiRevealsHint: 'Setiap pembukaan kontak tercatat atas nama staf.',
+    greetings: {
+      morning: 'Selamat pagi',
+      midday: 'Selamat siang',
+      afternoon: 'Selamat sore',
+      evening: 'Selamat malam',
+    },
+    headline: (greeting: string, count: number | null) => {
+      if (count === null) return `${greeting}.`;
+      return count === 0
+        ? `${greeting}. Tidak ada yang perlu Anda tangani sekarang.`
+        : `${greeting}. Ada ${String(count)} hal yang perlu Anda tangani hari ini.`;
+    },
+    dateLine: (date: string, time: string) => `${date} · ${time} WIB`,
+    exportLink: 'Ekspor',
+    today: {
+      title: 'Kunjungan hari ini',
+      summary: (
+        sessions: number,
+        rws: number,
+        reserved: number,
+        capacity: number,
+        present: number,
+      ) =>
+        `${String(sessions)} sesi di ${String(rws)} RW · ${String(reserved)} dari ${String(capacity)} kursi terisi · ${String(present)} sudah hadir`,
+      openAttendance: 'Buka kehadiran',
+      now: (time: string) => `Sekarang ${time}`,
+    },
+    actions: {
+      title: 'Perlu tindakan',
+      description: 'Diurutkan dari yang paling mendesak.',
+      none: 'Tidak ada yang menunggu. Semua beres.',
+      bookingReview: (count: number, code: string | null) =>
+        count === 1 && code !== null
+          ? `${code} perlu ditinjau`
+          : `${String(count)} reservasi perlu ditinjau`,
+      bookingReviewDetail: 'Buka reservasi dan pilih jalan keluarnya.',
+      securityAlerts: (count: number) => `${String(count)} peringatan keamanan terbuka`,
+      securityAlertsDetail: (title: string | null) => (title === null ? '' : `Terakhir: ${title}`),
+      pendingReviews: (count: number) => `${String(count)} ulasan menunggu moderasi`,
+      pendingReviewsDetail: 'Terbitkan atau tolak sebelum tampil di situs.',
+      piiReveals: (count: number) =>
+        `Kontak pemesan dibuka hari ini: ${String(count)}. Setiap pembukaan tercatat atas nama staf.`,
+    },
+    cumulative: {
+      title: 'Pendapatan kumulatif · 30 hari terakhir',
+      hint: 'Bersih dari buku besar bagi hasil.',
+      series: 'Kumulatif',
+    },
+    occupancy: {
+      title: 'Okupansi 7 hari ke depan',
+      description: 'Kursi terjual ÷ kapasitas, termasuk yang menunggu bayar.',
+      note: 'Garis tepi: semua sesi hari itu penuh. Tanda —: belum ada sesi.',
+      rwColumn: 'RW',
+      noSession: 'belum ada sesi',
+      full: 'penuh',
     },
     sessions: {
-      title: 'Sesi hari ini',
       none: 'Tidak ada sesi hari ini',
       noneDescription: 'Sesi dibuat di halaman Sesi Kunjungan.',
       seats: (reserved: number, capacity: number) =>
         `${String(reserved)}/${String(capacity)} kursi`,
       checkedIn: (count: number) => `${String(count)} check-in`,
-      manage: 'Kelola sesi',
     },
   },
   // docs/Security.md §7.5: the footer of every export sheet, and the export request's field messages (Task P4.6).

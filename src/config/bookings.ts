@@ -5,6 +5,8 @@ import type { EnumValue } from '@/db/enums';
 // docs/PRD.md §13.1 A23 addendum (delta review of PR #91, L-2c): `?category=admin_unpaid` on /dashboard/bookings
 // narrows the list to the officers' bookings still waiting for their payment.
 export const ADMIN_UNPAID_VIEW = 'admin_unpaid';
+// The bookings held for a superadmin's or officer's review, the overview's "Perlu tindakan" link (Dasbor Gelap).
+export const UNDER_REVIEW_VIEW = 'under_review';
 
 export const BOOKINGS_DASHBOARD_PATH = '/dashboard/bookings';
 
