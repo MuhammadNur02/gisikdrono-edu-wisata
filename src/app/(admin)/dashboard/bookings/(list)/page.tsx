@@ -15,6 +15,7 @@ import { activeBookingView, firstPageAddress, visitDateFilterOf } from '@/lib/ut
 import { todayInJakarta } from '@/lib/utils/dates';
 import { listFacets, rwFacet } from '@/lib/utils/facets';
 import { loadListQuery } from '@/lib/utils/list-query';
+import { loadBookingPreviewAction } from '@/server/actions/booking-admin';
 import { verifyStaffTotpAction } from '@/server/actions/staff-totp';
 import {
   createAdminBookingAction,
@@ -66,7 +67,10 @@ const VIEW_FACET: ListFacet = {
   ],
 };
 
-function bookingFacets(isSuperadmin: boolean, rwUnits: Parameters<typeof rwFacet>[1]) {
+function bookingFacets(
+  isSuperadmin: boolean,
+  rwUnits: Awaited<ReturnType<typeof listRwUnitsForStaff>>,
+) {
   return listFacets(isSuperadmin, {
     status: STATUS_FACET,
     others: [VIEW_FACET],
@@ -99,6 +103,43 @@ function BookingsHeader(props: {
   );
 }
 
+// One page of the list and the view counts. A page past the end (rows that went away, a hand-typed ?page=) goes back
+// to the first page of the same filters instead of reading as a list that is empty from the start (review of PR #76,
+// F-76-3).
+async function loadList(
+  query: Awaited<ReturnType<typeof loadListQuery>>,
+  rw: number | null,
+  searchParams: SearchParams,
+) {
+  const visitDate = visitDateFilterOf(query.date);
+  const today = todayInJakarta();
+  const [result, viewCounts] = await Promise.all([
+    listBookingsForStaff(query, rw, visitDate),
+    countBookingViews(rw, today),
+  ]);
+  if (result.rows.length === 0 && query.page > 1)
+    redirect(firstPageAddress(BOOKINGS_DASHBOARD_PATH, await searchParams));
+  return { visitDate, today, result, viewCounts };
+}
+
+// The list with its filters and the preview panel's loader.
+function BookingsTable(props: {
+  result: Awaited<ReturnType<typeof listBookingsForStaff>>;
+  rwUnits: Awaited<ReturnType<typeof listRwUnitsForStaff>>;
+  isSuperadmin: boolean;
+  visitDate: string | null;
+}) {
+  return (
+    <BookingTable
+      {...props.result}
+      rws={props.rwUnits}
+      facets={bookingFacets(props.isSuperadmin, props.rwUnits)}
+      visitDate={props.visitDate}
+      loadPreview={loadBookingPreviewAction}
+    />
+  );
+}
+
 // Task P4.3.02, docs/PRD.md FR-ADMIN-05: the bookings from `?q=&sort=&page=&status=&rw=&date=` through
 // v_bookings_staff. An RW admin reads their own RW's bookings inside the view's window, whatever the URL says; the
 // superadmin every booking, narrowed to the RW they pick.
@@ -114,17 +155,7 @@ export default async function BookingsPage({ searchParams }: { searchParams: Sea
     getPublicSiteSettings(),
   ]);
   if (!isSuperadmin && rw === null) return null;
-  const visitDate = visitDateFilterOf(query.date);
-  const today = todayInJakarta();
-  const [result, viewCounts] = await Promise.all([
-    listBookingsForStaff(query, rw, visitDate),
-    countBookingViews(rw, today),
-  ]);
-  // A page past the end (rows that went away, a hand-typed ?page=) goes back to the first page of the same filters
-  // instead of reading as a list that is empty from the start (review of PR #76, F-76-3).
-  if (result.rows.length === 0 && query.page > 1)
-    redirect(firstPageAddress(BOOKINGS_DASHBOARD_PATH, await searchParams));
-  const facets = bookingFacets(isSuperadmin, rwUnits);
+  const { visitDate, today, result, viewCounts } = await loadList(query, rw, searchParams);
 
   return (
     <>
@@ -141,7 +172,12 @@ export default async function BookingsPage({ searchParams }: { searchParams: Sea
         today={today}
         rw={isSuperadmin ? rw : null}
       />
-      <BookingTable {...result} rws={rwUnits} facets={facets} visitDate={visitDate} />
+      <BookingsTable
+        result={result}
+        rwUnits={rwUnits}
+        isSuperadmin={isSuperadmin}
+        visitDate={visitDate}
+      />
     </>
   );
 }

@@ -125,3 +125,9 @@ export type BookingViewKey =
   'all' | 'under_review' | 'today' | 'pending_payment' | 'paid' | 'completed';
 
 export type BookingViewCounts = Record<BookingViewKey, number | null>;
+
+// The bookings list's preview panel: the booking and its newest events, newest first.
+export interface BookingPreview {
+  booking: BookingDetail;
+  events: BookingTimelineEvent[];
+}

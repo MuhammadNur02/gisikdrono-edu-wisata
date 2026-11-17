@@ -54,6 +54,9 @@ export interface DataTableProps<TData extends ListRow> {
   toolbarActions?: ReactNode;
   // What the page shows when nothing exists yet (docs/StyleGuide.md §6.9); the filter-empty state is the table's own.
   emptyState: ReactNode;
+  // A mouse click on a row (outside its links and buttons) opens it here, as the bookings preview does; keyboard users
+  // reach the same through a button in the row.
+  onRowOpen?: (row: TData) => void;
   // Offered when rows can be selected; the bar shows at most three.
   bulkActions?: readonly BulkAction[];
 }
@@ -119,9 +122,34 @@ function HeaderRows<TData>({ table }: { table: TableInstance<TData> }) {
   ));
 }
 
-function BodyRows<TData>({ table }: { table: TableInstance<TData> }) {
+// A click that lands on a control of the row belongs to that control, not to the row.
+function isOnControl(target: EventTarget): boolean {
+  return (
+    target instanceof Element &&
+    target.closest('a, button, input, label, [role="checkbox"]') !== null
+  );
+}
+
+function BodyRows<TData>({
+  table,
+  onRowOpen,
+}: {
+  table: TableInstance<TData>;
+  onRowOpen?: ((row: TData) => void) | undefined;
+}) {
   return table.getRowModel().rows.map((row) => (
-    <TableRow key={row.id} data-state={row.getIsSelected() ? 'selected' : undefined}>
+    <TableRow
+      key={row.id}
+      data-state={row.getIsSelected() ? 'selected' : undefined}
+      className={onRowOpen ? 'cursor-pointer' : undefined}
+      onClick={
+        onRowOpen
+          ? (event) => {
+              if (!isOnControl(event.target)) onRowOpen(row.original);
+            }
+          : undefined
+      }
+    >
       {row.getVisibleCells().map((cell) => (
         <TableCell
           key={cell.id}
@@ -139,7 +167,15 @@ function BodyRows<TData>({ table }: { table: TableInstance<TData> }) {
 
 // docs/StyleGuide.md §6.4 (Dasbor Gelap): one card, an uppercase header on the muted band, 56 px rows, hover tint, no
 // zebra; nothing animates (§7.3).
-function DesktopTable<TData>({ table, caption }: { table: TableInstance<TData>; caption: string }) {
+function DesktopTable<TData>({
+  table,
+  caption,
+  onRowOpen,
+}: {
+  table: TableInstance<TData>;
+  caption: string;
+  onRowOpen?: ((row: TData) => void) | undefined;
+}) {
   return (
     <div className="hidden overflow-hidden rounded-xl border border-border bg-card md:block">
       <Table>
@@ -148,7 +184,7 @@ function DesktopTable<TData>({ table, caption }: { table: TableInstance<TData>; 
           <HeaderRows table={table} />
         </TableHeader>
         <TableBody>
-          <BodyRows table={table} />
+          <BodyRows table={table} onRowOpen={onRowOpen} />
         </TableBody>
       </Table>
     </div>
@@ -237,7 +273,11 @@ function DataTableBody<TData extends ListRow>(props: DataTableProps<TData>) {
         <FilterEmpty onReset={list.reset} />
       ) : (
         <>
-          <DesktopTable table={table} caption={text.caption(noun, total)} />
+          <DesktopTable
+            table={table}
+            caption={text.caption(noun, total)}
+            onRowOpen={props.onRowOpen}
+          />
           <CardList table={table} selectable={selectable} />
           <Pagination
             page={list.query.page}
