@@ -54,8 +54,11 @@ export const financeCopy = {
       accrued: 'Total hak',
       paidOut: 'Sudah dibayar',
       outstanding: 'Belum dibayar',
+      share: 'Porsi',
     },
     partiesEmpty: 'Belum ada entri buku besar.',
+    partiesTotal: 'Total',
+    shareLabel: (percent: number) => `${String(percent)} % dari bagian periode`,
   },
   rwRecap: {
     description:

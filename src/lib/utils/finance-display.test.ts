@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  shareOfPeriod,
   applyOutcomeOf,
   hasPayableTotal,
   netSeries,
@@ -108,5 +109,15 @@ describe('hasPayableTotal (review of PR #80, M-2)', () => {
         preview: { ...preview, total: null, entries: null, blockedSince: '2026-09-28' },
       }),
     ).toBe(false);
+  });
+});
+
+describe('shareOfPeriod', () => {
+  it('is the whole percent of the period net, kept within 0 to 100', () => {
+    expect(shareOfPeriod(5_420_000, 12_840_000)).toBe(42);
+    expect(shareOfPeriod(0, 12_840_000)).toBe(0);
+    expect(shareOfPeriod(-405_000, 12_840_000)).toBe(0);
+    expect(shareOfPeriod(13_000_000, 12_840_000)).toBe(100);
+    expect(shareOfPeriod(100, 0)).toBe(0);
   });
 });
