@@ -75,3 +75,12 @@ export function applyOutcomeOf(status: AdjustmentReply['status']): ApplyOutcome 
 export function hasPayableTotal(state: PayoutPreviewState): boolean {
   return state.status === 'ready' && (state.preview.total ?? 0) > 0;
 }
+
+const PERCENT = 100;
+
+// A party's share of the period's net as a whole percent, for the bar beside it; none when the period nets to nothing
+// or less, and never past 0–100 for a party with a reversal larger than its settlements.
+export function shareOfPeriod(net: number, periodNet: number): number {
+  if (periodNet <= 0) return 0;
+  return Math.min(PERCENT, Math.max(0, Math.round((net / periodNet) * PERCENT)));
+}
