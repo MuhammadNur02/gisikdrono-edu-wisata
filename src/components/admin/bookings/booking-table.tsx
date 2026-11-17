@@ -3,43 +3,95 @@
 import type { ColumnDef } from '@tanstack/react-table';
 import { ClipboardList } from 'lucide-react';
 import Link from 'next/link';
+import { useMemo } from 'react';
 
 import { VisitDateFilter } from '@/components/admin/bookings/visit-date-filter';
 import { ColumnHeader } from '@/components/admin/data-table/column-header';
 import { DataTable } from '@/components/admin/data-table/data-table';
 import { EmptyState } from '@/components/admin/shell/empty-state';
 import { StatusBadge } from '@/components/admin/status/status-badge';
+import { RwTag } from '@/components/layout/rw-tag';
 import { Badge } from '@/components/ui/badge';
 import { bookingDetailPath } from '@/config/bookings';
-import { rwLabel } from '@/config/rw';
 import { bookingsAdminCopy } from '@/lib/copy/bookings-admin';
 import { formatIDR } from '@/lib/utils/currency';
-import { formatDateShort } from '@/lib/utils/dates';
+import {
+  formatDateShort,
+  formatDateTimeShort,
+  formatTimeAgo,
+  formatWeekdayDayMonth,
+  todayInJakarta,
+} from '@/lib/utils/dates';
+import { rwBadgeFor } from '@/lib/utils/rw-units';
 import type { BookingListRow } from '@/types/booking-admin';
 import type { ListFacet } from '@/types/data-table';
+import type { RwBadge } from '@/types/rw-unit';
 
 const text = bookingsAdminCopy.list;
 
-function visitText(row: BookingListRow): string {
-  const start = formatDateShort(row.visitDate);
+function dayText(row: BookingListRow, today: string): string {
+  if (row.visitDate === today && row.visitDateEnd === today) return text.today;
+  const start = formatWeekdayDayMonth(row.visitDate);
   return row.visitDateEnd === row.visitDate
     ? start
     : `${start} – ${formatDateShort(row.visitDateEnd)}`;
 }
 
+// The day (today in the accent), then the package under it.
+function VisitCell({ row }: { row: BookingListRow }) {
+  const today = todayInJakarta();
+  return (
+    <span className="block whitespace-normal">
+      <span
+        className={
+          row.visitDate === today ? 'font-medium text-primary-ink' : 'font-medium text-foreground'
+        }
+      >
+        {dayText(row, today)}
+      </span>
+      {row.packageName ? (
+        <span className="block text-caption text-muted-foreground">{row.packageName}</span>
+      ) : null}
+    </span>
+  );
+}
+
+function RwCell({ row, rws }: { row: BookingListRow; rws: readonly RwBadge[] }) {
+  return (
+    <span className="inline-flex flex-wrap gap-1">
+      {row.rwIds.map((rwId) => (
+        <RwTag key={rwId} rw={rwBadgeFor(rwId, rws)} size="sm" />
+      ))}
+    </span>
+  );
+}
+
+// "2 jam yang lalu", with the exact time on hover; the server and the browser may round a minute apart.
+function CreatedCell({ row }: { row: BookingListRow }) {
+  return (
+    <span
+      className="text-muted-foreground"
+      title={formatDateTimeShort(row.createdAt)}
+      suppressHydrationWarning
+    >
+      {formatTimeAgo(row.createdAt)}
+    </span>
+  );
+}
+
 function BookingCell({ row }: { row: BookingListRow }) {
   return (
-    <span className="block space-y-1 whitespace-normal">
-      <Link
-        href={bookingDetailPath(row.id)}
-        className="block font-medium tabular-nums underline-offset-4 hover:underline focus-visible:underline"
-      >
-        {row.bookingCode}
-      </Link>
-      <span className="block text-body-sm text-muted-foreground">
+    <Link
+      href={bookingDetailPath(row.id)}
+      className="block rounded-sm whitespace-normal outline-none focus-visible:ring-2 focus-visible:ring-ring hover:[&>.who]:underline"
+    >
+      <span className="who block font-semibold text-foreground underline-offset-4">
         {row.institutionName ?? row.picFirstName ?? text.individual}
       </span>
-    </span>
+      <span className="block font-mono text-caption text-muted-foreground tabular-nums">
+        {row.bookingCode}
+      </span>
+    </Link>
   );
 }
 
@@ -64,7 +116,7 @@ function StatusCell({ row }: { row: BookingListRow }) {
   );
 }
 
-const BOOKING_COLUMNS: ColumnDef<BookingListRow>[] = [
+const HEAD_COLUMNS: ColumnDef<BookingListRow>[] = [
   {
     id: 'booking',
     header: text.columns.booking,
@@ -75,15 +127,26 @@ const BOOKING_COLUMNS: ColumnDef<BookingListRow>[] = [
     id: 'visit_date',
     accessorFn: (row) => row.visitDate,
     header: ({ column }) => <ColumnHeader column={column} title={text.columns.visitDate} />,
-    cell: ({ row }) => visitText(row.original),
+    cell: ({ row }) => <VisitCell row={row.original} />,
     meta: { label: text.columns.visitDate },
   },
-  {
-    id: 'rws',
-    header: text.columns.rws,
-    cell: ({ row }) => row.original.rwIds.map(rwLabel).join(', '),
-    meta: { label: text.columns.rws },
-  },
+];
+
+// The RW column needs every RW's accent, so the columns are built once per list of RWs.
+function bookingColumns(rws: readonly RwBadge[]): ColumnDef<BookingListRow>[] {
+  return [
+    ...HEAD_COLUMNS,
+    {
+      id: 'rws',
+      header: text.columns.rws,
+      cell: ({ row }) => <RwCell row={row.original} rws={rws} />,
+      meta: { label: text.columns.rws },
+    },
+    ...TAIL_COLUMNS,
+  ];
+}
+
+const TAIL_COLUMNS: ColumnDef<BookingListRow>[] = [
   {
     id: 'pax',
     header: text.columns.pax,
@@ -106,23 +169,26 @@ const BOOKING_COLUMNS: ColumnDef<BookingListRow>[] = [
     id: 'created_at',
     accessorFn: (row) => row.createdAt,
     header: ({ column }) => <ColumnHeader column={column} title={text.columns.createdAt} />,
-    cell: ({ row }) => formatDateShort(row.original.createdAt),
+    cell: ({ row }) => <CreatedCell row={row.original} />,
     meta: { label: text.columns.createdAt },
   },
 ];
 
 export interface BookingTableProps {
   rows: BookingListRow[];
+  // Every RW, for the RW tags in their own accent.
+  rws: readonly RwBadge[];
   total: number;
   facets: readonly ListFacet[];
   visitDate: string | null;
 }
 
 // Task P4.3.02, docs/PRD.md FR-ADMIN-05: one page of bookings from the URL's query; the code opens the booking.
-export function BookingTable({ rows, total, facets, visitDate }: BookingTableProps) {
+export function BookingTable({ rows, rws, total, facets, visitDate }: BookingTableProps) {
+  const columns = useMemo(() => bookingColumns(rws), [rws]);
   return (
     <DataTable
-      columns={BOOKING_COLUMNS}
+      columns={columns}
       rows={rows}
       total={total}
       noun={text.noun}

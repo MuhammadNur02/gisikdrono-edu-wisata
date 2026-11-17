@@ -105,7 +105,10 @@ function HeaderRows<TData>({ table }: { table: TableInstance<TData> }) {
         <TableHead
           key={header.id}
           aria-sort={ariaSortOf(header)}
-          className={cn('h-12 px-4 text-body-sm', alignClass(header))}
+          className={cn(
+            'h-9 px-4 text-micro font-semibold text-muted-foreground',
+            alignClass(header),
+          )}
         >
           {header.isPlaceholder
             ? null
@@ -123,7 +126,7 @@ function BodyRows<TData>({ table }: { table: TableInstance<TData> }) {
         <TableCell
           key={cell.id}
           className={cn(
-            'h-12 px-4 text-body-sm',
+            'h-14 px-4 py-2.5 text-caption',
             cell.column.columnDef.meta?.align === 'right' && 'text-right tabular-nums',
           )}
         >
@@ -134,13 +137,14 @@ function BodyRows<TData>({ table }: { table: TableInstance<TData> }) {
   ));
 }
 
-// docs/StyleGuide.md §6.4: sticky header, 48 px rows, hover tint, no zebra; nothing animates (§7.3).
+// docs/StyleGuide.md §6.4 (Dasbor Gelap): one card, an uppercase header on the muted band, 56 px rows, hover tint, no
+// zebra; nothing animates (§7.3).
 function DesktopTable<TData>({ table, caption }: { table: TableInstance<TData>; caption: string }) {
   return (
-    <div className="hidden overflow-hidden rounded-xl border border-border md:block">
+    <div className="hidden overflow-hidden rounded-xl border border-border bg-card md:block">
       <Table>
         <TableCaption className="sr-only">{caption}</TableCaption>
-        <TableHeader className="sticky top-0 z-10 bg-muted/50 backdrop-blur">
+        <TableHeader className="sticky top-0 z-10 bg-muted">
           <HeaderRows table={table} />
         </TableHeader>
         <TableBody>

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  formatTimeAgo,
+  formatWeekdayDayMonth,
   bookableRange,
   calendarDateToVisitDate,
   formatDateLong,
@@ -161,5 +163,21 @@ describe('jakartaDayBounds', () => {
       start: '2026-10-24T17:00:00.000Z',
       end: '2026-10-25T17:00:00.000Z',
     });
+  });
+});
+
+describe('formatTimeAgo', () => {
+  const now = new Date('2026-11-17T05:00:00Z');
+  it('counts back in the largest whole step', () => {
+    expect(formatTimeAgo('2026-11-17T04:30:00Z', now)).toBe('30 menit yang lalu');
+    expect(formatTimeAgo('2026-11-17T03:00:00Z', now)).toBe('2 jam yang lalu');
+    expect(formatTimeAgo('2026-11-16T05:00:00Z', now)).toBe('kemarin');
+    expect(formatTimeAgo('2026-11-12T05:00:00Z', now)).toBe('5 hari yang lalu');
+  });
+});
+
+describe('formatWeekdayDayMonth', () => {
+  it('writes a visit day for a dense table', () => {
+    expect(formatWeekdayDayMonth('2026-11-07')).toBe('Sab, 7 Nov');
   });
 });

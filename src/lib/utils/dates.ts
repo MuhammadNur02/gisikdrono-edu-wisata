@@ -75,6 +75,37 @@ export function jakartaHour(instant: string): number {
   return inJakarta(instant).getHours();
 }
 
+// When something happened, counted back from now: '2 jam yang lalu', 'kemarin', '5 hari yang lalu'.
+const MINUTES_PER_HOUR = 60;
+const HOURS_PER_DAY = 24;
+const DAYS_PER_WEEK = 7;
+const WEEKS_PER_MONTH_ROUNDED = 5;
+const MONTHS_PER_YEAR = 12;
+const MS_PER_MINUTE = 60_000;
+// Each unit and how many of it make the next one up.
+const RELATIVE_STEPS: readonly [Intl.RelativeTimeFormatUnit, number][] = [
+  ['minute', MINUTES_PER_HOUR],
+  ['hour', HOURS_PER_DAY],
+  ['day', DAYS_PER_WEEK],
+  ['week', WEEKS_PER_MONTH_ROUNDED],
+  ['month', MONTHS_PER_YEAR],
+];
+const relativeFormat = new Intl.RelativeTimeFormat('id', { numeric: 'auto' });
+
+export function formatTimeAgo(instant: string, now: Date = new Date()): string {
+  let amount = (new Date(instant).getTime() - now.getTime()) / MS_PER_MINUTE;
+  for (const [unit, size] of RELATIVE_STEPS) {
+    if (Math.abs(amount) < size) return relativeFormat.format(Math.round(amount), unit);
+    amount /= size;
+  }
+  return relativeFormat.format(Math.round(amount), 'year');
+}
+
+// 'Sab, 7 Nov': a visit day in a dense table.
+export function formatWeekdayDayMonth(visitDate: string): string {
+  return format(inJakarta(visitDate), 'EEE, d MMM', { locale: indonesian });
+}
+
 // A day's short name on a calendar grid: 'Min', 'Sen'.
 export function formatWeekdayShort(visitDate: string): string {
   return format(inJakarta(visitDate), 'EEE', { locale: indonesian });
