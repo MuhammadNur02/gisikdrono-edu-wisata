@@ -51,7 +51,7 @@ test('an RW officer checks a group in by its code, with one person more than boo
   expect(sent[1]?.attendeeCount).toBe(31);
   // The sheet's own button comes before the dialog's corner X, which is also named Tutup.
   await sheet.getByRole('button', { name: 'Tutup', exact: true }).first().click();
-  const recent = page.getByRole('region', { name: 'Pemindaian terakhir' });
+  const recent = page.getByRole('region', { name: 'Scan terakhir di gerbang ini' });
   await expect(recent.getByText('Tiket valid')).toBeVisible();
 });
 

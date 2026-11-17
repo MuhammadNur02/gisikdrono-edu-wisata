@@ -90,7 +90,12 @@ export const scannerCopy = {
     phoneLastDigits: '4 digit terakhir nomor WhatsApp',
     submit: 'Periksa',
   },
-  recent: { title: 'Pemindaian terakhir', empty: 'Belum ada pemindaian.' },
+  recent: {
+    title: 'Scan terakhir di gerbang ini',
+    empty: 'Belum ada pemindaian.',
+    attendance: 'Lihat kehadiran',
+  },
+  tip: 'Jarak 15–25 cm · hindari pantulan layar · satu tiket per scan',
   modal: {
     title: 'Scan Tiket',
     description: 'Foto QR tiket dengan kamera ponsel, atau masukkan kode manual.',
