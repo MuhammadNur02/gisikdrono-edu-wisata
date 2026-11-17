@@ -80,13 +80,37 @@ function useCamera(onDecoded: (raw: string) => boolean) {
 
 type CameraControls = ReturnType<typeof useCamera>;
 
+// The four corners the officer aims the ticket into (Dasbor Gelap); decoration only, over the stream.
+const AIM_CORNERS = [
+  'top-0 left-0 border-t-4 border-l-4 rounded-tl-xl',
+  'top-0 right-0 border-t-4 border-r-4 rounded-tr-xl',
+  'bottom-0 left-0 border-b-4 border-l-4 rounded-bl-xl',
+  'bottom-0 right-0 border-b-4 border-r-4 rounded-br-xl',
+] as const;
+
+function AimFrame() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center"
+    >
+      <div className="relative size-3/5 max-h-72 max-w-72">
+        {AIM_CORNERS.map((corner) => (
+          <span key={corner} className={`absolute size-10 border-primary ${corner}`} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function CameraFrame({ camera }: { camera: CameraControls }) {
   return (
     <div
       aria-label={text.cameraLabel}
       role="region"
-      className="relative aspect-3/4 w-full overflow-hidden rounded-2xl bg-muted md:aspect-video"
+      className="relative aspect-3/4 w-full overflow-hidden rounded-2xl border border-border bg-sidebar md:aspect-video lg:aspect-square"
     >
+      {camera.isOn ? <AimFrame /> : null}
       {camera.isOn ? (
         <CameraStream
           isArmed={camera.isArmed}
@@ -161,6 +185,7 @@ function CameraPanel({
   return (
     <div className="space-y-3">
       <CameraFrame camera={camera} />
+      <p className="text-center text-caption text-muted-foreground">{text.tip}</p>
       {camera.error ? <FormAlert tone="danger">{cameraErrorLine(camera.error)}</FormAlert> : null}
       <p aria-live="polite" className="sr-only">
         {camera.isArmed ? text.scanning : ''}
@@ -215,6 +240,11 @@ function useLiveScanner() {
 export function ScannerView({ canOverride, returnTo, logOpenedAction }: ScannerViewProps) {
   const navigate = useBoundaryNavigation();
   const { scanner, camera } = useLiveScanner();
+  const onClosed = returnTo
+    ? () => {
+        navigate(returnTo);
+      }
+    : undefined;
 
   // Every opening of the scanner is audited (rpc_log_ui_event 'scanner_opened', Task P4.4.05).
   useEffect(() => {
@@ -222,33 +252,27 @@ export function ScannerView({ canOverride, returnTo, logOpenedAction }: ScannerV
   }, [logOpenedAction]);
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-6">
-      <SoundToggle sound={scanner.sound} />
-      <ScanTabs
-        camera={
-          <CameraPanel
-            camera={camera}
-            canScan={scanner.state.stage === 'idle'}
-            onArm={() => {
-              scanner.sound.prime();
-              camera.arm();
-            }}
-          />
-        }
-        manual={<ManualCheckInForm isBusy={scanner.isBusy} onSubmit={scanner.submitManual} />}
-      />
-      <RecentScans scans={scanner.recent} />
-      <ScanResultSheet
-        scanner={scanner}
-        canOverride={canOverride}
-        onClosed={
-          returnTo
-            ? () => {
-                navigate(returnTo);
-              }
-            : undefined
-        }
-      />
+    <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-5">
+      <div className="flex flex-col gap-4 lg:col-span-3">
+        <SoundToggle sound={scanner.sound} />
+        <ScanTabs
+          camera={
+            <CameraPanel
+              camera={camera}
+              canScan={scanner.state.stage === 'idle'}
+              onArm={() => {
+                scanner.sound.prime();
+                camera.arm();
+              }}
+            />
+          }
+          manual={<ManualCheckInForm isBusy={scanner.isBusy} onSubmit={scanner.submitManual} />}
+        />
+      </div>
+      <div className="lg:col-span-2">
+        <RecentScans scans={scanner.recent} />
+      </div>
+      <ScanResultSheet scanner={scanner} canOverride={canOverride} onClosed={onClosed} />
     </div>
   );
 }
