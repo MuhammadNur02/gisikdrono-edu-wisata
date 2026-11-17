@@ -5,15 +5,19 @@ import { fail } from '@/lib/errors';
 import { requireRole, type StaffContext } from '@/server/auth/guards';
 import {
   getAddonNotes,
+  getBookingDetail,
   getBookingParticipants,
+  listBookingTimeline,
   revealBookingContact,
   revokeBookingTicket,
   saveAdminNotes,
   setAddonFulfillment,
 } from '@/server/services/booking-admin-service';
+import type { BookingDetail } from '@/types/booking-admin';
 
 import {
   loadAddonNotesAction,
+  loadBookingPreviewAction,
   loadBookingParticipantsAction,
   revealBookingContactAction,
   revokeTicketAction,
@@ -26,7 +30,9 @@ vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }
 vi.mock('@/server/auth/guards', () => ({ requireRole: vi.fn() }));
 vi.mock('@/server/services/booking-admin-service', () => ({
   getAddonNotes: vi.fn(),
+  getBookingDetail: vi.fn(),
   getBookingParticipants: vi.fn(),
+  listBookingTimeline: vi.fn(),
   revealBookingContact: vi.fn(),
   revokeBookingTicket: vi.fn(),
   saveAdminNotes: vi.fn(),
@@ -134,5 +140,76 @@ describe('revokeTicketAction', () => {
     ).resolves.toMatchObject({
       error: { code: 'VALIDATION' },
     });
+  });
+});
+
+const BOOKING: BookingDetail = {
+  id: BOOKING_ID,
+  bookingCode: 'GSK-7F3K9Q2M',
+  status: 'paid',
+  institutionName: 'SD Negeri Gisikdrono 02',
+  picFirstName: 'Rina',
+  bookerType: 'school',
+  packageName: 'Eduwisata Ecowastreme',
+  rwIds: [5],
+  paxCount: 30,
+  visitDate: '2026-11-20',
+  visitDateEnd: '2026-11-20',
+  paymentStatus: 'settled',
+  needsReview: false,
+  amounts: { total: 900000, paid: 900000 },
+  createdAt: '2026-11-10T03:00:00Z',
+  phoneMasked: '+62 812 •••• •471',
+  emailMasked: null,
+  isPhoneVerified: true,
+  isEmailVerified: false,
+  isAnonymised: false,
+  channel: 'web',
+  notes: null,
+  adminNotes: null,
+  reviewReason: null,
+  cancelReason: null,
+  expiresAt: null,
+  legs: [],
+  payments: [],
+  tickets: [],
+  invoices: [],
+};
+
+describe('loadBookingPreviewAction', () => {
+  const event = (id: string) => ({
+    id,
+    fromStatus: null,
+    toStatus: null,
+    actorType: 'system' as const,
+    reason: null,
+    occurredAt: '2026-11-17T03:00:00Z',
+  });
+
+  it('reads the booking and its four newest events, newest first, at AAL2', async () => {
+    vi.mocked(getBookingDetail).mockResolvedValue(BOOKING);
+    vi.mocked(listBookingTimeline).mockResolvedValue(['e1', 'e2', 'e3', 'e4', 'e5'].map(event));
+    const result = await loadBookingPreviewAction({ bookingId: BOOKING_ID });
+    expect(result).toEqual({
+      ok: true,
+      data: { booking: BOOKING, events: ['e5', 'e4', 'e3', 'e2'].map(event) },
+    });
+  });
+
+  it('answers NOT_FOUND for a booking outside the window of the staff member', async () => {
+    vi.mocked(getBookingDetail).mockResolvedValue(null);
+    vi.mocked(listBookingTimeline).mockResolvedValue([]);
+    await expect(loadBookingPreviewAction({ bookingId: BOOKING_ID })).resolves.toMatchObject({
+      error: { code: 'NOT_FOUND' },
+    });
+  });
+
+  it('refuses an AAL1 session and a malformed id before reading', async () => {
+    vi.mocked(requireRole).mockResolvedValueOnce({ ok: true, ctx: { ...OFFICER, isAal2: false } });
+    await expect(loadBookingPreviewAction({ bookingId: BOOKING_ID })).resolves.toMatchObject({
+      error: { code: 'FORBIDDEN' },
+    });
+    expect((await loadBookingPreviewAction({ bookingId: 'x' })).ok).toBe(false);
+    expect(getBookingDetail).not.toHaveBeenCalled();
   });
 });

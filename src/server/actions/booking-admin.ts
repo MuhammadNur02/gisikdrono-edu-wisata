@@ -14,18 +14,45 @@ import {
 import { requireRole } from '@/server/auth/guards';
 import {
   getAddonNotes,
+  getBookingDetail,
   getBookingParticipants,
+  listBookingTimeline,
   revealBookingContact,
   revokeBookingTicket,
   saveAdminNotes,
   setAddonFulfillment,
 } from '@/server/services/booking-admin-service';
 import type { ActionResult } from '@/types/action-result';
-import type { ParticipantEntry, RevealedContact } from '@/types/booking-admin';
+import type { BookingPreview, ParticipantEntry, RevealedContact } from '@/types/booking-admin';
 
 // /dashboard/bookings/[id] (Task P4.3.02, docs/PRD.md FR-ADMIN-05; docs/StyleGuide.md §6.10). Either staff role at
 // AAL2; RLS and the personal-data functions decide the booking's scope and window again in the database. The contact
 // and the participants are returned to the page that asked and kept nowhere else.
+
+// The list's preview panel (Dasbor Gelap): the booking as its detail page reads it, with the newest events, so a row
+// can be looked at without leaving the list. The same RLS window as the page; contacts stay masked.
+const PREVIEW_EVENTS = 4;
+
+export async function loadBookingPreviewAction(
+  input: unknown,
+): Promise<ActionResult<BookingPreview>> {
+  const parsed = bookingTargetSchema.safeParse(input);
+  if (!parsed.success) return mapError(parsed.error);
+  const guard = await requireRole('superadmin', 'admin_rw');
+  if (!guard.ok) return guard;
+  if (!guard.ctx.isAal2) return fail('FORBIDDEN');
+
+  try {
+    const [booking, timeline] = await Promise.all([
+      getBookingDetail(parsed.data.bookingId),
+      listBookingTimeline(parsed.data.bookingId),
+    ]);
+    if (booking === null) return fail('NOT_FOUND');
+    return ok({ booking, events: timeline.slice(-PREVIEW_EVENTS).reverse() });
+  } catch (error) {
+    return mapError(error);
+  }
+}
 
 export async function revealBookingContactAction(
   input: unknown,

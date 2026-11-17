@@ -1,10 +1,14 @@
 'use client';
 
 import type { ColumnDef } from '@tanstack/react-table';
-import { ClipboardList } from 'lucide-react';
+import { ClipboardList, PanelRightOpen } from 'lucide-react';
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
+import {
+  BookingPreviewSheet,
+  type PreviewLoader,
+} from '@/components/admin/bookings/booking-preview';
 import { VisitDateFilter } from '@/components/admin/bookings/visit-date-filter';
 import { ColumnHeader } from '@/components/admin/data-table/column-header';
 import { DataTable } from '@/components/admin/data-table/data-table';
@@ -133,7 +137,26 @@ const HEAD_COLUMNS: ColumnDef<BookingListRow>[] = [
 ];
 
 // The RW column needs every RW's accent, so the columns are built once per list of RWs.
-function bookingColumns(rws: readonly RwBadge[]): ColumnDef<BookingListRow>[] {
+type OpenPreview = (row: BookingListRow) => void;
+
+// The row's own way into the preview, for the keyboard and for phones (the cards have no row click).
+function PreviewButton({ row, open }: { row: BookingListRow; open: OpenPreview }) {
+  return (
+    <button
+      type="button"
+      aria-label={text.preview.open(row.bookingCode)}
+      title={text.preview.open(row.bookingCode)}
+      onClick={() => {
+        open(row);
+      }}
+      className="flex size-11 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:size-8"
+    >
+      <PanelRightOpen aria-hidden className="size-4" />
+    </button>
+  );
+}
+
+function bookingColumns(rws: readonly RwBadge[], open: OpenPreview): ColumnDef<BookingListRow>[] {
   return [
     ...HEAD_COLUMNS,
     {
@@ -143,6 +166,12 @@ function bookingColumns(rws: readonly RwBadge[]): ColumnDef<BookingListRow>[] {
       meta: { label: text.columns.rws },
     },
     ...TAIL_COLUMNS,
+    {
+      id: 'preview',
+      header: () => <span className="sr-only">{text.preview.history}</span>,
+      cell: ({ row }) => <PreviewButton row={row.original} open={open} />,
+      meta: { label: text.preview.openDetail, align: 'right' },
+    },
   ];
 }
 
@@ -180,24 +209,47 @@ export interface BookingTableProps {
   rws: readonly RwBadge[];
   total: number;
   facets: readonly ListFacet[];
+  // loadBookingPreviewAction, handed in by the page.
+  loadPreview: PreviewLoader;
   visitDate: string | null;
 }
 
-// Task P4.3.02, docs/PRD.md FR-ADMIN-05: one page of bookings from the URL's query; the code opens the booking.
-export function BookingTable({ rows, rws, total, facets, visitDate }: BookingTableProps) {
-  const columns = useMemo(() => bookingColumns(rws), [rws]);
+// Task P4.3.02, docs/PRD.md FR-ADMIN-05: one page of bookings from the URL's query; the name opens the booking, a click
+// elsewhere on the row (or its panel button) opens the preview (Dasbor Gelap).
+export function BookingTable({
+  rows,
+  rws,
+  total,
+  facets,
+  visitDate,
+  loadPreview,
+}: BookingTableProps) {
+  const [opened, setOpened] = useState<BookingListRow | null>(null);
+  const columns = useMemo(() => bookingColumns(rws, setOpened), [rws]);
   return (
-    <DataTable
-      columns={columns}
-      rows={rows}
-      total={total}
-      noun={text.noun}
-      facets={facets}
-      searchPlaceholder={text.search}
-      toolbarActions={<VisitDateFilter date={visitDate} />}
-      emptyState={
-        <EmptyState icon={ClipboardList} title={text.empty} description={text.emptyHint} />
-      }
-    />
+    <>
+      <DataTable
+        columns={columns}
+        rows={rows}
+        total={total}
+        noun={text.noun}
+        facets={facets}
+        searchPlaceholder={text.search}
+        toolbarActions={<VisitDateFilter date={visitDate} />}
+        emptyState={
+          <EmptyState icon={ClipboardList} title={text.empty} description={text.emptyHint} />
+        }
+        onRowOpen={setOpened}
+      />
+      <BookingPreviewSheet
+        bookingId={opened?.id ?? null}
+        bookingCode={opened?.bookingCode ?? null}
+        rws={rws}
+        load={loadPreview}
+        onClose={() => {
+          setOpened(null);
+        }}
+      />
+    </>
   );
 }
