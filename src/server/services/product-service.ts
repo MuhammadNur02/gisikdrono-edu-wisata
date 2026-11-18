@@ -34,8 +34,8 @@ import type {
 // just took off has already left its variants (products_umkm_variant_photos) and one it just added may be picked.
 
 const LIST_COLUMNS =
-  'id, rw_id, vendor_id, slug, name, category, price, unit_label, status, is_addon_eligible, is_available, is_featured, updated_at, umkm_vendors(name)';
-const DETAIL_COLUMNS = `${LIST_COLUMNS}, description_md, min_order_qty, max_order_qty, lead_time_days, image_paths, sort_order, product_variants(label, image_path, is_available, sort_order)`;
+  'id, rw_id, vendor_id, slug, name, category, price, unit_label, status, is_addon_eligible, is_available, is_featured, updated_at, image_paths, umkm_vendors(name)';
+const DETAIL_COLUMNS = `${LIST_COLUMNS}, description_md, min_order_qty, max_order_qty, lead_time_days, sort_order, product_variants(label, image_path, is_available, sort_order)`;
 
 type ListRow = Pick<
   Tables<'products_umkm'>,
@@ -52,17 +52,13 @@ type ListRow = Pick<
   | 'is_available'
   | 'is_featured'
   | 'updated_at'
+  | 'image_paths'
 > & { umkm_vendors: { name: string } | null };
 
 type DetailRow = ListRow &
   Pick<
     Tables<'products_umkm'>,
-    | 'description_md'
-    | 'min_order_qty'
-    | 'max_order_qty'
-    | 'lead_time_days'
-    | 'image_paths'
-    | 'sort_order'
+    'description_md' | 'min_order_qty' | 'max_order_qty' | 'lead_time_days' | 'sort_order'
   > & {
     product_variants: Pick<
       Tables<'product_variants'>,
@@ -92,6 +88,7 @@ function toListItem(row: ListRow): ProductListItem {
     isAvailable: row.is_available,
     isFeatured: row.is_featured,
     updatedAt: row.updated_at,
+    thumbPath: row.image_paths[0] ?? null,
   };
 }
 

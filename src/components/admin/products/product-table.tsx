@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
+import { ListThumb } from '@/components/admin/cms/list-thumb';
 import { ColumnHeader } from '@/components/admin/data-table/column-header';
 import { DataTable } from '@/components/admin/data-table/data-table';
 import { RowActions, type RowActionItem } from '@/components/admin/data-table/row-actions';
@@ -68,27 +69,32 @@ function actionsOf(
   return items;
 }
 
+// The photo, the name that opens the product, and its seller under it (Dasbor Gelap).
+function ProductCell({ product }: { product: ProductListItem }) {
+  return (
+    <span className="flex items-center gap-3 whitespace-normal">
+      <ListThumb path={product.thumbPath} alt={product.name} />
+      <span className="min-w-0">
+        <Link
+          href={PRODUCT_PATHS.edit(product.id)}
+          className="block font-semibold text-foreground underline-offset-4 hover:underline focus-visible:underline"
+        >
+          {product.name}
+        </Link>
+        <span className="block text-caption text-muted-foreground">{product.vendorName}</span>
+      </span>
+    </span>
+  );
+}
+
 function nameColumns(): ColumnDef<ProductListItem>[] {
   return [
     {
       id: 'name',
       accessorFn: (product) => product.name,
       header: ({ column }) => <ColumnHeader column={column} title={text.columns.name} />,
-      cell: ({ row }) => (
-        <Link
-          href={PRODUCT_PATHS.edit(row.original.id)}
-          className="font-medium underline-offset-4 hover:underline focus-visible:underline"
-        >
-          {row.original.name}
-        </Link>
-      ),
+      cell: ({ row }) => <ProductCell product={row.original} />,
       meta: { label: text.columns.name, card: 'title' },
-    },
-    {
-      id: 'vendor',
-      header: text.columns.vendor,
-      cell: ({ row }) => row.original.vendorName,
-      meta: { label: text.columns.vendor },
     },
     {
       id: 'category',

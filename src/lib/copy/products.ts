@@ -25,7 +25,6 @@ export const productsCopy = {
   saved: 'Produk tersimpan.',
   columns: {
     name: 'Nama',
-    vendor: 'UMKM',
     category: 'Kategori',
     rw: 'RW',
     price: 'Harga',

@@ -81,6 +81,8 @@ export interface ProductListItem {
   isAvailable: boolean;
   isFeatured: boolean;
   updatedAt: string;
+  // The product's first photo, for the list's thumbnail; null without one.
+  thumbPath: string | null;
 }
 
 // A variant as the product form edits it: its label, its photo (one of the product's imagePaths) and whether it is
