@@ -13,6 +13,20 @@ export const financeCopy = {
     to: 'Sampai tanggal',
     invalid: 'Periode tidak valid. Pilih tanggal awal sebelum tanggal akhir, paling lama 12 bulan.',
   },
+  recent: {
+    ledgerTitle: 'Buku besar terbaru',
+    ledgerDescription:
+      'Hanya bertambah, tidak bisa diubah. Koreksi dicatat sebagai baris pembalik.',
+    ledgerEmpty: 'Belum ada entri buku besar.',
+    entryTypes: { settlement: 'Pelunasan', reversal: 'Pembalik', adjustment: 'Penyesuaian' },
+    payoutsTitle: 'Batch pencairan',
+    payoutsDescription: 'Transfer ke kas RW, kelurahan dan penjual, dengan bukti.',
+    payoutsEmpty: 'Belum ada batch pencairan.',
+    payoutPaid: (day: string) => `Dibayar ${day}`,
+    payoutNoProof: 'Menunggu bukti',
+    newPayout: 'Buat batch pencairan',
+    openAll: 'Lihat semua',
+  },
   recap: {
     title: 'Rekap keuangan',
     description:
