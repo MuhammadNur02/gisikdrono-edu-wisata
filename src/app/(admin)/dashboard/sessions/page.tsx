@@ -6,12 +6,12 @@ import { TemplateEditor } from '@/components/admin/calendar/template-editor';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
 import { FormAlert } from '@/components/forms/form-alert';
 import { rwLabel, type RwId } from '@/config/rw';
-import { MONTH_PARAM } from '@/config/sessions';
+import { MONTH_PARAM, WEEK_PARAM } from '@/config/sessions';
 import { sessionsCopy } from '@/lib/copy/sessions';
 import { todayInJakarta } from '@/lib/utils/dates';
-import { monthKeyOf } from '@/lib/utils/sessions';
+import { monthKeyOf, weekDays, weekStartOf } from '@/lib/utils/sessions';
 import { singleSearchValue } from '@/lib/utils/staff-paths';
-import { monthKeySchema } from '@/lib/validations/session';
+import { monthKeySchema, visitDateSchema } from '@/lib/validations/session';
 import {
   createSessionTemplateAction,
   createVisitSessionAction,
@@ -23,8 +23,12 @@ import {
 } from '@/server/actions/sessions';
 import { ownerOfNewContent, readRwScope } from '@/server/auth/content-owner';
 import { requireDashboardStaff } from '@/server/auth/session';
-import { listSessionsForMonth, listSessionTemplates } from '@/server/services/session-service';
-import type { SessionTemplateAdmin } from '@/types/session';
+import {
+  listSessionsBetween,
+  listSessionTemplates,
+  monthRange,
+} from '@/server/services/session-service';
+import type { SessionCalendarView, SessionTemplateAdmin } from '@/types/session';
 
 const text = sessionsCopy;
 
@@ -44,10 +48,20 @@ const TEMPLATE_ACTIONS = {
   remove: removeSessionTemplateAction,
 };
 
-// The month on screen: `?month=YYYY-MM`, or the current month in Semarang.
-function monthOf(value: string | undefined, today: string): string {
-  const parsed = monthKeySchema.safeParse(value);
-  return parsed.success ? parsed.data : monthKeyOf(today);
+// What is on screen: `?month=YYYY-MM` the month grid, else the week of `?week=` or the current week in Semarang.
+function viewOf(
+  params: Record<string, string | string[] | undefined>,
+  today: string,
+): SessionCalendarView {
+  const month = monthKeySchema.safeParse(singleSearchValue(params[MONTH_PARAM]));
+  if (month.success) return { kind: 'month', month: month.data };
+  const week = visitDateSchema.safeParse(singleSearchValue(params[WEEK_PARAM]));
+  return { kind: 'week', weekStart: weekStartOf(week.success ? week.data : today) };
+}
+
+function rangeOf(view: SessionCalendarView): { from: string; to: string } {
+  if (view.kind === 'month') return monthRange(view.month);
+  return { from: view.weekStart, to: weekDays(view.weekStart).at(-1) ?? view.weekStart };
 }
 
 // The superadmin under `Semua`: sessions always belong to one RW, so the page asks for one first.
@@ -80,9 +94,10 @@ function HeaderActions({
   );
 }
 
-async function loadMonth(rwId: RwId, month: string) {
+async function loadView(rwId: RwId, view: SessionCalendarView) {
+  const { from, to } = rangeOf(view);
   const [sessions, templates] = await Promise.all([
-    listSessionsForMonth(rwId, month),
+    listSessionsBetween(rwId, from, to),
     listSessionTemplates(rwId),
   ]);
   return { sessions, templates };
@@ -96,8 +111,10 @@ export default async function SessionsPage({ searchParams }: { searchParams: Sea
   const rwId = ownerOfNewContent(ctx, await readRwScope());
   if (rwId === undefined || rwId === null) return <ChooseRwNotice />;
   const today = todayInJakarta();
-  const month = monthOf(singleSearchValue((await searchParams)[MONTH_PARAM]), today);
-  const { sessions, templates } = await loadMonth(rwId, month);
+  const view = viewOf(await searchParams, today);
+  const { sessions, templates } = await loadView(rwId, view);
+  // "Buat sesi" fills a whole month: the one on screen, or the one the week starts in.
+  const month = view.kind === 'month' ? view.month : monthKeyOf(view.weekStart);
 
   return (
     <>
@@ -108,10 +125,10 @@ export default async function SessionsPage({ searchParams }: { searchParams: Sea
       />
       {sessions.length === 0 ? (
         <FormAlert tone="info">
-          {text.empty} {text.emptyHint}
+          {view.kind === 'month' ? text.empty : text.emptyWeek} {text.emptyHint}
         </FormAlert>
       ) : null}
-      <SessionsBoard month={month} today={today} sessions={sessions} actions={SESSION_ACTIONS} />
+      <SessionsBoard view={view} today={today} sessions={sessions} actions={SESSION_ACTIONS} />
     </>
   );
 }

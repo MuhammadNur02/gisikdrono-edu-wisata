@@ -2,6 +2,7 @@
 
 import { useId } from 'react';
 
+import { BAR_FILL, STATUS_DOT } from '@/components/admin/calendar/quota-colors';
 import { CALENDAR_BARS_PER_DAY } from '@/config/sessions';
 import { SESSION_STATUS } from '@/config/status';
 import { sessionsCopy } from '@/lib/copy/sessions';
@@ -22,18 +23,6 @@ export interface SessionCalendarProps {
   today: string;
   onSelectDay: (date: string) => void;
 }
-
-const BAR_FILL = {
-  open: 'bg-chart-1',
-  nearly_full: 'bg-warning',
-  full: 'bg-danger',
-} as const;
-
-const STATUS_DOT = {
-  open: 'bg-success',
-  closed: 'bg-neutral',
-  cancelled: 'bg-danger',
-} as const;
 
 // docs/StyleGuide.md §6.8 (Dasbor Gelap): the session's start time from md up, where a day has the room, then a thin
 // quota bar (reserved / capacity) with the session's status dot. Nothing animates.

@@ -1,4 +1,4 @@
-import { addMonths, format, getDay, getDaysInMonth } from 'date-fns';
+import { addDays, addMonths, format, getDay, getDaysInMonth } from 'date-fns';
 import { id as indonesian } from 'date-fns/locale';
 
 import { GENERATE_MONTHS_AHEAD, OCCUPANCY_WARNING_RATIO } from '@/config/sessions';
@@ -68,4 +68,37 @@ export function groupByDate<T extends { sessionDate: string }>(
 export function isGeneratableMonth(month: string, today: string): boolean {
   const current = monthKeyOf(today);
   return month >= current && month <= shiftMonth(current, GENERATE_MONTHS_AHEAD);
+}
+
+// The week view (Dasbor Gelap): weeks run Sunday to Saturday, as the month grid's rows do.
+export function weekStartOf(visitDate: string): string {
+  const day = visitDateToCalendarDate(visitDate);
+  return calendarDateToVisitDate(addDays(day, -getDay(day)));
+}
+
+export function shiftWeek(weekStart: string, delta: number): string {
+  return calendarDateToVisitDate(
+    addDays(visitDateToCalendarDate(weekStart), delta * DAYS_PER_WEEK),
+  );
+}
+
+export function weekDays(weekStart: string): string[] {
+  const first = visitDateToCalendarDate(weekStart);
+  return Array.from({ length: DAYS_PER_WEEK }, (_, index) =>
+    calendarDateToVisitDate(addDays(first, index)),
+  );
+}
+
+// '2–8 November 2026', or '29 November – 5 Desember 2026' across two months, or with both years across two.
+export function weekLabel(weekStart: string): string {
+  const first = visitDateToCalendarDate(weekStart);
+  const last = addDays(first, DAYS_PER_WEEK - 1);
+  const end = format(last, 'd MMMM yyyy', { locale: indonesian });
+  if (first.getFullYear() !== last.getFullYear()) {
+    return `${format(first, 'd MMMM yyyy', { locale: indonesian })} – ${end}`;
+  }
+  if (first.getMonth() !== last.getMonth()) {
+    return `${format(first, 'd MMMM', { locale: indonesian })} – ${end}`;
+  }
+  return `${format(first, 'd')}–${end}`;
 }

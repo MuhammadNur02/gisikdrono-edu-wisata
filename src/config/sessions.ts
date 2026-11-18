@@ -1,7 +1,10 @@
 // /dashboard/sessions (Task P4.3.04). Where the table has a CHECK the cap is the same number (0003_tables.sql).
 
 export const SESSIONS_PATH = '/dashboard/sessions';
+// `?month=YYYY-MM` shows the month grid; otherwise the week view shows `?week=` (any day, read as its Sunday) or
+// the current week (Dasbor Gelap).
 export const MONTH_PARAM = 'month';
+export const WEEK_PARAM = 'week';
 
 export const SESSION_LIMITS = {
   label: 60,

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  shiftWeek,
+  weekDays,
+  weekLabel,
+  weekStartOf,
   calendarWeeks,
   fillRatio,
   groupByDate,
@@ -71,5 +75,33 @@ describe('isGeneratableMonth', () => {
     expect(isGeneratableMonth('2027-10', '2026-10-24')).toBe(true);
     expect(isGeneratableMonth('2027-11', '2026-10-24')).toBe(false);
     expect(isGeneratableMonth('2026-09', '2026-10-24')).toBe(false);
+  });
+});
+
+describe('the week view', () => {
+  it('starts a week on its Sunday', () => {
+    expect(weekStartOf('2026-11-05')).toBe('2026-11-01');
+    expect(weekStartOf('2026-11-01')).toBe('2026-11-01');
+    expect(weekStartOf('2026-11-07')).toBe('2026-11-01');
+  });
+
+  it('lists seven days and moves a week at a time, across months and years', () => {
+    expect(weekDays('2026-11-29')).toEqual([
+      '2026-11-29',
+      '2026-11-30',
+      '2026-12-01',
+      '2026-12-02',
+      '2026-12-03',
+      '2026-12-04',
+      '2026-12-05',
+    ]);
+    expect(shiftWeek('2026-11-29', 1)).toBe('2026-12-06');
+    expect(shiftWeek('2027-01-03', -1)).toBe('2026-12-27');
+  });
+
+  it('names the week the way people write a range', () => {
+    expect(weekLabel('2026-11-01')).toBe('1–7 November 2026');
+    expect(weekLabel('2026-11-29')).toBe('29 November – 5 Desember 2026');
+    expect(weekLabel('2026-12-27')).toBe('27 Desember 2026 – 2 Januari 2027');
   });
 });
