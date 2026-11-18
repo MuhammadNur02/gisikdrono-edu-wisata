@@ -105,6 +105,7 @@ function stored(rwId: number): ProductAdmin {
     isAvailable: true,
     isFeatured: false,
     updatedAt: '2026-10-24T01:00:00Z',
+    thumbPath: null,
     descriptionMd: null,
     minOrderQty: 1,
     maxOrderQty: null,
