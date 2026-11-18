@@ -6,7 +6,7 @@ import { CALENDAR_BARS_PER_DAY } from '@/config/sessions';
 import { SESSION_STATUS } from '@/config/status';
 import { sessionsCopy } from '@/lib/copy/sessions';
 import { cn } from '@/lib/utils/cn';
-import { formatDateLong } from '@/lib/utils/dates';
+import { formatDateLong, formatSessionClock } from '@/lib/utils/dates';
 import { calendarWeeks, fillRatio, groupByDate, occupancyOf } from '@/lib/utils/sessions';
 import type { VisitSessionAdmin } from '@/types/session';
 
@@ -35,7 +35,8 @@ const STATUS_DOT = {
   cancelled: 'bg-danger',
 } as const;
 
-// docs/StyleGuide.md §6.8: a thin quota bar (reserved / capacity) with the session's status dot. Nothing animates.
+// docs/StyleGuide.md §6.8 (Dasbor Gelap): the session's start time from md up, where a day has the room, then a thin
+// quota bar (reserved / capacity) with the session's status dot. Nothing animates.
 function QuotaBar({ session }: { session: VisitSessionAdmin }) {
   const ratio = fillRatio(session.reservedPax, session.capacity);
   const fill = BAR_FILL[occupancyOf(session.reservedPax, session.capacity)];
@@ -45,6 +46,9 @@ function QuotaBar({ session }: { session: VisitSessionAdmin }) {
         aria-hidden
         className={cn('size-1.5 shrink-0 rounded-full', STATUS_DOT[session.status])}
       />
+      <span className="hidden w-9 shrink-0 text-caption text-muted-foreground tabular-nums md:inline">
+        {formatSessionClock(session.startTime)}
+      </span>
       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
         <div
           className={cn('h-full rounded-full', fill)}
@@ -108,7 +112,7 @@ function DayCell({ date, sessions, isToday, onSelect }: DayCellProps) {
       aria-label={text.openDay(formatDateLong(date))}
       aria-describedby={descriptionId}
       className={cn(
-        'flex min-h-20 flex-col gap-1 rounded-lg border border-border bg-card p-2 text-left transition-colors outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring md:min-h-24',
+        'flex min-h-20 flex-col gap-1 rounded-lg border border-border bg-card p-2 text-left transition-colors outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring md:min-h-28',
         isToday && 'border-primary',
       )}
     >
@@ -131,7 +135,7 @@ export function SessionCalendar({ month, sessions, today, onSelectDay }: Session
   const byDate = groupByDate(sessions);
   return (
     <div role="group" aria-label={text.calendarLabel} className="space-y-2">
-      <div className="grid grid-cols-7 gap-1 text-center text-overline text-muted-foreground">
+      <div className="grid grid-cols-7 gap-1 text-center text-micro font-semibold text-muted-foreground">
         {text.weekdays.map((weekday) => (
           <span key={weekday}>{weekday}</span>
         ))}
