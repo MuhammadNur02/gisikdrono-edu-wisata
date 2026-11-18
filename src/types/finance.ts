@@ -315,3 +315,13 @@ export interface EvidenceLink {
   url: string;
   expiresInSeconds: number;
 }
+
+// One ledger row as the recap's "Buku besar terbaru" shows it: when, what kind, for whom, and how much (a reversal is
+// negative).
+export interface LedgerEntryLine {
+  id: number;
+  createdAt: string;
+  entryType: EnumValue<'revenue_entry_type'>;
+  beneficiaryKey: string;
+  amount: number;
+}

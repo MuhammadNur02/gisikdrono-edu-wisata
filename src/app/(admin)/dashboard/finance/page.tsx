@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 
 import { PartyBalanceTable } from '@/components/admin/finance/party-balance-table';
 import { InvariantNotice, NetChart, RecapKpis } from '@/components/admin/finance/recap-overview';
+import { PayoutsPanel, RecentLedgerPanel } from '@/components/admin/finance/recent-panels';
 import { RwRecapKpis } from '@/components/admin/finance/rw-recap-overview';
 import { FilterBar, type FilterField } from '@/components/admin/security/filter-bar';
 import { DashboardPageHeader } from '@/components/admin/shell/dashboard-page-header';
@@ -11,7 +12,9 @@ import { financeCopy } from '@/lib/copy/finance';
 import { todayInJakarta } from '@/lib/utils/dates';
 import { parseFinancePeriod, type PeriodRead } from '@/lib/validations/finance';
 import { requireDashboardStaff } from '@/server/auth/session';
+import { listRecentLedgerEntries } from '@/server/services/finance-recent-service';
 import { loadFinanceRecap, loadRwFinanceRecap } from '@/server/services/finance-service';
+import { listPayouts } from '@/server/services/revenue-share-service';
 
 const text = financeCopy.recap;
 
@@ -39,7 +42,11 @@ function PeriodControls({ period }: { period: PeriodRead }) {
 // months, the last 30 days unless the URL names another: the payments settled and refunded, the ledger invariant, the
 // daily net and each party's balance, all read from the ledger views through the finance RPCs at AAL2.
 async function SuperadminRecap({ period }: { period: PeriodRead }) {
-  const recap = await loadFinanceRecap({ from: period.from, to: period.to });
+  const [recap, payouts, entries] = await Promise.all([
+    loadFinanceRecap({ from: period.from, to: period.to }),
+    listPayouts(),
+    listRecentLedgerEntries(),
+  ]);
   return (
     <>
       <DashboardPageHeader title={text.title} description={text.description} />
@@ -48,7 +55,13 @@ async function SuperadminRecap({ period }: { period: PeriodRead }) {
         <RecapKpis overview={recap.overview} />
         <InvariantNotice overview={recap.overview} />
         <NetChart daily={recap.overview.daily} period={period} />
-        <PartyBalanceTable balances={recap.balances} shares={recap.shares} />
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          <div className="min-w-0 lg:col-span-2">
+            <PartyBalanceTable balances={recap.balances} shares={recap.shares} />
+          </div>
+          <PayoutsPanel payouts={payouts} />
+        </div>
+        <RecentLedgerPanel entries={entries} />
       </div>
     </>
   );
@@ -58,7 +71,10 @@ async function SuperadminRecap({ period }: { period: PeriodRead }) {
 // and their UMKM vendors' shares of the period, by day, and what each is still owed. No payment, booker, account
 // number or action; the database keeps the scope (revenue_recap through internal.stats_scope).
 async function RwRecap({ period }: { period: PeriodRead }) {
-  const recap = await loadRwFinanceRecap({ from: period.from, to: period.to });
+  const [recap, entries] = await Promise.all([
+    loadRwFinanceRecap({ from: period.from, to: period.to }),
+    listRecentLedgerEntries(),
+  ]);
   const rwText = financeCopy.rwRecap;
   return (
     <>
@@ -68,6 +84,7 @@ async function RwRecap({ period }: { period: PeriodRead }) {
         <RwRecapKpis totals={recap.totals} />
         <NetChart daily={recap.days} period={period} description={rwText.chartDescription} />
         <PartyBalanceTable balances={recap.balances} shares={recap.shares} />
+        <RecentLedgerPanel entries={entries} />
       </div>
     </>
   );
