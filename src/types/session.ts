@@ -44,3 +44,7 @@ export interface SessionTemplateAdmin {
   capacity: number;
   isActive: boolean;
 }
+
+// What /dashboard/sessions shows: a week from its Sunday (the default, Dasbor Gelap) or a month of the grid.
+export type SessionCalendarView =
+  { kind: 'week'; weekStart: string } | { kind: 'month'; month: string };

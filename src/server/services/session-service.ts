@@ -85,11 +85,12 @@ export function monthRange(month: string): { from: string; to: string } {
   };
 }
 
-export async function listSessionsForMonth(
+// One RW's sessions between two visit dates, both included: a month of the grid or a week of the week view.
+export async function listSessionsBetween(
   rwId: RwId,
-  month: string,
+  from: string,
+  to: string,
 ): Promise<VisitSessionAdmin[]> {
-  const { from, to } = monthRange(month);
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('visit_sessions')
